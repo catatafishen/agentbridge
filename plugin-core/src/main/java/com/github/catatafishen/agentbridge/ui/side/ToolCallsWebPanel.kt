@@ -13,6 +13,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.util.ui.JBUI
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
@@ -36,6 +37,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     private val browser: JBCefBrowser?
     private var browserReady = false
     private var serviceListener: ChangeListener? = null
+    private var diffQuery: JBCefJSQuery? = null
 
     init {
         if (JBCefApp.isSupported()) {
@@ -43,6 +45,24 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             val panelBg = JBUI.CurrentTheme.ToolWindow.background()
             browser.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
             Disposer.register(this, browser)
+
+            val query = PlatformApiCompat.createJSQuery(browser)
+            query.addHandler { request ->
+                try {
+                    val parsed = com.google.gson.JsonParser.parseString(request).asJsonObject
+                    val original = parsed.get("original").asString
+                    val modified = parsed.get("modified").asString
+                    val toolName = parsed.get("tool").asString
+                    ApplicationManager.getApplication().invokeLater {
+                        ToolCallInputDiffViewer.showDiff(project, original, modified, toolName)
+                    }
+                } catch (e: Exception) {
+                    LOG.warn("openInputDiff: failed to parse request", e)
+                }
+                null
+            }
+            Disposer.register(this, query)
+            diffQuery = query
 
             browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
                 override fun onLoadEnd(cefBrowser: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
@@ -91,6 +111,13 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             "window.addEventListener('wheel',function(e){if(e.ctrlKey){e.preventDefault();e.stopPropagation();}},{passive:false,capture:true});",
             "", 0
         )
+        diffQuery?.let { query ->
+            browser?.cefBrowser?.executeJavaScript(
+                "window.openInputDiff = function(original, modified, tool) { " +
+                    query.inject("JSON.stringify({original:original,modified:modified,tool:tool})") + " };",
+                "", 0
+            )
+        }
         browserReady = true
         ApplicationManager.getApplication().invokeLater {
             val service = LiveToolCallService.getInstance(project)
@@ -176,6 +203,9 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             sb.append(",\"durationMs\":").append(entry.durationMs())
             sb.append(",\"hasHooks\":").append(entry.hasHooks())
 
+            entry.originalInput()?.let { orig ->
+                sb.append(",\"originalArguments\":").append(escapeJson(orig))
+            }
             val stages = entry.hookStages().toList()
             if (stages.isNotEmpty()) {
                 sb.append(",\"hookStages\":[")

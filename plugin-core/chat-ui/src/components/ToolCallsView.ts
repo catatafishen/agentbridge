@@ -83,6 +83,20 @@ export class ToolCallsView extends PollableView {
     private _handleClick(e: MouseEvent): void {
         const target = e.target as HTMLElement;
 
+        // View diff button click
+        if ((target as HTMLElement).classList.contains('tcv-diff-btn')) {
+            const row = target.closest<HTMLElement>('.tcv-item');
+            if (row?.dataset.id) {
+                const item = ToolCallsController.get(Number(row.dataset.id));
+                if (item?.originalArguments) {
+                    const fn = (window as any).openInputDiff;
+                    if (typeof fn === 'function') fn(item.originalArguments, item.arguments, item.toolName);
+                }
+            }
+            e.stopPropagation();
+            return;
+        }
+
         // Pipeline stage click
         const stageNode = target.closest<HTMLElement>('.tcv-pipe-node');
         if (stageNode?.dataset.stage) {
@@ -206,10 +220,12 @@ export class ToolCallsView extends PollableView {
         const metaSection = `<div class="tcv-meta-row">${nameRow}${toolRow}${tsRow}</div>`;
 
         // Default I/O view (shown when no pipeline stage is selected)
+        const diffBtn = item.originalArguments && this._pushMode
+            ? `<button class="tcv-diff-btn">View diff</button>` : '';
         const ioView = this._selectedStage ? '' : `
             <div class="tcv-io">
                 <div class="tcv-io-section">
-                    <div class="tcv-label">Input</div>
+                    <div class="tcv-label">Input${diffBtn ? ' ' + diffBtn : ''}</div>
                     ${this._renderContent(item.arguments || '')}
                 </div>
                 <div class="tcv-io-section">
@@ -307,7 +323,9 @@ export class ToolCallsView extends PollableView {
         // Render stage content directly in tcv-detail without an extra wrapper box —
         // the pre/code block already has its own visual container, so double-boxing is redundant.
         if (stage === 'input') {
-            return `<div class="tcv-label">Input Arguments</div>
+            const diffBtn = item.originalArguments && this._pushMode
+                ? `<button class="tcv-diff-btn">View diff</button>` : '';
+            return `<div class="tcv-label">Input Arguments${diffBtn ? ' ' + diffBtn : ''}</div>
                 ${this._renderContent(item.arguments || '')}`;
         }
         if (stage === 'output') {

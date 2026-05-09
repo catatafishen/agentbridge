@@ -32,7 +32,7 @@ class LiveToolCallServiceTest {
 
     @Test
     void recordStart_adds_running_entry() {
-        long callId = service.recordStart("read_file", "Read File", "{}", "FILE", false);
+        long callId = service.recordStart("read_file", "Read File", "{}", "FILE", false, null);
         assertTrue(callId > 0);
         assertEquals(1, service.size());
 
@@ -44,7 +44,7 @@ class LiveToolCallServiceTest {
 
     @Test
     void complete_updates_entry() {
-        long callId = service.recordStart("git_status", "Git Status", "{}", "GIT", false);
+        long callId = service.recordStart("git_status", "Git Status", "{}", "GIT", false, null);
         service.complete(callId, "on branch main", 42, true);
 
         LiveToolCallEntry entry = service.getEntries().getFirst();
@@ -56,7 +56,7 @@ class LiveToolCallServiceTest {
 
     @Test
     void complete_with_failure() {
-        long callId = service.recordStart("run_command", "Run Command", "{\"cmd\":\"bad\"}", null, false);
+        long callId = service.recordStart("run_command", "Run Command", "{\"cmd\":\"bad\"}", null, false, null);
         service.complete(callId, "Error: command failed", 100, false);
 
         LiveToolCallEntry entry = service.getEntries().getFirst();
@@ -65,7 +65,7 @@ class LiveToolCallServiceTest {
 
     @Test
     void complete_unknown_callId_is_noop() {
-        service.recordStart("test", "Test", "{}", null, false);
+        service.recordStart("test", "Test", "{}", null, false, null);
         // Should not throw — unknown IDs are silently ignored (entry may have been evicted)
         service.complete(999_999, "output", 10, true);
         assertEquals(1, service.size());
@@ -74,9 +74,9 @@ class LiveToolCallServiceTest {
 
     @Test
     void multiple_entries_ordered() {
-        service.recordStart("first", "First", "{}", null, false);
-        service.recordStart("second", "Second", "{}", null, false);
-        service.recordStart("third", "Third", "{}", null, false);
+        service.recordStart("first", "First", "{}", null, false, null);
+        service.recordStart("second", "Second", "{}", null, false, null);
+        service.recordStart("third", "Third", "{}", null, false, null);
 
         List<LiveToolCallEntry> entries = service.getEntries();
         assertEquals(3, entries.size());
@@ -87,8 +87,8 @@ class LiveToolCallServiceTest {
 
     @Test
     void clear_removes_all_entries() {
-        service.recordStart("a", "A", "{}", null, false);
-        service.recordStart("b", "B", "{}", null, false);
+        service.recordStart("a", "A", "{}", null, false, null);
+        service.recordStart("b", "B", "{}", null, false, null);
         service.clear();
         assertEquals(0, service.size());
         assertTrue(service.getEntries().isEmpty());
@@ -96,9 +96,9 @@ class LiveToolCallServiceTest {
 
     @Test
     void getEntries_returns_defensive_copy() {
-        service.recordStart("test", "Test", "{}", null, false);
+        service.recordStart("test", "Test", "{}", null, false, null);
         List<LiveToolCallEntry> snapshot = service.getEntries();
-        service.recordStart("another", "Another", "{}", null, false);
+        service.recordStart("another", "Another", "{}", null, false, null);
         assertEquals(1, snapshot.size());
     }
 
@@ -106,14 +106,14 @@ class LiveToolCallServiceTest {
     void listener_notified_on_start() {
         AtomicInteger count = new AtomicInteger();
         service.addChangeListener(e -> count.incrementAndGet());
-        service.recordStart("tool", "Tool", "{}", null, false);
+        service.recordStart("tool", "Tool", "{}", null, false, null);
         assertEquals(1, count.get());
     }
 
     @Test
     void listener_notified_on_complete() {
         AtomicInteger count = new AtomicInteger();
-        long callId = service.recordStart("tool", "Tool", "{}", null, false);
+        long callId = service.recordStart("tool", "Tool", "{}", null, false, null);
         service.addChangeListener(e -> count.incrementAndGet());
         service.complete(callId, "done", 5, true);
         assertEquals(1, count.get());
@@ -122,7 +122,7 @@ class LiveToolCallServiceTest {
     @Test
     void listener_notified_on_clear() {
         AtomicInteger count = new AtomicInteger();
-        service.recordStart("tool", "Tool", "{}", null, false);
+        service.recordStart("tool", "Tool", "{}", null, false, null);
         service.addChangeListener(e -> count.incrementAndGet());
         service.clear();
         assertEquals(1, count.get());
@@ -133,18 +133,18 @@ class LiveToolCallServiceTest {
         AtomicInteger count = new AtomicInteger();
         ChangeListener listener = e -> count.incrementAndGet();
         service.addChangeListener(listener);
-        service.recordStart("a", "A", "{}", null, false);
+        service.recordStart("a", "A", "{}", null, false, null);
         assertEquals(1, count.get());
 
         service.removeChangeListener(listener);
-        service.recordStart("b", "B", "{}", null, false);
+        service.recordStart("b", "B", "{}", null, false, null);
         assertEquals(1, count.get());
     }
 
     @Test
     void eviction_when_exceeding_max() {
         for (int i = 0; i < 210; i++) {
-            service.recordStart("tool_" + i, "Tool " + i, "{}", null, false);
+            service.recordStart("tool_" + i, "Tool " + i, "{}", null, false, null);
         }
         assertEquals(200, service.size());
         assertEquals("tool_10", service.getEntries().getFirst().toolName());
@@ -153,11 +153,11 @@ class LiveToolCallServiceTest {
     @Test
     void completion_survives_eviction() {
         // Record first entry, remember its callId
-        long earlyCallId = service.recordStart("tool_0", "Tool 0", "{}", null, false);
+        long earlyCallId = service.recordStart("tool_0", "Tool 0", "{}", null, false, null);
 
         // Fill to capacity and beyond — tool_0 gets evicted
         for (int i = 1; i <= 205; i++) {
-            service.recordStart("tool_" + i, "Tool " + i, "{}", null, false);
+            service.recordStart("tool_" + i, "Tool " + i, "{}", null, false, null);
         }
         assertEquals(200, service.size());
         // tool_0 has been evicted — completing it is a safe no-op
@@ -166,7 +166,7 @@ class LiveToolCallServiceTest {
         assertTrue(service.getEntries().getFirst().isRunning());
 
         // But completing a still-present entry works
-        long recentCallId = service.recordStart("recent", "Recent", "{}", null, false);
+        long recentCallId = service.recordStart("recent", "Recent", "{}", null, false, null);
         service.complete(recentCallId, "done", 5, true);
         LiveToolCallEntry recent = service.getEntries().getLast();
         assertFalse(recent.isRunning());
