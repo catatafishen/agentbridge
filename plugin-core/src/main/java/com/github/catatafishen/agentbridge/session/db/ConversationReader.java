@@ -29,6 +29,10 @@ public final class ConversationReader {
 
     private static final Logger LOG = Logger.getInstance(ConversationReader.class);
 
+    private static final String[] KNOWN_MCP_PREFIXES = {
+        "agentbridge-", "agentbridge_", "mcp_agentbridge_", "@agentbridge/"
+    };
+
     private final ConversationDatabase database;
 
     public ConversationReader(@NotNull ConversationDatabase database) {
@@ -648,15 +652,17 @@ public final class ConversationReader {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Strips the ACP client prefix from a tool name to get the canonical MCP name.
-     * Handles both dash (Copilot/Junie) and underscore (OpenCode) prefix styles.
-     * Already-canonical names pass through unchanged.
+     * Strips known MCP server prefixes from a tool name to get the canonical MCP name.
+     * Only strips prefixes that unambiguously identify an MCP tool — arbitrary dashes
+     * in human-readable descriptions are left intact.
      */
     @NotNull
     private static String stripMcpPrefix(@NotNull String toolName) {
-        int dash = toolName.indexOf('-');
-        if (dash >= 0) return toolName.substring(dash + 1);
-        if (toolName.startsWith("agentbridge_")) return toolName.substring("agentbridge_".length());
+        for (String prefix : KNOWN_MCP_PREFIXES) {
+            if (toolName.startsWith(prefix)) {
+                return toolName.substring(prefix.length());
+            }
+        }
         return toolName;
     }
 
