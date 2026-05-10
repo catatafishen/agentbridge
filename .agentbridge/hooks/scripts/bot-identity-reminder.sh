@@ -11,6 +11,7 @@
 #
 # Purpose: remind agents after a git_commit to use bot identity for authorship,
 # keeping commit attribution consistent during plugin development.
+# See docs/BOT-IDENTITY-HOOKS.md for setup. These hooks are optional — safe to disable locally.
 # =============================================================================
 #
 # Success hook for git_commit: reminds about bot identity for authorship.

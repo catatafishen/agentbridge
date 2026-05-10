@@ -15,6 +15,8 @@
 # =============================================================================
 #
 # generate-github-app-token.sh — Generate a GitHub App installation access token.
+# See docs/BOT-IDENTITY-HOOKS.md for setup instructions (main repo vs fork, GitHub App vs PAT).
+# These hooks are optional — safe to disable or delete locally.
 #
 # Requires: openssl, curl, base64 (all standard on macOS/Linux)
 #
