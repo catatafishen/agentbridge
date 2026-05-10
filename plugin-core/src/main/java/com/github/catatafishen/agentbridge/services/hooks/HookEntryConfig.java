@@ -35,6 +35,8 @@ import java.util.Map;
  * @param env           extra environment variables merged into the script process
  * @param prependString optional static text prepended to tool output (null for permission hooks)
  * @param appendString  optional static text appended to tool output (null for permission hooks)
+ * @param showInRunPanel if true and the entry is not async, the script process is shown in the
+ *                       IDE Run panel instead of running silently in the background
  */
 public record HookEntryConfig(
     @Nullable String script,
@@ -43,7 +45,8 @@ public record HookEntryConfig(
     boolean async,
     @NotNull Map<String, String> env,
     @Nullable String prependString,
-    @Nullable String appendString
+    @Nullable String appendString,
+    boolean showInRunPanel
 ) {
 
     private static final int DEFAULT_TIMEOUT = 10;

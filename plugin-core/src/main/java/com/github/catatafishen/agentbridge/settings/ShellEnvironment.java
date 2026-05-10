@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedReader;
@@ -157,69 +158,74 @@ public class ShellEnvironment {
         return path != null ? path : "";
     }
 
-    private static volatile String cachedShellPath;
-    private static final Object SHELL_PATH_LOCK = new Object();
+    /**
+     * Returns the shell to use for executing hook scripts, consulting IntelliJ's terminal
+     * settings for the given project via reflection.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>IntelliJ's {@code TerminalProjectOptionsProvider.getShellPath()} — if the result
+     *       is a recognised POSIX shell (sh, bash, zsh, dash, fish) it is returned directly.</li>
+     *   <li>The {@code $SHELL} environment variable (Unix only).</li>
+     *   <li>{@code /bin/sh} on Unix; {@code "sh"} on Windows (resolved via {@code PATH},
+     *       e.g. Git Bash adds {@code sh} to the system PATH on Windows).</li>
+     * </ol>
+     *
+     * <p>No disk scanning is performed.
+     *
+     * @param project the current project
+     * @return the resolved shell executable path (never blank)
+     */
+    @NotNull
+    public static String getShellPath(@NotNull Project project) {
+        try {
+            Class<?> cls = Class.forName("org.jetbrains.plugins.terminal.TerminalProjectOptionsProvider");
+            Object settings = cls.getMethod("getInstance", Project.class).invoke(null, project);
+            String path = (String) settings.getClass().getMethod("getShellPath").invoke(settings);
+            if (path != null && !path.isBlank() && isPosixShell(path)) {
+                return path;
+            }
+        } catch (Exception e) {
+            LOG.info("Could not read IntelliJ terminal shell path via reflection: " + e.getMessage());
+        }
+        return getShellPath();
+    }
 
     /**
-     * Returns the path to a POSIX-compatible shell for executing hook scripts.
-     * <p>
-     * On Unix, returns {@code /bin/sh}. On Windows, discovers {@code sh.exe} or
-     * {@code bash.exe} by searching PATH entries first, then known Git for Windows
-     * install locations. Result is cached after the first call.
-     * <p>
-     * <b>Why here:</b> All cross-platform shell detection is centralized in
-     * {@code ShellEnvironment} to keep OS-specific logic in one testable place,
-     * separate from hook execution mechanics in {@code HookExecutor}.
+     * Returns a fallback shell path without consulting any project settings.
+     * On Unix returns {@code $SHELL} (or {@code /bin/sh} if unset).
+     * On Windows returns {@code "sh"} (resolved via {@code PATH}, e.g. Git Bash).
+     *
+     * <p>No disk scanning is performed.
+     *
+     * @return the shell executable path (never blank)
      */
     @NotNull
     public static String getShellPath() {
-        if (cachedShellPath != null) return cachedShellPath;
-        synchronized (SHELL_PATH_LOCK) {
-            if (cachedShellPath != null) return cachedShellPath;
-            cachedShellPath = discoverShellPath();
-            return cachedShellPath;
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) {
+            return "sh";
         }
+        String envShell = System.getenv("SHELL");
+        return (envShell != null && !envShell.isBlank()) ? envShell : "/bin/sh";
     }
 
-    @NotNull
-    private static String discoverShellPath() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (!os.contains("win")) return "/bin/sh";
-
-        // 1. Search PATH entries for sh.exe or bash.exe
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv != null) {
-            for (String dir : pathEnv.split(java.io.File.pathSeparator)) {
-                for (String shell : new String[]{"sh.exe", "bash.exe"}) {
-                    java.io.File candidate = new java.io.File(dir, shell);
-                    if (candidate.exists()) {
-                        String result = candidate.getAbsolutePath();
-                        LOG.info("ShellEnvironment: found POSIX shell on PATH: " + result);
-                        return result;
-                    }
-                }
-            }
+    /**
+     * Returns {@code true} if the given shell path (or bare name) refers to a POSIX-compatible
+     * shell that can be used to run hook scripts.
+     */
+    private static boolean isPosixShell(@NotNull String shellPath) {
+        String name = shellPath;
+        int lastSlash = Math.max(shellPath.lastIndexOf('/'), shellPath.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            name = shellPath.substring(lastSlash + 1);
         }
-        // 2. Try known Git for Windows install locations (sh preferred over bash)
-        String[] knownPaths = {
-            "C:\\Program Files\\Git\\usr\\bin\\sh.exe",
-            "C:\\Program Files (x86)\\Git\\usr\\bin\\sh.exe",
-            "C:\\Program Files\\Git\\bin\\sh.exe",
-            "C:\\Program Files (x86)\\Git\\bin\\sh.exe",
-            "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
-            "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
-            "C:\\Program Files\\Git\\bin\\bash.exe",
-            "C:\\Program Files (x86)\\Git\\bin\\bash.exe"
+        // Strip extension (e.g. bash.exe on Windows)
+        int dotIdx = name.lastIndexOf('.');
+        if (dotIdx > 0) name = name.substring(0, dotIdx);
+        return switch (name.toLowerCase()) {
+            case "sh", "bash", "zsh", "dash", "fish" -> true;
+            default -> false;
         };
-        for (String p : knownPaths) {
-            if (new java.io.File(p).exists()) {
-                LOG.info("ShellEnvironment: found POSIX shell at known Git for Windows path: " + p);
-                return p;
-            }
-        }
-        // 3. Fall back to bare "sh" — ProcessBuilder will fail visibly if not on PATH,
-        //    which is correct per the project's "prefer visible errors" principle.
-        LOG.warn("ShellEnvironment: no POSIX shell found on Windows, falling back to 'sh' (will fail visibly if not on PATH)");
-        return "sh";
     }
 }

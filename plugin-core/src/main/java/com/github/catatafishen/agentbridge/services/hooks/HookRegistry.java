@@ -216,9 +216,10 @@ public final class HookRegistry {
             ? obj.get("prependString").getAsString() : null;
         String appendString = (trigger != HookTrigger.PERMISSION && obj.has("appendString"))
             ? obj.get("appendString").getAsString() : null;
+        boolean showInRunPanel = obj.has("showInRunPanel") && obj.get("showInRunPanel").getAsBoolean();
 
         return new HookEntryConfig(script, timeout, failSilently, async, Map.copyOf(env),
-            prependString, appendString);
+            prependString, appendString, showInRunPanel);
     }
 
     /**
