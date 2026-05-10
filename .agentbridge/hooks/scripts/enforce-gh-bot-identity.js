@@ -77,7 +77,7 @@ if (!botToken) {
     const genScript = path.join(path.dirname(process.argv[1]), 'generate-github-app-token.sh');
     if (fs.existsSync(genScript)) {
         try {
-            botToken = execFileSync('bash', [genScript], {encoding: 'utf8'}).trim();
+            botToken = execFileSync('sh', [genScript], {encoding: 'utf8'}).trim();
         } catch (_) {
             botToken = '';
         }

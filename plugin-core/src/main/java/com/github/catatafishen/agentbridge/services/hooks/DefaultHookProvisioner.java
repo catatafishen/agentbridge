@@ -23,6 +23,15 @@ import java.util.List;
  * <p>On first project open (when no hook JSON configs exist), copies the bundled
  * defaults to {@code <storage-dir>/hooks/}. Users can then customize the files,
  * and use {@link #restoreDefaults(Project)} to reset them to the bundled originals.</p>
+ *
+ * <p><b>Distribution boundary:</b> Only scripts listed in {@code manifest.txt} are
+ * distributed to end users. The manifest references resources from
+ * {@code plugin-core/src/main/resources/default-hooks/}, which is the only
+ * path compiled into the plugin JAR. Scripts under {@code .agentbridge/hooks/scripts/}
+ * at the project root are development-only artifacts — because that directory is
+ * <em>not</em> a Gradle source set, it is never included in the plugin ZIP and
+ * never copied here. If you add new end-user hooks, they must be placed under
+ * {@code plugin-core/src/main/resources/default-hooks/} and listed in the manifest.</p>
  */
 public final class DefaultHookProvisioner {
 
