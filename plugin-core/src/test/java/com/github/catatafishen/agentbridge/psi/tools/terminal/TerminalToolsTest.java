@@ -201,8 +201,8 @@ public class TerminalToolsTest extends BasePlatformTestCase {
 
     /**
      * The response from {@code list_terminals} must always be non-null, non-blank,
-     * and must not start with "Error". It must include the "Available shells:" section
-     * and the closing tip line regardless of whether any terminal is open.
+     * and must not start with "Error". It must include the closing tip line
+     * regardless of whether any terminal is open.
      */
     public void testListTerminalsResponseFormat() throws Exception {
         String result = listTerminalsTool.execute(new JsonObject());
@@ -211,8 +211,6 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         assertFalse("Result must not be blank", result.isBlank());
         assertFalse("Result must never start with 'Error', got: " + result,
             result.startsWith("Error"));
-        assertTrue("Expected 'Available shells:' section in result, got: " + result,
-            result.contains("Available shells:"));
         // The tip line is appended unconditionally at the end of execute()
         assertTrue("Expected closing tip referencing read_terminal_output, got: " + result,
             result.contains("read_terminal_output"));
@@ -221,24 +219,18 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     }
 
     /**
-     * The "Available shells:" section must list discovered shells or at least attempt
-     * to check common shell paths for the current OS. On POSIX systems {@code /bin/sh}
-     * is universally available, so at least one "&#x2713;" entry is expected; on Windows
-     * the section may list zero available entries but the header must still be present.
+     * The "IntelliJ default shell:" section must appear in the output. In the test
+     * sandbox the terminal plugin may not be available, so the fallback message is
+     * also accepted.
      */
-    public void testListTerminalsAvailableShellsSection() throws Exception {
+    public void testListTerminalsDefaultShellIsReported() throws Exception {
         String result = listTerminalsTool.execute(new JsonObject());
 
         assertNotNull("Result must not be null", result);
-        assertTrue("Expected 'Available shells:' section in result, got: " + result,
-            result.contains("Available shells:"));
-
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (!os.contains("win") && new java.io.File("/bin/sh").exists()) {
-            // /bin/sh is universally available on POSIX — at least one shell must be shown
-            assertTrue("Expected at least one '✓' shell entry on POSIX system, got: " + result,
-                result.contains("✓"));
-        }
+        boolean hasDefaultShell = result.contains("IntelliJ default shell:");
+        boolean hasFallback = result.contains("Could not determine IntelliJ default shell.");
+        assertTrue("Expected default shell or fallback message, got: " + result,
+            hasDefaultShell || hasFallback);
     }
 
     /**
