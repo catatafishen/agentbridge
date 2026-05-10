@@ -142,9 +142,8 @@ export class ToolCallsView extends PollableView {
                 const d = new Date(item.timestamp);
                 const minuteKey = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
                 if (minuteKey !== lastMinuteKey) {
-                    const mm = String(d.getMinutes()).padStart(2, '0');
-                    const ss = String(d.getSeconds()).padStart(2, '0');
-                    html.push(`<div class="tcv-time-sep">${mm}:${ss}</div>`);
+                    const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                    html.push(`<div class="tcv-time-sep">${timeStr}</div>`);
                     lastMinuteKey = minuteKey;
                 }
             }
