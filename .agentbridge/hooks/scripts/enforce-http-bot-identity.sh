@@ -22,6 +22,9 @@
 #   2. ~/.agentbridge/bot-token file (static PAT)
 #   3. GitHub App token via generate-github-app-token.sh (dynamic, preferred)
 #
+# See docs/BOT-IDENTITY-HOOKS.md for setup instructions (main repo vs fork, GitHub App vs PAT).
+# These hooks are optional — safe to disable or delete locally.
+#
 # Trigger: PRE
 # Input:   JSON payload on stdin with arguments.url, arguments.method
 # Output:  {"arguments":{"auth":"bearer <token>"}} or {"error":"..."}

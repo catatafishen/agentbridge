@@ -14,6 +14,9 @@
 # while developing the plugin are attributed to the agent, not the developer.
 # =============================================================================
 #
+# See docs/BOT-IDENTITY-HOOKS.md for setup instructions.
+# These hooks are optional — safe to disable or delete locally.
+#
 # Pre-hook for git_commit: silently sets the commit author to the connected agent identity.
 #
 # Uses AGENTBRIDGE_AGENT_NAME (set from the MCP initialize handshake) so the commit

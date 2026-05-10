@@ -11,6 +11,7 @@
 #
 # Purpose: after a git_push of a feature branch, remind agents to create a PR
 # using the bot identity, keeping PR attribution consistent during development.
+# See docs/BOT-IDENTITY-HOOKS.md for setup. These hooks are optional — safe to disable locally.
 # =============================================================================
 #
 # Success hook for git_push: appends PR creation tip after pushing feature branches.

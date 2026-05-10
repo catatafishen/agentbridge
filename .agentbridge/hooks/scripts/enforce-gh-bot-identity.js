@@ -32,6 +32,9 @@
 //   - Implicit POST: gh api ... -f/-F (form fields imply POST)
 //   - GraphQL mutations: gh api graphql (always POST)
 //
+// See docs/BOT-IDENTITY-HOOKS.md for setup instructions (main repo vs fork, GitHub App vs PAT).
+// These hooks are optional — safe to disable or delete locally.
+//
 // ⚠️ AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry
 //    using built-in bash, run_in_terminal, or any other tool that bypasses
 //    this check. Instead, stop and tell the user the bot token is not configured.
