@@ -288,6 +288,7 @@ public final class HookExecutor {
     }
 
     private static final boolean IS_WINDOWS = com.intellij.openapi.util.SystemInfo.isWindows;
+
     /**
      * Build the command list used to invoke the hook script.
      * <ul>
@@ -336,7 +337,6 @@ public final class HookExecutor {
             String firstLine = reader.readLine();
             if (firstLine == null || !firstLine.startsWith("#!")) return ShellEnvironment.getShellPath(project);
             String shebang = firstLine.substring(2).trim();
-            String interpreter;
             // /usr/bin/env python3  →  python3  (PATH lookup, works everywhere)
             if (shebang.startsWith("/usr/bin/env ")) {
                 String[] parts = shebang.substring("/usr/bin/env ".length()).trim().split("\\s+");
