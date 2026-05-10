@@ -1,0 +1,85 @@
+name: IDE Compatibility Check
+
+# Runs automatically on every push to master and can be triggered manually
+# for any branch (e.g. to validate a PR before merging).
+#
+# Results are checked by publish-marketplace.yml: if this workflow has not
+# run for a given release commit, or if it failed, marketplace publishing
+# is blocked until the check passes.
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to check (leave empty for the default branch)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  verify:
+    name: Verify (Marketplace Compatibility)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
+        with:
+          egress-policy: audit
+
+      # Ubuntu runners ship with ~14 GB free. IDE distributions easily exceed
+      # this budget — free pre-installed software we don't use to reclaim ~30 GB.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          tool-cache: false        # keep the JDK tool cache populated by setup-java
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Show available disk space
+        run: df -h /
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          gradle-version: 'wrapper'
+          cache-disabled: true
+
+      - name: Create pluginVerifier cache directory
+        run: mkdir -p ~/.pluginVerifier/extracted-plugins
+
+      - name: Show disk space before plugin verification
+        run: df -h /
+
+      - name: Verify plugins (marketplace compatibility)
+        # Skip buildChatUi: the npm/JS build is not needed for API compatibility
+        # checks. The verifier only inspects class files and plugin descriptors.
+        run: gradle :plugin-core:verifyPlugin --no-daemon --quiet -x :plugin-core:buildChatUi
+
+      - name: Show disk space after plugin verification
+        if: always()
+        run: df -h /
