@@ -317,7 +317,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         });
         animationTimer.setRepeats(true);
 
-        switchListener = () -> SwingUtilities.invokeLater(this::refreshClientSection);
+        switchListener = () -> ApplicationManager.getApplication().invokeLater(this::refreshClientSection);
         agentManager.addSwitchListener(switchListener);
 
         timerPanel.setOnStatsChanged(this::refresh);
@@ -662,7 +662,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                     TodayTotals totals = new TodayTotals(turns, tools, inTok, outTok,
                         linesAdded, linesRemoved, durMs, premium);
                     todayTotalsRef.set(totals);
-                    SwingUtilities.invokeLater(() -> {
+                    ApplicationManager.getApplication().invokeLater(() -> {
                         // Read multiplier mode on the EDT at apply time. The pooled-thread
                         // DB query may take long enough that the user has switched providers
                         // by the time we repaint — using the *current* snapshot avoids

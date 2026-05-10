@@ -128,6 +128,10 @@ public final class ToolReadinessGate {
                 return projectInitErrorMessage(toolName);
             }
             try {
+                // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
+                // this runs in a blocking MCP call handler that must return a result synchronously.
+                // IntelliJ's DumbService.runWhenSmart() is callback-based and incompatible with
+                // the synchronous MCP protocol flow.
                 Thread.sleep(PROJECT_INIT_POLL_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

@@ -13,7 +13,6 @@ import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.UIUtil
-import javax.swing.SwingUtilities
 
 class BillingConfigurable :
     BoundConfigurable("Billing Data"),
@@ -90,7 +89,7 @@ class BillingConfigurable :
             val client = CopilotBillingClient()
             val ghCli = client.findGhCli()
             val authenticated = ghCli != null && client.isGhAuthenticated(ghCli)
-            SwingUtilities.invokeLater {
+            ApplicationManager.getApplication().invokeLater {
                 when {
                     ghCli == null -> {
                         statusLabel.text = "GitHub CLI not found — install from cli.github.com"

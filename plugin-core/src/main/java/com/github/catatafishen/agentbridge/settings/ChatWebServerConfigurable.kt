@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.services.ChatWebServer
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
@@ -17,7 +18,6 @@ import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import javax.swing.JButton
 import javax.swing.JOptionPane
-import javax.swing.SwingUtilities
 import javax.swing.Timer
 
 class ChatWebServerConfigurable(private val project: Project) :
@@ -103,7 +103,7 @@ class ChatWebServerConfigurable(private val project: Project) :
                 try {
                     ws.start()
                 } catch (e: Exception) {
-                    SwingUtilities.invokeLater {
+                    ApplicationManager.getApplication().invokeLater {
                         JOptionPane.showMessageDialog(
                             null,
                             "Failed to start web server: ${e.message}",
@@ -113,7 +113,7 @@ class ChatWebServerConfigurable(private val project: Project) :
                     }
                     return@Thread
                 }
-                SwingUtilities.invokeLater(::refresh)
+                ApplicationManager.getApplication().invokeLater(::refresh)
             }, "ChatWebServer-start").start()
         }
     }

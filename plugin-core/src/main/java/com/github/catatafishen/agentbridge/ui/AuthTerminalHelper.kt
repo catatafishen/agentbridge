@@ -59,6 +59,9 @@ fun runAuthInEmbeddedTerminal(
                     val deadline = System.currentTimeMillis() + 5_000L
                     while (System.currentTimeMillis() < deadline) {
                         if (getTty.invoke(widget) != null) break
+                        // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here
+                        // because terminal TTY readiness is accessed via reflection (internal API)
+                        // and has no callback.
                         Thread.sleep(100)
                     }
                     val fullCommand = buildCommandWithEnvironment(command, envVars)

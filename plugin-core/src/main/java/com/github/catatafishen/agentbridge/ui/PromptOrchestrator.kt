@@ -883,6 +883,10 @@ class PromptOrchestrator(
     /**
      * Captures the current HEAD commit hash. Returns null if git is unavailable or the
      * working directory is not a git repository.
+     *
+     * Antipattern (DESIGN-PRINCIPLES.md): ProcessBuilder for git commands. Should use git4idea APIs
+     * (e.g. GitRepositoryManager.getInstance(project).repositories). Kept because adding an optional
+     * dependency on the git4idea plugin requires careful class-loading setup for these UI-layer utilities.
      */
     private fun captureGitHead(): String? {
         return try {

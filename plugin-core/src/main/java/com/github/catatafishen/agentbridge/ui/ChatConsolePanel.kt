@@ -1872,6 +1872,9 @@ class ChatConsolePanel(
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                // Antipattern (DESIGN-PRINCIPLES.md): ProcessBuilder for git commands. Should use git4idea
+                // APIs. Kept because adding an optional dependency on git4idea requires careful class-loading
+                // setup for these UI-layer utilities.
                 val process = ProcessBuilder("git", "rev-parse", abbreviatedHash)
                     .directory(java.io.File(basePath))
                     .redirectErrorStream(true)

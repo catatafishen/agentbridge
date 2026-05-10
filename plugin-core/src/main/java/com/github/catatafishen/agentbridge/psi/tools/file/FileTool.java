@@ -583,6 +583,11 @@ public abstract class FileTool extends Tool {
      * Returns a short git status annotation for a file, e.g. "[git: modified, not staged]".
      * Runs a single git command via ProcessBuilder. Returns empty string on any error
      * or if the file is not in a git repo.
+     * <p>
+     * Antipattern (DESIGN-PRINCIPLES.md): ProcessBuilder for git commands. Should use
+     * ChangeListManager.getInstance(project).getChange(virtualFile) instead. Kept because
+     * ChangeListManager requires a VirtualFile lookup and VCS refresh that may not be available
+     * immediately after file writes in the MCP tool flow.
      */
     protected static String getGitFileStatus(Project project, String pathStr) {
         String basePath = project.getBasePath();

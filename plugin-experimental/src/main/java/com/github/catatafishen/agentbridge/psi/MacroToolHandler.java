@@ -117,7 +117,10 @@ public final class MacroToolHandler implements ToolDefinition {
                 + " seconds. It may be waiting for user input (e.g., a dialog).";
         }
 
-        // Small delay for EDT to settle after macro playback
+        // Small delay for EDT to settle after macro playback.
+        // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
+        // IntelliJ's macro playback API has no completion callback — a short settle delay is needed
+        // to let EDT process remaining events before snapshotting results.
         Thread.sleep(200);
 
         // Snapshot after and build result

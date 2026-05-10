@@ -38,7 +38,7 @@ public class ProjectBuildSupport {
     public static String buildProject(Project project, String moduleName, AtomicBoolean buildInProgress)
         throws ExecutionException, InterruptedException, TimeoutException {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        long startTime = System.currentTimeMillis();
+        long startNanos = System.nanoTime();
 
         EdtUtil.invokeLater(() -> {
             try {
@@ -52,7 +52,7 @@ public class ProjectBuildSupport {
                     (aborted, errorCount, warningCount, context) -> {
                         buildInProgress.set(false);
                         restoreFocusIfNeeded(project, activeEditor);
-                        resultFuture.complete(formatBuildResult(aborted, errorCount, warningCount, context, startTime));
+                        resultFuture.complete(formatBuildResult(aborted, errorCount, warningCount, context, startNanos));
                     };
 
                 if (!moduleName.isEmpty()) {
@@ -118,8 +118,8 @@ public class ProjectBuildSupport {
     }
 
     private static String formatBuildResult(boolean aborted, int errorCount, int warningCount,
-                                            CompileContext context, long startTime) {
-        long elapsed = System.currentTimeMillis() - startTime;
+                                            CompileContext context, long startNanos) {
+        long elapsed = (System.nanoTime() - startNanos) / 1_000_000;
         StringBuilder sb = new StringBuilder(formatBuildHeader(aborted, errorCount, warningCount, elapsed));
 
         appendCompilerMessages(sb, context, CompilerMessageCategory.ERROR, "ERROR", Integer.MAX_VALUE);

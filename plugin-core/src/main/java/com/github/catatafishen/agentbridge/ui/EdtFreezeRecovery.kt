@@ -121,6 +121,9 @@ internal class EdtFreezeRecovery(
             runCatching { cef.wasResized(comp.width, comp.height) }
         }
         runCatching { cef.invalidate() }
+        // Antipattern (DESIGN-PRINCIPLES.md): SwingUtilities.invokeLater bypasses IntelliJ's modality-aware
+        // dispatcher. Kept here intentionally: during an EDT freeze, IntelliJ's own dispatcher may be stuck.
+        // Raw Swing dispatch is the only reliable path to schedule recovery work.
         SwingUtilities.invokeLater {
             runCatching { entry.onRecovered() }
         }

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.intellij.openapi.application.ApplicationManager
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.psi.tools.rider.ReSharperMcpClient
 import com.github.catatafishen.agentbridge.services.ToolDefinition
@@ -199,7 +200,7 @@ class ToolsConfigurable(private val project: Project) :
                 val w = toolsPanel.width
                 if (w > 0 && w != lastWidth) {
                     lastWidth = w
-                    SwingUtilities.invokeLater {
+                    ApplicationManager.getApplication().invokeLater {
                         toolsPanel.revalidate()
                         toolsPanel.repaint()
                     }

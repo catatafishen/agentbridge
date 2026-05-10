@@ -110,6 +110,9 @@ class FileNavigator(private val project: Project) {
         }, delayMs, TimeUnit.MILLISECONDS)
     }
 
+    // Antipattern (DESIGN-PRINCIPLES.md): ProcessBuilder for git commands. Should use git4idea APIs
+    // (e.g. Git.getInstance().resolveReference()). Kept because adding an optional dependency on the
+    // git4idea plugin requires careful class-loading setup for these UI-layer utilities.
     private fun resolveFullHash(shortHash: String): String? {
         val basePath = project.basePath ?: return null
         var process: Process? = null

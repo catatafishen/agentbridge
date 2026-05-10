@@ -78,6 +78,9 @@ class GitWarningBanner(private val project: Project) : InlineBanner("", EditorNo
         return null
     }
 
+    // Antipattern (DESIGN-PRINCIPLES.md): ProcessBuilder for git commands. Should use git4idea APIs
+    // (GitRepositoryManager, GitExecutableManager). Kept because adding an optional dependency on the
+    // git4idea plugin requires careful class-loading setup, and these simple checks work reliably.
     private fun isGitInstalled(dir: java.io.File): Boolean {
         return try {
             val p = ProcessBuilder("git", "--version")

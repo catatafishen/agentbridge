@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.intellij.openapi.util.SystemInfo
+
 /**
  * Pure parsing and command-building logic for auth flows.
  * Extracted from [AuthLoginService] to enable unit testing without Project or UI dependencies.

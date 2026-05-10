@@ -13,7 +13,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.UIUtil
-import javax.swing.SwingUtilities
 
 @Suppress("unused")
 class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
@@ -90,7 +89,7 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
         statusLabel.foreground = UIUtil.getLabelForeground()
         ApplicationManager.getApplication().executeOnPooledThread {
             val version = AcpClientBinaryResolver(AGENT_ID, AGENT_ID).detectVersion()
-            SwingUtilities.invokeLater {
+            ApplicationManager.getApplication().invokeLater {
                 if (version != null) {
                     statusLabel.text = "✓ OpenCode found — $version"
                     statusLabel.foreground = JBColor(0x008000, 0x4EC94E)

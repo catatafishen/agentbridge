@@ -2844,6 +2844,9 @@ override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
         var lastError: Exception? = null
         for (attempt in 1..3) {
             if (attempt > 1) {
+                // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
+                // this retry backoff runs on a pooled thread (executeOnPooledThread), not EDT.
+                // An Alarm or coroutine delay would add complexity without benefit for a simple retry loop.
                 Thread.sleep(2000L)
                 // If the user disconnected during the sleep, abort rather than restarting the agent.
                 if (modelLoadGeneration != startGeneration) return emptyList()

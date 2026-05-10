@@ -17,7 +17,6 @@ import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.UIUtil
 import javax.swing.JOptionPane
-import javax.swing.SwingUtilities
 
 @Suppress("unused")
 class CodexClientConfigurable(private val project: Project) :
@@ -90,7 +89,7 @@ class CodexClientConfigurable(private val project: Project) :
         statusLabel.foreground = UIUtil.getLabelForeground()
         ApplicationManager.getApplication().executeOnPooledThread {
             val version = AcpClientBinaryResolver(PROFILE_ID, "codex").detectVersion()
-            SwingUtilities.invokeLater {
+            ApplicationManager.getApplication().invokeLater {
                 if (version != null) {
                     statusLabel.text = "✓ Codex CLI found — $version"
                     statusLabel.foreground = JBColor(0x008000, 0x4EC94E)
@@ -131,7 +130,7 @@ class CodexClientConfigurable(private val project: Project) :
                     ).start()
                 }
             } catch (ex: Exception) {
-                SwingUtilities.invokeLater {
+                ApplicationManager.getApplication().invokeLater {
                     JOptionPane.showMessageDialog(
                         null,
                         "Could not open a terminal. Run manually: $cmd",

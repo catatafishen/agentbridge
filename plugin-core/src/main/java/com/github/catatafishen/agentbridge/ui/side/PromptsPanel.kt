@@ -47,7 +47,7 @@ internal class PromptsPanel(
 
     private val hierarchyListener = java.awt.event.HierarchyListener { e ->
         if ((e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong()) != 0L && isShowing) {
-            SwingUtilities.invokeLater { scrollToBottom() }
+            ApplicationManager.getApplication().invokeLater { scrollToBottom() }
         }
     }
 
@@ -196,7 +196,7 @@ internal class PromptsPanel(
         }
 
         if (scrollToBottom && listModel.size() > 0) {
-            SwingUtilities.invokeLater {
+            ApplicationManager.getApplication().invokeLater {
                 promptList.ensureIndexIsVisible(listModel.size() - 1)
             }
         }

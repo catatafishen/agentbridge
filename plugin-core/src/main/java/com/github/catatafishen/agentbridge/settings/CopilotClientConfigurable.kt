@@ -21,7 +21,6 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.UIUtil
 import java.io.File
 import javax.swing.JComponent
-import javax.swing.SwingUtilities
 
 @Suppress("unused")
 class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
@@ -156,7 +155,7 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
     }
 
     private fun setStatus(text: String, color: JBColor) {
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             statusLabel.text = text
             statusLabel.foreground = color
         }

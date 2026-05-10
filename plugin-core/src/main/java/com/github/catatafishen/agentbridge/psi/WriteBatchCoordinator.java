@@ -104,7 +104,9 @@ final class WriteBatchCoordinator {
                     + "ms with " + pendingWrites.get() + " write(s) still pending");
                 break;
             }
-            //noinspection BusyWait — polling is acceptable here; drain is rare and short-lived
+            //noinspection BusyWait — polling is acceptable here; drain is rare and short-lived.
+            // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept because there is no
+            // IntelliJ callback for "all pending WriteActions completed" — short polling is the only option.
             Thread.sleep(50);
         }
         LOG.info("Write batch drain: complete");

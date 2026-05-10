@@ -160,9 +160,9 @@ public final class HttpRequestTool extends InfrastructureTool {
 
             showRequestInRunPanel(method, urlStr, request, body);
 
-            long startMs = System.currentTimeMillis();
+            long startNanos = System.nanoTime();
             HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            long elapsedMs = System.currentTimeMillis() - startMs;
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
 
             String responseBodyStr = new String(response.body(), StandardCharsets.UTF_8);
             logResponse(response.statusCode(), elapsedMs, responseBodyStr.length());

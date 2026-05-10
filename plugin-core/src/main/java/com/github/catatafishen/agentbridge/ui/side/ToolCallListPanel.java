@@ -139,7 +139,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
             renderedCount = entries.size();
             listPanel.revalidate();
             listPanel.repaint();
-            SwingUtilities.invokeLater(() ->
+            ApplicationManager.getApplication().invokeLater(() ->
                 scrollPane.getVerticalScrollBar().setValue(0));
             return;
         }
@@ -163,7 +163,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
         listPanel.revalidate();
         listPanel.repaint();
-        SwingUtilities.invokeLater(() ->
+        ApplicationManager.getApplication().invokeLater(() ->
             scrollPane.getVerticalScrollBar().setValue(0));
     }
 

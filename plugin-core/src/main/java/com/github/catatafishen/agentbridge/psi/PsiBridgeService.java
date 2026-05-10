@@ -1161,6 +1161,8 @@ public final class PsiBridgeService implements Disposable {
 
             // Phase 2: sleep for SETTLE_MS — gives SonarLint (and other external annotators)
             // time to complete their follow-up pass and update the markup model.
+            // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
+            // IntelliJ has no callback for "all external annotators finished" — polling is the only option.
             long snapshotAt = lastFinishedAt;
             Thread.sleep(SETTLE_MS);
 

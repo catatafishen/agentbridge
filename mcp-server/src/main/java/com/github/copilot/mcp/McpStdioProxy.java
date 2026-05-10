@@ -135,6 +135,8 @@ public class McpStdioProxy {
                 // Server not ready yet
             }
             try {
+                // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
+                // McpStdioProxy is a standalone process without IntelliJ platform APIs available.
                 Thread.sleep(RETRY_DELAY_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

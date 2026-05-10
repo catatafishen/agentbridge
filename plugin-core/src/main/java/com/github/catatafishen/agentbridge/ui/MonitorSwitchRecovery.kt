@@ -177,6 +177,9 @@ internal class MonitorSwitchRecovery(
         refreshOsrWhenStable(attempt = 0, lastScale = -1.0, stableCount = 0)
     }
 
+    // Antipattern (DESIGN-PRINCIPLES.md): SwingUtilities.invokeLater bypasses IntelliJ's modality-aware
+    // dispatcher. Kept here intentionally: monitor-switch CEF recovery operates at the AWT/JCEF level
+    // and must not be filtered by IntelliJ's modality state.
     private fun refreshOsrWhenStable(attempt: Int, lastScale: Double, stableCount: Int) {
         SwingUtilities.invokeLater {
             val comp = component
