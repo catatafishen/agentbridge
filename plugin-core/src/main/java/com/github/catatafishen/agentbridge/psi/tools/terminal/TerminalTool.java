@@ -8,6 +8,7 @@ import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import org.jetbrains.annotations.NotNull;
@@ -27,7 +28,6 @@ public abstract class TerminalTool extends Tool {
     protected static final String JSON_TAB_NAME = "tab_name";
     protected static final String TERMINAL_TOOL_WINDOW_ID = "Terminal";
     protected static final String GET_INSTANCE_METHOD = "getInstance";
-    protected static final String OS_NAME_PROPERTY = "os.name";
     protected static final String TERMINAL_MANAGER_CLASS = "org.jetbrains.plugins.terminal.TerminalToolWindowManager";
     protected static final String TERMINAL_WIDGET_CLASS = "com.intellij.terminal.ui.TerminalWidget";
     protected static final String FIND_WIDGET_BY_CONTENT_METHOD = "findWidgetByContent";
@@ -275,8 +275,7 @@ public abstract class TerminalTool extends Tool {
 
     protected void appendAvailableShells(StringBuilder result) {
         result.append("\nAvailable shells:\n");
-        String os = System.getProperty(OS_NAME_PROPERTY, "").toLowerCase();
-        if (os.contains("win")) {
+        if (SystemInfo.isWindows) {
             checkShell(result, "PowerShell", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
             checkShell(result, "PowerShell 7", "C:\\Program Files\\PowerShell\\7\\pwsh.exe");
             checkShell(result, "Command Prompt", "C:\\Windows\\System32\\cmd.exe");

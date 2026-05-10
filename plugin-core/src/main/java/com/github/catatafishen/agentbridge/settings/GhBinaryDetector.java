@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -23,19 +24,10 @@ public final class GhBinaryDetector extends ClientBinaryDetector {
         return (custom == null || custom.isBlank()) ? null : custom.trim();
     }
 
-    /**
-     * {@code gh}-specific install locations that fall outside the generic known directories.
-     * <ul>
-     *   <li>Linux: snap packages, Linuxbrew, {@code ~/.local/bin}</li>
-     *   <li>Windows: GitHub CLI installer paths under Program Files / AppData</li>
-     *   <li>macOS: nothing unique — all locations covered by the base-class lookup</li>
-     * </ul>
-     */
     @Override
     @NotNull
     protected List<String> additionalSearchPaths() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win")) {
+        if (SystemInfo.isWindows) {
             return List.of(
                 "C:\\Program Files\\GitHub CLI\\gh.exe",
                 "C:\\Program Files (x86)\\GitHub CLI\\gh.exe",

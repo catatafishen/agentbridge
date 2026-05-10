@@ -9,6 +9,7 @@ import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,7 +23,6 @@ public final class RunCommandTool extends InfrastructureTool {
     private static final String PARAM_TIMEOUT = "timeout";
     private static final String PARAM_MAX_CHARS = "max_chars";
     private static final String JSON_TITLE = "title";
-    private static final String OS_NAME_PROPERTY = "os.name";
     private static final String JAVA_HOME_ENV = "JAVA_HOME";
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
 
@@ -121,7 +121,7 @@ public final class RunCommandTool extends InfrastructureTool {
 
     private GeneralCommandLine buildCommandLine(String command, String basePath) {
         GeneralCommandLine cmd;
-        if (System.getProperty(OS_NAME_PROPERTY).contains("Win")) {
+        if (SystemInfo.isWindows) {
             cmd = new GeneralCommandLine("cmd", "/c", command);
         } else {
             cmd = new GeneralCommandLine("sh", "-c", command);

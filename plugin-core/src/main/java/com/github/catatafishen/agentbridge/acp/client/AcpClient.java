@@ -38,6 +38,7 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -1438,7 +1439,7 @@ public abstract class AcpClient extends AbstractAgentClient {
      * @return absolute path to an existing java executable, or {@code null} if none found
      */
     private static @Nullable String resolveJavaBinaryPath() {
-        boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        boolean isWindows = SystemInfo.isWindows;
         String javaExe = isWindows ? "java.exe" : "java";
 
         String javaHome = System.getProperty("java.home");

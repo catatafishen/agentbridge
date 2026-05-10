@@ -14,6 +14,7 @@ import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -25,7 +26,6 @@ import java.nio.file.Path;
  */
 public final class GetProjectInfoTool extends ProjectTool {
 
-    private static final String OS_NAME_PROPERTY = "os.name";
 
     public GetProjectInfoTool(Project project) {
         super(project);
@@ -96,7 +96,7 @@ public final class GetProjectInfoTool extends ProjectTool {
         } catch (Exception e) {
             sb.append("Plugin version: unavailable\n");
         }
-        sb.append("OS: ").append(System.getProperty(OS_NAME_PROPERTY))
+        sb.append("OS: ").append(System.getProperty("os.name"))
             .append(" ").append(System.getProperty("os.version"))
             .append(" (").append(System.getProperty("os.arch")).append(")\n");
         sb.append("Java: ").append(System.getProperty("java.version"))
@@ -136,7 +136,7 @@ public final class GetProjectInfoTool extends ProjectTool {
             || Files.exists(Path.of(basePath, "build.gradle"))) {
             sb.append("\nBuild System: Gradle\n");
             Path gradlew = Path.of(basePath,
-                System.getProperty(OS_NAME_PROPERTY).contains("Win") ? "gradlew.bat" : "gradlew");
+                SystemInfo.isWindows ? "gradlew.bat" : "gradlew");
             sb.append("Gradle Wrapper: ").append(gradlew).append("\n");
         } else if (Files.exists(Path.of(basePath, "pom.xml"))) {
             sb.append("\nBuild System: Maven\n");
