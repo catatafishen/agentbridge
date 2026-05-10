@@ -5,7 +5,6 @@ import com.github.catatafishen.agentbridge.psi.review.RevertReasonDialog;
 import com.github.catatafishen.agentbridge.psi.review.ReviewItem;
 import com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
-import com.github.catatafishen.agentbridge.ui.util.EmptyStateStyles;
 import com.github.catatafishen.agentbridge.ui.util.SidePanelFooter;
 import com.github.catatafishen.agentbridge.ui.util.TimestampDisplayFormatter;
 import com.intellij.icons.AllIcons;
@@ -54,8 +53,6 @@ import java.util.List;
  */
 public final class DiffPanel extends JPanel implements Disposable {
 
-    private static final String CARD_CONTENT = "content";
-    private static final String CARD_EMPTY = "empty";
     private static final String ACTION_OPEN_FILE = "openFile";
     private static final String ACTION_REMOVE_APPROVED = "removeApproved";
 
@@ -78,11 +75,7 @@ public final class DiffPanel extends JPanel implements Disposable {
 
     private final JBLabel pendingHeader;
     private final JBLabel approvedHeader;
-    private final JBLabel emptyLabel;
     private final JBLabel diffTotalsLabel;
-
-    private final CardLayout cardLayout;
-    private final JPanel cardPanel;
 
     private final transient ReviewDiffCountAnimator diffCountAnimator;
     private final Timer diffAnimationTimer;
@@ -115,21 +108,6 @@ public final class DiffPanel extends JPanel implements Disposable {
         splitter.setFirstComponent(createSectionPanel(pendingHeader, pendingList));
         splitter.setSecondComponent(createSectionPanel(approvedHeader, approvedList));
 
-        emptyLabel = new JBLabel("", SwingConstants.CENTER);
-        emptyLabel.setForeground(JBColor.GRAY);
-        emptyLabel.setBorder(EmptyStateStyles.PLACEHOLDER_PADDING);
-        JPanel emptyStatePanel = new JPanel(new GridBagLayout());
-        JPanel column = new JPanel();
-        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
-        emptyLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        column.add(emptyLabel);
-        emptyStatePanel.add(column);
-
-        cardLayout = new CardLayout();
-        cardPanel = new JPanel(cardLayout);
-        cardPanel.add(splitter, CARD_CONTENT);
-        cardPanel.add(emptyStatePanel, CARD_EMPTY);
-
         ActionToolbar toolbar = createToolbar();
         toolbar.setTargetComponent(this);
 
@@ -137,7 +115,7 @@ public final class DiffPanel extends JPanel implements Disposable {
         diffTotalsLabel.setBorder(JBUI.Borders.emptyRight(8));
         JPanel toolbarFooter = SidePanelFooter.createToolbarFooter(toolbar, diffTotalsLabel);
 
-        add(cardPanel, BorderLayout.CENTER);
+        add(splitter, BorderLayout.CENTER);
         add(toolbarFooter, BorderLayout.SOUTH);
 
         project.getMessageBus().connect(this).subscribe(
@@ -181,13 +159,6 @@ public final class DiffPanel extends JPanel implements Disposable {
         updateDiffTotals(allItems);
         updateDiffAnimationTimer(now);
 
-        if (!allItems.isEmpty()) {
-            cardLayout.show(cardPanel, CARD_CONTENT);
-        } else {
-            emptyLabel.setText("<html><center>No agent edits to review.<br>"
-                + "Edits will appear here as soon as the agent touches a file.</center></html>");
-            cardLayout.show(cardPanel, CARD_EMPTY);
-        }
         revalidate();
         repaint();
     }
@@ -239,6 +210,7 @@ public final class DiffPanel extends JPanel implements Disposable {
         list.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         list.setCellRenderer(new FileRowRenderer());
         list.setExpandableItemsEnabled(false);
+        list.getEmptyText().clear();
         ToolTipManager.sharedInstance().registerComponent(list);
         return list;
     }

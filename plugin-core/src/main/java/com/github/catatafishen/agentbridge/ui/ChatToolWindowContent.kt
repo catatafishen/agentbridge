@@ -147,8 +147,28 @@ class ChatToolWindowContent(
         registerReviewPanelHandlers()
         setupUI()
         subscribeToFocusRestoreEvents()
+        subscribeToToolWindowFocus()
         // Initialise the session store's agent name from the currently active profile.
         conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+    }
+
+    /**
+     * Repaints the send button when the tool window gains or loses focus,
+     * toggling between primary (blue + white icon) and normal styling.
+     */
+    private fun subscribeToToolWindowFocus() {
+        val listener: com.intellij.openapi.wm.ex.ToolWindowManagerListener =
+            object : com.intellij.openapi.wm.ex.ToolWindowManagerListener {
+                override fun stateChanged(toolWindowManager: com.intellij.openapi.wm.ToolWindowManager) {
+                    if (::innerInputToolbar.isInitialized) {
+                        innerInputToolbar.updateActionsAsync()
+                    }
+                }
+            }
+        project.messageBus.connect().subscribe(
+            com.intellij.openapi.wm.ex.ToolWindowManagerListener.TOPIC,
+            listener
+        )
     }
 
     /**
@@ -997,7 +1017,6 @@ class ChatToolWindowContent(
         row.add(promptTextArea, BorderLayout.CENTER)
 
         val footerGroup = DefaultActionGroup()
-        footerGroup.add(ShortcutHintsAction())
         footerGroup.add(ModelSelectorAction())
         footerGroup.add(SendAction())
 
@@ -1005,11 +1024,14 @@ class ChatToolWindowContent(
         innerInputToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
         innerInputToolbar.isReservePlaceAutoPopupIcon = true
         innerInputToolbar.component.isOpaque = false
-        innerInputToolbar.component.apply {
-            border = JBUI.Borders.empty()
-            alignmentY = Component.RIGHT_ALIGNMENT
+        innerInputToolbar.component.border = JBUI.Borders.empty()
+
+        val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = false
+            add(shortcutHintPanel, BorderLayout.CENTER)
+            add(innerInputToolbar.component, BorderLayout.EAST)
         }
-        row.add(RightAnchoredFooterScrollPane(innerInputToolbar.component), BorderLayout.SOUTH)
+        row.add(footerPanel, BorderLayout.SOUTH)
 
         refreshShortcutHints()
 
@@ -1155,20 +1177,6 @@ class ChatToolWindowContent(
         shortcutHintPanel.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
     }
 
-    private inner class ShortcutHintsAction : AnAction(), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun actionPerformed(e: AnActionEvent) {
-            // Custom-component placeholder for the shortcut hint row; it has no direct click action.
-        }
-
-        override fun createCustomComponent(presentation: Presentation, place: String): JComponent = shortcutHintPanel
-
-        override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
-            component.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
-        }
-    }
-
     private fun setSendingState(sending: Boolean) {
         isSending = sending
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
@@ -1292,6 +1300,7 @@ class ChatToolWindowContent(
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
             "/icons/send.svg", SendAction::class.java
         )
+        private val sendIconWhite = com.intellij.util.IconUtil.colorize(sendIcon, java.awt.Color.WHITE)
 
         // Captured at createCustomComponent time so showSendDropdown has a stable popup anchor.
         private var sendButton: JButton? = null
@@ -1302,7 +1311,7 @@ class ChatToolWindowContent(
             // Compact icon-only button keeps the footer from growing taller than the
             // dropdowns beside it while still exposing the action through the tooltip.
             val button = object : JButton(sendIcon) {
-                override fun isDefaultButton(): Boolean = true
+                override fun isDefaultButton(): Boolean = toolWindow.isActive
             }
             button.isFocusable = false
             button.margin = JBUI.insets(0, 6)
@@ -1324,7 +1333,8 @@ class ChatToolWindowContent(
             (component as? JButton)?.let { btn ->
                 btn.isEnabled = presentation.isEnabled
                 btn.text = ""
-                btn.icon = presentation.icon ?: sendIcon
+                val baseIcon = presentation.icon ?: sendIcon
+                btn.icon = if (toolWindow.isActive) sendIconWhite else baseIcon
                 btn.toolTipText = presentation.description
             }
         }
@@ -1727,7 +1737,11 @@ class ChatToolWindowContent(
             return group
         }
 
-        override fun createActionPopup(context: DataContext, component: JComponent, disposeCallback: Runnable?): com.intellij.openapi.ui.popup.JBPopup {
+        override fun createActionPopup(
+            context: DataContext,
+            component: JComponent,
+            disposeCallback: Runnable?
+        ): com.intellij.openapi.ui.popup.JBPopup {
             if (agentManager.client.supportsModelGrouping()) {
                 return createGroupedPopup(disposeCallback)
             }
@@ -1902,35 +1916,35 @@ class ChatToolWindowContent(
         // showing/updating the bubble, resolving it when consumed, and removing it when cancelled.
         val nudgeService = AgentNudgeService.getInstance(project)
         nudgeService.addListener(object : AgentNudgeService.Listener {
-override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
-    // Track pending human text synchronously so it isn't lost if the nudge is never shown.
-    if (entry.source() == NudgeSource.HUMAN) {
-        pendingHumanText = AgentNudgeService.mergeNudges(pendingHumanText, entry.text())
-    }
-    if (!entry.showBubble()) return
+            override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
+                // Track pending human text synchronously so it isn't lost if the nudge is never shown.
+                if (entry.source() == NudgeSource.HUMAN) {
+                    pendingHumanText = AgentNudgeService.mergeNudges(pendingHumanText, entry.text())
+                }
+                if (!entry.showBubble()) return
 
-    // IMPORTANT: activeBubbleId must be read INSIDE invokeLater (on the EDT), not here.
-    // onNudgeAdded fires from a background thread. If multiple reprimands arrive before the
-    // EDT processes any of the queued runnables, reading activeBubbleId here would return null
-    // for every call — each would skip the "remove existing bubble" branch and post its own
-    // showNudgeBubble, resulting in multiple visible bubbles. By reading activeBubbleId inside
-    // invokeLater, each queued runnable sees the value written by the previous one, so at most
-    // one bubble is visible at any time.
-    ApplicationManager.getApplication().invokeLater {
-        val existingId = activeBubbleId
-        if (existingId != null) {
-            consolePanel.removeNudgeBubble(existingId)
-        }
-        activeBubbleId = entry.id()
-        // Use the service's current pending text. By the time the EDT runs, reprimand
-        // coalescing may have advanced past this entry, so getPendingNudgesText() reflects
-        // the most recent state. Falls back to entry.text() only when nudges were already
-        // consumed (the bubble will be immediately resolved by onNudgesInjected).
-        val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
-        consolePanel.showNudgeBubble(entry.id(), mergedText, entry.source())
-        refreshShortcutHints()
-    }
-}
+                // IMPORTANT: activeBubbleId must be read INSIDE invokeLater (on the EDT), not here.
+                // onNudgeAdded fires from a background thread. If multiple reprimands arrive before the
+                // EDT processes any of the queued runnables, reading activeBubbleId here would return null
+                // for every call — each would skip the "remove existing bubble" branch and post its own
+                // showNudgeBubble, resulting in multiple visible bubbles. By reading activeBubbleId inside
+                // invokeLater, each queued runnable sees the value written by the previous one, so at most
+                // one bubble is visible at any time.
+                ApplicationManager.getApplication().invokeLater {
+                    val existingId = activeBubbleId
+                    if (existingId != null) {
+                        consolePanel.removeNudgeBubble(existingId)
+                    }
+                    activeBubbleId = entry.id()
+                    // Use the service's current pending text. By the time the EDT runs, reprimand
+                    // coalescing may have advanced past this entry, so getPendingNudgesText() reflects
+                    // the most recent state. Falls back to entry.text() only when nudges were already
+                    // consumed (the bubble will be immediately resolved by onNudgesInjected).
+                    val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
+                    consolePanel.showNudgeBubble(entry.id(), mergedText, entry.source())
+                    refreshShortcutHints()
+                }
+            }
 
             override fun onNudgesInjected(entries: List<AgentNudgeService.NudgeEntry>, mergedText: String) {
                 pendingHumanText = null
@@ -2311,7 +2325,13 @@ override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
                         val end = offset + trigger.length
                         // Guard against stale offset: the document may have changed between
                         // documentChanged() and this invokeLater callback (e.g. pasting a large block).
-                        if (end <= doc.textLength && doc.getText(com.intellij.openapi.util.TextRange(offset, end)) == trigger) {
+                        if (end <= doc.textLength && doc.getText(
+                                com.intellij.openapi.util.TextRange(
+                                    offset,
+                                    end
+                                )
+                            ) == trigger
+                        ) {
                             doc.deleteString(offset, end)
                         }
                     }
