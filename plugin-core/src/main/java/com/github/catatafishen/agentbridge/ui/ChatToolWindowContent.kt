@@ -1053,7 +1053,10 @@ class ChatToolWindowContent(
             setSendingState(false)
             return
         }
-        if (rawText.isEmpty()) return
+        if (rawText.isEmpty()) {
+            showEmptyPromptWarning()
+            return
+        }
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
         // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
@@ -1082,6 +1085,20 @@ class ChatToolWindowContent(
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId)
         }
+    }
+    private fun showEmptyPromptWarning() {
+        JBPopupFactory.getInstance()
+            .createHtmlTextBalloonBuilder(
+                "Write a prompt to the coding agent first",
+                com.intellij.ui.MessageType.WARNING,
+                null
+            )
+            .setFadeoutTime(3000)
+            .createBalloon()
+            .show(
+                com.intellij.ui.awt.RelativePoint.getCenterOf(promptTextArea),
+                com.intellij.openapi.ui.popup.Balloon.Position.above
+            )
     }
 
     private fun restorePromptText(rawText: String) {
@@ -1344,21 +1361,16 @@ class ChatToolWindowContent(
         }
 
         override fun update(e: AnActionEvent) {
-            val isLoggedIn = authService.pendingAuthError == null
-            val hasText = promptTextArea.text.trim().isNotEmpty()
-            // Icon must be set in update() — not updateCustomComponent — so that
-            // presentation changes trigger the toolbar to call updateCustomComponent.
             val activeIcon = if (toolWindow.isActive) sendIconWhite else sendIcon
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
                 e.presentation.icon = activeIcon
                 e.presentation.text = ""
                 e.presentation.description = "Nudge, queue, or stop and send"
-                e.presentation.isEnabled = hasText
             } else {
                 e.presentation.icon = activeIcon
                 e.presentation.text = ""
+                val isLoggedIn = authService.pendingAuthError == null
                 e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
-                e.presentation.isEnabled = isLoggedIn && hasText
             }
         }
 
