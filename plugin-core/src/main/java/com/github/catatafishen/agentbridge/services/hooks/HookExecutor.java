@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
 import com.github.catatafishen.agentbridge.services.ProcessStreamUtils;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -207,7 +208,7 @@ public final class HookExecutor {
         };
     }
 
-    private static final String DEFAULT_SHELL = "/bin/sh";
+    private static final boolean IS_WINDOWS = com.intellij.openapi.util.SystemInfo.isWindows;
 
     /**
      * Build the command list used to invoke the hook script.
@@ -217,7 +218,10 @@ public final class HookExecutor {
      *       line (e.g. {@code #!/usr/bin/env bash} → {@code bash scriptPath}).
      *       If the shebang uses {@code /usr/bin/env}, the resolver token after {@code env}
      *       is extracted so that e.g. {@code #!/usr/bin/env python3} works correctly.</li>
-     *   <li>Scripts with no readable shebang fall back to {@code /bin/sh}.</li>
+     *   <li>Scripts with no readable shebang fall back to {@link ShellEnvironment#getShellPath()}
+     *       ({@code /bin/sh} on Unix; the discovered POSIX shell on Windows).</li>
+     *   <li>On Windows, script paths are normalized to forward slashes so that
+     *       POSIX shell parameter expansion ({@code ${0%/*}}) works correctly.</li>
      * </ul>
      */
     private static @NotNull List<String> buildCommand(@NotNull Path scriptPath) {
@@ -231,29 +235,69 @@ public final class HookExecutor {
         } else {
             cmd.add(resolveInterpreter(scriptPath));
         }
-        cmd.add(scriptPath.toAbsolutePath().toString());
+        String scriptPathStr = scriptPath.toAbsolutePath().toString();
+        // POSIX shells expect forward slashes; backslashes break ${0%/*} in _lib.sh
+        if (IS_WINDOWS) {
+            scriptPathStr = scriptPathStr.replace('\\', '/');
+        }
+        cmd.add(scriptPathStr);
         return cmd;
     }
 
     /**
      * Extract the interpreter from the script's shebang line.
-     * Returns {@code /bin/sh} as a safe fallback when the shebang is absent or unreadable.
+     * <p>
+     * On Windows, {@code sh} and {@code bash} shebangs — whether absolute or via
+     * {@code /usr/bin/env} — are redirected to {@link ShellEnvironment#getShellPath()}
+     * (the discovered Git for Windows shell) since they are not on the default
+     * Windows PATH. Other Unix absolute paths (e.g. {@code /usr/bin/python3}) are
+     * reduced to their basename for PATH-based resolution.
+     * Falls back to {@link ShellEnvironment#getShellPath()} when the shebang is
+     * absent or unreadable.
      */
     private static @NotNull String resolveInterpreter(@NotNull Path scriptPath) {
         try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(scriptPath)) {
             String firstLine = reader.readLine();
-            if (firstLine == null || !firstLine.startsWith("#!")) return DEFAULT_SHELL;
+            if (firstLine == null || !firstLine.startsWith("#!")) return ShellEnvironment.getShellPath();
             String shebang = firstLine.substring(2).trim();
-            // /usr/bin/env python3  →  python3
+            String interpreter;
+            // /usr/bin/env python3  →  python3  (PATH lookup, works everywhere)
             if (shebang.startsWith("/usr/bin/env ")) {
                 String[] parts = shebang.substring("/usr/bin/env ".length()).trim().split("\\s+");
-                return parts[0].isEmpty() ? DEFAULT_SHELL : parts[0];
+                interpreter = parts[0].isEmpty() ? ShellEnvironment.getShellPath() : parts[0];
+            } else {
+                interpreter = shebang.split("\\s+")[0];
             }
-            // /bin/bash  or  /usr/bin/python3  →  use as-is
-            return shebang.split("\\s+")[0];
+            if (!IS_WINDOWS) return interpreter;
+            // On Windows, redirect sh/bash/dash to the discovered POSIX shell
+            // (these are not on the default Windows PATH)
+            if (isShellInterpreter(interpreter)) return ShellEnvironment.getShellPath();
+            // Other Unix absolute paths (/usr/bin/python3) → basename for PATH lookup
+            if (interpreter.startsWith("/")) {
+                return interpreter.substring(interpreter.lastIndexOf('/') + 1);
+            }
+            return interpreter;
         } catch (java.io.IOException e) {
-            return DEFAULT_SHELL;
+            return ShellEnvironment.getShellPath();
         }
+    }
+
+    /**
+     * Returns {@code true} if the interpreter is a common POSIX shell (sh, bash, or dash)
+     * that needs to be redirected to {@link ShellEnvironment#getShellPath()} on Windows.
+     * <p>
+     * Only the shells our hook scripts actually use are listed here. Other shells (zsh, ksh,
+     * etc.) may be installed on Windows (e.g., via Cygwin) and should be resolved via PATH,
+     * not redirected to the Git for Windows shell.
+     */
+    private static boolean isShellInterpreter(@NotNull String interpreter) {
+        String basename = interpreter.contains("/")
+            ? interpreter.substring(interpreter.lastIndexOf('/') + 1)
+            : interpreter;
+        return switch (basename) {
+            case "sh", "bash", "dash" -> true;
+            default -> false;
+        };
     }
 
     private static CompletableFuture<String> readAsync(InputStream stream) {
