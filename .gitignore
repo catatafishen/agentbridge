@@ -105,6 +105,9 @@ integration-tests/bin
 mcp-server/bin
 .junie/
 
+# External debug artifacts (MCP debug session databases)
+external-debug/
+
 # Plugin runtime data (tool stats, models, memory — machine-specific)
 .agentbridge/*
 # But version-control the hook configs and scripts (project policy)
