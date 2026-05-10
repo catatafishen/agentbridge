@@ -29,13 +29,12 @@ public final class ListTerminalsTool extends TerminalTool {
         return "List active terminal tabs with their names. Use tab names with read_terminal_output or write_terminal_input.";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -45,7 +44,6 @@ public final class ListTerminalsTool extends TerminalTool {
         StringBuilder result = new StringBuilder();
 
         appendOpenTerminalTabs(result);
-        appendAvailableShells(result);
         appendDefaultShell(result);
 
         result.append("\n\nTip: Use read_terminal_output or write_terminal_input with tab_name to interact with a listed tab.");

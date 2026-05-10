@@ -1,15 +1,11 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
-import com.github.catatafishen.agentbridge.services.ToolDefinition;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class TerminalToolStaticMethodsTest {
 
@@ -372,115 +368,6 @@ class TerminalToolStaticMethodsTest {
             String result = TerminalTool.truncateForTitle("a".repeat(100));
             assertEquals(40, result.length());
             assertTrue(result.endsWith("..."));
-        }
-    }
-
-    // ── Instance-method tests (via minimal concrete subclass) ──
-
-    /**
-     * Minimal concrete subclass so we can invoke protected instance methods
-     * ({@code checkShell}, {@code appendAvailableShells}) without a running IDE.
-     */
-    private static class TestableTerminalTool extends TerminalTool {
-        TestableTerminalTool() {
-            super(null);
-        }
-
-        @Override
-        public @NotNull String id() {
-            return "test";
-        }
-
-        @Override
-        public @NotNull ToolDefinition.Kind kind() {
-            return ToolDefinition.Kind.READ;
-        }
-
-        @Override
-        public @NotNull String displayName() {
-            return "Test";
-        }
-
-        @Override
-        public @NotNull String description() {
-            return "Test";
-        }
-    }
-
-    @Nested
-    @DisplayName("checkShell")
-    class CheckShellTest {
-
-        private final TestableTerminalTool tool = new TestableTerminalTool();
-
-        @Test
-        @DisplayName("existing path appends ✓ line in expected format")
-        void existingPath_appendsCheckmark() {
-            assumeTrue(new java.io.File("/bin/sh").exists(), "Requires /bin/sh");
-            StringBuilder sb = new StringBuilder();
-            tool.checkShell(sb, "sh", "/bin/sh");
-            assertEquals("  ✓ sh — /bin/sh\n", sb.toString());
-        }
-
-        @Test
-        @DisplayName("non-existing path appends nothing")
-        void nonExistingPath_appendsNothing() {
-            StringBuilder sb = new StringBuilder();
-            tool.checkShell(sb, "NoShell", "/no/such/shell/path");
-            assertEquals("", sb.toString());
-        }
-
-        @Test
-        @DisplayName("multiple shells checked sequentially accumulate")
-        void multipleShells() {
-            assumeTrue(new java.io.File("/bin/sh").exists(), "Requires /bin/sh");
-            StringBuilder sb = new StringBuilder();
-            tool.checkShell(sb, "sh", "/bin/sh");
-            tool.checkShell(sb, "NoShell", "/no/such/shell/path");
-            tool.checkShell(sb, "sh again", "/bin/sh");
-            String result = sb.toString();
-            assertTrue(result.contains("✓ sh — /bin/sh"));
-            assertTrue(result.contains("✓ sh again — /bin/sh"));
-            assertFalse(result.contains("NoShell"));
-        }
-    }
-
-    @Nested
-    @DisplayName("appendAvailableShells")
-    class AppendAvailableShellsTest {
-
-        private final TestableTerminalTool tool = new TestableTerminalTool();
-
-        @Test
-        @DisplayName("output always starts with header line")
-        void startsWithHeader() {
-            StringBuilder sb = new StringBuilder();
-            tool.appendAvailableShells(sb);
-            assertTrue(sb.toString().startsWith("\nAvailable shells:\n"));
-        }
-
-        @Test
-        @DisplayName("on Linux, /bin/sh is listed")
-        void linuxShListed() {
-            String os = System.getProperty("os.name", "").toLowerCase();
-            assumeTrue(os.contains("linux"), "Test requires Linux");
-            assumeTrue(new java.io.File("/bin/sh").exists(), "Requires /bin/sh");
-            StringBuilder sb = new StringBuilder();
-            tool.appendAvailableShells(sb);
-            assertTrue(sb.toString().contains("✓ sh — /bin/sh"),
-                "Expected /bin/sh to be listed on Linux; got:\n" + sb);
-        }
-
-        @Test
-        @DisplayName("no Windows-specific shells on a non-Windows OS")
-        void noWindowsShellsOnLinux() {
-            String os = System.getProperty("os.name", "").toLowerCase();
-            assumeTrue(!os.contains("win"), "Test requires non-Windows OS");
-            StringBuilder sb = new StringBuilder();
-            tool.appendAvailableShells(sb);
-            String result = sb.toString();
-            assertFalse(result.contains("PowerShell"), "Should not list PowerShell on non-Windows");
-            assertFalse(result.contains("cmd.exe"), "Should not list cmd.exe on non-Windows");
         }
     }
 }

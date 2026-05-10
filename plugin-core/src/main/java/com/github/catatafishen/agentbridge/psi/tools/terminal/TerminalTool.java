@@ -8,7 +8,6 @@ import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import org.jetbrains.annotations.NotNull;
@@ -273,22 +272,6 @@ public abstract class TerminalTool extends Tool {
         }
     }
 
-    protected void appendAvailableShells(StringBuilder result) {
-        result.append("\nAvailable shells:\n");
-        if (SystemInfo.isWindows) {
-            checkShell(result, "PowerShell", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-            checkShell(result, "PowerShell 7", "C:\\Program Files\\PowerShell\\7\\pwsh.exe");
-            checkShell(result, "Command Prompt", "C:\\Windows\\System32\\cmd.exe");
-            checkShell(result, "Git Bash", "C:\\Program Files\\Git\\bin\\bash.exe");
-            checkShell(result, "WSL", "C:\\Windows\\System32\\wsl.exe");
-        } else {
-            checkShell(result, "Bash", "/bin/bash");
-            checkShell(result, "Zsh", "/bin/zsh");
-            checkShell(result, "Fish", "/usr/bin/fish");
-            checkShell(result, "sh", "/bin/sh");
-        }
-    }
-
     protected void appendDefaultShell(StringBuilder result) {
         try {
             var settingsClass = Class.forName("org.jetbrains.plugins.terminal.TerminalProjectOptionsProvider");
@@ -299,13 +282,6 @@ public abstract class TerminalTool extends Tool {
             result.append("\nIntelliJ default shell: ").append(defaultShell);
         } catch (Exception e) {
             result.append("\nCould not determine IntelliJ default shell.");
-        }
-    }
-
-    protected void checkShell(StringBuilder result, String name, String path) {
-        java.io.File file = new java.io.File(path);
-        if (file.exists()) {
-            result.append("  ✓ ").append(name).append(" — ").append(path).append("\n");
         }
     }
 
