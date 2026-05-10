@@ -26,6 +26,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -85,7 +86,6 @@ public final class SessionSwitchService implements Disposable {
     private static final String CLAUDE_PROJECTS_DIR = "projects";
     private static final String JUNIE_HOME = ".junie";
     private static final String JUNIE_SESSIONS_DIR = "sessions";
-    private static final String USER_HOME_PROPERTY = "user.home";
     private static final String JSONL_EXT = ".jsonl";
     private static final String WORKSPACE_PATHS_KEY = "workspacePaths";
     private static final String COPILOT_ID_PREFIX = "copilot";
@@ -283,7 +283,7 @@ public final class SessionSwitchService implements Disposable {
         @NotNull List<EntryData> entries,
         @Nullable String basePath,
         @NotNull String toProfileId) {
-        Path dir = Path.of(System.getProperty(USER_HOME_PROPERTY), JUNIE_HOME, JUNIE_SESSIONS_DIR);
+        Path dir = Path.of(SystemProperties.getUserHome(), JUNIE_HOME, JUNIE_SESSIONS_DIR);
         int limit = new GenericSettings(AgentProfileManager.JUNIE_PROFILE_ID, project)
             .getContextHistoryLimit(JunieClientConfigurable.DEFAULT_CONTEXT_LIMIT_CHARS);
         exportToAcpLocalSession(entries, basePath, toProfileId, dir, "Junie", limit);
@@ -477,7 +477,7 @@ public final class SessionSwitchService implements Disposable {
      */
     @NotNull
     static Path copilotSessionDir(@NotNull String sessionId) {
-        return Path.of(System.getProperty(USER_HOME_PROPERTY, ""), ".copilot", SESSION_STATE_DIR, sessionId);
+        return Path.of(SystemProperties.getUserHome(), ".copilot", SESSION_STATE_DIR, sessionId);
     }
 
     /**
@@ -520,7 +520,7 @@ public final class SessionSwitchService implements Disposable {
         String base = basePath != null ? basePath : "";
 
         // Copilot session directories (new location: ~/.copilot/session-state/)
-        collectPlanFiles(Path.of(System.getProperty(USER_HOME_PROPERTY), ".copilot", SESSION_STATE_DIR), candidates);
+        collectPlanFiles(Path.of(SystemProperties.getUserHome(), ".copilot", SESSION_STATE_DIR), candidates);
 
         // Legacy: Copilot session directories (old location: .agent-work/copilot/session-state/)
         collectPlanFiles(Path.of(base, AGENT_WORK_DIR, COPILOT_ID_PREFIX, SESSION_STATE_DIR), candidates);
@@ -708,7 +708,7 @@ public final class SessionSwitchService implements Disposable {
     private static Path claudeProjectDir(@Nullable String basePath) {
         String projectPath = basePath != null ? basePath : "";
         String dirName = projectPath.replace('/', '-');
-        String home = System.getProperty(USER_HOME_PROPERTY, "");
+        String home = SystemProperties.getUserHome();
         return Path.of(home, CLAUDE_HOME, CLAUDE_PROJECTS_DIR, dirName);
     }
 

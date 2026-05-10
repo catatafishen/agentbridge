@@ -7,6 +7,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -58,7 +59,7 @@ public final class KiroClientExporter {
      */
     @NotNull
     public static Path defaultSessionsDir() {
-        return Path.of(System.getProperty("user.home"), ".kiro", "sessions", "cli");
+        return Path.of(SystemProperties.getUserHome(), ".kiro", "sessions", "cli");
     }
 
     @Nullable

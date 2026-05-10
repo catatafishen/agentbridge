@@ -18,6 +18,7 @@ import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.project.Project
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
@@ -571,7 +572,7 @@ class ChatToolWindowContent(
                 )
 
             isCLINotFound -> {
-                val cmd = if (System.getProperty("os.name").lowercase().contains("win"))
+                val cmd = if (SystemInfo.isWindows)
                     "winget install GitHub.Copilot" else "npm install -g @github/copilot-cli"
                 updateState("Copilot CLI is not installed \u2014 install with: $cmd", showInstall = true)
             }

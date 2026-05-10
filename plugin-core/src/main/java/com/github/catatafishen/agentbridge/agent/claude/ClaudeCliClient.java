@@ -24,6 +24,7 @@ import com.google.gson.JsonParser;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -920,7 +921,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 return Path.of(basePath, ".agent-work", "mcp-configs");
             }
         }
-        return Path.of(System.getProperty("user.home"), ".agentbridge", "mcp-configs");
+        return Path.of(SystemProperties.getUserHome(), ".agentbridge", "mcp-configs");
     }
 
     // ── Prompt building ──────────────────────────────────────────────────────

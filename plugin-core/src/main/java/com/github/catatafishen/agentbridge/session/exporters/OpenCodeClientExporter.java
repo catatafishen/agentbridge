@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -54,7 +55,7 @@ public final class OpenCodeClientExporter {
         if (xdgData != null && !xdgData.isEmpty()) {
             return Path.of(xdgData, "opencode", "opencode.db");
         }
-        return Path.of(System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db");
+        return Path.of(SystemProperties.getUserHome(), ".local", "share", "opencode", "opencode.db");
     }
 
     /**

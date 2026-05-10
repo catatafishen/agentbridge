@@ -16,6 +16,7 @@ import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -239,7 +240,7 @@ public final class CopilotClient extends AcpClient {
      * No environment overrides — the CLI uses the real user home for config, auth, and sessions.
      */
     static Path copilotHome() {
-        return Path.of(System.getProperty("user.home"), ".copilot");
+        return Path.of(SystemProperties.getUserHome(), ".copilot");
     }
 
     private void migrateResumeSessionFromLegacyPath() {

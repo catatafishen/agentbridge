@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.memory.embedding;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.SystemProperties;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -59,7 +60,7 @@ public final class ModelDownloader {
      * Returns the model directory. Creates it if it doesn't exist.
      */
     public static @NotNull Path getModelDirectory() {
-        Path home = Path.of(System.getProperty("user.home"));
+        Path home = Path.of(SystemProperties.getUserHome());
         return home.resolve(".agentbridge").resolve("models").resolve(MODEL_DIR_NAME);
     }
 

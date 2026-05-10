@@ -7,6 +7,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,7 +38,7 @@ public final class CopilotClientExporter {
 
     @NotNull
     public static Path defaultSessionStateDir(@NotNull String basePath) {
-        return Path.of(System.getProperty("user.home"), ".copilot", "session-state");
+        return Path.of(SystemProperties.getUserHome(), ".copilot", "session-state");
     }
 
     public static void exportToFile(

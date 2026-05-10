@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -660,7 +661,7 @@ public final class ToolUtils {
     private static java.nio.file.Path resolveCommandPath(@NotNull String pathStr, @Nullable java.nio.file.Path base) {
         try {
             String expanded = pathStr.startsWith("~")
-                ? System.getProperty("user.home") + pathStr.substring(1)
+                ? SystemProperties.getUserHome() + pathStr.substring(1)
                 : pathStr;
             java.nio.file.Path p = java.nio.file.Path.of(expanded);
             java.nio.file.Path candidate = p.isAbsolute() || base == null ? p : base.resolve(p);

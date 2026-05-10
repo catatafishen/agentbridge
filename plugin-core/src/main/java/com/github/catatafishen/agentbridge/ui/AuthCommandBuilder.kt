@@ -53,7 +53,7 @@ object AuthCommandBuilder {
     fun buildCommandWithEnvironment(command: String, envVars: Map<String, String>): String {
         if (envVars.isEmpty()) return command
 
-        val isWindows = System.getProperty("os.name").lowercase().contains("win")
+        val isWindows = SystemInfo.isWindows
 
         return if (isWindows) {
             // Windows cmd: set VAR=value && command

@@ -7,29 +7,35 @@ small, trustworthy, and easy to maintain.
 
 ## 1. Internally: prefer JetBrains APIs over custom code
 
-When the plugin needs to know something about the environment — what OS it's running on, what
-shell the user prefers, what SDK the project uses — it should ask IntelliJ, not re-discover
-it independently.
+IntelliJ is a massive platform with decades of engineering behind it — OS detection, shell
+management, VCS integration, file system abstraction, project model, SDK resolution, process
+management, UI threading, and much more. Whenever the plugin needs a capability that IntelliJ
+already provides, it should use the IntelliJ API rather than reimplementing it.
 
 **Why this matters:**
 
-- IntelliJ already solves these problems correctly across all supported platforms and
-  configurations. Re-solving them invites bugs and inconsistencies.
-- Custom OS-detection, file-system scanning, or subprocess spawning inside a plugin looks
-  suspicious to security-conscious users (and their corporate endpoint tools). Calls like
+- IntelliJ's implementations are tested across all supported platforms, IDE versions, and
+  edge cases. Our reimplementations will always be less robust.
+- Custom OS-detection, file-system scanning, or subprocess spawning inside a plugin can look
+  suspicious to security-conscious users and their corporate endpoint tools. Calls like
   "spawn a shell to capture the user's PATH" or "scan `/usr/local/bin` for executables" are
   visible in process monitors and raise red flags.
-- Our custom solutions are almost certainly less robust than what JetBrains has tested over
-  years and many IDE versions.
+- Using platform APIs means we benefit automatically from JetBrains bug fixes and improvements
+  across IDE versions, without having to maintain our own code.
 
 **Concrete examples:**
 
-| Instead of…                                                     | Use…                                             |
-|-----------------------------------------------------------------|--------------------------------------------------|
-| `System.getProperty("os.name").contains("Win")`                 | `SystemInfo.isWindows`                           |
-| Spawning a login shell to discover the user's `$SHELL`          | `TerminalProjectOptionsProvider.getShellPath()`  |
-| Scanning `PATH` directories to find a shell binary              | `TerminalProjectOptionsProvider.getShellPath()`  |
-| `ProjectRootManager.getInstance(p).getProjectSdk().getHomePath()` + env fallback | `ProjectRootManager.getInstance(p).getProjectSdk()` only; no env fallback needed if SDK is configured |
+| Instead of…                                            | Use…                                                |
+|--------------------------------------------------------|-----------------------------------------------------|
+| `System.getProperty("os.name").contains("Win")`        | `SystemInfo.isWindows`                              |
+| `System.getProperty("user.home")`                      | `SystemProperties.getUserHome()`                    |
+| Spawning a login shell to discover the user's `$SHELL` | `TerminalProjectOptionsProvider.getShellPath()`     |
+| Scanning `PATH` directories to find a shell binary     | `TerminalProjectOptionsProvider.getShellPath()`     |
+| `javax.swing.SwingUtilities.invokeLater()`             | `ApplicationManager.getApplication().invokeLater()` |
+| `ProcessBuilder` for git commands                      | `git4idea` APIs (`Git.getInstance().runCommand()`)  |
+| `File.separator` for path construction                 | `/` (IntelliJ VFS convention) or `Path.of()`        |
+| `Thread.sleep()` for polling                           | `Alarm`, `CountDownLatch`, or coroutine `delay()`   |
+| `System.currentTimeMillis()` for elapsed time          | `System.nanoTime()` (immune to wall-clock drift)    |
 
 **Currently unavoidable exceptions:**
 
@@ -69,12 +75,12 @@ wrapping?"*
 
 **Patterns that have been fixed:**
 
-| What we removed / replaced                     | Why                                                                               |
-|-------------------------------------------------|-----------------------------------------------------------------------------------|
-| Custom `database_list_sources` / `_list_tables` / `_get_schema` tools | Duplicated JetBrains' native MCP tools (`list_database_connections`, etc.). Removed. |
-| Custom JDBC `database_execute_query`           | Bypassed IntelliJ's connection management entirely. Removed.                      |
-| `ShellEnvironment` shell-path detection in hook execution | Now uses `TerminalProjectOptionsProvider.getShellPath()` (IntelliJ's configured shell). |
-| `System.getProperty("os.name")` throughout    | Replaced with `SystemInfo.isWindows` (IntelliJ's OS detection API).              |
+| What we removed / replaced                                            | Why                                                                                     |
+|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| Custom `database_list_sources` / `_list_tables` / `_get_schema` tools | Duplicated JetBrains' native MCP tools (`list_database_connections`, etc.). Removed.    |
+| Custom JDBC `database_execute_query`                                  | Bypassed IntelliJ's connection management entirely. Removed.                            |
+| `ShellEnvironment` shell-path detection in hook execution             | Now uses `TerminalProjectOptionsProvider.getShellPath()` (IntelliJ's configured shell). |
+| `System.getProperty("os.name")` throughout                            | Replaced with `SystemInfo.isWindows` (IntelliJ's OS detection API).                     |
 
 **Patterns to watch for:**
 
@@ -95,12 +101,15 @@ the experimental plugin to contain the `@ApiStatus.Internal` API risk.
 
 ## Summary
 
-| Principle                         | Rule                                                                            |
-|-----------------------------------|---------------------------------------------------------------------------------|
-| OS / platform detection           | Always use `SystemInfo.isWindows/isMac/isLinux`                                 |
-| Shell discovery                   | Always use `TerminalProjectOptionsProvider.getShellPath()`                      |
-| SDK / JDK path                    | Always use `ProjectRootManager.getProjectSdk()`                                 |
-| Feature availability check        | Query IntelliJ's model; disable the tool if the feature is absent               |
-| New MCP tool design               | Ask "what IntelliJ API does this wrap?" before writing a line of code           |
-| Competing with JetBrains          | Don't. Proxy their tool; don't write a parallel implementation                  |
-| Fallbacks for missing IDE features | None. Fail visibly; let the agent use a specialist server instead               |
+| Principle                          | Rule                                                                  |
+|------------------------------------|-----------------------------------------------------------------------|
+| OS / platform detection            | Always use `SystemInfo.isWindows/isMac/isLinux`                       |
+| User home directory                | Always use `SystemProperties.getUserHome()`                           |
+| Shell discovery                    | Always use `TerminalProjectOptionsProvider.getShellPath()`            |
+| SDK / JDK path                     | Always use `ProjectRootManager.getProjectSdk()`                       |
+| UI thread dispatch                 | Always use `ApplicationManager.getApplication().invokeLater()`        |
+| Git operations                     | Prefer `git4idea` APIs over `ProcessBuilder` + `git` CLI              |
+| Feature availability check         | Query IntelliJ's model; disable the tool if the feature is absent     |
+| New MCP tool design                | Ask "what IntelliJ API does this wrap?" before writing a line of code |
+| Competing with JetBrains           | Don't. Proxy their tool; don't write a parallel implementation        |
+| Fallbacks for missing IDE features | None. Fail visibly; let the agent use a specialist server instead     |
