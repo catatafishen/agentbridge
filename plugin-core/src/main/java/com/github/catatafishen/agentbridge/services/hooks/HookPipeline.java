@@ -98,7 +98,7 @@ public final class HookPipeline {
             toolName, arguments, project.getName(), Instant.now().toString());
 
         for (HookEntryConfig entry : entries) {
-            HookResult result = HookExecutor.execute(entry, HookTrigger.PERMISSION, payload, config, projectEnv);
+            HookResult result = HookExecutor.execute(project, entry, HookTrigger.PERMISSION, payload, config, projectEnv);
             if (result instanceof HookResult.PermissionDecision(boolean allowed, String reason) && !allowed) {
                 String resolvedReason = reason != null ? reason : "Denied by permission hook";
                 LOG.info("Permission hook denied tool " + toolName + ": " + resolvedReason);
@@ -131,7 +131,7 @@ public final class HookPipeline {
             HookPayload payload = HookPayload.forPreExecution(
                 toolName, currentArgs, project.getName(), Instant.now().toString());
 
-            HookResult result = HookExecutor.execute(entry, HookTrigger.PRE, payload, config, projectEnv);
+            HookResult result = HookExecutor.execute(project, entry, HookTrigger.PRE, payload, config, projectEnv);
 
             if (result instanceof HookResult.PreHookFailure(String error)) {
                 LOG.info("Pre-hook blocked tool " + toolName + ": " + error);
@@ -182,7 +182,7 @@ public final class HookPipeline {
                 toolName, arguments, currentOutput, isError, project.getName(),
                 Instant.now().toString(), durationMs);
 
-            HookResult result = HookExecutor.execute(entry, HookTrigger.SUCCESS, payload, config, projectEnv);
+            HookResult result = HookExecutor.execute(project, entry, HookTrigger.SUCCESS, payload, config, projectEnv);
             if (result instanceof HookResult.OutputModification mod) {
                 currentOutput = applyOutputText(mod, currentOutput);
                 if (mod.stateOverride() != null) {
@@ -217,7 +217,7 @@ public final class HookPipeline {
                 toolName, arguments, currentOutput, isError, project.getName(),
                 Instant.now().toString(), durationMs);
 
-            HookResult result = HookExecutor.execute(entry, HookTrigger.FAILURE, payload, config, projectEnv);
+            HookResult result = HookExecutor.execute(project, entry, HookTrigger.FAILURE, payload, config, projectEnv);
             if (result instanceof HookResult.OutputModification mod) {
                 String modifiedOutput = applyOutputText(mod, currentOutput);
                 if (modifiedOutput != null) {
