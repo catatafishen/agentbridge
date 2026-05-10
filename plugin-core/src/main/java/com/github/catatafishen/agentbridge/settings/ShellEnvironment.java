@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedReader;
@@ -155,5 +156,76 @@ public class ShellEnvironment {
             path = System.getenv("PATH");
         }
         return path != null ? path : "";
+    }
+
+    /**
+     * Returns the shell to use for executing hook scripts, consulting IntelliJ's terminal
+     * settings for the given project via reflection.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>IntelliJ's {@code TerminalProjectOptionsProvider.getShellPath()} — if the result
+     *       is a recognised POSIX shell (sh, bash, zsh, dash, fish) it is returned directly.</li>
+     *   <li>The {@code $SHELL} environment variable (Unix only).</li>
+     *   <li>{@code /bin/sh} on Unix; {@code "sh"} on Windows (resolved via {@code PATH},
+     *       e.g. Git Bash adds {@code sh} to the system PATH on Windows).</li>
+     * </ol>
+     *
+     * <p>No disk scanning is performed.
+     *
+     * @param project the current project
+     * @return the resolved shell executable path (never blank)
+     */
+    @NotNull
+    public static String getShellPath(@NotNull Project project) {
+        try {
+            Class<?> cls = Class.forName("org.jetbrains.plugins.terminal.TerminalProjectOptionsProvider");
+            Object settings = cls.getMethod("getInstance", Project.class).invoke(null, project);
+            String path = (String) settings.getClass().getMethod("getShellPath").invoke(settings);
+            if (path != null && !path.isBlank() && isPosixShell(path)) {
+                return path;
+            }
+        } catch (Exception e) {
+            LOG.info("Could not read IntelliJ terminal shell path via reflection: " + e.getMessage());
+        }
+        return getShellPath();
+    }
+
+    /**
+     * Returns a fallback shell path without consulting any project settings.
+     * On Unix returns {@code $SHELL} (or {@code /bin/sh} if unset).
+     * On Windows returns {@code "sh"} (resolved via {@code PATH}, e.g. Git Bash).
+     *
+     * <p>No disk scanning is performed.
+     *
+     * @return the shell executable path (never blank)
+     */
+    @NotNull
+    public static String getShellPath() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) {
+            return "sh";
+        }
+        String envShell = System.getenv("SHELL");
+        return (envShell != null && !envShell.isBlank()) ? envShell : "/bin/sh";
+    }
+
+    /**
+     * Returns {@code true} if the given shell path (or bare name) refers to a POSIX-compatible
+     * shell that can be used to run hook scripts.
+     */
+    private static boolean isPosixShell(@NotNull String shellPath) {
+        String name = shellPath;
+        int lastSlash = Math.max(shellPath.lastIndexOf('/'), shellPath.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            name = shellPath.substring(lastSlash + 1);
+        }
+        // Strip extension (e.g. bash.exe on Windows)
+        int dotIdx = name.lastIndexOf('.');
+        if (dotIdx > 0) name = name.substring(0, dotIdx);
+        return switch (name.toLowerCase()) {
+            case "sh", "bash", "zsh", "dash", "fish" -> true;
+            default -> false;
+        };
     }
 }

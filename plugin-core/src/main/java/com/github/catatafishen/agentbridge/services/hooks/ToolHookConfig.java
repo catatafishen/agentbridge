@@ -102,6 +102,7 @@ public record ToolHookConfig(
             obj.addProperty("failSilently", false);
         }
         if (entry.async()) obj.addProperty("async", true);
+        if (entry.showInRunPanel()) obj.addProperty("showInRunPanel", true);
         if (!entry.env().isEmpty()) {
             JsonObject envObj = new JsonObject();
             entry.env().forEach(envObj::addProperty);

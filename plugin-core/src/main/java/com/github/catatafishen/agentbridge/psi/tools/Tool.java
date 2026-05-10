@@ -1,24 +1,12 @@
 package com.github.catatafishen.agentbridge.psi.tools;
 
-import com.github.catatafishen.agentbridge.psi.EdtUtil;
-import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
-import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.google.gson.JsonObject;
-import com.intellij.execution.RunContentExecutor;
-import com.intellij.execution.process.OSProcessHandler;
-import com.intellij.execution.process.ProcessEvent;
-import com.intellij.execution.process.ProcessListener;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Abstract base class for all individual tool implementations.
@@ -182,61 +170,8 @@ public abstract class Tool implements ToolDefinition {
     protected ProcessResult executeInRunPanel(
         com.intellij.execution.configurations.GeneralCommandLine cmd,
         String title, int timeoutSec) throws Exception {
-        CompletableFuture<Integer> exitFuture = new CompletableFuture<>();
-        StringBuilder output = new StringBuilder();
-
-        Process process = cmd.createProcess();
-        OSProcessHandler processHandler = new OSProcessHandler(process, cmd.getCommandLineString());
-        processHandler.addProcessListener(new ProcessListener() {
-            @Override
-            public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
-                output.append(event.getText());
-            }
-
-            @Override
-            public void processTerminated(@NotNull ProcessEvent event) {
-                exitFuture.complete(event.getExitCode());
-            }
-        });
-
-        EdtUtil.invokeLater(() -> {
-            try {
-                // Evaluate chat-active state here on the EDT, not before invokeLater, to avoid
-                // a stale capture: RunContentExecutor.run() is the actual UI operation,
-                // and the user's focus may have changed between the check and this point.
-                //
-                // RunContentExecutor exposes TWO independent flags, both defaulting to true:
-                //   - withActivateToolWindow → setActivateToolWindowWhenAdded (window activation)
-                //   - withFocusToolWindow    → setAutoFocusContent           (tab content focus)
-                // Even with activateToolWindow=false, setAutoFocusContent(true) still steals
-                // keyboard focus into the new console tab when it is added to an already-visible
-                // Run window. Both must be gated together to keep focus on the chat prompt.
-                boolean chatActive = PsiBridgeService.isChatToolWindowActive(project);
-                new RunContentExecutor(project, processHandler)
-                    .withTitle(title)
-                    .withActivateToolWindow(!chatActive)
-                    .withFocusToolWindow(!chatActive)
-                    .run();
-            } catch (Exception e) {
-                // RunContentExecutor.run() may have already called startNotify() before
-                // throwing (e.g. if the Run panel fails to register the content descriptor).
-                // Only call startNotify() here if the process was not yet started, so the
-                // process output listeners can still receive events and the exit future completes.
-                if (!processHandler.isStartNotified()) {
-                    processHandler.startNotify();
-                }
-            }
-        });
-
-        AgentTabTracker.getInstance(project).trackTab("Run", title);
-
-        try {
-            int exitCode = exitFuture.get(timeoutSec, TimeUnit.SECONDS);
-            return new ProcessResult(exitCode, output.toString(), false);
-        } catch (TimeoutException e) {
-            processHandler.destroyProcess();
-            return new ProcessResult(-1, output.toString(), true);
-        }
+        RunPanelExecutor.RunResult result = RunPanelExecutor.execute(project, cmd, title, timeoutSec);
+        return new ProcessResult(result.exitCode(), result.output(), result.timedOut());
     }
 
 }

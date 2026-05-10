@@ -1,12 +1,16 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
+import com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor;
 import com.github.catatafishen.agentbridge.services.ProcessStreamUtils;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -23,6 +27,13 @@ import java.util.concurrent.TimeUnit;
 /**
  * Executes hook scripts with the stdin/stdout JSON protocol.
  * Handles timeout enforcement, failSilently behavior, async mode, and result parsing.
+ *
+ * <p>Shell discovery delegates to {@link ShellEnvironment#getShellPath(Project)} which
+ * consults IntelliJ's configured terminal shell — no disk scanning is performed here.
+ *
+ * <p>When a hook entry has {@code showInRunPanel: true} and is not async, the process
+ * is shown in the IDE Run panel via {@link RunPanelExecutor} so the user can observe
+ * its output in real time.
  */
 public final class HookExecutor {
 
@@ -36,7 +47,8 @@ public final class HookExecutor {
     private HookExecutor() {
     }
 
-    public static @NotNull HookResult execute(@NotNull HookEntryConfig entry,
+    public static @NotNull HookResult execute(@NotNull Project project,
+                                              @NotNull HookEntryConfig entry,
                                               @NotNull HookTrigger trigger,
                                               @NotNull HookPayload payload,
                                               @NotNull ToolHookConfig config,
@@ -47,12 +59,12 @@ public final class HookExecutor {
         }
 
         if (entry.async()) {
-            startAsync(scriptPath, entry, payload, config.toolId(), projectEnv);
+            startAsync(project, scriptPath, entry, payload, config, projectEnv);
             return new HookResult.NoOp();
         }
 
         try {
-            String stdout = runScript(scriptPath, entry, payload, projectEnv);
+            String stdout = runScript(project, scriptPath, entry, payload, config, projectEnv);
             return parseResult(trigger, stdout);
         } catch (IOException e) {
             if (entry.failSilently()) {
@@ -64,40 +76,108 @@ public final class HookExecutor {
         }
     }
 
-    private static void startAsync(@NotNull Path scriptPath,
+    private static void startAsync(@NotNull Project project,
+                                   @NotNull Path scriptPath,
                                    @NotNull HookEntryConfig entry,
                                    @NotNull HookPayload payload,
-                                   @NotNull String toolId,
+                                   @NotNull ToolHookConfig config,
                                    @NotNull Map<String, String> projectEnv) {
         CompletableFuture.runAsync(() -> {
             try {
-                runScript(scriptPath, entry, payload, projectEnv);
+                runScript(project, scriptPath, entry, payload, config, projectEnv);
             } catch (IOException e) {
-                LOG.warn("Async hook script failed for tool '" + toolId + "': " + e.getMessage());
+                LOG.warn("Async hook script failed for tool '" + config.toolId() + "': " + e.getMessage());
             }
         });
     }
 
-    private static @NotNull String runScript(@NotNull Path scriptPath,
+    private static @NotNull String runScript(@NotNull Project project,
+                                             @NotNull Path scriptPath,
                                              @NotNull HookEntryConfig entry,
                                              @NotNull HookPayload payload,
+                                             @NotNull ToolHookConfig config,
                                              @NotNull Map<String, String> projectEnv) throws IOException {
-        List<String> command = buildCommand(scriptPath);
-        ProcessBuilder builder = new ProcessBuilder(command);
-        builder.directory(scriptPath.getParent().toFile());
+        List<String> command = buildCommand(scriptPath, project);
+        GeneralCommandLine cmd = new GeneralCommandLine(command);
+        cmd.setWorkDirectory(scriptPath.getParent().toFile());
 
         // Layer environment variables: project context → per-entry overrides → argument values
-        Map<String, String> env = builder.environment();
-        env.putAll(projectEnv);
-
+        cmd.withEnvironment(projectEnv);
         if (!entry.env().isEmpty()) {
-            env.putAll(entry.env());
+            cmd.withEnvironment(entry.env());
+        }
+        cmd.withEnvironment(HookEnvironmentProvider.getArgumentEnvironment(payload.arguments()));
+
+        // Route to the IDE Run panel when configured and the entry is synchronous
+        if (entry.showInRunPanel() && !entry.async()) {
+            return runInPanel(project, cmd, entry, payload, config.toolId());
+        }
+        return runDirect(cmd, entry, payload);
+    }
+
+    /**
+     * Run the hook process in the IDE Run panel so the user can observe its output.
+     * JSON payload is written to stdin asynchronously immediately after process creation,
+     * before the Run panel registers the process handler.
+     */
+    private static @NotNull String runInPanel(@NotNull Project project,
+                                              @NotNull GeneralCommandLine cmd,
+                                              @NotNull HookEntryConfig entry,
+                                              @NotNull HookPayload payload,
+                                              @NotNull String toolId) throws IOException {
+        byte[] stdinBytes = GSON.toJson(payload).getBytes(StandardCharsets.UTF_8);
+
+        Process process;
+        try {
+            process = cmd.createProcess();
+        } catch (Exception e) {
+            throw new IOException("Failed to start hook process: " + e.getMessage(), e);
         }
 
-        Map<String, String> argEnv = HookEnvironmentProvider.getArgumentEnvironment(payload.arguments());
-        env.putAll(argEnv);
+        // Write JSON to stdin in a background thread; the hook reads it as it runs.
+        // Errors are swallowed — some hooks may not read stdin at all.
+        CompletableFuture.runAsync(() -> {
+            try (var stdin = process.getOutputStream()) {
+                stdin.write(stdinBytes);
+            } catch (IOException ignored) {
+                // Hook may not consume stdin; ignore broken-pipe errors
+            }
+        });
 
-        Process process = builder.start();
+        String title = "Hook: " + toolId;
+        RunPanelExecutor.RunResult result;
+        try {
+            result = RunPanelExecutor.execute(project, process, cmd.getCommandLineString(), title, entry.timeout());
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Hook Run panel execution failed: " + e.getMessage(), e);
+        }
+
+        if (result.timedOut()) {
+            throw new IOException("Hook timed out after " + entry.timeout() + "s");
+        }
+        if (result.exitCode() != 0) {
+            String detail = result.output().isBlank() ? "" : ": " + truncate(result.output().trim());
+            throw new IOException("Hook exited with code " + result.exitCode() + detail);
+        }
+        return result.output();
+    }
+
+    /**
+     * Run the hook process directly (no Run panel), capturing stdout/stderr and injecting
+     * the JSON payload via stdin.
+     */
+    private static @NotNull String runDirect(@NotNull GeneralCommandLine cmd,
+                                             @NotNull HookEntryConfig entry,
+                                             @NotNull HookPayload payload) throws IOException {
+        Process process;
+        try {
+            process = cmd.createProcess();
+        } catch (Exception e) {
+            throw new IOException("Failed to start hook process: " + e.getMessage(), e);
+        }
+
         CompletableFuture<String> stdout = readAsync(process.getInputStream());
         CompletableFuture<String> stderr = readAsync(process.getErrorStream());
 
@@ -116,7 +196,7 @@ public final class HookExecutor {
 
         if (!finished) {
             process.destroyForcibly();
-            throw new IOException("Hook timed out after " + entry.timeout() + "s: " + scriptPath);
+            throw new IOException("Hook timed out after " + entry.timeout() + "s");
         }
 
         String out = await(stdout, "stdout");
@@ -207,8 +287,6 @@ public final class HookExecutor {
         };
     }
 
-    private static final String DEFAULT_SHELL = "/bin/sh";
-
     /**
      * Build the command list used to invoke the hook script.
      * <ul>
@@ -217,10 +295,11 @@ public final class HookExecutor {
      *       line (e.g. {@code #!/usr/bin/env bash} → {@code bash scriptPath}).
      *       If the shebang uses {@code /usr/bin/env}, the resolver token after {@code env}
      *       is extracted so that e.g. {@code #!/usr/bin/env python3} works correctly.</li>
-     *   <li>Scripts with no readable shebang fall back to {@code /bin/sh}.</li>
+     *   <li>Scripts with no readable shebang fall back to the IntelliJ-configured shell
+     *       (via {@link ShellEnvironment#getShellPath(Project)}).</li>
      * </ul>
      */
-    private static @NotNull List<String> buildCommand(@NotNull Path scriptPath) {
+    private static @NotNull List<String> buildCommand(@NotNull Path scriptPath, @NotNull Project project) {
         List<String> cmd = new ArrayList<>();
         String fileName = scriptPath.getFileName().toString().toLowerCase();
         if (fileName.endsWith(".ps1")) {
@@ -229,7 +308,7 @@ public final class HookExecutor {
             cmd.add("Bypass");
             cmd.add("-File");
         } else {
-            cmd.add(resolveInterpreter(scriptPath));
+            cmd.add(resolveInterpreter(scriptPath, project));
         }
         cmd.add(scriptPath.toAbsolutePath().toString());
         return cmd;
@@ -237,22 +316,22 @@ public final class HookExecutor {
 
     /**
      * Extract the interpreter from the script's shebang line.
-     * Returns {@code /bin/sh} as a safe fallback when the shebang is absent or unreadable.
+     * Falls back to the IntelliJ-configured terminal shell when the shebang is absent or unreadable.
      */
-    private static @NotNull String resolveInterpreter(@NotNull Path scriptPath) {
+    private static @NotNull String resolveInterpreter(@NotNull Path scriptPath, @NotNull Project project) {
         try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(scriptPath)) {
             String firstLine = reader.readLine();
-            if (firstLine == null || !firstLine.startsWith("#!")) return DEFAULT_SHELL;
+            if (firstLine == null || !firstLine.startsWith("#!")) return ShellEnvironment.getShellPath(project);
             String shebang = firstLine.substring(2).trim();
             // /usr/bin/env python3  →  python3
             if (shebang.startsWith("/usr/bin/env ")) {
                 String[] parts = shebang.substring("/usr/bin/env ".length()).trim().split("\\s+");
-                return parts[0].isEmpty() ? DEFAULT_SHELL : parts[0];
+                return parts[0].isEmpty() ? ShellEnvironment.getShellPath(project) : parts[0];
             }
             // /bin/bash  or  /usr/bin/python3  →  use as-is
             return shebang.split("\\s+")[0];
         } catch (java.io.IOException e) {
-            return DEFAULT_SHELL;
+            return ShellEnvironment.getShellPath(project);
         }
     }
 
