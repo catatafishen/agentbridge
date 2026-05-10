@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.settings;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedReader;
@@ -55,9 +56,7 @@ public class ShellEnvironment {
 
     @NotNull
     private static Map<String, String> captureEnvironment() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-
-        if (os.contains("win")) {
+        if (SystemInfo.isWindows) {
             return captureWindowsEnvironment();
         } else {
             return captureUnixEnvironment();
@@ -202,8 +201,7 @@ public class ShellEnvironment {
      */
     @NotNull
     public static String getShellPath() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win")) {
+        if (SystemInfo.isWindows) {
             return "sh";
         }
         String envShell = System.getenv("SHELL");

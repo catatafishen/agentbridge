@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -116,7 +117,7 @@ public final class OpenCodeClient extends AcpClient {
      */
     @Nullable
     static String resolveWindowsOpenCodePath(@Nullable String projectBasePath) {
-        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+        if (!SystemInfo.isWindows) {
             return null;
         }
         if (projectBasePath == null || projectBasePath.isEmpty()) {

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -49,8 +50,7 @@ public class BinaryDetector {
 
     @Nullable
     private static String tryDetectBinary(@NotNull String binaryName) {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        List<String> cmd = os.contains("win")
+        List<String> cmd = isWindows()
             ? List.of("cmd.exe", "/c", binaryName + VERSION_FLAG)
             : List.of("sh", "-c", "command -v " + binaryName + " >/dev/null && " + binaryName + VERSION_FLAG);
 
@@ -274,7 +274,7 @@ public class BinaryDetector {
     }
 
     private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase().contains("win");
+        return SystemInfo.isWindows;
     }
 
     /**

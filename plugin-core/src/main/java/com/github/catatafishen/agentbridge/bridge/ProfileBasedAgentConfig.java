@@ -19,6 +19,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -642,7 +643,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
 
     @Nullable
     private static String resolveJavaPath() {
-        String javaExe = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
+        String javaExe = SystemInfo.isWindows ? "java.exe" : "java";
         String javaPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + javaExe;
         return new File(javaPath).exists() ? javaPath : null;
     }
