@@ -20,6 +20,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -1300,7 +1301,11 @@ class ChatToolWindowContent(
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
             "/icons/send.svg", SendAction::class.java
         )
-        private val sendIconWhite = com.intellij.util.IconUtil.colorize(sendIcon, java.awt.Color.WHITE)
+
+        // keepBrightness=false ensures a true white icon, not a brightness-preserved grey.
+        private val sendIconWhite = com.intellij.util.IconUtil.colorize(
+            sendIcon, JBColor.WHITE, keepGray = false, keepBrightness = false
+        )
 
         // Captured at createCustomComponent time so showSendDropdown has a stable popup anchor.
         private var sendButton: JButton? = null
@@ -1333,8 +1338,7 @@ class ChatToolWindowContent(
             (component as? JButton)?.let { btn ->
                 btn.isEnabled = presentation.isEnabled
                 btn.text = ""
-                val baseIcon = presentation.icon ?: sendIcon
-                btn.icon = if (toolWindow.isActive) sendIconWhite else baseIcon
+                btn.icon = presentation.icon ?: sendIcon
                 btn.toolTipText = presentation.description
             }
         }
@@ -1342,13 +1346,16 @@ class ChatToolWindowContent(
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
             val hasText = promptTextArea.text.trim().isNotEmpty()
+            // Icon must be set in update() — not updateCustomComponent — so that
+            // presentation changes trigger the toolbar to call updateCustomComponent.
+            val activeIcon = if (toolWindow.isActive) sendIconWhite else sendIcon
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
-                e.presentation.icon = sendIcon
+                e.presentation.icon = activeIcon
                 e.presentation.text = ""
                 e.presentation.description = "Nudge, queue, or stop and send"
                 e.presentation.isEnabled = hasText
             } else {
-                e.presentation.icon = sendIcon
+                e.presentation.icon = activeIcon
                 e.presentation.text = ""
                 e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
                 e.presentation.isEnabled = isLoggedIn && hasText
@@ -1383,21 +1390,23 @@ class ChatToolWindowContent(
 
                 override fun actionPerformed(e: AnActionEvent) = onQueueMessageClicked()
             })
+            group.addSeparator()
             group.add(object :
-                AnAction("Stop and Send", "Stop the agent and send this as a new prompt", AllIcons.Actions.Restart) {
+                AnAction("Stop and Send", "Stop the current agent and send this prompt", AllIcons.Actions.Suspend) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = hasText
+                    e.presentation.isEnabled = hasText && authService.pendingAuthError == null
                 }
 
                 override fun actionPerformed(e: AnActionEvent) = onForceStopAndSend()
             })
-
-            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+            val popup = JBPopupFactory.getInstance()
                 .createActionGroupPopup(
-                    null, group,
-                    com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project),
-                    com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+                    null,
+                    group,
+                    DataContext.EMPTY_CONTEXT,
+                    JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+                    false
                 )
             popup.showUnderneathOf(anchor)
         }
