@@ -1090,7 +1090,7 @@ class ChatToolWindowContent(
         JBPopupFactory.getInstance()
             .createHtmlTextBalloonBuilder(
                 "Write a prompt to the coding agent first",
-                com.intellij.ui.MessageType.WARNING,
+                com.intellij.openapi.ui.MessageType.WARNING,
                 null
             )
             .setFadeoutTime(3000)
