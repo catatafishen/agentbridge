@@ -23,12 +23,14 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -39,29 +41,23 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Side panel listing files the agent has touched in the current {@link AgentEditSession}.
  * <p>
- * Uses a {@link JBList} with a single row renderer instead of a multi-column table.
- * Each row shows: file-type icon + status-colored filename on the left,
- * a +N -M diff-counts column, and approve/remove icons on the right. Full
- * relative path and last-edit timestamp are shown in the row tooltip. Click
- * zones are determined by x-position relative to cell bounds.
+ * Files are split into two sections — "Pending" and "Approved" — connected by a
+ * {@link OnePixelSplitter}. Each section uses a {@link JBList} with a compact row
+ * renderer showing file-type icon, status-colored filename, and animated diff counts.
+ * Approve/unapprove/revert actions are available via right-click context menu.
  */
 public final class DiffPanel extends JPanel implements Disposable {
 
-    private static final String CARD_LIST = "list";
+    private static final String CARD_CONTENT = "content";
     private static final String CARD_EMPTY = "empty";
-    private static final String ACTION_REMOVE_APPROVED = "removeApprovedRow";
-
-    /**
-     * Unscaled button zone width (each action icon gets this much horizontal space).
-     * Compact 18px buttons match the file-row aesthetic of the session-tab
-     * project files list, replacing the previous 28px tile look.
-     */
-    private static final int BUTTON_SIZE = 18;
+    private static final String ACTION_OPEN_FILE = "openFile";
+    private static final String ACTION_REMOVE_APPROVED = "removeApproved";
 
     private static final JBColor DIFF_GREEN = new JBColor(new Color(0, 128, 0), new Color(80, 200, 80));
     private static final JBColor DIFF_RED = new JBColor(new Color(200, 0, 0), new Color(255, 80, 80));
@@ -74,12 +70,20 @@ public final class DiffPanel extends JPanel implements Disposable {
         new Color(0, 120, 0, 90), new Color(80, 200, 80, 90));
 
     private final transient Project project;
-    private final DefaultListModel<ReviewItem> listModel = new DefaultListModel<>();
-    private final JBList<ReviewItem> list;
-    private final CardLayout cardLayout;
-    private final JPanel cardPanel;
+
+    private final DefaultListModel<ReviewItem> pendingModel = new DefaultListModel<>();
+    private final DefaultListModel<ReviewItem> approvedModel = new DefaultListModel<>();
+    private final JBList<ReviewItem> pendingList;
+    private final JBList<ReviewItem> approvedList;
+
+    private final JBLabel pendingHeader;
+    private final JBLabel approvedHeader;
     private final JBLabel emptyLabel;
     private final JBLabel diffTotalsLabel;
+
+    private final CardLayout cardLayout;
+    private final JPanel cardPanel;
+
     private final transient ReviewDiffCountAnimator diffCountAnimator;
     private final Timer diffAnimationTimer;
 
@@ -89,30 +93,27 @@ public final class DiffPanel extends JPanel implements Disposable {
 
         diffCountAnimator = new ReviewDiffCountAnimator();
 
-        list = new JBList<>(listModel) {
-            @Override
-            public String getToolTipText(MouseEvent e) {
-                return getZoneTooltip(e);
-            }
-        };
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        list.setCellRenderer(new ReviewRowRenderer());
-        list.setExpandableItemsEnabled(false);
-        ToolTipManager.sharedInstance().registerComponent(list);
-        configureListActions();
+        pendingList = createReviewList();
+        approvedList = createReviewList();
+        configurePendingListActions();
+        configureApprovedListActions();
+
+        pendingHeader = createSectionHeader("Pending");
+        approvedHeader = createSectionHeader("Approved");
 
         diffAnimationTimer = new Timer(33, e -> {
             long now = System.currentTimeMillis();
-            list.repaint();
+            pendingList.repaint();
+            approvedList.repaint();
             if (!diffCountAnimator.hasActiveAnimations(now)) {
                 ((Timer) e.getSource()).stop();
             }
         });
         diffAnimationTimer.setRepeats(true);
 
-        JBScrollPane scrollPane = new JBScrollPane(list);
-        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        OnePixelSplitter splitter = new OnePixelSplitter(true, 0.6f);
+        splitter.setFirstComponent(createSectionPanel(pendingHeader, pendingList));
+        splitter.setSecondComponent(createSectionPanel(approvedHeader, approvedList));
 
         emptyLabel = new JBLabel("", SwingConstants.CENTER);
         emptyLabel.setForeground(JBColor.GRAY);
@@ -126,7 +127,7 @@ public final class DiffPanel extends JPanel implements Disposable {
 
         cardLayout = new CardLayout();
         cardPanel = new JPanel(cardLayout);
-        cardPanel.add(scrollPane, CARD_LIST);
+        cardPanel.add(splitter, CARD_CONTENT);
         cardPanel.add(emptyStatePanel, CARD_EMPTY);
 
         ActionToolbar toolbar = createToolbar();
@@ -153,33 +154,35 @@ public final class DiffPanel extends JPanel implements Disposable {
     }
 
     public void refresh() {
-        ReviewItem selected = list.getSelectedValue();
-        String selectedPath = selected != null ? selected.path() : null;
-
         AgentEditSession session = AgentEditSession.getInstance(project);
-        List<ReviewItem> items = session.getReviewItems();
+        List<ReviewItem> allItems = session.getReviewItems();
         long now = System.currentTimeMillis();
-        diffCountAnimator.sync(items, now);
+        diffCountAnimator.sync(allItems, now);
 
-        listModel.clear();
-        for (ReviewItem item : items) {
-            listModel.addElement(item);
+        List<ReviewItem> pending = new ArrayList<>();
+        List<ReviewItem> approved = new ArrayList<>();
+        for (ReviewItem item : allItems) {
+            if (item.approved()) approved.add(item);
+            else pending.add(item);
         }
 
-        if (selectedPath != null) {
-            for (int i = 0; i < listModel.size(); i++) {
-                if (listModel.get(i).path().equals(selectedPath)) {
-                    list.setSelectedIndex(i);
-                    break;
-                }
-            }
-        }
+        String selectedPendingPath = selectedPath(pendingList);
+        String selectedApprovedPath = selectedPath(approvedList);
 
-        updateDiffTotals(items);
+        syncModel(pendingModel, pending);
+        syncModel(approvedModel, approved);
+
+        restoreSelection(pendingList, pendingModel, selectedPendingPath);
+        restoreSelection(approvedList, approvedModel, selectedApprovedPath);
+
+        pendingHeader.setText(sectionTitle("Pending", pending.size()));
+        approvedHeader.setText(sectionTitle("Approved", approved.size()));
+
+        updateDiffTotals(allItems);
         updateDiffAnimationTimer(now);
 
-        if (!items.isEmpty()) {
-            cardLayout.show(cardPanel, CARD_LIST);
+        if (!allItems.isEmpty()) {
+            cardLayout.show(cardPanel, CARD_CONTENT);
         } else {
             emptyLabel.setText("<html><center>No agent edits to review.<br>"
                 + "Edits will appear here as soon as the agent touches a file.</center></html>");
@@ -187,6 +190,219 @@ public final class DiffPanel extends JPanel implements Disposable {
         }
         revalidate();
         repaint();
+    }
+
+    private static @Nullable String selectedPath(@NotNull JBList<ReviewItem> list) {
+        ReviewItem item = list.getSelectedValue();
+        return item != null ? item.path() : null;
+    }
+
+    private static void syncModel(@NotNull DefaultListModel<ReviewItem> model,
+                                  @NotNull List<ReviewItem> items) {
+        model.clear();
+        for (ReviewItem item : items) {
+            model.addElement(item);
+        }
+    }
+
+    private static void restoreSelection(@NotNull JBList<ReviewItem> list,
+                                         @NotNull DefaultListModel<ReviewItem> model,
+                                         @Nullable String path) {
+        if (path == null) return;
+        for (int i = 0; i < model.size(); i++) {
+            if (model.get(i).path().equals(path)) {
+                list.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private static @NotNull String sectionTitle(@NotNull String label, int count) {
+        return count > 0 ? label + " (" + count + ")" : label;
+    }
+
+    private @NotNull JBList<ReviewItem> createReviewList() {
+        JBList<ReviewItem> list = new JBList<>() {
+            @Override
+            public String getToolTipText(MouseEvent e) {
+                ReviewItem item = itemAtPoint(this, e);
+                if (item == null) return null;
+                String tip = item.relativePath()
+                    + (item.approved() ? " · Approved" : " · Pending review");
+                if (item.lastEditedMillis() > 0) {
+                    tip += " · " + TimestampDisplayFormatter.formatEpochMillis(item.lastEditedMillis());
+                }
+                return tip;
+            }
+        };
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        list.setCellRenderer(new FileRowRenderer());
+        list.setExpandableItemsEnabled(false);
+        ToolTipManager.sharedInstance().registerComponent(list);
+        return list;
+    }
+
+    private static @NotNull JBLabel createSectionHeader(@NotNull String title) {
+        JBLabel label = new JBLabel(title);
+        label.setBorder(JBUI.Borders.empty(4, 8, 4, 8));
+        label.setForeground(UIUtil.getLabelInfoForeground());
+        label.setFont(UIUtil.getLabelFont(UIUtil.FontSize.SMALL).deriveFont(Font.BOLD));
+        return label;
+    }
+
+    private static @NotNull JPanel createSectionPanel(@NotNull JBLabel header,
+                                                      @NotNull JBList<ReviewItem> list) {
+        JBScrollPane scrollPane = new JBScrollPane(list);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private void configurePendingListActions() {
+        pendingList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    ReviewItem item = itemAtPoint(pendingList, e);
+                    if (item != null) navigateToFile(item);
+                } else if (e.isPopupTrigger()) {
+                    showPendingContextMenu(e);
+                }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) showPendingContextMenu(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (e.isPopupTrigger()) showPendingContextMenu(e);
+            }
+        });
+
+        InputMap im = pendingList.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+        ActionMap am = pendingList.getActionMap();
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), ACTION_OPEN_FILE);
+        am.put(ACTION_OPEN_FILE, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                ReviewItem item = pendingList.getSelectedValue();
+                if (item != null) navigateToFile(item);
+            }
+        });
+    }
+
+    private void configureApprovedListActions() {
+        approvedList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    ReviewItem item = itemAtPoint(approvedList, e);
+                    if (item != null) navigateToFile(item);
+                } else if (e.isPopupTrigger()) {
+                    showApprovedContextMenu(e);
+                }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) showApprovedContextMenu(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (e.isPopupTrigger()) showApprovedContextMenu(e);
+            }
+        });
+
+        InputMap im = approvedList.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+        ActionMap am = approvedList.getActionMap();
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), ACTION_OPEN_FILE);
+        am.put(ACTION_OPEN_FILE, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                ReviewItem item = approvedList.getSelectedValue();
+                if (item != null) navigateToFile(item);
+            }
+        });
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), ACTION_REMOVE_APPROVED);
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), ACTION_REMOVE_APPROVED);
+        am.put(ACTION_REMOVE_APPROVED, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                ReviewItem item = approvedList.getSelectedValue();
+                if (item != null) {
+                    AgentEditSession.getInstance(project).removeApproved(item.path());
+                }
+            }
+        });
+    }
+
+    private void showPendingContextMenu(@NotNull MouseEvent e) {
+        ReviewItem item = itemAtPoint(pendingList, e);
+        if (item == null) return;
+
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem approveItem = new JMenuItem("Approve", AllIcons.Actions.Checked);
+        approveItem.addActionListener(ev ->
+            AgentEditSession.getInstance(project).acceptFile(item.path()));
+        menu.add(approveItem);
+        menu.addSeparator();
+        JMenuItem revertItem = new JMenuItem("Revert…", AllIcons.Actions.Rollback);
+        revertItem.addActionListener(ev -> showRevertDialog(item));
+        menu.add(revertItem);
+        menu.show(pendingList, e.getX(), e.getY());
+    }
+
+    private void showApprovedContextMenu(@NotNull MouseEvent e) {
+        ReviewItem item = itemAtPoint(approvedList, e);
+        if (item == null) return;
+
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem unapproveItem = new JMenuItem("Unapprove", AllIcons.Actions.Rollback);
+        unapproveItem.addActionListener(ev ->
+            AgentEditSession.getInstance(project).unapproveFile(item.path()));
+        menu.add(unapproveItem);
+        JMenuItem removeItem = new JMenuItem("Remove from list", AllIcons.Actions.Close);
+        removeItem.addActionListener(ev ->
+            AgentEditSession.getInstance(project).removeApproved(item.path()));
+        menu.add(removeItem);
+        menu.show(approvedList, e.getX(), e.getY());
+    }
+
+    private static @Nullable ReviewItem itemAtPoint(@NotNull JBList<ReviewItem> list,
+                                                    @NotNull MouseEvent e) {
+        int index = list.locationToIndex(e.getPoint());
+        if (index < 0) return null;
+        Rectangle bounds = list.getCellBounds(index, index);
+        if (bounds == null || !bounds.contains(e.getPoint())) return null;
+        return list.getModel().getElementAt(index);
+    }
+
+    private void navigateToFile(@NotNull ReviewItem item) {
+        if (item.status() == ReviewItem.Status.DELETED) return;
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
+        if (vf != null) FileEditorManager.getInstance(project).openFile(vf, true);
+    }
+
+    private void showRevertDialog(@NotNull ReviewItem item) {
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
+        if (vf == null) return;
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        RevertReasonDialog dialog = new RevertReasonDialog(
+            project, vf, item.relativePath(), session.isGateActive());
+        if (!dialog.showAndGet()) return;
+        AgentEditSession.RevertGateAction gateAction = switch (dialog.getResult()) {
+            case CONTINUE_REVIEWING -> AgentEditSession.RevertGateAction.CONTINUE_REVIEWING;
+            case SEND_NOW -> AgentEditSession.RevertGateAction.SEND_NOW;
+            default -> AgentEditSession.RevertGateAction.DEFAULT;
+        };
+        session.revertFile(item.path(), dialog.getReason(), gateAction);
     }
 
     private void updateDiffAnimationTimer(long now) {
@@ -218,156 +434,6 @@ public final class DiffPanel extends JPanel implements Disposable {
         }
     }
 
-    private void configureListActions() {
-        list.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (!SwingUtilities.isLeftMouseButton(e)) return;
-                ReviewItem item = itemAtPoint(e);
-                if (item != null) handleListClick(item, e);
-            }
-        });
-
-        list.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                if (e.isPopupTrigger()) showRevertPopup(e);
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (e.isPopupTrigger()) showRevertPopup(e);
-            }
-        });
-
-        InputMap im = list.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
-        ActionMap am = list.getActionMap();
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), ACTION_REMOVE_APPROVED);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), ACTION_REMOVE_APPROVED);
-        am.put(ACTION_REMOVE_APPROVED, new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                ReviewItem item = list.getSelectedValue();
-                if (item != null && item.approved()) {
-                    AgentEditSession.getInstance(project).removeApproved(item.path());
-                }
-            }
-        });
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "openFile");
-        am.put("openFile", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                ReviewItem item = list.getSelectedValue();
-                if (item != null) navigateToFile(item);
-            }
-        });
-    }
-
-    private static final int ZONE_FILE = 0;
-    private static final int ZONE_APPROVE = 1;
-    private static final int ZONE_REMOVE = 2;
-
-    /**
-     * Resolves the {@link ReviewItem} at a mouse event's position,
-     * or {@code null} if the click is outside any list cell.
-     */
-    private @Nullable ReviewItem itemAtPoint(MouseEvent e) {
-        int index = list.locationToIndex(e.getPoint());
-        if (index < 0) return null;
-        Rectangle bounds = list.getCellBounds(index, index);
-        if (bounds == null || !bounds.contains(e.getPoint())) return null;
-        return listModel.get(index);
-    }
-
-    private void handleListClick(@NotNull ReviewItem item, MouseEvent e) {
-        int index = list.locationToIndex(e.getPoint());
-        Rectangle bounds = list.getCellBounds(index, index);
-        if (bounds == null) return;
-        int zone = hitTestZone(e.getX() - bounds.x, bounds.width);
-        switch (zone) {
-            case ZONE_REMOVE -> {
-                if (item.approved()) {
-                    AgentEditSession.getInstance(project).removeApproved(item.path());
-                } else {
-                    showRevertDialog(item);
-                }
-            }
-            case ZONE_APPROVE -> toggleApproval(item);
-            default -> navigateToFile(item);
-        }
-    }
-
-    private static int hitTestZone(int relativeX, int cellWidth) {
-        int btn = JBUI.scale(BUTTON_SIZE);
-        int rightPad = JBUI.scale(6);  // matches empty(2, 8, 2, 6) right inset
-        int gap = JBUI.scale(2);       // gap between approve and reject icons
-        // Reject icon is rightmost; approve icon sits immediately to its left.
-        int rejectStart = cellWidth - rightPad - btn;
-        int approveStart = rejectStart - gap - btn;
-        if (relativeX >= rejectStart) return ZONE_REMOVE;
-        if (relativeX >= approveStart) return ZONE_APPROVE;
-        return ZONE_FILE;
-    }
-
-    private String getZoneTooltip(MouseEvent e) {
-        ReviewItem item = itemAtPoint(e);
-        if (item == null) return null;
-
-        int index = list.locationToIndex(e.getPoint());
-        Rectangle bounds = list.getCellBounds(index, index);
-        if (bounds == null) return null;
-        int zone = hitTestZone(e.getX() - bounds.x, bounds.width);
-        return switch (zone) {
-            case ZONE_REMOVE -> item.approved() ? "Remove from list" : "Reject this change…";
-            case ZONE_APPROVE -> item.approved() ? "Approved — click to unapprove" : "Approve this change";
-            default -> {
-                String tip = item.relativePath() + (item.approved() ? " · Approved" : " · Pending review");
-                if (item.lastEditedMillis() > 0) {
-                    tip += " · " + TimestampDisplayFormatter.formatEpochMillis(item.lastEditedMillis());
-                }
-                yield tip;
-            }
-        };
-    }
-
-    private void toggleApproval(@NotNull ReviewItem item) {
-        AgentEditSession session = AgentEditSession.getInstance(project);
-        if (item.approved()) session.unapproveFile(item.path());
-        else session.acceptFile(item.path());
-    }
-
-    private void navigateToFile(@NotNull ReviewItem item) {
-        if (item.status() == ReviewItem.Status.DELETED) return;
-        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
-        if (vf != null) FileEditorManager.getInstance(project).openFile(vf, true);
-    }
-
-    private void showRevertDialog(@NotNull ReviewItem item) {
-        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
-        if (vf == null) return;
-        AgentEditSession session = AgentEditSession.getInstance(project);
-        RevertReasonDialog dialog = new RevertReasonDialog(
-            project, vf, item.relativePath(), session.isGateActive());
-        if (!dialog.showAndGet()) return;
-        AgentEditSession.RevertGateAction gateAction = switch (dialog.getResult()) {
-            case CONTINUE_REVIEWING -> AgentEditSession.RevertGateAction.CONTINUE_REVIEWING;
-            case SEND_NOW -> AgentEditSession.RevertGateAction.SEND_NOW;
-            default -> AgentEditSession.RevertGateAction.DEFAULT;
-        };
-        session.revertFile(item.path(), dialog.getReason(), gateAction);
-    }
-
-    private void showRevertPopup(MouseEvent e) {
-        ReviewItem item = itemAtPoint(e);
-        if (item == null) return;
-        JPopupMenu menu = new JPopupMenu();
-        JMenuItem revertItem = new JMenuItem("Revert…", AllIcons.Actions.Rollback);
-        revertItem.addActionListener(ev -> showRevertDialog(item));
-        menu.add(revertItem);
-        menu.show(list, e.getX(), e.getY());
-    }
-
     private @NotNull ActionToolbar createToolbar() {
         DefaultActionGroup group = new DefaultActionGroup();
         group.add(new AutoApproveToggleAction(project));
@@ -387,14 +453,7 @@ public final class DiffPanel extends JPanel implements Disposable {
 
             @Override
             public void update(@NotNull AnActionEvent e) {
-                boolean anyApproved = false;
-                for (ReviewItem it : AgentEditSession.getInstance(project).getReviewItems()) {
-                    if (it.approved()) {
-                        anyApproved = true;
-                        break;
-                    }
-                }
-                e.getPresentation().setEnabled(anyApproved);
+                e.getPresentation().setEnabled(!approvedModel.isEmpty());
             }
         });
         return ActionManager.getInstance().createActionToolbar("ReviewChangesToolbar", group, true);
@@ -482,62 +541,29 @@ public final class DiffPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Renders a single review row in a compact three-column layout:
-     * <ul>
-     *   <li>LEFT: file-type icon + status-colored filename only (no inline path —
-     *       full relative path moved to the row tooltip together with the last-edit
-     *       timestamp).</li>
-     *   <li>MIDDLE-RIGHT: dedicated column with animated +N -M diff counts.</li>
-     *   <li>RIGHT: small approve toggle and reject/remove icons.</li>
-     * </ul>
-     * Removing the inline path keeps the row narrow enough for the side panel
-     * width; the path remains discoverable via tooltip.
+     * Compact row renderer: file-type icon + status-colored filename + animated diff counts.
+     * Context menus handle approve/unapprove/revert actions, so no inline action buttons.
      */
-    private final class ReviewRowRenderer extends JPanel implements ListCellRenderer<ReviewItem> {
+    private final class FileRowRenderer extends JPanel implements ListCellRenderer<ReviewItem> {
         private final JLabel fileIconLabel = new JLabel();
         private final SimpleColoredComponent fileText = new SimpleColoredComponent();
         private final SimpleColoredComponent diffCountsText = new SimpleColoredComponent();
-        private final BadgeLabel approveLabel = new BadgeLabel();
-        private final JLabel removeLabel = new JLabel();
 
-        ReviewRowRenderer() {
+        FileRowRenderer() {
             setLayout(new BorderLayout());
             setBorder(JBUI.Borders.empty(2, 8, 2, 6));
 
-            Dimension btnDim = new Dimension(JBUI.scale(BUTTON_SIZE), JBUI.scale(BUTTON_SIZE));
-
-            // LEFT: file-type icon (matches FileNodeRenderer in ProjectFilesPanel).
             fileIconLabel.setBorder(JBUI.Borders.emptyRight(6));
             add(fileIconLabel, BorderLayout.WEST);
 
-            // CENTER: filename only on a single line.
             fileText.setOpaque(false);
             fileText.setIpad(JBUI.emptyInsets());
             add(fileText, BorderLayout.CENTER);
 
-            // RIGHT: diff counts column + compact approve + reject icons.
-            // BorderLayout pins actions to the far right; diff counts get their own
-            // column to the left of the action buttons.
             diffCountsText.setOpaque(false);
             diffCountsText.setIpad(JBUI.emptyInsets());
-            diffCountsText.setBorder(JBUI.Borders.emptyRight(8));
-
-            JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0));
-            actions.setOpaque(false);
-            approveLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            approveLabel.setVerticalAlignment(SwingConstants.CENTER);
-            approveLabel.setPreferredSize(btnDim);
-            removeLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            removeLabel.setVerticalAlignment(SwingConstants.CENTER);
-            removeLabel.setPreferredSize(btnDim);
-            actions.add(approveLabel);
-            actions.add(removeLabel);
-
-            JPanel east = new JPanel(new BorderLayout());
-            east.setOpaque(false);
-            east.add(diffCountsText, BorderLayout.CENTER);
-            east.add(actions, BorderLayout.EAST);
-            add(east, BorderLayout.EAST);
+            diffCountsText.setBorder(JBUI.Borders.emptyLeft(8));
+            add(diffCountsText, BorderLayout.EAST);
         }
 
         @Override
@@ -550,15 +576,12 @@ public final class DiffPanel extends JPanel implements Disposable {
             setBackground(bg);
             setOpaque(true);
 
-            // File icon — derived from the filename so each row renders with the same
-            // language icon it would have in the Project view / Editor tab strip.
             Path p = Path.of(item.path());
             String fileName = p.getFileName() != null ? p.getFileName().toString() : item.path();
             Icon icon = com.intellij.openapi.fileTypes.FileTypeManager
                 .getInstance().getFileTypeByFileName(fileName).getIcon();
             fileIconLabel.setIcon(icon != null ? icon : AllIcons.FileTypes.Text);
 
-            // Filename only — full path is in the tooltip.
             fileText.clear();
             fileText.setFont(jList.getFont());
             Color fileColor = isSelected ? fg : switch (item.status()) {
@@ -568,7 +591,6 @@ public final class DiffPanel extends JPanel implements Disposable {
             };
             fileText.append(fileName, new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, fileColor));
 
-            // Diff counts column.
             diffCountsText.clear();
             diffCountsText.setFont(jList.getFont());
             long now = System.currentTimeMillis();
@@ -585,38 +607,7 @@ public final class DiffPanel extends JPanel implements Disposable {
                     new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER, c));
             }
 
-            approveLabel.setIcon(AllIcons.Actions.Checked);
-            approveLabel.setHighlighted(item.approved());
-            removeLabel.setIcon(item.approved() ? AllIcons.Actions.Close : AllIcons.Actions.Rollback);
-
             return this;
-        }
-    }
-
-    /**
-     * A {@link JLabel} that draws a semi-transparent green badge behind the icon
-     * when {@link #setHighlighted(boolean) highlighted}, indicating approved state.
-     */
-    private static final class BadgeLabel extends JLabel {
-        private boolean highlighted;
-
-        void setHighlighted(boolean highlighted) {
-            this.highlighted = highlighted;
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            if (highlighted) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int size = JBUI.scale(22);
-                int x = (getWidth() - size) / 2;
-                int y = (getHeight() - size) / 2;
-                g2.setColor(APPROVED_BG);
-                g2.fillRoundRect(x, y, size, size, JBUI.scale(4), JBUI.scale(4));
-                g2.dispose();
-            }
-            super.paintComponent(g);
         }
     }
 

@@ -1301,8 +1301,9 @@ class ChatToolWindowContent(
         override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
             // Compact icon-only button keeps the footer from growing taller than the
             // dropdowns beside it while still exposing the action through the tooltip.
-            val button = JButton(sendIcon)
-            button.putClientProperty("JButton.buttonType", "primary")
+            val button = object : JButton(sendIcon) {
+                override fun isDefaultButton(): Boolean = true
+            }
             button.isFocusable = false
             button.margin = JBUI.insets(0, 6)
             button.iconTextGap = 0
@@ -1708,6 +1709,13 @@ class ChatToolWindowContent(
     /** ComboBoxAction for model selection — matches Run panel dropdown style. */
     private inner class ModelSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun createComboBoxButton(presentation: Presentation): ComboBoxButton {
+            return super.createComboBoxButton(presentation).apply {
+                isBorderPainted = false
+                isContentAreaFilled = false
+            }
+        }
 
         override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
             val group = DefaultActionGroup()
