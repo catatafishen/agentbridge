@@ -10,6 +10,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.SystemInfo
 
 /**
  * Encapsulates all authentication login logic for Copilot CLI and GitHub CLI.
@@ -19,7 +20,6 @@ class AuthLoginService(private val project: Project) {
 
     private companion object {
         private val LOG = Logger.getInstance(AuthLoginService::class.java)
-        private const val OS_NAME_PROPERTY = "os.name"
     }
 
     // ── Auth error tracking ─────────────────────────────────────────────────
@@ -391,14 +391,13 @@ class AuthLoginService(private val project: Project) {
     }
 
     private fun launchExternalTerminal(command: String, envVars: Map<String, String>) {
-        val os = System.getProperty(OS_NAME_PROPERTY).lowercase()
         val fullCommand = buildCommandWithEnvironment(command, envVars)
 
         when {
-            os.contains("win") ->
+            SystemInfo.isWindows ->
                 ProcessBuilder("cmd", "/c", "start", "cmd", "/k", fullCommand).start()
 
-            os.contains("mac") ->
+            SystemInfo.isMac ->
                 ProcessBuilder(
                     "osascript", "-e",
                     "tell application \"Terminal\" to do script \"$fullCommand\"",

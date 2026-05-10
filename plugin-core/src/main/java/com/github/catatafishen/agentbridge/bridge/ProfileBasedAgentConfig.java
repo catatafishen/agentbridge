@@ -20,6 +20,7 @@ import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -471,13 +472,13 @@ public class ProfileBasedAgentConfig implements AgentConfig {
                 return Path.of(basePath, ".agent-work", "mcp-configs");
             }
         }
-        return Path.of(System.getProperty("user.home"), ".agentbridge", "mcp-configs");
+        return Path.of(SystemProperties.getUserHome(), ".agentbridge", "mcp-configs");
     }
 
     @Nullable
     private String detectExistingMcpRegistration(int mcpPort) {
         String targetUrl = "http://127.0.0.1:" + mcpPort + "/mcp";
-        String userHome = System.getProperty("user.home", "");
+        String userHome = SystemProperties.getUserHome();
         List<Path> candidates = new ArrayList<>(List.of(
             Path.of(userHome, ".copilot", "mcp-config.json"),
             Path.of(userHome, ".config", "github-copilot", "mcp.json")

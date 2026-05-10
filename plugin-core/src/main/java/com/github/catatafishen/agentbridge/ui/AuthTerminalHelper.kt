@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.SystemInfo
 
 private val LOG = Logger.getInstance("AuthTerminalHelper")
 
@@ -85,7 +86,7 @@ fun runAuthInEmbeddedTerminal(
 private fun buildCommandWithEnvironment(command: String, envVars: Map<String, String>): String {
     if (envVars.isEmpty()) return command
 
-    val isWindows = System.getProperty("os.name").lowercase().contains("win")
+    val isWindows = SystemInfo.isWindows
 
     return if (isWindows) {
         // Windows cmd: set VAR=value && command

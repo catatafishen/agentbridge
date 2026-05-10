@@ -9,6 +9,7 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -288,7 +289,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setAlternateNames(List.of("kiro"));
         p.setInstallHint("Install Kiro CLI and ensure it's available on your PATH.");
         p.setInstallUrl("https://kiro.dev/docs/cli/acp/");
-        p.setAgentsDirectory(System.getProperty("user.home") + "/.kiro/agents");
+        p.setAgentsDirectory(SystemProperties.getUserHome() + "/.kiro/agents");
         p.setBundledAgentFiles(List.of("kiro-intellij-explore.json", "kiro-intellij-task.json"));
         return p;
     }

@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,12 +38,12 @@ public final class CodexClientExporter {
 
     @NotNull
     public static Path defaultSessionsDir() {
-        return Path.of(System.getProperty("user.home"), ".codex", "sessions");
+        return Path.of(SystemProperties.getUserHome(), ".codex", "sessions");
     }
 
     @NotNull
     public static Path defaultDbPath() {
-        return Path.of(System.getProperty("user.home"), ".codex", "codex.db");
+        return Path.of(SystemProperties.getUserHome(), ".codex", "codex.db");
     }
 
     @Nullable

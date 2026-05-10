@@ -66,6 +66,24 @@ Examples: `[ quick-reply: Yes | No ]`  `[ quick-reply: Keep | Delete all:danger 
             > End of auto-generated instructions
 ---
 
+# Design Principles
+
+This plugin follows two core principles. See [docs/DESIGN-PRINCIPLES.md](docs/DESIGN-PRINCIPLES.md)
+for detailed rationale and examples.
+
+**1. Internally: prefer JetBrains APIs over custom code.**
+IntelliJ already provides OS detection (`SystemInfo`), shell management
+(`TerminalProjectOptionsProvider`), VCS integration (`git4idea`), project model, SDK resolution,
+UI threading (`ApplicationManager.invokeLater`), and much more. Never reimplement what the
+platform already does — our version will be less robust and may look suspicious to users.
+
+**2. MCP tools: be a bridge, not an inventor.**
+Every MCP tool should wrap an IntelliJ action. If JetBrains provides a feature, proxy it.
+If JetBrains doesn't provide it, decide whether it belongs here at all. Never build custom
+implementations (raw JDBC, subprocess scanning, etc.) as substitutes for IDE-level features.
+If a feature isn't available in the user's IDE installation, disable the tool gracefully —
+the agent can use a specialist MCP server instead.
+
 # Development Workflow
 
 Each feature or bug fix must be done in its own branch and a PR created when the work is done.

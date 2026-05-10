@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.settings;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedReader;
@@ -77,7 +78,7 @@ public class ShellEnvironment {
             // - ~/.bashrc often has "case $- in *i*) ;; *) return ;;" which skips nvm/sdkman init
             //   even if sourced explicitly
             // - nvm.sh and sdkman-init.sh are designed to be sourced without interactive guards
-            String home = System.getProperty("user.home");
+            String home = SystemProperties.getUserHome();
             String command = buildEnvCaptureCommand(home);
 
             ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-c", command);

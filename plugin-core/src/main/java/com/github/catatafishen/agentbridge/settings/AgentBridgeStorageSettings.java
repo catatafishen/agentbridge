@@ -6,6 +6,7 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -101,7 +102,7 @@ public final class AgentBridgeStorageSettings
      */
     @NotNull
     public static Path getUserHomeStorageRoot() {
-        return Paths.get(System.getProperty("user.home"), DEFAULT_DIR_NAME);
+        return Paths.get(SystemProperties.getUserHome(), DEFAULT_DIR_NAME);
     }
 
     /**

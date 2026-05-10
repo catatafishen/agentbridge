@@ -38,6 +38,7 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.SystemProperties;
 import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -288,7 +289,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         try {
             String cwd = project.getBasePath();
             if (cwd == null) {
-                cwd = System.getProperty("user.home");
+                cwd = SystemProperties.getUserHome();
             }
             createSession(cwd);
             return null; // Auth successful
@@ -1172,7 +1173,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     private Process launchProcess(int mcpPort) throws IOException {
         String cwd = project.getBasePath();
         if (cwd == null) {
-            cwd = System.getProperty("user.home");
+            cwd = SystemProperties.getUserHome();
         }
         launchCwd = cwd;
 

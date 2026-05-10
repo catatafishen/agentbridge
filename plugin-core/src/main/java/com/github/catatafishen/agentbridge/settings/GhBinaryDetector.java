@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,7 +32,7 @@ public final class GhBinaryDetector extends ClientBinaryDetector {
             return List.of(
                 "C:\\Program Files\\GitHub CLI\\gh.exe",
                 "C:\\Program Files (x86)\\GitHub CLI\\gh.exe",
-                System.getProperty("user.home") + "\\AppData\\Local\\GitHub CLI\\gh.exe"
+                SystemProperties.getUserHome() + "\\AppData\\Local\\GitHub CLI\\gh.exe"
             );
         }
         // macOS paths (/opt/homebrew/bin, /usr/local/bin) are covered by BinaryDetector.
@@ -39,7 +40,7 @@ public final class GhBinaryDetector extends ClientBinaryDetector {
         return List.of(
             "/snap/bin/gh",
             "/home/linuxbrew/.linuxbrew/bin/gh",
-            System.getProperty("user.home") + "/.local/bin/gh"
+            SystemProperties.getUserHome() + "/.local/bin/gh"
         );
     }
 }

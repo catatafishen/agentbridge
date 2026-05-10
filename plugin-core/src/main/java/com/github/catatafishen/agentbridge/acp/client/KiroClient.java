@@ -7,6 +7,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -240,7 +241,7 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws java.io.IOException {
-        java.nio.file.Path kiroDir = java.nio.file.Path.of(System.getProperty("user.home"), ".kiro", "agents");
+        java.nio.file.Path kiroDir = java.nio.file.Path.of(SystemProperties.getUserHome(), ".kiro", "agents");
         java.nio.file.Files.createDirectories(kiroDir);
         java.nio.file.Path agentPath = kiroDir.resolve("intellij-task.json");
 
