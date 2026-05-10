@@ -86,8 +86,8 @@ public final class DiffPanel extends JPanel implements Disposable {
 
         diffCountAnimator = new ReviewDiffCountAnimator();
 
-        pendingList = createReviewList();
-        approvedList = createReviewList();
+        pendingList = createReviewList(pendingModel);
+        approvedList = createReviewList(approvedModel);
         configurePendingListActions();
         configureApprovedListActions();
 
@@ -192,8 +192,8 @@ public final class DiffPanel extends JPanel implements Disposable {
         return count > 0 ? label + " (" + count + ")" : label;
     }
 
-    private @NotNull JBList<ReviewItem> createReviewList() {
-        JBList<ReviewItem> list = new JBList<>() {
+    private @NotNull JBList<ReviewItem> createReviewList(@NotNull DefaultListModel<ReviewItem> model) {
+        JBList<ReviewItem> list = new JBList<>(model) {
             @Override
             public String getToolTipText(MouseEvent e) {
                 ReviewItem item = itemAtPoint(this, e);
