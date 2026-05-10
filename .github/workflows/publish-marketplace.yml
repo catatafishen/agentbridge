@@ -49,7 +49,7 @@ jobs:
             echo "Using provided tag: $INPUT_TAG"
             echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
-            LATEST=$(gh release list --repo "${{ github.repository }}" --limit 5 \
+            LATEST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 5 \
               --json tagName,isPrerelease,isDraft \
               --jq '[.[] | select(.isPrerelease == false and .isDraft == false)][0].tagName')
             if [ -z "$LATEST" ]; then
@@ -69,7 +69,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Tag | Date | Title |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-----|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          gh release list --repo "${{ github.repository }}" --limit 10 \
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 10 \
             --json tagName,publishedAt,name \
             --jq '.[] | "| \(.tagName) | \(.publishedAt | split("T")[0]) | \(.name) |"' \
             >> "$GITHUB_STEP_SUMMARY"
@@ -77,6 +77,8 @@ jobs:
           echo "**Selected:** \`$SELECTED_TAG\`" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Step 1: Show release notes for review and editing ───────────────
+  # Fetches the GitHub Release body (editable markdown) so you can review and
+  # optionally edit it on GitHub before approving the upload.
   preview:
     name: Preview changelog for ${{ needs.resolve-tag.outputs.tag }}
     needs: resolve-tag
@@ -95,12 +97,13 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
           CHANNEL: ${{ inputs.channel }}
         run: |
-          # Fetch the release body (markdown) — this is editable on GitHub
+          # Fetch the release body (markdown) — editable on GitHub before approval.
+          # The publish job will re-fetch the final version after any edits.
           gh release view "$RELEASE_TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --json body --jq '.body' > release-body.md
 
-          EDIT_URL="https://github.com/${{ github.repository }}/releases/edit/${RELEASE_TAG}"
+          EDIT_URL="https://github.com/$GITHUB_REPOSITORY/releases/edit/$RELEASE_TAG"
 
           {
             echo "### 📝 Marketplace change notes for $RELEASE_TAG"
@@ -151,7 +154,7 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           gh release download "$RELEASE_TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --pattern "agentbridge-*.zip" \
             --dir release-artifacts
           ls -la release-artifacts/
@@ -161,36 +164,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          # Read the (potentially edited) release body
+          # Re-fetch release body (user may have edited it after preview was shown)
           gh release view "$RELEASE_TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --json body --jq '.body' > release-body.md
 
-          # Convert GitHub-Flavored Markdown → HTML
-          # pandoc is pre-installed on ubuntu-latest runners
-          pandoc -f gfm -t html --no-highlight release-body.md -o release-body.html
+          # Convert GFM → HTML using GitHub's own Markdown API (via gh CLI).
+          # This avoids a pandoc dependency (not pre-installed on ubuntu-24.04 runners)
+          # and produces identical output to what GitHub itself renders.
+          python3 - <<'PYEOF'
+          import json, subprocess, os, re
 
-          # Strip <details>/<summary> wrappers (marketplace may not render them)
-          # but keep the content inside visible
-          sed -i \
-            -e 's/<details>//g' \
-            -e 's/<\/details>//g' \
-            -e 's/<summary>[^<]*<\/summary>//g' \
-            release-body.html
+          body = open('release-body.md').read()
+          payload = json.dumps({
+              'text': body,
+              'mode': 'gfm',
+              'context': os.environ.get('GITHUB_REPOSITORY', ''),
+          })
+          result = subprocess.run(
+              ['gh', 'api', '/markdown', '--input', '-'],
+              input=payload.encode(),
+              capture_output=True,
+              check=True,
+          )
+          html = result.stdout.decode()
 
-          # Assemble full marketplace changelog: static header + release notes
-          cat > marketplace-changelog.html << 'HEADER'
-          <p><b>AgentBridge</b> connects AI coding agents to your IDE via 100+ MCP tools
-          for code intelligence, navigation, editing, debugging, and git.</p>
-          <p>
-            <a href="https://github.com/catatafishen/agentbridge">GitHub</a> &middot;
-            <a href="https://github.com/catatafishen/agentbridge/releases">All Releases</a>
-          </p>
-          <hr/>
-          HEADER
-          cat release-body.html >> marketplace-changelog.html
+          # Strip <details>/<summary> wrappers but keep the inner content visible.
+          # The JetBrains Marketplace may not render these HTML elements.
+          html = re.sub(r'<details[^>]*>', '', html)
+          html = html.replace('</details>', '')
+          html = re.sub(r'<summary[^>]*>.*?</summary>', '', html, flags=re.DOTALL)
 
-          echo "### Generated marketplace HTML" >> "$GITHUB_STEP_SUMMARY"
+          open('release-body.html', 'w').write(html)
+          PYEOF
+
+          # Assemble: static header + converted release notes
+          {
+            printf '<p><b>AgentBridge</b> connects AI coding agents to your IDE via 100+ MCP tools\n'
+            printf 'for code intelligence, navigation, editing, debugging, and git.</p>\n'
+            printf '<p>\n'
+            printf '  <a href="https://github.com/%s">GitHub</a> &middot;\n' "$GITHUB_REPOSITORY"
+            printf '  <a href="https://github.com/%s/releases">All Releases</a>\n' "$GITHUB_REPOSITORY"
+            printf '</p>\n'
+            printf '<hr/>\n'
+            cat release-body.html
+          } > marketplace-changelog.html
+
+          echo "### 📋 Generated marketplace HTML" >> "$GITHUB_STEP_SUMMARY"
           echo '```html' >> "$GITHUB_STEP_SUMMARY"
           cat marketplace-changelog.html >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -215,16 +235,17 @@ jobs:
           fi
           echo "Plugin JAR: $MAIN_JAR"
 
-          # Extract plugin.xml from the JAR
-          mkdir -p work/xml
+          # Extract plugin.xml from the JAR for patching
+          mkdir -p work/xml/META-INF
           unzip -o -q "$MAIN_JAR" META-INF/plugin.xml -d work/xml
 
-          # Replace <change-notes> section with the new HTML
-          python3 << 'PYEOF'
+          # Patch <change-notes> in plugin.xml with the generated HTML
+          python3 - <<'PYEOF'
           import re
 
           with open('work/xml/META-INF/plugin.xml') as f:
               xml = f.read()
+
           with open('marketplace-changelog.html') as f:
               notes = f.read()
 
@@ -235,9 +256,9 @@ jobs:
           )
 
           if patched == xml:
-              print("::warning::No <change-notes> section found — changelog not patched")
+              print('::warning::No <change-notes> section found — changelog not patched')
           else:
-              print("Patched <change-notes> section in plugin.xml")
+              print('Patched <change-notes> section in plugin.xml')
 
           with open('work/xml/META-INF/plugin.xml', 'w') as f:
               f.write(patched)
@@ -308,10 +329,10 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           # Remove any existing pending-review tags (handles retries cleanly)
-          gh api "repos/${{ github.repository }}/git/refs" --jq \
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" --jq \
             '.[] | select(.ref | startswith("refs/tags/marketplace-pending-")) | .ref' \
             | while read -r REF; do
-                gh api "repos/${{ github.repository }}/git/$REF" -X DELETE
+                gh api "repos/$GITHUB_REPOSITORY/git/$REF" -X DELETE
                 echo "Removed stale tag: $REF"
               done
 
@@ -324,4 +345,3 @@ jobs:
             -m "Pending JetBrains Marketplace review for $RELEASE_TAG"
           git push origin "marketplace-pending-$RELEASE_TAG"
           echo "Tagged $RELEASE_TAG as pending marketplace review"
-
