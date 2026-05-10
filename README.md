@@ -1,6 +1,7 @@
 # AgentBridge
 
-[![CI](https://github.com/catatafishen/agentbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/catatafishen/agentbridge/actions/workflows/ci.yml)
+[![CI](https://github.com/catatafishen/agentbridge/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/catatafishen/agentbridge/actions/workflows/ci.yml)
+[![IDE Compatibility](https://github.com/catatafishen/agentbridge/actions/workflows/ide-compatibility.yml/badge.svg?branch=master)](https://github.com/catatafishen/agentbridge/actions/workflows/ide-compatibility.yml)
 [![Release](https://img.shields.io/github/v/release/catatafishen/agentbridge?label=release)](https://github.com/catatafishen/agentbridge/releases/latest)
 [![Marketplace](https://img.shields.io/jetbrains/plugin/v/30415?logo=jetbrains&label=marketplace)](https://plugins.jetbrains.com/plugin/30415-agentbridge)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)

@@ -129,10 +129,88 @@ jobs:
             echo "> If the notes look good as-is, just approve directly."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Step 2: Upload (requires 'marketplace' environment approval) ──────
+  # ── Step 2: Gate on IDE compatibility check ─────────────────────────
+  # Blocks publishing if the ide-compatibility workflow has not run on the
+  # release commit, is still running, or failed.
+  check-compatibility:
+    name: Check IDE compatibility for ${{ needs.resolve-tag.outputs.tag }}
+    needs: [ resolve-tag, preview ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Check IDE compatibility run status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          # Resolve the commit SHA the release tag points to.
+          # Release tags can be annotated (object type "tag") or lightweight
+          # (object type "commit") — dereference annotated tags one level.
+          OBJ_TYPE=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+            --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+            --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            COMMIT_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$OBJ_SHA" \
+              --jq '.object.sha')
+          else
+            COMMIT_SHA="$OBJ_SHA"
+          fi
+          echo "Release tag: $RELEASE_TAG → commit $COMMIT_SHA"
+
+          # Find the most recent ide-compatibility run for this exact commit.
+          RUNS=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ide-compatibility.yml/runs?head_sha=$COMMIT_SHA&per_page=10" \
+            --jq '.workflow_runs | sort_by(.created_at) | reverse')
+          TOTAL=$(echo "$RUNS" | jq 'length')
+          echo "Found $TOTAL ide-compatibility run(s) for commit $COMMIT_SHA"
+
+          if [ "$TOTAL" = "0" ]; then
+            echo "::error::No IDE compatibility check has been run for $RELEASE_TAG (commit $COMMIT_SHA)."
+            echo "Trigger the 'IDE Compatibility Check' workflow manually for this commit, wait for it to pass, then retry publishing."
+            exit 1
+          fi
+
+          LATEST_STATUS=$(echo "$RUNS" | jq -r '.[0].status')
+          LATEST_CONCLUSION=$(echo "$RUNS" | jq -r '.[0].conclusion')
+          LATEST_URL=$(echo "$RUNS" | jq -r '.[0].html_url')
+          echo "Latest run: status=$LATEST_STATUS conclusion=$LATEST_CONCLUSION"
+          echo "Run URL: $LATEST_URL"
+
+          if [ "$LATEST_STATUS" != "completed" ]; then
+            echo "::error::IDE compatibility check is still running for $RELEASE_TAG."
+            echo "Wait for it to complete before publishing to the marketplace."
+            echo "Check: $LATEST_URL"
+            exit 1
+          fi
+
+          if [ "$LATEST_CONCLUSION" != "success" ]; then
+            echo "::error::IDE compatibility check failed for $RELEASE_TAG (conclusion: $LATEST_CONCLUSION)."
+            echo "Fix the compatibility issues before publishing to the marketplace."
+            echo "Check: $LATEST_URL"
+            exit 1
+          fi
+
+          {
+            echo "### ✅ IDE Compatibility"
+            echo ""
+            echo "IDE compatibility check **passed** for \`$RELEASE_TAG\`."
+            echo ""
+            echo "Run: $LATEST_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "IDE compatibility check passed — proceeding with marketplace publish."
+
+  # ── Step 3: Upload (requires 'marketplace' environment approval) ──────
   publish:
     name: Upload ${{ needs.resolve-tag.outputs.tag }} to JetBrains Marketplace
-    needs: [ resolve-tag, preview ]
+    needs: [ resolve-tag, preview, check-compatibility ]
     runs-on: ubuntu-latest
     environment: marketplace
     permissions:
