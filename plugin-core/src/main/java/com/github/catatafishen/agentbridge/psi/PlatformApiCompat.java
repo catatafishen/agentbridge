@@ -1572,7 +1572,7 @@ public final class PlatformApiCompat {
     }
 
     /**
-     * Applies a look-and-feel theme and updates the UI.
+     * Applies a look-and-feel theme and updates the UI, including syncing the editor color scheme.
      *
      * <p><b>Why extracted:</b> Calling {@code LafManager.updateUI()} directly can trigger
      * {@code EditorColorsManagerImpl.getSchemeForCurrentUITheme()}, which logs a platform-level
@@ -1580,9 +1580,10 @@ public final class PlatformApiCompat {
      * registered as a color scheme in the current IDE installation. This is an IntelliJ platform
      * bug (the bundled "IntelliJ Light" theme references a scheme that doesn't always exist).
      *
-     * <p>To prevent the error we pre-set the global color scheme to the theme's declared scheme
-     * when it exists, or fall back to the IDE default scheme when it doesn't — so the registry
-     * lookup inside {@code updateUI()} succeeds silently. We then use
+     * <p>This method always explicitly syncs the editor color scheme before applying the theme:
+     * if the theme's {@code editorSchemeId} is registered, it is set as the global scheme
+     * (keeping the editor in sync with the UI theme); if it is not registered, the current scheme
+     * is re-set (a no-op that prevents the platform from logging a lookup error). We then use
      * {@code setCurrentLookAndFeel(theme, true)} (the integrated single-call form) rather than
      * the two-step {@code setCurrentLookAndFeel(theme, false)} + explicit {@code updateUI()}.</p>
      */
@@ -1595,7 +1596,12 @@ public final class PlatformApiCompat {
             com.intellij.openapi.editor.colors.EditorColorsManager ecm =
                 com.intellij.openapi.editor.colors.EditorColorsManager.getInstance();
             com.intellij.openapi.editor.colors.EditorColorsScheme scheme = ecm.getScheme(schemeId);
-            if (scheme == null) {
+            if (scheme != null) {
+                // Explicitly sync the editor color scheme to match the new UI theme.
+                // Without this, setCurrentLookAndFeel may leave the editor scheme unchanged,
+                // causing a mismatch (e.g., dark UI with a light editor or vice versa).
+                ecm.setGlobalScheme(scheme);
+            } else {
                 // Theme references a color scheme that is not registered (IntelliJ platform bug).
                 // Pre-set the IDE's current global scheme so getSchemeForCurrentUITheme() does not log an error.
                 ecm.setGlobalScheme(ecm.getGlobalScheme());
