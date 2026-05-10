@@ -129,7 +129,7 @@ public final class HookRegistry {
 
             // Provision default hooks on first load if none exist
             if (lastLoadedMs == 0) {
-                DefaultHookProvisioner.provisionIfEmpty(project);
+                DefaultHookProvisioner.provisionDefaults(project);
             }
 
             hooksByTool.clear();

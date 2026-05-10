@@ -20,9 +20,18 @@ import java.util.List;
 /**
  * Provisions default hook configs and scripts from bundled plugin resources.
  *
- * <p>On first project open (when no hook JSON configs exist), copies the bundled
- * defaults to {@code <storage-dir>/hooks/}. Users can then customize the files,
- * and use {@link #restoreDefaults(Project)} to reset them to the bundled originals.</p>
+ * <p>There are two distinct update policies, reflecting two distinct purposes:
+ * <ul>
+ *   <li><b>Script files</b> ({@code scripts/*.sh}) — internal implementation. Always
+ *       overwritten on plugin startup so that bug fixes (e.g. Windows path normalization)
+ *       reach all existing users without requiring them to manually restore defaults.</li>
+ *   <li><b>JSON config files</b> ({@code *.json}) — user-configurable (which hooks run,
+ *       timeouts, env vars, failSilently, etc.). Only provisioned when no JSON files exist
+ *       yet, preserving any user customizations made after first install.</li>
+ * </ul>
+ *
+ * <p>This separation means a plugin upgrade will silently patch buggy scripts while
+ * keeping user-edited hook configs intact.
  *
  * <p><b>Distribution boundary:</b> Only scripts listed in {@code manifest.txt} are
  * distributed to end users. The manifest references resources from
@@ -43,73 +52,98 @@ public final class DefaultHookProvisioner {
     }
 
     /**
-     * Provisions default hooks if the hooks directory is empty or doesn't exist.
-     * Called from {@code HookRegistry.ensureLoaded()} on first load.
+     * Provisions default hooks on plugin startup.
      *
-     * @return true if defaults were provisioned, false if hooks already exist
+     * <p>Scripts are <em>always</em> overwritten so that bug fixes in plugin updates
+     * (e.g. Windows path normalization) automatically reach existing users.
+     * JSON configs are only provisioned when none exist yet, preserving user customizations.
+     *
+     * <p>Called from {@link HookRegistry} on first access after each IDE startup.
      */
-    public static boolean provisionIfEmpty(@NotNull Project project) {
+    public static void provisionDefaults(@NotNull Project project) {
         Path hooksDir = resolveHooksDir(project);
-        if (hasExistingJsonConfigs(hooksDir)) {
-            return false;
+        ensureScriptsDir(hooksDir);
+
+        List<String> entries = readManifest();
+        if (entries.isEmpty()) {
+            LOG.warn("Default hooks manifest is empty or missing");
+            return;
         }
 
-        LOG.info("No hook configs found — provisioning defaults to " + hooksDir);
-        return copyBundledResources(hooksDir);
+        boolean hasJsonConfigs = hasExistingJsonConfigs(hooksDir);
+
+        for (String entry : entries) {
+            boolean isScript = entry.startsWith("scripts/");
+            if (!isScript && hasJsonConfigs) {
+                // JSON config exists — skip to preserve user customizations
+                continue;
+            }
+            copyEntry(entry, hooksDir);
+        }
+
+        if (!hasJsonConfigs) {
+            LOG.info("No hook configs found — provisioned defaults to " + hooksDir);
+        }
     }
 
     /**
      * Restores all hook configs and scripts to their bundled defaults.
-     * Overwrites any user customizations.
+     * Overwrites any user customizations — call only when the user explicitly requests a reset.
      *
      * @return true if defaults were restored successfully
      */
     public static boolean restoreDefaults(@NotNull Project project) {
         Path hooksDir = resolveHooksDir(project);
         LOG.info("Restoring default hooks to " + hooksDir);
-        return copyBundledResources(hooksDir);
-    }
 
-    private static boolean copyBundledResources(@NotNull Path hooksDir) {
+        ensureScriptsDir(hooksDir);
+
         List<String> entries = readManifest();
         if (entries.isEmpty()) {
             LOG.warn("Default hooks manifest is empty or missing");
             return false;
         }
 
-        try {
-            Files.createDirectories(hooksDir.resolve("scripts"));
-        } catch (IOException e) {
-            LOG.warn("Failed to create hooks directory: " + hooksDir, e);
-            return false;
-        }
-
         boolean allCopied = true;
         for (String entry : entries) {
-            String resourcePath = RESOURCE_BASE + entry;
-            Path targetPath = hooksDir.resolve(entry);
-
-            try (InputStream is = DefaultHookProvisioner.class.getResourceAsStream(resourcePath)) {
-                if (is == null) {
-                    LOG.warn("Bundled resource not found: " + resourcePath);
-                    allCopied = false;
-                    continue;
-                }
-                Files.copy(is, targetPath, StandardCopyOption.REPLACE_EXISTING);
-
-                if (entry.endsWith(".sh") && !targetPath.toFile().setExecutable(true)) {
-                    LOG.warn("Failed to set executable permission on: " + entry);
-                }
-            } catch (IOException e) {
-                LOG.warn("Failed to copy default hook resource: " + entry, e);
+            if (!copyEntry(entry, hooksDir)) {
                 allCopied = false;
             }
         }
 
         if (allCopied) {
-            LOG.info("Provisioned " + entries.size() + " default hook resources");
+            LOG.info("Restored " + entries.size() + " default hook resources");
         }
         return allCopied;
+    }
+
+    private static boolean copyEntry(@NotNull String entry, @NotNull Path hooksDir) {
+        String resourcePath = RESOURCE_BASE + entry;
+        Path targetPath = hooksDir.resolve(entry);
+
+        try (InputStream is = DefaultHookProvisioner.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                LOG.warn("Bundled resource not found: " + resourcePath);
+                return false;
+            }
+            Files.copy(is, targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+            if (entry.endsWith(".sh") && !targetPath.toFile().setExecutable(true)) {
+                LOG.warn("Failed to set executable permission on: " + entry);
+            }
+            return true;
+        } catch (IOException e) {
+            LOG.warn("Failed to copy default hook resource: " + entry, e);
+            return false;
+        }
+    }
+
+    private static void ensureScriptsDir(@NotNull Path hooksDir) {
+        try {
+            Files.createDirectories(hooksDir.resolve("scripts"));
+        } catch (IOException e) {
+            LOG.warn("Failed to create hooks/scripts directory: " + hooksDir, e);
+        }
     }
 
     private static @NotNull List<String> readManifest() {
