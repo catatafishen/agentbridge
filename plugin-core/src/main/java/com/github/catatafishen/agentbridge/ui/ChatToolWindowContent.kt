@@ -1086,6 +1086,7 @@ class ChatToolWindowContent(
             promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId)
         }
     }
+
     private fun showEmptyPromptWarning() {
         JBPopupFactory.getInstance()
             .createHtmlTextBalloonBuilder(
@@ -1334,6 +1335,23 @@ class ChatToolWindowContent(
             // dropdowns beside it while still exposing the action through the tooltip.
             val button = object : JButton(sendIcon) {
                 override fun isDefaultButton(): Boolean = toolWindow.isActive
+
+                // Repaint immediately when focus moves between components so isDefaultButton()
+                // (which checks toolWindow.isActive) is re-evaluated without waiting for the
+                // async action-update cycle that otherwise drives the blue↔grey transition.
+                private val focusSync = java.beans.PropertyChangeListener { repaint() }
+
+                override fun addNotify() {
+                    super.addNotify()
+                    java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                        .addPropertyChangeListener("focusOwner", focusSync)
+                }
+
+                override fun removeNotify() {
+                    java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                        .removePropertyChangeListener("focusOwner", focusSync)
+                    super.removeNotify()
+                }
             }
             button.isFocusable = false
             button.margin = JBUI.insets(0, 6)
