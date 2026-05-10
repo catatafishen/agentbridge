@@ -1,4 +1,19 @@
 #!/bin/sh
+# =============================================================================
+# INTERNAL DEVELOPMENT HOOK — for AgentBridge plugin contributors only.
+#
+# This script is committed to the plugin repository as part of the project's
+# OWN hook configuration (.agentbridge/hooks/), which governs how agents behave
+# when working on the plugin's own codebase. It is NOT distributed to end users.
+# End users receive a different set of hooks from plugin-core/src/main/resources/
+# default-hooks/ (see DefaultHookProvisioner). This file is intentionally absent
+# from that manifest.
+#
+# Purpose: enforce GitHub bot identity on http_request calls that write to the
+# GitHub API, so all agent-authored API actions are attributed to the project bot
+# rather than the developer's personal account.
+# =============================================================================
+#
 # Pre-hook for http_request: intercepts GitHub API calls that create/modify
 # content and enforces bot identity via Authorization header.
 #

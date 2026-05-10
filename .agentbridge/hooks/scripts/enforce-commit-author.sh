@@ -1,4 +1,19 @@
 #!/usr/bin/env bash
+# =============================================================================
+# INTERNAL DEVELOPMENT HOOK — for AgentBridge plugin contributors only.
+#
+# This script is committed to the plugin repository as part of the project's
+# OWN hook configuration (.agentbridge/hooks/), which governs how agents behave
+# when working on the plugin's own codebase. It is NOT distributed to end users.
+# End users receive a different set of hooks from plugin-core/src/main/resources/
+# default-hooks/ (see DefaultHookProvisioner). This file is intentionally absent
+# from that manifest.
+#
+# Purpose: automatically set the git commit author to the connected agent's
+# identity (e.g. "Copilot <Copilot@users.noreply.github.com>") so commits made
+# while developing the plugin are attributed to the agent, not the developer.
+# =============================================================================
+#
 # Pre-hook for git_commit: silently sets the commit author to the connected agent identity.
 #
 # Uses AGENTBRIDGE_AGENT_NAME (set from the MCP initialize handshake) so the commit

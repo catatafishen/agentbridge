@@ -1,4 +1,18 @@
 #!/bin/sh
+# =============================================================================
+# INTERNAL DEVELOPMENT HOOK — for AgentBridge plugin contributors only.
+#
+# This script is committed to the plugin repository as part of the project's
+# OWN hook configuration (.agentbridge/hooks/), which governs how agents behave
+# when working on the plugin's own codebase. It is NOT distributed to end users.
+# End users receive a different set of hooks from plugin-core/src/main/resources/
+# default-hooks/ (see DefaultHookProvisioner). This file is intentionally absent
+# from that manifest.
+#
+# Purpose: remind agents after a git_commit to use bot identity for authorship,
+# keeping commit attribution consistent during plugin development.
+# =============================================================================
+#
 # Success hook for git_commit: reminds about bot identity for authorship.
 #
 # Trigger: SUCCESS
