@@ -57,18 +57,8 @@ public final class DefaultHookProvisioner {
     private DefaultHookProvisioner() {
     }
 
-    /**
-     * Provisions default hooks on plugin startup.
-     *
-     * <p>Scripts are <em>always</em> overwritten so that bug fixes in plugin updates
-     * automatically reach existing users. JSON configs are only generated when none
-     * exist yet, preserving user customizations.
-     *
-     * <p>Called from {@link HookRegistry} on first access after each IDE startup.
-     */
     public static void provisionDefaults(@NotNull Project project) {
         Path hooksDir = resolveHooksDir(project);
-        ensureScriptsDir(hooksDir);
 
         List<String> entries = readManifest();
         if (entries.isEmpty()) {
@@ -76,15 +66,22 @@ public final class DefaultHookProvisioner {
             return;
         }
 
-        // Always overwrite all script files (bug fixes must reach existing users)
+        // Always wipe and recreate the scripts directory — removes orphaned scripts
+        // from old plugin versions. User customizations are expected to be in git.
+        deleteScriptsDir(hooksDir);
+        ensureScriptsDir(hooksDir);
+
         for (String entry : entries) {
             copyEntry(entry, hooksDir);
         }
 
-        // JSON configs are generated dynamically (not in manifest) — only on first install
-        if (!hasExistingJsonConfigs(hooksDir)) {
+        // JSON configs are generated dynamically (not in manifest).
+        // Only (re)generate when: no JSON exists yet, or the platform stamp is stale
+        // (e.g. user upgraded from a version that only provisioned .sh configs on Windows).
+        if (!hasExistingJsonConfigs(hooksDir) || isPlatformStampStale(hooksDir)) {
             writeJsonConfigs(hooksDir);
-            LOG.info("No hook configs found — provisioned defaults to " + hooksDir);
+            writePlatformStamp(hooksDir);
+            LOG.info("Provisioned hook configs for platform " + SCRIPT_EXT + " to " + hooksDir);
         }
     }
 
@@ -98,13 +95,14 @@ public final class DefaultHookProvisioner {
         Path hooksDir = resolveHooksDir(project);
         LOG.info("Restoring default hooks to " + hooksDir);
 
-        ensureScriptsDir(hooksDir);
-
         List<String> entries = readManifest();
         if (entries.isEmpty()) {
             LOG.warn("Default hooks manifest is empty or missing");
             return false;
         }
+
+        deleteScriptsDir(hooksDir);
+        ensureScriptsDir(hooksDir);
 
         boolean allCopied = true;
         for (String entry : entries) {
@@ -114,11 +112,47 @@ public final class DefaultHookProvisioner {
         }
 
         writeJsonConfigs(hooksDir);
+        writePlatformStamp(hooksDir);
 
         if (allCopied) {
             LOG.info("Restored " + entries.size() + " default hook resources");
         }
         return allCopied;
+    }
+
+    private static final String PLATFORM_STAMP_FILE = ".provision-platform";
+
+    private static boolean isPlatformStampStale(@NotNull Path hooksDir) {
+        Path stamp = hooksDir.resolve(PLATFORM_STAMP_FILE);
+        try {
+            String stored = Files.readString(stamp, StandardCharsets.UTF_8).trim();
+            return !SCRIPT_EXT.equals(stored);
+        } catch (IOException e) {
+            return true; // No stamp → old install, treat as stale
+        }
+    }
+
+    private static void writePlatformStamp(@NotNull Path hooksDir) {
+        Path stamp = hooksDir.resolve(PLATFORM_STAMP_FILE);
+        try {
+            Files.writeString(stamp, SCRIPT_EXT, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            LOG.warn("Failed to write platform stamp: " + e.getMessage());
+        }
+    }
+
+    private static void deleteScriptsDir(@NotNull Path hooksDir) {
+        Path scriptsDir = hooksDir.resolve("scripts");
+        if (!Files.isDirectory(scriptsDir)) return;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(scriptsDir)) {
+            for (Path file : stream) {
+                Files.deleteIfExists(file);
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to clean scripts directory: " + e.getMessage());
+        }
     }
 
     /**
