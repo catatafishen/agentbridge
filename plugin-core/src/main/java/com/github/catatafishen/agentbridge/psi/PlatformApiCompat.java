@@ -336,6 +336,24 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Creates a notification in the "AgentBridge Notifications" group without showing it, so the
+     * caller can add actions before calling {@code notification.notify(project)}.
+     *
+     * <p><b>Why extracted:</b> {@code NotificationGroup.createNotification(String, String, NotificationType)}
+     * causes a false-positive "Cannot resolve method" error in the IDE daemon when called from
+     * non-PlatformApiCompat files, because the extension point generic differs between IDE SDK versions.
+     * Centralising the call here confines the daemon error to one file and keeps business code clean.</p>
+     */
+    public static @NotNull com.intellij.notification.Notification createNotification(
+        @NotNull String title,
+        @NotNull String content,
+        @NotNull com.intellij.notification.NotificationType type) {
+        return com.intellij.notification.NotificationGroupManager.getInstance()
+            .getNotificationGroup("AgentBridge Notifications")
+            .createNotification(title, content, type);
+    }
+
+    /**
      *
      * <p><b>Why extracted:</b> {@code CefLoadHandlerAdapter} provides default implementations for all
      * {@code CefLoadHandler} methods, but the JCEF version bundled with the dev IDE may declare
