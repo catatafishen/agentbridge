@@ -1,9 +1,11 @@
 package com.github.catatafishen.agentbridge.psi.review;
 
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.markup.HighlighterLayer;
 import com.intellij.openapi.editor.markup.HighlighterTargetArea;
 import com.intellij.openapi.editor.markup.MarkupModel;
@@ -15,7 +17,9 @@ import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.Alarm;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.*;
@@ -82,10 +86,13 @@ public final class AgentEditHighlighter implements Disposable {
      * Recomputes and applies highlights for all currently open text editors of
      * {@code vf}. Safe to call from any thread. No-op when the session is inactive
      * or no before-snapshot exists for the file.
+     * <p>
+     * When {@link McpServerSettings#isShowEditorHighlights()} is false, any existing
+     * highlights for the file are removed instead of being refreshed.
      */
     public void refreshHighlights(@NotNull VirtualFile vf) {
         AgentEditSession session = AgentEditSession.getInstance(project);
-        if (!session.isActive()) {
+        if (!session.isActive() || !McpServerSettings.getInstance(project).isShowEditorHighlights()) {
             clearForFile(vf);
             return;
         }
@@ -94,6 +101,122 @@ public final class AgentEditHighlighter implements Disposable {
         ApplicationManager.getApplication().invokeLater(
             () -> applyOnEdt(vf, ranges),
             ignored -> project.isDisposed());
+    }
+
+    /**
+     * Briefly highlights all changed ranges for {@code vf} in the editor to guide
+     * the user to the changed location after navigation. The flash lasts 1.5 s and
+     * is independent of the {@link McpServerSettings#isShowEditorHighlights()} toggle —
+     * it fires even when persistent highlights are disabled.
+     * <p>
+     * Also scrolls the editor to the first change. Safe to call from any thread.
+     */
+    public void flashForNavigation(@NotNull VirtualFile vf) {
+        List<ChangeRange> ranges = AgentEditSession.getInstance(project).computeRanges(vf);
+        if (ranges.isEmpty()) return;
+
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (project.isDisposed()) return;
+            FileEditorManager fem = FileEditorManager.getInstance(project);
+            for (FileEditor fe : fem.getEditors(vf)) {
+                if (fe instanceof TextEditor textEditor) {
+                    flashInEditor(textEditor.getEditor(), ranges, textEditor);
+                    break;
+                }
+            }
+        }, ignored -> project.isDisposed());
+    }
+
+    /**
+     * Refreshes highlights for all currently open files in the active session.
+     * Called when the "show highlights" toggle is turned back on. No-op when
+     * highlights are disabled — the calling toggle action checks the setting first.
+     */
+    public void refreshAll() {
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        if (!session.isActive()) return;
+
+        LocalFileSystem lfs = LocalFileSystem.getInstance();
+        for (String path : session.getModifiedFilePaths()) {
+            VirtualFile vf = lfs.findFileByPath(path);
+            if (vf != null) refreshHighlights(vf);
+        }
+    }
+
+    private void flashInEditor(@NotNull Editor editor,
+                               @NotNull List<ChangeRange> ranges,
+                               @NotNull Disposable parent) {
+        int docLineCount = editor.getDocument().getLineCount();
+        if (docLineCount == 0) return;
+
+        List<RangeHighlighter> flashHighlighters = buildFlashHighlighters(editor, ranges, docLineCount);
+        if (flashHighlighters.isEmpty()) return;
+
+        new Alarm(Alarm.ThreadToUse.SWING_THREAD, parent).addRequest(() -> {
+            for (RangeHighlighter h : flashHighlighters) {
+                try {
+                    editor.getMarkupModel().removeHighlighter(h);
+                } catch (Exception ignored) {
+                    // editor disposed concurrently
+                }
+            }
+        }, 1500);
+    }
+
+    private @NotNull List<RangeHighlighter> buildFlashHighlighters(@NotNull Editor editor,
+                                                                   @NotNull List<ChangeRange> ranges,
+                                                                   int docLineCount) {
+        List<RangeHighlighter> flashHighlighters = new ArrayList<>(ranges.size());
+        boolean scrolled = false;
+
+        for (ChangeRange range : ranges) {
+            int[] offsets = resolveOffsets(editor, range, docLineCount);
+            if (offsets == null) continue;
+
+            if (!scrolled) {
+                editor.getScrollingModel().scrollTo(
+                    editor.offsetToLogicalPosition(offsets[0]), ScrollType.CENTER);
+                scrolled = true;
+            }
+
+            Color bg = colorFor(range.type());
+            TextAttributes attrs = new TextAttributes();
+            attrs.setBackgroundColor(bg);
+            flashHighlighters.add(editor.getMarkupModel().addRangeHighlighter(
+                offsets[0], offsets[1],
+                HighlighterLayer.SELECTION - 1,
+                attrs,
+                HighlighterTargetArea.LINES_IN_RANGE));
+        }
+        return flashHighlighters;
+    }
+
+    private static int @org.jetbrains.annotations.Nullable [] resolveOffsets(@NotNull Editor editor,
+                                                                             @NotNull ChangeRange range,
+                                                                             int docLineCount) {
+        int startLine;
+        int endLineInclusive;
+        if (range.type() == ChangeType.DELETED) {
+            int clamped = Math.clamp(range.startLine(), 0, docLineCount - 1);
+            startLine = clamped;
+            endLineInclusive = clamped;
+        } else {
+            if (range.startLine() >= docLineCount || range.endLine() <= range.startLine()) return null;
+            startLine = range.startLine();
+            endLineInclusive = Math.min(range.endLine(), docLineCount) - 1;
+        }
+        int start = editor.getDocument().getLineStartOffset(startLine);
+        int end = editor.getDocument().getLineEndOffset(endLineInclusive);
+        if (end < start) return null;
+        return new int[]{start, end};
+    }
+
+    private static Color colorFor(@NotNull ChangeType type) {
+        return switch (type) {
+            case ADDED -> ADDED_BG;
+            case MODIFIED -> MODIFIED_BG;
+            case DELETED -> DELETED_BG;
+        };
     }
 
     private void applyOnEdt(@NotNull VirtualFile vf, @NotNull List<ChangeRange> ranges) {

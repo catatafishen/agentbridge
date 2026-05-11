@@ -171,6 +171,19 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
+     * When true (default), agent-edit highlights are painted as persistent background colors
+     * in the editor while a review session is active. Users who rely on git diff colors may
+     * prefer to disable this to avoid redundant overlapping highlights.
+     */
+    public boolean isShowEditorHighlights() {
+        return myState.showEditorHighlights;
+    }
+
+    public void setShowEditorHighlights(boolean show) {
+        myState.showEditorHighlights = show;
+    }
+
+    /**
      * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run, and applies
      * incremental defaults when new default-disabled tools are added in later
      * versions. Existing user enable/disable choices are preserved — only tools
@@ -237,6 +250,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean reviewAgentEdits = false;
         private boolean autoApproveAgentEdits = false;
         private boolean autoCleanReviewOnNewPrompt = false;
+        private boolean showEditorHighlights = true;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
@@ -344,6 +358,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setAutoCleanReviewOnNewPrompt(boolean autoCleanReviewOnNewPrompt) {
             this.autoCleanReviewOnNewPrompt = autoCleanReviewOnNewPrompt;
+        }
+
+        public boolean isShowEditorHighlights() {
+            return showEditorHighlights;
+        }
+
+        public void setShowEditorHighlights(boolean showEditorHighlights) {
+            this.showEditorHighlights = showEditorHighlights;
         }
 
         public @org.jetbrains.annotations.Nullable String getKindReadColorKey() {

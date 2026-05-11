@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.review;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditHighlighter;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.psi.review.RevertReasonDialog;
 import com.github.catatafishen.agentbridge.psi.review.ReviewItem;
@@ -359,7 +360,9 @@ public final class DiffPanel extends JPanel implements Disposable {
     private void navigateToFile(@NotNull ReviewItem item) {
         if (item.status() == ReviewItem.Status.DELETED) return;
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
-        if (vf != null) FileEditorManager.getInstance(project).openFile(vf, true);
+        if (vf == null) return;
+        FileEditorManager.getInstance(project).openFile(vf, true);
+        AgentEditHighlighter.getInstance(project).flashForNavigation(vf);
     }
 
     private void showRevertDialog(@NotNull ReviewItem item) {
@@ -410,6 +413,7 @@ public final class DiffPanel extends JPanel implements Disposable {
         DefaultActionGroup group = new DefaultActionGroup();
         group.add(new AutoApproveToggleAction(project));
         group.add(new AutoCleanOnNewPromptToggleAction(project));
+        group.add(new ShowEditorHighlightsToggleAction(project));
         group.addSeparator();
         group.add(new DumbAwareAction("Clean Approved",
             "Remove all approved rows from the list", AllIcons.Actions.GC) {
@@ -509,6 +513,38 @@ public final class DiffPanel extends JPanel implements Disposable {
         @Override
         public void setSelected(@NotNull AnActionEvent e, boolean state) {
             McpServerSettings.getInstance(project).setAutoCleanReviewOnNewPrompt(state);
+        }
+    }
+
+    private static final class ShowEditorHighlightsToggleAction extends ToggleAction {
+        private final Project project;
+
+        ShowEditorHighlightsToggleAction(@NotNull Project project) {
+            super("Show Editor Highlights",
+                "Paint agent-edit background colors in the editor. Disable when git diff colors are sufficient",
+                AllIcons.Actions.Highlighting);
+            this.project = project;
+        }
+
+        @Override
+        public @NotNull ActionUpdateThread getActionUpdateThread() {
+            return ActionUpdateThread.BGT;
+        }
+
+        @Override
+        public boolean isSelected(@NotNull AnActionEvent e) {
+            return McpServerSettings.getInstance(project).isShowEditorHighlights();
+        }
+
+        @Override
+        public void setSelected(@NotNull AnActionEvent e, boolean state) {
+            McpServerSettings.getInstance(project).setShowEditorHighlights(state);
+            AgentEditHighlighter highlighter = AgentEditHighlighter.getInstance(project);
+            if (state) {
+                highlighter.refreshAll();
+            } else {
+                highlighter.clearAll();
+            }
         }
     }
 
