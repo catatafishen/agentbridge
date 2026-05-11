@@ -34,8 +34,15 @@ public final class RunInTerminalTool extends TerminalTool {
 
     @Override
     public @NotNull String description() {
-        return "Run a command in IntelliJ's integrated terminal. Returns terminal output. " +
-            "Use for interactive commands that need stdin (prompts, REPL). For non-interactive commands with captured output, prefer run_command.";
+        return """
+            Run a command in IntelliJ's integrated terminal. Returns terminal output. \
+            Use for interactive commands that need stdin (prompts, REPL). \
+            For non-interactive commands with captured output, prefer run_command.
+
+            If the terminal is waiting for user input (a prompt, confirmation, or REPL), \
+            use write_terminal_input to send the input — do NOT end your turn and wait. \
+            If you need a value from the user (e.g. a password or choice), call ask_user first, \
+            then send the answer via write_terminal_input.""";
     }
 
     @Override

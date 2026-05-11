@@ -128,6 +128,22 @@ When fixing a bug, **always fix the root cause, not just the symptom**.
 - **Prefer visible errors over invisible wrong behavior.** A crash or error message that leads to
   a fix is always better than silently wrong output that nobody notices.
 
+# Unexpected Tool Behaviour
+
+When a tool produces an error, wrong output, missing parameters, or surprising behaviour:
+
+1. **Stop and document it** — add a note to `.agent-work/tool-behavior-issues.md` with:
+   - Tool name and the call that triggered the issue
+   - What you expected vs. what happened
+   - Any workaround you used
+2. **Consider whether the MCP tool can be improved** — check the tool's Java source in
+   `psi/tools/` to see if the description, validation, or response can be fixed.
+3. **Do not silently work around the issue** — only apply a workaround *after* documenting it,
+   so there is a record for future review.
+
+This keeps a growing backlog of real-world tool friction that can be triaged and fixed in
+targeted improvement passes.
+
 # Plugin Development Best Practices for Performance
 
 If developing a plugin, adhere to these guidelines to avoid performance degradation:
