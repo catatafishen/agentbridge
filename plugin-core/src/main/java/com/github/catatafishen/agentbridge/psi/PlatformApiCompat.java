@@ -1036,6 +1036,7 @@ public final class PlatformApiCompat {
         java.util.Map.entry("rev-list", git4idea.commands.GitCommand.REV_LIST),
         java.util.Map.entry("rev-parse", git4idea.commands.GitCommand.REV_PARSE),
         java.util.Map.entry("revert", git4idea.commands.GitCommand.REVERT),
+        java.util.Map.entry("rm", git4idea.commands.GitCommand.RM),
         java.util.Map.entry("show", git4idea.commands.GitCommand.SHOW),
         java.util.Map.entry("stash", git4idea.commands.GitCommand.STASH),
         java.util.Map.entry("status", git4idea.commands.GitCommand.STATUS),

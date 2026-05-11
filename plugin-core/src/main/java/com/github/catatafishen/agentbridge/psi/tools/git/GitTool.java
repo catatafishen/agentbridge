@@ -50,7 +50,7 @@ public abstract class GitTool extends Tool {
     private static final Set<String> WRITE_COMMANDS = Set.of(
         "add", "branch", "checkout", "cherry-pick", "commit", "fetch", "merge",
         "pull", "push", "rebase", "remote", "reset", "restore",
-        "revert", "stash", "switch", "tag"
+        "revert", "rm", "stash", "tag"
     );
 
     static final Pattern FULL_HASH_PATTERN =

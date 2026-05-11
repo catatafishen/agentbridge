@@ -29,6 +29,7 @@ public final class GitToolFactory {
             new GitCommitTool(project),
             new GitStageTool(project),
             new GitUnstageTool(project),
+            new GitUntrackTool(project),
             new GitBranchTool(project),
             new GitStashTool(project),
             new GitRevertTool(project),
