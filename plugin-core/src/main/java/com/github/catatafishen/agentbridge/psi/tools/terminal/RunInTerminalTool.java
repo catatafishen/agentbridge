@@ -39,10 +39,13 @@ public final class RunInTerminalTool extends TerminalTool {
             Use for interactive commands that need stdin (prompts, REPL). \
             For non-interactive commands with captured output, prefer run_command.
 
-            If the terminal is waiting for user input (a prompt, confirmation, or REPL), \
-            use write_terminal_input to send the input — do NOT end your turn and wait. \
-            If you need a value from the user (e.g. a password or choice), call ask_user first, \
-            then send the answer via write_terminal_input.""";
+            When the terminal is waiting for input:
+            - For non-sensitive input (confirmations, choices, non-secret text): \
+            send it directly via write_terminal_input.
+            - For sensitive input (passwords, tokens, secrets): NEVER ask for or handle \
+            the value yourself. Use ask_user to notify the user, e.g. \
+            "The terminal is waiting for your password. Please type it directly in the terminal." \
+            with options like "Done" / "No, abort". The user types the secret themselves.""";
     }
 
     @Override
