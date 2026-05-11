@@ -143,6 +143,11 @@ jobs:
       - name: Build Fuzzers (${{ matrix.sanitizer }})
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        env:
+          # Override GITHUB_SHA so ClusterFuzz builds the PR branch code instead of master.
+          # In pull_request_target events GITHUB_SHA defaults to the base branch (master) HEAD,
+          # causing the action's internal clone to check out the wrong commit.
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         with:
           language: jvm
           github-token: ${{ secrets.GITHUB_TOKEN }}
