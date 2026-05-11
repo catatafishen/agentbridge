@@ -92,6 +92,23 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns {@code true} when the IDE is running as the headless Remote Dev backend (the server
+     * side of a JetBrains Gateway session — i.e., the machine hosting the project).
+     *
+     * <p><b>Why extracted:</b> The canonical {@code com.intellij.util.PlatformUtils.isRemoteDevServer()}
+     * is marked {@code @ApiStatus.Internal} which would trigger a Marketplace warning.
+     * The underlying check — {@code "RemoteDevServer".equals(System.getProperty("idea.platform.prefix"))} —
+     * is a stable, documented mechanism. We wrap it here to keep the rest of the codebase clean.</p>
+     *
+     * <p>Use this to skip JCEF-based UI in the backend process. JCEF components cannot be
+     * serialized over the Gateway Rd protocol to the thin client — use simple Swing or a
+     * placeholder instead.</p>
+     */
+    public static boolean isRemoteDevServer() {
+        return "RemoteDevServer".equals(System.getProperty("idea.platform.prefix"));
+    }
+
+    /**
      * Retrieves the name of the next undo action for a given file editor.
      *
      * <p><b>Why extracted:</b> {@code UndoManager.getUndoActionNameAndDescription()} returns

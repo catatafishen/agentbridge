@@ -22,7 +22,11 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
 
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        if (PlatformApiCompat.isJetBrainsClient()) {
+        // JCEF-based chat UI cannot be serialized over the Gateway Rd protocol.
+        // isJetBrainsClient() catches the thin-client frontend process;
+        // isRemoteDevServer() catches the headless backend process (where createToolWindowContent
+        // actually runs and where JCEF components would fail to render in the thin client).
+        if (PlatformApiCompat.isJetBrainsClient() || PlatformApiCompat.isRemoteDevServer()) {
             Content content = ContentFactory.getInstance().createContent(
                 buildThinClientPlaceholder(), "", false
             );
