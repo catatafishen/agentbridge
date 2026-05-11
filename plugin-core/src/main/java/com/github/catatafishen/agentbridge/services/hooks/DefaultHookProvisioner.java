@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -104,12 +103,8 @@ public final class DefaultHookProvisioner {
         return entries;
     }
 
-    /**
-     * Wipes the scripts directory and all JSON configs, then re-provisions from scratch.
-     * Used for old installs (no hash file) and explicit "Restore defaults".
-     */
     private static boolean wipeThenProvision(@NotNull Path hooksDir, @NotNull List<String> scriptEntries) {
-        deleteScriptsDir(hooksDir);
+        deleteScriptEntries(hooksDir, scriptEntries);
         ensureScriptsDir(hooksDir);
 
         Map<String, String> newHashes = new HashMap<>();
@@ -327,15 +322,19 @@ public final class DefaultHookProvisioner {
         }
     }
 
-    private static void deleteScriptsDir(@NotNull Path hooksDir) {
-        Path scriptsDir = hooksDir.resolve("scripts");
-        if (!Files.isDirectory(scriptsDir)) return;
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(scriptsDir)) {
-            for (Path file : stream) {
+    /**
+     * Deletes only the manifest-managed script entries from the hooks directory.
+     * Custom scripts placed alongside the managed ones (e.g. project-specific bot-identity
+     * hooks) are intentionally preserved — they are outside the provisioner's scope.
+     */
+    private static void deleteScriptEntries(@NotNull Path hooksDir, @NotNull List<String> scriptEntries) {
+        for (String entry : scriptEntries) {
+            Path file = hooksDir.resolve(entry);
+            try {
                 Files.deleteIfExists(file);
+            } catch (IOException e) {
+                LOG.warn("Failed to delete hook file: " + entry + ": " + e.getMessage());
             }
-        } catch (IOException e) {
-            LOG.warn("Failed to clean scripts directory: " + e.getMessage());
         }
     }
 

@@ -725,13 +725,13 @@ public final class ChatWebServer implements Disposable {
             LOG.info("[ChatWebServer] Generating new CA + server certificates");
             java.nio.file.Files.createDirectories(pluginDir);
             deleteCertificateStoresForCaRegeneration(caKsFile, serverKsFile);
-            generateCaPlusServerCerts(pluginDir, caKsFile, serverKsFile, localIps);
+            generateCaPlusServerCerts(pluginDir, caKsFile, serverKsFile, localIps, ksPassword);
         } else if (serverNeedsRegen) {
             // Preserve existing CA so devices that already installed it keep trusting us.
             LOG.info("[ChatWebServer] Regenerating server certificate only (CA unchanged)");
             java.nio.file.Files.deleteIfExists(serverKsFile.toPath());
             java.nio.file.Files.createDirectories(pluginDir);
-            regenerateServerCert(pluginDir, caKsFile, serverKsFile, localIps);
+            regenerateServerCert(pluginDir, caKsFile, serverKsFile, localIps, ksPassword);
         }
 
         // Load CA cert for device installation at /cert.crt
@@ -855,13 +855,13 @@ public final class ChatWebServer implements Disposable {
         java.nio.file.Path pluginDir,
         java.io.File caKsFile,
         java.io.File serverKsFile,
-        List<String> localIps) throws IOException {
+        List<String> localIps,
+        String ksPassword) throws IOException {
 
         java.io.File caExportFile = pluginDir.resolve("ca-export.der").toFile();
         java.io.File serverCsrFile = pluginDir.resolve("server.csr").toFile();
         java.io.File serverCerFile = pluginDir.resolve("server.cer").toFile();
 
-        String ksPassword = getOrCreateKeystorePassword();
         try {
             generateCaCertificate(caKsFile, ksPassword);
             generateServerKeyPair(serverKsFile, ksPassword);
@@ -884,13 +884,13 @@ public final class ChatWebServer implements Disposable {
         java.nio.file.Path pluginDir,
         java.io.File caKsFile,
         java.io.File serverKsFile,
-        List<String> localIps) throws IOException {
+        List<String> localIps,
+        String ksPassword) throws IOException {
 
         java.io.File caExportFile = pluginDir.resolve("ca-export.der").toFile();
         java.io.File serverCsrFile = pluginDir.resolve("server.csr").toFile();
         java.io.File serverCerFile = pluginDir.resolve("server.cer").toFile();
 
-        String ksPassword = getOrCreateKeystorePassword();
         try {
             generateServerKeyPair(serverKsFile, ksPassword);
             generateServerCertificateChain(caKsFile, serverKsFile, caExportFile, serverCsrFile, serverCerFile,
