@@ -658,7 +658,11 @@ public final class McpProtocolHandler {
         service.enrichToolCallStats(new ToolCallStatsEnrichment(
             dbEventId, inputSize, outputSize, data.durationMs(),
             data.success(), data.errorMessage(), data.category(), data.displayName()));
-        if (!data.hookStages().isEmpty()) {
+        // Only record hook stages when we have a confirmed tracker record — the FK on
+        // hook_executions.tool_event_id requires the events row to already exist.
+        // When callRecord is null we're falling back to a raw toolUseId that may not be
+        // in the events table yet, which would cause a SQLITE_CONSTRAINT_FOREIGNKEY error.
+        if (!data.hookStages().isEmpty() && callRecord != null) {
             service.recordHookStages(dbEventId, data.hookStages());
         }
     }

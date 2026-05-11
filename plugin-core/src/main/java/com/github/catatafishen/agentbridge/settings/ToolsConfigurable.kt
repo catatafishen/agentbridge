@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
-import com.intellij.openapi.application.ApplicationManager
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.psi.tools.rider.ReSharperMcpClient
 import com.github.catatafishen.agentbridge.services.ToolDefinition
@@ -9,6 +8,7 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.ui.ThemeColor
 import com.github.catatafishen.agentbridge.ui.ToolKindColors
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
