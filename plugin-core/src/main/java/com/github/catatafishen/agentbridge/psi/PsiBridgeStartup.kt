@@ -1,8 +1,10 @@
 package com.github.catatafishen.agentbridge.psi
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.wm.ToolWindowManager
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -50,6 +52,14 @@ class PsiBridgeStartup : ProjectActivity {
                 LOG.info("Web chat server auto-started on port ${webSettings.port}")
             } catch (e: Exception) {
                 LOG.error("Failed to auto-start web chat server", e)
+            }
+        }
+
+        // In Remote Dev backend mode, show the tool window so the thin client user sees it
+        // without having to manually open it via View → Tool Windows on first use.
+        if (PlatformApiCompat.isRemoteDevBackend()) {
+            ApplicationManager.getApplication().invokeLater {
+                ToolWindowManager.getInstance(project).getToolWindow("AgentBridge")?.show(null)
             }
         }
     }
