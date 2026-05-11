@@ -23,10 +23,6 @@ export interface Bridge {
 
     autoScrollEnabled?(): void;
 
-    scrollStarted?(): void;
-
-    scrollEnded?(): void;
-
     openSettings?(): void;
 }
 

@@ -31,10 +31,6 @@ export interface WebBridge {
     autoScrollDisabled?(): void;
 
     autoScrollEnabled?(): void;
-
-    scrollStarted?(): void;
-
-    scrollEnded?(): void;
 }
 
 declare global {

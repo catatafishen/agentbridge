@@ -279,7 +279,6 @@ export default class ChatContainer extends HTMLElement {
     private _markScrollActive(): void {
         if (!this.classList.contains('is-scrolling')) {
             this.classList.add('is-scrolling');
-            globalThis._bridge?.scrollStarted?.();
         }
         if (this._scrollIdleTimer !== null) {
             clearTimeout(this._scrollIdleTimer);
@@ -287,7 +286,6 @@ export default class ChatContainer extends HTMLElement {
         this._scrollIdleTimer = globalThis.setTimeout(() => {
             this._scrollIdleTimer = null;
             this.classList.remove('is-scrolling');
-            globalThis._bridge?.scrollEnded?.();
         }, 140);
     }
 

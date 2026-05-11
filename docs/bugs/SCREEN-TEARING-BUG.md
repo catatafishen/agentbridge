@@ -99,9 +99,8 @@ Kotlin appendText()
 - **No CSS scroll virtualization in OSR** — chat rows are painted normally; `content-visibility`,
   `contain-intrinsic-size`, and paint containment are avoided because they defer viewport paint work
   into active scroll frames.
-- **Manual scroll gets streaming-rate OSR repaint cadence** — `ChatContainer` notifies Kotlin when
-  scrolling starts/ends so `ChatConsolePanel` temporarily raises `setWindowlessFrameRate()` from the
-  idle 30fps cap to 60fps during active scroll gestures.
+- **Manual scroll gets streaming-rate OSR repaint cadence** — `ChatContainer` adds the `is-scrolling`
+  class during active scroll gestures for 140ms after scroll activity stops.
 - **No hover-generated overlays while scrolling** — `ChatContainer` applies `is-scrolling` during
   active scroll gestures so message descendants stop receiving pointer hover/click hit-tests until
   scrolling is idle again.
@@ -325,12 +324,14 @@ pseudo-element on `chat-message[data-agent]:hover::before`.
 3. The scroll handler clicked `load-more` synchronously when the user reached the top. That could
    insert history and compensate scroll from inside the scroll event itself.
 
-**Fix**: `ChatContainer` now notifies the Kotlin bridge when scrolling starts and when it has been idle
-for 140ms. `ChatConsolePanel` boosts `setWindowlessFrameRate()` to 60fps for that active scroll window
-and returns to 30fps only after scrolling ends (unless streaming is still active). The agent tooltip CSS
-was removed entirely, message descendants stop receiving pointer hover/click hit-tests during active
-scroll, and the load-more trigger is now deferred through `requestAnimationFrame()` instead of mutating
-the DOM from the scroll event callback.
+**Fix**: `ChatContainer` now marks a scroll as active with the `is-scrolling` CSS class and keeps it
+active for 140ms of scroll idle time. The agent tooltip CSS was removed entirely, message descendants
+stop receiving pointer hover/click hit-tests during active scroll, and the load-more trigger is now
+deferred through `requestAnimationFrame()` instead of mutating the DOM from the scroll event callback.
+
+> **Note**: an earlier version of this fix also boosted `setWindowlessFrameRate()` from 30fps to 60fps
+> during active scroll and streaming via a Kotlin bridge callback, but that mechanism was removed as it
+> did not measurably reduce tearing and added unnecessary complexity.
 
 ### Fix 8 — Defer autoscroll one rAF after DOM mutation (this commit)
 
@@ -582,11 +583,9 @@ the `chip-ring` span is always present and the `animation: spin` is paused by CS
 
 | File                       | Component                        | Purpose                                                                                              |
 |----------------------------|----------------------------------|------------------------------------------------------------------------------------------------------|
-| `ChatConsolePanel.kt`      | `startStreaming()`               | Sets 60fps, marks `streaming=true`, disables smooth scroll                                           |
-| `ChatConsolePanel.kt`      | `finishResponse()`               | Sets 30fps unless active scroll still needs 60fps, marks `streaming=false`, restores smooth scroll   |
+| `ChatConsolePanel.kt`      | `startStreaming()`               | Marks `streaming=true`, disables smooth scroll                                                       |
+| `ChatConsolePanel.kt`      | `finishResponse()`               | Marks `streaming=false`, restores smooth scroll                                                      |
 | `ChatConsolePanel.kt`      | `executeJs()`                    | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                                         |
-| `ChatConsolePanel.kt`      | `setFrameRate()`                 | Wraps `setWindowlessFrameRate()`                                                                     |
-| `ChatConsolePanel.kt`      | Scroll bridge handlers           | Temporarily boosts JCEF OSR to 60fps while the user is actively scrolling                            |
 | `ChatContainer.ts`         | `_scrollRAF`                     | rAF debounce gate for scroll writes (now holds nested 2-rAF chain — Fix 8)                           |
 | `ChatContainer.ts`         | `_scheduleDeferredScroll()`      | Two-rAF deferral helper — separates DOM-mutation paint from scroll paint (Fix 8)                     |
 | `ChatContainer.ts`         | `ResizeObserver`                 | Debounced via `_scheduleDeferredScroll()` — never writes scrollTop directly                          |

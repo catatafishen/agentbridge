@@ -135,8 +135,6 @@ class ChatConsolePanel(
     private var cancelQueuedMessageBridgeJs = ""
     private var autoScrollDisabledBridgeJs = ""
     private var autoScrollEnabledBridgeJs = ""
-    private var scrollStartedBridgeJs = ""
-    private var scrollEndedBridgeJs = ""
     private var openSettingsBridgeJs = ""
 
     @Volatile
@@ -155,44 +153,12 @@ class ChatConsolePanel(
     private var activeAskUser: ActiveAskUser? = null
     private var extendAskUserBridgeJs = ""
 
-    // CEF windowless frame rate — high during streaming and active user scroll, moderate when idle.
-    // 10fps was too aggressive — caused stale-frame tearing during manual scroll.
-    //
-    // In Remote Dev backend mode the underlying browser is BackendCefBrowser, which proxies display
-    // to the thin client but does not forward low-level CEF control calls like setWindowlessFrameRate.
-    // The call throws UnsupportedOperationException by design — catching it is the correct response.
-    private fun setFrameRate(fps: Int) {
-        try {
-            browser?.cefBrowser?.setWindowlessFrameRate(fps)
-        } catch (e: UnsupportedOperationException) {
-            LOG.debug("setWindowlessFrameRate not supported in this environment (BackendCefBrowser): ${e.message}")
-        }
-    }
-
-    private fun beginScrollFrameRateBoost() {
-        if (streaming || scrollFrameRateBoosted) return
-        scrollFrameRateBoosted = true
-        ApplicationManager.getApplication().invokeLater {
-            if (!streaming) setFrameRate(STREAMING_FRAME_RATE)
-        }
-    }
-
-    private fun endScrollFrameRateBoost() {
-        if (!scrollFrameRateBoosted) return
-        scrollFrameRateBoosted = false
-        ApplicationManager.getApplication().invokeLater {
-            if (!streaming) setFrameRate(IDLE_FRAME_RATE)
-        }
-    }
 
     // Tracks whether the agent is actively streaming a response. Used by
     // monitor-switch recovery to defer DOM replay until streaming ends, so
     // the replay does not race with in-flight token updates.
     @Volatile
     private var streaming = false
-
-    @Volatile
-    private var scrollFrameRateBoosted = false
 
     // ── Swing fallback ─────────────────────────────────────────────
     private val fallbackArea: JBTextArea?
@@ -206,8 +172,6 @@ class ChatConsolePanel(
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
-        private const val STREAMING_FRAME_RATE = 60
-        private const val IDLE_FRAME_RATE = 30
 
         private val GIT_HISTORY_TOOLS = setOf("git_log", "git_show")
     }
@@ -307,16 +271,6 @@ class ChatConsolePanel(
             Disposer.register(this, autoScrollEnabledQuery)
             autoScrollEnabledBridgeJs = autoScrollEnabledQuery.inject("''")
 
-            val scrollStartedQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
-            scrollStartedQuery.addHandler { beginScrollFrameRateBoost(); null }
-            Disposer.register(this, scrollStartedQuery)
-            scrollStartedBridgeJs = scrollStartedQuery.inject("''")
-
-            val scrollEndedQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
-            scrollEndedQuery.addHandler { endScrollFrameRateBoost(); null }
-            Disposer.register(this, scrollEndedQuery)
-            scrollEndedBridgeJs = scrollEndedQuery.inject("''")
-
             val openSettingsQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             openSettingsQuery.addHandler {
                 ApplicationManager.getApplication().invokeLater {
@@ -331,8 +285,6 @@ class ChatConsolePanel(
             extendAskUserQuery.addHandler { reqId -> handleExtendAskUser(reqId); null }
             Disposer.register(this, extendAskUserQuery)
             extendAskUserBridgeJs = extendAskUserQuery.inject("reqId")
-
-            setFrameRate(IDLE_FRAME_RATE)
 
             add(browser.component, BorderLayout.CENTER)
 
@@ -433,7 +385,6 @@ class ChatConsolePanel(
     }
 
     override fun startStreaming() {
-        setFrameRate(STREAMING_FRAME_RATE)
         streaming = true
         // Disable smooth scroll during streaming — CSS scroll animations conflict
         // with rapid programmatic scrollTop changes, causing JCEF OSR tearing.
@@ -830,7 +781,6 @@ class ChatConsolePanel(
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
         streaming = false
-        setFrameRate(if (scrollFrameRateBoosted) STREAMING_FRAME_RATE else IDLE_FRAME_RATE)
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         toolJustCompleted = false
@@ -901,7 +851,6 @@ class ChatConsolePanel(
 
     override fun cancelAllRunning() {
         streaming = false
-        setFrameRate(if (scrollFrameRateBoosted) STREAMING_FRAME_RATE else IDLE_FRAME_RATE)
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         clearPendingAskUserRequest(null)
@@ -1967,8 +1916,6 @@ class ChatConsolePanel(
                 cancelQueuedMessage: function(id, text) { $cancelQueuedMessageBridgeJs },
                 autoScrollDisabled: function() { $autoScrollDisabledBridgeJs },
                 autoScrollEnabled: function() { $autoScrollEnabledBridgeJs },
-                scrollStarted: function() { $scrollStartedBridgeJs },
-                scrollEnded: function() { $scrollEndedBridgeJs },
                 extendAskUser: function(reqId) { $extendAskUserBridgeJs },
                 openSettings: function() { $openSettingsBridgeJs }
             };
