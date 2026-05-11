@@ -132,17 +132,17 @@ When fixing a bug, **always fix the root cause, not just the symptom**.
 
 When a tool produces an error, wrong output, missing parameters, or surprising behaviour:
 
-1. **Stop and document it** — add an entry to `docs/unconfirmed-tool-problems.md` with:
-    - Tool name and the call that triggered the issue
-    - What you expected vs. what happened
-    - Any workaround you used
+1. **Stop and file a GitHub issue** — open an issue on `catatafishen/agentbridge` with:
+    - Title: `<tool_name>: <short description of the problem>`
+    - Body: tool name, the call that triggered it, what you expected vs. what happened, any workaround
+    - Label: **`triage: unconfirmed-tool-problem`** (yellow) — this flags it for human review
 2. **Consider whether the MCP tool can be improved** — check the tool's Java source in
    `psi/tools/` to see if the description, validation, or response can be fixed.
-3. **Do not silently work around the issue** — only apply a workaround *after* documenting it,
+3. **Do not silently work around the issue** — only apply a workaround *after* filing the issue,
    so there is a record for future review.
 
-This keeps a growing, committed backlog of real-world tool friction that can be triaged and
-fixed in targeted improvement passes.
+Issues with `triage: unconfirmed-tool-problem` are periodically reviewed: root cause confirmed →
+label removed and fixed; not a bug → closed with explanation.
 
 # Plugin Development Best Practices for Performance
 
