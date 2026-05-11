@@ -157,8 +157,16 @@ class ChatConsolePanel(
 
     // CEF windowless frame rate — high during streaming and active user scroll, moderate when idle.
     // 10fps was too aggressive — caused stale-frame tearing during manual scroll.
+    //
+    // In Remote Dev backend mode the underlying browser is BackendCefBrowser, which proxies display
+    // to the thin client but does not forward low-level CEF control calls like setWindowlessFrameRate.
+    // The call throws UnsupportedOperationException by design — catching it is the correct response.
     private fun setFrameRate(fps: Int) {
-        browser?.cefBrowser?.setWindowlessFrameRate(fps)
+        try {
+            browser?.cefBrowser?.setWindowlessFrameRate(fps)
+        } catch (e: UnsupportedOperationException) {
+            LOG.debug("setWindowlessFrameRate not supported in this environment (BackendCefBrowser): ${e.message}")
+        }
     }
 
     private fun beginScrollFrameRateBoost() {
