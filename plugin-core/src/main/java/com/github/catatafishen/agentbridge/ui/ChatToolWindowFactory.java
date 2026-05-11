@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
@@ -8,12 +9,15 @@ import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import com.intellij.ui.jcef.JBCefApp;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
 
 public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware {
+
+    private static final Logger LOG = Logger.getInstance(ChatToolWindowFactory.class);
 
     @Override
     public boolean shouldBeAvailable(@NotNull Project project) {
@@ -22,11 +26,23 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
 
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
+        // Log diagnostic info to help identify remote-dev scenarios.
+        String prefix = System.getProperty("idea.platform.prefix", "idea");
+        boolean jcefSupported = JBCefApp.isSupported();
+        boolean isJbc = PlatformApiCompat.isJetBrainsClient();
+        boolean isRds = PlatformApiCompat.isRemoteDevServer();
+        LOG.info("AgentBridge tool window: prefix=" + prefix
+            + " jcef=" + jcefSupported
+            + " isJetBrainsClient=" + isJbc
+            + " isRemoteDevServer=" + isRds);
+
         // JCEF-based chat UI cannot be serialized over the Gateway Rd protocol.
         // isJetBrainsClient() catches the thin-client frontend process;
         // isRemoteDevServer() catches the headless backend process (where createToolWindowContent
         // actually runs and where JCEF components would fail to render in the thin client).
-        if (PlatformApiCompat.isJetBrainsClient() || PlatformApiCompat.isRemoteDevServer()) {
+        // !JBCefApp.isSupported() catches any other environment where JCEF cannot render
+        // (e.g. the IDE acting as a Gateway backend with a non-RemoteDevServer prefix).
+        if (isJbc || isRds || !jcefSupported) {
             Content content = ContentFactory.getInstance().createContent(
                 buildThinClientPlaceholder(), "", false
             );
