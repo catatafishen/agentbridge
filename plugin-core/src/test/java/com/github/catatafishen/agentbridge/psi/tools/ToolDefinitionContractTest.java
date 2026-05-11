@@ -59,7 +59,7 @@ import com.github.catatafishen.agentbridge.psi.tools.git.GitStashTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitStatusTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitTagTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitUnstageTool;
-import com.github.catatafishen.agentbridge.psi.tools.infrastructure.AskUserTool;
+import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.GetNotificationsTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.HttpRequestTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.InteractWithModalTool;
@@ -336,7 +336,7 @@ class ToolDefinitionContractTest {
 
     static Stream<Tool> infrastructureTools() {
         return Stream.of(
-            new AskUserTool(null),
+            new PromptUserTool(null),
             new HttpRequestTool(null),
             new RunCommandTool(null),
             new ReadIdeLogTool(null),

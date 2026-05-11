@@ -9,16 +9,16 @@ issues without documenting them first.
 
 ---
 
-## 2026-05-11 — `create_file` emits misleading error on relative paths
+## 2026-05-11 — Misleading "parameters required" error from `create_file`
 
-**Tool:** `create_file` (CLI built-in shell tool, not an agentbridge MCP tool)  
-**Call:** `create_file` with `path = "plugin-core/src/main/resources/..."` (relative)  
-**Expected:** File created, or a clear "absolute path required" error  
-**Actual:** `Error: 'path' and 'content' parameters are required` — both params were provided; the error is misleading  
-**Root cause (suspected):** The CLI `create` tool requires an **absolute path**. Relative paths silently fail validation and the generic "parameters required" error is returned instead of a path-specific message.  
-**Workaround used:** Switch to `write_file` (agentbridge MCP), which accepts project-relative paths and handles both create and overwrite.  
-**Improvement candidate:**
-- Make the error message specific: `"Path must be absolute. Received: plugin-core/..."`
-- Or resolve relative paths from the project root automatically.
+**Tool:** `create_file` (MCP `agentbridge-create_file`)  
+**Trigger:** Called with a relative path like `plugin-core/src/main/resources/...`  
+**Observed error:** `Error: 'path' and 'content' parameters are required` — both params were provided  
+**Investigation result:** The error came from a dead defensive check in `CreateFileTool.execute()` that
+could only fire if JSON schema validation failed to reject missing parameters first. The tool already
+handled relative paths correctly (resolves via `project.getBasePath()`). The defensive check was
+removed (2026-05-11) as redundant dead code. The description was already accurate: "absolute or
+project-relative" is supported.  
+**Status:** Closed — root cause was dead defensive check. Fixed by removing it.
 
 ---

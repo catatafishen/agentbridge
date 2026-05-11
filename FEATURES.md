@@ -235,7 +235,7 @@ screen.
 - **Live chat mirror** — all agent messages and tool chips stream in real time via SSE
 - **Unified Send/Nudge button** — label switches to "Nudge" while the agent is running; sends a
   prompt when idle and nudges mid-turn
-- **Quick-reply support** — `ask_user` quick-reply buttons work from the web UI
+- **Quick-reply support** — `prompt_user` quick-reply buttons work from the web UI
 - **Permission approvals** — approve or deny tool-use permission requests remotely
 - **Push notifications** — browser notifications when the agent needs your attention (requires
   notification permission on the device)
@@ -267,7 +267,8 @@ session format that works across all supported clients — so your context trave
 
 Connect any ACP-compatible agent and switch between profiles instantly.
 
-- **Agent profiles** — Built-in profiles for every supported agent (Copilot, Claude Code, Codex, Junie, Kiro, OpenCode, Hermes Agent), plus fully custom profiles
+- **Agent profiles** — Built-in profiles for every supported agent (Copilot, Claude Code, Codex, Junie, Kiro, OpenCode,
+  Hermes Agent), plus fully custom profiles
 - **Per-profile settings** — Connection command, tool permissions, built-in tool blocking, custom instructions
 - **Agent selector** — Switch agents with one click from the connection panel
 - **Extensible** — Add new agent backends by implementing `AgentConfig` + `AgentSettings` interfaces

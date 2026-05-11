@@ -25,25 +25,25 @@ import java.util.concurrent.TimeoutException;
 /**
  * Asks the user a question and waits for a response.
  */
-public final class AskUserTool extends InfrastructureTool {
+public final class PromptUserTool extends InfrastructureTool {
 
     private static final String PARAM_QUESTION = "question";
     private static final String PARAM_OPTIONS = "options";
     private static final long RESPONSE_TIMEOUT_MS = 120_000L;
     private static final String NOTIFICATION_GROUP_ID = "AgentBridge Notifications";
 
-    public AskUserTool(Project project) {
+    public PromptUserTool(Project project) {
         super(project);
     }
 
     @Override
     public @NotNull String id() {
-        return "ask_user";
+        return "prompt_user";
     }
 
     @Override
     public @NotNull String displayName() {
-        return "Ask User";
+        return "Prompt User";
     }
 
     @Override
