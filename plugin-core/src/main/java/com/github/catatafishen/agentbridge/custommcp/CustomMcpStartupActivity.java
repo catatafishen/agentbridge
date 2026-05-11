@@ -5,7 +5,6 @@ import com.intellij.openapi.startup.ProjectActivity;
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Startup activity for the custom-MCP plugin variant.
@@ -14,9 +13,12 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class CustomMcpStartupActivity implements ProjectActivity {
 
-    @Nullable
+    @NotNull
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
+        if (com.github.catatafishen.agentbridge.psi.PlatformApiCompat.isJetBrainsClient()) {
+            return Unit.INSTANCE;
+        }
         CustomMcpRegistrar.getInstance(project).syncRegistrations();
         return Unit.INSTANCE;
     }

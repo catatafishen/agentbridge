@@ -14,6 +14,11 @@ import java.nio.file.Path
 class PsiBridgeStartup : ProjectActivity {
 
     override suspend fun execute(project: Project) {
+        if (PlatformApiCompat.isJetBrainsClient()) {
+            LOG.info("Running in JetBrains thin client — skipping backend initialization")
+            return
+        }
+
         LOG.info("Initializing plugin for project: ${project.name}")
 
         createAgentWorkspace(project)
