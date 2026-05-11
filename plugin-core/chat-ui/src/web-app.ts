@@ -757,7 +757,7 @@ function reqNotifPerm(): void {
 
 document.addEventListener('click', reqNotifPerm, {once: true});
 
-// ── Quick-reply bridge (ask_user responses) ─────────────────────────────────
+// ── Quick-reply bridge (prompt_user responses) ─────────────────────────────────
 
 document.addEventListener('quick-reply', (e: Event) => {
     globalThis._bridge?.quickReply((e as CustomEvent).detail.text);

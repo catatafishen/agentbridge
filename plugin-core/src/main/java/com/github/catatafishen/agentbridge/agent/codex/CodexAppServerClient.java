@@ -12,7 +12,7 @@ import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
-import com.github.catatafishen.agentbridge.psi.tools.infrastructure.AskUserTool;
+import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
@@ -970,7 +970,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
      * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService#callTool}),
      * and declined early for DENY tools to avoid unnecessary MCP round-trips.</p>
      *
-     * <p>Non-approval questions are forwarded to the user via {@link AskUserTool}.</p>
+     * <p>Non-approval questions are forwarded to the user via {@link PromptUserTool}.</p>
      *
      * <p><b>Wire format</b> (per Codex app-server protocol spec):</p>
      * <pre>
@@ -1058,14 +1058,14 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         }
 
         try {
-            String response = new AskUserTool(project).execute(toolArgs);
+            String response = new PromptUserTool(project).execute(toolArgs);
             // If the response matches an option label, use it directly
             for (String label : optionLabels) {
                 if (label.equalsIgnoreCase(response.trim())) return label;
             }
             return response.trim();
         } catch (Exception e) {
-            LOG.warn("AskUserTool failed for Codex requestUserInput question", e);
+            LOG.warn("PromptUserTool failed for Codex requestUserInput question", e);
             // Return the last option (typically "Cancel") as a safe fallback
             return optionLabels.isEmpty() ? "Cancel" : optionLabels.getLast();
         }
@@ -1296,19 +1296,19 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         JsonArray options = extractOptionsArray(arguments);
         toolArgs.add(F_OPTIONS, options);
 
-        // Emit a ToolCall chip so the user sees the ask_user tool being invoked
+        // Emit a ToolCall chip so the user sees the prompt_user tool being invoked
         String chipId = UUID.randomUUID().toString();
         Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb != null) {
-            cb.accept(new SessionUpdate.ToolCall(chipId, "ask_user", "ask_user", SessionUpdate.ToolKind.OTHER,
+            cb.accept(new SessionUpdate.ToolCall(chipId, "prompt_user", "prompt_user", SessionUpdate.ToolKind.OTHER,
                 toolArgs.toString(), null, null, null, null, null));
         }
 
         String userResponse;
         try {
-            userResponse = new AskUserTool(project).execute(toolArgs);
+            userResponse = new PromptUserTool(project).execute(toolArgs);
         } catch (Exception e) {
-            LOG.warn("AskUserTool failed during Codex native request_user_input", e);
+            LOG.warn("PromptUserTool failed during Codex native request_user_input", e);
             userResponse = "Error: failed to get user input";
         }
 

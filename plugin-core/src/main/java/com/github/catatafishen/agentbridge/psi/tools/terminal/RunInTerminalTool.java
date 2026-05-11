@@ -43,7 +43,7 @@ public final class RunInTerminalTool extends TerminalTool {
             - For non-sensitive input (confirmations, choices, non-secret text): \
             send it directly via write_terminal_input.
             - For sensitive input (passwords, tokens, secrets): NEVER ask for or handle \
-            the value yourself. Use ask_user to notify the user, e.g. \
+            the value yourself. Use prompt_user to notify the user, e.g. \
             "The terminal is waiting for your password. Please type it directly in the terminal." \
             with options like "Done" / "No, abort". The user types the secret themselves.""";
     }
