@@ -7,7 +7,6 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -43,7 +42,11 @@ public final class ListProjectFilesTool extends NavigationTool {
 
     @Override
     public @NotNull String description() {
-        return "List files in a project directory, optionally filtered by glob pattern";
+        return """
+            List files in a project directory. All parameters are optional — call with no \
+            arguments to list all project files. This is the recommended first step when \
+            exploring an unfamiliar project, as it reveals the actual languages and structure \
+            before filtering. Use 'pattern' only once you already know the file types present.""";
     }
 
     @Override
@@ -60,7 +63,7 @@ public final class ListProjectFilesTool extends NavigationTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(PARAM_DIRECTORY, TYPE_STRING, "Optional subdirectory to list (relative to project root)", ""),
-            Param.optional(PARAM_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt')", ""),
+            Param.optional(PARAM_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt'). Omit when exploring an unfamiliar project — guessing a pattern for the wrong language returns nothing", ""),
             Param.optional("sort", TYPE_STRING, "Sort order: 'name' (default, alphabetical), 'size' (largest first), 'modified' (most recently modified first)", ""),
             Param.optional(PARAM_MIN_SIZE, TYPE_INTEGER, "Only include files at least this many bytes", ""),
             Param.optional(PARAM_MAX_SIZE, TYPE_INTEGER, "Only include files at most this many bytes", ""),
@@ -96,7 +99,7 @@ public final class ListProjectFilesTool extends NavigationTool {
         }
 
         return ApplicationManager.getApplication().runReadAction(
-            (Computable<String>) () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
+            () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
     }
 
     private record FileEntry(String relPath, String tag, String typeName, long size, long timestamp) {
