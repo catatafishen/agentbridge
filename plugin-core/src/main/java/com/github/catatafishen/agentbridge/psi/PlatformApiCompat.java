@@ -75,6 +75,23 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns {@code true} when the IDE is running as the JetBrains thin client (Gateway remote-dev
+     * client side, i.e., the laptop side of a remote-development session).
+     *
+     * <p><b>Why extracted:</b> The canonical {@code com.intellij.util.PlatformUtils.isJetBrainsClient()}
+     * is marked {@code @ApiStatus.Internal} which would trigger a Marketplace warning.
+     * The underlying check — {@code "JetBrainsClient".equals(System.getProperty("idea.platform.prefix"))} —
+     * is a stable, documented mechanism used throughout the IntelliJ ecosystem. We wrap it here to
+     * keep the rest of the codebase free of the suppression and to centralise the rationale.</p>
+     *
+     * <p>Use this to skip backend-only initialization (MCP server, PSI bridge, agent management) when
+     * the plugin is loaded in the thin client where those services make no sense.</p>
+     */
+    public static boolean isJetBrainsClient() {
+        return "JetBrainsClient".equals(System.getProperty("idea.platform.prefix"));
+    }
+
+    /**
      * Retrieves the name of the next undo action for a given file editor.
      *
      * <p><b>Why extracted:</b> {@code UndoManager.getUndoActionNameAndDescription()} returns
