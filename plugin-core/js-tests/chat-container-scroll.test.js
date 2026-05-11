@@ -291,18 +291,14 @@ describe('ChatContainer scroll behavior', () => {
     describe('scroll event handling', () => {
         it('marks active scrolling and clears the marker after scroll idle', () => {
             vi.useFakeTimers();
-            const startSpy = vi.spyOn(globalThis._bridge, 'scrollStarted');
-            const endSpy = vi.spyOn(globalThis._bridge, 'scrollEnded');
 
             container.dispatchEvent(new Event('scroll'));
 
             expect(container.classList.contains('is-scrolling')).toBe(true);
-            expect(startSpy).toHaveBeenCalledTimes(1);
 
             vi.advanceTimersByTime(140);
 
             expect(container.classList.contains('is-scrolling')).toBe(false);
-            expect(endSpy).toHaveBeenCalledTimes(1);
             vi.useRealTimers();
         });
 
