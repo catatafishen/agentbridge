@@ -17,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,12 @@ public final class HookExecutor {
                                               @NotNull Map<String, String> projectEnv) throws HookExecutionException {
         Path scriptPath = config.resolveScript(entry);
         if (scriptPath == null) {
+            return new HookResult.NoOp();
+        }
+        // Guard against stale JSON configs referencing scripts removed from disk (e.g. after
+        // migrating from shell scripts to built-in Java hooks on Windows).
+        if (!Files.exists(scriptPath)) {
+            LOG.info("Hook script not found (skipping): " + scriptPath);
             return new HookResult.NoOp();
         }
 

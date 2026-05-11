@@ -25,6 +25,8 @@ import java.util.Objects;
 public final class HookPipeline {
 
     private static final Logger LOG = Logger.getInstance(HookPipeline.class);
+    private static final String ARG_COMMAND = "command";
+    private static final String ARG_CONTENT = "content";
 
     private HookPipeline() {
     }
@@ -84,6 +86,16 @@ public final class HookPipeline {
                                                                @NotNull String toolName,
                                                                @NotNull JsonObject arguments)
         throws HookExecutor.HookExecutionException {
+
+        // Built-in Java checks run first — platform-independent, no shell required.
+        String builtInDenial = switch (toolName) {
+            case "run_command" -> BuiltInPermissionHooks.checkRunCommand(getStringArg(arguments, ARG_COMMAND));
+            case "run_in_terminal" -> BuiltInPermissionHooks.checkRunInTerminal(getStringArg(arguments, ARG_COMMAND));
+            default -> null;
+        };
+        if (builtInDenial != null) {
+            return new PermissionResult.Denied(builtInDenial);
+        }
 
         List<HookEntryConfig> entries = HookRegistry.getInstance(project)
             .findEntries(toolName, HookTrigger.PERMISSION);
@@ -163,33 +175,47 @@ public final class HookPipeline {
     public static @NotNull PostHookOutcome runSuccessHooks(@NotNull Project project,
                                                            @NotNull String toolName,
                                                            @NotNull JsonObject arguments,
-                                                           @Nullable String output,
-                                                           long durationMs)
+                                                           @NotNull String output)
         throws HookExecutor.HookExecutionException {
 
         List<HookEntryConfig> entries = HookRegistry.getInstance(project)
             .findEntries(toolName, HookTrigger.SUCCESS);
-        if (entries.isEmpty()) return new PostHookOutcome(output, false);
 
-        ToolHookConfig config = Objects.requireNonNull(
-            HookRegistry.getInstance(project).findConfig(toolName));
-        Map<String, String> projectEnv = HookEnvironmentProvider.getProjectEnvironment(project);
         String currentOutput = output;
         boolean isError = false;
+        boolean scriptModifiedOutput = false;
 
-        for (HookEntryConfig entry : entries) {
-            HookPayload payload = HookPayload.forPostExecution(
-                toolName, arguments, currentOutput, isError, project.getName(),
-                Instant.now().toString(), durationMs);
+        if (!entries.isEmpty()) {
+            ToolHookConfig config = Objects.requireNonNull(
+                HookRegistry.getInstance(project).findConfig(toolName));
+            Map<String, String> projectEnv = HookEnvironmentProvider.getProjectEnvironment(project);
 
-            HookResult result = HookExecutor.execute(project, entry, HookTrigger.SUCCESS, payload, config, projectEnv);
-            if (result instanceof HookResult.OutputModification mod) {
-                currentOutput = applyOutputText(mod, currentOutput);
-                if (mod.stateOverride() != null) {
-                    isError = !mod.stateOverride();
+            for (HookEntryConfig entry : entries) {
+                HookPayload payload = HookPayload.forPostExecution(
+                    toolName, arguments, currentOutput, isError, project.getName(),
+                    Instant.now().toString(), 0L);
+
+                HookResult result = HookExecutor.execute(project, entry, HookTrigger.SUCCESS, payload, config, projectEnv);
+
+                if (result instanceof HookResult.OutputModification mod) {
+                    currentOutput = applyOutputText(mod, currentOutput);
+                    if (mod.stateOverride() != null) {
+                        isError = !mod.stateOverride();
+                    }
+                    scriptModifiedOutput = true;
                 }
+                currentOutput = applyEntryTextModifiers(entry, currentOutput);
             }
-            currentOutput = applyEntryTextModifiers(entry, currentOutput);
+        }
+
+        // Run built-in Java success hooks only if no script produced output.
+        // This ensures Windows users (where scripts may be absent) still receive nudges,
+        // while Unix users with working scripts don't see duplicate annotations.
+        if (!scriptModifiedOutput) {
+            String builtInAppend = getBuiltInSuccessAnnotation(toolName, arguments, currentOutput);
+            if (builtInAppend != null) {
+                currentOutput = currentOutput + builtInAppend;
+            }
         }
 
         return new PostHookOutcome(currentOutput, isError);
@@ -267,5 +293,23 @@ public final class HookPipeline {
             return base + mod.appendedText();
         }
         return original;
+    }
+
+    private static @Nullable String getBuiltInSuccessAnnotation(@NotNull String toolName,
+                                                                @NotNull JsonObject arguments,
+                                                                @Nullable String output) {
+        return switch (toolName) {
+            case "run_in_terminal" -> BuiltInSuccessHooks.terminalReprimand(
+                getStringArg(arguments, ARG_COMMAND), false);
+            case "write_file" -> BuiltInSuccessHooks.staleNamingCheck(
+                output, getStringArg(arguments, ARG_CONTENT));
+            default -> null;
+        };
+    }
+
+    private static @Nullable String getStringArg(@NotNull JsonObject arguments, @NotNull String key) {
+        if (!arguments.has(key)) return null;
+        var el = arguments.get(key);
+        return el.isJsonPrimitive() ? el.getAsString() : null;
     }
 }

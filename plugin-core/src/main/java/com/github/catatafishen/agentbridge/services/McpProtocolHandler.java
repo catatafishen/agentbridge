@@ -576,7 +576,7 @@ public final class McpProtocolHandler {
             }
 
             long durationMs = System.currentTimeMillis() - callStartMs;
-            var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs, hookStages);
+            var postOutcome = applyPostHook(toolName, arguments, resultText, hookStages);
             resultText = postOutcome.output();
             resultText = truncateIfNeeded(resultText);
             boolean isError = postOutcome.isError() || ToolError.isError(resultText);
@@ -718,11 +718,12 @@ public final class McpProtocolHandler {
 
     private @NotNull HookPipeline.PostHookOutcome applyPostHook(@NotNull String toolName,
                                                                 @NotNull JsonObject arguments,
-                                                                @Nullable String output, long durationMs,
+                                                                @Nullable String output,
                                                                 @NotNull List<HookStageResult> hookStages) {
         try {
             long start = System.currentTimeMillis();
-            HookPipeline.PostHookOutcome outcome = HookPipeline.runSuccessHooks(project, toolName, arguments, output, durationMs);
+            String nonNullOutput = output != null ? output : "";
+            HookPipeline.PostHookOutcome outcome = HookPipeline.runSuccessHooks(project, toolName, arguments, nonNullOutput);
             long elapsed = System.currentTimeMillis() - start;
             if (elapsed > 0) {
                 boolean modified = !Objects.equals(output, outcome.output()) || outcome.isError();

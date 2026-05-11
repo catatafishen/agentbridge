@@ -515,7 +515,7 @@ class ToolsConfigurable(private val project: Project) :
     private fun restoreDefaultHooks() {
         val result = com.intellij.openapi.ui.Messages.showYesNoDialog(
             project,
-            "This will overwrite all hook configs and scripts with the bundled defaults.\nAny customizations will be lost.\n\nContinue?",
+            "Built-in hooks are now implemented in Java and cannot be customized here.\n\nThis will reload the hook registry. Any custom hook JSON configs in your hooks directory will be preserved.\n\nContinue?",
             "Restore Default Hooks",
             com.intellij.openapi.ui.Messages.getWarningIcon()
         )

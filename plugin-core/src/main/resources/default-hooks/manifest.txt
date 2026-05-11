@@ -1,8 +1,3 @@
-run_command.json
-run_in_terminal.json
-write_file.json
-scripts/_lib.sh
-scripts/check-stale-naming.sh
-scripts/run-command-abuse.sh
-scripts/run-in-terminal-abort.sh
-scripts/run-in-terminal-reprimand.sh
+# Default hook resources manifest
+# Built-in hooks are now implemented in Java (BuiltInPermissionHooks, BuiltInSuccessHooks).
+# No shell scripts or JSON configs are provisioned by default.
