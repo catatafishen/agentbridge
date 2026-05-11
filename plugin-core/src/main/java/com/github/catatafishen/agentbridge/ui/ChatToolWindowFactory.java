@@ -38,14 +38,17 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
             + " isRemoteDevServer=" + isRds
             + " isRemoteDevBackend=" + isRdb);
 
-        // JCEF-based chat UI cannot be serialized over the Gateway Rd protocol.
-        // isJetBrainsClient() catches the thin-client frontend process;
-        // isRemoteDevServer() catches the headless backend process (prefix=RemoteDevServer);
-        // isRemoteDevBackend() catches IntelliJ IDEA acting as a Remote Dev host via
-        //   "Open in JetBrains Client" — it retains the "idea" prefix and reports jcef=true
-        //   but JCEF content still cannot be forwarded to the thin client over the Rd protocol;
-        // !JBCefApp.isSupported() catches any other environment where JCEF cannot render.
-        if (isJbc || isRds || isRdb || !jcefSupported) {
+        // Show a placeholder only when the full UI genuinely cannot be rendered:
+        //   isJetBrainsClient()  — thin-client frontend process: tool window content is provided by
+        //                          the backend and forwarded; nothing to render locally.
+        //   isRemoteDevServer()  — headless RemoteDevServer backend: no display, no JCEF.
+        //   !jcefSupported       — any other environment where JCEF is unavailable.
+        //
+        // isRemoteDevBackend() (IntelliJ acting as a Remote Dev host) is intentionally NOT guarded
+        // here: in IntelliJ 2024.3+ the full Swing component tree, including JCEF bitmaps, is
+        // forwarded to the thin client over the Gateway Rd protocol. The real UI is shown and
+        // works correctly in the thin client.
+        if (isJbc || isRds || !jcefSupported) {
             Content content = ContentFactory.getInstance().createContent(
                 buildThinClientPlaceholder(), "", false
             );
