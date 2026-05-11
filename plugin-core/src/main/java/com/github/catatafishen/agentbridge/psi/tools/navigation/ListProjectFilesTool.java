@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.ListProjectFilesRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -98,8 +99,11 @@ public final class ListProjectFilesTool extends NavigationTool {
             return "Error: " + e.getMessage();
         }
 
+        // Cast is required: without it, the call is ambiguous between Computable<T> and
+        // ThrowableComputable<T,E> overloads of runReadAction, causing a compile error.
+        // The IntelliJ daemon incorrectly flags it as redundant (false positive).
         return ApplicationManager.getApplication().runReadAction(
-            () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
+            (Computable<String>) () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
     }
 
     private record FileEntry(String relPath, String tag, String typeName, long size, long timestamp) {
