@@ -51,6 +51,7 @@ class ToolsConfigurable(private val project: Project) :
     private var executeColorCombo: ThemeColorComboBox? = null
     private var toolNameFilter: JTextField? = null
     private var hooksOnlyFilter: JCheckBox? = null
+    private var hookStatusPanel: HookFileStatusPanel? = null
 
     override fun createPanel() = panel {
         row {
@@ -142,6 +143,18 @@ class ToolsConfigurable(private val project: Project) :
             maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
         }
         toolsPanel.add(topRow)
+
+        val hookSep = JBLabel("Hook files").apply {
+            font = JBUI.Fonts.label().deriveFont(java.awt.Font.BOLD)
+            border = JBUI.Borders.empty(8, 0, 4, 0)
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        toolsPanel.add(hookSep)
+        val hookStatus = HookFileStatusPanel(project).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        hookStatusPanel = hookStatus
+        toolsPanel.add(hookStatus)
 
         val searchField = JTextField().apply {
             toolTipText = "Filter by tool name or ID"
@@ -485,6 +498,7 @@ class ToolsConfigurable(private val project: Project) :
         executeColorCombo = null
         toolNameFilter = null
         hooksOnlyFilter = null
+        hookStatusPanel = null
         toolCheckboxes.clear()
         categoryCheckboxes.clear()
         templateIndicators.clear()
@@ -526,6 +540,7 @@ class ToolsConfigurable(private val project: Project) :
         if (restored) {
             com.github.catatafishen.agentbridge.services.hooks.HookRegistry
                 .getInstance(project).reload()
+            hookStatusPanel?.refresh()
             // Refresh all hook indicators
             for ((toolId, indicator) in templateIndicators) {
                 val config = com.github.catatafishen.agentbridge.services.hooks.HookRegistry

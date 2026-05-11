@@ -196,4 +196,72 @@ public final class HookHashRegistry {
             throw new IllegalStateException("SHA-256 not available", e);
         }
     }
+
+    /**
+     * Status of a single hook file, computed by comparing disk content against known hashes.
+     * The status drives display in the settings UI — which color to show and whether to offer
+     * a "Revert" button.
+     */
+    public enum FileStatus {
+        /**
+         * File matches the current bundled version — no action needed.
+         */
+        UP_TO_DATE("Up to date"),
+        /**
+         * File matches a historical official version — plugin will auto-update it on next startup.
+         */
+        OFFICIAL("Plugin version"),
+        /**
+         * File has been edited by the user — plugin won't overwrite without asking.
+         */
+        MODIFIED("Modified"),
+        /**
+         * File does not exist on disk.
+         */
+        MISSING("Missing"),
+        /**
+         * No hash registry exists — cannot determine if file was edited.
+         */
+        UNKNOWN("Unknown");
+
+        public final String label;
+
+        FileStatus(String label) {
+            this.label = label;
+        }
+
+        /**
+         * Returns true when the status means we can offer a "Revert" action.
+         */
+        public boolean canRevert() {
+            return this != UP_TO_DATE;
+        }
+    }
+
+    /**
+     * Computes the status of a single hook file by comparing its disk hash against the
+     * stored and bundled hashes.
+     *
+     * @param filename      relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.sh})
+     * @param hooksDir      resolved hooks directory for the project
+     * @param storedHashes  map loaded from {@link #load(Path)} (.provision-hashes)
+     * @param bundledHashes map loaded from {@link #loadBundledHashes()} (bundled-hashes.properties)
+     */
+    public static @NotNull FileStatus computeFileStatus(@NotNull String filename,
+                                                        @NotNull Path hooksDir,
+                                                        @NotNull Map<String, String> storedHashes,
+                                                        @NotNull Map<String, String> bundledHashes) {
+        if (!exists(hooksDir)) {
+            return Files.isRegularFile(hooksDir.resolve(filename)) ? FileStatus.UNKNOWN : FileStatus.MISSING;
+        }
+        String diskHash = computeFileHash(hooksDir.resolve(filename));
+        if (diskHash == null) return FileStatus.MISSING;
+        if (diskHash.equals(bundledHashes.get(filename))) return FileStatus.UP_TO_DATE;
+        if (isOfficialHash(filename, diskHash, bundledHashes)) return FileStatus.OFFICIAL;
+        // Fallback: if disk matches what we last wrote, it's unmodified even if not in official
+        // history (e.g. first install after hash tracking was introduced predates any history).
+        if (diskHash.equals(storedHashes.get(filename))) return FileStatus.OFFICIAL;
+        return FileStatus.MODIFIED;
+    }
 }
+

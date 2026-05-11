@@ -369,8 +369,36 @@ public final class DefaultHookProvisioner {
         return entries;
     }
 
+    /**
+     * Reverts a single hook file to its bundled default and updates the stored hash.
+     *
+     * <p>Works for both scripts (read from classpath resources) and generated JSON configs.
+     * After reverting, the file will be recognized as official on the next startup.
+     *
+     * @param project  the current project (used to resolve the hooks directory)
+     * @param filename relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.sh})
+     * @return true if the file was successfully reverted
+     */
+    public static boolean revertFile(@NotNull Project project, @NotNull String filename) {
+        Path hooksDir = resolveHooksDir(project);
+        String content = readBundledResourceAsString(RESOURCE_BASE + filename);
+        if (content == null) {
+            content = buildJsonConfigs().get(filename);
+        }
+        if (content == null) {
+            LOG.warn("Cannot revert: no bundled content found for " + filename);
+            return false;
+        }
+        String hash = copyStringAndHash(filename, content, hooksDir);
+        if (hash == null) return false;
+        Map<String, String> hashes = HookHashRegistry.load(hooksDir);
+        hashes.put(filename, hash);
+        HookHashRegistry.save(hooksDir, hashes);
+        return true;
+    }
+
     @NotNull
-    static Path resolveHooksDir(@NotNull Project project) {
+    public static Path resolveHooksDir(@NotNull Project project) {
         return AgentBridgeStorageSettings.getInstance()
             .getProjectStorageDir(project)
             .resolve("hooks");
