@@ -66,6 +66,9 @@ public final class CreateFileTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        if (!args.has("path") || !args.has(PARAM_CONTENT)) {
+            return "Error: 'path' and 'content' parameters are required";
+        }
         String pathStr = args.get("path").getAsString();
         String content = args.get(PARAM_CONTENT).getAsString();
 
