@@ -8,6 +8,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static com.github.catatafishen.agentbridge.psi.PlatformApiCompat.SourceRootKind;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for pure-logic methods in {@link PlatformApiCompat} that do NOT require
@@ -256,6 +258,122 @@ class PlatformApiCompatPureLogicTest {
             var map = getMap();
             org.junit.jupiter.api.Assertions.assertNotNull(map.get(command),
                 "IDE_GIT_COMMAND_MAP should map '" + command + "'");
+        }
+    }
+
+    // ── Remote Dev detection ──────────────────────────────────
+
+    @Nested
+    class RemoteDevDetection {
+
+        private static final String PLATFORM_PREFIX_PROP = "idea.platform.prefix";
+        private static final String REMOTE_DEV_LAUNCHER_PROP = "ide.started.from.remote.dev.launcher";
+
+        @Test
+        void isJetBrainsClientReturnsFalseByDefault() {
+            String saved = System.getProperty(PLATFORM_PREFIX_PROP);
+            try {
+                System.clearProperty(PLATFORM_PREFIX_PROP);
+                assertFalse(PlatformApiCompat.isJetBrainsClient());
+            } finally {
+                restoreProperty(PLATFORM_PREFIX_PROP, saved);
+            }
+        }
+
+        @Test
+        void isJetBrainsClientReturnsTrueWhenPropertyMatches() {
+            String saved = System.getProperty(PLATFORM_PREFIX_PROP);
+            try {
+                System.setProperty(PLATFORM_PREFIX_PROP, "JetBrainsClient");
+                assertTrue(PlatformApiCompat.isJetBrainsClient());
+            } finally {
+                restoreProperty(PLATFORM_PREFIX_PROP, saved);
+            }
+        }
+
+        @Test
+        void isJetBrainsClientReturnsFalseForOtherPrefix() {
+            String saved = System.getProperty(PLATFORM_PREFIX_PROP);
+            try {
+                System.setProperty(PLATFORM_PREFIX_PROP, "idea");
+                assertFalse(PlatformApiCompat.isJetBrainsClient());
+            } finally {
+                restoreProperty(PLATFORM_PREFIX_PROP, saved);
+            }
+        }
+
+        @Test
+        void isRemoteDevServerReturnsFalseByDefault() {
+            String saved = System.getProperty(PLATFORM_PREFIX_PROP);
+            try {
+                System.clearProperty(PLATFORM_PREFIX_PROP);
+                assertFalse(PlatformApiCompat.isRemoteDevServer());
+            } finally {
+                restoreProperty(PLATFORM_PREFIX_PROP, saved);
+            }
+        }
+
+        @Test
+        void isRemoteDevServerReturnsTrueWhenPropertyMatches() {
+            String saved = System.getProperty(PLATFORM_PREFIX_PROP);
+            try {
+                System.setProperty(PLATFORM_PREFIX_PROP, "RemoteDevServer");
+                assertTrue(PlatformApiCompat.isRemoteDevServer());
+            } finally {
+                restoreProperty(PLATFORM_PREFIX_PROP, saved);
+            }
+        }
+
+        @Test
+        void isRemoteDevServerReturnsFalseForOtherPrefix() {
+            String saved = System.getProperty(PLATFORM_PREFIX_PROP);
+            try {
+                System.setProperty(PLATFORM_PREFIX_PROP, "idea");
+                assertFalse(PlatformApiCompat.isRemoteDevServer());
+            } finally {
+                restoreProperty(PLATFORM_PREFIX_PROP, saved);
+            }
+        }
+
+        @Test
+        void isRemoteDevBackendReturnsFalseByDefault() {
+            String saved = System.getProperty(REMOTE_DEV_LAUNCHER_PROP);
+            try {
+                System.clearProperty(REMOTE_DEV_LAUNCHER_PROP);
+                assertFalse(PlatformApiCompat.isRemoteDevBackend());
+            } finally {
+                restoreProperty(REMOTE_DEV_LAUNCHER_PROP, saved);
+            }
+        }
+
+        @Test
+        void isRemoteDevBackendReturnsTrueWhenPropertySet() {
+            String saved = System.getProperty(REMOTE_DEV_LAUNCHER_PROP);
+            try {
+                System.setProperty(REMOTE_DEV_LAUNCHER_PROP, "true");
+                assertTrue(PlatformApiCompat.isRemoteDevBackend());
+            } finally {
+                restoreProperty(REMOTE_DEV_LAUNCHER_PROP, saved);
+            }
+        }
+
+        @Test
+        void isRemoteDevBackendReturnsFalseForNonTrueValue() {
+            String saved = System.getProperty(REMOTE_DEV_LAUNCHER_PROP);
+            try {
+                System.setProperty(REMOTE_DEV_LAUNCHER_PROP, "false");
+                assertFalse(PlatformApiCompat.isRemoteDevBackend());
+            } finally {
+                restoreProperty(REMOTE_DEV_LAUNCHER_PROP, saved);
+            }
+        }
+
+        private static void restoreProperty(String key, String savedValue) {
+            if (savedValue != null) {
+                System.setProperty(key, savedValue);
+            } else {
+                System.clearProperty(key);
+            }
         }
     }
 }
