@@ -109,6 +109,30 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns {@code true} when IntelliJ IDEA is running as a Remote Development backend
+     * (i.e., the project-hosting machine in a JetBrains Gateway / "Open in JetBrains Client"
+     * session) but was launched with the regular {@code idea} platform prefix rather than the
+     * {@code RemoteDevServer} prefix.
+     *
+     * <p>This scenario occurs when the user chooses <em>Open in JetBrains Client</em> from within
+     * a running IntelliJ IDEA instance: the IDE becomes the Remote Dev host but retains its normal
+     * prefix.  In this mode JCEF WebView components are initialized (so
+     * {@link com.intellij.ui.jcef.JBCefApp#isSupported()} returns {@code true}), but their content
+     * cannot be serialized over the Gateway Rd protocol and appears blank in the thin client.</p>
+     *
+     * <p><b>Why extracted:</b> The JVM flag {@code ide.started.from.remote.dev.launcher=true} is
+     * set by the Remote Dev launcher script and is the only reliable way to detect this mode when
+     * the platform prefix is still {@code idea}.  There is no public JetBrains API for this check;
+     * wrapping it here keeps the system-property read in one place and documents the reasoning.</p>
+     *
+     * <p>Use this together with {@link #isRemoteDevServer()} to guard JCEF-based UI: show a Swing
+     * placeholder instead so the thin client sees meaningful content.</p>
+     */
+    public static boolean isRemoteDevBackend() {
+        return "true".equals(System.getProperty("ide.started.from.remote.dev.launcher"));
+    }
+
+    /**
      * Retrieves the name of the next undo action for a given file editor.
      *
      * <p><b>Why extracted:</b> {@code UndoManager.getUndoActionNameAndDescription()} returns

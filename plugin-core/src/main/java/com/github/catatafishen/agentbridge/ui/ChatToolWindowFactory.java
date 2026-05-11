@@ -31,18 +31,21 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
         boolean jcefSupported = JBCefApp.isSupported();
         boolean isJbc = PlatformApiCompat.isJetBrainsClient();
         boolean isRds = PlatformApiCompat.isRemoteDevServer();
+        boolean isRdb = PlatformApiCompat.isRemoteDevBackend();
         LOG.info("AgentBridge tool window: prefix=" + prefix
             + " jcef=" + jcefSupported
             + " isJetBrainsClient=" + isJbc
-            + " isRemoteDevServer=" + isRds);
+            + " isRemoteDevServer=" + isRds
+            + " isRemoteDevBackend=" + isRdb);
 
         // JCEF-based chat UI cannot be serialized over the Gateway Rd protocol.
         // isJetBrainsClient() catches the thin-client frontend process;
-        // isRemoteDevServer() catches the headless backend process (where createToolWindowContent
-        // actually runs and where JCEF components would fail to render in the thin client).
-        // !JBCefApp.isSupported() catches any other environment where JCEF cannot render
-        // (e.g. the IDE acting as a Gateway backend with a non-RemoteDevServer prefix).
-        if (isJbc || isRds || !jcefSupported) {
+        // isRemoteDevServer() catches the headless backend process (prefix=RemoteDevServer);
+        // isRemoteDevBackend() catches IntelliJ IDEA acting as a Remote Dev host via
+        //   "Open in JetBrains Client" — it retains the "idea" prefix and reports jcef=true
+        //   but JCEF content still cannot be forwarded to the thin client over the Rd protocol;
+        // !JBCefApp.isSupported() catches any other environment where JCEF cannot render.
+        if (isJbc || isRds || isRdb || !jcefSupported) {
             Content content = ContentFactory.getInstance().createContent(
                 buildThinClientPlaceholder(), "", false
             );
