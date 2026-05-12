@@ -148,6 +148,10 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar"/>
 
+    <!-- Registry for temporary external-dir modules (attach_external_dir / detach_external_dir) -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry"/>
+
     <!-- Live tool call tracking for the Tools tab in the side panel -->
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.LiveToolCallService"/>

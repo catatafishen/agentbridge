@@ -1,10 +1,15 @@
 package com.github.catatafishen.agentbridge.psi
 
+import com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.wm.ToolWindowManager
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Starts the PSI Bridge HTTP server when a project opens.
@@ -20,6 +25,9 @@ class PsiBridgeStartup : ProjectActivity {
         }
 
         LOG.info("Initializing plugin for project: ${project.name}")
+
+        createAgentWorkspace(project)
+        cleanupStaleExternalModules(project)
 
         // Force-initialize PsiBridgeService so tools are registered before any agent connects
         PsiBridgeService.getInstance(project)
@@ -56,6 +64,54 @@ class PsiBridgeStartup : ProjectActivity {
         if (PlatformApiCompat.isRemoteDevBackend()) {
             ApplicationManager.getApplication().invokeLater {
                 ToolWindowManager.getInstance(project).getToolWindow("AgentBridge")?.show(null)
+            }
+        }
+    }
+
+    /**
+     * Creates the .agent-work/ directory structure for agent session state.
+     * This directory is typically gitignored and provides a safe workspace
+     * for the agent to store session artifacts.
+     */
+    private fun createAgentWorkspace(project: Project) {
+        val basePath = project.basePath ?: return
+
+        try {
+            val agentWork = Path.of(basePath, ".agent-work")
+            Files.createDirectories(agentWork.resolve("session-state"))
+            Files.createDirectories(agentWork.resolve("files"))
+
+            LOG.info("Agent workspace initialized at: $agentWork")
+        } catch (e: Exception) {
+            LOG.warn("Failed to create agent workspace", e)
+        }
+    }
+
+    /**
+     * Removes any stale agentbridge-ext-* modules left by an unclean shutdown.
+     * All agentbridge-ext-* modules are removed unconditionally on startup since
+     * attached external dirs are not persisted across sessions.
+     * Runs asynchronously on a pooled thread.
+     */
+    private fun cleanupStaleExternalModules(project: Project) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val manager = ModuleManager.getInstance(project)
+                val prefix = ExternalDirRegistry.MODULE_NAME_PREFIX
+                val staleModules = ApplicationManager.getApplication().runReadAction(
+                    Computable {
+                        manager.modules.filter { it.name.startsWith(prefix) }
+                    }
+                )
+                if (staleModules.isEmpty()) return@executeOnPooledThread
+                EdtUtil.invokeAndWait {
+                    ApplicationManager.getApplication().runWriteAction {
+                        staleModules.forEach { manager.disposeModule(it) }
+                    }
+                }
+                LOG.info("Cleaned up ${staleModules.size} stale external dir module(s)")
+            } catch (e: Exception) {
+                LOG.warn("Failed to clean up stale external dir modules", e)
             }
         }
     }
