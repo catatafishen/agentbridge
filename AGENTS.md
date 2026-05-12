@@ -98,14 +98,14 @@ to tell at a glance whether work was done by a human or an agent.
 
 **Commit author** — Every commit authored by an AI agent must use the agent's non-personal identity, not a human's
 personal email. The commit hook enforces this automatically via `enforce-commit-author.sh`:
-`github-copilot-developer <github-copilot-developer@users.noreply.github.com>` for Copilot CLI sessions.
-Do not amend commits to substitute a human email for AI-authored changes.
+`github-copilot-developer <github-copilot-developer@users.noreply.github.com>` for Copilot CLI sessions. Do not amend
+commits to substitute a human email for AI-authored changes.
 
 **PR opener** — Pull requests created by agents must be opened using the bot identity (e.g. `agentbridge-fixer[bot]`),
 not the repository owner's personal account. Use the `GH_TOKEN` injection hook (`enforce-gh-bot-identity.js`) which
-replaces the token with a short-lived bot installation token before any `gh pr create` or `gh pr comment` call.
-If the bot token is unavailable, the hook blocks the call and surfaces an error rather than silently falling back to
-the owner identity.
+replaces the token with a short-lived bot installation token before any `gh pr create` or `gh pr comment` call. If the
+bot token is unavailable, the hook blocks the call and surfaces an error rather than silently falling back to the owner
+identity.
 
 **No merge commits** — Branches must be rebased onto master before merging, not merged with a merge commit. Merge
 commits indicate a stale base and pollute the linear history.
