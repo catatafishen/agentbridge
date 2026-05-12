@@ -131,8 +131,9 @@ public final class ExternalDirRegistry implements Disposable {
     @SuppressWarnings("java:S112")
     @Nullable
     private String doCreateModule(@NotNull String imlPath, @NotNull VirtualFile dir) {
+        Module module = null;
         try {
-            Module module = ModuleManager.getInstance(project).newModule(imlPath, "");
+            module = ModuleManager.getInstance(project).newModule(imlPath, "JAVA_MODULE");
             ModifiableRootModel model = ModuleRootManager.getInstance(module).getModifiableModel();
             ContentEntry entry = model.addContentEntry(dir);
             for (String excluded : EXCLUDED_DIR_NAMES) {
@@ -144,6 +145,15 @@ public final class ExternalDirRegistry implements Disposable {
             model.commit();
             return null; // success
         } catch (Exception e) {
+            // Module was created but setup failed — dispose it to avoid leaving a half-configured module
+            if (module != null) {
+                try {
+                    ModuleManager.getInstance(project).disposeModule(module);
+                    Files.deleteIfExists(Path.of(imlPath));
+                } catch (Exception cleanup) {
+                    LOG.warn("Failed to clean up partially created module at " + imlPath, cleanup);
+                }
+            }
             return e.getMessage();
         }
     }
@@ -173,17 +183,26 @@ public final class ExternalDirRegistry implements Disposable {
     }
 
     /**
-     * Returns true if {@code absolutePath} is inside any attached external directory.
+     * Returns true if {@code absolutePath} (after normalization) is inside any attached external directory.
      * Used by write tools to reject modifications to read-only external directories.
      */
     public boolean isExternalPath(@NotNull String absolutePath) {
+        Path candidate = Path.of(absolutePath).normalize();
         for (AttachedDir dir : attached.values()) {
-            String base = dir.absolutePath();
-            if (absolutePath.equals(base) || absolutePath.startsWith(base + "/")) {
+            if (isUnderDirectory(candidate, Path.of(dir.absolutePath()))) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Returns true if {@code candidate} (after normalization) is equal to or inside {@code directory}.
+     * Uses {@link Path#normalize()} to resolve {@code ..} segments before comparing, preventing
+     * traversal-based bypasses and handling Windows vs. POSIX path separators correctly.
+     */
+    static boolean isUnderDirectory(Path candidate, Path directory) {
+        return candidate.normalize().startsWith(directory.normalize());
     }
 
     /**
