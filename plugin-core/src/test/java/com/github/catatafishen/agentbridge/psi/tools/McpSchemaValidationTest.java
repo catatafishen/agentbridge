@@ -74,6 +74,7 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.editor.ListThemesTool",
         "com.github.catatafishen.agentbridge.psi.tools.editor.SetThemeTool",
         "com.github.catatafishen.agentbridge.psi.tools.editor.SearchConversationHistoryTool",
+        "com.github.catatafishen.agentbridge.psi.tools.editor.QueryTurnsTool",
         // file
         "com.github.catatafishen.agentbridge.psi.tools.file.ReadFileTool",
         "com.github.catatafishen.agentbridge.psi.tools.file.WriteFileTool",

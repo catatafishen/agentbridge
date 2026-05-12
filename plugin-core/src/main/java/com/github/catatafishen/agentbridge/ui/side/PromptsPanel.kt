@@ -141,8 +141,8 @@ internal class PromptsPanel(
         toolField.document.addDocumentListener(filterChangeListener)
         fileField.document.addDocumentListener(filterChangeListener)
 
-        branchCombo.addActionListener { refresh(scrollToBottom = false) }
-        agentCombo.addActionListener { refresh(scrollToBottom = false) }
+        branchCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
+        agentCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
 
         // Configure combo boxes
         branchCombo.font = JBUI.Fonts.miniFont()
@@ -268,7 +268,7 @@ internal class PromptsPanel(
     }
 
     private fun refresh(scrollToBottom: Boolean) {
-        if (hasSqlFilters() || (searchField.text.isNotBlank() && hasSqlFilters())) {
+        if (hasSqlFilters()) {
             reloadWithSqlFilters(scrollToBottom)
         } else {
             refreshFromMemory(scrollToBottom)
@@ -281,15 +281,15 @@ internal class PromptsPanel(
      */
     private fun reloadWithSqlFilters(scrollToBottom: Boolean) {
         val query = searchField.text.orEmpty().trim().takeIf { it.isNotEmpty() }
-        val branch = (branchCombo.selectedItem as? String)?.takeIf { it != "(all branches)" }
-        val agent = (agentCombo.selectedItem as? String)?.takeIf { it != "(all agents)" }
+        val branch = (branchCombo.selectedItem as? String)?.takeIf { it != ALL_BRANCHES }
+        val agent = (agentCombo.selectedItem as? String)?.takeIf { it != ALL_AGENTS }
         val tool = toolField.text.trim().takeIf { it.isNotEmpty() }
         val file = fileField.text.trim().takeIf { it.isNotEmpty() }
 
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
             val params = ConversationQuery.QueryParams(
-                null, null, displayedCount + PAGE_SIZE, null,
+                null, null, PAGE_SIZE, null,
                 query, null, tool, file, branch, agent,
                 null, null, false, false, Int.MAX_VALUE
             )

@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Executes structured SQL queries against {@link ConversationDatabase} and returns
@@ -177,7 +178,6 @@ public final class ConversationQuery {
 
     // ── Internal query ────────────────────────────────────────────────────────
 
-    @NotNull
     private List<TurnSummary> queryInternal(
         @NotNull Connection conn, @NotNull QueryParams p) throws SQLException {
 
@@ -200,7 +200,7 @@ public final class ConversationQuery {
         }
         if (p.agentName() != null) {
             whereClauses.add("lower(s.agent_name) LIKE ?");
-            sqlParams.add("%" + p.agentName().toLowerCase() + "%");
+            sqlParams.add("%" + p.agentName().toLowerCase(Locale.ROOT) + "%");
         }
         if (p.since() != null) {
             whereClauses.add("t.started_at >= ?");
@@ -211,7 +211,7 @@ public final class ConversationQuery {
             sqlParams.add(p.until().toString());
         }
         if (p.userMessage() != null) {
-            String likePattern = "%" + p.userMessage().toLowerCase() + "%";
+            String likePattern = "%" + p.userMessage().toLowerCase(Locale.ROOT) + "%";
             whereClauses.add("""
                 (lower(t.prompt_text) LIKE ?
                  OR EXISTS (
@@ -224,7 +224,7 @@ public final class ConversationQuery {
             sqlParams.add(likePattern);
         }
         if (p.assistantText() != null) {
-            String likePattern = "%" + p.assistantText().toLowerCase() + "%";
+            String likePattern = "%" + p.assistantText().toLowerCase(Locale.ROOT) + "%";
             whereClauses.add("""
                 EXISTS (
                   SELECT 1 FROM events e3
@@ -235,7 +235,7 @@ public final class ConversationQuery {
             sqlParams.add(likePattern);
         }
         if (p.toolName() != null) {
-            String likePattern = "%" + p.toolName().toLowerCase() + "%";
+            String likePattern = "%" + p.toolName().toLowerCase(Locale.ROOT) + "%";
             whereClauses.add("""
                 EXISTS (
                   SELECT 1 FROM events e4
@@ -246,12 +246,12 @@ public final class ConversationQuery {
             sqlParams.add(likePattern);
         }
         if (p.filePath() != null) {
-            String likePattern = "%" + p.filePath() + "%";
+            String likePattern = "%" + p.filePath().toLowerCase(Locale.ROOT) + "%";
             whereClauses.add("""
                 EXISTS (
                   SELECT 1 FROM events e5
                   JOIN tool_call_events tc ON e5.id = tc.event_id
-                  WHERE e5.turn_id = t.id AND tc.file_path LIKE ?
+                  WHERE e5.turn_id = t.id AND lower(tc.file_path) LIKE ?
                 )
                 """);
             sqlParams.add(likePattern);
@@ -261,19 +261,26 @@ public final class ConversationQuery {
             ? ""
             : "WHERE " + String.join(" AND ", whereClauses);
 
-        String limitClause = "";
+        String limitClause;
         if (p.lastN() != null) {
             limitClause = "LIMIT ? OFFSET ?";
             sqlParams.add(p.lastN());
             sqlParams.add(p.offset() != null ? p.offset() : 0);
+        } else if (p.turnId() != null) {
+            limitClause = ""; // WHERE t.id = ? already constrains to one row
+        } else {
+            // No explicit limit: apply a hard cap to prevent full-table scans
+            limitClause = "LIMIT 500";
         }
 
         String sql = """
             SELECT t.id, t.session_id, t.prompt_text, t.started_at, t.model,
                    t.git_branch_at_start, t.tool_call_count,
                    s.agent_name, COALESCE(s.display_name, ''),
-                   (SELECT id FROM turns WHERE started_at < t.started_at
-                    ORDER BY started_at DESC LIMIT 1) AS prev_turn_id
+                   (SELECT id FROM turns
+                     WHERE started_at < t.started_at
+                        OR (started_at = t.started_at AND id < t.id)
+                     ORDER BY started_at DESC, id DESC LIMIT 1) AS prev_turn_id
             FROM turns t
             JOIN sessions s ON t.session_id = s.id
             %s

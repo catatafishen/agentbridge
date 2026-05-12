@@ -49,7 +49,7 @@ public final class QueryTurnsTool extends EditorTool {
     private static final DateTimeFormatter DISPLAY_FMT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    public QueryTurnsTool(@NotNull Project project) {
+    public QueryTurnsTool(@Nullable Project project) {
         super(project);
     }
 
@@ -162,7 +162,7 @@ public final class QueryTurnsTool extends EditorTool {
         String agentName = stringOrNull(args, PARAM_AGENT_NAME);
         boolean includeThinking = boolOrDefault(args, PARAM_INCLUDE_THINKING, false);
         boolean includeToolCalls = boolOrDefault(args, PARAM_INCLUDE_TOOL_CALLS, false);
-        int maxChars = intOrDefault(args, PARAM_MAX_CHARS, 8000);
+        int maxChars = Math.max(10, intOrDefault(args, PARAM_MAX_CHARS, 8000));
 
         Instant since;
         Instant until;
@@ -173,8 +173,15 @@ public final class QueryTurnsTool extends EditorTool {
             return "Error: " + e.getMessage();
         }
 
-        // Default to last_n=5 when no retrieval param is given
+        // Default to last_n=5 when no retrieval param is given.
+        // Reject conflicting combinations where more than one retrieval selector is set.
         boolean hasRetrievalParam = turnId != null || sessionId != null || lastN != null;
+        if (hasRetrievalParam) {
+            int retrievalCount = (turnId != null ? 1 : 0) + (sessionId != null ? 1 : 0) + (lastN != null ? 1 : 0);
+            if (retrievalCount > 1) {
+                return "Error: Only one of turn_id, session_id, or last_n may be used at a time. Pick the one that matches your intent.";
+            }
+        }
         if (!hasRetrievalParam) lastN = 5;
 
         ConversationQuery.QueryParams params = new ConversationQuery.QueryParams(
@@ -275,7 +282,8 @@ public final class QueryTurnsTool extends EditorTool {
 
     @NotNull
     private static String shortModelName(@NotNull String model) {
-        // Trim long model identifiers (e.g. "claude-sonnet-4-6-20250514" → "claude-sonnet-4.6")
+        // Trim long model identifiers (e.g. "claude-sonnet-4-6-20250514" → "claude-sonnet")
+        // Returns broad family buckets: "claude-sonnet", "claude-haiku", "gpt-4", etc.
         String lower = model.toLowerCase(Locale.ROOT);
         if (lower.contains("sonnet")) return "claude-sonnet";
         if (lower.contains("haiku")) return "claude-haiku";
