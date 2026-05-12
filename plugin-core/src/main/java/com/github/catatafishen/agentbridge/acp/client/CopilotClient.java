@@ -343,12 +343,29 @@ public final class CopilotClient extends AcpClient {
         if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
             return true;
         }
+        // Any "<server>-<tool>" pattern (e.g. "github-create_issue", "puppeteer-screenshot")
+        // is a third-party MCP server tool explicitly configured by the user. Do not reprimand.
+        if (hasMcpServerPrefix(protocolTitle)) {
+            return true;
+        }
         // Copilot CLI sends human-readable display names (e.g. "Git Stage") in
         // permission requests instead of the snake_case "agentbridge-git_stage" form
         // used in session/update notifications. Fall back to ToolRegistry lookup
         // so these are recognized as MCP tools rather than flagged as built-in.
         ToolRegistry registry = ToolRegistry.getInstance(project);
         return registry.findByDisplayName(protocolTitle) != null;
+    }
+
+    /**
+     * Returns {@code true} if {@code title} starts with a {@code <server>-} prefix,
+     * indicating a tool from any MCP server (e.g. {@code agentbridge-}, {@code github-},
+     * {@code puppeteer-}). Server prefixes are all-alphanumeric — no spaces or underscores.
+     */
+    private static boolean hasMcpServerPrefix(String title) {
+        int hyphen = title.indexOf('-');
+        if (hyphen <= 0) return false;
+        String prefix = title.substring(0, hyphen);
+        return prefix.chars().allMatch(Character::isLetterOrDigit);
     }
 
     /**
@@ -601,7 +618,7 @@ public final class CopilotClient extends AcpClient {
                 if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
                     boolean showBubble = mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED;
                     String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
-                    AgentNudgeService.getInstance(project).addNudge(buildReprimand(kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
+                    AgentNudgeService.getInstance(project).addNudge(buildReprimand(title, kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
                 }
             }
         }
@@ -621,10 +638,15 @@ public final class CopilotClient extends AcpClient {
         return request;
     }
 
-    private static String buildReprimand(String kind) {
-        return "You used native " + kind + " tools. Use Agentbridge MCP tools instead — "
-            + "native tools bypass the plugin's identity hooks, follow-agent visibility, "
-            + "and IDE buffer sync.";
+    private static String buildReprimand(String title, String kind) {
+        String toolRef = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
+            ? "the `" + title.toLowerCase() + "` built-in tool"
+            : "a built-in " + kind + " tool";
+        return "Always prefer AgentBridge MCP tools. "
+            + "Other tools bypass plugin features: IDE buffer sync, follow-agent visibility, "
+            + "and user-defined hooks that fire on every tool call. "
+            + "This notice appeared because you just used " + toolRef
+            + " — use an AgentBridge MCP equivalent instead.";
     }
 
     /**
