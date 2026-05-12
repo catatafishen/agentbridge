@@ -1,3 +1,4 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
@@ -165,7 +166,9 @@ intellijPlatform {
             )
         )
         ides {
-            recommended()
+            // Use explicit stable versions only — recommended() also pulls in EAP builds
+            // which cause ClosedByInterruptException from resource exhaustion.
+            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
         }
     }
 }

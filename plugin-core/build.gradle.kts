@@ -433,15 +433,17 @@ intellijPlatform {
             )
         )
         ides {
-            recommended()
-            // Verify against non-Java JetBrains IDEs
+            // Use explicit stable versions only — recommended() also pulls in EAP builds
+            // (IU-261, IU-262) which cause ClosedByInterruptException from resource exhaustion
+            // when 6+ verifiers run in parallel on CI.
+            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
             create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
             create(IntelliJPlatformType.WebStorm, "2025.3")
             create(IntelliJPlatformType.GoLand, "2025.3")
             // Note: Android Studio verification via Gradle plugin is broken
             // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
             // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
-            // IntelliJ IDEA 2025.3 which we verify above via recommended().
+            // IntelliJ IDEA 2025.3 which we verify above.
         }
     }
 }
