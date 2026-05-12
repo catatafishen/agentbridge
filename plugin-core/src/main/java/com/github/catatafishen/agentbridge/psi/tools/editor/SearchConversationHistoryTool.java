@@ -74,7 +74,8 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     @Override
     public @NotNull String description() {
-        return "List, read, and search past conversation sessions from the chat history";
+        return "⚠️ Deprecated — use query_turns instead. " +
+            "Lists, reads, and searches past conversation sessions from the chat history";
     }
 
     @Override

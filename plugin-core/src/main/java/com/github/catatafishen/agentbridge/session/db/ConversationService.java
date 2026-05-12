@@ -294,6 +294,39 @@ public final class ConversationService implements Disposable {
         return result;
     }
 
+    /**
+     * Executes a structured SQL query against the conversation database.
+     *
+     * @param params query parameters; see {@link ConversationQuery.QueryParams}
+     * @return matching turns, most-recent-first
+     */
+    @NotNull
+    public List<ConversationQuery.TurnSummary> query(@NotNull ConversationQuery.QueryParams params) {
+        ConversationDatabase db = project != null ? ConversationDatabase.getInstance(project) : null;
+        if (db == null || !db.isReady()) return List.of();
+        return new ConversationQuery(db).query(params);
+    }
+
+    /**
+     * Returns distinct git branch names that have at least one turn, for filter dropdowns.
+     */
+    @NotNull
+    public List<String> listDistinctBranches() {
+        ConversationDatabase db = project != null ? ConversationDatabase.getInstance(project) : null;
+        if (db == null || !db.isReady()) return List.of();
+        return new ConversationQuery(db).listDistinctBranches();
+    }
+
+    /**
+     * Returns distinct agent names from sessions that have turns, for filter dropdowns.
+     */
+    @NotNull
+    public List<String> listDistinctAgents() {
+        ConversationDatabase db = project != null ? ConversationDatabase.getInstance(project) : null;
+        if (db == null || !db.isReady()) return List.of();
+        return new ConversationQuery(db).listDistinctAgents();
+    }
+
     // ── Session ID management ────────────────────────────────────────────────
 
     /**
