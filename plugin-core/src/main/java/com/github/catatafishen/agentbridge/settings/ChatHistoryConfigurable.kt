@@ -241,35 +241,75 @@ class ChatHistoryConfigurable(private val project: Project) :
     private fun scanConversations(): List<ConversationEntry> {
         val sessionsDir = ExportUtils.sessionsDir(project).toPath()
         if (!Files.isDirectory(sessionsDir)) return emptyList()
-
-        val indexFile = sessionsDir.resolve("sessions-index.json")
-        if (!Files.isRegularFile(indexFile)) return emptyList()
-
         val currentSessionId = runCatching {
             Files.readString(sessionsDir.resolve(".current-session-id")).trim()
         }.getOrNull()
+        val indexFile = sessionsDir.resolve("sessions-index.json")
+        return if (Files.isRegularFile(indexFile))
+            scanFromIndex(sessionsDir, indexFile, currentSessionId)
+        else
+            scanFromDirectory(sessionsDir, currentSessionId)
+    }
 
+    private fun scanFromIndex(sessionsDir: Path, indexFile: Path, currentSessionId: String?): List<ConversationEntry> {
+        val normalizedDir = sessionsDir.normalize()
         return try {
             val array = JsonParser.parseString(Files.readString(indexFile)).asJsonArray
             val entries = mutableListOf<ConversationEntry>()
             for (el in array) {
-                val obj = el.asJsonObject
-                val id = obj.get("id")?.asString ?: continue
-                val jsonlPath = obj.get("jsonlPath")?.asString ?: "$id.jsonl"
-                val updatedAt = obj.get("updatedAt")?.asLong ?: 0L
-                val jsonlFile = sessionsDir.resolve(jsonlPath)
-                if (!Files.isRegularFile(jsonlFile)) continue
-                val size = runCatching { Files.size(jsonlFile) }.getOrDefault(0L)
-                val messageCount = ConversationFileUtils.countJsonlLines(jsonlFile)
-                val isCurrentSession = id == currentSessionId
-                val displayName = if (isCurrentSession) CURRENT_SESSION_LABEL
-                else ConversationFileUtils.formatDateMillis(updatedAt)
-                entries.add(
-                    ConversationEntry(jsonlFile, displayName, messageCount, size, updatedAt, isCurrentSession)
-                )
+                try {
+                    val obj = el.asJsonObject
+                    val id = obj.get("id")?.asString ?: continue
+                    val jsonlPath = obj.get("jsonlPath")?.asString ?: "$id.jsonl"
+                    val updatedAt = obj.get("updatedAt")?.asLong ?: 0L
+                    val jsonlFile = sessionsDir.resolve(jsonlPath).normalize()
+                    if (!jsonlFile.startsWith(normalizedDir)) continue  // path traversal guard
+                    if (!Files.isRegularFile(jsonlFile)) continue
+                    val size = runCatching { Files.size(jsonlFile) }.getOrDefault(0L)
+                    val turnCount = obj.get("turnCount")?.takeIf { !it.isJsonNull }?.asInt
+                    val messageCount = turnCount ?: ConversationFileUtils.countJsonlLines(jsonlFile)
+                    val isCurrentSession = id == currentSessionId
+                    val displayName = if (isCurrentSession) CURRENT_SESSION_LABEL
+                    else ConversationFileUtils.formatDateMillis(updatedAt)
+                    entries.add(
+                        ConversationEntry(
+                            jsonlFile,
+                            displayName,
+                            messageCount,
+                            size,
+                            updatedAt,
+                            isCurrentSession
+                        )
+                    )
+                } catch (e: Exception) {
+                    LOG.warn("Skipping malformed session index entry: $el", e)
+                }
             }
             entries
         } catch (e: Exception) {
+            LOG.warn("Failed to parse sessions index: $indexFile", e)
+            emptyList()
+        }
+    }
+
+    private fun scanFromDirectory(sessionsDir: Path, currentSessionId: String?): List<ConversationEntry> {
+        return runCatching {
+            Files.list(sessionsDir).use { stream ->
+                stream.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".jsonl") }
+                    .map { file ->
+                        val id = file.fileName.toString().removeSuffix(".jsonl")
+                        val size = runCatching { Files.size(file) }.getOrDefault(0L)
+                        val dateMillis = runCatching { Files.getLastModifiedTime(file).toMillis() }.getOrDefault(0L)
+                        val messageCount = ConversationFileUtils.countJsonlLines(file)
+                        val isCurrentSession = id == currentSessionId
+                        val displayName = if (isCurrentSession) CURRENT_SESSION_LABEL
+                        else ConversationFileUtils.formatDateMillis(dateMillis)
+                        ConversationEntry(file, displayName, messageCount, size, dateMillis, isCurrentSession)
+                    }
+                    .sorted(Comparator.comparingLong<ConversationEntry> { it.dateMillis }.reversed())
+                    .toList()
+            }
+        }.getOrElse { e ->
             LOG.warn("Failed to scan sessions directory: $sessionsDir", e)
             emptyList()
         }

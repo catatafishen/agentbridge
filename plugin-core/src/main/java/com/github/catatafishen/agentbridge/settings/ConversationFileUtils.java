@@ -94,14 +94,14 @@ public final class ConversationFileUtils {
      * Returns -1 if the file cannot be read.
      */
     public static int countJsonlLines(Path file) {
-        try (java.io.BufferedReader reader = Files.newBufferedReader(file)) {
+        try (java.io.BufferedReader reader = Files.newBufferedReader(file, java.nio.charset.StandardCharsets.UTF_8)) {
             int count = 0;
             String line;
             while ((line = reader.readLine()) != null) {
                 if (!line.isBlank()) count++;
             }
             return count;
-        } catch (Exception e) {
+        } catch (java.io.IOException e) {
             return -1;
         }
     }
