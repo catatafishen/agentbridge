@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
+import com.github.catatafishen.agentbridge.session.exporters.ExportUtils
+import com.google.gson.JsonParser
 import com.intellij.icons.AllIcons
 import com.intellij.ide.actions.RevealFileAction
 import com.intellij.notification.NotificationGroupManager
@@ -18,16 +20,10 @@ import com.intellij.ui.ColoredTableCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.ToolbarDecorator
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.AlignY
-import com.intellij.ui.dsl.builder.RowLayout
-import com.intellij.ui.dsl.builder.bindIntValue
-import com.intellij.ui.dsl.builder.bindSelected
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import java.io.IOException
-import java.nio.file.DirectoryStream
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.JTable
@@ -69,7 +65,7 @@ class ChatHistoryConfigurable(private val project: Project) :
 
         row {
             comment(
-                "Conversation files stored in this project's <code>.agent-work</code> directory."
+                "Conversation sessions stored in the AgentBridge sessions directory."
             )
         }
         row { cell(summaryLabel) }
@@ -177,15 +173,13 @@ class ChatHistoryConfigurable(private val project: Project) :
     private fun createRevealInFinderAction(): AnAction =
         object : AnAction(
             "Show in ${RevealFileAction.getFileManagerName()}",
-            "Open conversations directory in file manager",
+            "Open sessions directory in file manager",
             AllIcons.Actions.MenuOpen
         ) {
             override fun actionPerformed(e: AnActionEvent) {
-                val basePath = project.basePath ?: return
-                var dir = Path.of(basePath, AGENT_WORK_DIR, CONVERSATIONS_DIR)
-                if (!Files.isDirectory(dir)) dir = Path.of(basePath, AGENT_WORK_DIR)
-                RevealFileAction.openDirectory(dir.toFile())
+                RevealFileAction.openDirectory(ExportUtils.sessionsDir(project))
             }
+
             override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
         }
 
@@ -245,26 +239,40 @@ class ChatHistoryConfigurable(private val project: Project) :
     }
 
     private fun scanConversations(): List<ConversationEntry> {
-        val basePath = project.basePath ?: return emptyList()
-        val entries = mutableListOf<ConversationEntry>()
-        val agentWorkDir = Path.of(basePath, AGENT_WORK_DIR)
-        val current = agentWorkDir.resolve(CURRENT_SESSION_FILE)
-        if (Files.isRegularFile(current)) entries.add(buildEntry(current, true))
-        val conversationsDir = agentWorkDir.resolve(CONVERSATIONS_DIR)
-        if (Files.isDirectory(conversationsDir)) {
-            try {
-                Files.newDirectoryStream(
-                    conversationsDir, "$ARCHIVE_PREFIX*$JSON_EXTENSION"
-                ).use { stream: DirectoryStream<Path> ->
-                    for (file in stream) {
-                        if (Files.isRegularFile(file)) entries.add(buildEntry(file, false))
-                    }
-                }
-            } catch (e: IOException) {
-                LOG.warn("Failed to scan conversations directory: $conversationsDir", e)
+        val sessionsDir = ExportUtils.sessionsDir(project).toPath()
+        if (!Files.isDirectory(sessionsDir)) return emptyList()
+
+        val indexFile = sessionsDir.resolve("sessions-index.json")
+        if (!Files.isRegularFile(indexFile)) return emptyList()
+
+        val currentSessionId = runCatching {
+            Files.readString(sessionsDir.resolve(".current-session-id")).trim()
+        }.getOrNull()
+
+        return try {
+            val array = JsonParser.parseString(Files.readString(indexFile)).asJsonArray
+            val entries = mutableListOf<ConversationEntry>()
+            for (el in array) {
+                val obj = el.asJsonObject
+                val id = obj.get("id")?.asString ?: continue
+                val jsonlPath = obj.get("jsonlPath")?.asString ?: "$id.jsonl"
+                val updatedAt = obj.get("updatedAt")?.asLong ?: 0L
+                val jsonlFile = sessionsDir.resolve(jsonlPath)
+                if (!Files.isRegularFile(jsonlFile)) continue
+                val size = runCatching { Files.size(jsonlFile) }.getOrDefault(0L)
+                val messageCount = ConversationFileUtils.countJsonlLines(jsonlFile)
+                val isCurrentSession = id == currentSessionId
+                val displayName = if (isCurrentSession) CURRENT_SESSION_LABEL
+                else ConversationFileUtils.formatDateMillis(updatedAt)
+                entries.add(
+                    ConversationEntry(jsonlFile, displayName, messageCount, size, updatedAt, isCurrentSession)
+                )
             }
+            entries
+        } catch (e: Exception) {
+            LOG.warn("Failed to scan sessions directory: $sessionsDir", e)
+            emptyList()
         }
-        return entries
     }
 
     private fun updateSummary(entries: List<ConversationEntry>) {
@@ -355,40 +363,9 @@ class ChatHistoryConfigurable(private val project: Project) :
         }
     }
 
-    private fun buildEntry(file: Path, currentSession: Boolean): ConversationEntry {
-        val size: Long
-        val lastModifiedMillis: Long
-        try {
-            size = Files.size(file)
-            lastModifiedMillis = Files.getLastModifiedTime(file).toMillis()
-        } catch (e: IOException) {
-            LOG.warn("Failed to read file attributes: $file", e)
-            return ConversationEntry(file, file.fileName.toString(), 0, 0, 0, currentSession)
-        }
-        val messageCount = ConversationFileUtils.countMessages(file)
-        val displayName: String
-        val dateMillis: Long
-        if (currentSession) {
-            displayName = CURRENT_SESSION_LABEL
-            dateMillis = lastModifiedMillis
-        } else {
-            val timestamp = file.fileName.toString()
-                .removePrefix(ARCHIVE_PREFIX)
-                .removeSuffix(JSON_EXTENSION)
-            displayName = ConversationFileUtils.formatTimestamp(timestamp)
-            dateMillis = ConversationFileUtils.parseTimestampMillis(timestamp, lastModifiedMillis)
-        }
-        return ConversationEntry(file, displayName, messageCount, size, dateMillis, currentSession)
-    }
-
     companion object {
         const val ID = "com.github.catatafishen.agentbridge.chatHistory"
         private val LOG = Logger.getInstance(ChatHistoryConfigurable::class.java)
-        private const val AGENT_WORK_DIR = ".agent-work"
-        private const val CONVERSATIONS_DIR = "conversations"
-        private const val CURRENT_SESSION_FILE = "conversation.json"
-        private const val ARCHIVE_PREFIX = "conversation-"
-        private const val JSON_EXTENSION = ".json"
         private const val CURRENT_SESSION_LABEL = "Current Session"
     }
 }
