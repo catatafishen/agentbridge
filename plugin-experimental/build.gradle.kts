@@ -1,3 +1,4 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
@@ -165,7 +166,11 @@ intellijPlatform {
             )
         )
         ides {
-            recommended()
+            // Explicit stable version to avoid recommended() pulling in EAP builds
+            // (261/262 = IDEA 2026.x) that cause resource exhaustion and spurious
+            // ClosedByInterruptException failures in the verifier. See plugin-core
+            // build.gradle.kts for the full explanation.
+            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
         }
     }
 }

@@ -239,4 +239,15 @@ jobs:
           # package-registry distribution channel in addition to the GitHub
           # release ZIP and the JetBrains Marketplace listing. Also gives
           # OpenSSF Scorecard's "Packaging" check something to detect.
+          #
+          # Guard against workflow reruns: GitHub Packages returns 409 Conflict
+          # if we try to publish the same version twice. Check if the .pom is
+          # already present and skip if so (idempotent rerun).
+          POM_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://maven.pkg.github.com/catatafishen/agentbridge/com/github/catatafishen/ide-agent-for-copilot/$PLUGIN_VERSION/ide-agent-for-copilot-$PLUGIN_VERSION.pom")
+          if [ "$POM_STATUS" = "200" ]; then
+            echo "v$PLUGIN_VERSION already published to GitHub Packages — skipping (workflow rerun)."
+            exit 0
+          fi
           gradle :plugin-core:publish :plugin-experimental:publish --no-daemon --quiet

@@ -433,15 +433,20 @@ intellijPlatform {
             )
         )
         ides {
-            recommended()
-            // Verify against non-Java JetBrains IDEs
+            // Use explicit stable versions instead of recommended() to avoid
+            // EAP builds (261/262 = IDEA 2026.x) being pulled in automatically.
+            // Those EAP IDEs are large and can cause runner resource exhaustion,
+            // which interrupts verifier worker threads and cascades into a spurious
+            // ClosedByInterruptException failure on all workers via structured concurrency.
+            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
+            // Non-Java JetBrains IDEs (same 253 platform base)
             create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
             create(IntelliJPlatformType.WebStorm, "2025.3")
             create(IntelliJPlatformType.GoLand, "2025.3")
             // Note: Android Studio verification via Gradle plugin is broken
             // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
             // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
-            // IntelliJ IDEA 2025.3 which we verify above via recommended().
+            // IntelliJ IDEA 2025.3 which we verify above.
         }
     }
 }
@@ -608,16 +613,16 @@ tasks {
     }
 
     named<VerifyPluginTask>("verifyPlugin") {
-        // The plugin verifier runs each IDE in a separate coroutine on Dispatchers.Default,
-        // which in Kotlin uses CoroutineScheduler (NOT ForkJoinPool.common). Multiple workers
-        // share a CachingJarFileSystemProvider that caches ZipFileSystem instances by URI.
-        // When one coroutine's thread is interrupted (e.g., during coroutine cancellation),
-        // the NIO channel closure propagates to all co-readers of the same cached ZipFileSystem,
-        // causing ClosedByInterruptException in other workers and a spurious CI failure.
+        // The primary fix for ClosedByInterruptException CI failures is using explicit stable
+        // IDE versions above (not recommended()). recommended() pulled in EAP builds (261/262 =
+        // IDEA 2026.x) that are large, resource-intensive, and prone to crashing a verifier worker
+        // thread. When one worker thread is interrupted, NIO channel closures cascade to all other
+        // workers that share CachingJarFileSystemProvider ZipFileSystem instances, causing spurious
+        // ClosedByInterruptException failures on every worker via structured-concurrency cancellation.
         //
-        // Fix: force the Kotlin CoroutineScheduler to 1 thread so all IDE checks run
-        // sequentially, eliminating the shared-filesystem race. ForkJoinPool.common.parallelism
-        // does NOT affect Kotlin's scheduler and must NOT be relied on for this purpose.
+        // Secondary safety net: if the verifier uses Kotlin's DefaultDispatcher (CoroutineScheduler)
+        // for its workers, limiting the pool to 1 thread makes all IDE checks sequential, eliminating
+        // the shared-filesystem race. ForkJoinPool.common.parallelism does NOT affect this scheduler.
         jvmArgs(
             "-Dkotlinx.coroutines.scheduler.core.pool.size=1",
             "-Dkotlinx.coroutines.scheduler.max.pool.size=1",
