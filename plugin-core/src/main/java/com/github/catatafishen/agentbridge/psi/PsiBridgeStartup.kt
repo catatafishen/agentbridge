@@ -5,8 +5,6 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.wm.ToolWindowManager
-import java.nio.file.Files
-import java.nio.file.Path
 
 /**
  * Starts the PSI Bridge HTTP server when a project opens.
@@ -22,8 +20,6 @@ class PsiBridgeStartup : ProjectActivity {
         }
 
         LOG.info("Initializing plugin for project: ${project.name}")
-
-        createAgentWorkspace(project)
 
         // Force-initialize PsiBridgeService so tools are registered before any agent connects
         PsiBridgeService.getInstance(project)
@@ -61,25 +57,6 @@ class PsiBridgeStartup : ProjectActivity {
             ApplicationManager.getApplication().invokeLater {
                 ToolWindowManager.getInstance(project).getToolWindow("AgentBridge")?.show(null)
             }
-        }
-    }
-
-    /**
-     * Creates the .agent-work/ directory structure for agent session state.
-     * This directory is typically gitignored and provides a safe workspace
-     * for the agent to store session artifacts.
-     */
-    private fun createAgentWorkspace(project: Project) {
-        val basePath = project.basePath ?: return
-
-        try {
-            val agentWork = Path.of(basePath, ".agent-work")
-            Files.createDirectories(agentWork.resolve("session-state"))
-            Files.createDirectories(agentWork.resolve("files"))
-
-            LOG.info("Agent workspace initialized at: $agentWork")
-        } catch (e: Exception) {
-            LOG.warn("Failed to create agent workspace", e)
         }
     }
 
