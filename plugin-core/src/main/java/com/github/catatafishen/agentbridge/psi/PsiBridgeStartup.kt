@@ -88,9 +88,8 @@ class PsiBridgeStartup : ProjectActivity {
     }
 
     /**
-     * Removes any stale agentbridge-ext-* modules left by an unclean shutdown.
-     * All agentbridge-ext-* modules are removed unconditionally on startup since
-     * attached external dirs are not persisted across sessions.
+     * Removes all agentbridge-ext-* modules left over from a previous session.
+     * External modules are temporary by design and should not persist across restarts.
      * Runs asynchronously on a pooled thread.
      */
     private fun cleanupStaleExternalModules(project: Project) {

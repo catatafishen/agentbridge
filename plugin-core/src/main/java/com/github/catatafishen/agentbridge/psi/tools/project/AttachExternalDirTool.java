@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import org.jetbrains.annotations.NotNull;
 
@@ -72,7 +71,7 @@ public final class AttachExternalDirTool extends ProjectTool {
 
     @Override
     public @NotNull String permissionTemplate() {
-        return "Attach external directory: {path}";
+        return "Attach external directory: {path}{git_url}";
     }
 
     @Override
@@ -144,10 +143,7 @@ public final class AttachExternalDirTool extends ProjectTool {
                 + ". Provide a 'destination' parameter or use 'path' to attach an existing directory.";
         }
 
-        String command = "git clone -- " + shellEscape(gitUrl) + " " + shellEscape(destination);
-        GeneralCommandLine cmd = SystemInfo.isWindows
-            ? new GeneralCommandLine("cmd", "/c", command)
-            : new GeneralCommandLine("sh", "-c", command);
+        GeneralCommandLine cmd = new GeneralCommandLine("git", "clone", "--", gitUrl, destination);
         cmd.setWorkDirectory(System.getProperty("user.dir"));
 
         ProcessResult result = executeInRunPanel(cmd, "git clone " + gitUrl, 120);
@@ -200,7 +196,4 @@ public final class AttachExternalDirTool extends ProjectTool {
         return name.isEmpty() ? "external" : name;
     }
 
-    private static String shellEscape(String s) {
-        return "'" + s.replace("'", "'\\''") + "'";
-    }
 }

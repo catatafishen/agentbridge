@@ -615,22 +615,24 @@ public abstract class FileTool extends Tool {
         }
     }
 
-    /**
-     * Returns an error string if {@code pathStr} resolves to a path inside an attached external
-     * directory, or {@code null} if the write is permitted.
-     *
-     * <p>External directories are read-only to prevent accidental modification of projects
-     * that were attached for reference purposes only.
-     */
     protected @Nullable String guardExternalWrite(@NotNull String pathStr) {
-        String normalized = pathStr.replace('\\', '/');
-        String absPath = normalized.startsWith("/") ? normalized
-            : (project.getBasePath() != null ? project.getBasePath() + "/" + normalized : null);
-        if (absPath == null) return null;
+        java.nio.file.Path absPath;
+        try {
+            java.nio.file.Path p = java.nio.file.Path.of(pathStr);
+            if (p.isAbsolute()) {
+                absPath = p.normalize();
+            } else {
+                String base = project.getBasePath();
+                if (base == null) return null;
+                absPath = java.nio.file.Path.of(base).resolve(pathStr).normalize();
+            }
+        } catch (Exception e) {
+            return null;  // invalid path syntax — let subsequent logic handle it
+        }
 
         com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry registry =
             com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry.getInstance(project);
-        if (registry.isExternalPath(absPath)) {
+        if (registry.isExternalPath(absPath.toString())) {
             return "Error: '" + pathStr + "' is inside an attached external directory. "
                 + "External directories are read-only. Detach it first with detach_external_dir if you need to modify it.";
         }
