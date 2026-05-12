@@ -33,6 +33,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.util.Alarm;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -612,6 +613,28 @@ public abstract class FileTool extends Tool {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /**
+     * Returns an error string if {@code pathStr} resolves to a path inside an attached external
+     * directory, or {@code null} if the write is permitted.
+     *
+     * <p>External directories are read-only to prevent accidental modification of projects
+     * that were attached for reference purposes only.
+     */
+    protected @Nullable String guardExternalWrite(@NotNull String pathStr) {
+        String normalized = pathStr.replace('\\', '/');
+        String absPath = normalized.startsWith("/") ? normalized
+            : (project.getBasePath() != null ? project.getBasePath() + "/" + normalized : null);
+        if (absPath == null) return null;
+
+        com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry registry =
+            com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry.getInstance(project);
+        if (registry.isExternalPath(absPath)) {
+            return "Error: '" + pathStr + "' is inside an attached external directory. "
+                + "External directories are read-only. Detach it first with detach_external_dir if you need to modify it.";
+        }
+        return null;
     }
 
     protected FileTool(Project project) {

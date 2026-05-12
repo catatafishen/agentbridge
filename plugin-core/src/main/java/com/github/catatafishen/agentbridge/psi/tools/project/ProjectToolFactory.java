@@ -37,6 +37,9 @@ public final class ProjectToolFactory {
         tools.add(new DeleteRunConfigurationTool(project, runConfigService));
         tools.add(new GetProjectModulesTool(project));
         tools.add(new GetProjectDependenciesTool(project));
+        tools.add(new AttachExternalDirTool(project));
+        tools.add(new DetachExternalDirTool(project));
+        tools.add(new ListExternalDirsTool(project));
         return List.copyOf(tools);
     }
 }

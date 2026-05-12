@@ -70,6 +70,8 @@ public final class CreateFileTool extends FileTool {
             return "Error: 'path' and 'content' parameters are required";
         }
         String pathStr = args.get("path").getAsString();
+        String guardError = guardExternalWrite(pathStr);
+        if (guardError != null) return guardError;
         String content = args.get(PARAM_CONTENT).getAsString();
 
         String basePath = project.getBasePath();
