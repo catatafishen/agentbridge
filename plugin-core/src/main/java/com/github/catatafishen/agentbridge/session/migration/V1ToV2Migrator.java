@@ -59,8 +59,9 @@ public final class V1ToV2Migrator {
 
         String v1Json = readBestV1Json(basePath);
         if (v1Json == null || v1Json.isBlank()) {
-            // Nothing to migrate — just create an empty index so we don't retry
-            writeEmptyIndex(sessionsDir, indexFile);
+            // No v1 data to migrate. Don't create a sentinel file here — doing so would
+            // pin ExportUtils.sessionsDir() to the legacy .agent-work/sessions path on fresh
+            // installs, preventing the configured .agentbridge/sessions directory from being used.
             return;
         }
 

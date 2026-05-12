@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,30 +42,31 @@ class V1ToV2MigratorTest {
     // ── nothing to migrate (no conversation.json) ─────────────────────────────
 
     @Test
-    void writesEmptyIndexWhenNoV1DataExists() {
+    void doesNothingWhenNoV1DataExists() {
         V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
 
         Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
-        assertTrue(indexFile.toFile().exists(), "empty index must be created");
-        assertIndexEquals(indexFile);
+        assertFalse(indexFile.toFile().exists(), "no sentinel file should be created on fresh installs");
     }
 
     @Test
-    void writesEmptyIndexWhenConversationJsonIsEmpty() throws IOException {
+    void doesNothingWhenConversationJsonIsEmpty() throws IOException {
         writeConversationJson("   ");
 
         V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
 
-        assertIndexEquals(projectRoot.resolve(".agent-work/sessions/sessions-index.json"));
+        Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
+        assertFalse(indexFile.toFile().exists(), "no sentinel file should be created for empty/tiny v1 files");
     }
 
     @Test
-    void writesEmptyIndexWhenConversationJsonHasEmptyArray() throws IOException {
+    void doesNothingWhenConversationJsonHasEmptyArray() throws IOException {
         writeConversationJson("[]");
 
         V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
 
-        assertIndexEquals(projectRoot.resolve(".agent-work/sessions/sessions-index.json"));
+        Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
+        assertFalse(indexFile.toFile().exists(), "no sentinel file should be created for empty v1 array");
     }
 
     // ── null basePath ─────────────────────────────────────────────────────────
@@ -163,14 +165,6 @@ class V1ToV2MigratorTest {
         Path agentWork = projectRoot.resolve(".agent-work");
         Files.createDirectories(agentWork);
         Files.writeString(agentWork.resolve("conversation.json"), content, StandardCharsets.UTF_8);
-    }
-
-    private static void assertIndexEquals(Path indexFile) {
-        try {
-            assertEquals("[]", Files.readString(indexFile, StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private static String singleSessionV1Json() {

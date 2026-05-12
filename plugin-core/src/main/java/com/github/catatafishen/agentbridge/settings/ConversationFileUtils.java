@@ -88,4 +88,21 @@ public final class ConversationFileUtils {
             return -1;
         }
     }
+
+    /**
+     * Counts lines in a JSONL file (one JSON object per line).
+     * Returns -1 if the file cannot be read.
+     */
+    public static int countJsonlLines(Path file) {
+        try (java.io.BufferedReader reader = Files.newBufferedReader(file)) {
+            int count = 0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.isBlank()) count++;
+            }
+            return count;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
 }

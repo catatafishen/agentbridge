@@ -9,6 +9,7 @@ import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
@@ -467,10 +468,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
 
     private Path resolvePrivateMcpConfigDir() {
         if (project != null) {
-            String basePath = project.getBasePath();
-            if (basePath != null && !basePath.isBlank()) {
-                return Path.of(basePath, ".agent-work", "mcp-configs");
-            }
+            return AgentBridgeStorageSettings.getInstance().getProjectStorageDir(project).resolve("mcp-configs");
         }
         return Path.of(SystemProperties.getUserHome(), ".agentbridge", "mcp-configs");
     }
