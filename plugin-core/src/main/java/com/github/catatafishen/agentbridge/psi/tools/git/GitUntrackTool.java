@@ -92,6 +92,7 @@ public final class GitUntrackTool extends GitTool {
         if (recursive) {
             cmdArgs.add("-r");
         }
+        cmdArgs.add("--");
         cmdArgs.addAll(paths);
 
         String result = runGitIn(root, cmdArgs.toArray(String[]::new));
