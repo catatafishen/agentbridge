@@ -40,6 +40,7 @@ import java.util.concurrent.TimeoutException;
 public final class ConversationService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ConversationService.class);
+    private static final String DB_INIT_FAILED = "ConversationDatabase initialization failed: ";
 
     private static final String CURRENT_SESSION_FILE = ".current-session-id";
     private static final int MAX_SESSION_NAME_LENGTH = 60;
@@ -294,37 +295,44 @@ public final class ConversationService implements Disposable {
         return result;
     }
 
-    /**
-     * Executes a structured SQL query against the conversation database.
-     *
-     * @param params query parameters; see {@link ConversationQuery.QueryParams}
-     * @return matching turns, most-recent-first
-     */
     @NotNull
     public List<ConversationQuery.TurnSummary> query(@NotNull ConversationQuery.QueryParams params) {
-        ConversationDatabase db = project != null ? ConversationDatabase.getInstance(project) : null;
-        if (db == null || !db.isReady()) return List.of();
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
         return new ConversationQuery(db).query(params);
     }
 
-    /**
-     * Returns distinct git branch names that have at least one turn, for filter dropdowns.
-     */
     @NotNull
     public List<String> listDistinctBranches() {
-        ConversationDatabase db = project != null ? ConversationDatabase.getInstance(project) : null;
-        if (db == null || !db.isReady()) return List.of();
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
         return new ConversationQuery(db).listDistinctBranches();
     }
 
-    /**
-     * Returns distinct agent names from sessions that have turns, for filter dropdowns.
-     */
     @NotNull
     public List<String> listDistinctAgents() {
-        ConversationDatabase db = project != null ? ConversationDatabase.getInstance(project) : null;
-        if (db == null || !db.isReady()) return List.of();
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
         return new ConversationQuery(db).listDistinctAgents();
+    }
+
+    /**
+     * Returns a ready {@link ConversationDatabase} instance, initializing it if necessary.
+     * Returns {@code null} if there is no project, or if initialization fails.
+     */
+    @Nullable
+    private ConversationDatabase getInitializedDbOrNull() {
+        if (project == null) return null;
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        if (!db.isReady()) {
+            try {
+                db.initialize();
+            } catch (Exception e) {
+                LOG.debug(DB_INIT_FAILED + e.getMessage());
+                return null;
+            }
+        }
+        return db;
     }
 
     // ── Session ID management ────────────────────────────────────────────────
@@ -461,7 +469,7 @@ public final class ConversationService implements Disposable {
                 try {
                     db.initialize();
                 } catch (Exception e) {
-                    LOG.debug("ConversationDatabase initialization failed: " + e.getMessage());
+                    LOG.debug(DB_INIT_FAILED + e.getMessage());
                     return null;
                 }
             }
@@ -482,7 +490,7 @@ public final class ConversationService implements Disposable {
                 try {
                     db.initialize();
                 } catch (Exception e) {
-                    LOG.debug("ConversationDatabase initialization failed: " + e.getMessage());
+                    LOG.debug(DB_INIT_FAILED + e.getMessage());
                     return null;
                 }
             }

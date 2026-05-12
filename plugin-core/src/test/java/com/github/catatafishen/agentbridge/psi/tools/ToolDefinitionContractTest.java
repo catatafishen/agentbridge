@@ -23,6 +23,7 @@ import com.github.catatafishen.agentbridge.psi.tools.editor.GetOpenEditorsTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.ListScratchFilesTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.ListThemesTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.OpenInEditorTool;
+import com.github.catatafishen.agentbridge.psi.tools.editor.QueryTurnsTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.RunScratchFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.SearchConversationHistoryTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.SetThemeTool;
@@ -59,11 +60,11 @@ import com.github.catatafishen.agentbridge.psi.tools.git.GitStashTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitStatusTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitTagTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitUnstageTool;
-import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.GetNotificationsTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.HttpRequestTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.InteractWithModalTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ListRunTabsTool;
+import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadBuildOutputTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadIdeLogTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadRunOutputTool;
@@ -237,7 +238,8 @@ class ToolDefinitionContractTest {
             new GetOpenEditorsTool(null),
             new ListThemesTool(null),
             new SetThemeTool(null),
-            new SearchConversationHistoryTool(null)
+            new SearchConversationHistoryTool(null),
+            new QueryTurnsTool(null)
         );
     }
 
