@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side
 
+import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
@@ -8,7 +9,9 @@ import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_RO
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.DocumentAdapter
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
@@ -17,12 +20,17 @@ import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
+import java.awt.FlowLayout
+import java.awt.GridLayout
 import java.awt.event.HierarchyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.*
 import javax.swing.event.DocumentEvent
+
+private const val ALL_BRANCHES = "(all branches)"
+private const val ALL_AGENTS = "(all agents)"
 
 internal class PromptsPanel(
     private val project: Project,
@@ -33,10 +41,18 @@ internal class PromptsPanel(
         val prompt: EntryData.Prompt,
         val stats: EntryData.TurnStats?,
         val commits: List<String>,
-        val sessionId: String = ""
+        val sessionId: String = "",
+        val turnId: String = ""
     )
 
     private val searchField = SearchTextField()
+    private val branchModel = DefaultComboBoxModel(arrayOf(ALL_BRANCHES))
+    private val agentModel = DefaultComboBoxModel(arrayOf(ALL_AGENTS))
+    private val branchCombo = ComboBox(branchModel)
+    private val agentCombo = ComboBox(agentModel)
+    private val toolField = JBTextField()
+    private val fileField = JBTextField()
+
     private val listModel = DefaultListModel<PromptItem>()
     private val promptList = JBList(listModel)
     private val sessionStore = ConversationService.getInstance(project)
@@ -101,6 +117,13 @@ internal class PromptsPanel(
             }
         })
 
+        val filterChangeListener = object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                displayedCount = PAGE_SIZE
+                refresh(scrollToBottom = false)
+            }
+        }
+
         searchField.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) {
                 val q = searchField.text.orEmpty()
@@ -113,9 +136,34 @@ internal class PromptsPanel(
         })
         searchField.textEditor.emptyText.text = "Search prompts…"
 
-        val top = JPanel(BorderLayout())
-        top.border = JBUI.Borders.empty(4)
-        top.add(searchField, BorderLayout.CENTER)
+        toolField.emptyText.text = "tool name…"
+        fileField.emptyText.text = "file path…"
+        toolField.document.addDocumentListener(filterChangeListener)
+        fileField.document.addDocumentListener(filterChangeListener)
+
+        branchCombo.addActionListener { refresh(scrollToBottom = false) }
+        agentCombo.addActionListener { refresh(scrollToBottom = false) }
+
+        // Configure combo boxes
+        branchCombo.font = JBUI.Fonts.miniFont()
+        agentCombo.font = JBUI.Fonts.miniFont()
+        toolField.font = JBUI.Fonts.miniFont()
+        fileField.font = JBUI.Fonts.miniFont()
+
+        val filterRow = JPanel(GridLayout(2, 2, JBUI.scale(4), JBUI.scale(2))).apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyTop(2)
+            add(labeledControl("Branch:", branchCombo))
+            add(labeledControl("Agent:", agentCombo))
+            add(labeledControl("Tool:", toolField))
+            add(labeledControl("File:", fileField))
+        }
+
+        val top = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(4)
+            add(searchField, BorderLayout.NORTH)
+            add(filterRow, BorderLayout.CENTER)
+        }
         add(top, BorderLayout.NORTH)
 
         val centerPanel = JPanel(BorderLayout())
@@ -126,11 +174,20 @@ internal class PromptsPanel(
         add(centerPanel, BorderLayout.CENTER)
 
         chatConsole.addEntriesChangeListener(entriesListener)
-
         addHierarchyListener(hierarchyListener)
 
+        populateFilterCombos()
         reloadHistoryAsync()
         refresh()
+    }
+
+    private fun labeledControl(label: String, control: JComponent): JPanel {
+        val p = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+        }
+        p.add(JLabel(label).apply { font = JBUI.Fonts.miniFont() })
+        p.add(control)
+        return p
     }
 
     private fun scrollToBottom() {
@@ -147,6 +204,31 @@ internal class PromptsPanel(
             reloadHistoryAsync()
         } else {
             refresh()
+        }
+    }
+
+    /** Populates the Branch and Agent dropdowns from the DB on a pooled thread. */
+    private fun populateFilterCombos() {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val branches = sessionStore.listDistinctBranches().toList()
+            val agents = sessionStore.listDistinctAgents().toList()
+            ApplicationManager.getApplication().invokeLater {
+                val selectedBranch = branchCombo.selectedItem as? String
+                branchModel.removeAllElements()
+                branchModel.addElement(ALL_BRANCHES)
+                branches.forEach { branchModel.addElement(it) }
+                if (selectedBranch != null && selectedBranch != ALL_BRANCHES) {
+                    branchCombo.selectedItem = selectedBranch
+                }
+
+                val selectedAgent = agentCombo.selectedItem as? String
+                agentModel.removeAllElements()
+                agentModel.addElement(ALL_AGENTS)
+                agents.forEach { agentModel.addElement(it) }
+                if (selectedAgent != null && selectedAgent != ALL_AGENTS) {
+                    agentCombo.selectedItem = selectedAgent
+                }
+            }
         }
     }
 
@@ -171,11 +253,71 @@ internal class PromptsPanel(
         }
     }
 
+    /** Returns true if any SQL-backed filter (branch/agent/tool/file) is active. */
+    private fun hasSqlFilters(): Boolean {
+        val branch = branchCombo.selectedItem as? String
+        val agent = agentCombo.selectedItem as? String
+        return (branch != null && branch != ALL_BRANCHES) ||
+            (agent != null && agent != ALL_AGENTS) ||
+            toolField.text.isNotBlank() ||
+            fileField.text.isNotBlank()
+    }
+
     private fun refresh() {
         refresh(scrollToBottom = true)
     }
 
     private fun refresh(scrollToBottom: Boolean) {
+        if (hasSqlFilters() || (searchField.text.isNotBlank() && hasSqlFilters())) {
+            reloadWithSqlFilters(scrollToBottom)
+        } else {
+            refreshFromMemory(scrollToBottom)
+        }
+    }
+
+    /**
+     * SQL-backed refresh: queries conversation DB directly with active filters.
+     * Used when branch/agent/tool/file filters are set.
+     */
+    private fun reloadWithSqlFilters(scrollToBottom: Boolean) {
+        val query = searchField.text.orEmpty().trim().takeIf { it.isNotEmpty() }
+        val branch = (branchCombo.selectedItem as? String)?.takeIf { it != "(all branches)" }
+        val agent = (agentCombo.selectedItem as? String)?.takeIf { it != "(all agents)" }
+        val tool = toolField.text.trim().takeIf { it.isNotEmpty() }
+        val file = fileField.text.trim().takeIf { it.isNotEmpty() }
+
+        val serial = historyLoadSerial.incrementAndGet()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val params = ConversationQuery.QueryParams(
+                null, null, displayedCount + PAGE_SIZE, null,
+                query, null, tool, file, branch, agent,
+                null, null, false, false, Int.MAX_VALUE
+            )
+            val turns = sessionStore.query(params).toList()
+            val items = turns.map { turn ->
+                // Build a synthetic PromptItem from the TurnSummary
+                val prompt = EntryData.Prompt(
+                    turn.userMessage(), turn.timestamp().toString(),
+                    null, turn.turnId(), turn.turnId()
+                )
+                PromptItem(prompt, null, emptyList(), turn.sessionId(), turn.turnId())
+            }
+            ApplicationManager.getApplication().invokeLater {
+                if (serial != historyLoadSerial.get()) return@invokeLater
+                loadMorePanel.isVisible = false
+                listModel.clear()
+                items.forEach { listModel.addElement(it) }
+                if (scrollToBottom && listModel.size() > 0) {
+                    ApplicationManager.getApplication().invokeLater {
+                        promptList.ensureIndexIsVisible(listModel.size() - 1)
+                    }
+                }
+            }
+        }
+    }
+
+    /** In-memory refresh: uses loaded historyEntries + live chatConsole entries. */
+    private fun refreshFromMemory(scrollToBottom: Boolean) {
         val query = searchField.text.orEmpty()
         val allEntries = mergeEntries(historyEntries, chatConsole.entriesSnapshot())
         val prompts = allEntries.filterIsInstance<EntryData.Prompt>()
@@ -192,7 +334,8 @@ internal class PromptsPanel(
             val key = promptEntryId(p)
             val data = turnDataMap[key]
             val sid = promptSessionMap[key] ?: ""
-            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid))
+            val tid = p.id.takeIf { it.isNotEmpty() } ?: p.entryId
+            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid, tid))
         }
 
         if (scrollToBottom && listModel.size() > 0) {
@@ -203,7 +346,6 @@ internal class PromptsPanel(
     }
 
     private fun loadMore() {
-        // Preserve scroll: after adding PAGE_SIZE new items at top, scroll back to item at PAGE_SIZE
         val targetIndex = PAGE_SIZE.coerceAtMost(listModel.size())
         displayedCount += PAGE_SIZE
         refresh(scrollToBottom = false)
@@ -269,7 +411,8 @@ internal class PromptsPanel(
             if (listWidth > 0) {
                 textArea.setSize(listWidth - JBUI.scale(18), Short.MAX_VALUE.toInt())
             }
-            tsLabel.text = formatTimestamp(value.prompt.timestamp)
+            val turnIdSuffix = value.turnId.takeIf { it.length >= 8 }?.let { " · ${it.take(8)}…" } ?: ""
+            tsLabel.text = formatTimestamp(value.prompt.timestamp) + turnIdSuffix
             statsLabel.text = formatStats(value.stats)
             textArea.text = truncatePrompt(value.prompt.text.trim())
 
