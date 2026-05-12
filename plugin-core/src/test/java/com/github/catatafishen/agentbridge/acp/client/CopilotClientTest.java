@@ -74,14 +74,14 @@ class CopilotClientTest {
     void merge_onlyMcpTools() throws Exception {
         List<String> result = invokeMerge(List.of("git_status"), List.of());
         assertEquals(1, result.size());
-        assertEquals("agentbridge/git_status", result.get(0));
+        assertEquals("agentbridge/git_status", result.getFirst());
     }
 
     @Test
     void merge_onlyBuiltinTools() throws Exception {
         List<String> result = invokeMerge(List.of(), List.of("bash"));
         assertEquals(1, result.size());
-        assertEquals("bash", result.get(0));
+        assertEquals("bash", result.getFirst());
     }
 
     // ── resolveAcpName (protected instance — Copilot-specific override) ─────
@@ -103,7 +103,6 @@ class CopilotClientTest {
 
     // ── Reflection helpers (private static methods) ───────────────────
 
-    @SuppressWarnings("unchecked")
     private static String invokeBuildAgentDefinition(String name, String description,
                                                      List<String> tools, String systemPrompt) throws Exception {
         Method m = CopilotClient.class.getDeclaredMethod("buildAgentDefinition",
@@ -222,14 +221,22 @@ class CopilotClientTest {
 
     @Test
     void buildReprimand_readKind() throws Exception {
-        String result = invokeBuildReprimand("read");
-        assertTrue(result.startsWith("You used native read tools."), "message should start with the tool-kind prefix");
+        String result = invokeBuildReprimand("unknown-tool", "read");
+        assertTrue(result.contains("a built-in read tool"), "kind should appear in message as 'a built-in read tool'");
+        assertTrue(result.startsWith("Always prefer AgentBridge MCP tools."), "message should start with the standard prefix");
     }
 
     @Test
     void buildReprimand_executeKind() throws Exception {
-        String result = invokeBuildReprimand("execute");
-        assertTrue(result.startsWith("You used native execute tools."), "message should start with the tool-kind prefix");
+        String result = invokeBuildReprimand("unknown-tool", "execute");
+        assertTrue(result.contains("a built-in execute tool"), "kind should appear in message as 'a built-in execute tool'");
+        assertTrue(result.startsWith("Always prefer AgentBridge MCP tools."), "message should start with the standard prefix");
+    }
+
+    @Test
+    void buildReprimand_knownToolName() throws Exception {
+        String result = invokeBuildReprimand("bash", "execute");
+        assertTrue(result.contains("the `bash` built-in tool"), "known tool name should be referenced directly");
     }
 
     // ── shouldReprimand (private static) ────────────────────────────────
@@ -320,10 +327,10 @@ class CopilotClientTest {
         return (JsonObject) m.invoke(allocateClient(), params);
     }
 
-    private static String invokeBuildReprimand(String kind) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
+    private static String invokeBuildReprimand(String title, String kind) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class, String.class);
         m.setAccessible(true);
-        return (String) m.invoke(null, kind);
+        return (String) m.invoke(null, title, kind);
     }
 
     private static boolean invokeShouldReprimand(String toolId) throws Exception {
