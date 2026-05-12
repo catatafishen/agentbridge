@@ -91,6 +91,15 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
 
+## Async CI Pattern
+
+CI takes 3-5 minutes after each push or rebase. Do not wait for it synchronously — check
+`gh pr checks <number>` between other tasks. A good cadence: push a branch, work on something
+else, come back to verify once CI has had time to finish.
+
+If CI is failing: `gh pr checks <number>` to see which check failed, then
+`gh run view <run-id> --log-failed` for details.
+
 # AI Identity and Transparency
 
 When AI agents author or open GitHub content, the identity must be transparent — reviewers and auditors should be able
