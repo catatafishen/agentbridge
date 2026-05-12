@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -545,11 +546,19 @@ public abstract class GitTool extends Tool {
         boolean finished = p.waitFor(30, TimeUnit.SECONDS);
         if (!finished) {
             p.destroyForcibly();
-            return "Error: git command timed out";
+            stdoutFuture.cancel(true);
+            stderrFuture.cancel(true);
+            return "Error: git command timed out after 30s";
         }
 
-        String stdout = stdoutFuture.get(5, TimeUnit.SECONDS);
-        String stderr = stderrFuture.get(5, TimeUnit.SECONDS);
+        String stdout;
+        String stderr;
+        try {
+            stdout = stdoutFuture.get(5, TimeUnit.SECONDS);
+            stderr = stderrFuture.get(5, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            return "Error: timed out reading git output (output may be too large)";
+        }
 
         if (p.exitValue() != 0) {
             return "Error (exit " + p.exitValue() + "): " + stderr.trim();

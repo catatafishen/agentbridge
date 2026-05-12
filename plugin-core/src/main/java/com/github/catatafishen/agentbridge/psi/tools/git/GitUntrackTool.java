@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +39,8 @@ public final class GitUntrackTool extends GitTool {
             + "After untracking, the file will appear as untracked in git status. You usually want "
             + "to also add the path to .gitignore afterward to prevent it from being re-staged. "
             + "This is NOT the same as git_unstage (which only unstages staged-but-uncommitted "
-            + "changes) — git_untrack removes the file from tracking history entirely.";
+            + "changes) — git_untrack removes the file from the index so it is no longer tracked "
+            + "going forward. The file still exists in prior commits and history.";
     }
 
     @Override
@@ -54,6 +56,20 @@ public final class GitUntrackTool extends GitTool {
     @Override
     public @NotNull String permissionTemplate() {
         return "Untrack {path} from git index";
+    }
+
+    @Override
+    public @Nullable String resolvePermissionQuestion(@Nullable JsonObject args) {
+        if (args != null && args.has(PARAM_PATHS) && args.get(PARAM_PATHS).isJsonArray()) {
+            var array = args.getAsJsonArray(PARAM_PATHS);
+            if (!array.isEmpty()) {
+                String first = array.get(0).getAsString();
+                return array.size() == 1
+                    ? "Untrack " + first + " from git index"
+                    : "Untrack " + first + " (and " + (array.size() - 1) + " more) from git index";
+            }
+        }
+        return super.resolvePermissionQuestion(args);
     }
 
     @Override
