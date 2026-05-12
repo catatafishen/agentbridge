@@ -111,7 +111,8 @@ public final class GitUntrackTool extends GitTool {
             for (var p : args.getAsJsonArray(PARAM_PATHS)) {
                 result.add(p.getAsString());
             }
-            return result.isEmpty() ? null : result;
+            if (!result.isEmpty()) return result;
+            // Fall through to 'path' when 'paths' is present but empty
         }
         if (args.has("path") && !args.get("path").getAsString().isEmpty()) {
             return List.of(args.get("path").getAsString());

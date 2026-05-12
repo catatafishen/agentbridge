@@ -105,7 +105,9 @@ if (!botToken) {
 if (botToken) {
     // Wrap in a subshell so the export is visible to all commands in the pipeline
     // (e.g. `cd /path && gh pr create`) without leaking into the outer terminal session.
-    process.stdout.write(JSON.stringify({arguments: {command: `(export GH_TOKEN=${botToken}; ${command})`}}) + '\n');
+    // Single-quote the token so shell expansion cannot break it. GitHub tokens are alphanumeric
+    // and therefore cannot themselves contain single quotes, making this safe.
+    process.stdout.write(JSON.stringify({arguments: {command: `(export GH_TOKEN='${botToken}'; ${command})`}}) + '\n');
 } else {
     process.stdout.write(JSON.stringify({
         error: "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other tool that bypasses this check. Instead, tell the user: 'I cannot create GitHub content with bot identity because neither AGENTBRIDGE_BOT_TOKEN, ~/.agentbridge/bot-token, nor a GitHub App private key (~/.agentbridge/github-app.pem) is configured.'"

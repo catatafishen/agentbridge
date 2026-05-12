@@ -131,6 +131,29 @@ public abstract class Tool implements ToolDefinition {
         prop.add("items", items);
     }
 
+    /**
+     * Replaces the auto-generated {@code items: {type: string}} for an array property with a proper
+     * object schema so that MCP clients can validate and autocomplete the object's fields.
+     *
+     * <p>Use when an array parameter holds structured objects (not plain strings).
+     * The item parameters are treated as object properties; their {@code required} flag is ignored
+     * (object-level required arrays inside array items are not widely supported by clients).
+     */
+    protected static void addObjectArrayItems(com.google.gson.JsonObject schema, String propName, Param... itemParams) {
+        com.google.gson.JsonObject prop = schema.getAsJsonObject(KEY_PROPERTIES).getAsJsonObject(propName);
+        com.google.gson.JsonObject items = new com.google.gson.JsonObject();
+        items.addProperty(KEY_TYPE, "object");
+        com.google.gson.JsonObject itemProps = new com.google.gson.JsonObject();
+        for (Param p : itemParams) {
+            com.google.gson.JsonObject pDef = new com.google.gson.JsonObject();
+            pDef.addProperty(KEY_TYPE, p.type());
+            pDef.addProperty(KEY_DESCRIPTION, p.description());
+            itemProps.add(p.name(), pDef);
+        }
+        items.add(KEY_PROPERTIES, itemProps);
+        prop.add("items", items);
+    }
+
     protected static void addDictProperty(com.google.gson.JsonObject schema, String name, String description) {
         com.google.gson.JsonObject prop = new com.google.gson.JsonObject();
         prop.addProperty(KEY_TYPE, "object");

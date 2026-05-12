@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,9 +65,10 @@ public final class GitRebaseTool extends GitTool {
             onto a remote branch (origin/*). Returns rebase result with branch context.
 
             Interactive rebase (without a terminal editor): pass interactive: true and an \
-            'operations' list of {commit, action} objects, where 'commit' is a short SHA or \
-            prefix and 'action' is one of: pick (default), drop, squash, fixup, reword, edit. \
-            Commits not listed in operations keep their default 'pick' action. \
+            'operations' list of {commit, action} objects, where 'commit' is a non-blank \
+            short SHA prefix and 'action' is one of: pick (default), drop, squash, fixup, \
+            reword, edit. Commits not listed in operations keep their default 'pick' action. \
+            'branch' is required when interactive is true. \
             Example: operations: [{commit: 'abc1234', action: 'squash'}, {commit: 'def5678', action: 'drop'}]""";
     }
 
@@ -106,7 +108,9 @@ public final class GitRebaseTool extends GitTool {
             Param.optional("skip", TYPE_BOOLEAN, "Skip the current patch and continue rebase"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
-        addArrayItems(s, PARAM_OPERATIONS);
+        addObjectArrayItems(s, PARAM_OPERATIONS,
+            Param.required("commit", TYPE_STRING, "Non-blank short SHA prefix of the commit to rebase"),
+            Param.required("action", TYPE_STRING, "Action: pick, drop, squash, fixup, reword, or edit"));
         return s;
     }
 
@@ -173,18 +177,29 @@ public final class GitRebaseTool extends GitTool {
     // ── Interactive rebase (programmatic, no UI dialog) ──────
 
     private @NotNull String doInteractiveRebase(@NotNull JsonObject args, @NotNull String root) {
+        if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
+            return "Error: 'autosquash' is not supported in programmatic interactive rebase. "
+                + "Operations are applied explicitly — mark fixup!/squash! commits manually in the operations list.";
+        }
+
         String upstream = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
         if (upstream == null || upstream.isBlank()) {
             return "Error: 'branch' (upstream) parameter is required for interactive rebase";
         }
 
         Map<String, String> operations = parseOperations(args);
+        for (String key : operations.keySet()) {
+            if (key.isBlank()) {
+                return "Error: empty 'commit' SHA in operations list — each entry must have a non-blank commit prefix";
+            }
+        }
 
         try {
             git4idea.repo.GitRepository repo = PlatformApiCompat.getRepositoryForRoot(project, root);
             if (repo == null) {
-                return "Error: no git4idea repository found for '" + root
-                    + "'. Interactive rebase requires the git4idea plugin.";
+                return "Error: repository '" + root + "' is not registered in IntelliJ's VCS roots. "
+                    + "Check Settings → Version Control and confirm the directory is tracked, "
+                    + "or verify that the git4idea plugin is installed.";
             }
 
             String reviewError = AgentEditSession.getInstance(project)
@@ -193,7 +208,7 @@ public final class GitRebaseTool extends GitTool {
 
             AtomicReference<String> errorRef = new AtomicReference<>();
 
-            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            Future<?> future = ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
                     VirtualFile repoRoot = repo.getRoot();
                     var handler = new ProgrammaticRebaseEditorHandler(project, repoRoot, operations);
@@ -215,7 +230,9 @@ public final class GitRebaseTool extends GitTool {
                 } catch (Exception e) {
                     errorRef.set(e.getMessage());
                 }
-            }).get(60, TimeUnit.SECONDS);
+            });
+
+            future.get(60, TimeUnit.SECONDS);
 
             if (errorRef.get() != null) return "Error: " + errorRef.get();
 
@@ -226,7 +243,7 @@ public final class GitRebaseTool extends GitTool {
         } catch (NoClassDefFoundError e) {
             return "Error: git4idea plugin required for interactive rebase (not available in this IDE)";
         } catch (TimeoutException e) {
-            return "Error: interactive rebase timed out after 60 seconds";
+            return "Error: interactive rebase timed out after 60 seconds (rebase may still be running in background)";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: interactive rebase was interrupted";
@@ -244,7 +261,9 @@ public final class GitRebaseTool extends GitTool {
             if (!el.isJsonObject()) continue;
             JsonObject op = el.getAsJsonObject();
             if (!op.has("commit") || !op.has("action")) continue;
-            result.put(op.get("commit").getAsString().trim(), op.get("action").getAsString().trim());
+            String commitKey = op.get("commit").getAsString().trim();
+            if (commitKey.isBlank()) continue;
+            result.put(commitKey, op.get("action").getAsString().trim());
         }
         return result;
     }
@@ -276,7 +295,9 @@ public final class GitRebaseTool extends GitTool {
      */
     private static final class ProgrammaticRebaseEditorHandler extends GitInteractiveRebaseEditorHandler {
 
-        /** Map from short SHA prefix → action string (pick/drop/squash/fixup/reword/edit). */
+        /**
+         * Map from short SHA prefix → action string (pick/drop/squash/fixup/reword/edit).
+         */
         private final Map<String, String> operationsByCommit;
 
         ProgrammaticRebaseEditorHandler(

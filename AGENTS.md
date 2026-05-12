@@ -72,17 +72,15 @@ This plugin follows two core principles. See [docs/DESIGN-PRINCIPLES.md](docs/DE
 for detailed rationale and examples.
 
 **1. Internally: prefer JetBrains APIs over custom code.**
-IntelliJ already provides OS detection (`SystemInfo`), shell management
-(`TerminalProjectOptionsProvider`), VCS integration (`git4idea`), project model, SDK resolution,
-UI threading (`ApplicationManager.invokeLater`), and much more. Never reimplement what the
-platform already does — our version will be less robust and may look suspicious to users.
+IntelliJ already provides OS detection (`SystemInfo`), shell management (`TerminalProjectOptionsProvider`), VCS
+integration (`git4idea`), project model, SDK resolution, UI threading (`ApplicationManager.invokeLater`), and much more.
+Never reimplement what the platform already does — our version will be less robust and may look suspicious to users.
 
 **2. MCP tools: be a bridge, not an inventor.**
-Every MCP tool should wrap an IntelliJ action. If JetBrains provides a feature, proxy it.
-If JetBrains doesn't provide it, decide whether it belongs here at all. Never build custom
-implementations (raw JDBC, subprocess scanning, etc.) as substitutes for IDE-level features.
-If a feature isn't available in the user's IDE installation, disable the tool gracefully —
-the agent can use a specialist MCP server instead.
+Every MCP tool should wrap an IntelliJ action. If JetBrains provides a feature, proxy it. If JetBrains doesn't provide
+it, decide whether it belongs here at all. Never build custom implementations (raw JDBC, subprocess scanning, etc.) as
+substitutes for IDE-level features. If a feature isn't available in the user's IDE installation, disable the tool
+gracefully — the agent can use a specialist MCP server instead.
 
 # Development Workflow
 
@@ -93,11 +91,33 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
 
+# AI Identity and Transparency
+
+When AI agents author or open GitHub content, the identity must be transparent — reviewers and auditors should be able
+to tell at a glance whether work was done by a human or an agent.
+
+**Commit author** — Every commit authored by an AI agent must use the agent's non-personal identity, not a human's
+personal email. The commit hook enforces this automatically via `enforce-commit-author.sh`:
+`github-copilot-developer <github-copilot-developer@users.noreply.github.com>` for Copilot CLI sessions.
+Do not amend commits to substitute a human email for AI-authored changes.
+
+**PR opener** — Pull requests created by agents must be opened using the bot identity (e.g. `agentbridge-fixer[bot]`),
+not the repository owner's personal account. Use the `GH_TOKEN` injection hook (`enforce-gh-bot-identity.js`) which
+replaces the token with a short-lived bot installation token before any `gh pr create` or `gh pr comment` call.
+If the bot token is unavailable, the hook blocks the call and surfaces an error rather than silently falling back to
+the owner identity.
+
+**No merge commits** — Branches must be rebased onto master before merging, not merged with a merge commit. Merge
+commits indicate a stale base and pollute the linear history.
+
+**Why this matters** — Mixed authorship (AI commit under human name, or PR opened as a human by an agent) is misleading
+to reviewers. The git log and PR timeline should clearly show when work was automated. The `author` and `committer`
+fields in `git log`, and the PR "opened by" field, are the signals reviewers rely on for accountability.
+
 # Use Git Blame Before Changing Explicit Settings
 
-Before removing or reversing something that was explicitly set — a `.gitignore` rule, a disabled
-flag, a commented-out block, a deleted file — **run `git blame` first** to find the commit that
-introduced it, then read that commit message.
+Before removing or reversing something that was explicitly set — a `.gitignore` rule, a disabled flag, a commented-out
+block, a deleted file — **run `git blame` first** to find the commit that introduced it, then read that commit message.
 
 Explicit settings are rarely accidental. Common patterns that look wrong but aren't:
 
@@ -106,27 +126,25 @@ Explicit settings are rarely accidental. Common patterns that look wrong but are
 - A commented-out block → was temporarily disabled with intent to revisit
 - A file deleted from the repo → was intentionally removed (replaced by a better mechanism)
 
-**The rule:** if `git blame` shows the change was made deliberately (descriptive commit message,
-not a typo fix), understand *why* before deciding to undo it. The fix may need to go elsewhere —
-for example, updating a Docker build script rather than re-adding a binary the CI was designed to
-avoid.
+**The rule:** if `git blame` shows the change was made deliberately (descriptive commit message, not a typo fix),
+understand *why* before deciding to undo it. The fix may need to go elsewhere — for example, updating a Docker build
+script rather than re-adding a binary the CI was designed to avoid.
 
 # Bug Fixing: Root Cause vs Symptom
 
 When fixing a bug, **always fix the root cause, not just the symptom**.
 
-- **Investigate before patching.** Trace the problem to its origin. A quick fix that masks the real
-  issue creates technical debt and hides future failures.
-- **Never add silent fallbacks that hide errors.** If a value is unexpectedly missing or wrong,
-  surface the problem visibly — throw an exception, show `<unknown>`, log a warning. Never silently
-  substitute a plausible-looking default (e.g., using `new Date()` when a timestamp is missing).
-  Silent fallbacks make bugs invisible and lie to the user.
+- **Investigate before patching.** Trace the problem to its origin. A quick fix that masks the real issue creates
+  technical debt and hides future failures.
+- **Never add silent fallbacks that hide errors.** If a value is unexpectedly missing or wrong, surface the problem
+  visibly — throw an exception, show `<unknown>`, log a warning. Never silently substitute a plausible-looking default
+  (e.g., using `new Date()` when a timestamp is missing). Silent fallbacks make bugs invisible and lie to the user.
 - **If you must fix a symptom**, document it thoroughly. Add a code comment explaining:
     1. What the symptom is
     2. Why the root cause cannot be fixed right now
     3. What the root cause is (so the next person can find it)
-- **Prefer visible errors over invisible wrong behavior.** A crash or error message that leads to
-  a fix is always better than silently wrong output that nobody notices.
+- **Prefer visible errors over invisible wrong behavior.** A crash or error message that leads to a fix is always better
+  than silently wrong output that nobody notices.
 
 # Unexpected Tool Behaviour
 
@@ -138,20 +156,20 @@ When a tool produces an error, wrong output, missing parameters, or surprising b
     - Label: **`triage: unconfirmed-tool-problem`** (yellow) — this flags it for human review
 2. **Consider whether the MCP tool can be improved** — check the tool's Java source in
    `psi/tools/` to see if the description, validation, or response can be fixed.
-3. **Do not silently work around the issue** — only apply a workaround *after* filing the issue,
-   so there is a record for future review.
+3. **Do not silently work around the issue** — only apply a workaround *after* filing the issue, so there is a record
+   for future review.
 
-Issues with `triage: unconfirmed-tool-problem` are periodically reviewed: root cause confirmed →
-label removed and fixed; not a bug → closed with explanation.
+Issues with `triage: unconfirmed-tool-problem` are periodically reviewed: root cause confirmed → label removed and
+fixed; not a bug → closed with explanation.
 
 # Plugin Development Best Practices for Performance
 
 If developing a plugin, adhere to these guidelines to avoid performance degradation:
 
-- **Avoid Expensive PSI Operations:** Avoid `getText()` and `getTextRange()` on large files, as
-  they traverse the entire tree. Use `textMatches()` or `textLength` instead.
-- **Background Tasks:** All heavy processing (networking, file I/O, heavy computation) must be
-  offloaded to background threads. Never hold the UI thread.
+- **Avoid Expensive PSI Operations:** Avoid `getText()` and `getTextRange()` on large files, as they traverse the entire
+  tree. Use `textMatches()` or `textLength` instead.
+- **Background Tasks:** All heavy processing (networking, file I/O, heavy computation) must be offloaded to background
+  threads. Never hold the UI thread.
 - **Cache Information:** Store PSI data in `UserData` or use custom indexes to avoid recomputing data.
 
 # MCP Tool Development Best Practices
@@ -162,8 +180,7 @@ When adding or modifying MCP tools (in `psi/tools/`), follow these conventions d
 
 ## Tool Descriptions
 
-Descriptions are the primary way agents decide which tool to use. Write them as if briefing a new
-team member:
+Descriptions are the primary way agents decide which tool to use. Write them as if briefing a new team member:
 
 - **What it does** — the core action in one sentence
 - **When to use it** — differentiate from similar tools (e.g., `search_text` vs `search_symbols` vs
@@ -177,8 +194,7 @@ Good: `"Delete a file from the project. This is permanent and cannot be undone w
 
 ## Response Enrichment
 
-Tool responses should include enough context that the agent doesn't need follow-up calls to understand
-the state:
+Tool responses should include enough context that the agent doesn't need follow-up calls to understand the state:
 
 - **Git tools**: Append branch context (current branch, tracking, ahead/behind, staged/modified counts)
   using `getBranchContext()` or `getBranchSummary()` from `GitTool` base class
@@ -197,8 +213,8 @@ Git tools that reference remote branches (`origin/*`, `remotes/*`) should auto-f
 
 ## Error Handling
 
-- Return errors starting with `"Error: "` or `"Error (exit N): "` — the MCP protocol handler detects
-  these prefixes to set `isError: true` in the MCP response
+- Return errors starting with `"Error: "` or `"Error (exit N): "` — the MCP protocol handler detects these prefixes to
+  set `isError: true` in the MCP response
 - Make error messages actionable: tell the agent what to do to fix it, not just what went wrong
 - Bad: `"Error: nothing to commit"` \
   Good: `"Error: Nothing staged for commit. Use git_stage to stage files first, or pass all: true to auto-stage."`
@@ -209,8 +225,8 @@ Set annotation hints correctly in the tool class:
 
 - `isReadOnly()` — true if the tool never modifies project state
 - `isDestructive()` — true if changes are hard to undo (delete, reset --hard)
-- `isIdempotent()` — true if calling with same args produces same result (defaults to `isReadOnly()`).
-  Override to `true` for write tools that are idempotent (e.g., `write_file`, `format_code`, `set_theme`)
+- `isIdempotent()` — true if calling with same args produces same result (defaults to `isReadOnly()`). Override to
+  `true` for write tools that are idempotent (e.g., `write_file`, `format_code`, `set_theme`)
 - `openWorldHint` — true if the tool accesses external resources (network, filesystem outside project)
 
 ## Token Efficiency
@@ -249,8 +265,8 @@ System prompt goes here...
 - `intellij-explore.md` — fast codebase exploration (read-only MCP tools)
 - `ide-task.md` — task execution with IntelliJ tools
 
-**Status**: ✅ Working (agent definitions loaded), but built-in tool filtering is
-broken ([bug #556](https://github.com/github/copilot-cli/issues/556))
+**Status**: ✅ Working (agent definitions loaded), but built-in tool filtering is broken
+([bug #556](https://github.com/github/copilot-cli/issues/556))
 
 ## OpenCode
 
@@ -367,16 +383,16 @@ plugin launches Hermes without a TTY for hook prompts)
 | Kiro     | `@agentbridge/`    | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts    | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
 | Hermes   | `mcp_agentbridge_` | ❌ No ACP-side definitions        | N/A (gating via `~/.hermes/config.yaml` toolsets/skills)   | ✅ Via `--accept-hooks` | 0 (sub-agents via `delegate_task`)  | ✅ Working                  |
 
-See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode
-investigation and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.
+See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode investigation
+and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.
 
 # UI / Logic Separation
 
 ## Principle
 
-UI classes (Swing panels, JCEF wrappers, IntelliJ Configurable implementations) must not contain
-testable business logic. If a method has **no dependency on Swing, JCEF, or IntelliJ UI APIs**, it
-belongs in a standalone class that can be unit-tested in isolation.
+UI classes (Swing panels, JCEF wrappers, IntelliJ Configurable implementations) must not contain testable business
+logic. If a method has **no dependency on Swing, JCEF, or IntelliJ UI APIs**, it belongs in a standalone class that can
+be unit-tested in isolation.
 
 ## What Qualifies as Extractable Logic
 
@@ -398,12 +414,12 @@ Any pure function or stateless computation embedded in a UI class:
 
 1. **Identify pure methods** — methods whose inputs and outputs don't reference `JComponent`,
    `JBColor`, `ConsoleView`, `JPanel`, `JCEF*`, `invokeLater`, etc.
-2. **Create a dedicated class** in the same package (or a `util` sub-package if reused across
-   packages). Name it by responsibility: `XxxFormatter`, `XxxCalculator`, `XxxParser`, `XxxBuilder`.
-3. **Make methods static** where possible (pure functions). If they need shared state, use a
-   lightweight data class as input rather than passing the UI panel.
-4. **Delegate from the UI class** — the UI class calls the extracted method and applies the result
-   to its components. The UI method becomes a thin wrapper:
+2. **Create a dedicated class** in the same package (or a `util` sub-package if reused across packages). Name it by
+   responsibility: `XxxFormatter`, `XxxCalculator`, `XxxParser`, `XxxBuilder`.
+3. **Make methods static** where possible (pure functions). If they need shared state, use a lightweight data class as
+   input rather than passing the UI panel.
+4. **Delegate from the UI class** — the UI class calls the extracted method and applies the result to its components.
+   The UI method becomes a thin wrapper:
    ```java
    // Before (in BillingManager.kt)
    private fun refreshUsageDisplay() {
@@ -422,20 +438,20 @@ Any pure function or stateless computation embedded in a UI class:
 
 These files demonstrate good separation and should be used as reference:
 
-- **`MessageFormatter.kt`** — pure formatting utilities (`formatTimestamp`, `escapeHtml`, `escapeJs`).
-  Zero UI dependencies. 97 lines of testable code.
-- **`MarkdownRenderer.kt`** — pure Markdown→HTML conversion. External dependencies (file resolution,
-  git detection) injected via lambda parameters. Exemplary testability design.
+- **`MessageFormatter.kt`** — pure formatting utilities (`formatTimestamp`, `escapeHtml`, `escapeJs`). Zero UI
+  dependencies. 97 lines of testable code.
+- **`MarkdownRenderer.kt`** — pure Markdown→HTML conversion. External dependencies (file resolution, git detection)
+  injected via lambda parameters. Exemplary testability design.
 - **`ConversationSerializer.kt`** — pure JSON parsing for conversation data. No UI imports.
-- **`ChatDataModel.kt`** — pure data classes and lookup tables. No behavior to test, but clean
-  separation of data from presentation.
+- **`ChatDataModel.kt`** — pure data classes and lookup tables. No behavior to test, but clean separation of data from
+  presentation.
 
 ## Anti-Patterns to Avoid
 
-- **Don't create god utility classes** (e.g., `ChatUtils` with 50 unrelated methods). Each extracted
-  class should have a single, cohesive responsibility.
+- **Don't create god utility classes** (e.g., `ChatUtils` with 50 unrelated methods). Each extracted class should have a
+  single, cohesive responsibility.
 - **Don't pass UI components as parameters** to extracted methods. Pass the data they contain instead.
-- **Don't extract trivially** — a one-line format call inside a UI method isn't worth extracting
-  unless it's reused or complex enough to warrant a test.
-- **Don't add section-comment banners** to organize logic within a UI class. If you need section
-  headers, the file is too large — extract instead.
+- **Don't extract trivially** — a one-line format call inside a UI method isn't worth extracting unless it's reused or
+  complex enough to warrant a test.
+- **Don't add section-comment banners** to organize logic within a UI class. If you need section headers, the file is
+  too large — extract instead.
