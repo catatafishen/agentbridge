@@ -97,6 +97,10 @@ class AcpConnectPanel(
     private val profileCombo = ComboBox<AgentProfile>()
     private val sessionCombo = ComboBox<SessionChoice>()
     private val connectButton = JButton("Connect")
+    private val connectSpinner = AsyncProcessIcon("acp-connect").apply {
+        isVisible = false
+        toolTipText = "Connecting…"
+    }
     private val acpAutoConnectCheckbox = JBCheckBox("Auto-connect on startup")
     private val acpHintLabel = JBLabel("Start the tool server above first").apply {
         foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
@@ -323,6 +327,13 @@ class AcpConnectPanel(
         connectButton.icon = AllIcons.Actions.Execute
         connectButton.addActionListener { doConnect() }
         panel.add(connectButton, BorderLayout.CENTER)
+
+        val spinnerWrapper = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyLeft(8)
+        }
+        spinnerWrapper.add(connectSpinner, BorderLayout.CENTER)
+        panel.add(spinnerWrapper, BorderLayout.EAST)
 
         return panel
     }
@@ -607,13 +618,20 @@ class AcpConnectPanel(
 
         val customCommand = if (cmd.isNotBlank() && cmd != selectedProfile.defaultStartCommand) cmd else null
 
-        // Apply session selection: clear or set the resume session ID
-        applySessionChoice(profileId)
-
+        // Show immediate visual feedback before any work starts, so the EDT is free to repaint
+        // the button before applySessionChoice or onConnect run.
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
         connectButton.text = "Connecting\u2026"
-        onConnect(profileId, customCommand)
+        connectSpinner.isVisible = true
+
+        // Defer the actual work to the next EDT cycle so the button state paints first.
+        // applySessionChoice may do file I/O (deleteIfExists for None/Older cases) which
+        // should not block the current event handler.
+        ApplicationManager.getApplication().invokeLater {
+            applySessionChoice(profileId)
+            onConnect(profileId, customCommand)
+        }
     }
 
     private fun applySessionChoice(profileId: String) {
@@ -670,6 +688,7 @@ class AcpConnectPanel(
         ApplicationManager.getApplication().invokeLater {
             connectButton.isEnabled = true
             connectButton.text = "Connect"
+            connectSpinner.isVisible = false
             val profile = agentManager.activeProfile
             when {
                 authService.isAuthenticationError(message) && profile.isSupportsOAuthSignIn ->
@@ -723,6 +742,7 @@ class AcpConnectPanel(
         ApplicationManager.getApplication().invokeLater {
             connectButton.isEnabled = true
             connectButton.text = "Connect"
+            connectSpinner.isVisible = false
             acpAutoConnectCheckbox.isSelected = agentManager.isAutoConnect
             refreshProfileCombo()
             refreshSessionCombo()
@@ -735,6 +755,7 @@ class AcpConnectPanel(
             statusBanner.dismissCurrent()
             connectButton.isEnabled = false
             connectButton.text = "Connecting\u2026"
+            connectSpinner.isVisible = true
         }
     }
 
