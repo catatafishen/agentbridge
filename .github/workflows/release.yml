@@ -239,4 +239,12 @@ jobs:
           # package-registry distribution channel in addition to the GitHub
           # release ZIP and the JetBrains Marketplace listing. Also gives
           # OpenSSF Scorecard's "Packaging" check something to detect.
-          gradle :plugin-core:publish :plugin-experimental:publish --no-daemon --quiet
+          #
+          # Skip if this version is already published (handles workflow reruns):
+          # GitHub Packages returns 409 Conflict on duplicate uploads.
+          POM_URL="https://maven.pkg.github.com/catatafishen/agentbridge/com/github/catatafishen/ideagentforcopilot/${PLUGIN_VERSION}/ideagentforcopilot-${PLUGIN_VERSION}.pom"
+          if curl -sf -o /dev/null -u "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "${POM_URL}" 2>/dev/null; then
+            echo "Version ${PLUGIN_VERSION} already published to GitHub Packages — skipping."
+          else
+            gradle :plugin-core:publish :plugin-experimental:publish --no-daemon --quiet
+          fi
