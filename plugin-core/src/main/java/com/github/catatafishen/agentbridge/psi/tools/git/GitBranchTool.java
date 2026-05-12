@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.ui.renderers.GitBranchRenderer;
 import com.google.gson.JsonObject;
@@ -103,7 +102,9 @@ public final class GitBranchTool extends GitTool {
         String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
             ? args.get(PARAM_BASE).getAsString()
             : null;
-        String result = ideCreate(setupError, name, base);
+        String result = base != null
+            ? runGitIn(setupError, CMD_CHECKOUT, "-b", name, base)
+            : runGitIn(setupError, CMD_CHECKOUT, "-b", name);
         if (result.startsWith(ERR_PREFIX)) return result;
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
         return "Created and switched to branch '" + name + "'\n" + getBranchContextIn(setupError);
@@ -118,7 +119,7 @@ public final class GitBranchTool extends GitTool {
             .awaitReviewCompletion("branch switch '" + name + "'");
         if (reviewError != null) return reviewError;
 
-        String result = ideSwitch(setupError, name);
+        String result = runGitIn(setupError, CMD_CHECKOUT, name);
         if (result.startsWith(ERR_PREFIX)) return result;
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch switch");
         return "Switched to branch '" + name + "'\n" + getBranchContextIn(setupError);
@@ -130,63 +131,15 @@ public final class GitBranchTool extends GitTool {
         String setupError = prepareBranchWrite(repoParam, "branch delete");
         if (setupError.startsWith(ERR_PREFIX)) return setupError;
         boolean force = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
-        return ideDelete(setupError, name, force);
+        String result = runGitIn(setupError, CMD_BRANCH, force ? "-D" : "-d", name);
+        if (result.startsWith(ERR_PREFIX)) return result;
+        return "Deleted branch '" + name + "'\n" + getBranchContextIn(setupError);
     }
 
     private String prepareBranchWrite(@Nullable String repoParam, @NotNull String action) {
         String ambiError = requireUnambiguousRepo(repoParam, action);
         if (ambiError != null) return ambiError;
         return resolveRepoRootOrError(repoParam);
-    }
-
-    /**
-     * Create a new branch and switch to it. Prefers Git4Idea high-level API; falls back to CLI.
-     */
-    private String ideCreate(String root, String name, @Nullable String base) throws Exception {
-        try {
-            String result = PlatformApiCompat.ideCheckoutNewBranch(project, root, name, base);
-            if (result != null) {
-                refreshVcsState();
-                return result;
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Git4Idea unavailable
-        }
-        return base != null
-            ? runGitIn(root, CMD_CHECKOUT, "-b", name, base)
-            : runGitIn(root, CMD_CHECKOUT, "-b", name);
-    }
-
-    /**
-     * Switch to an existing branch. Prefers Git4Idea high-level API; falls back to CLI.
-     */
-    private String ideSwitch(String root, String name) throws Exception {
-        try {
-            String result = PlatformApiCompat.ideCheckout(project, root, name);
-            if (result != null) {
-                refreshVcsState();
-                return result;
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Git4Idea unavailable
-        }
-        return runGitIn(root, CMD_CHECKOUT, name);
-    }
-
-    /**
-     * Delete a branch. Prefers Git4Idea high-level API; falls back to CLI.
-     */
-    private String ideDelete(String root, String name, boolean force) throws Exception {
-        try {
-            String result = PlatformApiCompat.ideDeleteBranch(project, root, name, force);
-            if (result != null) {
-                refreshVcsState();
-                return result;
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Git4Idea unavailable
-        }
-        return runGitIn(root, CMD_BRANCH, force ? "-D" : "-d", name);
     }
 
     private static @Nullable String requireName(JsonObject args) {

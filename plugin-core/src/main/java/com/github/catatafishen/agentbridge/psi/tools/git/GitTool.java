@@ -22,12 +22,14 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -229,17 +231,6 @@ public abstract class GitTool extends Tool {
 
     // ── Branch context enrichment ────────────────────────────
 
-    /**
-     * Gathers current branch state metadata for appending to tool responses.
-     * Runs ~5 lightweight git commands, each fail-safe (omitted on error).
-     * Typical latency: &lt;200ms total.
-     *
-     * @return formatted context block, or empty string if branch detection fails
-     */
-    protected String getBranchContext() {
-        return getBranchContextIn(resolveRepoRootOrError(null));
-    }
-
     protected String getBranchContextIn(@NotNull String rootDir) {
         if (rootDir.startsWith(ERR_PREFIX)) return "";
         String branch = runGitInQuiet(rootDir, REV_PARSE, ABBREV_REF, "HEAD");
@@ -297,14 +288,7 @@ public abstract class GitTool extends Tool {
     }
 
     /**
-     * Returns a compact one-line branch summary (for tools that want less verbosity).
-     */
-    protected String getBranchSummary() {
-        return getBranchSummaryIn(resolveRepoRootOrError(null));
-    }
-
-    /**
-     * Root-aware variant of {@link #getBranchSummary()}.
+     * Root-aware branch summary: compact one-line status for tools that want less verbosity.
      */
     protected String getBranchSummaryIn(@NotNull String rootDir) {
         if (rootDir.startsWith(ERR_PREFIX)) return "";
@@ -380,14 +364,6 @@ public abstract class GitTool extends Tool {
         return null;
     }
 
-    /**
-     * Detects the default branch (origin/main or origin/master) in the primary repo.
-     */
-    @Nullable
-    protected String detectDefaultBranch() {
-        return detectDefaultBranchIn(resolveRepoRootOrError(null));
-    }
-
     @Nullable
     private String detectDefaultBranchIn(@NotNull String rootDir) {
         String symbolic = runGitInQuiet(rootDir, "symbolic-ref", "refs/remotes/origin/HEAD");
@@ -404,17 +380,9 @@ public abstract class GitTool extends Tool {
     // ── Auto-fetch throttling ────────────────────────────────
 
     /**
-     * Fetches from origin in the primary repo if the last fetch was more than 60 seconds ago.
-     * Returns a note about what was fetched, or empty string if throttled/failed.
-     */
-    protected String autoFetchIfStale() {
-        String root = resolveRepoRootOrError(null);
-        return root.startsWith(ERR_PREFIX) ? "" : autoFetchIfStaleIn(root);
-    }
-
-    /**
-     * Root-aware variant of {@link #autoFetchIfStale()}.
+     * Root-aware auto-fetch: fetches from origin if the last fetch was more than 60 seconds ago.
      * Throttle is tracked per repository root to avoid cross-repo interference.
+     * Returns a note about what was fetched, or empty string if throttled/failed.
      */
     protected String autoFetchIfStaleIn(@NotNull String rootDir) {
         AtomicLong timer = lastFetchTimes.computeIfAbsent(rootDir, k -> new AtomicLong(0));
@@ -446,20 +414,11 @@ public abstract class GitTool extends Tool {
 
     /**
      * Checks if a branch/ref argument references a remote and fetches if stale.
+     * Root-aware: fetches from the specified repository root.
      *
-     * @param ref the branch or ref name from tool arguments
+     * @param ref     the branch or ref name from tool arguments
+     * @param rootDir the repository root directory
      * @return fetch note if fetched, empty string otherwise
-     */
-    protected String autoFetchForRemoteRef(@Nullable String ref) {
-        if (ref == null) return "";
-        if (ref.startsWith("origin/") || ref.startsWith("remotes/")) {
-            return autoFetchIfStale();
-        }
-        return "";
-    }
-
-    /**
-     * Root-aware variant of {@link #autoFetchForRemoteRef(String)}.
      */
     protected String autoFetchForRemoteRefIn(@Nullable String ref, @NotNull String rootDir) {
         if (ref == null) return "";
@@ -470,21 +429,6 @@ public abstract class GitTool extends Tool {
     }
 
     // ── Run git (quiet variant for metadata) ─────────────────
-
-    /**
-     * Runs a git command in the primary repository and returns trimmed stdout, or null on error.
-     * Used for lightweight metadata queries that must not fail loudly.
-     */
-    @Nullable
-    protected String runGitQuiet(String... args) {
-        try {
-            String result = runGit(args);
-            if (result == null || result.startsWith(ERR_PREFIX)) return null;
-            return result.trim();
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
     /**
      * Runs a git command in {@code rootDir} and returns trimmed stdout, or null on any error.
@@ -580,14 +524,32 @@ public abstract class GitTool extends Tool {
         pb.environment().put("GIT_TERMINAL_PROMPT", "0");
         Process p = pb.start();
 
-        String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        // Read stdout and stderr concurrently to prevent pipe deadlock.
+        // Sequential reads (stdout-then-stderr) can deadlock when git fills the stderr OS
+        // pipe buffer while we are blocked waiting for stdout to reach EOF.
+        CompletableFuture<String> stdoutFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return "";
+            }
+        });
+        CompletableFuture<String> stderrFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return "";
+            }
+        });
 
         boolean finished = p.waitFor(30, TimeUnit.SECONDS);
         if (!finished) {
             p.destroyForcibly();
             return "Error: git command timed out";
         }
+
+        String stdout = stdoutFuture.get(5, TimeUnit.SECONDS);
+        String stderr = stderrFuture.get(5, TimeUnit.SECONDS);
 
         if (p.exitValue() != 0) {
             return "Error (exit " + p.exitValue() + "): " + stderr.trim();
