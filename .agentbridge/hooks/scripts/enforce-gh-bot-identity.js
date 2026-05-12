@@ -105,8 +105,9 @@ if (!botToken) {
 if (botToken) {
     // Wrap in a subshell so the export is visible to all commands in the pipeline
     // (e.g. `cd /path && gh pr create`) without leaking into the outer terminal session.
-    // Single-quote the token so shell expansion cannot break it. GitHub tokens are alphanumeric
-    // and therefore cannot themselves contain single quotes, making this safe.
+    // Single-quote the token so shell expansion cannot break it. GitHub tokens use only
+    // alphanumeric characters and underscores (e.g. ghp_, ghs_, github_pat_) and therefore
+    // cannot contain single quotes, making this safe.
     process.stdout.write(JSON.stringify({arguments: {command: `(export GH_TOKEN='${botToken}'; ${command})`}}) + '\n');
 } else {
     process.stdout.write(JSON.stringify({

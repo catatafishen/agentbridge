@@ -43,6 +43,7 @@ public final class GitRebaseTool extends GitTool {
     private static final String PARAM_ABORT = "abort";
     private static final String PARAM_CONTINUE_REBASE = "continue_rebase";
     private static final String PARAM_EXEC = "exec";
+    private static final Set<String> VALID_REBASE_ACTIONS = Set.of("pick", "reword", "edit", "squash", "fixup", "drop");
 
     public GitRebaseTool(Project project) {
         super(project);
@@ -181,19 +182,30 @@ public final class GitRebaseTool extends GitTool {
             return "Error: 'autosquash' is not supported in programmatic interactive rebase. "
                 + "Operations are applied explicitly — mark fixup!/squash! commits manually in the operations list.";
         }
+        if (args.has("onto") && !args.get("onto").getAsString().isBlank()) {
+            return "Error: 'onto' is not supported in interactive rebase mode. "
+                + "Use plain rebase (without interactive: true) for --onto.";
+        }
+        if (args.has(PARAM_EXEC) && !args.get(PARAM_EXEC).getAsString().isBlank()) {
+            return "Error: 'exec' is not supported in interactive rebase mode.";
+        }
 
         String upstream = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
         if (upstream == null || upstream.isBlank()) {
             return "Error: 'branch' (upstream) parameter is required for interactive rebase";
         }
 
+        String fetchNote = autoFetchForRemoteRefIn(upstream, root);
+
         Map<String, String> operations = parseOperations(args);
-        for (String key : operations.keySet()) {
-            if (key.isBlank()) {
-                return "Error: empty 'commit' SHA in operations list — each entry must have a non-blank commit prefix";
+        for (Map.Entry<String, String> entry : operations.entrySet()) {
+            if (!VALID_REBASE_ACTIONS.contains(entry.getValue())) {
+                return "Error: invalid rebase action '" + entry.getValue() + "' for commit '"
+                    + entry.getKey() + "'. Allowed: " + String.join(", ", VALID_REBASE_ACTIONS);
             }
         }
 
+        Future<?> future = null;
         try {
             git4idea.repo.GitRepository repo = PlatformApiCompat.getRepositoryForRoot(project, root);
             if (repo == null) {
@@ -208,7 +220,7 @@ public final class GitRebaseTool extends GitTool {
 
             AtomicReference<String> errorRef = new AtomicReference<>();
 
-            Future<?> future = ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            future = ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
                     VirtualFile repoRoot = repo.getRoot();
                     var handler = new ProgrammaticRebaseEditorHandler(project, repoRoot, operations);
@@ -228,7 +240,7 @@ public final class GitRebaseTool extends GitTool {
                         errorRef.set("Rebase failed or conflicts remain. Resolve conflicts and use continue_rebase: true");
                     }
                 } catch (Exception e) {
-                    errorRef.set(e.getMessage());
+                    errorRef.set(e.getMessage() != null ? e.getMessage() : e.toString());
                 }
             });
 
@@ -238,17 +250,18 @@ public final class GitRebaseTool extends GitTool {
 
             AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase -i");
             refreshVcsState();
-            return "Interactive rebase completed" + getBranchContextIn(root);
+            return fetchNote + "Interactive rebase completed" + getBranchContextIn(root);
 
         } catch (NoClassDefFoundError e) {
             return "Error: git4idea plugin required for interactive rebase (not available in this IDE)";
         } catch (TimeoutException e) {
+            future.cancel(true);
             return "Error: interactive rebase timed out after 60 seconds (rebase may still be running in background)";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: interactive rebase was interrupted";
         } catch (Exception e) {
-            return "Error: " + e.getMessage();
+            return "Error: " + (e.getMessage() != null ? e.getMessage() : e.toString());
         }
     }
 
@@ -263,7 +276,7 @@ public final class GitRebaseTool extends GitTool {
             if (!op.has("commit") || !op.has("action")) continue;
             String commitKey = op.get("commit").getAsString().trim();
             if (commitKey.isBlank()) continue;
-            result.put(commitKey, op.get("action").getAsString().trim());
+            result.put(commitKey, op.get("action").getAsString().trim().toLowerCase());
         }
         return result;
     }
@@ -329,8 +342,9 @@ public final class GitRebaseTool extends GitTool {
         @Nullable
         private String findOperation(@NotNull String sha) {
             if (operationsByCommit.containsKey(sha)) return operationsByCommit.get(sha);
+            // sha is git's full commit hash; op.getKey() is the agent-provided short prefix
             for (Map.Entry<String, String> op : operationsByCommit.entrySet()) {
-                if (sha.startsWith(op.getKey()) || op.getKey().startsWith(sha)) {
+                if (sha.startsWith(op.getKey())) {
                     return op.getValue();
                 }
             }
