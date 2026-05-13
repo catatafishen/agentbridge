@@ -436,7 +436,10 @@ intellijPlatform {
             // Use explicit stable versions only — recommended() also pulls in EAP builds
             // (IU-261, IU-262) which cause ClosedByInterruptException from resource exhaustion
             // when 6+ verifiers run in parallel on CI.
-            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
+            // IntelliJ IDEA Community (IC) is no longer published as a separate artifact
+            // since 2025.3 — JetBrains unified the distribution. Use Ultimate (IU) instead;
+            // it covers the same platform API surface for compatibility verification.
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3")
             create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
             create(IntelliJPlatformType.WebStorm, "2025.3")
             create(IntelliJPlatformType.GoLand, "2025.3")
