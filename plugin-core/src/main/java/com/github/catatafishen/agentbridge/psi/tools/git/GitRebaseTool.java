@@ -14,6 +14,10 @@ import git4idea.rebase.GitRebaseUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,7 +47,11 @@ public final class GitRebaseTool extends GitTool {
     private static final String PARAM_ABORT = "abort";
     private static final String PARAM_CONTINUE_REBASE = "continue_rebase";
     private static final String PARAM_EXEC = "exec";
-    private static final Set<String> VALID_REBASE_ACTIONS = Set.of("pick", "reword", "edit", "squash", "fixup", "drop");
+    private static final String OP_COMMIT = "commit";
+    private static final String OP_ACTION = "action";
+    private static final String OP_MESSAGE = "message";
+    private static final String ACTION_REWORD = "reword";
+    private static final Set<String> VALID_REBASE_ACTIONS = Set.of("pick", ACTION_REWORD, "edit", "squash", "fixup", "drop");
 
     public GitRebaseTool(Project project) {
         super(project);
@@ -70,7 +78,9 @@ public final class GitRebaseTool extends GitTool {
             short SHA prefix and 'action' is one of: pick (default), drop, squash, fixup, \
             reword, edit. Commits not listed in operations keep their default 'pick' action. \
             'branch' is required when interactive is true. \
-            Example: operations: [{commit: 'abc1234', action: 'squash'}, {commit: 'def5678', action: 'drop'}]""";
+            The 'reword' action requires a 'message' field with the new commit message. \
+            Example: operations: [{commit: 'abc1234', action: 'squash'}, {commit: 'def5678', action: 'drop'}, \
+            {commit: 'ghi9012', action: 'reword', message: 'Better commit message'}]""";
     }
 
     @Override
@@ -98,7 +108,8 @@ public final class GitRebaseTool extends GitTool {
             Param.optional(PARAM_OPERATIONS, TYPE_ARRAY,
                 "List of {commit, action} objects for interactive rebase. "
                     + "Each 'commit' is a short SHA prefix; 'action' is pick/drop/squash/fixup/reword/edit. "
-                    + "Commits not listed keep their default 'pick' action."),
+                    + "Commits not listed keep their default 'pick' action. "
+                    + "The 'reword' action requires a 'message' field with the new commit message."),
             Param.optional(PARAM_AUTOSQUASH, TYPE_BOOLEAN,
                 "Automatically squash fixup! and squash! commits (requires interactive)"),
             Param.optional(PARAM_EXEC, TYPE_STRING,
@@ -110,8 +121,9 @@ public final class GitRebaseTool extends GitTool {
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
         addObjectArrayItems(s, PARAM_OPERATIONS,
-            Param.required("commit", TYPE_STRING, "Non-blank short SHA prefix of the commit to rebase"),
-            Param.required("action", TYPE_STRING, "Action: pick, drop, squash, fixup, reword, or edit"));
+            Param.required(OP_COMMIT, TYPE_STRING, "Non-blank short SHA prefix of the commit to rebase"),
+            Param.required(OP_ACTION, TYPE_STRING, "Action: pick, drop, squash, fixup, reword, or edit"),
+            Param.optional(OP_MESSAGE, TYPE_STRING, "New commit message (required when action is 'reword')"));
         return s;
     }
 
@@ -178,32 +190,16 @@ public final class GitRebaseTool extends GitTool {
     // ── Interactive rebase (programmatic, no UI dialog) ──────
 
     private @NotNull String doInteractiveRebase(@NotNull JsonObject args, @NotNull String root) {
-        if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
-            return "Error: 'autosquash' is not supported in programmatic interactive rebase. "
-                + "Operations are applied explicitly — mark fixup!/squash! commits manually in the operations list.";
-        }
-        if (args.has("onto") && !args.get("onto").getAsString().isBlank()) {
-            return "Error: 'onto' is not supported in interactive rebase mode. "
-                + "Use plain rebase (without interactive: true) for --onto.";
-        }
-        if (args.has(PARAM_EXEC) && !args.get(PARAM_EXEC).getAsString().isBlank()) {
-            return "Error: 'exec' is not supported in interactive rebase mode.";
-        }
+        String argError = validateInteractiveArgs(args);
+        if (argError != null) return argError;
 
-        String upstream = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
-        if (upstream == null || upstream.isBlank()) {
-            return "Error: 'branch' (upstream) parameter is required for interactive rebase";
-        }
-
+        String upstream = args.get(PARAM_BRANCH).getAsString();
         String fetchNote = autoFetchForRemoteRefIn(upstream, root);
 
         Map<String, String> operations = parseOperations(args);
-        for (Map.Entry<String, String> entry : operations.entrySet()) {
-            if (!VALID_REBASE_ACTIONS.contains(entry.getValue())) {
-                return "Error: invalid rebase action '" + entry.getValue() + "' for commit '"
-                    + entry.getKey() + "'. Allowed: " + String.join(", ", VALID_REBASE_ACTIONS);
-            }
-        }
+        Map<String, String> messages = parseMessages(args);
+        String opError = validateOperations(operations, messages);
+        if (opError != null) return opError;
 
         Future<?> future = null;
         try {
@@ -219,30 +215,8 @@ public final class GitRebaseTool extends GitTool {
             if (reviewError != null) return reviewError;
 
             AtomicReference<String> errorRef = new AtomicReference<>();
-
-            future = ApplicationManager.getApplication().executeOnPooledThread(() -> {
-                try {
-                    VirtualFile repoRoot = repo.getRoot();
-                    var handler = new ProgrammaticRebaseEditorHandler(project, repoRoot, operations);
-
-                    git4idea.branch.GitRebaseParams params = new git4idea.branch.GitRebaseParams(
-                        repo.getVcs().getVersion(),
-                        null,
-                        null,
-                        upstream,
-                        Set.of(GitRebaseOption.INTERACTIVE),
-                        handler
-                    );
-
-                    boolean ok = GitRebaseUtils.rebaseWithResult(
-                        project, List.of(repo), params, new EmptyProgressIndicator());
-                    if (!ok) {
-                        errorRef.set("Rebase failed or conflicts remain. Resolve conflicts and use continue_rebase: true");
-                    }
-                } catch (Exception e) {
-                    errorRef.set(e.getMessage() != null ? e.getMessage() : e.toString());
-                }
-            });
+            future = ApplicationManager.getApplication().executeOnPooledThread(() ->
+                executeRebaseOnPooledThread(repo, upstream, operations, messages, errorRef));
 
             future.get(60, TimeUnit.SECONDS);
 
@@ -256,7 +230,9 @@ public final class GitRebaseTool extends GitTool {
             return "Error: git4idea plugin required for interactive rebase (not available in this IDE)";
         } catch (TimeoutException e) {
             future.cancel(true);
-            return "Error: interactive rebase timed out after 60 seconds (rebase may still be running in background)";
+            return "Error: interactive rebase timed out after 60 seconds. "
+                + "A modal dialog may be blocking — call interact_with_modal to inspect or dismiss it, "
+                + "or the rebase may still be running in background.";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: interactive rebase was interrupted";
@@ -265,18 +241,103 @@ public final class GitRebaseTool extends GitTool {
         }
     }
 
+    private void executeRebaseOnPooledThread(
+        @NotNull git4idea.repo.GitRepository repo,
+        @NotNull String upstream,
+        @NotNull Map<String, String> operations,
+        @NotNull Map<String, String> messages,
+        @NotNull AtomicReference<String> errorRef) {
+        try {
+            VirtualFile repoRoot = repo.getRoot();
+            var handler = new ProgrammaticRebaseEditorHandler(project, repoRoot, operations, messages);
+
+            git4idea.branch.GitRebaseParams params = new git4idea.branch.GitRebaseParams(
+                repo.getVcs().getVersion(),
+                null,
+                null,
+                upstream,
+                Set.of(GitRebaseOption.INTERACTIVE),
+                handler
+            );
+
+            boolean ok = GitRebaseUtils.rebaseWithResult(
+                project, List.of(repo), params, new EmptyProgressIndicator());
+            if (!ok) {
+                errorRef.set("Rebase failed or conflicts remain. Resolve conflicts and use continue_rebase: true");
+            }
+        } catch (Exception e) {
+            errorRef.set(e.getMessage() != null ? e.getMessage() : e.toString());
+        }
+    }
+
+    private @Nullable String validateInteractiveArgs(@NotNull JsonObject args) {
+        if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
+            return "Error: 'autosquash' is not supported in programmatic interactive rebase. "
+                + "Operations are applied explicitly — mark fixup!/squash! commits manually in the operations list.";
+        }
+        if (args.has("onto") && !args.get("onto").getAsString().isBlank()) {
+            return "Error: 'onto' is not supported in interactive rebase mode. "
+                + "Use plain rebase (without interactive: true) for --onto.";
+        }
+        if (args.has(PARAM_EXEC) && !args.get(PARAM_EXEC).getAsString().isBlank()) {
+            return "Error: 'exec' is not supported in interactive rebase mode.";
+        }
+        String upstream = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
+        if (upstream == null || upstream.isBlank()) {
+            return "Error: 'branch' (upstream) parameter is required for interactive rebase";
+        }
+        return null;
+    }
+
+    private @Nullable String validateOperations(@NotNull Map<String, String> operations, @NotNull Map<String, String> messages) {
+        for (Map.Entry<String, String> entry : operations.entrySet()) {
+            String action = entry.getValue();
+            if (!VALID_REBASE_ACTIONS.contains(action)) {
+                return "Error: invalid rebase action '" + action + "' for commit '"
+                    + entry.getKey() + "'. Allowed: " + String.join(", ", VALID_REBASE_ACTIONS);
+            }
+            if (ACTION_REWORD.equals(action) && !messages.containsKey(entry.getKey())) {
+                return "Error: 'reword' action for commit '" + entry.getKey()
+                    + "' requires a 'message' field with the new commit message.";
+            }
+        }
+        return null;
+    }
+
     private @NotNull Map<String, String> parseOperations(@NotNull JsonObject args) {
         Map<String, String> result = new LinkedHashMap<>();
         if (!args.has(PARAM_OPERATIONS) || !args.get(PARAM_OPERATIONS).isJsonArray()) {
             return result;
         }
         for (var el : args.getAsJsonArray(PARAM_OPERATIONS)) {
-            if (!el.isJsonObject()) continue;
-            JsonObject op = el.getAsJsonObject();
-            if (!op.has("commit") || !op.has("action")) continue;
-            String commitKey = op.get("commit").getAsString().trim();
-            if (commitKey.isBlank()) continue;
-            result.put(commitKey, op.get("action").getAsString().trim().toLowerCase());
+            if (el.isJsonObject()) {
+                JsonObject op = el.getAsJsonObject();
+                if (op.has(OP_COMMIT) && op.has(OP_ACTION)) {
+                    String commitKey = op.get(OP_COMMIT).getAsString().trim();
+                    if (!commitKey.isBlank()) {
+                        result.put(commitKey, op.get(OP_ACTION).getAsString().trim().toLowerCase());
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    private @NotNull Map<String, String> parseMessages(@NotNull JsonObject args) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (!args.has(PARAM_OPERATIONS) || !args.get(PARAM_OPERATIONS).isJsonArray()) {
+            return result;
+        }
+        for (var el : args.getAsJsonArray(PARAM_OPERATIONS)) {
+            if (el.isJsonObject()) {
+                JsonObject op = el.getAsJsonObject();
+                if (op.has(OP_COMMIT) && op.has(OP_MESSAGE)) {
+                    String commitKey = op.get(OP_COMMIT).getAsString().trim();
+                    if (!commitKey.isBlank()) {
+                        result.put(commitKey, op.get(OP_MESSAGE).getAsString());
+                    }
+                }
+            }
         }
         return result;
     }
@@ -299,12 +360,13 @@ public final class GitRebaseTool extends GitTool {
     // ── Programmatic rebase editor ────────────────────────────
 
     /**
-     * Applies agent-provided operations to the rebase todo list without opening a dialog.
+     * Applies agent-provided operations to the rebase instruction list without opening a dialog.
      *
      * <p>Extends {@link GitInteractiveRebaseEditorHandler} so git4idea owns all file I/O,
-     * state management, and editor protocol; we only override {@code collectNewEntries()}
-     * to substitute the desired actions. Commits not mentioned in {@code operationsByCommit}
-     * keep their original action (typically {@code pick}).
+     * state management, and editor protocol. We override {@code collectNewEntries()} to apply
+     * the requested actions and {@code handleUnstructuredEditor(File)} to inject commit messages
+     * for {@code reword} entries without showing a dialog.
+     * Commits not mentioned in {@code operationsByCommit} keep their original action ({@code pick}).
      */
     private static final class ProgrammaticRebaseEditorHandler extends GitInteractiveRebaseEditorHandler {
 
@@ -313,12 +375,26 @@ public final class GitRebaseTool extends GitTool {
          */
         private final Map<String, String> operationsByCommit;
 
+        /**
+         * Map from short SHA prefix → new commit message (for reword entries).
+         */
+        private final Map<String, String> messagesByCommit;
+
+        /**
+         * Messages for reword entries in order, consumed one-by-one by
+         * {@link #handleUnstructuredEditor(File)} as git processes each reword commit.
+         */
+        private final List<String> rewordMessages = new ArrayList<>();
+        private int rewordIndex = 0;
+
         ProgrammaticRebaseEditorHandler(
             @NotNull Project project,
             @NotNull VirtualFile root,
-            @NotNull Map<String, String> operationsByCommit) {
+            @NotNull Map<String, String> operationsByCommit,
+            @NotNull Map<String, String> messagesByCommit) {
             super(project, root);
             this.operationsByCommit = operationsByCommit;
+            this.messagesByCommit = messagesByCommit;
         }
 
         @Override
@@ -335,8 +411,27 @@ public final class GitRebaseTool extends GitTool {
                 }
                 GitRebaseEntry.Action newAction = GitRebaseEntry.parseAction(actionString);
                 result.add(new GitRebaseEntry(newAction, sha, entry.getSubject()));
+                if (ACTION_REWORD.equals(actionString)) {
+                    String msg = findMessage(sha);
+                    if (msg != null) rewordMessages.add(msg);
+                }
             }
             return result;
+        }
+
+        /**
+         * Called by git4idea when git invokes the editor on COMMIT_EDITMSG for a {@code reword}
+         * entry. Writes the next pre-supplied message to the file instead of showing a dialog.
+         * Returns {@code true} (handled) to suppress the dialog.
+         */
+        @Override
+        protected boolean handleUnstructuredEditor(@NotNull File file) throws IOException {
+            if (rewordIndex >= rewordMessages.size()) {
+                // Fallback: should not happen if validation passed, but defer to dialog rather than fail silently
+                return false;
+            }
+            Files.writeString(file.toPath(), rewordMessages.get(rewordIndex++) + "\n", StandardCharsets.UTF_8);
+            return true;
         }
 
         @Nullable
@@ -344,9 +439,16 @@ public final class GitRebaseTool extends GitTool {
             if (operationsByCommit.containsKey(sha)) return operationsByCommit.get(sha);
             // sha is git's full commit hash; op.getKey() is the agent-provided short prefix
             for (Map.Entry<String, String> op : operationsByCommit.entrySet()) {
-                if (sha.startsWith(op.getKey())) {
-                    return op.getValue();
-                }
+                if (sha.startsWith(op.getKey())) return op.getValue();
+            }
+            return null;
+        }
+
+        @Nullable
+        private String findMessage(@NotNull String sha) {
+            if (messagesByCommit.containsKey(sha)) return messagesByCommit.get(sha);
+            for (Map.Entry<String, String> op : messagesByCommit.entrySet()) {
+                if (sha.startsWith(op.getKey())) return op.getValue();
             }
             return null;
         }

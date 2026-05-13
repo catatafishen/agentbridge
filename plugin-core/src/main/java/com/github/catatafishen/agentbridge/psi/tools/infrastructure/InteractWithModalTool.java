@@ -33,6 +33,7 @@ public final class InteractWithModalTool extends InfrastructureTool {
 
     private static final int CLICK_TIMEOUT_SECONDS = 5;
     private static final String PARAM_BUTTON = "button";
+    private static final String PARAM_TEXT_INPUT = "text_input";
 
     public InteractWithModalTool(Project project) {
         super(project);
@@ -51,9 +52,13 @@ public final class InteractWithModalTool extends InfrastructureTool {
     @Override
     public @NotNull String description() {
         return "Query or respond to a modal dialog that is blocking IDE operations. "
-            + "With no arguments, returns the dialog title, message text, and available buttons. "
+            + "With no arguments, returns the dialog title, message text, available buttons, "
+            + "and current text-field contents. "
             + "With a 'button' argument, clicks the named button to dismiss the dialog "
-            + "so the blocked tool call can continue.";
+            + "so the blocked tool call can continue. "
+            + "With a 'text_input' argument, sets the text in the first editable text field "
+            + "of the dialog (e.g. a commit message editor) — combine with 'button' to set "
+            + "the text and confirm in one call.";
     }
 
     @Override
@@ -75,7 +80,9 @@ public final class InteractWithModalTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(PARAM_BUTTON, TYPE_STRING, "The button text to click (e.g. 'OK', 'Cancel', 'Yes', 'No'). "
-                + "Omit to inspect the dialog without interacting with it.")
+                + "Omit to inspect the dialog without interacting with it."),
+            Param.optional(PARAM_TEXT_INPUT, TYPE_STRING, "Text to set in the first editable text field or text area "
+                + "of the dialog (e.g. a commit message). Can be combined with 'button' to set text and confirm in one call.")
         );
     }
 
@@ -91,9 +98,18 @@ public final class InteractWithModalTool extends InfrastructureTool {
             return "No modal dialog is currently visible.";
         }
 
-        if (!args.has(PARAM_BUTTON) || args.get(PARAM_BUTTON).isJsonNull()
-            || args.get(PARAM_BUTTON).getAsString().isBlank()) {
+        boolean hasButton = args.has(PARAM_BUTTON) && !args.get(PARAM_BUTTON).isJsonNull()
+            && !args.get(PARAM_BUTTON).getAsString().isBlank();
+        boolean hasTextInput = args.has(PARAM_TEXT_INPUT) && !args.get(PARAM_TEXT_INPUT).isJsonNull();
+
+        if (!hasButton && !hasTextInput) {
             return describeDialog(dialog);
+        }
+
+        if (hasTextInput) {
+            String setResult = setTextInDialog(dialog, args.get(PARAM_TEXT_INPUT).getAsString());
+            if (setResult.startsWith("Error")) return setResult;
+            if (!hasButton) return setResult;
         }
 
         return clickDialogButton(dialog, args.get(PARAM_BUTTON).getAsString());
@@ -118,13 +134,17 @@ public final class InteractWithModalTool extends InfrastructureTool {
         sb.append("Modal dialog: '").append(title != null && !title.isBlank() ? title : "(untitled)").append("'\n");
 
         List<String> labels = new ArrayList<>();
+        List<String> textFields = new ArrayList<>();
         List<String> radioButtons = new ArrayList<>();
         List<String> checkBoxes = new ArrayList<>();
         List<String> buttons = new ArrayList<>();
-        collectComponents(dialog, labels, radioButtons, checkBoxes, buttons);
+        collectComponents(dialog, labels, textFields, radioButtons, checkBoxes, buttons);
 
         if (!labels.isEmpty()) {
             sb.append("Message: ").append(String.join(" ", labels)).append("\n");
+        }
+        if (!textFields.isEmpty()) {
+            sb.append("Text fields: ").append(textFields).append("\n");
         }
         if (!radioButtons.isEmpty()) {
             sb.append("Radio buttons: ").append(radioButtons).append("\n");
@@ -135,8 +155,43 @@ public final class InteractWithModalTool extends InfrastructureTool {
         if (!buttons.isEmpty()) {
             sb.append("Buttons: ").append(buttons).append("\n");
         }
-        sb.append("Use interact_with_modal with button=<text> to click a button.");
+        sb.append("Use interact_with_modal with button=<text> to click a button");
+        if (!textFields.isEmpty()) {
+            sb.append(", or text_input=<value> to set the text field");
+        }
+        sb.append(".");
         return sb.toString();
+    }
+
+    private static String setTextInDialog(Dialog dialog, String text) {
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        ApplicationManager.getApplication().invokeLater(() ->
+                future.complete(doSetText(dialog, text)),
+            ModalityState.any());
+        return awaitBooleanFuture(future,
+            "Set text field to: " + text,
+            "Error: no editable text field found in dialog.",
+            "Error: timed out waiting to set text field.",
+            "Error setting text: ");
+    }
+
+    private static boolean doSetText(Container container, String text) {
+        for (Component comp : container.getComponents()) {
+            if (comp instanceof JTextArea ta && ta.isEditable()) {
+                ta.setText(text);
+                ta.requestFocusInWindow();
+                return true;
+            }
+            if (comp instanceof JTextField tf && tf.isEditable()) {
+                tf.setText(text);
+                tf.requestFocusInWindow();
+                return true;
+            }
+            if (comp instanceof Container c && doSetText(c, text)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String clickDialogButton(Dialog dialog, String buttonText) {
@@ -145,22 +200,33 @@ public final class InteractWithModalTool extends InfrastructureTool {
         ApplicationManager.getApplication().invokeLater(() ->
                 future.complete(doClick(dialog, buttonText)),
             ModalityState.any());
+        String notFound = "Button '" + buttonText + "' not found. Available buttons: " + collectButtons(dialog) + ".";
+        return awaitBooleanFuture(future,
+            "Clicked button '" + buttonText + "' on dialog '"
+                + (dialog.getTitle() != null ? dialog.getTitle() : "(untitled)") + "'.",
+            notFound,
+            "Timed out waiting to click button '" + buttonText + "'.",
+            "Error clicking button: ");
+    }
 
+    /**
+     * Waits for a boolean future submitted to the EDT with {@link ModalityState#any()}.
+     * Returns {@code successMsg} on {@code true}, {@code missingMsg} on {@code false},
+     * or an error string on timeout / execution error / interrupt.
+     */
+    private static String awaitBooleanFuture(CompletableFuture<Boolean> future,
+                                             String successMsg, String missingMsg,
+                                             String timeoutMsg, String executionErrorPrefix) {
         try {
             boolean found = future.get(CLICK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            if (found) {
-                return "Clicked button '" + buttonText + "' on dialog '"
-                    + (dialog.getTitle() != null ? dialog.getTitle() : "(untitled)") + "'.";
-            }
-            List<String> available = collectButtons(dialog);
-            return "Button '" + buttonText + "' not found. Available buttons: " + available + ".";
+            return found ? successMsg : missingMsg;
         } catch (TimeoutException e) {
-            return "Timed out waiting to click button '" + buttonText + "'.";
+            return timeoutMsg;
         } catch (ExecutionException e) {
-            return "Error clicking button: " + e.getCause().getMessage();
+            return executionErrorPrefix + e.getCause().getMessage();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Interrupted while clicking button.";
+            return "Interrupted.";
         }
     }
 
@@ -196,21 +262,36 @@ public final class InteractWithModalTool extends InfrastructureTool {
     }
 
     private static void collectComponents(Container container,
-                                          List<String> labels, List<String> radioButtons,
+                                          List<String> labels, List<String> textFields,
+                                          List<String> radioButtons,
                                           List<String> checkBoxes, List<String> buttons) {
         for (Component comp : container.getComponents()) {
-            if (comp instanceof JRadioButton rb && rb.getText() != null && !rb.getText().isBlank()) {
-                radioButtons.add(rb.getText());
-            } else if (comp instanceof JCheckBox cb && cb.getText() != null && !cb.getText().isBlank()) {
-                checkBoxes.add(cb.getText());
-            } else if (comp instanceof JButton btn && btn.getText() != null && !btn.getText().isBlank()) {
-                buttons.add(btn.getText());
-            } else if (comp instanceof JLabel lbl && lbl.getText() != null && !lbl.getText().isBlank() && lbl.getIcon() == null) {
-                labels.add(lbl.getText());
-            }
+            classifyComponent(comp, labels, textFields, radioButtons, checkBoxes, buttons);
             if (comp instanceof Container c) {
-                collectComponents(c, labels, radioButtons, checkBoxes, buttons);
+                collectComponents(c, labels, textFields, radioButtons, checkBoxes, buttons);
             }
         }
+    }
+
+    private static void classifyComponent(Component comp,
+                                          List<String> labels, List<String> textFields,
+                                          List<String> radioButtons, List<String> checkBoxes, List<String> buttons) {
+        if (comp instanceof JRadioButton rb && rb.getText() != null && !rb.getText().isBlank()) {
+            radioButtons.add(rb.getText());
+        } else if (comp instanceof JCheckBox cb && cb.getText() != null && !cb.getText().isBlank()) {
+            checkBoxes.add(cb.getText());
+        } else if (comp instanceof JButton btn && btn.getText() != null && !btn.getText().isBlank()) {
+            buttons.add(btn.getText());
+        } else if (comp instanceof JLabel lbl && lbl.getText() != null && !lbl.getText().isBlank() && lbl.getIcon() == null) {
+            labels.add(lbl.getText());
+        } else if (comp instanceof JTextArea ta && ta.isEditable()) {
+            textFields.add(describeTextContent("text area", ta.getText()));
+        } else if (comp instanceof JTextField tf && tf.isEditable()) {
+            textFields.add(describeTextContent("text field", tf.getText()));
+        }
+    }
+
+    private static String describeTextContent(String type, String content) {
+        return "(" + type + "): " + (content.isBlank() ? "(empty)" : content.replace('\n', '↵'));
     }
 }
