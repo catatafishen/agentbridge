@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.services.PromptDbService
+import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
-import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
@@ -14,21 +14,15 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.SearchTextField
-import com.intellij.ui.components.JBTextField
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
-import java.awt.BorderLayout
-import java.awt.Component
-import java.awt.Cursor
-import java.awt.Dimension
-import java.awt.FlowLayout
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
+import java.awt.*
 import java.awt.event.HierarchyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.util.EnumSet
+import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.*
 import javax.swing.event.DocumentEvent
@@ -112,8 +106,10 @@ internal class PromptsPanel(
 
     private var displayedCount = PAGE_SIZE
 
-    @Volatile private var historyEntries: List<EntryData> = emptyList()
-    @Volatile private var promptSessionMap: Map<String, String> = emptyMap()
+    @Volatile
+    private var historyEntries: List<EntryData> = emptyList()
+    @Volatile
+    private var promptSessionMap: Map<String, String> = emptyMap()
 
     private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
         font = JBUI.Fonts.miniFont()
@@ -176,7 +172,9 @@ internal class PromptsPanel(
             override fun textChanged(e: DocumentEvent) {
                 if (branchUpdating) return
                 val text = branchEditor.text.orEmpty().trim()
-                updateBranchPopup(text)
+                // Defer model mutation: modifying the combo model triggers configureEditor→setText,
+                // which is forbidden while a document notification is already in progress.
+                SwingUtilities.invokeLater { updateBranchPopup(text) }
                 if (text != lastBranchText) {
                     lastBranchText = text
                     displayedCount = PAGE_SIZE
@@ -253,30 +251,50 @@ internal class PromptsPanel(
             add(scopeThinking)
             add(scopeToolCalls)
         }
-        advancedPanel.add(scopeRow, gbc(gridx = 0, gridy = 0, gridwidth = 4, fillH = true, weightx = 1.0,
-            bottom = rowGap))
+        advancedPanel.add(
+            scopeRow, gbc(
+                gridx = 0, gridy = 0, gridwidth = 4, fillH = true, weightx = 1.0,
+                bottom = rowGap
+            )
+        )
 
         // Row 1: Branch label + Branch combo (full width)
-        advancedPanel.add(JLabel("Branch:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 0, gridy = 1, right = labelGap, bottom = rowGap))
-        advancedPanel.add(branchCombo,
-            gbc(gridx = 1, gridy = 1, gridwidth = 3, fillH = true, weightx = 1.0, bottom = rowGap))
+        advancedPanel.add(
+            JLabel("Branch:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 0, gridy = 1, right = labelGap, bottom = rowGap)
+        )
+        advancedPanel.add(
+            branchCombo,
+            gbc(gridx = 1, gridy = 1, gridwidth = 3, fillH = true, weightx = 1.0, bottom = rowGap)
+        )
 
         // Row 2: Agent label + Agent combo | Tool label + Tool combo
-        advancedPanel.add(JLabel("Agent:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 0, gridy = 2, right = labelGap, bottom = rowGap))
-        advancedPanel.add(agentCombo,
-            gbc(gridx = 1, gridy = 2, fillH = true, weightx = 0.4, right = JBUI.scale(8), bottom = rowGap))
-        advancedPanel.add(JLabel("Tool:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 2, gridy = 2, right = labelGap, bottom = rowGap))
-        advancedPanel.add(toolCombo,
-            gbc(gridx = 3, gridy = 2, fillH = true, weightx = 0.6, bottom = rowGap))
+        advancedPanel.add(
+            JLabel("Agent:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 0, gridy = 2, right = labelGap, bottom = rowGap)
+        )
+        advancedPanel.add(
+            agentCombo,
+            gbc(gridx = 1, gridy = 2, fillH = true, weightx = 0.4, right = JBUI.scale(8), bottom = rowGap)
+        )
+        advancedPanel.add(
+            JLabel("Tool:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 2, gridy = 2, right = labelGap, bottom = rowGap)
+        )
+        advancedPanel.add(
+            toolCombo,
+            gbc(gridx = 3, gridy = 2, fillH = true, weightx = 0.6, bottom = rowGap)
+        )
 
         // Row 3: File label + File field (full width)
-        advancedPanel.add(JLabel("File:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 0, gridy = 3, right = labelGap, bottom = gap))
-        advancedPanel.add(fileField,
-            gbc(gridx = 1, gridy = 3, gridwidth = 3, fillH = true, weightx = 1.0, bottom = gap))
+        advancedPanel.add(
+            JLabel("File:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 0, gridy = 3, right = labelGap, bottom = gap)
+        )
+        advancedPanel.add(
+            fileField,
+            gbc(gridx = 1, gridy = 3, gridwidth = 3, fillH = true, weightx = 1.0, bottom = gap)
+        )
     }
 
     private fun gbc(

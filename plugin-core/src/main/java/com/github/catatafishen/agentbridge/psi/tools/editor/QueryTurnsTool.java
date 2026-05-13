@@ -1,10 +1,10 @@
 package com.github.catatafishen.agentbridge.psi.tools.editor;
 
 import com.github.catatafishen.agentbridge.psi.TimeArgParser;
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.services.PromptDbService;
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
-import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;

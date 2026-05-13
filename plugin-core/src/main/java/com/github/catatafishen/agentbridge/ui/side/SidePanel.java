@@ -35,7 +35,6 @@ public final class SidePanel extends JPanel implements Disposable {
     private static final int TAB_REVIEW = 0;
     private static final int TAB_TODOS = 1;
     private static final int TAB_PROMPT_DB = 3;
-    private static final int TAB_SESSION = 4;
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
     private final transient Project project;
@@ -73,7 +72,6 @@ public final class SidePanel extends JPanel implements Disposable {
         // (new files on disk, the agent editing plan.md) appear without manual refresh.
         tabsPanel.addSelectionListener(idx -> {
             if (idx == TAB_TODOS) todoPanel.refresh();
-            else if (idx == TAB_SESSION) sessionStatsPanel.refreshFiles();
         }, this);
 
         // Register navigation callback: when the agent calls query_turns with follow-agent

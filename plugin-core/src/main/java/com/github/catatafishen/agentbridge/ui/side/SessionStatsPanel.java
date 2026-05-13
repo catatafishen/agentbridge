@@ -25,6 +25,7 @@ import java.awt.*;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -54,9 +55,16 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final transient ProcessingTimerPanel timerPanel;
     private final transient BillingManager billing;
     private final transient ActiveAgentManager agentManager;
-    private final Font smallFont;
+    private Font smallFont;
     private final Color dimColor;
     private final transient Runnable switchListener;
+
+    /**
+     * Labels that use {@code smallFont} — re-populated in the constructor and refreshed in
+     * {@link #updateUI()} so font size stays correct after IDE zoom-level changes.
+     */
+    private final List<JLabel> scalableLabels = new ArrayList<>();
+    private final List<JLabel> boldScalableLabels = new ArrayList<>();
 
     private final transient SessionDiffAnimator sessionDiffAnimator = new SessionDiffAnimator();
     private final transient SessionDiffAnimator turnDiffAnimator = new SessionDiffAnimator();
@@ -106,7 +114,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final JPanel remainingRow;
     private final JPanel resetsRow;
     private final JPanel billingSection;
-    private final ProjectFilesPanel filesPanel;
 
     // "Today" section — aggregates persisted turn_stats rows for the current local date,
     // across all agents. Independent of the in-memory Session totals (which only track
@@ -143,6 +150,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         // Selected client section
         clientNameLabel.setFont(smallFont);
+        scalableLabels.add(clientNameLabel);
         JPanel clientRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
         clientRow.setOpaque(false);
         clientRow.setBorder(BorderFactory.createEmptyBorder(0, JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
@@ -268,35 +276,24 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
         JPanel sessionHeader = createSectionHeader("Session");
-        JPanel filesHeader = createSectionHeader("Project files");
         content.add(clientSection);
         content.add(turnSection);
         content.add(sessionHeader);
         content.add(statsGrid);
         content.add(todaySection);
         content.add(billingSection);
-        content.add(filesHeader);
         // BoxLayout.Y_AXIS centers children with default CENTER_ALIGNMENT and sizes them
         // to their preferredWidth — section panels would visually float in the middle of
         // the side panel. Anchor each direct child of `content` at the left edge and let
         // it grow to the full width.
         leftAlignChild(sessionHeader);
         leftAlignChild(statsGrid);
-        leftAlignChild(filesHeader);
-
-        // Project files tree expands to its full preferred height; the outer
-        // scroll pane (below) handles scrolling for the entire side panel.
-        filesPanel = new ProjectFilesPanel(project);
 
         JPanel wrapper = new VerticalScrollablePanel();
         wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
         wrapper.setOpaque(false);
-        // Each child sticks to its preferred height; together they grow the
-        // wrapper beyond the viewport so the outer scroll pane can scroll it.
         content.setAlignmentX(Component.LEFT_ALIGNMENT);
-        filesPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         wrapper.add(content);
-        wrapper.add(filesPanel);
 
         JBScrollPane scrollPane = new JBScrollPane(wrapper);
         scrollPane.setBorder(JBUI.Borders.empty());
@@ -326,19 +323,34 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         refresh();
     }
 
-    /**
-     * Refreshes the project-files tree. Called when the Session tab is selected.
-     */
-    void refreshFiles() {
-        filesPanel.refresh();
-    }
-
     @Override
     public void dispose() {
         agentManager.removeSwitchListener(switchListener);
         timerPanel.setOnStatsChanged(null);
         billing.setOnBillingChanged(null);
         animationTimer.stop();
+    }
+
+    /**
+     * Re-derives {@code smallFont} at the new scale factor whenever the IDE zoom level changes.
+     * IntelliJ fires {@code updateUI()} on all visible components when the user changes zoom,
+     * but Swing won't re-apply a font that was explicitly set via {@code setFont()} — so labels
+     * that use {@code smallFont} would stay at the pre-zoom pixel size without this override.
+     *
+     * <p>The {@code scalableLabels == null} guard is necessary: JPanel's constructor chain calls
+     * {@code updateUI()} before this class's field initialisers run, so the lists are genuinely
+     * null on that first invocation.
+     */
+    @Override
+    @SuppressWarnings("java:S2583") // scalableLabels IS null on the first updateUI() call from super()
+    public void updateUI() {
+        super.updateUI();
+        if (scalableLabels == null) return;
+        smallFont = UIManager.getFont("Label.font").deriveFont((float) JBUI.scale(11));
+        for (JLabel label : scalableLabels) label.setFont(smallFont);
+        for (JLabel label : boldScalableLabels) label.setFont(smallFont.deriveFont(Font.BOLD));
+        revalidate();
+        repaint();
     }
 
     /**
@@ -369,6 +381,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private JPanel createSectionHeader(JLabel label) {
         label.setFont(smallFont.deriveFont(Font.BOLD));
         label.setForeground(dimColor);
+        boldScalableLabels.add(label);
         JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
         titleRow.setOpaque(false);
         titleRow.setBorder(BorderFactory.createEmptyBorder(
@@ -411,6 +424,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JLabel suffixLabel = new JLabel(suffix);
         suffixLabel.setFont(smallFont);
         suffixLabel.setForeground(dimColor);
+        scalableLabels.add(suffixLabel);
         // The header is now a vertical box (title row + divider). The first child
         // is the title FlowLayout row — append the suffix label there so it appears
         // inline next to the bold title (matching the original behaviour).
@@ -430,6 +444,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         label.setFont(smallFont);
         label.setForeground(UIManager.getColor("Label.foreground"));
         value.setFont(smallFont);
+        scalableLabels.add(label);
+        scalableLabels.add(value);
         // Right-align values so columns line up cleanly across sections; label stays left.
         value.setHorizontalAlignment(SwingConstants.RIGHT);
 
