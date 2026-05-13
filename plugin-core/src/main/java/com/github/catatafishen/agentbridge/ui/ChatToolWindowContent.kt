@@ -66,6 +66,12 @@ class ChatToolWindowContent(
     private val rootSplitter = com.intellij.ui.OnePixelSplitter(
         /* vertical = */ false, /* proportion = */ 0.0f
     ).also {
+        it.setResizeEnabled(false)
+        // Suppress the 1px divider line without setting dividerWidth=0 (which breaks layout).
+        // setBlindZone makes OnePixelDivider fill a bounds rect shrunken by the insets; with a
+        // top inset larger than any screen height the bounds.height goes negative, making
+        // fillRect a no-op — nothing is drawn. Short.MAX_VALUE (×4 DPI = 131k px) is safe.
+        it.setBlindZone { JBUI.insets(Short.MAX_VALUE.toInt(), 0, 0, 0) }
         it.secondComponent = mainPanel
         it.setHonorComponentsMinimumSize(false)
         // When the tool window is resized (by dragging its border), keep the chat pane
@@ -711,10 +717,7 @@ class ChatToolWindowContent(
     private fun attachSidePanel(sessionStatsPanel: com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel) {
         val side =
             com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
-                border = JBUI.Borders.compound(
-                    JBUI.Borders.empty(4),
-                    com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
-                )
+                border = JBUI.Borders.empty(4)
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
@@ -863,7 +866,9 @@ class ChatToolWindowContent(
     ) {
         val resizeState = ResizeState()
         val resizeDragZone = JBUI.scale(8)
-        val resizeHandler = object : java.awt.event.MouseAdapter() {
+
+        // N resize: drag the top edge of inputSection to change the input panel height.
+        val nResizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 inputSection.cursor = if (e.y <= resizeDragZone) {
                     Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
@@ -896,8 +901,63 @@ class ChatToolWindowContent(
                 if (resizeState.activeResize == null) inputSection.cursor = Cursor.getDefaultCursor()
             }
         }
-        inputSection.addMouseMotionListener(resizeHandler)
-        inputSection.addMouseListener(resizeHandler)
+        inputSection.addMouseMotionListener(nResizeHandler)
+        inputSection.addMouseListener(nResizeHandler)
+
+        // W/NW resize: drag the left margin of bottomSection to adjust the side panel width.
+        // bottomSection has an 8px left border — that strip is the W drag zone.
+        // The NW corner (x ≤ 8, y ≤ 8) simultaneously resizes height AND width.
+        var widthDragStart: Pair<Int, Int>? = null  // (startX, startSideWidth)
+        var nwHeightDragStart: Pair<Int, Int>? = null  // (startY, startHeight)
+
+        val wResizeHandler = object : java.awt.event.MouseAdapter() {
+            override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                if (e.x > resizeDragZone) return
+                bottomSection.cursor = if (e.y <= resizeDragZone) {
+                    Cursor.getPredefinedCursor(Cursor.NW_RESIZE_CURSOR)
+                } else {
+                    Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR)
+                }
+            }
+
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (e.x > resizeDragZone) return
+                val sideWidth = rootSplitter.firstComponent?.width ?: 0
+                widthDragStart = Pair(e.locationOnScreen.x, sideWidth)
+                if (e.y <= resizeDragZone) {
+                    nwHeightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                }
+            }
+
+            override fun mouseDragged(e: java.awt.event.MouseEvent) {
+                widthDragStart?.let { (startX, startSideWidth) ->
+                    val deltaX = e.locationOnScreen.x - startX
+                    val totalWidth = rootSplitter.width.takeIf { it > 0 } ?: return@let
+                    rootSplitter.proportion = ((startSideWidth + deltaX).toFloat() / totalWidth)
+                        .coerceIn(0.0f, 0.9f)
+                }
+                nwHeightDragStart?.let { (startY, startH) ->
+                    val delta = startY - e.locationOnScreen.y
+                    bottomSection.preferredSize = Dimension(
+                        bottomSection.width,
+                        (startH + delta).coerceIn(minInputHeight(), maxInputHeight(splitPanel.height))
+                    )
+                    splitPanel.revalidate()
+                }
+            }
+
+            override fun mouseReleased(e: java.awt.event.MouseEvent) {
+                if (nwHeightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                widthDragStart = null
+                nwHeightDragStart = null
+            }
+
+            override fun mouseExited(e: java.awt.event.MouseEvent) {
+                if (widthDragStart == null) bottomSection.cursor = Cursor.getDefaultCursor()
+            }
+        }
+        bottomSection.addMouseMotionListener(wResizeHandler)
+        bottomSection.addMouseListener(wResizeHandler)
     }
 
     private fun installSavedInputHeight(
@@ -1266,9 +1326,7 @@ class ChatToolWindowContent(
         val leftGroup = DefaultActionGroup()
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
-        leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
-        leftGroup.addSeparator()
         leftGroup.add(DisconnectOrStopAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
