@@ -24,10 +24,9 @@ fi
 # Clear the per-project JPS compile-server directory under ~/.cache/JetBrains
 JPS_COMPILE_DIR=$(find "${HOME}/.cache/JetBrains" -maxdepth 4 -type d -name "compile-server" 2>/dev/null | head -1)
 if [ -n "$JPS_COMPILE_DIR" ]; then
-    # Each project has a subdirectory named after a hash; find the one matching our project
+    # Each project has a subdirectory named after a hash; find the one matching our project name
     project_name=$(basename "$AGENTBRIDGE_PROJECT_DIR")
-    project_jps=$(find "$JPS_COMPILE_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | \
-        xargs -I{} sh -c 'ls "{}" 2>/dev/null | grep -q "." && echo "{}"' | head -1)
+    project_jps=$(find "$JPS_COMPILE_DIR" -maxdepth 1 -mindepth 1 -type d -name "*${project_name}*" 2>/dev/null | head -1)
     if [ -n "$project_jps" ]; then
         rm -rf "${project_jps}"/* 2>/dev/null && cleared="$cleared jps-compile-server"
     fi
@@ -36,5 +35,5 @@ fi
 if [ -n "$cleared" ]; then
     hook_json_append "\n\n⚠️ JPS cache cleared automatically (${cleared# }). Call build_project again — if the same errors reappear they are real; if they disappear they were stale cache artifacts."
 else
-    hook_json_append "\n\n⚠️ Could not locate JPS cache to clear. If these errors are in files you did not edit, run: .agent-work/clear-jps-cache.sh, then call build_project again."
+    hook_json_append "\n\n⚠️ Could not locate JPS cache to clear. If these errors are in files you did not edit, use the 'Rebuild plugin-core (clean)' run configuration (via run_configuration tool) to force a full Gradle clean build, then call build_project again."
 fi

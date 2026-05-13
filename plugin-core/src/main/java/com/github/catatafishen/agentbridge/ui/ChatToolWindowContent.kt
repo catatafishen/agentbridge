@@ -732,6 +732,9 @@ class ChatToolWindowContent(
                     .setValue(PREF_SIDE_PANEL_OPEN, true)
             }
         }
+        com.intellij.openapi.util.Disposer.register(toolWindow.disposable) {
+            PromptDbService.getInstance(project).registerShowPanelCallback(null)
+        }
     }
 
     private fun restoreSidePanelOpenState() {
