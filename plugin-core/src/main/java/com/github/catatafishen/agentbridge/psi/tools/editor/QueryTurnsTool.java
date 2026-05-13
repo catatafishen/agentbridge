@@ -188,7 +188,8 @@ public final class QueryTurnsTool extends EditorTool {
             turnId, sessionId, lastN, offset,
             userMessage, assistantText, toolName, filePath, branch, agentName,
             since, until,
-            includeThinking, includeToolCalls, maxChars
+            includeThinking, includeToolCalls, maxChars,
+            null, null
         );
 
         List<ConversationQuery.TurnSummary> turns = store.query(params);

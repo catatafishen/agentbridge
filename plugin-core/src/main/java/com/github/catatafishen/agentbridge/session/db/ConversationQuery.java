@@ -10,8 +10,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Executes structured SQL queries against {@link ConversationDatabase} and returns
@@ -32,6 +34,16 @@ public final class ConversationQuery {
 
     public ConversationQuery(@NotNull ConversationDatabase database) {
         this.database = database;
+    }
+
+    /** Controls which event types are searched when using {@link QueryParams#combinedText()}. */
+    public enum SearchScope {
+        USER_PROMPT, TEXT_EVENTS, THINKING, TOOL_CALLS;
+
+        /** The default search scope: user prompt + assistant text events. */
+        public static Set<SearchScope> defaultScope() {
+            return EnumSet.of(USER_PROMPT, TEXT_EVENTS);
+        }
     }
 
     // ── Records ───────────────────────────────────────────────────────────────
@@ -55,7 +67,11 @@ public final class ConversationQuery {
         @Nullable Instant until,
         boolean includeThinking,
         boolean includeToolCalls,
-        int maxChars
+        int maxChars,
+        // Combined free-text search across multiple event types using OR logic (see SearchScope).
+        @Nullable String combinedText,
+        // Which event types to search when combinedText is set. Defaults to SearchScope.defaultScope() when null.
+        @Nullable Set<SearchScope> combinedScopes
     ) {
         /**
          * Default output: last 5 turns, prompt + assistant text only.
@@ -63,7 +79,7 @@ public final class ConversationQuery {
         public static QueryParams lastN(int n) {
             return new QueryParams(null, null, n, null,
                 null, null, null, null, null, null,
-                null, null, false, false, 8000);
+                null, null, false, false, 8000, null, null);
         }
 
         /**
@@ -72,7 +88,7 @@ public final class ConversationQuery {
         public static QueryParams byTurnId(String turnId) {
             return new QueryParams(turnId, null, null, null,
                 null, null, null, null, null, null,
-                null, null, false, false, 8000);
+                null, null, false, false, 8000, null, null);
         }
     }
 
@@ -128,7 +144,7 @@ public final class ConversationQuery {
     }
 
     /**
-     * Returns distinct branch names that have turns, for use in filter dropdowns.
+     * Returns distinct branch names that have turns, ordered by most recently used first.
      */
     @NotNull
     public List<String> listDistinctBranches() {
@@ -136,9 +152,11 @@ public final class ConversationQuery {
             Connection conn = database.getConnection();
             if (conn == null) return List.of();
             try (PreparedStatement ps = conn.prepareStatement("""
-                SELECT DISTINCT git_branch_at_start FROM turns
+                SELECT git_branch_at_start
+                FROM turns
                 WHERE git_branch_at_start IS NOT NULL AND git_branch_at_start != ''
-                ORDER BY git_branch_at_start
+                GROUP BY git_branch_at_start
+                ORDER BY MAX(started_at) DESC
                 """)) {
                 ResultSet rs = ps.executeQuery();
                 List<String> result = new ArrayList<>();
@@ -255,6 +273,50 @@ public final class ConversationQuery {
                 )
                 """);
             sqlParams.add(likePattern);
+        }
+        if (p.combinedText() != null && !p.combinedText().isBlank()) {
+            String likePattern = "%" + p.combinedText().toLowerCase(Locale.ROOT) + "%";
+            Set<SearchScope> scopes = p.combinedScopes() != null ? p.combinedScopes() : SearchScope.defaultScope();
+            List<String> orClauses = new ArrayList<>();
+            if (scopes.contains(SearchScope.USER_PROMPT)) {
+                orClauses.add("lower(t.prompt_text) LIKE ?");
+                sqlParams.add(likePattern);
+            }
+            if (scopes.contains(SearchScope.TEXT_EVENTS)) {
+                orClauses.add("""
+                    EXISTS (
+                      SELECT 1 FROM events e_ct
+                      JOIN text_events te_ct ON e_ct.id = te_ct.event_id
+                      WHERE e_ct.turn_id = t.id AND lower(te_ct.content) LIKE ?
+                    )
+                    """);
+                sqlParams.add(likePattern);
+            }
+            if (scopes.contains(SearchScope.THINKING)) {
+                orClauses.add("""
+                    EXISTS (
+                      SELECT 1 FROM events e_th
+                      JOIN thinking_events th ON e_th.id = th.event_id
+                      WHERE e_th.turn_id = t.id AND lower(th.content) LIKE ?
+                    )
+                    """);
+                sqlParams.add(likePattern);
+            }
+            if (scopes.contains(SearchScope.TOOL_CALLS)) {
+                orClauses.add("""
+                    EXISTS (
+                      SELECT 1 FROM events e_tc
+                      JOIN tool_call_events tc_c ON e_tc.id = tc_c.event_id
+                      WHERE e_tc.turn_id = t.id
+                        AND (lower(tc_c.arguments) LIKE ? OR lower(tc_c.result) LIKE ?)
+                    )
+                    """);
+                sqlParams.add(likePattern);
+                sqlParams.add(likePattern);
+            }
+            if (!orClauses.isEmpty()) {
+                whereClauses.add("(" + String.join(" OR ", orClauses) + ")");
+            }
         }
 
         String whereClause = whereClauses.isEmpty()

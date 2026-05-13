@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
@@ -11,8 +12,8 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.DocumentAdapter
-import com.intellij.ui.components.JBTextField
 import com.intellij.ui.SearchTextField
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
@@ -21,16 +22,20 @@ import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
-import java.awt.GridLayout
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
 import java.awt.event.HierarchyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.util.EnumSet
 import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.*
 import javax.swing.event.DocumentEvent
 
 private const val ALL_BRANCHES = "(all branches)"
 private const val ALL_AGENTS = "(all agents)"
+private const val ALL_TOOLS = "(all tools)"
+private const val BRANCH_PREVIEW_SIZE = 5
 
 internal class PromptsPanel(
     private val project: Project,
@@ -45,13 +50,51 @@ internal class PromptsPanel(
         val turnId: String = ""
     )
 
+    // ── Main search ──────────────────────────────────────────────────────────
+
     private val searchField = SearchTextField()
-    private val branchModel = DefaultComboBoxModel(arrayOf(ALL_BRANCHES))
+
+    // ── Search scope checkboxes (inside advanced panel) ──────────────────────
+
+    private val scopePrompt = JCheckBox("Prompt", true).apply { font = JBUI.Fonts.miniFont(); isOpaque = false }
+    private val scopeText = JCheckBox("Text events", true).apply { font = JBUI.Fonts.miniFont(); isOpaque = false }
+    private val scopeThinking = JCheckBox("Thinking", false).apply { font = JBUI.Fonts.miniFont(); isOpaque = false }
+    private val scopeToolCalls = JCheckBox("Tool I/O", false).apply { font = JBUI.Fonts.miniFont(); isOpaque = false }
+
+    // ── Filter controls (inside advanced panel) ──────────────────────────────
+
+    private var allBranches: List<String> = emptyList()
+    private var branchUpdating = false
+    private var lastBranchText = ""
+    private val branchModel = DefaultComboBoxModel<String>().apply { addElement(ALL_BRANCHES) }
+    private val branchCombo = ComboBox(branchModel).apply {
+        isEditable = true
+        font = JBUI.Fonts.miniFont()
+    }
+
     private val agentModel = DefaultComboBoxModel(arrayOf(ALL_AGENTS))
-    private val branchCombo = ComboBox(branchModel)
-    private val agentCombo = ComboBox(agentModel)
-    private val toolField = JBTextField()
-    private val fileField = JBTextField()
+    private val agentCombo = ComboBox(agentModel).apply { font = JBUI.Fonts.miniFont() }
+
+    private val toolModel = DefaultComboBoxModel(arrayOf(ALL_TOOLS))
+    private val toolCombo = ComboBox(toolModel).apply { font = JBUI.Fonts.miniFont() }
+
+    private val fileField = JBTextField().apply {
+        font = JBUI.Fonts.miniFont()
+        emptyText.text = "file path…"
+    }
+
+    // ── Advanced panel toggle ────────────────────────────────────────────────
+
+    private var advancedVisible = false
+    private val advancedPanel = JPanel(GridBagLayout()).apply { isOpaque = false; isVisible = false }
+    private val advancedToggle = JLabel("Filters ▼").apply {
+        font = JBUI.Fonts.miniFont()
+        foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        border = JBUI.Borders.emptyLeft(6)
+    }
+
+    // ── List and loading state ───────────────────────────────────────────────
 
     private val listModel = DefaultListModel<PromptItem>()
     private val promptList = JBList(listModel)
@@ -60,7 +103,6 @@ internal class PromptsPanel(
     private val entriesListener = Runnable {
         ApplicationManager.getApplication().invokeLater(::onEntriesChanged)
     }
-
     private val hierarchyListener = java.awt.event.HierarchyListener { e ->
         if ((e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong()) != 0L && isShowing) {
             ApplicationManager.getApplication().invokeLater { scrollToBottom() }
@@ -68,13 +110,9 @@ internal class PromptsPanel(
     }
 
     private var displayedCount = PAGE_SIZE
-    private var lastQuery = ""
 
-    @Volatile
-    private var historyEntries: List<EntryData> = emptyList()
-
-    @Volatile
-    private var promptSessionMap: Map<String, String> = emptyMap()
+    @Volatile private var historyEntries: List<EntryData> = emptyList()
+    @Volatile private var promptSessionMap: Map<String, String> = emptyMap()
 
     private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
         font = JBUI.Fonts.miniFont()
@@ -124,45 +162,63 @@ internal class PromptsPanel(
             }
         }
 
-        searchField.addDocumentListener(object : DocumentAdapter() {
-            override fun textChanged(e: DocumentEvent) {
-                val q = searchField.text.orEmpty()
-                if (q != lastQuery) {
-                    lastQuery = q
-                    displayedCount = PAGE_SIZE
-                }
-                refresh(scrollToBottom = false)
-            }
-        })
+        searchField.addDocumentListener(filterChangeListener)
         searchField.textEditor.emptyText.text = "Search prompts…"
-
-        toolField.emptyText.text = "tool name…"
-        fileField.emptyText.text = "file path…"
-        toolField.document.addDocumentListener(filterChangeListener)
         fileField.document.addDocumentListener(filterChangeListener)
 
-        branchCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
         agentCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
+        toolCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
 
-        // Configure combo boxes
-        branchCombo.font = JBUI.Fonts.miniFont()
-        agentCombo.font = JBUI.Fonts.miniFont()
-        toolField.font = JBUI.Fonts.miniFont()
-        fileField.font = JBUI.Fonts.miniFont()
+        // Branch editable combo: listen to editor text and action events (deduped via lastBranchText)
+        val branchEditor = branchCombo.editor.editorComponent as? JTextField
+        branchEditor?.document?.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                if (branchUpdating) return
+                val text = branchEditor.text.orEmpty().trim()
+                updateBranchPopup(text)
+                if (text != lastBranchText) {
+                    lastBranchText = text
+                    displayedCount = PAGE_SIZE
+                    refresh(scrollToBottom = false)
+                }
+            }
+        })
+        branchCombo.addActionListener {
+            if (!branchUpdating) {
+                val text = (branchCombo.editor?.item as? String)?.trim().orEmpty()
+                if (text != lastBranchText) {
+                    lastBranchText = text
+                    displayedCount = PAGE_SIZE
+                    refresh(scrollToBottom = false)
+                }
+            }
+        }
 
-        val filterRow = JPanel(GridLayout(2, 2, JBUI.scale(4), JBUI.scale(2))).apply {
+        val scopeListener = java.awt.event.ActionListener {
+            displayedCount = PAGE_SIZE
+            refresh(scrollToBottom = false)
+        }
+        scopePrompt.addActionListener(scopeListener)
+        scopeText.addActionListener(scopeListener)
+        scopeThinking.addActionListener(scopeListener)
+        scopeToolCalls.addActionListener(scopeListener)
+
+        advancedToggle.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) = toggleAdvanced()
+        })
+
+        buildAdvancedPanel()
+
+        val searchRow = JPanel(BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.emptyTop(2)
-            add(labeledControl("Branch:", branchCombo))
-            add(labeledControl("Agent:", agentCombo))
-            add(labeledControl("Tool:", toolField))
-            add(labeledControl("File:", fileField))
+            add(searchField, BorderLayout.CENTER)
+            add(advancedToggle, BorderLayout.EAST)
         }
 
         val top = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(4)
-            add(searchField, BorderLayout.NORTH)
-            add(filterRow, BorderLayout.CENTER)
+            add(searchRow, BorderLayout.NORTH)
+            add(advancedPanel, BorderLayout.CENTER)
         }
         add(top, BorderLayout.NORTH)
 
@@ -181,13 +237,70 @@ internal class PromptsPanel(
         refresh()
     }
 
-    private fun labeledControl(label: String, control: JComponent): JPanel {
-        val p = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
+    private fun buildAdvancedPanel() {
+        advancedPanel.border = JBUI.Borders.emptyTop(4)
+        val rowGap = JBUI.scale(3)
+        val labelGap = JBUI.scale(4)
+        val gap = JBUI.scale(2)
+
+        // Row 0: scope checkboxes (spans all columns)
+        val scopeRow = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)).apply {
             isOpaque = false
+            add(JLabel("Search in:").apply { font = JBUI.Fonts.miniFont() })
+            add(scopePrompt)
+            add(scopeText)
+            add(scopeThinking)
+            add(scopeToolCalls)
         }
-        p.add(JLabel(label).apply { font = JBUI.Fonts.miniFont() })
-        p.add(control)
-        return p
+        advancedPanel.add(scopeRow, gbc(gridx = 0, gridy = 0, gridwidth = 4, fillH = true, weightx = 1.0,
+            bottom = rowGap))
+
+        // Row 1: Branch label + Branch combo (full width)
+        advancedPanel.add(JLabel("Branch:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 0, gridy = 1, right = labelGap, bottom = rowGap))
+        advancedPanel.add(branchCombo,
+            gbc(gridx = 1, gridy = 1, gridwidth = 3, fillH = true, weightx = 1.0, bottom = rowGap))
+
+        // Row 2: Agent label + Agent combo | Tool label + Tool combo
+        advancedPanel.add(JLabel("Agent:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 0, gridy = 2, right = labelGap, bottom = rowGap))
+        advancedPanel.add(agentCombo,
+            gbc(gridx = 1, gridy = 2, fillH = true, weightx = 0.4, right = JBUI.scale(8), bottom = rowGap))
+        advancedPanel.add(JLabel("Tool:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 2, gridy = 2, right = labelGap, bottom = rowGap))
+        advancedPanel.add(toolCombo,
+            gbc(gridx = 3, gridy = 2, fillH = true, weightx = 0.6, bottom = rowGap))
+
+        // Row 3: File label + File field (full width)
+        advancedPanel.add(JLabel("File:").apply { font = JBUI.Fonts.miniFont() },
+            gbc(gridx = 0, gridy = 3, right = labelGap, bottom = gap))
+        advancedPanel.add(fileField,
+            gbc(gridx = 1, gridy = 3, gridwidth = 3, fillH = true, weightx = 1.0, bottom = gap))
+    }
+
+    private fun gbc(
+        gridx: Int, gridy: Int,
+        gridwidth: Int = 1,
+        fillH: Boolean = false,
+        weightx: Double = 0.0,
+        bottom: Int = 0,
+        right: Int = 0
+    ) = GridBagConstraints().also {
+        it.gridx = gridx
+        it.gridy = gridy
+        it.gridwidth = gridwidth
+        it.fill = if (fillH) GridBagConstraints.HORIZONTAL else GridBagConstraints.NONE
+        it.weightx = weightx
+        it.anchor = GridBagConstraints.WEST
+        it.insets = JBUI.insets(0, 0, bottom, right)
+    }
+
+    private fun toggleAdvanced() {
+        advancedVisible = !advancedVisible
+        advancedPanel.isVisible = advancedVisible
+        advancedToggle.text = if (advancedVisible) "Filters ▲" else "Filters ▼"
+        revalidate()
+        repaint()
     }
 
     private fun scrollToBottom() {
@@ -207,19 +320,15 @@ internal class PromptsPanel(
         }
     }
 
-    /** Populates the Branch and Agent dropdowns from the DB on a pooled thread. */
+    /** Populates Branch (from DB ordered by recency), Agent, and Tool (from ToolRegistry) dropdowns. */
     private fun populateFilterCombos() {
         ApplicationManager.getApplication().executeOnPooledThread {
             val branches = sessionStore.listDistinctBranches().toList()
             val agents = sessionStore.listDistinctAgents().toList()
+            val tools = ToolRegistry.getInstance(project).allTools.map { it.id() }
             ApplicationManager.getApplication().invokeLater {
-                val selectedBranch = branchCombo.selectedItem as? String
-                branchModel.removeAllElements()
-                branchModel.addElement(ALL_BRANCHES)
-                branches.forEach { branchModel.addElement(it) }
-                if (selectedBranch != null && selectedBranch != ALL_BRANCHES) {
-                    branchCombo.selectedItem = selectedBranch
-                }
+                allBranches = branches
+                updateBranchPopup("")
 
                 val selectedAgent = agentCombo.selectedItem as? String
                 agentModel.removeAllElements()
@@ -228,7 +337,39 @@ internal class PromptsPanel(
                 if (selectedAgent != null && selectedAgent != ALL_AGENTS) {
                     agentCombo.selectedItem = selectedAgent
                 }
+
+                val selectedTool = toolCombo.selectedItem as? String
+                toolModel.removeAllElements()
+                toolModel.addElement(ALL_TOOLS)
+                tools.forEach { toolModel.addElement(it) }
+                if (selectedTool != null && selectedTool != ALL_TOOLS) {
+                    toolCombo.selectedItem = selectedTool
+                }
             }
+        }
+    }
+
+    /**
+     * Updates the branch combo popup items based on [filter] text.
+     * When [filter] is blank, shows the [BRANCH_PREVIEW_SIZE] most recent branches.
+     * Otherwise, shows all branches containing [filter] (case-insensitive).
+     */
+    private fun updateBranchPopup(filter: String) {
+        branchUpdating = true
+        try {
+            val editorText = (branchCombo.editor?.item as? String).orEmpty()
+            val filtered = if (filter.isBlank()) {
+                allBranches.take(BRANCH_PREVIEW_SIZE)
+            } else {
+                allBranches.filter { it.contains(filter, ignoreCase = true) }
+            }
+            branchModel.removeAllElements()
+            branchModel.addElement(ALL_BRANCHES)
+            filtered.forEach { branchModel.addElement(it) }
+            // Restore the editor text since model replacement clears it
+            branchCombo.editor?.item = editorText
+        } finally {
+            branchUpdating = false
         }
     }
 
@@ -253,13 +394,15 @@ internal class PromptsPanel(
         }
     }
 
-    /** Returns true if any SQL-backed filter (branch/agent/tool/file) is active. */
-    private fun hasSqlFilters(): Boolean {
-        val branch = branchCombo.selectedItem as? String
+    /** Returns true if any filter is active; triggers SQL-backed query when true. */
+    private fun hasActiveFilters(): Boolean {
+        if (searchField.text.isNotBlank()) return true
+        val branch = (branchCombo.editor?.item as? String)?.trim().orEmpty()
         val agent = agentCombo.selectedItem as? String
-        return (branch != null && branch != ALL_BRANCHES) ||
+        val tool = toolCombo.selectedItem as? String
+        return (branch.isNotEmpty() && branch != ALL_BRANCHES) ||
             (agent != null && agent != ALL_AGENTS) ||
-            toolField.text.isNotBlank() ||
+            (tool != null && tool != ALL_TOOLS) ||
             fileField.text.isNotBlank()
     }
 
@@ -268,7 +411,7 @@ internal class PromptsPanel(
     }
 
     private fun refresh(scrollToBottom: Boolean) {
-        if (hasSqlFilters()) {
+        if (hasActiveFilters()) {
             reloadWithSqlFilters(scrollToBottom)
         } else {
             refreshFromMemory(scrollToBottom)
@@ -276,26 +419,28 @@ internal class PromptsPanel(
     }
 
     /**
-     * SQL-backed refresh: queries conversation DB directly with active filters.
-     * Used when branch/agent/tool/file filters are set.
+     * SQL-backed refresh: queries conversation DB with all active filters.
+     * Text search is scoped to the checked event types (user prompt, text events, thinking, tool I/O).
      */
     private fun reloadWithSqlFilters(scrollToBottom: Boolean) {
-        val query = searchField.text.orEmpty().trim().takeIf { it.isNotEmpty() }
-        val branch = (branchCombo.selectedItem as? String)?.takeIf { it != ALL_BRANCHES }
+        val combinedText = searchField.text.orEmpty().trim().takeIf { it.isNotEmpty() }
+        val branch = (branchCombo.editor?.item as? String)?.trim()
+            ?.takeIf { it.isNotEmpty() && it != ALL_BRANCHES }
         val agent = (agentCombo.selectedItem as? String)?.takeIf { it != ALL_AGENTS }
-        val tool = toolField.text.trim().takeIf { it.isNotEmpty() }
+        val tool = (toolCombo.selectedItem as? String)?.takeIf { it != ALL_TOOLS }
         val file = fileField.text.trim().takeIf { it.isNotEmpty() }
+        val scopes = if (combinedText != null) buildSearchScopes() else null
 
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
             val params = ConversationQuery.QueryParams(
                 null, null, PAGE_SIZE, null,
-                query, null, tool, file, branch, agent,
-                null, null, false, false, Int.MAX_VALUE
+                null, null, tool, file, branch, agent,
+                null, null, false, false, Int.MAX_VALUE,
+                combinedText, scopes
             )
             val turns = sessionStore.query(params).toList()
             val items = turns.map { turn ->
-                // Build a synthetic PromptItem from the TurnSummary
                 val prompt = EntryData.Prompt(
                     turn.userMessage(), turn.timestamp().toString(),
                     null, turn.turnId(), turn.turnId()
@@ -316,7 +461,16 @@ internal class PromptsPanel(
         }
     }
 
-    /** In-memory refresh: uses loaded historyEntries + live chatConsole entries. */
+    private fun buildSearchScopes(): Set<ConversationQuery.SearchScope> {
+        val scopes = EnumSet.noneOf(ConversationQuery.SearchScope::class.java)
+        if (scopePrompt.isSelected) scopes.add(ConversationQuery.SearchScope.USER_PROMPT)
+        if (scopeText.isSelected) scopes.add(ConversationQuery.SearchScope.TEXT_EVENTS)
+        if (scopeThinking.isSelected) scopes.add(ConversationQuery.SearchScope.THINKING)
+        if (scopeToolCalls.isSelected) scopes.add(ConversationQuery.SearchScope.TOOL_CALLS)
+        return scopes
+    }
+
+    /** In-memory refresh: uses loaded history entries + live chatConsole entries. No filters active. */
     private fun refreshFromMemory(scrollToBottom: Boolean) {
         val query = searchField.text.orEmpty()
         val allEntries = mergeEntries(historyEntries, chatConsole.entriesSnapshot())
@@ -447,8 +601,8 @@ internal class PromptsPanel(
 
     companion object {
         private const val PAGE_SIZE = 20
-        private const val MAX_CHARS = 200
-        private const val MAX_ROWS = 5
+        const val MAX_CHARS = 200
+        const val MAX_ROWS = 5
 
         private data class TurnData(val stats: EntryData.TurnStats, val commits: List<String>)
 
