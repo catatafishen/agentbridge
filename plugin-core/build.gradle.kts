@@ -584,7 +584,13 @@ tasks {
             ?.file
         jvmArgs(
             // Allow Mockito to mock final classes under Java 21's module system
-            "--add-opens", "java.base/java.lang=ALL-UNNAMED"
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+            // IntelliJ Platform 2.16+ sets -Djava.system.class.loader=PathClassLoader, which
+            // conflicts with Java 21 CDS (Class Data Sharing) initialization — the NIO filesystem
+            // (FileSystems$DefaultFileSystemHolder) initializes via CDS before the custom classloader
+            // is ready, causing "getSystemClassLoader cannot be called during instantiation".
+            // Disabling CDS avoids the conflict without affecting functionality.
+            "-XX:-UseSharedSpaces"
         )
         if (mockitoAgent != null) {
             jvmArgs("-javaagent:${mockitoAgent.absolutePath}")
