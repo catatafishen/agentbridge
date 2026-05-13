@@ -277,6 +277,27 @@ works and auth "just works".
 Avoid using native `bash` with `gh` — route through `agentbridge-run_command`
 so the call is visible in the IDE Run panel and goes through the plugin's hooks.
 
+### PR Review Comments
+
+When a PR has review comments, **always**:
+
+1. **Read every comment** before acting — understand the full scope before making any changes.
+2. **Fix, then respond, then resolve** — for each comment:
+    - If the issue is valid: fix it, then reply describing what was changed and where (file and line).
+    - If the issue was already fixed in a later commit: reply explaining that it was addressed and where.
+    - If the issue is out of scope or intentionally not fixed: reply explaining why, and what the trade-off is.
+3. **Never resolve silently** — a resolved thread with no reply leaves reviewers wondering if the concern was
+   understood.
+   Every thread must have a reply before resolution.
+4. **Resolve via GraphQL** — the REST API has no resolve endpoint. Use:
+   ```
+   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_..."}) { thread { isResolved } } }'
+   ```
+   Get thread IDs first with:
+   ```
+   gh api graphql -f query='{ repository(owner:"...", name:"...") { pullRequest(number: N) { reviewThreads(first: 20) { nodes { id isResolved comments(first: 1) { nodes { databaseId } } } } } } }'
+   ```
+
 ### JCEF Cursor Bridge
 
 CSS `cursor` values in the JCEF chat panel do **not** propagate to the Swing host. All cursor
