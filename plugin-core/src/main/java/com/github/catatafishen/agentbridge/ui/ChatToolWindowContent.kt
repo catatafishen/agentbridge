@@ -19,9 +19,9 @@ import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -799,6 +799,22 @@ class ChatToolWindowContent(
     ): JBPanel<JBPanel<*>> {
         val sideRailWidth = { sideButtonsPanel.preferredSize.width }
         return object : JBPanel<JBPanel<*>>(BorderLayout()) {
+            // Repaint when focus moves so the border colour reflects toolWindow.isActive
+            // in sync with the button's isDefaultButton() repaint (same trigger).
+            private val focusSync = java.beans.PropertyChangeListener { repaint() }
+
+            override fun addNotify() {
+                super.addNotify()
+                KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                    .addPropertyChangeListener("focusOwner", focusSync)
+            }
+
+            override fun removeNotify() {
+                KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                    .removePropertyChangeListener("focusOwner", focusSync)
+                super.removeNotify()
+            }
+
             override fun paintComponent(g: Graphics) {
                 super.paintComponent(g)
                 val g2 = g.create() as Graphics2D
@@ -822,7 +838,14 @@ class ChatToolWindowContent(
         g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         g2.fillRoundRect(0, 0, width, height, arc, arc)
         paintInputSectionDivider(g2, sideRailWidth)
-        g2.color = UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+        // Use the default-button focus colour when the tool window is active so the input
+        // border turns blue in sync with the send button — matching the native commit panel.
+        val borderColor = if (toolWindow.isActive) {
+            JBUI.CurrentTheme.Focus.defaultButtonColor()
+        } else {
+            UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+        }
+        g2.color = borderColor
         g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
     }
 
@@ -1396,6 +1419,18 @@ class ChatToolWindowContent(
             sendIcon, JBColor.WHITE, keepGray = false, keepBrightness = false
         )
 
+        // Selects white or normal send icon at paint time based on the button's current
+        // isDefaultButton() state. This keeps the icon colour in sync with the blue button
+        // background without depending on the async action-update cycle.
+        private val adaptiveIcon = object : Icon {
+            override fun getIconWidth() = sendIcon.iconWidth
+            override fun getIconHeight() = sendIcon.iconHeight
+            override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
+                val icon = if ((c as? JButton)?.isDefaultButton == true) sendIconWhite else sendIcon
+                icon.paintIcon(c, g, x, y)
+            }
+        }
+
         // Captured at createCustomComponent time so showSendDropdown has a stable popup anchor.
         private var sendButton: JButton? = null
 
@@ -1404,7 +1439,7 @@ class ChatToolWindowContent(
         override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
             // Compact icon-only button keeps the footer from growing taller than the
             // dropdowns beside it while still exposing the action through the tooltip.
-            val button = object : JButton(sendIcon) {
+            val button = object : JButton(adaptiveIcon) {
                 override fun isDefaultButton(): Boolean = toolWindow.isActive
 
                 // Repaint immediately when focus moves between components so isDefaultButton()
@@ -1414,12 +1449,12 @@ class ChatToolWindowContent(
 
                 override fun addNotify() {
                     super.addNotify()
-                    java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                    KeyboardFocusManager.getCurrentKeyboardFocusManager()
                         .addPropertyChangeListener("focusOwner", focusSync)
                 }
 
                 override fun removeNotify() {
-                    java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                    KeyboardFocusManager.getCurrentKeyboardFocusManager()
                         .removePropertyChangeListener("focusOwner", focusSync)
                     super.removeNotify()
                 }
@@ -1444,19 +1479,18 @@ class ChatToolWindowContent(
             (component as? JButton)?.let { btn ->
                 btn.isEnabled = presentation.isEnabled
                 btn.text = ""
-                btn.icon = presentation.icon ?: sendIcon
+                // Don't override icon — adaptiveIcon (set at creation) picks white/normal at
+                // paint time based on isDefaultButton(), keeping colour in sync with the fill.
                 btn.toolTipText = presentation.description
             }
         }
 
         override fun update(e: AnActionEvent) {
-            val activeIcon = if (toolWindow.isActive) sendIconWhite else sendIcon
+            // Icon colour is handled by adaptiveIcon at paint time — no async delay.
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
-                e.presentation.icon = activeIcon
                 e.presentation.text = ""
                 e.presentation.description = "Nudge, queue, or stop and send"
             } else {
-                e.presentation.icon = activeIcon
                 e.presentation.text = ""
                 val isLoggedIn = authService.pendingAuthError == null
                 e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
