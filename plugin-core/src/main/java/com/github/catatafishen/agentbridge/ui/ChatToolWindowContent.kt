@@ -846,6 +846,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             // Inset by 1px so the 2px stroke (centred on the path) stays fully within the component.
             g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
         } else {
+            g2.stroke = BasicStroke(1.0f)
             g2.color = UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
             g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
         }
