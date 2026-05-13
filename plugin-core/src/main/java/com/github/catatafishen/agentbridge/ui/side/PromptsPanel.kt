@@ -535,9 +535,24 @@ internal class PromptsPanel(
      * Must be called on the EDT.
      */
     fun applySearchParams(params: ConversationQuery.QueryParams) {
-        // Main search box: prefer combinedText (scope-aware), fall back to userMessage
-        val text = params.combinedText ?: params.userMessage ?: ""
-        if (searchField.text != text) searchField.text = text
+        // Clear all fields first so omitted filters don't carry over from a previous agent query.
+        searchField.text = ""
+        branchCombo.editor?.item = ""
+        agentModel.selectedItem = null
+        toolModel.selectedItem = null
+        fileField.text = ""
+
+        // Main search box: prefer combinedText, then userMessage, then assistantText.
+        // When assistantText is the sole filter, select the Text Events scope so the panel
+        // surfaces those turns (Prompt scope alone would miss assistant-text matches).
+        val assistantTextOnly = params.assistantText != null
+            && params.combinedText == null && params.userMessage == null
+        searchField.text = params.combinedText ?: params.userMessage ?: params.assistantText ?: ""
+
+        if (assistantTextOnly) {
+            scopePrompt.isSelected = false
+            scopeText.isSelected = true
+        }
 
         params.branch?.takeIf { it.isNotEmpty() }?.let { branchCombo.editor?.item = it }
         params.agentName?.takeIf { it.isNotEmpty() }?.let { agentModel.selectedItem = it }

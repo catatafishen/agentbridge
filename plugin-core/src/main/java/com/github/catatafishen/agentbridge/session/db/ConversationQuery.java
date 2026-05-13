@@ -36,11 +36,15 @@ public final class ConversationQuery {
         this.database = database;
     }
 
-    /** Controls which event types are searched when using {@link QueryParams#combinedText()}. */
+    /**
+     * Controls which event types are searched when using {@link QueryParams#combinedText()}.
+     */
     public enum SearchScope {
         USER_PROMPT, TEXT_EVENTS, THINKING, TOOL_CALLS;
 
-        /** The default search scope: user prompt + assistant text events. */
+        /**
+         * The default search scope: user prompt + assistant text events.
+         */
         public static Set<SearchScope> defaultScope() {
             return EnumSet.of(USER_PROMPT, TEXT_EVENTS);
         }
@@ -316,6 +320,10 @@ public final class ConversationQuery {
             }
             if (!orClauses.isEmpty()) {
                 whereClauses.add("(" + String.join(" OR ", orClauses) + ")");
+            } else {
+                // Text entered but all scopes unchecked — match nothing rather than returning
+                // the last 500 unrelated turns.
+                whereClauses.add("1=0");
             }
         }
 
