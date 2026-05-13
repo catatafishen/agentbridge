@@ -2,8 +2,10 @@ package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -52,6 +54,10 @@ public final class GitRebaseTool extends GitTool {
     private static final String OP_MESSAGE = "message";
     private static final String ACTION_REWORD = "reword";
     private static final Set<String> VALID_REBASE_ACTIONS = Set.of("pick", ACTION_REWORD, "edit", "squash", "fixup", "drop");
+    private static final Logger LOG = Logger.getInstance(GitRebaseTool.class);
+
+    private record ParsedOps(Map<String, String> operations, Map<String, String> messages) {
+    }
 
     public GitRebaseTool(Project project) {
         super(project);
@@ -196,8 +202,9 @@ public final class GitRebaseTool extends GitTool {
         String upstream = args.get(PARAM_BRANCH).getAsString();
         String fetchNote = autoFetchForRemoteRefIn(upstream, root);
 
-        Map<String, String> operations = parseOperations(args);
-        Map<String, String> messages = parseMessages(args);
+        ParsedOps parsed = parseOperations(args);
+        Map<String, String> operations = parsed.operations();
+        Map<String, String> messages = parsed.messages();
         String opError = validateOperations(operations, messages);
         if (opError != null) return opError;
 
@@ -304,42 +311,33 @@ public final class GitRebaseTool extends GitTool {
         return null;
     }
 
-    private @NotNull Map<String, String> parseOperations(@NotNull JsonObject args) {
-        Map<String, String> result = new LinkedHashMap<>();
+    private @NotNull ParsedOps parseOperations(@NotNull JsonObject args) {
+        Map<String, String> operations = new LinkedHashMap<>();
+        Map<String, String> messages = new LinkedHashMap<>();
         if (!args.has(PARAM_OPERATIONS) || !args.get(PARAM_OPERATIONS).isJsonArray()) {
-            return result;
+            return new ParsedOps(operations, messages);
         }
         for (var el : args.getAsJsonArray(PARAM_OPERATIONS)) {
-            if (el.isJsonObject()) {
-                JsonObject op = el.getAsJsonObject();
-                if (op.has(OP_COMMIT) && op.has(OP_ACTION)) {
-                    String commitKey = op.get(OP_COMMIT).getAsString().trim();
-                    if (!commitKey.isBlank()) {
-                        result.put(commitKey, op.get(OP_ACTION).getAsString().trim().toLowerCase());
-                    }
-                }
+            String commitKey = extractCommitKey(el);
+            if (commitKey == null) continue;
+            JsonObject op = el.getAsJsonObject();
+            if (op.has(OP_ACTION)) {
+                operations.put(commitKey, op.get(OP_ACTION).getAsString().trim().toLowerCase());
+            }
+            if (op.has(OP_MESSAGE)) {
+                messages.put(commitKey, op.get(OP_MESSAGE).getAsString());
             }
         }
-        return result;
+        return new ParsedOps(operations, messages);
     }
 
-    private @NotNull Map<String, String> parseMessages(@NotNull JsonObject args) {
-        Map<String, String> result = new LinkedHashMap<>();
-        if (!args.has(PARAM_OPERATIONS) || !args.get(PARAM_OPERATIONS).isJsonArray()) {
-            return result;
-        }
-        for (var el : args.getAsJsonArray(PARAM_OPERATIONS)) {
-            if (el.isJsonObject()) {
-                JsonObject op = el.getAsJsonObject();
-                if (op.has(OP_COMMIT) && op.has(OP_MESSAGE)) {
-                    String commitKey = op.get(OP_COMMIT).getAsString().trim();
-                    if (!commitKey.isBlank()) {
-                        result.put(commitKey, op.get(OP_MESSAGE).getAsString());
-                    }
-                }
-            }
-        }
-        return result;
+    @Nullable
+    private static String extractCommitKey(@NotNull JsonElement el) {
+        if (!el.isJsonObject()) return null;
+        JsonObject op = el.getAsJsonObject();
+        if (!op.has(OP_COMMIT)) return null;
+        String key = op.get(OP_COMMIT).getAsString().trim();
+        return key.isBlank() ? null : key;
     }
 
     // ── Control args (abort / continue / skip) ───────────────
@@ -385,6 +383,7 @@ public final class GitRebaseTool extends GitTool {
          * {@link #handleUnstructuredEditor(File)} as git processes each reword commit.
          */
         private final List<String> rewordMessages = new ArrayList<>();
+        private final List<String> rewordShas = new ArrayList<>();
         private int rewordIndex = 0;
 
         ProgrammaticRebaseEditorHandler(
@@ -413,7 +412,10 @@ public final class GitRebaseTool extends GitTool {
                 result.add(new GitRebaseEntry(newAction, sha, entry.getSubject()));
                 if (ACTION_REWORD.equals(actionString)) {
                     String msg = findMessage(sha);
-                    if (msg != null) rewordMessages.add(msg);
+                    if (msg != null) {
+                        rewordMessages.add(msg);
+                        rewordShas.add(sha);
+                    }
                 }
             }
             return result;
@@ -423,6 +425,10 @@ public final class GitRebaseTool extends GitTool {
          * Called by git4idea when git invokes the editor on COMMIT_EDITMSG for a {@code reword}
          * entry. Writes the next pre-supplied message to the file instead of showing a dialog.
          * Returns {@code true} (handled) to suppress the dialog.
+         *
+         * <p>Any existing template content in {@code file} (comment lines, git hooks-injected
+         * content) is intentionally discarded — only the new message and a trailing newline are
+         * written, matching the simplest valid commit message format.
          */
         @Override
         protected boolean handleUnstructuredEditor(@NotNull File file) throws IOException {
@@ -430,6 +436,7 @@ public final class GitRebaseTool extends GitTool {
                 // Fallback: should not happen if validation passed, but defer to dialog rather than fail silently
                 return false;
             }
+            LOG.debug("Applying reword message for commit " + rewordShas.get(rewordIndex));
             Files.writeString(file.toPath(), rewordMessages.get(rewordIndex++) + "\n", StandardCharsets.UTF_8);
             return true;
         }

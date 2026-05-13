@@ -100,16 +100,17 @@ public final class InteractWithModalTool extends InfrastructureTool {
 
         boolean hasButton = args.has(PARAM_BUTTON) && !args.get(PARAM_BUTTON).isJsonNull()
             && !args.get(PARAM_BUTTON).getAsString().isBlank();
-        boolean hasTextInput = args.has(PARAM_TEXT_INPUT) && !args.get(PARAM_TEXT_INPUT).isJsonNull();
+        boolean hasTextInput = args.has(PARAM_TEXT_INPUT) && !args.get(PARAM_TEXT_INPUT).isJsonNull()
+            && !args.get(PARAM_TEXT_INPUT).getAsString().isBlank();
 
         if (!hasButton && !hasTextInput) {
             return describeDialog(dialog);
         }
 
         if (hasTextInput) {
-            String setResult = setTextInDialog(dialog, args.get(PARAM_TEXT_INPUT).getAsString());
-            if (setResult.startsWith("Error")) return setResult;
-            if (!hasButton) return setResult;
+            String setError = setTextInDialog(dialog, args.get(PARAM_TEXT_INPUT).getAsString());
+            if (setError != null) return setError;
+            if (!hasButton) return "Set text field to: " + args.get(PARAM_TEXT_INPUT).getAsString();
         }
 
         return clickDialogButton(dialog, args.get(PARAM_BUTTON).getAsString());
@@ -163,16 +164,23 @@ public final class InteractWithModalTool extends InfrastructureTool {
         return sb.toString();
     }
 
+    @Nullable
     private static String setTextInDialog(Dialog dialog, String text) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         ApplicationManager.getApplication().invokeLater(() ->
                 future.complete(doSetText(dialog, text)),
             ModalityState.any());
-        return awaitBooleanFuture(future,
-            "Set text field to: " + text,
-            "Error: no editable text field found in dialog.",
-            "Error: timed out waiting to set text field.",
-            "Error setting text: ");
+        try {
+            boolean found = future.get(CLICK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return found ? null : "Error: no editable text field found in dialog.";
+        } catch (TimeoutException e) {
+            return "Error: timed out waiting to set text field.";
+        } catch (ExecutionException e) {
+            return "Error setting text: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Interrupted while setting text field.";
+        }
     }
 
     private static boolean doSetText(Container container, String text) {
@@ -206,7 +214,7 @@ public final class InteractWithModalTool extends InfrastructureTool {
                 + (dialog.getTitle() != null ? dialog.getTitle() : "(untitled)") + "'.",
             notFound,
             "Timed out waiting to click button '" + buttonText + "'.",
-            "Error clicking button: ");
+            "Interrupted while clicking button '" + buttonText + "'.");
     }
 
     /**
@@ -216,17 +224,17 @@ public final class InteractWithModalTool extends InfrastructureTool {
      */
     private static String awaitBooleanFuture(CompletableFuture<Boolean> future,
                                              String successMsg, String missingMsg,
-                                             String timeoutMsg, String executionErrorPrefix) {
+                                             String timeoutMsg, String interruptedMsg) {
         try {
             boolean found = future.get(CLICK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             return found ? successMsg : missingMsg;
         } catch (TimeoutException e) {
             return timeoutMsg;
         } catch (ExecutionException e) {
-            return executionErrorPrefix + e.getCause().getMessage();
+            return "Error: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Interrupted.";
+            return interruptedMsg;
         }
     }
 
