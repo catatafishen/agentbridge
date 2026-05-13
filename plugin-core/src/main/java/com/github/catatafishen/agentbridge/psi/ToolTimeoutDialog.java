@@ -62,7 +62,7 @@ public final class ToolTimeoutDialog {
                     project,
                     operationDescription + " is still running after " + elapsedSeconds + " seconds.\n"
                         + "What would you like to do?",
-                    "Operation Still Running",
+                    "Operation Still Running: " + operationDescription,
                     OPTIONS,
                     0,
                     Messages.getWarningIcon()

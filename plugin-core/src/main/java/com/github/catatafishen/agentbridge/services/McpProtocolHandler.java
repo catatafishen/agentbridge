@@ -52,6 +52,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Handles MCP (Model Context Protocol) JSON-RPC messages.
@@ -75,6 +76,7 @@ public final class McpProtocolHandler {
     private static final int MAX_RESULT_CHARS = 80_000;
     private static final int RESOURCE_PAGE_SIZE = 200;
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
+    private static final int INITIAL_TIMEOUT_SECONDS = 30;
 
     private static final String SERVER_NAME = "agentbridge";
     private static final String SERVER_VERSION = BuildInfo.getVersion();
@@ -626,32 +628,38 @@ public final class McpProtocolHandler {
     }
 
     /**
-     * Calls a tool on a pooled thread with a 30-second timeout. If the timeout fires, shows
+     * Calls a tool on a pooled thread with an initial timeout. If the timeout fires, shows
      * an interactive dialog so the user can extend the wait or cancel. {@link McpCallContext}
      * is set and cleared on the worker thread, not the MCP reader thread.
+     *
+     * <p>Cancellation is implemented by interrupting the worker thread directly — not via
+     * {@code future.cancel(true)}, which does not interrupt threads running inside
+     * {@link CompletableFuture#supplyAsync}.
      */
     private String callToolWithTimeout(String toolName, JsonObject arguments,
                                        @Nullable String toolUseId, JsonObject originalArguments,
                                        @Nullable String displayName) {
         String sessionKey = sessionKey(project);
         PsiBridgeService bridge = PsiBridgeService.getInstance(project);
+        AtomicReference<Thread> workerThread = new AtomicReference<>();
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+            workerThread.set(Thread.currentThread());
             McpCallContext.setCurrent(sessionKey);
             try {
                 return bridge.callTool(toolName, arguments, toolUseId, originalArguments);
             } finally {
                 McpCallContext.clear();
+                workerThread.set(null);
             }
         });
 
-        int elapsedSeconds = 30;
         try {
-            return future.get(elapsedSeconds, TimeUnit.SECONDS);
+            return future.get(INITIAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            return waitAfterTimeout(future, toolName, displayName, elapsedSeconds);
+            return waitAfterTimeout(future, workerThread, toolName, displayName);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            future.cancel(true);
+            interruptWorker(workerThread);
             return "Error: MCP handler interrupted while waiting for '" + toolName + "'";
         } catch (ExecutionException e) {
             return unwrapExecutionException(toolName, e);
@@ -660,21 +668,22 @@ public final class McpProtocolHandler {
         }
     }
 
-    private String waitAfterTimeout(CompletableFuture<String> future, String toolName,
-                                    @Nullable String displayName, int elapsedSeconds) {
+    private String waitAfterTimeout(CompletableFuture<String> future,
+                                    AtomicReference<Thread> workerThread,
+                                    String toolName, @Nullable String displayName) {
         int extra;
         try {
             extra = ToolTimeoutDialog.askForExtension(
-                project, displayName != null ? displayName : toolName, elapsedSeconds);
+                project, displayName != null ? displayName : toolName, INITIAL_TIMEOUT_SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            future.cancel(true);
+            interruptWorker(workerThread);
             return "Error: interrupted while showing timeout dialog for '" + toolName + "'";
         }
 
         if (extra == ToolTimeoutDialog.CANCEL) {
-            future.cancel(true);
-            return toolError(toolName, "was cancelled by user after " + elapsedSeconds + "s");
+            interruptWorker(workerThread);
+            return toolError(toolName, "was cancelled by user after " + INITIAL_TIMEOUT_SECONDS + "s");
         }
 
         try {
@@ -682,16 +691,23 @@ public final class McpProtocolHandler {
                 ? future.get()
                 : future.get(extra, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            future.cancel(true);
+            interruptWorker(workerThread);
             return toolError(toolName, "timed out after extended " + extra + "s wait");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            future.cancel(true);
+            interruptWorker(workerThread);
             return "Error: MCP handler interrupted during extended wait for '" + toolName + "'";
         } catch (ExecutionException e) {
             return unwrapExecutionException(toolName, e);
         } catch (CancellationException e) {
             return toolError(toolName, "was unexpectedly cancelled during extended wait");
+        }
+    }
+
+    private static void interruptWorker(@NotNull AtomicReference<Thread> workerThread) {
+        Thread worker = workerThread.get();
+        if (worker != null) {
+            worker.interrupt();
         }
     }
 
