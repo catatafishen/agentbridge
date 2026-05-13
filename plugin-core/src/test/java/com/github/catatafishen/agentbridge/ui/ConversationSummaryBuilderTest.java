@@ -344,7 +344,7 @@ class ConversationSummaryBuilderTest {
                 "Hello", "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
-        assertTrue(result.contains("[t1] User: Hello"));
+        assertTrue(result.contains("User: Hello"));
         assertFalse(result.contains("Agent:"));
     }
 
@@ -354,7 +354,7 @@ class ConversationSummaryBuilderTest {
                 "Question", "Answer", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
-        assertTrue(result.contains("[t2] User: Question"));
+        assertTrue(result.contains("User: Question"));
         assertTrue(result.contains("Agent: Answer"));
     }
 
@@ -364,7 +364,7 @@ class ConversationSummaryBuilderTest {
                 "Do it", "Done", 5, 2, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
-        assertTrue(result.contains("[t3] User: Do it"));
+        assertTrue(result.contains("User: Do it"));
         assertTrue(result.contains("Agent: Done"));
         assertTrue(result.contains("[5 tool calls, 2 thinking blocks]"));
     }
@@ -420,7 +420,7 @@ class ConversationSummaryBuilderTest {
         // Should only have User and Agent lines, no bracket marker
         String[] lines = result.strip().split("\n");
         assertEquals(2, lines.length);
-        assertTrue(lines[0].startsWith("[t1] User:"));
+        assertTrue(lines[0].startsWith("User:"));
         assertTrue(lines[1].startsWith("Agent:"));
     }
 
@@ -461,7 +461,7 @@ class ConversationSummaryBuilderTest {
         ConversationSummaryBuilder.TurnData a = new ConversationSummaryBuilder.TurnData(
                 "user", "agent", 1, 2, 3);
         ConversationSummaryBuilder.TurnData b = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 1, 2, 3);
+                "user", "agent", 99, 2, 3);
         assertNotEquals(a, b);
     }
 
@@ -484,7 +484,7 @@ class ConversationSummaryBuilderTest {
         assertEquals(1, turns.size());
 
         String formatted = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turns.get(0), false);
-        assertTrue(formatted.contains("[t1] User: Fix the bug"));
+        assertTrue(formatted.contains("User: Fix the bug"));
         assertTrue(formatted.contains("Agent: I fixed the bug."));
         assertTrue(formatted.contains("[2 tool calls, 1 thinking block]"));
     }
@@ -511,11 +511,11 @@ class ConversationSummaryBuilderTest {
         assertEquals(2, turns.size());
 
         String f1 = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turns.get(0), false);
-        assertTrue(f1.contains("[t1] User: Refactor the service"));
+        assertTrue(f1.contains("User: Refactor the service"));
         assertTrue(f1.contains("[1 tool call, 1 thinking block]"));
 
         String f2 = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turns.get(1), false);
-        assertTrue(f2.contains("[t2] User: Now run the tests"));
+        assertTrue(f2.contains("User: Now run the tests"));
         assertTrue(f2.contains("[1 tool call]"));
         assertTrue(f2.contains("Agent: Done, all tests pass."));
     }
