@@ -186,6 +186,11 @@ tasks {
         useJUnitPlatform()
         finalizedBy("jacocoTestReport")
     }
+
+    // buildSearchableOptions launches a headless IDE subprocess and crashes with
+    // PathClassLoader initialization errors on Java 21 with recent platform plugin
+    // versions. Settings search is non-essential for this experimental variant.
+    named("buildSearchableOptions") { enabled = false }
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {
