@@ -543,12 +543,14 @@ public abstract class GitTool extends Tool {
             }
         });
 
-        boolean finished = p.waitFor(30, TimeUnit.SECONDS);
-        if (!finished) {
+        try {
+            p.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             p.destroyForcibly();
             stdoutFuture.cancel(true);
             stderrFuture.cancel(true);
-            return "Error: git command timed out after 30s";
+            throw e;
         }
 
         String stdout;

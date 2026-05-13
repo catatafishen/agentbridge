@@ -9,6 +9,7 @@ import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolError;
+import com.github.catatafishen.agentbridge.psi.ToolTimeoutDialog;
 import com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService;
 import com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic;
 import com.github.catatafishen.agentbridge.services.hooks.HookExecutor;
@@ -46,6 +47,11 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Handles MCP (Model Context Protocol) JSON-RPC messages.
@@ -559,10 +565,8 @@ public final class McpProtocolHandler {
         long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks, originalInputJson);
         long callStartMs = System.currentTimeMillis();
 
-        McpCallContext.setCurrent(sessionKey(project));
         try {
-            String resultText = PsiBridgeService.getInstance(project)
-                .callTool(toolName, arguments, toolUseId, originalArguments);
+            String resultText = callToolWithTimeout(toolName, arguments, toolUseId, originalArguments, displayName);
 
             // Enrich the live entry display name with the ACP title once it is available.
             // ACP registers before MCP executes, so the record (and its acpTitle) should
@@ -619,6 +623,86 @@ public final class McpProtocolHandler {
         } finally {
             McpCallContext.clear();
         }
+    }
+
+    /**
+     * Calls a tool on a pooled thread with a 30-second timeout. If the timeout fires, shows
+     * an interactive dialog so the user can extend the wait or cancel. {@link McpCallContext}
+     * is set and cleared on the worker thread, not the MCP reader thread.
+     */
+    private String callToolWithTimeout(String toolName, JsonObject arguments,
+                                       @Nullable String toolUseId, JsonObject originalArguments,
+                                       @Nullable String displayName) {
+        String sessionKey = sessionKey(project);
+        PsiBridgeService bridge = PsiBridgeService.getInstance(project);
+        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+            McpCallContext.setCurrent(sessionKey);
+            try {
+                return bridge.callTool(toolName, arguments, toolUseId, originalArguments);
+            } finally {
+                McpCallContext.clear();
+            }
+        });
+
+        int elapsedSeconds = 30;
+        try {
+            return future.get(elapsedSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            return waitAfterTimeout(future, toolName, displayName, elapsedSeconds);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            return "Error: MCP handler interrupted while waiting for '" + toolName + "'";
+        } catch (ExecutionException e) {
+            return unwrapExecutionException(toolName, e);
+        } catch (CancellationException e) {
+            return toolError(toolName, "was unexpectedly cancelled");
+        }
+    }
+
+    private String waitAfterTimeout(CompletableFuture<String> future, String toolName,
+                                    @Nullable String displayName, int elapsedSeconds) {
+        int extra;
+        try {
+            extra = ToolTimeoutDialog.askForExtension(
+                project, displayName != null ? displayName : toolName, elapsedSeconds);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            return "Error: interrupted while showing timeout dialog for '" + toolName + "'";
+        }
+
+        if (extra == ToolTimeoutDialog.CANCEL) {
+            future.cancel(true);
+            return toolError(toolName, "was cancelled by user after " + elapsedSeconds + "s");
+        }
+
+        try {
+            return extra == ToolTimeoutDialog.INDEFINITE
+                ? future.get()
+                : future.get(extra, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            return toolError(toolName, "timed out after extended " + extra + "s wait");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            return "Error: MCP handler interrupted during extended wait for '" + toolName + "'";
+        } catch (ExecutionException e) {
+            return unwrapExecutionException(toolName, e);
+        } catch (CancellationException e) {
+            return toolError(toolName, "was unexpectedly cancelled during extended wait");
+        }
+    }
+
+    private static String toolError(String toolName, String reason) {
+        return "Error: '" + toolName + "' " + reason;
+    }
+
+    private static String unwrapExecutionException(String toolName, ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof RuntimeException re) throw re;
+        throw new IllegalStateException("Unexpected exception in tool '" + toolName + "'", cause);
     }
 
     private record ToolCallEnrichmentData(
