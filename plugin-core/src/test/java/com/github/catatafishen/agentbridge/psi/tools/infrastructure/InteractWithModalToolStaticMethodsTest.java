@@ -11,7 +11,9 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for private static helper methods in {@link InteractWithModalTool}:
@@ -29,16 +31,16 @@ class InteractWithModalToolStaticMethodsTest {
     @BeforeAll
     static void setUp() throws NoSuchMethodException {
         doClickMethod = InteractWithModalTool.class.getDeclaredMethod(
-                "doClick", Container.class, String.class);
+            "doClick", Container.class, String.class);
         doClickMethod.setAccessible(true);
 
         // The overload that returns List<String>
         collectButtonsMethod = InteractWithModalTool.class.getDeclaredMethod(
-                "collectButtons", Container.class);
+            "collectButtons", Container.class);
         collectButtonsMethod.setAccessible(true);
 
         collectComponentsMethod = InteractWithModalTool.class.getDeclaredMethod(
-                "collectComponents", Container.class, List.class, List.class, List.class, List.class, List.class);
+            "collectComponents", Container.class, List.class, List.class, List.class, List.class, List.class);
         collectComponentsMethod.setAccessible(true);
     }
 
