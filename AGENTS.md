@@ -100,6 +100,38 @@ once CI has had time to finish.
 If CI is failing: `gh pr checks <number>` to see which check failed, then
 `gh run view <run-id> --log-failed` for details.
 
+## Handling PR Review Comments
+
+When a PR has review comments, for **each comment thread**:
+
+1. **Address the concern** — fix the code, or decide not to fix it (with justification).
+2. **Reply to the thread** explaining what was done (or why it was intentionally left as-is):
+   ```
+   gh api repos/catatafishen/agentbridge/pulls/COMMENTS/COMMENT_ID/replies \
+     -f body="Fixed: description of what was changed and where."
+   ```
+3. **Mark the thread as resolved** via the GitHub GraphQL API:
+   ```
+   # Step 1 — get thread node IDs
+   gh api graphql -f query='{
+     repository(owner:"catatafishen", name:"agentbridge") {
+       pullRequest(number:N) {
+         reviewThreads(first:50) { nodes { id isResolved } }
+       }
+     }
+   }' --jq '.data.repository.pullRequest.reviewThreads.nodes[]'
+
+   # Step 2 — resolve each unresolved thread
+   gh api graphql -f query='mutation {
+     resolveReviewThread(input: {threadId: "PRRT_..."}) {
+       thread { id isResolved }
+     }
+   }'
+   ```
+
+**Never leave threads in the "pending" state** after replying. The reply explains the decision; the
+resolve signal tells reviewers the thread is closed. Both are required.
+
 # AI Identity and Transparency
 
 When AI agents author or open GitHub content, the identity must be transparent — reviewers and auditors should be able
