@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side
 
+import com.github.catatafishen.agentbridge.services.PromptDbService
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -231,7 +232,7 @@ internal class PromptsPanel(
 
         chatConsole.addEntriesChangeListener(entriesListener)
         addHierarchyListener(hierarchyListener)
-
+        PromptDbService.getInstance(project).registerNavigateCallback(::applySearchParams)
         populateFilterCombos()
         reloadHistoryAsync()
         refresh()
@@ -509,9 +510,33 @@ internal class PromptsPanel(
         }
     }
 
+    /**
+     * Fills search fields from the given query params and runs the search.
+     * Called by [PromptDbService] when follow-agent mode is on and the agent calls
+     * [com.github.catatafishen.agentbridge.psi.tools.editor.QueryTurnsTool].
+     * Must be called on the EDT.
+     */
+    fun applySearchParams(params: ConversationQuery.QueryParams) {
+        // Main search box: prefer combinedText (scope-aware), fall back to userMessage
+        val text = params.combinedText ?: params.userMessage ?: ""
+        if (searchField.text != text) searchField.text = text
+
+        params.branch?.takeIf { it.isNotEmpty() }?.let { branchCombo.editor?.item = it }
+        params.agentName?.takeIf { it.isNotEmpty() }?.let { agentModel.selectedItem = it }
+        params.toolName?.takeIf { it.isNotEmpty() }?.let { toolModel.selectedItem = it }
+        params.filePath?.takeIf { it.isNotEmpty() }?.let { fileField.text = it }
+
+        val hasAdvanced = !params.branch.isNullOrEmpty() || !params.agentName.isNullOrEmpty() ||
+            !params.toolName.isNullOrEmpty() || !params.filePath.isNullOrEmpty()
+        if (hasAdvanced && !advancedVisible) toggleAdvanced()
+
+        refresh()
+    }
+
     override fun dispose() {
         chatConsole.removeEntriesChangeListener(entriesListener)
         removeHierarchyListener(hierarchyListener)
+        PromptDbService.getInstance(project).registerNavigateCallback(null)
     }
 
     private class BubbleRenderer : ListCellRenderer<PromptItem> {

@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentNudgeService
 import com.github.catatafishen.agentbridge.services.ChatWebServer
+import com.github.catatafishen.agentbridge.services.PromptDbService
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
@@ -719,6 +720,15 @@ class ChatToolWindowContent(
         sidePanel = side
         rootSplitter.firstComponent = side
         restoreSidePanelOpenState()
+
+        // When the agent calls query_turns with follow-agent enabled, open the side panel.
+        PromptDbService.getInstance(project).registerShowPanelCallback {
+            if (rootSplitter.proportion < 0.01f) {
+                rootSplitter.proportion = defaultReviewProportion
+                com.intellij.ide.util.PropertiesComponent.getInstance(project)
+                    .setValue(PREF_SIDE_PANEL_OPEN, true)
+            }
+        }
     }
 
     private fun restoreSidePanelOpenState() {

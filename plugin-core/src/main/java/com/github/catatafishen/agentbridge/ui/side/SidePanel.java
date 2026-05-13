@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.services.PromptDbService;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.openapi.Disposable;
@@ -33,13 +34,16 @@ public final class SidePanel extends JPanel implements Disposable {
 
     private static final int TAB_REVIEW = 0;
     private static final int TAB_TODOS = 1;
+    private static final int TAB_PROMPT_DB = 3;
     private static final int TAB_SESSION = 4;
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
+    private final transient Project project;
 
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
+        this.project = project;
         DiffPanel reviewPanel = new DiffPanel(project);
         Disposer.register(this, reviewPanel);
         Disposer.register(this, sessionStatsPanel);
@@ -71,6 +75,13 @@ public final class SidePanel extends JPanel implements Disposable {
             if (idx == TAB_TODOS) todoPanel.refresh();
             else if (idx == TAB_SESSION) sessionStatsPanel.refreshFiles();
         }, this);
+
+        // Register navigation callback: when the agent calls query_turns with follow-agent
+        // enabled, switch to the Prompt DB tab and fill in the search fields.
+        PromptDbService.getInstance(project).registerNavigateCallback(params -> {
+            tabsPanel.selectTab(TAB_PROMPT_DB);
+            promptsPanel.applySearchParams(params);
+        });
 
         add(tabsPanel.getComponent(), BorderLayout.CENTER);
     }
@@ -116,6 +127,7 @@ public final class SidePanel extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
+        PromptDbService.getInstance(project).registerNavigateCallback(null);
         // Children registered with Disposer are disposed automatically.
     }
 }
