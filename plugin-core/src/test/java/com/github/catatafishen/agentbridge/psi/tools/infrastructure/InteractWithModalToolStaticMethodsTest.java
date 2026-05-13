@@ -38,7 +38,7 @@ class InteractWithModalToolStaticMethodsTest {
         collectButtonsMethod.setAccessible(true);
 
         collectComponentsMethod = InteractWithModalTool.class.getDeclaredMethod(
-                "collectComponents", Container.class, List.class, List.class, List.class, List.class);
+                "collectComponents", Container.class, List.class, List.class, List.class, List.class, List.class);
         collectComponentsMethod.setAccessible(true);
     }
 
@@ -52,9 +52,10 @@ class InteractWithModalToolStaticMethodsTest {
     }
 
     private static void invokeCollectComponents(Container c, List<String> labels,
-                                                List<String> radios, List<String> checkboxes,
+                                                List<String> textFields, List<String> radios,
+                                                List<String> checkboxes,
                                                 List<String> buttons) throws ReflectiveOperationException {
-        collectComponentsMethod.invoke(null, c, labels, radios, checkboxes, buttons);
+        collectComponentsMethod.invoke(null, c, labels, textFields, radios, checkboxes, buttons);
     }
 
     // ── doClick ─────────────────────────────────────────────
@@ -204,12 +205,14 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JButton("Btn"));
 
             List<String> labels = new ArrayList<>();
+            List<String> textFields = new ArrayList<>();
             List<String> radios = new ArrayList<>();
             List<String> checks = new ArrayList<>();
             List<String> btns = new ArrayList<>();
-            invokeCollectComponents(panel, labels, radios, checks, btns);
+            invokeCollectComponents(panel, labels, textFields, radios, checks, btns);
 
             assertEquals(List.of("Label text"), labels);
+            assertTrue(textFields.isEmpty());
             assertEquals(List.of("Radio"), radios);
             assertEquals(List.of("Check"), checks);
             assertEquals(List.of("Btn"), btns);
@@ -223,7 +226,7 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JRadioButton("Valid"));
 
             List<String> radios = new ArrayList<>();
-            invokeCollectComponents(panel, new ArrayList<>(), radios, new ArrayList<>(), new ArrayList<>());
+            invokeCollectComponents(panel, new ArrayList<>(), new ArrayList<>(), radios, new ArrayList<>(), new ArrayList<>());
             assertEquals(List.of("Valid"), radios);
         }
 
@@ -235,7 +238,7 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JCheckBox("Valid"));
 
             List<String> checks = new ArrayList<>();
-            invokeCollectComponents(panel, new ArrayList<>(), new ArrayList<>(), checks, new ArrayList<>());
+            invokeCollectComponents(panel, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), checks, new ArrayList<>());
             assertEquals(List.of("Valid"), checks);
         }
 
@@ -247,7 +250,7 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JButton("Valid"));
 
             List<String> btns = new ArrayList<>();
-            invokeCollectComponents(panel, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), btns);
+            invokeCollectComponents(panel, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), btns);
             assertEquals(List.of("Valid"), btns);
         }
 
@@ -259,7 +262,7 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JLabel("Valid"));
 
             List<String> labels = new ArrayList<>();
-            invokeCollectComponents(panel, labels, new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+            invokeCollectComponents(panel, labels, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
             assertEquals(List.of("Valid"), labels);
         }
 
@@ -273,7 +276,7 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JLabel("Text only"));
 
             List<String> labels = new ArrayList<>();
-            invokeCollectComponents(panel, labels, new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+            invokeCollectComponents(panel, labels, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
             assertEquals(List.of("Text only"), labels);
         }
 
@@ -287,12 +290,14 @@ class InteractWithModalToolStaticMethodsTest {
             panel.add(new JLabel("  "));
 
             List<String> labels = new ArrayList<>();
+            List<String> textFields = new ArrayList<>();
             List<String> radios = new ArrayList<>();
             List<String> checks = new ArrayList<>();
             List<String> btns = new ArrayList<>();
-            invokeCollectComponents(panel, labels, radios, checks, btns);
+            invokeCollectComponents(panel, labels, textFields, radios, checks, btns);
 
             assertTrue(labels.isEmpty());
+            assertTrue(textFields.isEmpty());
             assertTrue(radios.isEmpty());
             assertTrue(checks.isEmpty());
             assertTrue(btns.isEmpty());
@@ -307,7 +312,7 @@ class InteractWithModalToolStaticMethodsTest {
             outer.add(inner);
 
             List<String> labels = new ArrayList<>();
-            invokeCollectComponents(outer, labels, new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+            invokeCollectComponents(outer, labels, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
             assertEquals(List.of("Nested"), labels);
         }
     }
