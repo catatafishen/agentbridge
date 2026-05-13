@@ -8,7 +8,6 @@ import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.IntentionManager;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -106,29 +105,29 @@ public abstract class QualityTool extends Tool {
 
     /**
      * Returns the names of all intention actions available at the current caret position
-     * in {@code editor}. Filters by {@code isAvailable()} in a read action.
-     * Skips any action whose {@code isAvailable()} throws, logging at WARN level
-     * to aid debugging of third-party plugin issues (e.g., Kotlin K2 intentions that
-     * attempt illegal lock escalation inside ReadAction).
+     * in {@code editor}.
+     * Skips any action whose {@code isAvailable()} throws, logging at WARN level.
      *
-     * <p>Must be called on the EDT (caret position must already be set by the caller).</p>
+     * <p>Must be called on the EDT (caret position must already be set by the caller).
+     * <b>Do NOT wrap the call body in {@code runReadAction()}</b>: this method runs on the EDT,
+     * which already holds write-intent access. Wrapping in a plain ReadAction downgrades to
+     * read-only context, which prevents intentions (e.g., Kotlin K2) from internally acquiring
+     * {@code WriteIntentReadAction}, causing an {@code IllegalStateException} that crashes the EDT.</p>
      */
     protected List<String> collectIntentionNames(Editor editor, PsiFile psiFile) {
         List<IntentionAction> registered = IntentionManager.getInstance().getAvailableIntentions();
         List<String> names = new ArrayList<>();
-        ApplicationManager.getApplication().runReadAction(() -> {
-            for (IntentionAction action : registered) {
-                try {
-                    if (action.isAvailable(project, editor, psiFile)) {
-                        String text = action.getText();
-                        if (!text.isBlank()) names.add(text);
-                    }
-                } catch (Exception e) {
-                    LOG.warn("Intention " + action.getClass().getSimpleName()
-                        + " threw during isAvailable() — skipping", e);
+        for (IntentionAction action : registered) {
+            try {
+                if (action.isAvailable(project, editor, psiFile)) {
+                    String text = action.getText();
+                    if (!text.isBlank()) names.add(text);
                 }
+            } catch (Exception e) {
+                LOG.warn("Intention " + action.getClass().getSimpleName()
+                    + " threw during isAvailable() — skipping", e);
             }
-        });
+        }
         return names;
     }
 
