@@ -1,8 +1,5 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.ui.ConversationSummaryBuilder.formatTurnForSummary
-import com.github.catatafishen.agentbridge.ui.ConversationSummaryBuilder.groupIntoTurns
-
 /**
  * Pure utility for building compressed conversation summaries.
  *
@@ -14,12 +11,7 @@ import com.github.catatafishen.agentbridge.ui.ConversationSummaryBuilder.groupIn
  */
 internal object ConversationSummaryBuilder {
 
-    /**
-     * Intermediate representation of a single user→agent turn,
-     * produced by [groupIntoTurns] and consumed by [formatTurnForSummary].
-     */
     data class TurnData(
-        val id: String,
         val userText: String,
         val agentText: String,
         val toolCallCount: Int,
@@ -28,7 +20,7 @@ internal object ConversationSummaryBuilder {
     )
 
     /**
-     * Group a flat list of [EntryData] into named turns (t1, t2, …).
+     * Group a flat list of [EntryData] into turns.
      *
      * A new turn starts at every [EntryData.Prompt]. Agent text, tool calls,
      * thinking blocks, and sub-agent invocations that follow are accumulated
@@ -46,7 +38,6 @@ internal object ConversationSummaryBuilder {
             val p = currentPrompt ?: return
             turns.add(
                 TurnData(
-                    id = "t${turns.size + 1}",
                     userText = p.text,
                     agentText = agentTextBuf.toString().trim(),
                     toolCallCount = toolCount,
@@ -91,7 +82,7 @@ internal object ConversationSummaryBuilder {
      */
     fun formatTurnForSummary(turn: TurnData, full: Boolean): String {
         val sb = StringBuilder()
-        sb.appendLine("[${turn.id}] User: ${truncateField(turn.userText, full, "use turn_id='${turn.id}' for full")}")
+        sb.appendLine("User: ${truncateField(turn.userText, full, "truncated")}")
         if (turn.agentText.isNotEmpty()) {
             sb.appendLine("Agent: ${truncateField(turn.agentText, full, "truncated")}")
         }

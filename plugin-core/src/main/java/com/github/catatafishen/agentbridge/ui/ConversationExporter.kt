@@ -80,7 +80,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
         }
 
         val shown = blocks.size
-        val hint = "Use search_conversation_history(file='current', turn_id='tN') to read any turn in full."
+        val hint = "Use query_turns(last_n=N) to read recent turns in full."
         val header = if (shown < totalTurns) {
             "[Previous conversation: $totalTurns turns. Showing $shown most recent. $hint]\n\n"
         } else {

@@ -97,7 +97,6 @@
     "@intellij-code-tools/run_scratch_file",
     "@intellij-code-tools/get_active_file",
     "@intellij-code-tools/get_open_editors",
-    "@intellij-code-tools/search_conversation_history",
     "@intellij-code-tools/memory_search",
     "@intellij-code-tools/memory_store",
     "@intellij-code-tools/memory_status",

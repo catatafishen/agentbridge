@@ -25,7 +25,6 @@ class ConversationSummaryBuilderTest {
                 ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
-        assertEquals("t1", turns.get(0).getId());
         assertEquals("Hello", turns.get(0).getUserText());
         assertEquals("", turns.get(0).getAgentText());
         assertEquals(0, turns.get(0).getToolCallCount());
@@ -45,7 +44,6 @@ class ConversationSummaryBuilderTest {
                 ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
-        assertEquals("t1", turns.get(0).getId());
         assertEquals("User question", turns.get(0).getUserText());
         assertEquals("Agent reply", turns.get(0).getAgentText());
     }
@@ -67,10 +65,8 @@ class ConversationSummaryBuilderTest {
                 ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(2, turns.size());
-        assertEquals("t1", turns.get(0).getId());
         assertEquals("Q1", turns.get(0).getUserText());
         assertEquals("Reply 1", turns.get(0).getAgentText());
-        assertEquals("t2", turns.get(1).getId());
         assertEquals("Q2", turns.get(1).getUserText());
         assertEquals("Reply 2", turns.get(1).getAgentText());
     }
@@ -261,8 +257,8 @@ class ConversationSummaryBuilderTest {
     @Test
     void truncateField_hintIsIncludedInSuffix() {
         String text = "b".repeat(501);
-        String result = ConversationSummaryBuilder.INSTANCE.truncateField(text, false, "use turn_id='t1' for full");
-        assertTrue(result.endsWith("…[use turn_id='t1' for full]"));
+        String result = ConversationSummaryBuilder.INSTANCE.truncateField(text, false, "truncated");
+        assertTrue(result.endsWith("…[truncated]"));
     }
 
     // ── buildMarkerLine ───────────────────────────────────────────────
@@ -270,56 +266,56 @@ class ConversationSummaryBuilderTest {
     @Test
     void buildMarkerLine_noMarkers_returnsNull() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 0, 0, 0);
+                "user", "agent", 0, 0, 0);
         assertNull(ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_oneToolCall_singular() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 1, 0, 0);
+                "user", "agent", 1, 0, 0);
         assertEquals("[1 tool call]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_multipleToolCalls_plural() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 5, 0, 0);
+                "user", "agent", 5, 0, 0);
         assertEquals("[5 tool calls]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_oneThinkingBlock_singular() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 0, 1, 0);
+                "user", "agent", 0, 1, 0);
         assertEquals("[1 thinking block]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_multipleThinkingBlocks_plural() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 0, 3, 0);
+                "user", "agent", 0, 3, 0);
         assertEquals("[3 thinking blocks]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_oneSubAgent_singular() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 0, 0, 1);
+                "user", "agent", 0, 0, 1);
         assertEquals("[1 sub-agent]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_multipleSubAgents_plural() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 0, 0, 4);
+                "user", "agent", 0, 0, 4);
         assertEquals("[4 sub-agents]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_toolCallsAndThinking_combinedMarker() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 5, 2, 0);
+                "user", "agent", 5, 2, 0);
         assertEquals("[5 tool calls, 2 thinking blocks]",
                 ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
@@ -327,7 +323,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void buildMarkerLine_allThreeCounters_combinedMarker() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 3, 1, 2);
+                "user", "agent", 3, 1, 2);
         assertEquals("[3 tool calls, 1 thinking block, 2 sub-agents]",
                 ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
@@ -335,7 +331,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void buildMarkerLine_toolCallsAndSubAgents_noThinking() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 2, 0, 1);
+                "user", "agent", 2, 0, 1);
         assertEquals("[2 tool calls, 1 sub-agent]",
                 ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
@@ -345,7 +341,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_compactMinimalTurn_outputsUserLineOnly() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "Hello", "", 0, 0, 0);
+                "Hello", "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("[t1] User: Hello"));
@@ -355,7 +351,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_compactWithAgentText_includesAgentLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t2", "Question", "Answer", 0, 0, 0);
+                "Question", "Answer", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("[t2] User: Question"));
@@ -365,7 +361,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_compactWithMarkers_includesMarkerLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t3", "Do it", "Done", 5, 2, 0);
+                "Do it", "Done", 5, 2, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("[t3] User: Do it"));
@@ -377,17 +373,17 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_compactLongUserText_isTruncated() {
         String longUser = "x".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", longUser, "", 0, 0, 0);
+                longUser, "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
-        assertTrue(result.contains("…[use turn_id='t1' for full]"));
+        assertTrue(result.contains("…[truncated]"));
     }
 
     @Test
     void formatTurnForSummary_fullModeLongUserText_notTruncated() {
         String longUser = "x".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", longUser, "", 0, 0, 0);
+                longUser, "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, true);
 
         assertTrue(result.contains(longUser));
@@ -398,7 +394,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_compactLongAgentText_isTruncated() {
         String longAgent = "y".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "q", longAgent, 0, 0, 0);
+                "q", longAgent, 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("…[truncated]"));
@@ -408,7 +404,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_fullModeLongAgentText_notTruncated() {
         String longAgent = "y".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "q", longAgent, 0, 0, 0);
+                "q", longAgent, 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, true);
 
         assertTrue(result.contains(longAgent));
@@ -418,7 +414,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_noMarkers_noMarkerLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "q", "a", 0, 0, 0);
+                "q", "a", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         // Should only have User and Agent lines, no bracket marker
@@ -431,7 +427,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_emptyAgentText_noAgentLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t1", "q", "", 2, 0, 0);
+                "q", "", 2, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertFalse(result.contains("Agent:"));
@@ -442,10 +438,10 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_turnIdAppearsInUserHint() {
         String longUser = "z".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "t42", longUser, "", 0, 0, 0);
+                longUser, "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
-        assertTrue(result.contains("use turn_id='t42' for full"));
+        assertTrue(result.contains("…[truncated]"));
     }
 
     // ── TurnData data class basics ────────────────────────────────────
@@ -453,9 +449,9 @@ class ConversationSummaryBuilderTest {
     @Test
     void turnData_equality() {
         ConversationSummaryBuilder.TurnData a = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 1, 2, 3);
+                "user", "agent", 1, 2, 3);
         ConversationSummaryBuilder.TurnData b = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 1, 2, 3);
+                "user", "agent", 1, 2, 3);
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
     }
@@ -463,9 +459,9 @@ class ConversationSummaryBuilderTest {
     @Test
     void turnData_inequality() {
         ConversationSummaryBuilder.TurnData a = new ConversationSummaryBuilder.TurnData(
-                "t1", "user", "agent", 1, 2, 3);
+                "user", "agent", 1, 2, 3);
         ConversationSummaryBuilder.TurnData b = new ConversationSummaryBuilder.TurnData(
-                "t2", "user", "agent", 1, 2, 3);
+                "user", "agent", 1, 2, 3);
         assertNotEquals(a, b);
     }
 

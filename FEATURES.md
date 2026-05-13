@@ -182,7 +182,6 @@ Access the editor state, create scratch files for quick prototyping, and inspect
   needs the Python plugin.
 - **`list_themes`** / **`set_theme`** — List available IDE themes or switch themes
 - **`get_chat_html`** — Retrieve the live DOM of the chat panel (for debugging)
-- **`search_conversation_history`** — Search and recall past conversations across sessions
 
 ---
 

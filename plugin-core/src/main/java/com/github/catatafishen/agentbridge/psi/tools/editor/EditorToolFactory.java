@@ -26,8 +26,7 @@ public final class EditorToolFactory {
             new GetOpenEditorsTool(project),
             new ListThemesTool(project),
             new SetThemeTool(project),
-            new QueryTurnsTool(project),
-            new SearchConversationHistoryTool(project)
+            new QueryTurnsTool(project)
         );
     }
 }
