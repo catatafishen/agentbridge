@@ -819,7 +819,7 @@ class ChatToolWindowContent(
                 super.paintComponent(g)
                 val g2 = g.create() as Graphics2D
                 try {
-                    paintInputSectionBackground(g2, sideRailWidth())
+                    paintInputSectionBackground(g2, sideRailWidth(), toolWindow.isActive)
                 } finally {
                     g2.dispose()
                 }
@@ -832,21 +832,23 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth: Int) {
+private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth: Int, isActive: Boolean) {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         val arc = JBUI.scale(8)
         g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         g2.fillRoundRect(0, 0, width, height, arc, arc)
         paintInputSectionDivider(g2, sideRailWidth)
-        // Use the default-button focus colour when the tool window is active so the input
-        // border turns blue in sync with the send button — matching the native commit panel.
-        val borderColor = if (toolWindow.isActive) {
-            JBUI.CurrentTheme.Focus.defaultButtonColor()
+        if (isActive) {
+            g2.color = UIManager.getColor("Component.focusedBorderColor")
+                ?: UIManager.getColor("Focus.color")
+                ?: JBColor(0x3574F0, 0x3574F0)
+            g2.stroke = BasicStroke(JBUI.scale(2).toFloat())
+            // Inset by 1px so the 2px stroke (centred on the path) stays fully within the component.
+            g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
         } else {
-            UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+            g2.color = UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+            g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
         }
-        g2.color = borderColor
-        g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
     }
 
     private fun JComponent.paintInputSectionDivider(g2: Graphics2D, sideRailWidth: Int) {
