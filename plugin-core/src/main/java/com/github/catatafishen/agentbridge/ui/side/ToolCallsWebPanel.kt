@@ -4,6 +4,8 @@ import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry
 import com.github.catatafishen.agentbridge.services.LiveToolCallService
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.session.db.ConversationQuery
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.ChatTheme
 import com.intellij.openapi.Disposable
@@ -25,19 +27,13 @@ import java.awt.BorderLayout
 import javax.swing.JPanel
 import javax.swing.event.ChangeListener
 
-/**
- * JCEF-based panel displaying MCP tool calls with interactive pipeline visualization.
- * Renders the same `<tool-calls-view>` web component used in the PWA, fed by
- * [LiveToolCallService] via `ToolCallsController.upsert()` calls.
- *
- * Falls back to the Swing [ToolCallListPanel] when JCEF is unavailable.
- */
 class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
     private val browser: JBCefBrowser?
     private var browserReady = false
     private var serviceListener: ChangeListener? = null
     private var diffQuery: JBCefJSQuery? = null
+    private var loadMoreQuery: JBCefJSQuery? = null
 
     init {
         if (JBCefApp.isSupported()) {
@@ -65,6 +61,14 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             }
             Disposer.register(this, query)
             diffQuery = query
+
+            val loadMore = PlatformApiCompat.createJSQuery(browser)
+            loadMore.addHandler { beforeEventId ->
+                loadHistoryPage(if (beforeEventId.isNullOrBlank()) null else beforeEventId)
+                null
+            }
+            Disposer.register(this, loadMore)
+            loadMoreQuery = loadMore
 
             browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
                 override fun onLoadEnd(cefBrowser: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
@@ -120,10 +124,46 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                 "", 0
             )
         }
+        loadMoreQuery?.let { query ->
+            browser?.cefBrowser?.executeJavaScript(
+                "window.loadMoreToolCalls = function(beforeEventId) { " +
+                    query.inject("beforeEventId || ''") + " };",
+                "", 0
+            )
+        }
         browserReady = true
         ApplicationManager.getApplication().invokeLater {
+            loadHistoryPage(null)
             val service = LiveToolCallService.getInstance(project)
             pushAllEntries(service.entries)
+        }
+    }
+
+    /**
+     * Loads a page of historic tool calls from the conversation DB and pushes them
+     * to the JS ToolCallsController as prepended items.
+     */
+    private fun loadHistoryPage(beforeEventId: String?) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val service = ConversationService.getInstance(project)
+            val entries = service.loadToolCallHistory(HISTORY_PAGE_SIZE, beforeEventId)
+            val registry = ToolRegistry.getInstance(project)
+            if (entries.isEmpty()) {
+                ApplicationManager.getApplication().invokeLater {
+                    executeJs("ToolCallsController.setHistoryExhausted(true);")
+                }
+                return@executeOnPooledThread
+            }
+            val sb = StringBuilder()
+            for (entry in entries) {
+                sb.append("ToolCallsController.prependHistoric(")
+                    .append(historyEntryToJson(entry, registry))
+                    .append(");")
+            }
+            sb.append("ToolCallsController.notifyChange();")
+            ApplicationManager.getApplication().invokeLater {
+                executeJs(sb.toString())
+            }
         }
     }
 
@@ -182,6 +222,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
 
     companion object {
         private val LOG = Logger.getInstance(ToolCallsWebPanel::class.java)
+        private const val HISTORY_PAGE_SIZE = 50
 
         fun entryToJson(entry: LiveToolCallEntry, registry: ToolRegistry? = null): String {
             val sb = StringBuilder(256)
@@ -209,6 +250,43 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                 sb.append(",\"originalArguments\":").append(escapeJson(orig))
             }
             val stages = entry.hookStages().toList()
+            if (stages.isNotEmpty()) {
+                sb.append(",\"hookStages\":[")
+                stages.forEachIndexed { i, s ->
+                    if (i > 0) sb.append(',')
+                    sb.append("{\"trigger\":").append(escapeJson(s.trigger()))
+                    sb.append(",\"scriptName\":").append(escapeJson(s.scriptName()))
+                    sb.append(",\"outcome\":").append(escapeJson(s.outcome()))
+                    sb.append(",\"durationMs\":").append(s.durationMs())
+                    s.detail()?.let { sb.append(",\"detail\":").append(escapeJson(it)) }
+                    sb.append('}')
+                }
+                sb.append(']')
+            }
+            sb.append('}')
+            return sb.toString()
+        }
+
+        fun historyEntryToJson(
+            entry: ConversationQuery.ToolCallHistoryEntry,
+            registry: ToolRegistry? = null
+        ): String {
+            val sb = StringBuilder(256)
+            sb.append("{\"id\":").append(escapeJson(entry.eventId()))
+            sb.append(",\"title\":").append(escapeJson(entry.displayName()))
+            sb.append(",\"toolName\":").append(escapeJson(entry.toolName()))
+            val kind = registry?.findById(entry.toolName())?.kind()?.value() ?: entry.category()
+            kind?.let { sb.append(",\"kind\":").append(escapeJson(it)) }
+            val status = if (entry.success()) "success" else "error"
+            sb.append(",\"status\":").append(escapeJson(status))
+            sb.append(",\"timestamp\":").append(escapeJson(entry.timestamp().toString()))
+            sb.append(",\"arguments\":").append(escapeJson(entry.arguments()))
+            sb.append(",\"result\":").append(escapeJson(entry.result()))
+            sb.append(",\"durationMs\":").append(entry.durationMs())
+            sb.append(",\"hasHooks\":").append(entry.hasHooks())
+            sb.append(",\"historic\":true")
+
+            val stages = entry.hookStages()
             if (stages.isNotEmpty()) {
                 sb.append(",\"hookStages\":[")
                 stages.forEachIndexed { i, s ->

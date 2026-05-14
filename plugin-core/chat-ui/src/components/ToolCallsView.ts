@@ -18,13 +18,15 @@ export class ToolCallsView extends PollableView {
     private _list!: HTMLElement;
     private _empty!: HTMLElement;
     private _container!: HTMLElement;
-    private _expandedId: number | null = null;
+    private _expandedId: number | string | null = null;
     private _selectedStage: string | null = null;
     private _unsubscribe: (() => void) | null = null;
     /** True when running inside a JCEF panel (data pushed by Java). */
     private _pushMode = false;
     /** Auto-scroll to bottom when new items arrive. Disabled when user scrolls up. */
     private _autoScroll = true;
+    /** Prevents re-entrant auto-load calls. */
+    private _loadingMore = false;
 
     constructor() {
         super(2000);
@@ -33,6 +35,7 @@ export class ToolCallsView extends PollableView {
     connectedCallback(): void {
         this.innerHTML = `
             <div class="tcv-container">
+                <div class="tcv-load-more" hidden>↑ Load earlier tool calls</div>
                 <div class="tcv-empty">No tool calls yet</div>
                 <div class="tcv-list"></div>
             </div>`;
@@ -40,6 +43,9 @@ export class ToolCallsView extends PollableView {
         this._list = this.querySelector<HTMLElement>('.tcv-list')!;
         this._empty = this.querySelector<HTMLElement>('.tcv-empty')!;
         this._list.addEventListener('click', (e) => this._handleClick(e));
+
+        const loadMoreBtn = this.querySelector<HTMLElement>('.tcv-load-more')!;
+        loadMoreBtn.addEventListener('click', () => this._loadMore());
 
         // Scrolling upward disables auto-scroll; reaching the bottom re-enables it.
         this._container.addEventListener('wheel', (e: WheelEvent) => {
@@ -50,6 +56,10 @@ export class ToolCallsView extends PollableView {
         this._container.addEventListener('scroll', () => {
             if (!this._autoScroll && this._isAtBottom()) {
                 this._autoScroll = true;
+            }
+            // Auto-load more when scrolled to top
+            if (this._container.scrollTop < 30) {
+                this._loadMore();
             }
         }, {passive: true});
 
@@ -87,7 +97,7 @@ export class ToolCallsView extends PollableView {
         if ((target as HTMLElement).classList.contains('tcv-diff-btn')) {
             const row = target.closest<HTMLElement>('.tcv-item');
             if (row?.dataset.id) {
-                const item = ToolCallsController.get(Number(row.dataset.id));
+                const item = ToolCallsController.get(row.dataset.id!);
                 if (item?.originalArguments) {
                     const fn = (window as any).openInputDiff;
                     if (typeof fn === 'function') fn(item.originalArguments, item.arguments, item.toolName);
@@ -109,8 +119,8 @@ export class ToolCallsView extends PollableView {
         // Row expand/collapse
         const row = target.closest<HTMLElement>('.tcv-item');
         if (!row?.dataset.id) return;
-        const id = Number(row.dataset.id);
-        if (this._expandedId === id) {
+        const id = row.dataset.id;
+        if (String(this._expandedId) === id) {
             this._expandedId = null;
             this._selectedStage = null;
         } else {
@@ -126,7 +136,15 @@ export class ToolCallsView extends PollableView {
     private _render(): void {
         // Controller returns newest-first; reverse for chronological order (newest at bottom).
         const items = ToolCallsController.getAll().reverse();
-        if (this.toggleEmptyState(this._empty, this._list, items.length === 0)) return;
+        const noItems = items.length === 0 && ToolCallsController.isHistoryExhausted();
+        if (this.toggleEmptyState(this._empty, this._list, noItems)) return;
+
+        // Show/hide "Load earlier" button
+        const loadMoreEl = this.querySelector<HTMLElement>('.tcv-load-more');
+        if (loadMoreEl) {
+            const hasHistoric = items.some(i => i.historic);
+            loadMoreEl.hidden = ToolCallsController.isHistoryExhausted() || !hasHistoric;
+        }
 
         // Preserve scroll positions of <pre> blocks inside the expanded item across re-renders.
         const savedPreScrolls: number[] = [];
@@ -166,6 +184,19 @@ export class ToolCallsView extends PollableView {
 
     private _isAtBottom(): boolean {
         return this._container.scrollHeight - this._container.scrollTop - this._container.clientHeight < 50;
+    }
+
+    /** Requests an older page of tool calls from the host. */
+    private _loadMore(): void {
+        if (this._loadingMore || ToolCallsController.isHistoryExhausted()) return;
+        this._loadingMore = true;
+        const oldestId = ToolCallsController.oldestHistoricId();
+        const fn = (window as any).loadMoreToolCalls;
+        if (typeof fn === 'function') {
+            fn(oldestId ?? '');
+        }
+        // Reset guard after a short delay to allow re-triggers if the call failed silently.
+        setTimeout(() => { this._loadingMore = false; }, 2000);
     }
 
     /**

@@ -317,6 +317,18 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Loads recent tool call history from the conversation database.
+     * Used by the MCP tab to populate historic tool calls on startup.
+     */
+    @NotNull
+    public List<ConversationQuery.ToolCallHistoryEntry> loadToolCallHistory(
+        int limit, @Nullable String beforeEventId) {
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
+        return new ConversationQuery(db).loadToolCallHistory(limit, beforeEventId);
+    }
+
+    /**
      * Returns a ready {@link ConversationDatabase} instance, initializing it if necessary.
      * Returns {@code null} if there is no project, or if initialization fails.
      */
