@@ -30,12 +30,13 @@ public final class CreateRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). "
-            + "If unknown, an error will list all available types. "
-            + "For config types with no public Java API (e.g. Shell Script), pass 'raw_xml' with the full XML content instead — "
-            + "it is written directly to .idea/runConfigurations/<name>.xml. "
-            + "For plugin-specific or framework types (Node.js, Flask, Micronaut, etc.), use list_run_configuration_types to discover "
-            + "valid type IDs, then get_run_configuration_template to see available options, then pass them via the 'options' parameter.";
+        return "Create a new run configuration of any type supported by the IDE. "
+            + "Workflow: (1) call list_run_configuration_types to find the type ID, "
+            + "(2) call get_run_configuration_template with that type ID to get a JSON schema "
+            + "showing all configurable options and their defaults, "
+            + "(3) call this tool with the type ID and a 'config' JSON object matching the schema. "
+            + "The config object is validated against the schema — an error is returned immediately "
+            + "if any key is unknown or has the wrong type.";
     }
 
     @Override
@@ -45,25 +46,14 @@ public final class CreateRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        JsonObject s = schema(
+        return schema(
             Param.required("name", TYPE_STRING, "Name for the new run configuration"),
-            Param.optional("type", TYPE_STRING, "Configuration type ID (from list_run_configuration_types, e.g. 'application', 'junit', 'gradle'). Required unless 'raw_xml' is provided."),
-            Param.optional("factory_name", TYPE_STRING, "Optional factory name within the type (from list_run_configuration_types). Used when a type has multiple factories."),
-            Param.optional("jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g., '-Xmx512m')"),
-            Param.optional("program_args", TYPE_STRING, "Optional: program arguments"),
+            Param.required("type", TYPE_STRING, "Configuration type ID from list_run_configuration_types (e.g. 'Application', 'GradleRunConfiguration', 'NodeJSConfigurationType')"),
+            Param.optional("factory_name", TYPE_STRING, "Factory name within the type (from list_run_configuration_types). Only needed when a type has multiple factories."),
+            Param.optional("config", TYPE_OBJECT, "JSON object matching the schema from get_run_configuration_template. Each key maps to a configurable option; validated before saving."),
             Param.optional("working_dir", TYPE_STRING, "Optional: working directory path"),
-            Param.optional("main_class", TYPE_STRING, "Optional: main class (for Application configs)"),
-            Param.optional("test_class", TYPE_STRING, "Optional: test class (for JUnit configs)"),
-            Param.optional("module_name", TYPE_STRING, "Optional: IntelliJ module name (from project structure)"),
-            Param.optional("tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"),
-            Param.optional("script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g., '--info')"),
-            Param.optional("script_path", TYPE_STRING, "Optional: path to the script file (for Shell Script configs)"),
-            Param.optional("raw_xml", TYPE_STRING, "Optional: full XML content to write to .idea/runConfigurations/<name>.xml. Use for Shell Script or any config type whose Java API is inaccessible. When provided, 'type' is not required."),
             Param.optional("shared", TYPE_BOOLEAN, "Store as shared project file (default: true). If false, stored in workspace only")
         );
-        addDictProperty(s, "env", "Environment variables as key-value pairs");
-        addDictProperty(s, "options", "Optional: flat map of option name→value overrides, applied to the serialized config XML. Use get_run_configuration_template to discover valid option names.");
-        return s;
     }
 
     @Override

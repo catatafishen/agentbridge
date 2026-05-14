@@ -1290,7 +1290,7 @@ public final class PlatformApiCompat {
      * correct API is {@code getTitle()}.
      */
     public static @Nullable String checkRunConfigForError(
-        @NotNull com.intellij.execution.RunConfiguration config) {
+        @NotNull com.intellij.execution.configurations.RunConfiguration config) {
         try {
             config.checkConfiguration();
             return null;

@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
@@ -12,7 +14,6 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
-import com.intellij.openapi.util.JDOMUtil;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * Service for managing IntelliJ run configurations.
@@ -49,12 +51,22 @@ public final class RunConfigurationService {
 
     private static final String PARAM_ENV = "env";
     private static final String PARAM_FACTORY_NAME = "factory_name";
-    private static final String PARAM_OPTIONS = "options";
+    private static final String PARAM_CONFIG = "config";
     private static final String XML_ELEM_OPTION = "option";
     private static final String XML_ATTR_VALUE = "value";
     private static final String PARAM_SHARED = "shared";
     private static final String PARAM_TASKS = "tasks";
     private static final String METHOD_SET_WORKING_DIR = "setWorkingDirectory";
+
+    // JSON Schema key/type constants (used by xmlElementToJsonSchema and helpers)
+    private static final String JSON_KEY_TYPE = "type";
+    private static final String JSON_KEY_DEFAULT = "default";
+    private static final String JSON_KEY_PROPERTIES = "properties";
+    private static final String JSON_KEY_ITEMS = "items";
+    private static final String JSON_TYPE_OBJECT = "object";
+    private static final String JSON_TYPE_STRING = "string";
+    private static final String JSON_TYPE_ARRAY = "array";
+    private static final String JSON_TYPE_BOOLEAN = "boolean";
     private static final String PARAM_SCRIPT_PATH = "script_path";
     private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
@@ -205,14 +217,10 @@ public final class RunConfigurationService {
     public String createRunConfiguration(JsonObject args) throws Exception {
         String name = args.get("name").getAsString();
 
-        // raw_xml path: write the XML to .idea/runConfigurations/ and let the IDE pick it up.
-        if (args.has("raw_xml")) {
-            return createRunConfigFromXml(name, args.get("raw_xml").getAsString());
-        }
-
         if (!args.has("type")) {
-            return "Error: 'type' is required unless 'raw_xml' is provided. "
-                + "Available types: " + String.join(", ", PlatformApiCompat.listConfigurationTypeNames());
+            return "Error: 'type' is required. "
+                + "Use list_run_configuration_types to see available types, "
+                + "then get_run_configuration_template to get the JSON schema for your chosen type.";
         }
         String type = args.get("type").getAsString().toLowerCase();
 
@@ -220,82 +228,7 @@ public final class RunConfigurationService {
         String abuseError = checkProgramArgsAbuse(args, type);
         if (abuseError != null) return abuseError;
 
-        // If explicit options map provided, use the dynamic type-based path.
-        if (args.has(PARAM_OPTIONS)) {
-            return createRunConfigWithOptions(name, type, args);
-        }
-
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
-        EdtUtil.invokeLater(() -> {
-            try {
-                RunManager runManager = RunManager.getInstance(project);
-
-                // Find the configuration type
-                var configType = PlatformApiCompat.findConfigurationType(type);
-                if (configType == null) {
-                    resultFuture.complete("Unknown configuration type: '" + type
-                        + "'. Available types: " + String.join(", ", PlatformApiCompat.listConfigurationTypeNames()));
-                    return;
-                }
-
-                var factory = configType.getConfigurationFactories()[0];
-                var settings = runManager.createConfiguration(name, factory);
-                RunConfiguration config = settings.getConfiguration();
-
-                // Apply common properties
-                applyConfigProperties(config, args);
-
-                // Apply type-specific properties (includes Gradle tasks)
-                applyTypeSpecificProperties(config, args);
-
-                // Store as shared (project file) by default
-                boolean shared = !args.has(PARAM_SHARED) || args.get(PARAM_SHARED).getAsBoolean();
-                if (shared) {
-                    settings.storeInDotIdeaFolder();
-                } else {
-                    settings.storeInLocalWorkspace();
-                }
-
-                runManager.addConfiguration(settings);
-                runManager.setSelectedConfiguration(settings);
-
-                String storage = shared ? " (shared/project file)" : " (workspace-local)";
-                resultFuture.complete("Created run configuration: " + name
-                    + " [" + configType.getDisplayName() + "]" + storage
-                    + "\nUse run_configuration to execute it, or edit_run_configuration to modify it.");
-            } catch (Exception e) {
-                resultFuture.complete("Error creating run configuration: " + e.getMessage());
-            }
-        });
-
-        return resultFuture.get(10, TimeUnit.SECONDS);
-    }
-
-    private String createRunConfigFromXml(String name, String rawXml) {
-        String basePath = project.getBasePath();
-        if (basePath == null) return "Error: project base path is not available";
-
-        String filename = sanitizeConfigFileName(name);
-        java.io.File runConfigsDir = new java.io.File(basePath, ".idea/runConfigurations");
-        java.io.File xmlFile = new java.io.File(runConfigsDir, filename);
-
-        if (!runConfigsDir.exists() && !runConfigsDir.mkdirs()) {
-            return "Error: could not create directory " + runConfigsDir.getPath();
-        }
-        try (var writer = new java.io.FileWriter(xmlFile, java.nio.charset.StandardCharsets.UTF_8)) {
-            writer.write(rawXml);
-        } catch (java.io.IOException e) {
-            return "Error writing run configuration XML: " + e.getMessage();
-        }
-
-        // Refresh the VFS so IntelliJ's RunManager picks up the new file immediately.
-        var vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-            .refreshAndFindFileByIoFile(xmlFile);
-        if (vf != null) vf.refresh(false, false);
-
-        return "Created run configuration '" + name + "' from XML → " + xmlFile.getPath()
-            + "\nUse run_configuration to execute it.";
+        return createRunConfigWithOptions(name, type, args);
     }
 
     public String editRunConfiguration(JsonObject args) throws Exception {
@@ -411,17 +344,6 @@ public final class RunConfigurationService {
         }
 
         return null;
-    }
-
-    private void applyConfigProperties(RunConfiguration config, JsonObject args) {
-        List<String> ignore = new ArrayList<>();
-        if (args.has(PARAM_ENV)) applyEnvVars(config, args.getAsJsonObject(PARAM_ENV), ignore);
-        if (args.has(PARAM_JVM_ARGS))
-            setViaReflection(config, "setVMParameters", args.get(PARAM_JVM_ARGS).getAsString(), ignore, null);
-        if (args.has(PARAM_PROGRAM_ARGS))
-            setViaReflection(config, "setProgramParameters", args.get(PARAM_PROGRAM_ARGS).getAsString(), ignore, null);
-        if (args.has(PARAM_WORKING_DIR))
-            setViaReflection(config, METHOD_SET_WORKING_DIR, args.get(PARAM_WORKING_DIR).getAsString(), ignore, null);
     }
 
     private void applyTypeSpecificProperties(RunConfiguration config, JsonObject args) {
@@ -653,7 +575,6 @@ public final class RunConfigurationService {
 
     public String getRunConfigTemplate(JsonObject args) throws Exception {
         String typeName = args.get("type").getAsString();
-        String templateName = args.has("name") ? args.get("name").getAsString() : "Example";
         String factoryName = args.has(PARAM_FACTORY_NAME) ? args.get(PARAM_FACTORY_NAME).getAsString() : null;
 
         CompletableFuture<String> result = new CompletableFuture<>();
@@ -667,32 +588,23 @@ public final class RunConfigurationService {
                 }
                 var factory = PlatformApiCompat.findFactory(configType, factoryName);
                 var config = factory.createTemplateConfiguration(project);
-                config.setName(templateName);
+                config.setName("Example");
 
-                var configElement = buildConfigElement(templateName, configType.getId(), factory.getName());
-                config.writeExternal(configElement);
+                var element = buildConfigElement("Example", configType.getId(), factory.getName());
+                config.writeExternal(element);
 
-                var options = extractOptionList(configElement);
-                var component = new org.jdom.Element("component");
-                component.setAttribute("name", "ProjectRunConfigurationManager");
-                component.addContent(configElement);
-                String xml = JDOMUtil.write(component);
+                var schema = xmlElementToJsonSchema(element);
+                schema.addProperty("description",
+                    configType.getDisplayName() + " (type id: " + configType.getId()
+                        + ", factory: " + factory.getName() + ")");
 
-                var sb = new StringBuilder();
-                sb.append("Template for '").append(configType.getDisplayName())
-                    .append("' (type id: ").append(configType.getId())
-                    .append(", factory: ").append(factory.getName()).append(")\n\n");
-                if (!options.isEmpty()) {
-                    sb.append("Flat options (use as keys in create_run_configuration 'options' param):\n");
-                    options.forEach(o -> sb.append("  ").append(o).append("\n"));
-                    sb.append("\n");
-                }
-                sb.append("Full XML template:\n").append(xml);
-                sb.append("\n\nCreate with options:\n");
-                sb.append("  create_run_configuration(name=\"My Config\", type=\"")
-                    .append(configType.getId()).append("\", options={KEY: value, ...})\n");
-                sb.append("Or use raw_xml for complex nested options not expressible as flat key=value.");
-                result.complete(sb.toString());
+                var gson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
+                result.complete("JSON schema for '" + configType.getDisplayName()
+                    + "' (type id: " + configType.getId()
+                    + ", factory: " + factory.getName() + ")\n\n"
+                    + gson.toJson(schema)
+                    + "\n\nCreate with:\n  create_run_configuration(name=\"My Config\", type=\""
+                    + configType.getId() + "\", config={...from schema...})");
             } catch (Exception e) {
                 result.complete("Error generating template for '" + typeName + "': " + e.getMessage());
             }
@@ -742,15 +654,24 @@ public final class RunConfigurationService {
         try {
             var element = buildConfigElement(config.getName(), typeId, factoryName);
             config.writeExternal(element);
-            if (args.has(PARAM_OPTIONS)) applyOptionsToElement(element, args.getAsJsonObject(PARAM_OPTIONS));
-            if (args.has(PARAM_ENV)) applyEnvToElement(element, args.getAsJsonObject(PARAM_ENV));
+
+            if (args.has(PARAM_CONFIG)) {
+                var configJson = args.getAsJsonObject(PARAM_CONFIG);
+                var schema = xmlElementToJsonSchema(element);
+                var validationError = validateJsonAgainstSchema(configJson, schema);
+                if (validationError != null) throw new IllegalArgumentException(validationError);
+                mergeJsonConfigIntoXml(element, configJson);
+            }
+
             config.readExternal(element);
             if (args.has(PARAM_WORKING_DIR)) {
                 setViaReflection(config, METHOD_SET_WORKING_DIR,
                     args.get(PARAM_WORKING_DIR).getAsString(), new ArrayList<>(), null);
             }
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to apply config options: " + e.getMessage(), e);
+            throw new IllegalStateException("Failed to apply config: " + e.getMessage(), e);
         }
     }
 
@@ -769,54 +690,218 @@ public final class RunConfigurationService {
 
     private static org.jdom.Element buildConfigElement(String name, String typeId, String factoryName) {
         var element = new org.jdom.Element("configuration");
-        element.setAttribute("default", "false");
+        element.setAttribute(JSON_KEY_DEFAULT, "false");
         element.setAttribute("name", name);
-        element.setAttribute("type", typeId);
+        element.setAttribute(JSON_KEY_TYPE, typeId);
         element.setAttribute("factoryName", factoryName);
         return element;
     }
 
-    private static List<String> extractOptionList(org.jdom.Element configElement) {
-        var options = new ArrayList<String>();
-        for (var child : configElement.getChildren(XML_ELEM_OPTION)) {
-            String n = child.getAttributeValue("name");
-            String v = child.getAttributeValue(XML_ATTR_VALUE);
-            if (n != null) options.add(n + "=" + (v != null ? "\"" + v + "\"" : "(complex)"));
+    private static JsonObject xmlElementToJsonSchema(org.jdom.Element element) {
+        var schema = new JsonObject();
+        schema.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
+        var properties = new JsonObject();
+        for (org.jdom.Element child : element.getChildren()) {
+            String key;
+            JsonObject childSchema;
+            if (XML_ELEM_OPTION.equals(child.getName()) && child.getAttributeValue("name") != null) {
+                key = child.getAttributeValue("name");
+                childSchema = inferOptionSchema(child);
+            } else {
+                key = child.getName();
+                childSchema = inferElementSchema(child);
+            }
+            properties.add(key, childSchema);
         }
-        return options;
+        schema.add(JSON_KEY_PROPERTIES, properties);
+        return schema;
     }
 
-    private static void applyOptionsToElement(org.jdom.Element element, com.google.gson.JsonObject options) {
-        var existingMap = new HashMap<String, org.jdom.Element>();
-        for (var child : element.getChildren(XML_ELEM_OPTION)) {
-            String n = child.getAttributeValue("name");
-            if (n != null) existingMap.put(n, child);
-        }
-        for (var entry : options.entrySet()) {
-            String value = entry.getValue().getAsString();
-            var existing = existingMap.get(entry.getKey());
-            if (existing != null) {
-                existing.setAttribute(XML_ATTR_VALUE, value);
-            } else {
-                var opt = new org.jdom.Element(XML_ELEM_OPTION);
-                opt.setAttribute("name", entry.getKey());
-                opt.setAttribute(XML_ATTR_VALUE, value);
-                element.addContent(opt);
+    /**
+     * Recursively merges a JSON config object into a JDOM element.
+     * String values update/create {@code <option name="K" value="V"/>} (Pattern A) by default.
+     * Array values build {@code <option name="K"><list><option value="x"/></list></option>}.
+     * Object values recurse into the matching child element; "envs" gets special env-var handling.
+     */
+    private static void mergeJsonConfigIntoXml(org.jdom.Element element, JsonObject config) {
+        for (var entry : config.entrySet()) {
+            String key = entry.getKey();
+            JsonElement value = entry.getValue();
+            org.jdom.Element target = findOptionChild(element, key);
+            if (target == null) target = element.getChild(key);
+            if (value.isJsonPrimitive()) {
+                mergeStringIntoXml(element, key, value.getAsString(), target);
+            } else if (value.isJsonArray()) {
+                mergeArrayIntoXml(element, key, value.getAsJsonArray(), target);
+            } else if (value.isJsonObject()) {
+                mergeObjectIntoXml(element, key, value.getAsJsonObject(), target);
             }
         }
     }
 
-    private static void applyEnvToElement(org.jdom.Element element, com.google.gson.JsonObject env) {
-        var envsElem = element.getChild("envs");
-        if (envsElem == null) {
-            envsElem = new org.jdom.Element("envs");
-            element.addContent(envsElem);
+    private static org.jdom.Element findOptionChild(org.jdom.Element parent, String name) {
+        for (var child : parent.getChildren(XML_ELEM_OPTION)) {
+            if (name.equals(child.getAttributeValue("name"))) return child;
         }
-        for (var entry : env.entrySet()) {
-            var envVar = new org.jdom.Element("env");
-            envVar.setAttribute("name", entry.getKey());
-            envVar.setAttribute(XML_ATTR_VALUE, entry.getValue().getAsString());
-            envsElem.addContent(envVar);
+        return null;
+    }
+
+    private static void mergeStringIntoXml(org.jdom.Element parent, String key, String value,
+                                           org.jdom.Element existing) {
+        if (existing != null) {
+            if (existing.getAttributeValue(XML_ATTR_VALUE) != null) {
+                existing.setAttribute(XML_ATTR_VALUE, value);
+            } else {
+                existing.setText(value);
+            }
+        } else {
+            var opt = new org.jdom.Element(XML_ELEM_OPTION);
+            opt.setAttribute("name", key);
+            opt.setAttribute(XML_ATTR_VALUE, value);
+            parent.addContent(opt);
+        }
+    }
+
+    private static void mergeArrayIntoXml(org.jdom.Element parent, String key, JsonArray array,
+                                          org.jdom.Element existing) {
+        var container = existing;
+        if (container == null) {
+            container = new org.jdom.Element(XML_ELEM_OPTION);
+            container.setAttribute("name", key);
+            parent.addContent(container);
+        }
+        var list = container.getChild("list");
+        if (list == null) {
+            list = new org.jdom.Element("list");
+            container.addContent(list);
+        }
+        list.removeChildren(XML_ELEM_OPTION);
+        for (var item : array) {
+            var opt = new org.jdom.Element(XML_ELEM_OPTION);
+            opt.setAttribute(XML_ATTR_VALUE, item.getAsString());
+            list.addContent(opt);
+        }
+    }
+
+    private static void mergeObjectIntoXml(org.jdom.Element parent, String key, JsonObject obj,
+                                           org.jdom.Element existing) {
+        if ("envs".equals(key)) {
+            var envsElem = parent.getChild("envs");
+            if (envsElem == null) {
+                envsElem = new org.jdom.Element("envs");
+                parent.addContent(envsElem);
+            }
+            // Detect the child tag used in this envs element (usually "env")
+            String childTag = envsElem.getChildren().isEmpty() ? "env"
+                : envsElem.getChildren().getFirst().getName();
+            for (var entry : obj.entrySet()) {
+                var envVar = new org.jdom.Element(childTag);
+                envVar.setAttribute("name", entry.getKey());
+                envVar.setAttribute(XML_ATTR_VALUE, entry.getValue().getAsString());
+                envsElem.addContent(envVar);
+            }
+            return;
+        }
+        var target = existing != null ? existing : parent.getChild(key);
+        if (target == null) {
+            target = new org.jdom.Element(key);
+            parent.addContent(target);
+        }
+        mergeJsonConfigIntoXml(target, obj);
+    }
+
+    private static JsonObject inferOptionSchema(org.jdom.Element option) {
+        var children = option.getChildren();
+        String value = option.getAttributeValue(XML_ATTR_VALUE);
+        if (children.isEmpty()) return schemaPrimitive(value != null ? value : "");
+        if (children.size() == 1 && "list".equals(children.getFirst().getName())) {
+            return schemaArray(children.getFirst());
+        }
+        return xmlElementToJsonSchema(option);
+    }
+
+    private static JsonObject inferElementSchema(org.jdom.Element element) {
+        if ("envs".equals(element.getName())) {
+            return schemaDict();
+        }
+        var children = element.getChildren();
+        String valueAttr = element.getAttributeValue(XML_ATTR_VALUE);
+        if (children.isEmpty() && valueAttr != null) return schemaPrimitive(valueAttr);
+        String text = element.getTextTrim();
+        if (children.isEmpty() && !text.isEmpty()) return schemaPrimitive(text);
+        if (children.size() == 1 && "list".equals(children.getFirst().getName())) {
+            return schemaArray(children.getFirst());
+        }
+        if (children.isEmpty()) return schemaPrimitive("");
+        return xmlElementToJsonSchema(element);
+    }
+
+    private static JsonObject schemaPrimitive(String defaultValue) {
+        var prop = new JsonObject();
+        if ("true".equalsIgnoreCase(defaultValue) || "false".equalsIgnoreCase(defaultValue)) {
+            prop.addProperty(JSON_KEY_TYPE, JSON_TYPE_BOOLEAN);
+            prop.addProperty(JSON_KEY_DEFAULT, Boolean.parseBoolean(defaultValue));
+        } else {
+            prop.addProperty(JSON_KEY_TYPE, JSON_TYPE_STRING);
+            prop.addProperty(JSON_KEY_DEFAULT, defaultValue);
+        }
+        return prop;
+    }
+
+    private static JsonObject schemaArray(org.jdom.Element listElement) {
+        var prop = new JsonObject();
+        prop.addProperty(JSON_KEY_TYPE, JSON_TYPE_ARRAY);
+        var items = new JsonObject();
+        items.addProperty(JSON_KEY_TYPE, JSON_TYPE_STRING);
+        prop.add(JSON_KEY_ITEMS, items);
+        var defaults = new JsonArray();
+        for (var item : listElement.getChildren()) {
+            String v = item.getAttributeValue(XML_ATTR_VALUE);
+            if (v != null) defaults.add(v);
+        }
+        if (!defaults.isEmpty()) prop.add(JSON_KEY_DEFAULT, defaults);
+        return prop;
+    }
+
+    private static JsonObject schemaDict() {
+        var prop = new JsonObject();
+        prop.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
+        prop.addProperty("description", "Environment variables as key-value pairs");
+        var additionalProps = new JsonObject();
+        additionalProps.addProperty(JSON_KEY_TYPE, JSON_TYPE_STRING);
+        prop.add("additionalProperties", additionalProps);
+        return prop;
+    }
+
+    private static String validateJsonAgainstSchema(JsonObject config, JsonObject schema) {
+        if (!schema.has(JSON_KEY_PROPERTIES)) return null;
+        var properties = schema.getAsJsonObject(JSON_KEY_PROPERTIES);
+        var errors = new ArrayList<String>();
+        for (var entry : config.entrySet()) {
+            String key = entry.getKey();
+            if (!properties.has(key)) {
+                errors.add("Unknown option '" + key + "'");
+                continue;
+            }
+            collectTypeErrors(key, entry.getValue(), properties.getAsJsonObject(key), errors);
+        }
+        return errors.isEmpty() ? null
+            : "Schema validation failed:\n"
+              + errors.stream().map(e -> "  - " + e).collect(Collectors.joining("\n"));
+    }
+
+    private static void collectTypeErrors(String key, JsonElement value, JsonObject propSchema,
+                                          List<String> errors) {
+        String expectedType = propSchema.has(JSON_KEY_TYPE)
+            ? propSchema.get(JSON_KEY_TYPE).getAsString() : JSON_TYPE_STRING;
+        if (JSON_TYPE_ARRAY.equals(expectedType) && !value.isJsonArray()) {
+            errors.add("'" + key + "' must be an array");
+        } else if (JSON_TYPE_OBJECT.equals(expectedType) && !value.isJsonObject()) {
+            errors.add("'" + key + "' must be an object");
+        } else if (JSON_TYPE_OBJECT.equals(expectedType) && value.isJsonObject()
+            && propSchema.has(JSON_KEY_PROPERTIES)) {
+            String nested = validateJsonAgainstSchema(value.getAsJsonObject(), propSchema);
+            if (nested != null) errors.add("In '" + key + "': " + nested);
         }
     }
 

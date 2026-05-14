@@ -65,12 +65,14 @@ public abstract class Tool implements ToolDefinition {
     protected static final String TYPE_BOOLEAN = "boolean";
     protected static final String TYPE_INTEGER = "integer";
     protected static final String TYPE_ARRAY = "array";
+    protected static final String TYPE_OBJECT = "object";
 
     private static final String KEY_TYPE = "type";
     private static final String KEY_PROPERTIES = "properties";
     private static final String KEY_REQUIRED = "required";
     private static final String KEY_DESCRIPTION = "description";
     private static final String KEY_DEFAULT = "default";
+    private static final String KEY_ITEMS = "items";
 
     /**
      * Type-safe parameter definition for MCP tool schemas.
@@ -94,7 +96,7 @@ public abstract class Tool implements ToolDefinition {
 
     protected static com.google.gson.JsonObject schema(Param... params) {
         com.google.gson.JsonObject root = new com.google.gson.JsonObject();
-        root.addProperty(KEY_TYPE, "object");
+        root.addProperty(KEY_TYPE, TYPE_OBJECT);
         com.google.gson.JsonObject props = new com.google.gson.JsonObject();
         com.google.gson.JsonArray req = new com.google.gson.JsonArray();
         for (Param p : params) {
@@ -112,7 +114,7 @@ public abstract class Tool implements ToolDefinition {
             if (TYPE_ARRAY.equals(p.type())) {
                 com.google.gson.JsonObject items = new com.google.gson.JsonObject();
                 items.addProperty(KEY_TYPE, TYPE_STRING);
-                prop.add("items", items);
+                prop.add(KEY_ITEMS, items);
             }
             props.add(p.name(), prop);
             if (p.required()) {
@@ -128,7 +130,7 @@ public abstract class Tool implements ToolDefinition {
         com.google.gson.JsonObject prop = schema.getAsJsonObject(KEY_PROPERTIES).getAsJsonObject(propName);
         com.google.gson.JsonObject items = new com.google.gson.JsonObject();
         items.addProperty(KEY_TYPE, TYPE_STRING);
-        prop.add("items", items);
+        prop.add(KEY_ITEMS, items);
     }
 
     /**
@@ -142,7 +144,7 @@ public abstract class Tool implements ToolDefinition {
     protected static void addObjectArrayItems(com.google.gson.JsonObject schema, String propName, Param... itemParams) {
         com.google.gson.JsonObject prop = schema.getAsJsonObject(KEY_PROPERTIES).getAsJsonObject(propName);
         com.google.gson.JsonObject items = new com.google.gson.JsonObject();
-        items.addProperty(KEY_TYPE, "object");
+        items.addProperty(KEY_TYPE, TYPE_OBJECT);
         com.google.gson.JsonObject itemProps = new com.google.gson.JsonObject();
         for (Param p : itemParams) {
             com.google.gson.JsonObject pDef = new com.google.gson.JsonObject();
@@ -151,12 +153,12 @@ public abstract class Tool implements ToolDefinition {
             itemProps.add(p.name(), pDef);
         }
         items.add(KEY_PROPERTIES, itemProps);
-        prop.add("items", items);
+        prop.add(KEY_ITEMS, items);
     }
 
     protected static void addDictProperty(com.google.gson.JsonObject schema, String name, String description) {
         com.google.gson.JsonObject prop = new com.google.gson.JsonObject();
-        prop.addProperty(KEY_TYPE, "object");
+        prop.addProperty(KEY_TYPE, TYPE_OBJECT);
         prop.addProperty(KEY_DESCRIPTION, description);
         prop.add(KEY_PROPERTIES, new com.google.gson.JsonObject());
         com.google.gson.JsonObject additionalProps = new com.google.gson.JsonObject();

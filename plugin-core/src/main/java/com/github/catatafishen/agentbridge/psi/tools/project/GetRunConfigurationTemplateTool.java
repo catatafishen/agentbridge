@@ -29,10 +29,12 @@ public final class GetRunConfigurationTemplateTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Get the default XML template for a run configuration type, showing all available option names and defaults. "
-            + "Use this to discover what 'options' keys are valid before calling create_run_configuration with the 'options' parameter. "
-            + "Requires 'type' (a type ID from list_run_configuration_types). "
-            + "Optionally pass 'factory_name' to get the template for a specific factory within the type.";
+        return "Get a JSON schema describing all configurable options for a run configuration type. "
+            + "Use list_run_configuration_types first to find valid type IDs. "
+            + "The returned schema shows all available properties with their types, defaults, and descriptions. "
+            + "Pass the schema as the 'config' parameter to create_run_configuration. "
+            + "Example: get_run_configuration_template(type='Application') → schema → "
+            + "create_run_configuration(name='My App', type='Application', config={...}).";
     }
 
     @Override
