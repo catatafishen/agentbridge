@@ -78,10 +78,9 @@ Open **AgentBridge › UI/UX** in the IDE settings:
 
 | Setting                                   | Default | Description                                        |
 |-------------------------------------------|---------|----------------------------------------------------|
-| **Enable pause/resume button**            | On      | Shows the Pause button in the toolbar              |
 | **Auto-pause when chat input is focused** | Off     | Pauses automatically when you click the chat input |
 
-The auto-pause setting is only available when the pause feature is enabled.
+The Pause button is always visible in the toolbar when the agent is running.
 
 ---
 
