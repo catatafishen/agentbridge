@@ -52,6 +52,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -97,6 +98,13 @@ public final class McpProtocolHandler {
     private static final String KEY_JSONRPC = "jsonrpc";
 
     private final Project project;
+
+    /**
+     * Prevents multiple concurrent timeout dialogs. If a dialog is already active
+     * (another tool timed out at the same time), subsequent timeouts skip the dialog
+     * and wait indefinitely so the user is not bombarded with stacked modals.
+     */
+    private final AtomicBoolean timeoutDialogActive = new AtomicBoolean(false);
 
     /**
      * The name of the connected agent, extracted from the MCP {@code initialize}
@@ -635,6 +643,9 @@ public final class McpProtocolHandler {
      * <p>Cancellation is implemented by interrupting the worker thread directly — not via
      * {@code future.cancel(true)}, which does not interrupt threads running inside
      * {@link CompletableFuture#supplyAsync}.
+     *
+     * <p>If a timeout dialog is already active for another concurrent tool call, the new
+     * timeout skips the dialog and waits indefinitely to avoid stacking modal dialogs.
      */
     private String callToolWithTimeout(String toolName, JsonObject arguments,
                                        @Nullable String toolUseId, JsonObject originalArguments,
@@ -642,6 +653,7 @@ public final class McpProtocolHandler {
         String sessionKey = sessionKey(project);
         PsiBridgeService bridge = PsiBridgeService.getInstance(project);
         AtomicReference<Thread> workerThread = new AtomicReference<>();
+        long startMs = System.currentTimeMillis();
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
             workerThread.set(Thread.currentThread());
             McpCallContext.setCurrent(sessionKey);
@@ -656,7 +668,8 @@ public final class McpProtocolHandler {
         try {
             return future.get(INITIAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            return waitAfterTimeout(future, workerThread, toolName, displayName);
+            int elapsedSeconds = (int) ((System.currentTimeMillis() - startMs) / 1000);
+            return waitAfterTimeout(future, workerThread, toolName, displayName, elapsedSeconds);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             interruptWorker(workerThread);
@@ -670,20 +683,39 @@ public final class McpProtocolHandler {
 
     private String waitAfterTimeout(CompletableFuture<String> future,
                                     AtomicReference<Thread> workerThread,
-                                    String toolName, @Nullable String displayName) {
+                                    String toolName, @Nullable String displayName,
+                                    int elapsedSeconds) {
+        // If another concurrent tool already has a dialog showing, skip ours and wait indefinitely
+        // to avoid stacking modal dialogs on the user.
+        if (!timeoutDialogActive.compareAndSet(false, true)) {
+            try {
+                return future.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                interruptWorker(workerThread);
+                return "Error: MCP handler interrupted during extended wait for '" + toolName + "'";
+            } catch (ExecutionException e) {
+                return unwrapExecutionException(toolName, e);
+            } catch (CancellationException e) {
+                return toolError(toolName, "was unexpectedly cancelled during extended wait");
+            }
+        }
+
         int extra;
         try {
             extra = ToolTimeoutDialog.askForExtension(
-                project, displayName != null ? displayName : toolName, INITIAL_TIMEOUT_SECONDS);
+                project, displayName != null ? displayName : toolName, elapsedSeconds);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             interruptWorker(workerThread);
             return "Error: interrupted while showing timeout dialog for '" + toolName + "'";
+        } finally {
+            timeoutDialogActive.set(false);
         }
 
         if (extra == ToolTimeoutDialog.CANCEL) {
             interruptWorker(workerThread);
-            return toolError(toolName, "was cancelled by user after " + INITIAL_TIMEOUT_SECONDS + "s");
+            return toolError(toolName, "was cancelled by user after " + elapsedSeconds + "s");
         }
 
         try {
