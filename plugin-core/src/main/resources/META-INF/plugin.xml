@@ -156,6 +156,10 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.LiveToolCallService"/>
 
+    <!-- Pause/resume service — defers MCP tool calls while the user has paused the agent -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.services.McpPauseService"/>
+
     <!-- Bridges query_turns MCP tool → Prompt DB side panel for follow-agent navigation -->
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.PromptDbService"/>
