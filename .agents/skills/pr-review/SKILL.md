@@ -167,10 +167,14 @@ git_push(force=true)
 
 Conflicts during rebase:
 
-- **Clear conflicts** (e.g., a line was deleted in master and also modified in the branch, or two unrelated changes touch the same area): resolve using your best judgment — pick the version that preserves all intended changes.
-- **Unclear conflicts** (e.g., two diverging implementations of the same feature, or a large block rewritten in both): stop, describe both sides to the user, and ask which is the right implementation before resolving.
+- **Clear conflicts** (e.g., a line was deleted in master and also modified in the branch, or two unrelated changes
+  touch the same area): resolve using your best judgment — pick the version that preserves all intended changes.
+- **Unclear conflicts** (e.g., two diverging implementations of the same feature, or a large block rewritten in both):
+  call `prompt_user` (do NOT end the turn with a question) — describe both sides and ask which is the right
+  implementation, then continue resolving once the user replies.
 
-If rebase drops commits already in master (duplicate changes from a merged sibling PR), that's correct — don't re-apply them.
+If rebase drops commits already in master (duplicate changes from a merged sibling PR), that's correct — don't re-apply
+them.
 
 ---
 
