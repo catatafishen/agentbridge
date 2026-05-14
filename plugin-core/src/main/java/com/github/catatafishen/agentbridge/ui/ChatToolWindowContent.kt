@@ -17,6 +17,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
+import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
@@ -1946,23 +1947,51 @@ private fun createSideButtonsPanel(): JComponent {
         }
     }
 
-    /**
-     * A toggle action representing one tab in the side panel.
-     * Placed in the title bar via [setTabActionsVisible]. Selecting it switches the
-     * active side-panel tab; if the panel is closed, it also opens it.
-     */
-    private inner class TabSwitchAction(
+private inner class TabSwitchAction(
         private val tabIndex: Int,
         private val defaultName: String
-    ) : ToggleAction(defaultName) {
+    ) : AnAction(defaultName), CustomComponentAction {
 
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
-        override fun isSelected(e: AnActionEvent): Boolean =
+        override fun actionPerformed(e: AnActionEvent) = performSwitch()
+
+        override fun update(e: AnActionEvent) {
+            super.update(e)
+            if (tabIndex == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS) {
+                e.presentation.text = sidePanel?.getPlanTitle() ?: defaultName
+            }
+        }
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+            val btn = JButton(presentation.text ?: defaultName)
+            btn.isOpaque = false
+            btn.isBorderPainted = false
+            btn.isContentAreaFilled = false
+            btn.isFocusPainted = false
+            btn.border = JBUI.Borders.empty(0, 4)
+            btn.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            btn.putClientProperty("baseFont", btn.font)
+            btn.addActionListener {
+                performSwitch()
+                ActivityTracker.getInstance().inc()
+            }
+            return btn
+        }
+
+        override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
+            val btn = component as? JButton ?: return
+            btn.text = presentation.text ?: defaultName
+            val baseFont = btn.getClientProperty("baseFont") as? Font ?: btn.font
+            val selected = isSelected()
+            btn.foreground = if (selected) null else com.intellij.util.ui.UIUtil.getInactiveTextColor()
+            btn.font = baseFont.deriveFont(if (selected) Font.BOLD else Font.PLAIN)
+        }
+
+        private fun isSelected(): Boolean =
             sidePanel?.getSelectedTab() == tabIndex && rootSplitter.proportion >= 0.01f
 
-        override fun setSelected(e: AnActionEvent, state: Boolean) {
-            if (!state) return  // only act on selection, deselection is handled by mutual exclusion
+        private fun performSwitch() {
             ensureSidePanelAvailable()
             sidePanel?.selectTab(tabIndex)
             if (rootSplitter.proportion < 0.01f) {
@@ -1975,14 +2004,6 @@ private fun createSideButtonsPanel(): JComponent {
                 }
                 com.intellij.ide.util.PropertiesComponent.getInstance(project)
                     .setValue(PREF_SIDE_PANEL_OPEN, true)
-            }
-        }
-
-        override fun update(e: AnActionEvent) {
-            super.update(e)
-            // Keep Plan tab title in sync with the (done/total) badge.
-            if (tabIndex == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS) {
-                e.presentation.text = sidePanel?.getPlanTitle() ?: defaultName
             }
         }
     }
