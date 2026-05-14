@@ -69,6 +69,10 @@ public final class RunConfigurationService {
     private static final String JSON_TYPE_BOOLEAN = "boolean";
     private static final String PARAM_SCRIPT_PATH = "script_path";
     private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
+    private static final String PARAM_INTERPRETER_PATH = "interpreter_path";
+    private static final String PARAM_EXECUTE_IN_TERMINAL = "execute_in_terminal";
+    private static final String PARAM_SCRIPT_TEXT = "script_text";
+    private static final String PARAM_SCRIPT_OPTIONS = "script_options";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
     private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
 
@@ -224,11 +228,68 @@ public final class RunConfigurationService {
         }
         String type = args.get("type").getAsString().toLowerCase();
 
+        // Shell Script: use the deterministic XML builder instead of the IntelliJ API path.
+        // ShRunConfiguration has no stable public Java API; the XML builder produces correct output.
+        if (ShellScriptRunConfigXmlBuilder.isShellScriptType(type)) {
+            return createShellScriptRunConfig(name, args);
+        }
+
         // Abuse detection on program_args — same rules as run_command
         String abuseError = checkProgramArgsAbuse(args, type);
         if (abuseError != null) return abuseError;
 
         return createRunConfigWithOptions(name, type, args);
+    }
+
+    private String createShellScriptRunConfig(String name, JsonObject args) throws Exception {
+        var config = new ShellScriptRunConfigXmlBuilder.ShellScriptConfig(
+            args.has(PARAM_SCRIPT_PATH) ? args.get(PARAM_SCRIPT_PATH).getAsString() : null,
+            args.has(PARAM_SCRIPT_TEXT) ? args.get(PARAM_SCRIPT_TEXT).getAsString() : null,
+            args.has(PARAM_SCRIPT_OPTIONS) ? args.get(PARAM_SCRIPT_OPTIONS).getAsString() : null,
+            args.has(PARAM_INTERPRETER_PATH) ? args.get(PARAM_INTERPRETER_PATH).getAsString() : null,
+            null,
+            args.has(PARAM_WORKING_DIR) ? args.get(PARAM_WORKING_DIR).getAsString() : null,
+            !args.has(PARAM_EXECUTE_IN_TERMINAL) || args.get(PARAM_EXECUTE_IN_TERMINAL).getAsBoolean()
+        );
+        String xml = ShellScriptRunConfigXmlBuilder.build(name, config, project.getBasePath());
+        return createRunConfigFromXml(name, xml);
+    }
+
+    private String createRunConfigFromXml(String name, String rawXml) throws Exception {
+        String basePath = project.getBasePath();
+        if (basePath == null) return "Error: project base path is not available";
+
+        String fileName = sanitizeConfigFileName(name) + ".xml";
+        java.io.File dir = new java.io.File(basePath + "/.idea/runConfigurations");
+
+        CompletableFuture<String> result = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                if (!dir.exists() && !dir.mkdirs()) {
+                    result.complete("Error: could not create .idea/runConfigurations directory");
+                    return;
+                }
+                var vDir = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                    .refreshAndFindFileByIoFile(dir);
+                if (vDir == null) {
+                    result.complete("Error: could not find .idea/runConfigurations in VFS");
+                    return;
+                }
+                ApplicationManager.getApplication().runWriteAction(() -> {
+                    try {
+                        var vFile = vDir.findOrCreateChildData(this, fileName);
+                        vFile.setBinaryContent(rawXml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    } catch (java.io.IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                result.complete("Created run configuration: '" + name + "' [Shell Script]"
+                    + "\nUse run_configuration to execute it.");
+            } catch (Exception e) {
+                result.complete("Error creating run configuration: " + e.getMessage());
+            }
+        });
+        return result.get(10, TimeUnit.SECONDS);
     }
 
     public String editRunConfiguration(JsonObject args) throws Exception {
@@ -444,19 +505,30 @@ public final class RunConfigurationService {
     }
 
     private void applyGradleProperties(RunConfiguration config, JsonObject args) {
-        if (!args.has(PARAM_TASKS) && !args.has(PARAM_SCRIPT_PARAMETERS)) return;
+        if (!args.has(PARAM_TASKS) && !args.has(PARAM_SCRIPT_PARAMETERS) && !args.has(PARAM_JVM_ARGS)) return;
         try {
-            var getSettings = config.getClass().getMethod("getSettings");
-            var settings = getSettings.invoke(config);
+            Object rawSettings = config.getClass().getMethod("getSettings").invoke(config);
+            if (!(rawSettings instanceof com.intellij.openapi.externalSystem.model.execution.ExternalSystemTaskExecutionSettings settings))
+                return;
+
+            // externalProjectPath must be set; without it the Gradle config is non-functional.
+            if (settings.getExternalProjectPath() == null || settings.getExternalProjectPath().isEmpty()) {
+                settings.setExternalProjectPath(project.getBasePath());
+            }
+            if (settings.getExternalSystemIdString().isEmpty()) {
+                settings.setExternalSystemIdString("GRADLE");
+            }
 
             if (args.has(PARAM_TASKS)) {
-                List<String> taskNames = parseTaskNames(args.get(PARAM_TASKS));
-                var setTaskNames = settings.getClass().getMethod("setTaskNames", List.class);
-                setTaskNames.invoke(settings, taskNames);
+                settings.setTaskNames(parseTaskNames(args.get(PARAM_TASKS)));
             }
             if (args.has(PARAM_SCRIPT_PARAMETERS)) {
-                var setScriptParams = settings.getClass().getMethod("setScriptParameters", String.class);
-                setScriptParams.invoke(settings, args.get(PARAM_SCRIPT_PARAMETERS).getAsString());
+                settings.setScriptParameters(args.get(PARAM_SCRIPT_PARAMETERS).getAsString());
+            }
+            // jvm_args for Gradle live on ExternalSystemTaskExecutionSettings.vmOptions —
+            // setVMParameters on the config object itself would silently do nothing.
+            if (args.has(PARAM_JVM_ARGS)) {
+                settings.setVmOptions(args.get(PARAM_JVM_ARGS).getAsString());
             }
         } catch (Exception e) {
             LOG.warn("Failed to apply Gradle properties (config may not be a Gradle type)", e);

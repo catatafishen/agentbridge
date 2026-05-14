@@ -36,7 +36,10 @@ public final class CreateRunConfigurationTool extends ProjectTool {
             + "showing all configurable options and their defaults, "
             + "(3) call this tool with the type ID and a 'config' JSON object matching the schema. "
             + "The config object is validated against the schema — an error is returned immediately "
-            + "if any key is unknown or has the wrong type.";
+            + "if any key is unknown or has the wrong type. "
+            + "Shell Script configs (type 'ShConfigurationType' or 'Shell Script') support "
+            + "script_path (file) or script_text (inline), plus interpreter_path, script_options, "
+            + "and execute_in_terminal — no template needed for Shell Script.";
     }
 
     @Override
@@ -60,6 +63,10 @@ public final class CreateRunConfigurationTool extends ProjectTool {
             Param.optional("tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g. ':app:test'). Prefer 'config' when using the template workflow."),
             Param.optional("script_path", TYPE_STRING, "Optional: path to the script file for Shell Script configs. Prefer 'config' when using the template workflow."),
             Param.optional("script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g. '--info'). Prefer 'config' when using the template workflow."),
+            Param.optional("script_text", TYPE_STRING, "Optional: inline script body for Shell Script configs (mutually exclusive with script_path)"),
+            Param.optional("script_options", TYPE_STRING, "Optional: arguments passed to the Shell Script"),
+            Param.optional("interpreter_path", TYPE_STRING, "Optional: path to the interpreter for Shell Script configs (default: /bin/bash)"),
+            Param.optional("execute_in_terminal", TYPE_BOOLEAN, "Optional: run Shell Script in integrated terminal (default: true)"),
             Param.optional("module", TYPE_STRING, "Optional: module name for classpath resolution. Prefer 'config' when using the template workflow.")
         );
         // config accepts any key/value type — schema is determined at runtime by get_run_configuration_template
