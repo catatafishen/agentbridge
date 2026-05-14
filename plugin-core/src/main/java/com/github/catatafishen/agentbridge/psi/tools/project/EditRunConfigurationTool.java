@@ -42,7 +42,7 @@ public final class EditRunConfigurationTool extends ProjectTool {
     public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(
             Param.required("name", TYPE_STRING, "Name of the run configuration to edit"),
-            Param.optional("jvm_args", TYPE_STRING, "Optional: new JVM arguments"),
+            Param.optional("jvm_args", TYPE_STRING, "Optional: new JVM arguments. For Gradle configs, updates vmOptions on the run settings."),
             Param.optional("program_args", TYPE_STRING, "Optional: new program arguments"),
             Param.optional("working_dir", TYPE_STRING, "Optional: new working directory"),
             Param.optional("tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"),

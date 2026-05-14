@@ -30,9 +30,10 @@ public final class CreateRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). "
+        return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'Shell Script'). "
             + "If unknown, an error will list all available types. "
-            + "For config types with no public Java API (e.g. Shell Script), pass 'raw_xml' with the full XML content instead — "
+            + "Shell Script configs support script_path (file) or script_text (inline), interpreter_path, script_options, and execute_in_terminal. "
+            + "For config types not covered by the available parameters, pass 'raw_xml' with the full XML content — "
             + "it is written directly to .idea/runConfigurations/<name>.xml.";
     }
 
@@ -46,7 +47,7 @@ public final class CreateRunConfigurationTool extends ProjectTool {
         JsonObject s = schema(
             Param.required("name", TYPE_STRING, "Name for the new run configuration"),
             Param.optional("type", TYPE_STRING, "Configuration type (e.g., 'application', 'junit', 'gradle', 'Shell Script'). Required unless 'raw_xml' is provided. If unknown, an error will list all available types."),
-            Param.optional("jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g., '-Xmx512m')"),
+            Param.optional("jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g., '-Xmx512m'). For Gradle configs, sets vmOptions on the run settings."),
             Param.optional("program_args", TYPE_STRING, "Optional: program arguments"),
             Param.optional("working_dir", TYPE_STRING, "Optional: working directory path"),
             Param.optional("main_class", TYPE_STRING, "Optional: main class (for Application configs)"),
@@ -55,7 +56,11 @@ public final class CreateRunConfigurationTool extends ProjectTool {
             Param.optional("tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"),
             Param.optional("script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g., '--info')"),
             Param.optional("script_path", TYPE_STRING, "Optional: path to the script file (for Shell Script configs)"),
-            Param.optional("raw_xml", TYPE_STRING, "Optional: full XML content to write to .idea/runConfigurations/<name>.xml. Use for Shell Script or any config type whose Java API is inaccessible. When provided, 'type' is not required."),
+            Param.optional("script_text", TYPE_STRING, "Optional: inline script body (for Shell Script configs without a file; mutually exclusive with script_path)"),
+            Param.optional("script_options", TYPE_STRING, "Optional: arguments passed to the script (for Shell Script configs)"),
+            Param.optional("interpreter_path", TYPE_STRING, "Optional: path to the interpreter (for Shell Script configs; defaults to /bin/bash)"),
+            Param.optional("execute_in_terminal", TYPE_BOOLEAN, "Optional: run in embedded terminal (true, default) or Run panel (false) — Shell Script configs only"),
+            Param.optional("raw_xml", TYPE_STRING, "Optional: full XML content to write to .idea/runConfigurations/<name>.xml. Use only for config types not covered by the parameters above. When provided, 'type' is not required."),
             Param.optional("shared", TYPE_BOOLEAN, "Store as shared project file (default: true). If false, stored in workspace only")
         );
         addDictProperty(s, "env", "Environment variables as key-value pairs");
