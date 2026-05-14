@@ -40,7 +40,8 @@ public final class GitToolFactory {
             new GitFetchTool(project),
             new GitPullTool(project),
             new GitMergeTool(project),
-            new GitCherryPickTool(project)
+            new GitCherryPickTool(project),
+            new GitInitTool(project)
         );
     }
 }
