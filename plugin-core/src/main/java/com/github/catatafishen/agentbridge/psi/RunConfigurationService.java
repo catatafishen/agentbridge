@@ -16,6 +16,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,11 @@ public final class RunConfigurationService {
     private static final String PARAM_SCRIPT_OPTIONS = "script_options";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
     private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
+
+    // Config types that produce empty writeExternal output and need special handling
+    private static final String TYPE_JS_DEBUG = "JavascriptDebugType";
+    private static final String TYPE_CHROMIUM_REMOTE = "ChromiumRemoteDebugType";
+    private static final Map<String, JsonObject> KNOWN_EMPTY_TYPE_SCHEMAS = buildKnownEmptyTypeSchemas();
 
     private final Project project;
     private final ClassResolverUtil.ClassResolver classResolver;
@@ -519,7 +525,7 @@ public final class RunConfigurationService {
             // externalProjectPath must be set; without it the Gradle config is non-functional.
             String basePath = project.getBasePath();
             if ((settings.getExternalProjectPath() == null || settings.getExternalProjectPath().isEmpty())
-                    && basePath != null && !basePath.isEmpty()) {
+                && basePath != null && !basePath.isEmpty()) {
                 settings.setExternalProjectPath(basePath);
             }
             if (settings.getExternalSystemIdString().isEmpty()) {
@@ -673,6 +679,20 @@ public final class RunConfigurationService {
                 config.writeExternal(element);
 
                 var schema = xmlElementToJsonSchema(element);
+
+                // Some types (e.g. JavascriptDebugType, ChromiumRemoteDebugType) use
+                // XmlSerializer-based state rather than writeExternal and produce empty XML.
+                // Fall back to a hardcoded schema so agents know what options to pass.
+                if (schema.getAsJsonObject(JSON_KEY_PROPERTIES).entrySet().isEmpty()) {
+                    var knownSchema = KNOWN_EMPTY_TYPE_SCHEMAS.get(configType.getId());
+                    if (knownSchema != null) {
+                        schema = knownSchema.deepCopy();
+                        schema.addProperty("note",
+                            "Schema inferred from known properties (writeExternal produces nothing for this type). "
+                                + "Options are applied via XmlSerializer deserialization.");
+                    }
+                }
+
                 schema.addProperty("description",
                     configType.getDisplayName() + " (type id: " + configType.getId()
                         + ", factory: " + factory.getName() + ")");
@@ -737,12 +757,22 @@ public final class RunConfigurationService {
             if (args.has(PARAM_CONFIG)) {
                 var configJson = args.getAsJsonObject(PARAM_CONFIG);
                 var schema = xmlElementToJsonSchema(element);
-                var validationError = validateJsonAgainstSchema(configJson, schema);
-                if (validationError != null) throw new IllegalArgumentException(validationError);
+                // Only validate when schema has known properties. Types that use XmlSerializer
+                // rather than writeExternal produce an empty schema — skip validation so agents
+                // can still pass options (mergeJsonConfigIntoXml will add them to the element).
+                var schemaProperties = schema.getAsJsonObject(JSON_KEY_PROPERTIES);
+                if (!schemaProperties.entrySet().isEmpty()) {
+                    var validationError = validateJsonAgainstSchema(configJson, schema);
+                    if (validationError != null) throw new IllegalArgumentException(validationError);
+                }
                 mergeJsonConfigIntoXml(element, configJson);
             }
 
             config.readExternal(element);
+
+            // Secondary deserialization for configs (e.g. JavascriptDebugType) that use
+            // XmlSerializer / @State annotations rather than readExternal to read their fields.
+            tryXmlSerializerDeserialize(config, element);
 
             // Apply legacy top-level parameters (env, jvm_args, program_args, main_class, etc.)
             // for backward compatibility with agents using the pre-template workflow.
@@ -751,6 +781,19 @@ public final class RunConfigurationService {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to apply config: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Attempts to apply config options via XmlSerializer for config types that use
+     * {@code @State} annotations rather than {@code readExternal} (e.g. JavascriptDebugType).
+     * Silently ignored for types that don't support XmlSerializer.
+     */
+    private static void tryXmlSerializerDeserialize(RunConfiguration config, org.jdom.Element element) {
+        try {
+            com.intellij.util.xmlb.XmlSerializer.deserializeInto(config, element);
+        } catch (Exception ignored) {
+            // Not all config types support XmlSerializer; readExternal is the primary path.
         }
     }
 
@@ -774,6 +817,38 @@ public final class RunConfigurationService {
         element.setAttribute(JSON_KEY_TYPE, typeId);
         element.setAttribute("factoryName", factoryName);
         return element;
+    }
+
+    /**
+     * Returns hardcoded JSON schemas for run configuration types that produce empty XML from
+     * {@code writeExternal} (typically Kotlin configs using {@code @State} / XmlSerializer).
+     * This enables {@link #getRunConfigTemplate} to return useful documentation for those types.
+     */
+    private static Map<String, JsonObject> buildKnownEmptyTypeSchemas() {
+        Map<String, JsonObject> schemas = new HashMap<>();
+
+        // JavaScript Debug: opens a URL in a browser with JS debugging attached.
+        JsonObject jsDebugProps = new JsonObject();
+        jsDebugProps.add("url", schemaPrimitive("http://localhost:3000/"));
+        jsDebugProps.add("browser", schemaPrimitive(""));
+        jsDebugProps.add("browserPath", schemaPrimitive(""));
+        JsonObject jsDebug = new JsonObject();
+        jsDebug.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
+        jsDebug.add(JSON_KEY_PROPERTIES, jsDebugProps);
+        schemas.put(TYPE_JS_DEBUG, jsDebug);
+
+        // Chromium Remote Debug: attaches to a running Chrome/Chromium instance.
+        JsonObject chromeProps = new JsonObject();
+        chromeProps.add("host", schemaPrimitive("localhost"));
+        chromeProps.add("port", schemaPrimitive("9222"));
+        chromeProps.add("localRoot", schemaPrimitive(""));
+        chromeProps.add("remoteRoot", schemaPrimitive(""));
+        JsonObject chromeAttach = new JsonObject();
+        chromeAttach.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
+        chromeAttach.add(JSON_KEY_PROPERTIES, chromeProps);
+        schemas.put(TYPE_CHROMIUM_REMOTE, chromeAttach);
+
+        return Collections.unmodifiableMap(schemas);
     }
 
     static JsonObject xmlElementToJsonSchema(org.jdom.Element element) {
@@ -973,18 +1048,28 @@ public final class RunConfigurationService {
                                           List<String> errors) {
         String expectedType = propSchema.has(JSON_KEY_TYPE)
             ? propSchema.get(JSON_KEY_TYPE).getAsString() : JSON_TYPE_STRING;
-        if (JSON_TYPE_ARRAY.equals(expectedType) && !value.isJsonArray()) {
-            errors.add("'" + key + "' must be an array");
-        } else if (JSON_TYPE_OBJECT.equals(expectedType) && !value.isJsonObject()) {
+        if (JSON_TYPE_ARRAY.equals(expectedType)) {
+            if (!value.isJsonArray()) errors.add("'" + key + "' must be an array");
+        } else if (JSON_TYPE_OBJECT.equals(expectedType)) {
+            collectObjectTypeErrors(key, value, propSchema, errors);
+        } else if (JSON_TYPE_STRING.equals(expectedType) && !value.isJsonPrimitive()) {
+            errors.add("'" + key + "' must be a string, got "
+                + (value.isJsonArray() ? JSON_TYPE_ARRAY : JSON_TYPE_OBJECT));
+        } else if (JSON_TYPE_BOOLEAN.equals(expectedType) && !value.isJsonPrimitive()) {
+            errors.add("'" + key + "' must be a boolean, got "
+                + (value.isJsonArray() ? JSON_TYPE_ARRAY : JSON_TYPE_OBJECT));
+        }
+    }
+
+    private static void collectObjectTypeErrors(String key, JsonElement value, JsonObject propSchema,
+                                                List<String> errors) {
+        if (!value.isJsonObject()) {
             errors.add("'" + key + "' must be an object");
-        } else if (JSON_TYPE_OBJECT.equals(expectedType) && value.isJsonObject()
-            && propSchema.has(JSON_KEY_PROPERTIES)) {
+            return;
+        }
+        if (propSchema.has(JSON_KEY_PROPERTIES)) {
             String nested = validateJsonAgainstSchema(value.getAsJsonObject(), propSchema);
             if (nested != null) errors.add("In '" + key + "': " + nested);
-        } else if (JSON_TYPE_STRING.equals(expectedType) && !value.isJsonPrimitive()) {
-            errors.add("'" + key + "' must be a string, got " + (value.isJsonArray() ? "array" : "object"));
-        } else if (JSON_TYPE_BOOLEAN.equals(expectedType) && !value.isJsonPrimitive()) {
-            errors.add("'" + key + "' must be a boolean, got " + (value.isJsonArray() ? "array" : "object"));
         }
     }
 
