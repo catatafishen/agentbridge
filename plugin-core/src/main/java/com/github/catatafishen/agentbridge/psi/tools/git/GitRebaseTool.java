@@ -426,9 +426,14 @@ public final class GitRebaseTool extends GitTool {
          * entry. Writes the next pre-supplied message to the file instead of showing a dialog.
          * Returns {@code true} (handled) to suppress the dialog.
          *
-         * <p>Any existing template content in {@code file} (comment lines, git hooks-injected
-         * content) is intentionally discarded — only the new message and a trailing newline are
-         * written, matching the simplest valid commit message format.
+         * <p>Ordering guarantee: git processes reword entries in the same top-to-bottom order
+         * they appear in the rebase todo list, which is the same order {@link #collectNewEntries}
+         * observes them. {@code rewordMessages} is populated in that same order, so the positional
+         * index is always in sync.
+         *
+         * <p>Comment lines (lines starting with {@code #}) from the original file are preserved
+         * after the new message so that any git-hook-injected hints remain visible in the git log.
+         * Git strips them when reading the final commit message.
          */
         @Override
         protected boolean handleUnstructuredEditor(@NotNull File file) throws IOException {
@@ -437,7 +442,21 @@ public final class GitRebaseTool extends GitTool {
                 return false;
             }
             LOG.debug("Applying reword message for commit " + rewordShas.get(rewordIndex));
-            Files.writeString(file.toPath(), rewordMessages.get(rewordIndex++) + "\n", StandardCharsets.UTF_8);
+            String newMessage = rewordMessages.get(rewordIndex++);
+
+            // Preserve any comment/template lines from the original file (git strips them when reading).
+            List<String> commentLines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8).stream()
+                .filter(line -> line.startsWith("#"))
+                .toList();
+
+            StringBuilder content = new StringBuilder(newMessage).append("\n");
+            if (!commentLines.isEmpty()) {
+                content.append("\n");
+                for (String line : commentLines) {
+                    content.append(line).append("\n");
+                }
+            }
+            Files.writeString(file.toPath(), content.toString(), StandardCharsets.UTF_8);
             return true;
         }
 

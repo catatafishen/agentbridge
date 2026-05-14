@@ -176,7 +176,8 @@ public final class InteractWithModalTool extends InfrastructureTool {
         } catch (TimeoutException e) {
             return "Error: timed out waiting to set text field.";
         } catch (ExecutionException e) {
-            return "Error setting text: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            Throwable cause = e.getCause();
+            return "Error setting text: " + (cause != null ? String.valueOf(cause) : String.valueOf(e));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Interrupted while setting text field.";
@@ -231,7 +232,8 @@ public final class InteractWithModalTool extends InfrastructureTool {
         } catch (TimeoutException e) {
             return timeoutMsg;
         } catch (ExecutionException e) {
-            return "Error: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            Throwable cause = e.getCause();
+            return "Error: " + (cause != null ? String.valueOf(cause) : String.valueOf(e));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return interruptedMsg;
