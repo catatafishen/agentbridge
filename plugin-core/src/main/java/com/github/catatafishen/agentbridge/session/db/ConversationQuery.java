@@ -108,6 +108,38 @@ public final class ConversationQuery {
     }
 
     /**
+     * A single historic tool call loaded from the conversation database.
+     * Contains enough information to populate the MCP tab's ToolCallsView.
+     */
+    public record ToolCallHistoryEntry(
+        @NotNull String eventId,
+        @NotNull String toolName,
+        @NotNull String displayName,
+        @Nullable String category,
+        @Nullable String arguments,
+        @Nullable String result,
+        @NotNull Instant timestamp,
+        long durationMs,
+        boolean success,
+        @Nullable String status,
+        boolean hasHooks,
+        @NotNull List<HookStageEntry> hookStages
+    ) {
+    }
+
+    /**
+     * A hook execution stage associated with a tool call.
+     */
+    public record HookStageEntry(
+        @NotNull String trigger,
+        @NotNull String scriptName,
+        @NotNull String outcome,
+        long durationMs,
+        @Nullable String detail
+    ) {
+    }
+
+    /**
      * A turn summary returned by {@link #query(QueryParams)}.
      */
     public record TurnSummary(
@@ -453,6 +485,106 @@ public final class ConversationQuery {
             List<String> result = new ArrayList<>();
             while (rs.next()) result.add(rs.getString(1));
             return result;
+        }
+    }
+
+    /**
+     * Loads recent tool calls across all turns, sorted by timestamp descending (newest first).
+     * Used by the MCP tab to populate historic tool calls on startup.
+     *
+     * @param limit         maximum number of entries to return
+     * @param beforeEventId if non-null, only return entries with event_id &lt; this value
+     *                      (cursor-based pagination using timestamp ordering)
+     * @return list of tool call history entries, newest first
+     */
+    @NotNull
+    public List<ToolCallHistoryEntry> loadToolCallHistory(int limit, @Nullable String beforeEventId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try {
+                String sql;
+                if (beforeEventId != null) {
+                    sql = """
+                        SELECT e.id, tc.tool_name, tc.display_name, tc.category,
+                               tc.arguments, tc.result, e.timestamp, tc.duration_ms,
+                               tc.success, tc.status
+                        FROM events e
+                        JOIN tool_call_events tc ON e.id = tc.event_id
+                        WHERE e.timestamp < (SELECT timestamp FROM events WHERE id = ?)
+                        ORDER BY e.timestamp DESC
+                        LIMIT ?
+                        """;
+                } else {
+                    sql = """
+                        SELECT e.id, tc.tool_name, tc.display_name, tc.category,
+                               tc.arguments, tc.result, e.timestamp, tc.duration_ms,
+                               tc.success, tc.status
+                        FROM events e
+                        JOIN tool_call_events tc ON e.id = tc.event_id
+                        ORDER BY e.timestamp DESC
+                        LIMIT ?
+                        """;
+                }
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    int paramIdx = 1;
+                    if (beforeEventId != null) {
+                        ps.setString(paramIdx++, beforeEventId);
+                    }
+                    ps.setInt(paramIdx, limit);
+                    ResultSet rs = ps.executeQuery();
+                    List<ToolCallHistoryEntry> result = new ArrayList<>();
+                    while (rs.next()) {
+                        String eventId = rs.getString(1);
+                        String toolName = rs.getString(2);
+                        String displayName = nullToEmpty(rs.getString(3));
+                        if (displayName.isEmpty()) displayName = toolName;
+                        String category = rs.getString(4);
+                        String arguments = rs.getString(5);
+                        String resultText = rs.getString(6);
+                        Instant timestamp = parseInstant(rs.getString(7));
+                        long durationMs = rs.getLong(8);
+                        boolean success = rs.getInt(9) != 0;
+                        String status = rs.getString(10);
+
+                        List<HookStageEntry> hookStages = loadHookStages(conn, eventId);
+                        result.add(new ToolCallHistoryEntry(
+                            eventId, toolName, displayName, category,
+                            arguments, resultText, timestamp, durationMs,
+                            success, status, !hookStages.isEmpty(), hookStages
+                        ));
+                    }
+                    return result;
+                }
+            } catch (SQLException e) {
+                LOG.warn("Failed to load tool call history", e);
+                return List.of();
+            }
+        }
+    }
+
+    @NotNull
+    private List<HookStageEntry> loadHookStages(
+        @NotNull Connection conn, @NotNull String toolEventId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            SELECT trigger_kind, entry_id, outcome, duration_ms, outcome_reason
+            FROM hook_executions
+            WHERE tool_event_id = ?
+            ORDER BY rowid
+            """)) {
+            ps.setString(1, toolEventId);
+            ResultSet rs = ps.executeQuery();
+            List<HookStageEntry> stages = new ArrayList<>();
+            while (rs.next()) {
+                stages.add(new HookStageEntry(
+                    nullToEmpty(rs.getString(1)),
+                    nullToEmpty(rs.getString(2)),
+                    nullToEmpty(rs.getString(3)),
+                    rs.getLong(4),
+                    rs.getString(5)
+                ));
+            }
+            return stages;
         }
     }
 

@@ -1398,6 +1398,18 @@ file-nav {
     user-select: none;
 }
 
+.tcv-load-more {
+    text-align: center;
+    font-size: 0.78em;
+    color: var(--link);
+    cursor: pointer;
+    padding: 6px 0;
+    user-select: none;
+    opacity: 0.8;
+}
+.tcv-load-more:hover { opacity: 1; text-decoration: underline; }
+.tcv-load-more[hidden] { display: none; }
+
 .tcv-detail {
     flex-basis: 100%;
     margin-top: var(--sp-4, 8px);
