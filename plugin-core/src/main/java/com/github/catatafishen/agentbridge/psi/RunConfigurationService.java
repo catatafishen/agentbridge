@@ -9,6 +9,7 @@ import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -76,11 +77,6 @@ public final class RunConfigurationService {
     private static final String PARAM_SCRIPT_OPTIONS = "script_options";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
     private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
-
-    // Config types that produce empty writeExternal output and need special handling
-    private static final String TYPE_JS_DEBUG = "JavascriptDebugType";
-    private static final String TYPE_CHROMIUM_REMOTE = "ChromiumRemoteDebugType";
-    private static final Map<String, JsonObject> KNOWN_EMPTY_TYPE_SCHEMAS = buildKnownEmptyTypeSchemas();
 
     private final Project project;
     private final ClassResolverUtil.ClassResolver classResolver;
@@ -676,23 +672,14 @@ public final class RunConfigurationService {
                 config.setName("Example");
 
                 var element = buildConfigElement("Example", configType.getId(), factory.getName());
+                // Old-style: populate element via writeExternal (JDOMExternalizable)
                 config.writeExternal(element);
-
-                var schema = xmlElementToJsonSchema(element);
-
-                // Some types (e.g. JavascriptDebugType, ChromiumRemoteDebugType) use
-                // XmlSerializer-based state rather than writeExternal and produce empty XML.
-                // Fall back to a hardcoded schema so agents know what options to pass.
-                if (schema.getAsJsonObject(JSON_KEY_PROPERTIES).entrySet().isEmpty()) {
-                    var knownSchema = KNOWN_EMPTY_TYPE_SCHEMAS.get(configType.getId());
-                    if (knownSchema != null) {
-                        schema = knownSchema.deepCopy();
-                        schema.addProperty("note",
-                            "Schema inferred from known properties (writeExternal produces nothing for this type). "
-                                + "Options are applied via XmlSerializer deserialization.");
-                    }
+                // New-style: if writeExternal produced nothing, try PersistentStateComponent
+                if (element.getChildren().isEmpty()) {
+                    tryPopulateFromState(config, element);
                 }
 
+                var schema = xmlElementToJsonSchema(element);
                 schema.addProperty("description",
                     configType.getDisplayName() + " (type id: " + configType.getId()
                         + ", factory: " + factory.getName() + ")");
@@ -752,14 +739,19 @@ public final class RunConfigurationService {
         // The IDE daemon cannot see these declarations due to EP cascade, but Gradle compiles correctly.
         try {
             var element = buildConfigElement(config.getName(), typeId, factoryName);
+            // Old-style: populate element with current defaults (JDOMExternalizable)
             config.writeExternal(element);
+            // New-style: if writeExternal produced nothing, try PersistentStateComponent
+            if (element.getChildren().isEmpty()) {
+                tryPopulateFromState(config, element);
+            }
 
             if (args.has(PARAM_CONFIG)) {
                 var configJson = args.getAsJsonObject(PARAM_CONFIG);
                 var schema = xmlElementToJsonSchema(element);
-                // Only validate when schema has known properties. Types that use XmlSerializer
-                // rather than writeExternal produce an empty schema — skip validation so agents
-                // can still pass options (mergeJsonConfigIntoXml will add them to the element).
+                // Only validate when schema has known properties. If element is still empty
+                // after both serialization paths (unusual), skip validation so agents can
+                // still attempt to pass options.
                 var schemaProperties = schema.getAsJsonObject(JSON_KEY_PROPERTIES);
                 if (!schemaProperties.entrySet().isEmpty()) {
                     var validationError = validateJsonAgainstSchema(configJson, schema);
@@ -768,11 +760,10 @@ public final class RunConfigurationService {
                 mergeJsonConfigIntoXml(element, configJson);
             }
 
+            // Old-style: apply merged element back to config
             config.readExternal(element);
-
-            // Secondary deserialization for configs (e.g. JavascriptDebugType) that use
-            // XmlSerializer / @State annotations rather than readExternal to read their fields.
-            tryXmlSerializerDeserialize(config, element);
+            // New-style: apply merged element back via PersistentStateComponent
+            tryApplyStateFromElement(config, element);
 
             // Apply legacy top-level parameters (env, jvm_args, program_args, main_class, etc.)
             // for backward compatibility with agents using the pre-template workflow.
@@ -785,15 +776,42 @@ public final class RunConfigurationService {
     }
 
     /**
-     * Attempts to apply config options via XmlSerializer for config types that use
-     * {@code @State} annotations rather than {@code readExternal} (e.g. JavascriptDebugType).
-     * Silently ignored for types that don't support XmlSerializer.
+     * Populates a config XML element from a {@link PersistentStateComponent}'s state bean.
+     * Used when {@code writeExternal} produces nothing — newer configs (e.g. JavascriptDebugType)
+     * use {@code @State} annotations instead of the old {@code JDOMExternalizable} pattern.
      */
-    private static void tryXmlSerializerDeserialize(RunConfiguration config, org.jdom.Element element) {
+    private static void tryPopulateFromState(RunConfiguration config, org.jdom.Element target) {
+        if (!(config instanceof PersistentStateComponent<?> psc)) return;
+        var state = psc.getState();
+        if (state == null) return;
         try {
-            com.intellij.util.xmlb.XmlSerializer.deserializeInto(config, element);
+            var stateElement = com.intellij.util.xmlb.XmlSerializer.serialize(state);
+            if (stateElement == null) return;
+            List.copyOf(stateElement.getChildren()).forEach(child -> target.addContent(child.detach()));
         } catch (Exception ignored) {
-            // Not all config types support XmlSerializer; readExternal is the primary path.
+            // State objects without @Attribute/@Tag annotations produce nothing useful
+        }
+    }
+
+    /**
+     * Applies a merged XML element back to a {@link PersistentStateComponent}'s state bean.
+     * Counterpart to {@link #tryPopulateFromState}: used after options are merged into the element
+     * to propagate changes to configs that use the new {@code @State} / XmlSerializer pattern.
+     * <p>
+     * The unchecked cast is unavoidable: type {@code T} is erased at runtime, but the contract
+     * is safe because {@code getState()} and {@code loadState(T)} are always the same type {@code T}.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void tryApplyStateFromElement(RunConfiguration config, org.jdom.Element element) {
+        if (!(config instanceof PersistentStateComponent<?> psc)) return;
+        // Raw cast required: T is erased at runtime, but getState()/loadState(T) are always consistent.
+        var state = ((PersistentStateComponent) psc).getState();
+        if (state == null) return;
+        try {
+            com.intellij.util.xmlb.XmlSerializer.deserializeInto(state, element);
+            ((PersistentStateComponent<Object>) psc).loadState(state);
+        } catch (Exception ignored) {
+            // State objects without @Attribute/@Tag annotations are not XmlSerializer-compatible
         }
     }
 
@@ -817,38 +835,6 @@ public final class RunConfigurationService {
         element.setAttribute(JSON_KEY_TYPE, typeId);
         element.setAttribute("factoryName", factoryName);
         return element;
-    }
-
-    /**
-     * Returns hardcoded JSON schemas for run configuration types that produce empty XML from
-     * {@code writeExternal} (typically Kotlin configs using {@code @State} / XmlSerializer).
-     * This enables {@link #getRunConfigTemplate} to return useful documentation for those types.
-     */
-    private static Map<String, JsonObject> buildKnownEmptyTypeSchemas() {
-        Map<String, JsonObject> schemas = new HashMap<>();
-
-        // JavaScript Debug: opens a URL in a browser with JS debugging attached.
-        JsonObject jsDebugProps = new JsonObject();
-        jsDebugProps.add("url", schemaPrimitive("http://localhost:3000/"));
-        jsDebugProps.add("browser", schemaPrimitive(""));
-        jsDebugProps.add("browserPath", schemaPrimitive(""));
-        JsonObject jsDebug = new JsonObject();
-        jsDebug.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
-        jsDebug.add(JSON_KEY_PROPERTIES, jsDebugProps);
-        schemas.put(TYPE_JS_DEBUG, jsDebug);
-
-        // Chromium Remote Debug: attaches to a running Chrome/Chromium instance.
-        JsonObject chromeProps = new JsonObject();
-        chromeProps.add("host", schemaPrimitive("localhost"));
-        chromeProps.add("port", schemaPrimitive("9222"));
-        chromeProps.add("localRoot", schemaPrimitive(""));
-        chromeProps.add("remoteRoot", schemaPrimitive(""));
-        JsonObject chromeAttach = new JsonObject();
-        chromeAttach.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
-        chromeAttach.add(JSON_KEY_PROPERTIES, chromeProps);
-        schemas.put(TYPE_CHROMIUM_REMOTE, chromeAttach);
-
-        return Collections.unmodifiableMap(schemas);
     }
 
     static JsonObject xmlElementToJsonSchema(org.jdom.Element element) {
