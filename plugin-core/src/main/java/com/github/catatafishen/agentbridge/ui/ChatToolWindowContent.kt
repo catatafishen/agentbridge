@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentNudgeService
 import com.github.catatafishen.agentbridge.services.ChatWebServer
+import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.PromptDbService
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationService
@@ -104,6 +105,10 @@ class ChatToolWindowContent(
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
     private val queuedTexts = ArrayDeque<String>()
+
+    /** Tracks whether the current pause was triggered by auto-pause-on-input-focus logic. */
+    @Volatile
+    private var pausedByInputFocus = false
 
     @Volatile
     private var isSending = false
@@ -1092,6 +1097,25 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             editor.setBorder(null)
             editor.scrollPane.verticalScrollBar.preferredSize =
                 Dimension(JBUI.scale(10), editor.scrollPane.verticalScrollBar.preferredSize.height)
+            editor.contentComponent.addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent) {
+                    val s = ChatInputSettings.getInstance()
+                    if (s.isPauseFeatureEnabled() && s.isPauseOnInputFocus()) {
+                        val pauseService = McpPauseService.getInstance(project)
+                        if (!pauseService.isPaused()) {
+                            pausedByInputFocus = true
+                            pauseService.setPaused(true)
+                        }
+                    }
+                }
+
+                override fun focusLost(e: java.awt.event.FocusEvent) {
+                    if (pausedByInputFocus) {
+                        pausedByInputFocus = false
+                        McpPauseService.getInstance(project).setPaused(false)
+                    }
+                }
+            })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
@@ -1349,12 +1373,15 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
     }
 
-    private fun createSideButtonsPanel(): JComponent {
+private fun createSideButtonsPanel(): JComponent {
         val leftGroup = DefaultActionGroup()
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.add(DisconnectOrStopAction())
+        if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
+            leftGroup.add(PauseToggleAction())
+        }
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentControls", leftGroup, false
@@ -1407,6 +1434,37 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
                     )
                 popup.showUnderneathOf(component)
             }
+        }
+    }
+
+/**
+     * Pause/resume button that defers incoming MCP tool calls.
+     *
+     * While paused, any tool call that arrives from the agent blocks inside
+     * [McpPauseService.awaitResumeIfPaused] until the user clicks the button again.
+     * The button is only added to the toolbar when the pause feature is enabled in settings.
+     */
+    private inner class PauseToggleAction : AnAction() {
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            val paused = McpPauseService.getInstance(project).isPaused()
+            if (paused) {
+                e.presentation.icon = AllIcons.Actions.Resume
+                e.presentation.text = "Resume Agent"
+                e.presentation.description = "Resume MCP tool call execution"
+            } else {
+                e.presentation.icon = AllIcons.Actions.Pause
+                e.presentation.text = "Pause Agent"
+                e.presentation.description = "Pause MCP tool call execution — next tool call will wait until resumed"
+            }
+            e.presentation.isEnabled = true
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val service = McpPauseService.getInstance(project)
+            service.setPaused(!service.isPaused())
         }
     }
 

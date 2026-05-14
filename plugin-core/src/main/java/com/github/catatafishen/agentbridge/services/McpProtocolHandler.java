@@ -19,6 +19,7 @@ import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -542,6 +543,11 @@ public final class McpProtocolHandler {
         // Permission hook: deny/allow before any execution
         String permissionDenial = evaluatePermissionHook(toolName, arguments, hookStages);
         if (permissionDenial != null) return buildToolResult(msg, permissionDenial, true);
+
+        // Pause: defer execution if the user has paused the agent
+        if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
+            McpPauseService.getInstance(project).awaitResumeIfPaused();
+        }
 
         // Snapshot the original arguments before hooks can mutate them.
         // ToolCallTracker needs the pre-hook args for hash-based correlation with ACP,

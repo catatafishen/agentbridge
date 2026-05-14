@@ -188,6 +188,25 @@ class ChatInputConfigurable(private val project: Project) :
                     { s.reprimandNudgeMode = it ?: ChatInputSettings.ReprimandNudgeMode.ENABLED }
                 )
         }
+        separator()
+        lateinit var pauseFeature: Cell<JBCheckBox>
+        row {
+            pauseFeature = checkBox("Enable pause/resume button")
+                .comment(
+                    "Shows a pause button below the stop button. " +
+                        "While paused, the next MCP tool call waits until you resume."
+                )
+                .bindSelected({ s.isPauseFeatureEnabled() }, { s.setPauseFeatureEnabled(it) })
+        }
+        row {
+            checkBox("Auto-pause when chat input is focused")
+                .comment(
+                    "Automatically pauses the agent when you click into the chat input, " +
+                        "and resumes when the input loses focus."
+                )
+                .bindSelected({ s.isPauseOnInputFocus() }, { s.setPauseOnInputFocus(it) })
+                .enabledIf(pauseFeature.selected)
+        }
         onApply {
             val chatContent = ChatToolWindowContent.getInstance(project)
             chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)
