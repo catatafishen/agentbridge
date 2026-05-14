@@ -1016,6 +1016,40 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
     private fun maxInputHeight(splitPanelHeight: Int): Int =
         (splitPanelHeight - JBUI.scale(80)).coerceAtLeast(minInputHeight())
 
+    private fun createOrchestratorCallbacks() = PromptOrchestratorCallbacks(
+        onSendingStateChanged = ::setSendingState,
+        appendNewEntries = ::appendNewEntries,
+        appendNewEntriesThrottled = ::appendNewEntriesThrottled,
+        notifyIfUnfocused = ::notifyIfUnfocused,
+        saveTurnStatistics = ::saveTurnStatistics,
+        updateSessionInfo = ::updateSessionInfo,
+        requestFocusAfterTurn = { promptTextArea.requestFocusInWindow() },
+        onTimerIncrementToolCalls = {
+            if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
+        },
+        onTimerRecordUsage = { i, o, c ->
+            if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
+        },
+        onTimerSetLastTurnMultiplier = { mult ->
+            if (::processingTimerPanel.isInitialized) processingTimerPanel.setLastTurnMultiplier(mult)
+        },
+        onTimerSetCodeChangeStats = { a, r ->
+            if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
+        },
+        onClientUpdate = ::handleClientUpdate,
+        sendPromptDirectly = ::sendPromptDirectly,
+        restorePromptText = ::restorePromptText,
+        onTurnMineEntries = ::mineEntriesAfterTurn,
+        onQueuedMessageConsumed = { text ->
+            // Remove the LAST matching entry so that when the same text was queued multiple
+            // times, "recall most recent queued message" ordering remains intact (Up-arrow
+            // restores the oldest copies first, newest copies last).
+            val lastMatchingIndex = queuedTexts.lastIndexOf(text)
+            if (lastMatchingIndex >= 0) queuedTexts.removeAt(lastMatchingIndex)
+            ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
+        },
+    )
+
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
         row.isOpaque = false
@@ -1043,42 +1077,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         promptOrchestrator = PromptOrchestrator(
             project, agentManager, billing, contextManager, authService,
             { consolePanel }, { copilotBanner }, { statusBanner },
-            PromptOrchestratorCallbacks(
-                onSendingStateChanged = ::setSendingState,
-                appendNewEntries = ::appendNewEntries,
-                appendNewEntriesThrottled = ::appendNewEntriesThrottled,
-                notifyIfUnfocused = ::notifyIfUnfocused,
-                saveTurnStatistics = ::saveTurnStatistics,
-                updateSessionInfo = ::updateSessionInfo,
-                requestFocusAfterTurn = { promptTextArea.requestFocusInWindow() },
-                onTimerIncrementToolCalls = {
-                    if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
-                },
-                onTimerRecordUsage = { i, o, c ->
-                    if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
-                },
-                onTimerSetLastTurnMultiplier = { mult ->
-                    if (::processingTimerPanel.isInitialized) processingTimerPanel.setLastTurnMultiplier(mult)
-                },
-                onTimerSetCodeChangeStats = { a, r ->
-                    if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
-                },
-                onClientUpdate = ::handleClientUpdate,
-                sendPromptDirectly = ::sendPromptDirectly,
-                restorePromptText = ::restorePromptText,
-                onTurnMineEntries = ::mineEntriesAfterTurn,
-                onQueuedMessageConsumed = { text ->
-                    // Mirror the cancel path: remove the LAST matching entry so that when
-                    // the same text was queued multiple times, "recall most recent queued
-                    // message" ordering remains intact (Up-arrow restores the oldest copies
-                    // first, newest copies last).
-                    val lastMatchingIndex = queuedTexts.lastIndexOf(text)
-                    if (lastMatchingIndex >= 0) {
-                        queuedTexts.removeAt(lastMatchingIndex)
-                    }
-                    ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
-                },
-            )
+            createOrchestratorCallbacks()
         )
 
         // Shortcut hint bar — initialized here so input wiring below can reference it.
