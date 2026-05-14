@@ -33,7 +33,9 @@ public final class CreateRunConfigurationTool extends ProjectTool {
         return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). "
             + "If unknown, an error will list all available types. "
             + "For config types with no public Java API (e.g. Shell Script), pass 'raw_xml' with the full XML content instead — "
-            + "it is written directly to .idea/runConfigurations/<name>.xml.";
+            + "it is written directly to .idea/runConfigurations/<name>.xml. "
+            + "For plugin-specific or framework types (Node.js, Flask, Micronaut, etc.), use list_run_configuration_types to discover "
+            + "valid type IDs, then get_run_configuration_template to see available options, then pass them via the 'options' parameter.";
     }
 
     @Override
@@ -45,7 +47,8 @@ public final class CreateRunConfigurationTool extends ProjectTool {
     public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(
             Param.required("name", TYPE_STRING, "Name for the new run configuration"),
-            Param.optional("type", TYPE_STRING, "Configuration type (e.g., 'application', 'junit', 'gradle', 'Shell Script'). Required unless 'raw_xml' is provided. If unknown, an error will list all available types."),
+            Param.optional("type", TYPE_STRING, "Configuration type ID (from list_run_configuration_types, e.g. 'application', 'junit', 'gradle'). Required unless 'raw_xml' is provided."),
+            Param.optional("factory_name", TYPE_STRING, "Optional factory name within the type (from list_run_configuration_types). Used when a type has multiple factories."),
             Param.optional("jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g., '-Xmx512m')"),
             Param.optional("program_args", TYPE_STRING, "Optional: program arguments"),
             Param.optional("working_dir", TYPE_STRING, "Optional: working directory path"),
@@ -59,6 +62,7 @@ public final class CreateRunConfigurationTool extends ProjectTool {
             Param.optional("shared", TYPE_BOOLEAN, "Store as shared project file (default: true). If false, stored in workspace only")
         );
         addDictProperty(s, "env", "Environment variables as key-value pairs");
+        addDictProperty(s, "options", "Optional: flat map of option name→value overrides, applied to the serialized config XML. Use get_run_configuration_template to discover valid option names.");
         return s;
     }
 

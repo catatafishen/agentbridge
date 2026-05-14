@@ -1206,14 +1206,7 @@ public final class PlatformApiCompat {
      * be resolved due to the cascading type failure.</p>
      */
     static @Nullable com.intellij.execution.configurations.ConfigurationType findConfigurationType(@NotNull String type) {
-        for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
-            String displayName = ct.getDisplayName().toLowerCase();
-            if (displayName.contains(type)
-                || ct.getId().toLowerCase().contains(type)) {
-                return ct;
-            }
-        }
-        return null;
+        return findConfigurationTypeBySearch(type);
     }
 
     /**
@@ -1242,6 +1235,80 @@ public final class PlatformApiCompat {
         var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
             com.intellij.openapi.extensions.PluginId.getId(pluginId));
         return descriptor != null ? descriptor.getPluginPath() : null;
+    }
+
+    /**
+     * Returns structured descriptors for all registered run configuration types.
+     *
+     * <p><b>Why extracted:</b> Same {@code CONFIGURATION_TYPE_EP.getExtensionList()} resolution
+     * issue as {@link #listConfigurationTypeNames}. Methods on the returned objects
+     * ({@code getId()}, {@code getDisplayName()}, {@code getConfigurationFactories()}) all
+     * cascade-fail in the IDE daemon.</p>
+     */
+    public static @NotNull java.util.List<ConfigTypeDescriptor> listAllConfigTypeDescriptors() {
+        var result = new java.util.ArrayList<ConfigTypeDescriptor>();
+        for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
+            var factoryNames = new java.util.ArrayList<String>();
+            for (var factory : ct.getConfigurationFactories()) {
+                factoryNames.add(factory.getName());
+            }
+            result.add(new ConfigTypeDescriptor(ct.getId(), ct.getDisplayName(), java.util.List.copyOf(factoryNames)));
+        }
+        return java.util.Collections.unmodifiableList(result);
+    }
+
+    /**
+     * Finds a specific factory within a configuration type by name (case-insensitive).
+     * Falls back to the first factory if {@code factoryName} is null or not found.
+     *
+     * <p><b>Why extracted:</b> {@code ConfigurationFactory.getName()} cascade-fails from
+     * {@code CONFIGURATION_TYPE_EP} resolution issue. Gradle compiles cleanly.</p>
+     */
+    public static @NotNull com.intellij.execution.configurations.ConfigurationFactory findFactory(
+        @NotNull com.intellij.execution.configurations.ConfigurationType configType,
+        @Nullable String factoryName
+    ) {
+        if (factoryName != null) {
+            for (var factory : configType.getConfigurationFactories()) {
+                if (factory.getName().equalsIgnoreCase(factoryName)) return factory;
+            }
+        }
+        return configType.getConfigurationFactories()[0];
+    }
+
+    /**
+     * Checks whether a run configuration is valid and returns an error description if not.
+     *
+     * <p>Returns {@code null} when the configuration is valid or only has a non-fatal
+     * {@code RuntimeConfigurationWarning}. Returns the error title for
+     * {@code RuntimeConfigurationError} and other hard failures.
+     *
+     * <p><b>Why extracted:</b> {@code RuntimeConfigurationError} and
+     * {@code RuntimeConfigurationException} fail to resolve as {@code Throwable} subtypes in
+     * the IDE daemon due to the {@code CONFIGURATION_TYPE_EP} cascade. Gradle compiles cleanly.
+     * Additionally, {@code RuntimeConfigurationException.getMessage()} is deprecated — the
+     * correct API is {@code getTitle()}.
+     */
+    public static @Nullable String checkRunConfigForError(
+        @NotNull com.intellij.execution.RunConfiguration config) {
+        try {
+            config.checkConfiguration();
+            return null;
+        } catch (com.intellij.execution.configurations.RuntimeConfigurationError e) {
+            return e.getTitle();
+        } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {
+            if (e instanceof com.intellij.execution.configurations.RuntimeConfigurationWarning) return null;
+            return e.getTitle();
+        } catch (Exception e) {
+            return null; // Unknown exception during validation — don't block creation.
+        }
+    }
+
+    /**
+     * Descriptor for a registered run configuration type, exposing id, displayName, and
+     * factory names without triggering IDE cascade-resolution false positives.
+     */
+    public record ConfigTypeDescriptor(String id, String displayName, java.util.List<String> factoryNames) {
     }
 
     /**

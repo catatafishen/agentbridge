@@ -12,6 +12,7 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.util.JDOMUtil;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,10 +47,16 @@ public final class RunConfigurationService {
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
 
+    private static final String PARAM_ENV = "env";
+    private static final String PARAM_FACTORY_NAME = "factory_name";
+    private static final String PARAM_OPTIONS = "options";
+    private static final String XML_ELEM_OPTION = "option";
+    private static final String XML_ATTR_VALUE = "value";
     private static final String PARAM_SHARED = "shared";
     private static final String PARAM_TASKS = "tasks";
-    private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
+    private static final String METHOD_SET_WORKING_DIR = "setWorkingDirectory";
     private static final String PARAM_SCRIPT_PATH = "script_path";
+    private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
     private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
 
@@ -213,6 +220,11 @@ public final class RunConfigurationService {
         String abuseError = checkProgramArgsAbuse(args, type);
         if (abuseError != null) return abuseError;
 
+        // If explicit options map provided, use the dynamic type-based path.
+        if (args.has(PARAM_OPTIONS)) {
+            return createRunConfigWithOptions(name, type, args);
+        }
+
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
         EdtUtil.invokeLater(() -> {
@@ -321,8 +333,8 @@ public final class RunConfigurationService {
     private List<String> applyEditProperties(RunConfiguration config, JsonObject args) {
         List<String> changes = new ArrayList<>();
 
-        if (args.has("env")) {
-            applyEnvVars(config, args.getAsJsonObject("env"), changes);
+        if (args.has(PARAM_ENV)) {
+            applyEnvVars(config, args.getAsJsonObject(PARAM_ENV), changes);
         }
         if (args.has(PARAM_JVM_ARGS)) {
             setViaReflection(config, "setVMParameters",
@@ -333,7 +345,7 @@ public final class RunConfigurationService {
                 args.get(PARAM_PROGRAM_ARGS).getAsString(), changes, "program args");
         }
         if (args.has(PARAM_WORKING_DIR)) {
-            setViaReflection(config, "setWorkingDirectory",
+            setViaReflection(config, METHOD_SET_WORKING_DIR,
                 args.get(PARAM_WORKING_DIR).getAsString(), changes, "working directory");
         }
 
@@ -403,13 +415,13 @@ public final class RunConfigurationService {
 
     private void applyConfigProperties(RunConfiguration config, JsonObject args) {
         List<String> ignore = new ArrayList<>();
-        if (args.has("env")) applyEnvVars(config, args.getAsJsonObject("env"), ignore);
+        if (args.has(PARAM_ENV)) applyEnvVars(config, args.getAsJsonObject(PARAM_ENV), ignore);
         if (args.has(PARAM_JVM_ARGS))
             setViaReflection(config, "setVMParameters", args.get(PARAM_JVM_ARGS).getAsString(), ignore, null);
         if (args.has(PARAM_PROGRAM_ARGS))
             setViaReflection(config, "setProgramParameters", args.get(PARAM_PROGRAM_ARGS).getAsString(), ignore, null);
         if (args.has(PARAM_WORKING_DIR))
-            setViaReflection(config, "setWorkingDirectory", args.get(PARAM_WORKING_DIR).getAsString(), ignore, null);
+            setViaReflection(config, METHOD_SET_WORKING_DIR, args.get(PARAM_WORKING_DIR).getAsString(), ignore, null);
     }
 
     private void applyTypeSpecificProperties(RunConfiguration config, JsonObject args) {
@@ -617,6 +629,194 @@ public final class RunConfigurationService {
                 envs.put(entry.getKey(), entry.getValue().getAsString());
                 changes.add("env " + entry.getKey());
             }
+        }
+    }
+
+    // ---- Dynamic Type Discovery & Template-based Creation ----
+
+    public String listRunConfigurationTypes() {
+        var descriptors = PlatformApiCompat.listAllConfigTypeDescriptors();
+        if (descriptors.isEmpty()) return "No run configuration types found.";
+        var sb = new StringBuilder("Available run configuration types (")
+            .append(descriptors.size()).append("):\n\n");
+        for (var d : descriptors) {
+            sb.append("  id=").append(d.id())
+                .append("  display=\"").append(d.displayName()).append("\"");
+            if (d.factoryNames().size() > 1) {
+                sb.append("  factories=[").append(String.join(", ", d.factoryNames())).append("]");
+            }
+            sb.append("\n");
+        }
+        sb.append("\nUse get_run_configuration_template to see available options for any type.");
+        return sb.toString();
+    }
+
+    public String getRunConfigTemplate(JsonObject args) throws Exception {
+        String typeName = args.get("type").getAsString();
+        String templateName = args.has("name") ? args.get("name").getAsString() : "Example";
+        String factoryName = args.has(PARAM_FACTORY_NAME) ? args.get(PARAM_FACTORY_NAME).getAsString() : null;
+
+        CompletableFuture<String> result = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                var configType = PlatformApiCompat.findConfigurationType(typeName);
+                if (configType == null) {
+                    result.complete("Error: Unknown type '" + typeName + "'. "
+                        + "Use list_run_configuration_types to see available types.");
+                    return;
+                }
+                var factory = PlatformApiCompat.findFactory(configType, factoryName);
+                var config = factory.createTemplateConfiguration(project);
+                config.setName(templateName);
+
+                var configElement = buildConfigElement(templateName, configType.getId(), factory.getName());
+                config.writeExternal(configElement);
+
+                var options = extractOptionList(configElement);
+                var component = new org.jdom.Element("component");
+                component.setAttribute("name", "ProjectRunConfigurationManager");
+                component.addContent(configElement);
+                String xml = JDOMUtil.write(component);
+
+                var sb = new StringBuilder();
+                sb.append("Template for '").append(configType.getDisplayName())
+                    .append("' (type id: ").append(configType.getId())
+                    .append(", factory: ").append(factory.getName()).append(")\n\n");
+                if (!options.isEmpty()) {
+                    sb.append("Flat options (use as keys in create_run_configuration 'options' param):\n");
+                    options.forEach(o -> sb.append("  ").append(o).append("\n"));
+                    sb.append("\n");
+                }
+                sb.append("Full XML template:\n").append(xml);
+                sb.append("\n\nCreate with options:\n");
+                sb.append("  create_run_configuration(name=\"My Config\", type=\"")
+                    .append(configType.getId()).append("\", options={KEY: value, ...})\n");
+                sb.append("Or use raw_xml for complex nested options not expressible as flat key=value.");
+                result.complete(sb.toString());
+            } catch (Exception e) {
+                result.complete("Error generating template for '" + typeName + "': " + e.getMessage());
+            }
+        });
+        return result.get(10, TimeUnit.SECONDS);
+    }
+
+    private String createRunConfigWithOptions(String name, String typeName, JsonObject args) throws Exception {
+        CompletableFuture<String> result = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                var configType = PlatformApiCompat.findConfigurationType(typeName);
+                if (configType == null) {
+                    result.complete("Error: Unknown type '" + typeName + "'. "
+                        + "Use list_run_configuration_types to see available types.");
+                    return;
+                }
+                var factory = PlatformApiCompat.findFactory(configType,
+                    args.has(PARAM_FACTORY_NAME) ? args.get(PARAM_FACTORY_NAME).getAsString() : null);
+                var runManager = RunManager.getInstance(project);
+                var settings = runManager.createConfiguration(name, factory);
+                applyConfigFromOptions(settings.getConfiguration(), configType.getId(), factory.getName(), args);
+
+                String validationError = PlatformApiCompat.checkRunConfigForError(settings.getConfiguration());
+                if (validationError != null) {
+                    result.complete("Error: Configuration validation failed — " + validationError
+                        + "\nUse get_run_configuration_template with type=\"" + configType.getId()
+                        + "\" to see required options.");
+                    return;
+                }
+                saveNewConfig(runManager, settings, args);
+                result.complete("Created run configuration: '" + name + "' ["
+                    + configType.getDisplayName() + "]"
+                    + (isSharedConfig(args) ? " (shared)" : " (workspace-local)")
+                    + "\nUse run_configuration to execute it.");
+            } catch (Exception e) {
+                result.complete("Error creating run configuration: " + e.getMessage());
+            }
+        });
+        return result.get(10, TimeUnit.SECONDS);
+    }
+
+    private void applyConfigFromOptions(RunConfiguration config, String typeId,
+                                        String factoryName, JsonObject args) {
+        // writeExternal/readExternal throw checked exceptions (WriteExternalException, InvalidDataException).
+        // The IDE daemon cannot see these declarations due to EP cascade, but Gradle compiles correctly.
+        try {
+            var element = buildConfigElement(config.getName(), typeId, factoryName);
+            config.writeExternal(element);
+            if (args.has(PARAM_OPTIONS)) applyOptionsToElement(element, args.getAsJsonObject(PARAM_OPTIONS));
+            if (args.has(PARAM_ENV)) applyEnvToElement(element, args.getAsJsonObject(PARAM_ENV));
+            config.readExternal(element);
+            if (args.has(PARAM_WORKING_DIR)) {
+                setViaReflection(config, METHOD_SET_WORKING_DIR,
+                    args.get(PARAM_WORKING_DIR).getAsString(), new ArrayList<>(), null);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to apply config options: " + e.getMessage(), e);
+        }
+    }
+
+    private static boolean isSharedConfig(JsonObject args) {
+        return !args.has(PARAM_SHARED) || args.get(PARAM_SHARED).getAsBoolean();
+    }
+
+    private static void saveNewConfig(RunManager runManager,
+                                      com.intellij.execution.RunnerAndConfigurationSettings settings,
+                                      JsonObject args) {
+        if (isSharedConfig(args)) settings.storeInDotIdeaFolder();
+        else settings.storeInLocalWorkspace();
+        runManager.addConfiguration(settings);
+        runManager.setSelectedConfiguration(settings);
+    }
+
+    private static org.jdom.Element buildConfigElement(String name, String typeId, String factoryName) {
+        var element = new org.jdom.Element("configuration");
+        element.setAttribute("default", "false");
+        element.setAttribute("name", name);
+        element.setAttribute("type", typeId);
+        element.setAttribute("factoryName", factoryName);
+        return element;
+    }
+
+    private static List<String> extractOptionList(org.jdom.Element configElement) {
+        var options = new ArrayList<String>();
+        for (var child : configElement.getChildren(XML_ELEM_OPTION)) {
+            String n = child.getAttributeValue("name");
+            String v = child.getAttributeValue(XML_ATTR_VALUE);
+            if (n != null) options.add(n + "=" + (v != null ? "\"" + v + "\"" : "(complex)"));
+        }
+        return options;
+    }
+
+    private static void applyOptionsToElement(org.jdom.Element element, com.google.gson.JsonObject options) {
+        var existingMap = new HashMap<String, org.jdom.Element>();
+        for (var child : element.getChildren(XML_ELEM_OPTION)) {
+            String n = child.getAttributeValue("name");
+            if (n != null) existingMap.put(n, child);
+        }
+        for (var entry : options.entrySet()) {
+            String value = entry.getValue().getAsString();
+            var existing = existingMap.get(entry.getKey());
+            if (existing != null) {
+                existing.setAttribute(XML_ATTR_VALUE, value);
+            } else {
+                var opt = new org.jdom.Element(XML_ELEM_OPTION);
+                opt.setAttribute("name", entry.getKey());
+                opt.setAttribute(XML_ATTR_VALUE, value);
+                element.addContent(opt);
+            }
+        }
+    }
+
+    private static void applyEnvToElement(org.jdom.Element element, com.google.gson.JsonObject env) {
+        var envsElem = element.getChild("envs");
+        if (envsElem == null) {
+            envsElem = new org.jdom.Element("envs");
+            element.addContent(envsElem);
+        }
+        for (var entry : env.entrySet()) {
+            var envVar = new org.jdom.Element("env");
+            envVar.setAttribute("name", entry.getKey());
+            envVar.setAttribute(XML_ATTR_VALUE, entry.getValue().getAsString());
+            envsElem.addContent(envVar);
         }
     }
 
