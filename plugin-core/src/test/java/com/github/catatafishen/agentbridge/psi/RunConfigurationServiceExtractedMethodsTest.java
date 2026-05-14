@@ -27,41 +27,41 @@ class RunConfigurationServiceExtractedMethodsTest {
 
         @Test
         void simpleNameUnchanged() {
-            assertEquals("MyApp.xml", RunConfigurationService.sanitizeConfigFileName("MyApp"));
+            assertEquals("MyApp", RunConfigurationService.sanitizeConfigFileName("MyApp"));
         }
 
         @Test
         void spacesReplacedWithUnderscore() {
-            assertEquals("My_App_Config.xml",
+            assertEquals("My_App_Config",
                 RunConfigurationService.sanitizeConfigFileName("My App Config"));
         }
 
         @Test
         void specialCharsReplaced() {
-            assertEquals("run__debug_.xml",
+            assertEquals("run__debug_",
                 RunConfigurationService.sanitizeConfigFileName("run (debug)"));
         }
 
         @Test
         void dotsAndHyphensPreserved() {
-            assertEquals("my-app.v2.xml",
+            assertEquals("my-app.v2",
                 RunConfigurationService.sanitizeConfigFileName("my-app.v2"));
         }
 
         @Test
-        void emptyNameProducesJustExtension() {
-            assertEquals(".xml", RunConfigurationService.sanitizeConfigFileName(""));
+        void emptyNameProducesEmptyString() {
+            assertEquals("", RunConfigurationService.sanitizeConfigFileName(""));
         }
 
         @Test
         void unicodeCharsReplaced() {
-            assertEquals("______.xml",
+            assertEquals("______",
                 RunConfigurationService.sanitizeConfigFileName("日本語テスト"));
         }
 
         @Test
         void underscoresPreserved() {
-            assertEquals("my_config_name.xml",
+            assertEquals("my_config_name",
                 RunConfigurationService.sanitizeConfigFileName("my_config_name"));
         }
     }

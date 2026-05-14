@@ -38,7 +38,7 @@ public final class RunConfigurationService {
     private static final String PARAM_MAIN_CLASS = "main_class";
     private static final String PARAM_TEST_CLASS = "test_class";
     private static final String PARAM_TEST_METHOD = "test_method";
-    private static final String PARAM_MODULE_NAME = "module_name";
+    private static final String PARAM_MODULE_NAME = "module";
 
     // Reflection Field/Method Names
     private static final String FIELD_TEST_OBJECT = "TEST_OBJECT";
@@ -226,7 +226,7 @@ public final class RunConfigurationService {
                 + "Use list_run_configuration_types to see available types, "
                 + "then get_run_configuration_template to get the JSON schema for your chosen type.";
         }
-        String type = args.get("type").getAsString().toLowerCase();
+        String type = args.get("type").getAsString().toLowerCase(java.util.Locale.ROOT);
 
         // Shell Script: use the deterministic XML builder instead of the IntelliJ API path.
         // ShRunConfiguration has no stable public Java API; the XML builder produces correct output.
@@ -242,6 +242,11 @@ public final class RunConfigurationService {
     }
 
     private String createShellScriptRunConfig(String name, JsonObject args) throws Exception {
+        boolean hasPath = args.has(PARAM_SCRIPT_PATH) && !args.get(PARAM_SCRIPT_PATH).getAsString().isBlank();
+        boolean hasText = args.has(PARAM_SCRIPT_TEXT) && !args.get(PARAM_SCRIPT_TEXT).getAsString().isBlank();
+        if (hasPath && hasText) {
+            return "Error: 'script_path' and 'script_text' are mutually exclusive — provide exactly one.";
+        }
         var config = new ShellScriptRunConfigXmlBuilder.ShellScriptConfig(
             args.has(PARAM_SCRIPT_PATH) ? args.get(PARAM_SCRIPT_PATH).getAsString() : null,
             args.has(PARAM_SCRIPT_TEXT) ? args.get(PARAM_SCRIPT_TEXT).getAsString() : null,
@@ -512,8 +517,10 @@ public final class RunConfigurationService {
                 return;
 
             // externalProjectPath must be set; without it the Gradle config is non-functional.
-            if (settings.getExternalProjectPath() == null || settings.getExternalProjectPath().isEmpty()) {
-                settings.setExternalProjectPath(project.getBasePath());
+            String basePath = project.getBasePath();
+            if ((settings.getExternalProjectPath() == null || settings.getExternalProjectPath().isEmpty())
+                    && basePath != null && !basePath.isEmpty()) {
+                settings.setExternalProjectPath(basePath);
             }
             if (settings.getExternalSystemIdString().isEmpty()) {
                 settings.setExternalSystemIdString("GRADLE");
@@ -606,7 +613,7 @@ public final class RunConfigurationService {
      * {@code .idea/runConfigurations/}.
      */
     static String sanitizeConfigFileName(String name) {
-        return name.replaceAll("[^a-zA-Z0-9._-]", "_") + ".xml";
+        return name.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     /**
