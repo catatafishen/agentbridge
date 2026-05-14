@@ -78,11 +78,20 @@ class ChatToolWindowContent(
         // When the tool window is resized (by dragging its border), keep the chat pane
         // at its current width and let the sidebar absorb the size change.
         it.dividerPositionStrategy = com.intellij.openapi.ui.Splitter.DividerPositionStrategy.KEEP_SECOND_SIZE
-        it.border = com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP)
     }
 
     /** Proportion used when expanding the review panel after it was collapsed. */
     private val defaultReviewProportion = 0.3f
+
+    /**
+     * Tab-switching actions shown in the title bar's left section (via [setTabActionsVisible])
+     * while the side panel is open. Each action selects its corresponding tab in [sidePanel].
+     */
+    private val tabActions: List<TabSwitchAction> by lazy {
+        com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES.mapIndexed { i: Int, name: String ->
+            TabSwitchAction(i, name)
+        }
+    }
     private val agentManager = ActiveAgentManager.getInstance(project)
     private lateinit var connectPanel: AcpConnectPanel
     private var chatPanel: JComponent? = null
@@ -196,6 +205,7 @@ class ChatToolWindowContent(
             sidePanel?.selectReviewTab()
             if (rootSplitter.proportion < 0.01f) {
                 rootSplitter.proportion = defaultReviewProportion
+                setTabActionsVisible(true)
             }
         }
         com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
@@ -726,6 +736,7 @@ class ChatToolWindowContent(
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
+        side.setOnPlanTitleChanged { ActivityTracker.getInstance().inc() }
         rootSplitter.firstComponent = side
         restoreSidePanelOpenState()
 
@@ -735,6 +746,7 @@ class ChatToolWindowContent(
                 rootSplitter.proportion = defaultReviewProportion
                 com.intellij.ide.util.PropertiesComponent.getInstance(project)
                     .setValue(PREF_SIDE_PANEL_OPEN, true)
+                setTabActionsVisible(true)
             }
         }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable) {
@@ -746,6 +758,7 @@ class ChatToolWindowContent(
         val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
         if (props.getBoolean(PREF_SIDE_PANEL_OPEN, false)) {
             rootSplitter.proportion = defaultReviewProportion
+            setTabActionsVisible(true)
         }
     }
 
@@ -1904,6 +1917,7 @@ private fun createSideButtonsPanel(): JComponent {
                     val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
                 }
+                setTabActionsVisible(true)
             } else {
                 // When hiding: record the current side panel width, collapse it,
                 // then shrink the tool window by that width to restore the original chat area size.
@@ -1912,9 +1926,64 @@ private fun createSideButtonsPanel(): JComponent {
                 if (sideWidth > 0) {
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
                 }
+                setTabActionsVisible(false)
             }
             com.intellij.ide.util.PropertiesComponent.getInstance(project)
                 .setValue(PREF_SIDE_PANEL_OPEN, state)
+        }
+    }
+
+    /**
+     * Shows or hides the per-tab toggle actions in the title bar's left section.
+     * Should be called on the EDT whenever the side panel opens or closes.
+     */
+    private fun setTabActionsVisible(visible: Boolean) {
+        val ex = toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx ?: return
+        if (visible) {
+            ex.setTabActions(*tabActions.toTypedArray())
+        } else {
+            ex.setTabActions()
+        }
+    }
+
+    /**
+     * A toggle action representing one tab in the side panel.
+     * Placed in the title bar via [setTabActionsVisible]. Selecting it switches the
+     * active side-panel tab; if the panel is closed, it also opens it.
+     */
+    private inner class TabSwitchAction(
+        private val tabIndex: Int,
+        private val defaultName: String
+    ) : ToggleAction(defaultName) {
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean =
+            sidePanel?.getSelectedTab() == tabIndex && rootSplitter.proportion >= 0.01f
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            if (!state) return  // only act on selection, deselection is handled by mutual exclusion
+            ensureSidePanelAvailable()
+            sidePanel?.selectTab(tabIndex)
+            if (rootSplitter.proportion < 0.01f) {
+                val chatWidth = rootSplitter.width
+                rootSplitter.proportion = defaultReviewProportion
+                if (chatWidth > 0) {
+                    val stretchAmount =
+                        (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
+                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
+                }
+                com.intellij.ide.util.PropertiesComponent.getInstance(project)
+                    .setValue(PREF_SIDE_PANEL_OPEN, true)
+            }
+        }
+
+        override fun update(e: AnActionEvent) {
+            super.update(e)
+            // Keep Plan tab title in sync with the (done/total) badge.
+            if (tabIndex == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS) {
+                e.presentation.text = sidePanel?.getPlanTitle() ?: defaultName
+            }
         }
     }
 

@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.PromptDbService;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
@@ -11,77 +10,130 @@ import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 
 /**
- * Tabbed container for the left-hand tool-window pane.
- * Uses {@link PlatformApiCompat#createJBTabsPanel} for native IntelliJ flat tab styling.
+ * Container for the left-hand tool-window pane.
+ * <p>
+ * Tab selection is driven from outside (via the title-bar tab header in
+ * {@link com.github.catatafishen.agentbridge.ui.ChatToolWindowContent}). This panel uses a
+ * plain {@link CardLayout} so the tab strip appears in the IDE title bar rather than as a
+ * separate row inside the panel itself.
+ * <p>
  * Hosts five tabs:
  * <ol>
- *   <li><b>Diff</b> — the existing {@link DiffPanel} with pending agent edits.</li>
- *   <li><b>Plan</b> — rendered view of the active agent session's {@code plan.md},
- *       with a {@code (done/total)} badge in the tab title when checkbox-style task items exist.</li>
- *   <li><b>MCP</b> — live list of MCP tool calls with timestamps, categories, and expandable I/O.</li>
- *   <li><b>Prompt DB</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
- *   <li><b>Stats</b> — session statistics, billing info, and a project-files tree.</li>
+ *   <li><b>Diff</b> — pending agent edits ({@link DiffPanel}).</li>
+ *   <li><b>Plan</b> — rendered view of the active agent's {@code plan.md} with a
+ *       {@code (done/total)} badge when task items exist.</li>
+ *   <li><b>MCP</b> — live list of MCP tool calls with timestamps and expandable I/O.</li>
+ *   <li><b>Prompt DB</b> — searchable conversation history, click to scroll.</li>
+ *   <li><b>Stats</b> — session statistics and billing info.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
  */
 public final class SidePanel extends JPanel implements Disposable {
 
-    private static final int TAB_REVIEW = 0;
-    private static final int TAB_TODOS = 1;
-    private static final int TAB_PROMPT_DB = 3;
+    public static final int TAB_REVIEW = 0;
+    public static final int TAB_TODOS = 1;
+    public static final int TAB_MCP = 2;
+    public static final int TAB_PROMPT_DB = 3;
+    public static final int TAB_STATS = 4;
 
-    private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
+    /**
+     * Display names for each tab, in index order. Unmodifiable.
+     */
+    public static final java.util.List<String> TAB_NAMES =
+        java.util.List.of("Diff", "Plan", "MCP", "Prompt DB", "Stats");
+
+    private final CardLayout cardLayout = new CardLayout();
+    private final JPanel contentContainer = new JPanel(cardLayout);
+    private int selectedTab = TAB_REVIEW;
+    private String planBadge = "";
+    private transient @Nullable Consumer<String> onPlanTitleChanged;
+
     private final transient Project project;
+    private final TodoPanel todoPanel;
 
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
         this.project = project;
+
         DiffPanel reviewPanel = new DiffPanel(project);
         Disposer.register(this, reviewPanel);
         Disposer.register(this, sessionStatsPanel);
 
-        TodoPanel todoPanel = new TodoPanel(project);
+        todoPanel = new TodoPanel(project);
         Disposer.register(this, todoPanel);
         PromptsPanel promptsPanel = new PromptsPanel(project, chatConsole);
         Disposer.register(this, promptsPanel);
 
         JPanel mcpTab = buildMcpTab(project);
 
-        tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);
-        tabsPanel.addTab(reviewPanel, "Diff");
-        tabsPanel.addTab(todoPanel, "Plan");
-        tabsPanel.addTab(mcpTab, "MCP");
-        tabsPanel.addTab(promptsPanel, "Prompt DB");
-        tabsPanel.addTab(sessionStatsPanel, "Stats");
+        contentContainer.add(reviewPanel, String.valueOf(TAB_REVIEW));
+        contentContainer.add(todoPanel, String.valueOf(TAB_TODOS));
+        contentContainer.add(mcpTab, String.valueOf(TAB_MCP));
+        contentContainer.add(promptsPanel, String.valueOf(TAB_PROMPT_DB));
+        contentContainer.add(sessionStatsPanel, String.valueOf(TAB_STATS));
+        cardLayout.show(contentContainer, String.valueOf(TAB_REVIEW));
 
         todoPanel.setOnProgressChanged(() -> {
             int total = todoPanel.getTotal();
             int done = todoPanel.getDone();
-            String title = total > 0 ? "Plan (" + done + "/" + total + ")" : "Plan";
-            tabsPanel.setTabTitle(TAB_TODOS, title);
+            planBadge = total > 0 ? " (" + done + "/" + total + ")" : "";
+            if (onPlanTitleChanged != null) onPlanTitleChanged.accept(getPlanTitle());
         });
 
-        // Refresh contextual tabs each time they are selected so changes made elsewhere
-        // (new files on disk, the agent editing plan.md) appear without manual refresh.
-        tabsPanel.addSelectionListener(idx -> {
-            if (idx == TAB_TODOS) todoPanel.refresh();
-        }, this);
-
-        // Register navigation callback: when the agent calls query_turns with follow-agent
-        // enabled, switch to the Prompt DB tab and fill in the search fields.
         PromptDbService.getInstance(project).registerNavigateCallback(params -> {
-            tabsPanel.selectTab(TAB_PROMPT_DB);
+            selectTab(TAB_PROMPT_DB);
             promptsPanel.applySearchParams(params);
         });
 
-        add(tabsPanel.getComponent(), BorderLayout.CENTER);
+        add(contentContainer, BorderLayout.CENTER);
+    }
+
+    /**
+     * Switches to the given tab index and refreshes it if needed.
+     */
+    public void selectTab(int index) {
+        if (index == selectedTab) return;
+        selectedTab = index;
+        cardLayout.show(contentContainer, String.valueOf(index));
+        if (index == TAB_TODOS) todoPanel.refresh();
+    }
+
+    /**
+     * Returns the currently selected tab index.
+     */
+    public int getSelectedTab() {
+        return selectedTab;
+    }
+
+    /**
+     * Returns the Plan tab title, including the {@code (done/total)} badge if tasks exist.
+     */
+    public @NotNull String getPlanTitle() {
+        return "Plan" + planBadge;
+    }
+
+    /**
+     * Registers a callback that fires whenever the Plan tab title changes (badge update).
+     * The callback receives the new title string.
+     */
+    public void setOnPlanTitleChanged(@Nullable Consumer<String> callback) {
+        this.onPlanTitleChanged = callback;
+    }
+
+    /**
+     * Switches to the Diff tab. Safe to call from the EDT.
+     */
+    public void selectReviewTab() {
+        selectTab(TAB_REVIEW);
     }
 
     /**
@@ -116,16 +168,8 @@ public final class SidePanel extends JPanel implements Disposable {
         return tab;
     }
 
-    /**
-     * Switches to the Diff tab. Safe to call from the EDT.
-     */
-    public void selectReviewTab() {
-        tabsPanel.selectTab(TAB_REVIEW);
-    }
-
     @Override
     public void dispose() {
         PromptDbService.getInstance(project).registerNavigateCallback(null);
-        // Children registered with Disposer are disposed automatically.
     }
 }
