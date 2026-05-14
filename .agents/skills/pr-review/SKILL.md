@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Use when reviewing pull requests, fixing CI failures, addressing review comments, resolving threads, squashing commits, or getting a PR to mergeable state. Triggers include "check PR", "fix CI", "failing tests", "review comments", "resolve threads", "squash commits", "rebase", "DIRTY merge", or any request to review or merge a pull request.
+description: Use when reviewing pull requests, fixing CI failures, addressing review comments, resolving threads, squashing commits, getting a PR to mergeable state, or managing GitHub issues. Triggers include "check PR", "fix CI", "failing tests", "review comments", "resolve threads", "squash commits", "rebase", "DIRTY merge", "open issues", "close issue", or any request to review, merge, or track work in GitHub.
 ---
 
 # PR Review
@@ -35,6 +35,43 @@ to `628` — always update it before running.
 | `.agents/skills/pr-review/pr-threads.sh <PR>`     | Unresolved review threads with reply/resolve IDs |
 | `.agents/skills/pr-review/pr-threads.sh <PR> all` | All threads (resolved + unresolved)              |
 | `.agents/skills/pr-review/pr-squash.sh`           | Squash all branch commits into one               |
+| `.agents/skills/pr-review/pr-issues.sh list`      | List open GitHub issues                          |
+| `.agents/skills/pr-review/pr-issues.sh view <N>`  | Show issue details + comments                    |
+| `.agents/skills/pr-review/pr-issues.sh close <N>` | Close issue with optional reason comment         |
+
+---
+
+## GitHub Issues
+
+Manage issues that are related to the work you are doing.
+
+```bash
+# List all open issues
+bash .agents/skills/pr-review/pr-issues.sh list
+
+# View an issue with comments
+bash .agents/skills/pr-review/pr-issues.sh view 624
+
+# Add a comment to an issue
+bash .agents/skills/pr-review/pr-issues.sh comment 624 "Fixed in PR #630."
+
+# Close with a reason
+bash .agents/skills/pr-review/pr-issues.sh close 624 "Fixed in PR #630 — Shell Script run config XML builder."
+
+# Link issue to a PR (adds cross-reference comment on the issue)
+bash .agents/skills/pr-review/pr-issues.sh link-pr 624 630
+
+# Add a label
+bash .agents/skills/pr-review/pr-issues.sh label 624 "bug"
+
+# Open (reopen) a closed issue
+bash .agents/skills/pr-review/pr-issues.sh open 624
+```
+
+**When to close an issue from a PR:**
+- When the bug or feature addressed by a PR was tracked in an issue, close the issue when the PR is merged.
+- Always comment first with what was done and which PR fixed it.
+- Use `link-pr` to add a cross-reference, then `close` to close.
 
 ---
 
@@ -180,4 +217,38 @@ Run `pr-threads.sh <PR>` one more time to confirm zero unresolved threads.
 | Commit list        | `gh pr view <PR> --repo catatafishen/agentbridge --json commits --jq '[.commits[] \| .oid[:8] + " " + .messageHeadline]'` |
 | File in master?    | `git show origin/master:<path> 2>&1 \| head -3`                                                                           |
 | Commits on branch  | `git rev-list origin/master..HEAD --count`                                                                                |
-| Close PR with note | `gh pr close <PR> --repo catatafishen/agentbridge --comment "<reason>"`                                                   |
+| Close PR with note | `gh pr close <PR> --repo catatafishen/agentbridge --comment "<reason>"` |
+| Open issues        | `bash .agents/skills/pr-review/pr-issues.sh list` |
+| View issue         | `bash .agents/skills/pr-review/pr-issues.sh view <N>` |
+| Close issue        | `bash .agents/skills/pr-review/pr-issues.sh close <N> "<reason>"` |
+| Link issue to PR   | `bash .agents/skills/pr-review/pr-issues.sh link-pr <ISSUE> <PR>` |
+
+---
+
+## Skill Installation
+
+This skill lives in `.agents/skills/pr-review/` (canonical repo source). For Copilot CLI to
+discover it, it must also exist at `~/.copilot/skills/pr-review/SKILL.md`.
+
+### Install globally (Copilot CLI)
+
+```bash
+cp -r .agents/skills/pr-review ~/.copilot/skills/
+```
+
+### Install project-locally (shown in IDE panel)
+
+```bash
+cp -r .agents/skills/pr-review .agent-work/copilot/skills/
+```
+
+The Copilot CLI scans `~/.copilot/skills/*/SKILL.md` automatically — no CLI flag needed.
+
+### Other clients
+
+| Client   | Where to install                          | Notes                                      |
+|----------|-------------------------------------------|--------------------------------------------|
+| Copilot  | `~/.copilot/skills/<name>/SKILL.md`       | Global; auto-discovered                    |
+| Kiro     | `.agent-work/kiro/skills/<name>/SKILL.md` | Project-local; shown in IDE panel          |
+| OpenCode | No native skill system                    | Embed skill content in startup instruction |
+| Junie    | No skill system                           | Prompt engineering only                    |
