@@ -50,7 +50,7 @@ public final class ShellScriptRunConfigXmlBuilder {
      */
     public static boolean isShellScriptType(String type) {
         if (type == null) return false;
-        String lower = type.toLowerCase();
+        String lower = type.toLowerCase(java.util.Locale.ROOT);
         return lower.equals("shconfigurationtype")
             || lower.equals("shell script")
             || lower.equals("shell_script")
@@ -101,9 +101,14 @@ public final class ShellScriptRunConfigXmlBuilder {
     static String applyProjectDirMacro(String path, String projectBase) {
         if (path == null || path.isBlank()) return "";
         if (projectBase == null || projectBase.isBlank()) return path;
-        if (path.startsWith(projectBase + "/")) return "$PROJECT_DIR$" + path.substring(projectBase.length());
-        if (path.equals(projectBase)) return "$PROJECT_DIR$";
-        return path;
+        // Normalize to forward slashes so macro substitution works on all platforms.
+        String normalizedPath = path.replace('\\', '/');
+        String normalizedBase = projectBase.replace('\\', '/');
+        if (normalizedPath.startsWith(normalizedBase + "/")) {
+            return "$PROJECT_DIR$" + normalizedPath.substring(normalizedBase.length());
+        }
+        if (normalizedPath.equals(normalizedBase)) return "$PROJECT_DIR$";
+        return normalizedPath;
     }
 
     /**

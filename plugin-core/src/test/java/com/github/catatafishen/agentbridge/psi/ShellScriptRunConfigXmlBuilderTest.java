@@ -207,6 +207,13 @@ class ShellScriptRunConfigXmlBuilderTest {
         void emptyPathReturnsEmpty() {
             assertEquals("", ShellScriptRunConfigXmlBuilder.applyProjectDirMacro("", "/project"));
         }
+
+        @Test
+        void windowsBackslashesNormalized() {
+            assertEquals("$PROJECT_DIR$/foo/bar",
+                ShellScriptRunConfigXmlBuilder.applyProjectDirMacro(
+                    "C:\\Users\\project\\foo\\bar", "C:\\Users\\project"));
+        }
     }
 
     @Nested
