@@ -1325,6 +1325,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         isSending = sending
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
+            McpPauseService.getInstance(project).setPaused(false)
             restoreUnhandledNudgeIfNeeded()
         }
         ApplicationManager.getApplication().invokeLater {
@@ -1454,6 +1455,11 @@ private fun createSideButtonsPanel(): JComponent {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
+            if (!isSending) {
+                e.presentation.isVisible = false
+                return
+            }
+            e.presentation.isVisible = true
             when (McpPauseService.getInstance(project).getPauseState()) {
                 McpPauseService.PauseState.RUNNING -> {
                     e.presentation.icon = AllIcons.Actions.Pause
