@@ -912,12 +912,17 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         props: com.intellij.ide.util.PropertiesComponent
     ) {
         val resizeState = ResizeState()
-        val resizeDragZone = JBUI.scale(8)
+        // N resize zone: matches the visual border of inputSection (painted stroke ~2px).
+        // 4px gives enough grab area without extending deep into the content.
+        val nDragZone = JBUI.scale(4)
+        // W resize zone: matches the left inset of bottomSection (8px empty border).
+        // The full inset strip acts as the drag handle.
+        val wDragZone = JBUI.scale(8)
 
         // N resize: drag the top edge of inputSection to change the input panel height.
         val nResizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
-                inputSection.cursor = if (e.y <= resizeDragZone) {
+                inputSection.cursor = if (e.y <= nDragZone) {
                     Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
                 } else {
                     Cursor.getDefaultCursor()
@@ -925,7 +930,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             }
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
-                if (e.y <= resizeDragZone) resizeState.activeResize = Pair(e.locationOnScreen.y, bottomSection.height)
+                if (e.y <= nDragZone) resizeState.activeResize = Pair(e.locationOnScreen.y, bottomSection.height)
             }
 
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
@@ -959,8 +964,11 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
 
         val wResizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
-                if (e.x > resizeDragZone) return
-                bottomSection.cursor = if (e.y <= resizeDragZone) {
+                if (e.x > wDragZone) {
+                    if (widthDragStart == null) bottomSection.cursor = Cursor.getDefaultCursor()
+                    return
+                }
+                bottomSection.cursor = if (e.y <= nDragZone) {
                     Cursor.getPredefinedCursor(Cursor.NW_RESIZE_CURSOR)
                 } else {
                     Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR)
@@ -968,10 +976,10 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             }
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
-                if (e.x > resizeDragZone) return
+                if (e.x > wDragZone) return
                 val sideWidth = rootSplitter.firstComponent?.width ?: 0
                 widthDragStart = Pair(e.locationOnScreen.x, sideWidth)
-                if (e.y <= resizeDragZone) {
+                if (e.y <= nDragZone) {
                     nwHeightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
                 }
             }
