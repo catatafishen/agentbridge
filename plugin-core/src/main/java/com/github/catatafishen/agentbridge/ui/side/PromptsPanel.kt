@@ -86,7 +86,7 @@ internal class PromptsPanel(
         font = JBUI.Fonts.miniFont()
         foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-        border = JBUI.Borders.emptyLeft(6)
+        border = JBUI.Borders.emptyTop(2)
     }
 
     // ── List and loading state ───────────────────────────────────────────────
@@ -105,9 +105,11 @@ internal class PromptsPanel(
     }
 
     private var displayedCount = PAGE_SIZE
+    private var autoLoadingMore = false
 
     @Volatile
     private var historyEntries: List<EntryData> = emptyList()
+
     @Volatile
     private var promptSessionMap: Map<String, String> = emptyMap()
 
@@ -211,22 +213,41 @@ internal class PromptsPanel(
         val searchRow = JPanel(BorderLayout()).apply {
             isOpaque = false
             add(searchField, BorderLayout.CENTER)
-            add(advancedToggle, BorderLayout.EAST)
         }
 
         val top = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(4)
             add(searchRow, BorderLayout.NORTH)
             add(advancedPanel, BorderLayout.CENTER)
+            add(advancedToggle, BorderLayout.SOUTH)
         }
         add(top, BorderLayout.NORTH)
 
+        // loadMorePanel lives inside the scroll area, above the promptList.
+        // It is only visible when scrolled to the top and there are more items to load.
+        val listWrapper = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(loadMorePanel, BorderLayout.NORTH)
+            add(promptList, BorderLayout.CENTER)
+        }
         val centerPanel = JPanel(BorderLayout())
-        centerPanel.add(loadMorePanel, BorderLayout.NORTH)
-        val scrollPane = JBScrollPane(promptList)
+        val scrollPane = JBScrollPane(listWrapper)
         scrollPane.border = JBUI.Borders.empty()
         centerPanel.add(scrollPane, BorderLayout.CENTER)
         add(centerPanel, BorderLayout.CENTER)
+
+        // Auto-load when the user scrolls to the very top and loadMorePanel is visible.
+        scrollPane.viewport.addChangeListener {
+            val vp = scrollPane.viewport
+            if (vp.viewPosition.y == 0 && loadMorePanel.isVisible && !autoLoadingMore) {
+                autoLoadingMore = true
+                try {
+                    loadMore()
+                } finally {
+                    autoLoadingMore = false
+                }
+            }
+        }
 
         chatConsole.addEntriesChangeListener(entriesListener)
         addHierarchyListener(hierarchyListener)
