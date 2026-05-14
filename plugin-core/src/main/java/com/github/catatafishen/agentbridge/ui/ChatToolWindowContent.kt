@@ -839,9 +839,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         g2.fillRoundRect(0, 0, width, height, arc, arc)
         paintInputSectionDivider(g2, sideRailWidth)
         if (isActive) {
-            g2.color = UIManager.getColor("Component.focusedBorderColor")
-                ?: UIManager.getColor("Focus.color")
-                ?: JBColor(0x3574F0, 0x3574F0)
+            g2.color = JBUI.CurrentTheme.Focus.defaultButtonColor()
             g2.stroke = BasicStroke(JBUI.scale(2).toFloat())
             // Inset by 1px so the 2px stroke (centred on the path) stays fully within the component.
             g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
