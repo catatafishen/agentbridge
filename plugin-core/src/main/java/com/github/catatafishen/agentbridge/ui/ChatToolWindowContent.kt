@@ -826,7 +826,7 @@ class ChatToolWindowContent(
             }
         }.apply {
             isOpaque = false
-            border = JBUI.Borders.empty(8, 0, 1, 4)
+            border = JBUI.Borders.empty(8, 0, 4, 4)
             add(sideButtonsPanel, BorderLayout.WEST)
             add(inputRow, BorderLayout.CENTER)
         }
