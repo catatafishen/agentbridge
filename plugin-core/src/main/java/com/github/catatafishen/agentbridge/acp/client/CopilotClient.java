@@ -121,6 +121,13 @@ public final class CopilotClient extends AcpClient {
         "web_fetch", "web_search", "task_complete", "sql", "skill"
     );
 
+    /**
+     * Per-session counter of native tool bypass events. Used by {@link #buildReprimand}
+     * to escalate wording when the agent repeatedly ignores the nudge.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger nativeToolBypassCount =
+        new java.util.concurrent.atomic.AtomicInteger();
+
     // ─── Lifecycle ───────────────────────────────────
 
     public CopilotClient(Project project) {
@@ -618,7 +625,7 @@ public final class CopilotClient extends AcpClient {
                 if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
                     boolean showBubble = mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED;
                     String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
-                    AgentNudgeService.getInstance(project).addNudge(buildReprimand(title, kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
+                    AgentNudgeService.getInstance(project).addNudge(buildReprimand(kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
                 }
             }
         }
@@ -638,15 +645,59 @@ public final class CopilotClient extends AcpClient {
         return request;
     }
 
-    private static String buildReprimand(String title, String kind) {
-        String toolRef = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
-            ? "the `" + title.toLowerCase() + "` built-in tool"
-            : "a built-in " + kind + " tool";
-        return "Always prefer AgentBridge MCP tools. "
-            + "Other tools bypass plugin features: IDE buffer sync, follow-agent visibility, "
-            + "and user-defined hooks that fire on every tool call. "
-            + "This notice appeared because you just used " + toolRef
-            + " — use an AgentBridge MCP equivalent instead.";
+    /**
+     * Builds a consequence-first reprimand with kind-specific AgentBridge equivalents.
+     *
+     * <p>The message leads with the damage (desync) so the agent treats it as urgent,
+     * includes 3-5 actionable tool names for the specific kind, and escalates wording
+     * when the same session triggers repeated bypasses.
+     */
+    private String buildReprimand(String kind) {
+        int count = nativeToolBypassCount.incrementAndGet();
+        String equivalents = equivalentsForKind(kind);
+        String consequence = consequenceForKind(kind);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[System notice] ⚠️ ").append(consequence);
+        sb.append(" Use AgentBridge instead: ").append(equivalents).append(".");
+
+        if (count > 2) {
+            sb.append(" This is bypass #").append(count).append(" this session.")
+                .append(" ALL file reads/writes/commands MUST go through AgentBridge MCP tools.");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Returns a consequence-first description for the given tool kind, explaining
+     * what went wrong by using a built-in tool of that kind.
+     */
+    private static String consequenceForKind(String kind) {
+        return switch (kind) {
+            case "read" ->
+                "File read outside IDE buffer — the agent is now working with stale disk content, not what the editor shows.";
+            case "edit" ->
+                "File written outside IDE buffer — the editor is now out of sync and unsaved edits may be lost.";
+            case "search" -> "Search ran outside IDE index — results miss unsaved edits and lack semantic context.";
+            case "execute" ->
+                "Command ran outside IDE — bypassed audit hooks, bot identity injection, and follow-agent visibility.";
+            default -> "Built-in tool bypassed IDE buffer sync and hooks — editor state is now desynchronized.";
+        };
+    }
+
+    /**
+     * Returns a short comma-separated list of AgentBridge MCP tool names
+     * the agent should use instead, grouped by tool kind.
+     */
+    private static String equivalentsForKind(String kind) {
+        return switch (kind) {
+            case "read" -> "read_file, list_project_files, list_directory_tree";
+            case "edit" -> "write_file, edit_text, create_file, replace_symbol_body";
+            case "search" -> "search_text, search_symbols, find_file, find_references";
+            case "execute" -> "run_command, run_in_terminal, git_* tools";
+            default -> "read_file, write_file, edit_text, search_text, run_command";
+        };
     }
 
     /**

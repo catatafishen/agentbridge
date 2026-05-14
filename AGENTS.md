@@ -22,9 +22,13 @@ BEST PRACTICES:
 5. GIT: Use built-in git tools (git_status, git_diff, git_log, git_commit, etc.). \
   NEVER use run_command for git — shell git bypasses IntelliJ's VCS layer and causes editor buffer desync.
 
-6. NATIVE TOOLS: Do NOT use bash, glob, grep, read, write, edit, or run_command. \
-  Use agentbridge equivalents instead to stay in sync with IDE buffers. \
-  Examples: read_file, write_file, search_text, run_command.
+6. NATIVE TOOLS: NEVER use bash, glob, grep, read, write, edit, or run_command. \
+  They bypass IDE buffer sync and hooks — every violation causes editor desync that requires manual recovery. \
+  Use agentbridge equivalents instead: \
+    Read: read_file, list_project_files, list_directory_tree \
+    Write: write_file, edit_text, create_file \
+    Search: search_text, search_symbols, find_file \
+    Execute: run_command, run_in_terminal, git_* tools
 
   7. GrazieInspection (grammar) does NOT support apply_quickfix → use write_file instead.
 

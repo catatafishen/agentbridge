@@ -217,26 +217,45 @@ class CopilotClientTest {
         assertNull(invokeParseToolCallArguments(params));
     }
 
-    // ── buildReprimand (private static) ───────────────────────────────
+    // ── buildReprimand (private instance) ──────────────────────────────
 
     @Test
     void buildReprimand_readKind() throws Exception {
-        String result = invokeBuildReprimand("unknown-tool", "read");
-        assertTrue(result.contains("a built-in read tool"), "kind should appear in message as 'a built-in read tool'");
-        assertTrue(result.startsWith("Always prefer AgentBridge MCP tools."), "message should start with the standard prefix");
+        String result = invokeBuildReprimand("read");
+        assertTrue(result.contains("read_file"), "read kind should list read_file as equivalent");
+        assertTrue(result.contains("list_project_files"), "read kind should list list_project_files");
+        assertTrue(result.startsWith("[System notice] ⚠️"), "message should start with consequence framing");
     }
 
     @Test
     void buildReprimand_executeKind() throws Exception {
-        String result = invokeBuildReprimand("unknown-tool", "execute");
-        assertTrue(result.contains("a built-in execute tool"), "kind should appear in message as 'a built-in execute tool'");
-        assertTrue(result.startsWith("Always prefer AgentBridge MCP tools."), "message should start with the standard prefix");
+        String result = invokeBuildReprimand("execute");
+        assertTrue(result.contains("run_command"), "execute kind should list run_command");
+        assertTrue(result.contains("run_in_terminal"), "execute kind should list run_in_terminal");
+        assertTrue(result.startsWith("[System notice] ⚠️"), "message should start with consequence framing");
     }
 
     @Test
     void buildReprimand_knownToolName() throws Exception {
-        String result = invokeBuildReprimand("bash", "execute");
-        assertTrue(result.contains("the `bash` built-in tool"), "known tool name should be referenced directly");
+        String result = invokeBuildReprimand("execute");
+        assertTrue(result.contains("run_command"), "execute kind should list run_command equivalent");
+    }
+
+    @Test
+    void buildReprimand_escalatesAfterThreeBypassesOnSameInstance() throws Exception {
+        CopilotClient client = allocateClient();
+        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
+        m.setAccessible(true);
+
+        String first = (String) m.invoke(client, "read");
+        assertFalse(first.contains("bypass #"), "first call should not escalate");
+
+        m.invoke(client, "edit");  // 2nd
+
+        String third = (String) m.invoke(client, "execute");
+        assertTrue(third.contains("bypass #3"), "third call should escalate with count");
+        assertTrue(third.contains("ALL file reads/writes/commands MUST go through AgentBridge"),
+            "escalation should include hard constraint");
     }
 
     // ── shouldReprimand (private static) ────────────────────────────────
@@ -327,10 +346,10 @@ class CopilotClientTest {
         return (JsonObject) m.invoke(allocateClient(), params);
     }
 
-    private static String invokeBuildReprimand(String title, String kind) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class, String.class);
+    private static String invokeBuildReprimand(String kind) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
         m.setAccessible(true);
-        return (String) m.invoke(null, title, kind);
+        return (String) m.invoke(allocateClient(), kind);
     }
 
     private static boolean invokeShouldReprimand(String toolId) throws Exception {
