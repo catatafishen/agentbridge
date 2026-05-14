@@ -9,89 +9,83 @@ Gets a PR to mergeable state: CI green, all threads resolved, clean history, reb
 
 This repo: owner `catatafishen`, repo `agentbridge`, default branch `master`.
 
+## Run configurations (preferred — use `run_configuration` tool)
+
+Edit the `SCRIPT_OPTIONS` field to set the PR number, then run:
+
+| Config        | Purpose                                          |
+|---------------|--------------------------------------------------|
+| `PR CI Check` | CI status + failing test names + error messages  |
+| `PR Threads`  | Unresolved review threads with reply/resolve IDs |
+| `PR Squash`   | Squash all branch commits into one               |
+
+```
+edit_run_configuration("PR CI Check", script_parameters="628")
+run_configuration("PR CI Check")
+```
+
+Run configurations are terminal-attached (output visible in IDE). The PR number defaults
+to `628` — always update it before running.
+
+## Runnable scripts (fallback — copy path, run directly)
+
+| Script                                            | Purpose                                          |
+|---------------------------------------------------|--------------------------------------------------|
+| `.agents/skills/pr-review/pr-ci.sh <PR>`          | CI status + failing test names + error messages  |
+| `.agents/skills/pr-review/pr-threads.sh <PR>`     | Unresolved review threads with reply/resolve IDs |
+| `.agents/skills/pr-review/pr-threads.sh <PR> all` | All threads (resolved + unresolved)              |
+| `.agents/skills/pr-review/pr-squash.sh`           | Squash all branch commits into one               |
+
+---
+
 ## Mergeable Checklist
 
 - [ ] CI passing (all checks green)
 - [ ] No unresolved review threads
 - [ ] No merge conflicts (`mergeStateStatus` ≠ `DIRTY`)
-- [ ] Clean commit history (squash review-fix commits, see Step 5)
+- [ ] Clean commit history (squash review-fix commits, see Step 6)
 
 ---
 
 ## Step 1 — Check CI
 
 ```bash
+bash .agents/skills/pr-review/pr-ci.sh <PR>
+```
+
+This is a single-shot command: gets CI checks, finds failing job IDs from the URLs,
+then extracts exact test names and error messages from the job logs. No second call needed.
+
+For manual inspection:
+
+```bash
 gh pr checks <PR> --repo catatafishen/agentbridge
 ```
 
-Note the failing run URL. Extract the run ID from the URL (last path segment).
-
 ---
 
-## Step 2 — Find Failing Tests
+## Step 2 — Fix Failing Tests
 
-Two calls needed: first get the failing job ID, then extract the failure details.
+After `pr-ci.sh` identifies the failing test and error:
 
-```bash
-# Get failing job IDs
-gh api repos/catatafishen/agentbridge/actions/runs/<RUN_ID>/jobs \
-  --jq '.jobs[] | select(.conclusion=="failure") | "\(.id) \(.name)"'
-```
-
-```bash
-# Extract failing test name + error message from job log
-gh api repos/catatafishen/agentbridge/actions/jobs/<JOB_ID>/logs | python3 -c "
-import sys
-lines = sys.stdin.readlines()
-for i, line in enumerate(lines):
-    # Strip timestamp prefix; skip lines that say FAILED but end in PASSED (test names)
-    if 'FAILED' in line and 'PASSED' not in line:
-        for l in lines[max(0,i-3):min(len(lines),i+15)]:
-            print(l, end='')
-        print('---')
-"
-```
-
-> **Gotcha:** Test *names* containing `→ FAILED` will match but their line ends in `PASSED`.
-> The `PASSED not in line` guard filters these out.
+1. Find the test class and reproduce locally: `run_tests` in the IDE
+2. Fix the root cause
+3. Re-run locally to confirm green
+4. Commit and push — CI re-runs automatically
 
 ---
 
 ## Step 3 — Get Review Threads
 
-### All threads (for initial survey)
-
 ```bash
-gh api graphql -f query='{
-  repository(owner:"catatafishen", name:"agentbridge") {
-    pullRequest(number: <PR>) {
-      reviewThreads(first: 50) {
-        nodes {
-          id isResolved
-          comments(first: 1) { nodes { databaseId body url } }
-        }
-      }
-    }
-  }
-}' --jq '.data.repository.pullRequest.reviewThreads.nodes[]'
+bash .agents/skills/pr-review/pr-threads.sh <PR>             # unresolved only
+bash .agents/skills/pr-review/pr-threads.sh <PR> all         # all threads
 ```
 
-### Only unresolved (to check what still needs action)
+Output includes both IDs needed for the next step:
 
-```bash
-gh api graphql -f query='{
-  repository(owner:"catatafishen", name:"agentbridge") {
-    pullRequest(number: <PR>) {
-      reviewThreads(first: 50) {
-        nodes {
-          id isResolved
-          comments(first: 1) { nodes { databaseId body url } }
-        }
-      }
-    }
-  }
-}' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)'
-```
+- `Thread ID (for resolve)` — the `PRRT_...` node ID
+- `Comment DB ID (for reply)` — the integer `databaseId`
 
 ---
 
@@ -102,7 +96,7 @@ gh api graphql -f query='{
 ### Reply to a thread
 
 ```bash
-# Use `databaseId` from the thread's first comment (NOT the thread `id`)
+# Use `Comment DB ID` from pr-threads.sh output
 gh api repos/catatafishen/agentbridge/pulls/comments/<COMMENT_DB_ID>/replies \
   -f body="Fixed in <commit/file>: <one sentence describing what changed and why>"
 ```
@@ -110,7 +104,7 @@ gh api repos/catatafishen/agentbridge/pulls/comments/<COMMENT_DB_ID>/replies \
 ### Resolve a thread
 
 ```bash
-# Use the thread `id` field (starts with PRRT_), NOT databaseId
+# Use `Thread ID` (PRRT_...) from pr-threads.sh output
 gh api graphql -f query='mutation {
   resolveReviewThread(input: {threadId: "<PRRT_...>"}) {
     thread { id isResolved }
@@ -118,7 +112,8 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-> **Key distinction:** `databaseId` (integer) → replies. `id` (`PRRT_...` string) → resolve.
+> **Key distinction:** `databaseId` (integer) → replies API. `id` (`PRRT_...`) → GraphQL resolve.
+> The scripts output both; pick the right one for the operation.
 
 ---
 
@@ -136,37 +131,30 @@ git rebase origin/master
 git push --force-with-lease
 ```
 
-If rebase drops commits that are already in master (duplicate changes), that's correct — they
-were picked up from master.
+If rebase drops commits already in master (duplicate changes from merged PRs), that's correct.
 
 ---
 
 ## Step 6 — Squash Before Merging
 
 Review-fix commits (`fix: address comment X`, `chore: import tweak`) are internal iteration.
-Master should get one clean commit per logical unit, not the entire fix-reply-fix history.
-
-### Check how many commits to squash
+Master should get one clean commit per logical unit, not the back-and-forth fix history.
 
 ```bash
-git rev-list origin/master..HEAD --count
+bash .agents/skills/pr-review/pr-squash.sh
 ```
 
-### Squash all branch commits into one
+This counts commits since `origin/master`, lists them, prompts for confirmation, then
+runs `git reset --soft HEAD~N` and opens an editor for the final commit message.
+Leaves the push to you.
 
-```bash
-COUNT=$(git rev-list origin/master..HEAD --count)
-git reset --soft HEAD~$COUNT
-git commit -m "feat: <final complete description of the feature>"
-git push --force-with-lease
-```
+### Selective squash (keep logical structure)
 
-### Or squash selectively via IDE interactive rebase
+Use the IDE's interactive rebase with `git_rebase`:
 
-Use `git_rebase` with `interactive: true` and pass `operations`:
-- `pick` the first/base feature commit
-- `fixup` all review-fix commits on top of it
-- `reword` if the first commit message needs updating
+- `pick` original feature commits
+- `fixup` review-fix commits
+- `reword` if the base commit message needs updating after all fixes
 
 ---
 
@@ -174,20 +162,22 @@ Use `git_rebase` with `interactive: true` and pass `operations`:
 
 ```bash
 gh pr view <PR> --repo catatafishen/agentbridge \
-  --json mergeStateStatus,state,reviewDecision,statusCheckRollup
+  --json mergeStateStatus,state,reviewDecision
 ```
 
-All checks should show `SUCCESS`, `mergeStateStatus` = `CLEAN`, no unresolved threads.
+Run `pr-threads.sh <PR>` one more time to confirm zero unresolved threads.
 
 ---
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| CI checks | `gh pr checks <PR> --repo catatafishen/agentbridge` |
-| PR commit list | `gh pr view <PR> --repo catatafishen/agentbridge --json commits --jq '[.commits[] \| .oid[:8] + " " + .messageHeadline]'` |
-| PR merge state | `gh pr view <PR> --repo catatafishen/agentbridge --json mergeStateStatus,state` |
-| File in master? | `git show origin/master:<path> 2>&1 \| head -3` |
-| Commits on branch | `git rev-list origin/master..HEAD --count` |
-| Close PR with note | `gh pr close <PR> --repo catatafishen/agentbridge --comment "<reason>"` |
+| Task               | Command                                                                                                                   |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------|
+| CI + failing tests | `bash .agents/skills/pr-review/pr-ci.sh <PR>`                                                                             |
+| Unresolved threads | `bash .agents/skills/pr-review/pr-threads.sh <PR>`                                                                        |
+| Squash commits     | `bash .agents/skills/pr-review/pr-squash.sh`                                                                              |
+| PR status          | `gh pr view <PR> --repo catatafishen/agentbridge --json mergeStateStatus,state`                                           |
+| Commit list        | `gh pr view <PR> --repo catatafishen/agentbridge --json commits --jq '[.commits[] \| .oid[:8] + " " + .messageHeadline]'` |
+| File in master?    | `git show origin/master:<path> 2>&1 \| head -3`                                                                           |
+| Commits on branch  | `git rev-list origin/master..HEAD --count`                                                                                |
+| Close PR with note | `gh pr close <PR> --repo catatafishen/agentbridge --comment "<reason>"`                                                   |
