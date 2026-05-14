@@ -688,29 +688,24 @@ public final class McpProtocolHandler {
         // If another concurrent tool already has a dialog showing, skip ours and wait indefinitely
         // to avoid stacking modal dialogs on the user.
         if (!timeoutDialogActive.compareAndSet(false, true)) {
-            try {
-                return future.get();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                interruptWorker(workerThread);
-                return "Error: MCP handler interrupted during extended wait for '" + toolName + "'";
-            } catch (ExecutionException e) {
-                return unwrapExecutionException(toolName, e);
-            } catch (CancellationException e) {
-                return toolError(toolName, "was unexpectedly cancelled during extended wait");
-            }
+            return getFutureResult(future, workerThread, toolName, "extended wait");
         }
 
         int extra;
         try {
             extra = ToolTimeoutDialog.askForExtension(
-                project, displayName != null ? displayName : toolName, elapsedSeconds);
+                project, displayName != null ? displayName : toolName, elapsedSeconds, future);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             interruptWorker(workerThread);
             return "Error: interrupted while showing timeout dialog for '" + toolName + "'";
         } finally {
             timeoutDialogActive.set(false);
+        }
+
+        if (extra == ToolTimeoutDialog.COMPLETED) {
+            // The tool finished while the dialog was showing — read the result directly.
+            return getFutureResult(future, workerThread, toolName, "completed result");
         }
 
         if (extra == ToolTimeoutDialog.CANCEL) {
@@ -733,6 +728,24 @@ public final class McpProtocolHandler {
             return unwrapExecutionException(toolName, e);
         } catch (CancellationException e) {
             return toolError(toolName, "was unexpectedly cancelled during extended wait");
+        }
+    }
+
+    /**
+     * Waits for {@code future} without a timeout, translating all exceptions to error strings.
+     */
+    private String getFutureResult(CompletableFuture<String> future, AtomicReference<Thread> workerThread,
+                                   String toolName, String phase) {
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            interruptWorker(workerThread);
+            return "Error: MCP handler interrupted during " + phase + " for '" + toolName + "'";
+        } catch (ExecutionException e) {
+            return unwrapExecutionException(toolName, e);
+        } catch (CancellationException e) {
+            return toolError(toolName, "was unexpectedly cancelled during " + phase);
         }
     }
 
