@@ -153,6 +153,16 @@ class ChatConsolePanel(
     private var activeAskUser: ActiveAskUser? = null
     private var extendAskUserBridgeJs = ""
 
+    // Sets the JCEF OSR windowless frame rate. BackendCefBrowser (Remote Dev) does not forward
+    // this call to the thin client — it throws UnsupportedOperationException by design.
+    // Catching it is the correct response; the frame rate preference is a best-effort optimization.
+    private fun setFrameRate(fps: Int) {
+        try {
+            browser?.cefBrowser?.setWindowlessFrameRate(fps)
+        } catch (e: UnsupportedOperationException) {
+            LOG.debug("setWindowlessFrameRate not supported (BackendCefBrowser): ${e.message}")
+        }
+    }
 
     // Tracks whether the agent is actively streaming a response. Used by
     // monitor-switch recovery to defer DOM replay until streaming ends, so
@@ -172,6 +182,13 @@ class ChatConsolePanel(
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
+
+        // CEF windowless frame rate. High during streaming to match token delivery rate; moderate at idle.
+        // Without explicit control, CEF defaults to 30fps — but on some JBR builds the default may be lower,
+        // which causes visible stale-frame tearing when the Swing host repaints faster than CEF refreshes.
+        // setWindowlessFrameRate is not supported in Remote Dev (BackendCefBrowser); handled in setFrameRate().
+        private const val STREAMING_FRAME_RATE = 60
+        private const val IDLE_FRAME_RATE = 30
 
         private val GIT_HISTORY_TOOLS = setOf("git_log", "git_show")
     }
@@ -286,6 +303,8 @@ class ChatConsolePanel(
             Disposer.register(this, extendAskUserQuery)
             extendAskUserBridgeJs = extendAskUserQuery.inject("reqId")
 
+            setFrameRate(IDLE_FRAME_RATE)
+
             add(browser.component, BorderLayout.CENTER)
 
             browser.jbCefClient.addLoadHandler(
@@ -385,6 +404,7 @@ class ChatConsolePanel(
     }
 
     override fun startStreaming() {
+        setFrameRate(STREAMING_FRAME_RATE)
         streaming = true
         // Disable smooth scroll during streaming — CSS scroll animations conflict
         // with rapid programmatic scrollTop changes, causing JCEF OSR tearing.
@@ -781,6 +801,7 @@ class ChatConsolePanel(
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
         streaming = false
+        setFrameRate(IDLE_FRAME_RATE)
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         toolJustCompleted = false
@@ -851,6 +872,7 @@ class ChatConsolePanel(
 
     override fun cancelAllRunning() {
         streaming = false
+        setFrameRate(IDLE_FRAME_RATE)
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         clearPendingAskUserRequest(null)
@@ -919,22 +941,6 @@ class ChatConsolePanel(
                     el.classList.remove('prompt-flash');
                     ChatController.resumeAutoScroll();
                 }, 900);
-            })(15)
-            """.trimIndent()
-        )
-    }
-
-    fun scrollToTop() {
-        executeJs(
-            """
-            (function attempt(n){
-                var container = document.querySelector('chat-container');
-                if (!container) {
-                    if (n > 0) { setTimeout(function(){ attempt(n-1); }, 80); }
-                    return;
-                }
-                ChatController.setAutoScroll(false);
-                container.scrollTop = 0;
             })(15)
             """.trimIndent()
         )

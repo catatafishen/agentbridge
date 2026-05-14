@@ -258,7 +258,8 @@ Before merging *any* change to the files listed above, manually verify:
   Repeat in a multi-repo project (e.g. add a submodule or sibling repo)
   and verify selection happens in the *correct* repo.
 - [ ] `GitCommitTool.execute()` does NOT call `tw.activate(null)` or any helper that calls it directly. The only
-  VCS tool window opener is the `openVcsTw` lambda inside `showNewCommitInLog()` (called after graph is confirmed fresh).
+  VCS tool window opener is the `openVcsTw` lambda inside `showNewCommitInLog()` (called after graph is confirmed
+  fresh).
   Grep for `showVcsToolWindow\|tw\.activate` in `GitCommitTool.java` before merging.
 
 ---
@@ -286,8 +287,12 @@ If the bubble reappears after a future change, in order:
    `FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md): the guard belongs on VCS tool-window show/activate, not on the
    log-selection navigation.
 
-6. **Is `GitCommitTool.execute()` calling `tw.activate(null)` or any `showVcsToolWindow()` helper directly?** That is Cause 6.
-   The VCS tool window must only be opened via the `openVcsTw` callback inside `showNewCommitInLog()` — which fires only after
-   the `DataPackChangeListener` confirms the graph is fresh. Any direct `tw.activate()` call before that confirmation point
-   is a race that triggers IntelliJ 2025.3's "highlight current revision" on a stale graph. The sonar refactoring `9a07ecd67c`
+6. **Is `GitCommitTool.execute()` calling `tw.activate(null)` or any `showVcsToolWindow()` helper directly?** That is
+   Cause 6.
+   The VCS tool window must only be opened via the `openVcsTw` callback inside `showNewCommitInLog()` — which fires only
+   after
+   the `DataPackChangeListener` confirms the graph is fresh. Any direct `tw.activate()` call before that confirmation
+   point
+   is a race that triggers IntelliJ 2025.3's "highlight current revision" on a stale graph. The sonar refactoring
+   `9a07ecd67c`
    reintroduced this as a separate `showVcsToolWindow()` method called even before `runGitIn(commit)` completed.
