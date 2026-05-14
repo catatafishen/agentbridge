@@ -81,12 +81,20 @@ internal class PromptsPanel(
     // ── Advanced panel toggle ────────────────────────────────────────────────
 
     private var advancedVisible = false
+    private var applyingAgentParams = false
     private val advancedPanel = JPanel(GridBagLayout()).apply { isOpaque = false; isVisible = false }
     private val advancedToggle = JLabel("Filters ▼").apply {
         font = JBUI.Fonts.miniFont()
         foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         border = JBUI.Borders.emptyLeft(6)
+    }
+
+    private val agentQueryBanner = JLabel().apply {
+        font = JBUI.Fonts.miniFont()
+        foreground = JBUI.CurrentTheme.Label.disabledForeground()
+        border = JBUI.Borders.empty(2, 4)
+        isVisible = false
     }
 
     // ── List and loading state ───────────────────────────────────────────────
@@ -108,6 +116,7 @@ internal class PromptsPanel(
 
     @Volatile
     private var historyEntries: List<EntryData> = emptyList()
+
     @Volatile
     private var promptSessionMap: Map<String, String> = emptyMap()
 
@@ -154,6 +163,7 @@ internal class PromptsPanel(
 
         val filterChangeListener = object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) {
+                if (!applyingAgentParams) agentQueryBanner.isVisible = false
                 displayedCount = PAGE_SIZE
                 refresh(scrollToBottom = false)
             }
@@ -163,8 +173,12 @@ internal class PromptsPanel(
         searchField.textEditor.emptyText.text = "Search prompts…"
         fileField.document.addDocumentListener(filterChangeListener)
 
-        agentCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
-        toolCombo.addActionListener { displayedCount = PAGE_SIZE; refresh(scrollToBottom = false) }
+        val clearBannerAndRefresh = {
+            if (!applyingAgentParams) agentQueryBanner.isVisible = false
+            displayedCount = PAGE_SIZE; refresh(scrollToBottom = false)
+        }
+        agentCombo.addActionListener { clearBannerAndRefresh() }
+        toolCombo.addActionListener { clearBannerAndRefresh() }
 
         // Branch editable combo: listen to editor text and action events (deduped via lastBranchText)
         val branchEditor = branchCombo.editor.editorComponent as? JTextField
@@ -218,6 +232,7 @@ internal class PromptsPanel(
             border = JBUI.Borders.empty(4)
             add(searchRow, BorderLayout.NORTH)
             add(advancedPanel, BorderLayout.CENTER)
+            add(agentQueryBanner, BorderLayout.SOUTH)
         }
         add(top, BorderLayout.NORTH)
 
@@ -528,42 +543,74 @@ internal class PromptsPanel(
         }
     }
 
-    /**
-     * Fills search fields from the given query params and runs the search.
-     * Called by [PromptDbService] when follow-agent mode is on and the agent calls
-     * [com.github.catatafishen.agentbridge.psi.tools.editor.QueryTurnsTool].
-     * Must be called on the EDT.
-     */
     fun applySearchParams(params: ConversationQuery.QueryParams) {
-        // Clear all fields first so omitted filters don't carry over from a previous agent query.
-        searchField.text = ""
-        branchCombo.editor?.item = ""
-        agentModel.selectedItem = null
-        toolModel.selectedItem = null
-        fileField.text = ""
+        applyingAgentParams = true
+        try {
+            // Clear all fields first so omitted filters don't carry over from a previous agent query.
+            searchField.text = ""
+            branchCombo.editor?.item = ""
+            agentModel.selectedItem = null
+            toolModel.selectedItem = null
+            fileField.text = ""
 
-        // Main search box: prefer combinedText, then userMessage, then assistantText.
-        // When assistantText is the sole filter, select the Text Events scope so the panel
-        // surfaces those turns (Prompt scope alone would miss assistant-text matches).
-        val assistantTextOnly = params.assistantText != null
-            && params.combinedText == null && params.userMessage == null
-        searchField.text = params.combinedText ?: params.userMessage ?: params.assistantText ?: ""
+            // Main search box: prefer combinedText, then userMessage, then assistantText.
+            // When assistantText is the sole filter, select the Text Events scope so the panel
+            // surfaces those turns (Prompt scope alone would miss assistant-text matches).
+            val assistantTextOnly = params.assistantText != null
+                && params.combinedText == null && params.userMessage == null
+            searchField.text = params.combinedText ?: params.userMessage ?: params.assistantText ?: ""
 
-        if (assistantTextOnly) {
-            scopePrompt.isSelected = false
-            scopeText.isSelected = true
+            if (assistantTextOnly) {
+                scopePrompt.isSelected = false
+                scopeText.isSelected = true
+            }
+
+            params.branch?.takeIf { it.isNotEmpty() }?.let { branchCombo.editor?.item = it }
+            params.agentName?.takeIf { it.isNotEmpty() }?.let { agentModel.selectedItem = it }
+            params.toolName?.takeIf { it.isNotEmpty() }?.let { toolModel.selectedItem = it }
+            params.filePath?.takeIf { it.isNotEmpty() }?.let { fileField.text = it }
+
+            // Show banner describing retrieval params that have no UI representation.
+            val bannerText = buildAgentQueryBanner(params)
+            agentQueryBanner.text = bannerText
+            agentQueryBanner.isVisible = bannerText.isNotEmpty()
+
+            // Auto-expand filters whenever ANY parameter is active (not just branch/agent/tool/file).
+            val hasAny = searchField.text.isNotEmpty()
+                || !params.branch.isNullOrEmpty() || !params.agentName.isNullOrEmpty()
+                || !params.toolName.isNullOrEmpty() || !params.filePath.isNullOrEmpty()
+                || bannerText.isNotEmpty()
+            if (hasAny && !advancedVisible) toggleAdvanced()
+
+            refresh()
+        } finally {
+            applyingAgentParams = false
         }
+    }
 
-        params.branch?.takeIf { it.isNotEmpty() }?.let { branchCombo.editor?.item = it }
-        params.agentName?.takeIf { it.isNotEmpty() }?.let { agentModel.selectedItem = it }
-        params.toolName?.takeIf { it.isNotEmpty() }?.let { toolModel.selectedItem = it }
-        params.filePath?.takeIf { it.isNotEmpty() }?.let { fileField.text = it }
+    private fun buildAgentQueryBanner(params: ConversationQuery.QueryParams): String {
+        val parts = mutableListOf<String>()
+        params.lastN?.let { parts.add("last $it turns") }
+        params.sessionId?.takeIf { it.isNotEmpty() }?.let {
+            parts.add("session ${it.take(8)}…")
+        }
+        params.turnId?.takeIf { it.isNotEmpty() }?.let {
+            parts.add("turn ${it.take(8)}…")
+        }
+        params.since?.let { parts.add("since ${formatInstant(it)}") }
+        params.until?.let { parts.add("until ${formatInstant(it)}") }
+        if (parts.isEmpty()) return ""
+        return "Agent query: ${parts.joinToString(", ")}"
+    }
 
-        val hasAdvanced = !params.branch.isNullOrEmpty() || !params.agentName.isNullOrEmpty() ||
-            !params.toolName.isNullOrEmpty() || !params.filePath.isNullOrEmpty()
-        if (hasAdvanced && !advancedVisible) toggleAdvanced()
-
-        refresh()
+    private fun formatInstant(instant: java.time.Instant): String {
+        val zoned = instant.atZone(java.time.ZoneId.systemDefault())
+        val now = java.time.ZonedDateTime.now()
+        return if (zoned.toLocalDate() == now.toLocalDate()) {
+            zoned.toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES).toString()
+        } else {
+            zoned.toLocalDate().toString()
+        }
     }
 
     override fun dispose() {
