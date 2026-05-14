@@ -3,11 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.acp.model.Model
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
-import com.github.catatafishen.agentbridge.services.ActiveAgentManager
-import com.github.catatafishen.agentbridge.services.AgentNudgeService
-import com.github.catatafishen.agentbridge.services.ChatWebServer
-import com.github.catatafishen.agentbridge.services.McpPauseService
-import com.github.catatafishen.agentbridge.services.PromptDbService
+import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
@@ -17,7 +13,6 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
-import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
@@ -84,15 +79,15 @@ class ChatToolWindowContent(
     /** Proportion used when expanding the review panel after it was collapsed. */
     private val defaultReviewProportion = 0.3f
 
-    /**
-     * Tab-switching actions shown in the title bar's left section (via [setTabActionsVisible])
-     * while the side panel is open. Each action selects its corresponding tab in [sidePanel].
-     */
-    private val tabActions: List<TabSwitchAction> by lazy {
-        com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES.mapIndexed { i: Int, name: String ->
-            TabSwitchAction(i, name)
-        }
-    }
+    /** Wrapper panels for per-tab ContentManager contents, indexed by tab index. Non-empty iff side panel is open. */
+    private val contentWrappers = mutableListOf<JPanel>()
+
+    /** Listener that syncs ContentManager tab selection to the side panel. Null when side panel is closed. */
+    private var contentTabListener: com.intellij.ui.content.ContentManagerListener? = null
+
+    /** True while [updateSideTabContents] is rebuilding the ContentManager — prevents listener re-entrance. */
+    @Volatile
+    private var isUpdatingContentTabs = false
     private val agentManager = ActiveAgentManager.getInstance(project)
     private lateinit var connectPanel: AcpConnectPanel
     private var chatPanel: JComponent? = null
@@ -206,7 +201,7 @@ class ChatToolWindowContent(
             sidePanel?.selectReviewTab()
             if (rootSplitter.proportion < 0.01f) {
                 rootSplitter.proportion = defaultReviewProportion
-                setTabActionsVisible(true)
+                updateSideTabContents(true)
             }
         }
         com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
@@ -737,7 +732,13 @@ class ChatToolWindowContent(
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
-        side.setOnPlanTitleChanged { ActivityTracker.getInstance().inc() }
+        side.setOnPlanTitleChanged { newTitle ->
+            if (contentWrappers.isNotEmpty()) {
+                toolWindow.contentManager.getContent(com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
+                    ?.displayName = newTitle
+            }
+            ActivityTracker.getInstance().inc()
+        }
         rootSplitter.firstComponent = side
         restoreSidePanelOpenState()
 
@@ -747,7 +748,7 @@ class ChatToolWindowContent(
                 rootSplitter.proportion = defaultReviewProportion
                 com.intellij.ide.util.PropertiesComponent.getInstance(project)
                     .setValue(PREF_SIDE_PANEL_OPEN, true)
-                setTabActionsVisible(true)
+                updateSideTabContents(true)
             }
         }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable) {
@@ -759,7 +760,7 @@ class ChatToolWindowContent(
         val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
         if (props.getBoolean(PREF_SIDE_PANEL_OPEN, false)) {
             rootSplitter.proportion = defaultReviewProportion
-            setTabActionsVisible(true)
+            updateSideTabContents(true)
         }
     }
 
@@ -1918,7 +1919,7 @@ private fun createSideButtonsPanel(): JComponent {
                     val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
                 }
-                setTabActionsVisible(true)
+                updateSideTabContents(true)
             } else {
                 // When hiding: record the current side panel width, collapse it,
                 // then shrink the tool window by that width to restore the original chat area size.
@@ -1927,88 +1928,91 @@ private fun createSideButtonsPanel(): JComponent {
                 if (sideWidth > 0) {
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
                 }
-                setTabActionsVisible(false)
+                updateSideTabContents(false)
             }
             com.intellij.ide.util.PropertiesComponent.getInstance(project)
                 .setValue(PREF_SIDE_PANEL_OPEN, state)
         }
     }
 
-    /**
-     * Shows or hides the per-tab toggle actions in the title bar's left section.
-     * Should be called on the EDT whenever the side panel opens or closes.
+/**
+     * Switches between single-content mode (side panel closed) and multi-content
+     * tab mode (side panel open). In tab mode, each tab becomes a native IntelliJ
+     * {@link com.intellij.ui.content.Content} tab rendered in the tool window header,
+     * matching the look of the Commit/Version Control tool window.
+     *
+     * <p>{@code rootSplitter} is moved between wrapper panels via Swing re-parenting —
+     * only the currently selected wrapper is in the view hierarchy, so the component moves
+     * rather than being duplicated.
+     *
+     * <p>Must be called on the EDT.
      */
-    private fun setTabActionsVisible(visible: Boolean) {
-        val ex = toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx ?: return
-        if (visible) {
-            ex.setTabActions(*tabActions.toTypedArray())
-        } else {
-            ex.setTabActions()
-        }
-    }
+    private fun updateSideTabContents(open: Boolean) {
+        isUpdatingContentTabs = true
+        try {
+            val contentManager = toolWindow.contentManager
+            val contentFactory = com.intellij.ui.content.ContentFactory.getInstance()
 
-private inner class TabSwitchAction(
-        private val tabIndex: Int,
-        private val defaultName: String
-    ) : AnAction(defaultName), CustomComponentAction {
+            contentTabListener?.let { contentManager.removeContentManagerListener(it) }
+            contentTabListener = null
+            contentManager.removeAllContents(false)
+            contentWrappers.clear()
 
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun actionPerformed(e: AnActionEvent) = performSwitch()
-
-        override fun update(e: AnActionEvent) {
-            super.update(e)
-            if (tabIndex == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS) {
-                e.presentation.text = sidePanel?.getPlanTitle() ?: defaultName
-            }
-        }
-
-        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-            val btn = JButton(presentation.text ?: defaultName)
-            btn.isOpaque = false
-            btn.isBorderPainted = false
-            btn.isContentAreaFilled = false
-            btn.isFocusPainted = false
-            btn.border = JBUI.Borders.empty(0, 4)
-            btn.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            btn.putClientProperty("baseFont", btn.font)
-            btn.addActionListener {
-                performSwitch()
-                ActivityTracker.getInstance().inc()
-            }
-            return btn
-        }
-
-        override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
-            val btn = component as? JButton ?: return
-            btn.text = presentation.text ?: defaultName
-            val baseFont = btn.getClientProperty("baseFont") as? Font ?: btn.font
-            val selected = isSelected()
-            btn.foreground = if (selected) null else com.intellij.util.ui.UIUtil.getInactiveTextColor()
-            btn.font = baseFont.deriveFont(if (selected) Font.BOLD else Font.PLAIN)
-        }
-
-        private fun isSelected(): Boolean =
-            sidePanel?.getSelectedTab() == tabIndex && rootSplitter.proportion >= 0.01f
-
-        private fun performSwitch() {
-            ensureSidePanelAvailable()
-            sidePanel?.selectTab(tabIndex)
-            if (rootSplitter.proportion < 0.01f) {
-                val chatWidth = rootSplitter.width
-                rootSplitter.proportion = defaultReviewProportion
-                if (chatWidth > 0) {
-                    val stretchAmount =
-                        (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
-                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
+            if (open) {
+                val tabNames = com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES
+                tabNames.forEachIndexed { i, name ->
+                    val wrapper = JPanel(BorderLayout())
+                    contentWrappers.add(wrapper)
+                    val displayName = if (i == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
+                        (sidePanel?.getPlanTitle() ?: name) else name
+                    val content = contentFactory.createContent(wrapper, displayName, false)
+                    content.isCloseable = false
+                    contentManager.addContent(content)
                 }
-                com.intellij.ide.util.PropertiesComponent.getInstance(project)
-                    .setValue(PREF_SIDE_PANEL_OPEN, true)
+
+                val activeIdx = (sidePanel?.getSelectedTab() ?: 0).coerceIn(0, contentWrappers.lastIndex)
+                contentWrappers[activeIdx].add(rootSplitter, BorderLayout.CENTER)
+                contentManager.setSelectedContent(contentManager.getContent(activeIdx)!!, false)
+
+                val listener = object : com.intellij.ui.content.ContentManagerListener {
+                    override fun selectionChanged(event: com.intellij.ui.content.ContentManagerEvent) {
+                        if (!isUpdatingContentTabs
+                            && event.operation == com.intellij.ui.content.ContentManagerEvent.ContentOperation.add
+                        ) {
+                            val idx = contentManager.getIndexOfContent(event.content)
+                            if (idx >= 0) onContentTabSelected(idx)
+                        }
+                    }
+                }
+                contentTabListener = listener
+                contentManager.addContentManagerListener(listener)
+            } else {
+                val content = contentFactory.createContent(rootSplitter, "", false)
+                content.isCloseable = false
+                contentManager.addContent(content)
             }
+        } finally {
+            isUpdatingContentTabs = false
         }
     }
 
-    @Volatile
+    /** Handles a user clicking a native content tab: re-parents [rootSplitter] and switches the side panel. */
+    private fun onContentTabSelected(tabIndex: Int) {
+        isUpdatingContentTabs = true
+        try {
+            val wrapper = contentWrappers.getOrNull(tabIndex) ?: return
+            if (rootSplitter.parent !== wrapper) {
+                wrapper.add(rootSplitter, BorderLayout.CENTER)
+                wrapper.revalidate()
+                wrapper.repaint()
+            }
+            sidePanel?.selectTab(tabIndex)
+        } finally {
+            isUpdatingContentTabs = false
+        }
+    }
+
+@Volatile
     private var autoScrollEnabled = true
 
     private inner class AutoScrollToggleAction : ToggleAction(
