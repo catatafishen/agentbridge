@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Use when reviewing pull requests, fixing CI failures, addressing review comments, resolving threads, squashing commits, getting a PR to mergeable state, or managing GitHub issues. Triggers include "check PR", "fix CI", "failing tests", "review comments", "resolve threads", "squash commits", "rebase", "DIRTY merge", "open issues", "close issue", or any request to review, merge, or track work in GitHub.
+description: Use when reviewing pull requests, fixing CI failures, addressing review comments, resolving threads, cleaning commit history, getting a PR to mergeable state, or managing GitHub issues. Triggers include "check PR", "fix CI", "failing tests", "review comments", "resolve threads", "squash commits", "rebase", "DIRTY merge", "open issues", "close issue", or any request to review, merge, or track work in GitHub.
 ---
 
 # PR Review
@@ -69,6 +69,7 @@ bash .agents/skills/pr-review/pr-issues.sh open 624
 ```
 
 **When to close an issue from a PR:**
+
 - When the bug or feature addressed by a PR was tracked in an issue, close the issue when the PR is merged.
 - Always comment first with what was done and which PR fixed it.
 - Use `link-pr` to add a cross-reference, then `close` to close.
@@ -80,7 +81,7 @@ bash .agents/skills/pr-review/pr-issues.sh open 624
 - [ ] CI passing (all checks green)
 - [ ] No unresolved review threads
 - [ ] No merge conflicts (`mergeStateStatus` ≠ `DIRTY`)
-- [ ] Clean commit history (squash review-fix commits, see Step 6)
+- [ ] Clean commit history (fold review-fix noise into logical parent commits; keep atomic increments)
 
 ---
 
@@ -172,26 +173,53 @@ If rebase drops commits already in master (duplicate changes from merged PRs), t
 
 ---
 
-## Step 6 — Squash Before Merging
+## Step 6 — Clean Up Commit History Before Merging
 
-Review-fix commits (`fix: address comment X`, `chore: import tweak`) are internal iteration.
-Master should get one clean commit per logical unit, not the back-and-forth fix history.
+Incremental, atomic commits are **preferred** on master. Each commit should answer the question:
+"does this bring value in a future `git blame` or `git bisect`?" If yes, keep it.
+
+**Squash only the noise:**
+
+- `fix: address review comment` — fold into the commit it fixes
+- `chore: fix import` / `chore: typo` — fold into the nearest logical parent
+- Debug iterations: `WIP`, `try X`, `revert X and try Y`
+
+**Keep logical increments:**
+
+- A meaningful feature commit: `feat: add ShellScript XML builder`
+- A bug fix that stands alone: `fix: sanitizeConfigFileName double .xml`
+- A refactor with its own story: `refactor: extract BillingCalculator`
+
+### Interactive rebase (preferred)
+
+Use the IDE's interactive rebase to selectively squash:
+
+```bash
+git rebase -i origin/master
+```
+
+Or via the `git_rebase` tool:
+
+```
+git_rebase(interactive=true, branch="origin/master", operations=[
+    {commit: "abc1234", action: "pick"},   # keep: original feature
+    {commit: "def5678", action: "fixup"},  # noise: "fix review comment" → fold into prev
+    {commit: "ghi9012", action: "pick"},   # keep: second logical change
+    {commit: "jkl3456", action: "fixup"},  # noise: "import tweak" → fold into prev
+])
+```
+
+### Full squash (only when ALL commits are noise)
+
+Only squash everything when the entire branch is one logical change and all commits are
+back-and-forth iterations with no independent value:
 
 ```bash
 bash .agents/skills/pr-review/pr-squash.sh
 ```
 
-This counts commits since `origin/master`, lists them, prompts for confirmation, then
-runs `git reset --soft HEAD~N` and opens an editor for the final commit message.
-Leaves the push to you.
-
-### Selective squash (keep logical structure)
-
-Use the IDE's interactive rebase with `git_rebase`:
-
-- `pick` original feature commits
-- `fixup` review-fix commits
-- `reword` if the base commit message needs updating after all fixes
+This resets to `origin/master` and lets you write a single clean commit message.
+Use this sparingly — it discards history that may be useful.
 
 ---
 
@@ -212,16 +240,17 @@ Run `pr-threads.sh <PR>` one more time to confirm zero unresolved threads.
 |--------------------|---------------------------------------------------------------------------------------------------------------------------|
 | CI + failing tests | `bash .agents/skills/pr-review/pr-ci.sh <PR>`                                                                             |
 | Unresolved threads | `bash .agents/skills/pr-review/pr-threads.sh <PR>`                                                                        |
-| Squash commits     | `bash .agents/skills/pr-review/pr-squash.sh`                                                                              |
+| Clean history      | `git_rebase(interactive=true, branch="origin/master", ...)` — fixup noise, pick logical commits                           |
+| Full squash (rare) | `bash .agents/skills/pr-review/pr-squash.sh` — only when all commits are noise                                            |
 | PR status          | `gh pr view <PR> --repo catatafishen/agentbridge --json mergeStateStatus,state`                                           |
 | Commit list        | `gh pr view <PR> --repo catatafishen/agentbridge --json commits --jq '[.commits[] \| .oid[:8] + " " + .messageHeadline]'` |
 | File in master?    | `git show origin/master:<path> 2>&1 \| head -3`                                                                           |
 | Commits on branch  | `git rev-list origin/master..HEAD --count`                                                                                |
-| Close PR with note | `gh pr close <PR> --repo catatafishen/agentbridge --comment "<reason>"` |
-| Open issues        | `bash .agents/skills/pr-review/pr-issues.sh list` |
-| View issue         | `bash .agents/skills/pr-review/pr-issues.sh view <N>` |
-| Close issue        | `bash .agents/skills/pr-review/pr-issues.sh close <N> "<reason>"` |
-| Link issue to PR   | `bash .agents/skills/pr-review/pr-issues.sh link-pr <ISSUE> <PR>` |
+| Close PR with note | `gh pr close <PR> --repo catatafishen/agentbridge --comment "<reason>"`                                                   |
+| Open issues        | `bash .agents/skills/pr-review/pr-issues.sh list`                                                                         |
+| View issue         | `bash .agents/skills/pr-review/pr-issues.sh view <N>`                                                                     |
+| Close issue        | `bash .agents/skills/pr-review/pr-issues.sh close <N> "<reason>"`                                                         |
+| Link issue to PR   | `bash .agents/skills/pr-review/pr-issues.sh link-pr <ISSUE> <PR>`                                                         |
 
 ---
 
