@@ -11,6 +11,23 @@ import org.jetbrains.annotations.Nullable;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+/**
+ * Project-level service that coordinates navigation from the {@code query_turns} MCP tool
+ * to the Prompt DB side-panel tab.
+ *
+ * <p>When an agent calls {@code query_turns} with Follow Agent mode enabled, the tool
+ * calls {@link #navigateToSearch} which opens the side panel, switches to the Prompt DB
+ * tab, and fills in the search fields — giving the user a live view of what the agent
+ * is looking for in the conversation history.</p>
+ *
+ * <h3>Callback registration lifecycle</h3>
+ * <ul>
+ *   <li>{@link #registerShowPanelCallback} — registered by {@code ChatToolWindowContent}
+ *       once the side panel is attached. Unregistered when the tool window is disposed.</li>
+ *   <li>{@link #registerNavigateCallback} — registered by {@code SidePanel} in its
+ *       constructor. Unregistered by {@code SidePanel.dispose()}.</li>
+ * </ul>
+ */
 @Service(Service.Level.PROJECT)
 public final class PromptDbService {
 
