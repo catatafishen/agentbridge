@@ -31,7 +31,7 @@ import java.util.function.Consumer;
  *   <li><b>Plan</b> — rendered view of the active agent's {@code plan.md} with a
  *       {@code (done/total)} badge when task items exist.</li>
  *   <li><b>MCP</b> — live list of MCP tool calls with timestamps and expandable I/O.</li>
- *   <li><b>Prompt DB</b> — searchable conversation history, click to scroll.</li>
+ *   <li><b>Prompts</b> — searchable conversation history, click to scroll.</li>
  *   <li><b>Stats</b> — session statistics and billing info.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
@@ -48,7 +48,7 @@ public final class SidePanel extends JPanel implements Disposable {
      * Display names for each tab, in index order. Unmodifiable.
      */
     public static final java.util.List<String> TAB_NAMES =
-        java.util.List.of("Diff", "Plan", "MCP", "Prompt DB", "Stats");
+        java.util.List.of("Diff", "Plan", "MCP", "Prompts", "Stats");
 
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel contentContainer = new JPanel(cardLayout);

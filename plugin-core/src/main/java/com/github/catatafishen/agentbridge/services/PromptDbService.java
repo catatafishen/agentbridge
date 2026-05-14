@@ -20,7 +20,7 @@ public final class PromptDbService {
      */
     private final AtomicReference<Runnable> showPanelCallback = new AtomicReference<>();
     /**
-     * Switches to the Prompt DB tab and populates filters. Set by SidePanel.
+     * Switches to the Prompts tab and populates filters. Set by SidePanel.
      * AtomicReference used for thread-safe publication without synchronised blocks.
      */
     private final AtomicReference<Consumer<ConversationQuery.QueryParams>> navigateCallback = new AtomicReference<>();
@@ -38,7 +38,7 @@ public final class PromptDbService {
     }
 
     /**
-     * Opens the side panel (if needed), switches to the Prompt DB tab, and applies the
+     * Opens the side panel (if needed), switches to the Prompts tab, and applies the
      * given query params as search filters. No-op if no callbacks are registered yet.
      * <b>Must be called off the EDT</b> — dispatches to EDT internally.
      */

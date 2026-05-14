@@ -179,7 +179,7 @@ requestAnimationFrame(() => {
     const toolCallsView = document.createElement('tool-calls-view') as ToolCallsView;
     toolsPane.appendChild(toolCallsView);
 
-    const searchPane = swiper.addPane('Prompt DB');
+    const searchPane = swiper.addPane('Prompts');
     const searchView = document.createElement('search-view') as SearchView;
     searchPane.appendChild(searchView);
 
