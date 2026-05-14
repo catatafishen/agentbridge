@@ -4,11 +4,10 @@ import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.ReadFileRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -80,7 +79,7 @@ public class ReadFileTool extends FileTool {
         // Use a separate container to capture the actual line range for highlighting
         int[] effectiveRange = new int[]{startLine, endLine};
 
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        String result = ReadAction.nonBlocking(() -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -99,7 +98,7 @@ public class ReadFileTool extends FileTool {
 
             String hint = getDirectoryMarkingHint(vf);
             return applyReadHintAndTruncate(content, hint);
-        });
+        }).executeSynchronously();
 
         followFileIfEnabled(project, pathStr, effectiveRange[0], effectiveRange[1],
             HIGHLIGHT_READ, agentLabel(project) + " is reading");
