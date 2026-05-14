@@ -582,6 +582,11 @@ public final class McpProtocolHandler {
         try {
             String resultText = callToolWithTimeout(toolName, arguments, toolUseId, originalArguments, displayName);
 
+            // Pause: if the user requested a pause while the tool was running,
+            // block here before the result is sent back to the agent. This lets the
+            // user append a nudge that the agent sees together with the tool output.
+            McpPauseService.getInstance(project).awaitResumeIfPaused();
+
             // Enrich the live entry display name with the ACP title once it is available.
             // ACP registers before MCP executes, so the record (and its acpTitle) should
             // already exist by the time callTool() returns.
@@ -617,6 +622,11 @@ public final class McpProtocolHandler {
             return buildToolResult(msg, fullResult, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
+
+            // Pause: also check after failure — the user may want to nudge before
+            // the agent sees the error result.
+            McpPauseService.getInstance(project).awaitResumeIfPaused();
+
             String errorMsg = ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
             long durationMs = System.currentTimeMillis() - callStartMs;
             var failOutcome = applyFailureHook(toolName, arguments, errorMsg, durationMs, hookStages);
