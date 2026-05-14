@@ -175,24 +175,36 @@ If rebase drops commits already in master (duplicate changes from merged PRs), t
 
 ## Step 6 — Clean Up Commit History Before Merging
 
-Incremental, atomic commits are **preferred** on master. Each commit should answer the question:
-"does this bring value in a future `git blame` or `git bisect`?" If yes, keep it.
+### The git blame test
 
-**Squash only the noise:**
+`git blame` shows the **most recent** commit that touched each line. If that commit is
+`fix: address review comment`, it tells you nothing — you have to blame again on its
+parent to find the actual reasoning. Every extra blame step is lost context.
 
-- `fix: address review comment` — fold into the commit it fixes
-- `chore: fix import` / `chore: typo` — fold into the nearest logical parent
+**The test:** imagine reading this commit message as the first result of `git blame` on a
+line. Does it explain *why the code is this way*? If not — if the reader would need to
+dig further to understand the change — the commit is noise and should be folded into the
+commit that carries the real reasoning.
+
+This is not about aesthetics. A shallow `git blame` that shows noise hides the
+original decision. The first blame result should always be the answer, not a pointer
+to dig deeper.
+
+### What to fold vs. keep
+
+**Fold** (noise — hides reasoning when seen in git blame):
+
+- `fix: address review comment` — the change belongs on the commit that introduced the code
+- `chore: fix import` / `chore: typo` — invisible in git blame, should be invisible in history too
 - Debug iterations: `WIP`, `try X`, `revert X and try Y`
 
-**Keep logical increments:**
+**Keep** (atomic, carries reasoning on its own):
 
-- A meaningful feature commit: `feat: add ShellScript XML builder`
-- A bug fix that stands alone: `fix: sanitizeConfigFileName double .xml`
-- A refactor with its own story: `refactor: extract BillingCalculator`
+- `feat: add ShellScript XML builder` — explains why the builder exists
+- `fix: sanitizeConfigFileName was adding double .xml` — explains a specific bug
+- `refactor: extract BillingCalculator from ChatConsolePanel` — explains the separation
 
 ### Interactive rebase (preferred)
-
-Use the IDE's interactive rebase to selectively squash:
 
 ```bash
 git rebase -i origin/master
@@ -203,23 +215,25 @@ Or via the `git_rebase` tool:
 ```
 git_rebase(interactive=true, branch="origin/master", operations=[
     {commit: "abc1234", action: "pick"},   # keep: original feature
-    {commit: "def5678", action: "fixup"},  # noise: "fix review comment" → fold into prev
+    {commit: "def5678", action: "fixup"},  # noise: fold into prev, keep prev message
     {commit: "ghi9012", action: "pick"},   # keep: second logical change
-    {commit: "jkl3456", action: "fixup"},  # noise: "import tweak" → fold into prev
+    {commit: "jkl3456", action: "fixup"},  # noise: fold into prev
 ])
 ```
 
+`fixup` discards the noise commit's message and folds the diff into the parent —
+exactly what you want. `squash` lets you edit the merged message, useful if the fix
+actually adds important context to the parent.
+
 ### Full squash (only when ALL commits are noise)
 
-Only squash everything when the entire branch is one logical change and all commits are
-back-and-forth iterations with no independent value:
+When the entire branch is one logical change with no independent increments:
 
 ```bash
 bash .agents/skills/pr-review/pr-squash.sh
 ```
 
-This resets to `origin/master` and lets you write a single clean commit message.
-Use this sparingly — it discards history that may be useful.
+Use sparingly — prefer interactive rebase for branches with multiple logical steps.
 
 ---
 
