@@ -664,10 +664,10 @@ public final class RunConfigurationService {
             }
 
             config.readExternal(element);
-            if (args.has(PARAM_WORKING_DIR)) {
-                setViaReflection(config, METHOD_SET_WORKING_DIR,
-                    args.get(PARAM_WORKING_DIR).getAsString(), new ArrayList<>(), null);
-            }
+
+            // Apply legacy top-level parameters (env, jvm_args, program_args, main_class, etc.)
+            // for backward compatibility with agents using the pre-template workflow.
+            applyEditProperties(config, args);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -697,7 +697,7 @@ public final class RunConfigurationService {
         return element;
     }
 
-    private static JsonObject xmlElementToJsonSchema(org.jdom.Element element) {
+    static JsonObject xmlElementToJsonSchema(org.jdom.Element element) {
         var schema = new JsonObject();
         schema.addProperty(JSON_KEY_TYPE, JSON_TYPE_OBJECT);
         var properties = new JsonObject();
@@ -723,7 +723,7 @@ public final class RunConfigurationService {
      * Array values build {@code <option name="K"><list><option value="x"/></list></option>}.
      * Object values recurse into the matching child element; "envs" gets special env-var handling.
      */
-    private static void mergeJsonConfigIntoXml(org.jdom.Element element, JsonObject config) {
+    static void mergeJsonConfigIntoXml(org.jdom.Element element, JsonObject config) {
         for (var entry : config.entrySet()) {
             String key = entry.getKey();
             JsonElement value = entry.getValue();
@@ -873,7 +873,7 @@ public final class RunConfigurationService {
         return prop;
     }
 
-    private static String validateJsonAgainstSchema(JsonObject config, JsonObject schema) {
+    static String validateJsonAgainstSchema(JsonObject config, JsonObject schema) {
         if (!schema.has(JSON_KEY_PROPERTIES)) return null;
         var properties = schema.getAsJsonObject(JSON_KEY_PROPERTIES);
         var errors = new ArrayList<String>();
@@ -902,6 +902,10 @@ public final class RunConfigurationService {
             && propSchema.has(JSON_KEY_PROPERTIES)) {
             String nested = validateJsonAgainstSchema(value.getAsJsonObject(), propSchema);
             if (nested != null) errors.add("In '" + key + "': " + nested);
+        } else if (JSON_TYPE_STRING.equals(expectedType) && !value.isJsonPrimitive()) {
+            errors.add("'" + key + "' must be a string, got " + (value.isJsonArray() ? "array" : "object"));
+        } else if (JSON_TYPE_BOOLEAN.equals(expectedType) && !value.isJsonPrimitive()) {
+            errors.add("'" + key + "' must be a boolean, got " + (value.isJsonArray() ? "array" : "object"));
         }
     }
 
