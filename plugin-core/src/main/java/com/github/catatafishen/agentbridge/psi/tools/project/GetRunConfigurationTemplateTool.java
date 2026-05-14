@@ -32,7 +32,8 @@ public final class GetRunConfigurationTemplateTool extends ProjectTool {
         return "Get a JSON schema describing all configurable options for a run configuration type. "
             + "Use list_run_configuration_types first to find valid type IDs. "
             + "The returned schema shows all available properties with their types, defaults, and descriptions. "
-            + "Pass the schema as the 'config' parameter to create_run_configuration. "
+            + "Pass an object whose keys and values match the schema properties as the 'config' parameter "
+            + "to create_run_configuration. "
             + "Example: get_run_configuration_template(type='Application') → schema → "
             + "create_run_configuration(name='My App', type='Application', config={...}).";
     }

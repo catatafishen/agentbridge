@@ -46,14 +46,27 @@ public final class CreateRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        JsonObject s = schema(
             Param.required("name", TYPE_STRING, "Name for the new run configuration"),
             Param.required("type", TYPE_STRING, "Configuration type ID from list_run_configuration_types (e.g. 'Application', 'GradleRunConfiguration', 'NodeJSConfigurationType')"),
             Param.optional("factory_name", TYPE_STRING, "Factory name within the type (from list_run_configuration_types). Only needed when a type has multiple factories."),
             Param.optional("config", TYPE_OBJECT, "JSON object matching the schema from get_run_configuration_template. Each key maps to a configurable option; validated before saving."),
             Param.optional("working_dir", TYPE_STRING, "Optional: working directory path"),
-            Param.optional("shared", TYPE_BOOLEAN, "Store as shared project file (default: true). If false, stored in workspace only")
+            Param.optional("shared", TYPE_BOOLEAN, "Store as shared project file (default: true). If false, stored in workspace only"),
+            Param.optional("jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g. '-Xmx512m'). Prefer setting via 'config' when using get_run_configuration_template."),
+            Param.optional("program_args", TYPE_STRING, "Optional: program arguments. Prefer setting via 'config' when using get_run_configuration_template."),
+            Param.optional("main_class", TYPE_STRING, "Optional: fully-qualified main class name for Application/JUnit types. Prefer 'config' when using the template workflow."),
+            Param.optional("test_class", TYPE_STRING, "Optional: fully-qualified test class name for JUnit types. Prefer 'config' when using the template workflow."),
+            Param.optional("tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g. ':app:test'). Prefer 'config' when using the template workflow."),
+            Param.optional("script_path", TYPE_STRING, "Optional: path to the script file for Shell Script configs. Prefer 'config' when using the template workflow."),
+            Param.optional("script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g. '--info'). Prefer 'config' when using the template workflow."),
+            Param.optional("module", TYPE_STRING, "Optional: module name for classpath resolution. Prefer 'config' when using the template workflow.")
         );
+        // config accepts any key/value type — schema is determined at runtime by get_run_configuration_template
+        s.getAsJsonObject("properties").getAsJsonObject("config")
+            .add("additionalProperties", new JsonObject());
+        addDictProperty(s, "env", "Environment variables as key-value pairs");
+        return s;
     }
 
     @Override

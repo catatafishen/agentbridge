@@ -1272,6 +1272,9 @@ public final class PlatformApiCompat {
             for (var factory : configType.getConfigurationFactories()) {
                 if (factory.getName().equalsIgnoreCase(factoryName)) return factory;
             }
+            throw new IllegalArgumentException(
+                "Unknown factory_name '" + factoryName + "' for type '" + configType.getDisplayName()
+                    + "'. Use list_run_configuration_types to see available factory names.");
         }
         return configType.getConfigurationFactories()[0];
     }
