@@ -13,7 +13,9 @@ import com.intellij.execution.actions.ConfigurationContext;
 import com.intellij.execution.configurations.ConfigurationType;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
+import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessHandler;
+import com.intellij.execution.process.ProcessListener;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -681,9 +683,9 @@ public final class RunTestsTool extends TestingTool {
         }
 
         if (handler == null) return ERROR_PROCESS_FAILED_TO_START + configName;
-        if (!handler.waitFor(120_000)) return ERROR_TESTS_TIMED_OUT + configName;
+        int exitCode = awaitProcessTermination(handler);
+        if (exitCode == Integer.MIN_VALUE) return ERROR_TESTS_TIMED_OUT + configName;
 
-        int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
         String testOutput = collectTestRunOutput(configName);
         return formatTestSummary(exitCode, configName, testOutput);
     }
@@ -712,9 +714,9 @@ public final class RunTestsTool extends TestingTool {
         }
 
         if (handler == null) return ERROR_PROCESS_FAILED_TO_START + configName;
-        if (!handler.waitFor(120_000)) return ERROR_TESTS_TIMED_OUT + configName;
+        int exitCode = awaitProcessTermination(handler);
+        if (exitCode == Integer.MIN_VALUE) return ERROR_TESTS_TIMED_OUT + configName;
 
-        int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
         String basePath = project.getBasePath();
         if (basePath != null) {
             String xmlResults = parseJunitXmlResults(basePath, module);
@@ -723,6 +725,41 @@ public final class RunTestsTool extends TestingTool {
 
         String testOutput = collectTestRunOutput(configName);
         return formatTestSummary(exitCode, configName, testOutput);
+    }
+
+    /**
+     * Waits for the given {@link ProcessHandler} to terminate using an event-driven
+     * {@link ProcessListener} callback, rather than the polling-based
+     * {@link ProcessHandler#waitFor(long)}.
+     *
+     * <p>{@code waitFor} may not unblock if the handler implementation does not properly
+     * implement the termination notification protocol (observed with certain JUnit runner
+     * wrappers where the UI shows "complete" but the handler never transitions to terminated).
+     * {@code processTerminated} is the definitive event-driven signal and is more reliable.
+     *
+     * @return the process exit code on normal termination, or
+     * {@link Integer#MIN_VALUE} on timeout or interruption
+     */
+    private static int awaitProcessTermination(@NotNull ProcessHandler handler) {
+        CompletableFuture<Integer> doneFuture = new CompletableFuture<>();
+        handler.addProcessListener(new ProcessListener() {
+            @Override
+            public void processTerminated(@NotNull ProcessEvent event) {
+                doneFuture.complete(event.getExitCode());
+            }
+        });
+        // Race guard: the process may have already terminated before the listener was added.
+        if (handler.isProcessTerminated()) {
+            doneFuture.complete(handler.getExitCode() != null ? handler.getExitCode() : 0);
+        }
+        try {
+            return doneFuture.get(120, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Integer.MIN_VALUE;
+        } catch (Exception e) {
+            return Integer.MIN_VALUE;
+        }
     }
 
     // ── JUnit config helpers ─────────────────────────────────
