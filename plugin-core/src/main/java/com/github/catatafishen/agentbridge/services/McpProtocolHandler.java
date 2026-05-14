@@ -540,14 +540,15 @@ public final class McpProtocolHandler {
 
         List<HookStageResult> hookStages = new ArrayList<>();
 
-        // Permission hook: deny/allow before any execution
-        String permissionDenial = evaluatePermissionHook(toolName, arguments, hookStages);
-        if (permissionDenial != null) return buildToolResult(msg, permissionDenial, true);
-
-        // Pause: defer execution if the user has paused the agent
+        // Pause: defer execution before permission hook so the user can review the call,
+        // send a nudge, or let the agent reconsider before any denial is issued.
         if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
             McpPauseService.getInstance(project).awaitResumeIfPaused();
         }
+
+        // Permission hook: deny/allow before any execution
+        String permissionDenial = evaluatePermissionHook(toolName, arguments, hookStages);
+        if (permissionDenial != null) return buildToolResult(msg, permissionDenial, true);
 
         // Snapshot the original arguments before hooks can mutate them.
         // ToolCallTracker needs the pre-hook args for hash-based correlation with ACP,
