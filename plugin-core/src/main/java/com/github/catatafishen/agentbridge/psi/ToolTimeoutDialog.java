@@ -36,7 +36,7 @@ public final class ToolTimeoutDialog {
     public static final int INDEFINITE = Integer.MAX_VALUE;
 
     /**
-     * The tool completed while the dialog was showing.
+     * The tool completed before or during the dialog display.
      * The caller should read the result directly from the future.
      */
     public static final int COMPLETED = -1;
@@ -99,7 +99,13 @@ public final class ToolTimeoutDialog {
         toolFuture.whenComplete((result, ex) -> {
             try {
                 // Wait for the dialog to be set before trying to close it.
-                if (!dialogReady.await(5, TimeUnit.SECONDS)) return;
+                if (!dialogReady.await(5, TimeUnit.SECONDS)) {
+                    // EDT may still be pending (e.g., future completed just before invokeLater ran).
+                    // If the tool is actually done, flag it and wait longer for the dialog to appear.
+                    if (!toolFuture.isDone()) return;
+                    completedByFuture.set(true);
+                    if (!dialogReady.await(25, TimeUnit.SECONDS)) return;
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -135,6 +141,7 @@ public final class ToolTimeoutDialog {
                 dialogReady.countDown(); // unblock the watcher thread
 
                 dialog.setVisible(true); // enters modal event loop; returns when disposed or clicked
+                dialog.dispose(); // free native resources; no-op if already disposed by watcher
                 choiceIndex.set(parseChoice(pane));
             } finally {
                 dialogDone.countDown();
