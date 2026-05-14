@@ -1203,11 +1203,10 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         promptTextArea.text = ""
 
         val selectedModelId = resolveSelectedModelId()
-        // Auto-resume if the user paused the agent — sending a message signals intent to continue.
-        if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
-            pausedByInputFocus = false
-            McpPauseService.getInstance(project).setPaused(false)
-        }
+        // Always clear pause state when the user sends a message — a blocked MCP thread must be
+        // unblocked regardless of whether the pause feature is currently enabled in settings.
+        pausedByInputFocus = false
+        McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId)
         }
@@ -1442,46 +1441,46 @@ private fun createSideButtonsPanel(): JComponent {
         }
     }
 
-/**
- * Pause/resume button that defers incoming MCP tool calls.
- *
- * Three visual states track the full lifecycle:
- * - [McpPauseService.PauseState.RUNNING]  → Pause icon, enabled — click to pause
- * - [McpPauseService.PauseState.PENDING]  → Pause icon, disabled — waiting for a tool call to arrive
- * - [McpPauseService.PauseState.PAUSED]   → Resume icon, enabled — click to unblock
- */
-private inner class PauseToggleAction : AnAction() {
+    /**
+     * Pause/resume button that defers incoming MCP tool calls.
+     *
+     * Three visual states track the full lifecycle:
+     * - [McpPauseService.PauseState.RUNNING]  → Pause icon, enabled — click to pause
+     * - [McpPauseService.PauseState.PENDING]  → Pause icon, disabled — waiting for a tool call to arrive
+     * - [McpPauseService.PauseState.PAUSED]   → Resume icon, enabled — click to unblock
+     */
+    private inner class PauseToggleAction : AnAction() {
 
-    override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
-    override fun update(e: AnActionEvent) {
-        when (McpPauseService.getInstance(project).getPauseState()) {
-            McpPauseService.PauseState.RUNNING -> {
-                e.presentation.icon = AllIcons.Actions.Pause
-                e.presentation.text = "Pause Agent"
-                e.presentation.description = "Defer the next tool call so you can review and send a nudge before it runs"
-                e.presentation.isEnabled = true
-            }
-            McpPauseService.PauseState.PENDING -> {
-                e.presentation.icon = AllIcons.Actions.Pause
-                e.presentation.text = "Pausing…"
-                e.presentation.description = "Waiting for the agent to make a tool call"
-                e.presentation.isEnabled = false
-            }
-            McpPauseService.PauseState.PAUSED -> {
-                e.presentation.icon = AllIcons.Actions.Resume
-                e.presentation.text = "Resume Agent"
-                e.presentation.description = "Unblock the deferred tool call and continue execution"
-                e.presentation.isEnabled = true
+        override fun update(e: AnActionEvent) {
+            when (McpPauseService.getInstance(project).getPauseState()) {
+                McpPauseService.PauseState.RUNNING -> {
+                    e.presentation.icon = AllIcons.Actions.Pause
+                    e.presentation.text = "Pause Agent"
+                    e.presentation.description = "Defer the next tool call so you can review and send a nudge before it runs"
+                    e.presentation.isEnabled = true
+                }
+                McpPauseService.PauseState.PENDING -> {
+                    e.presentation.icon = AllIcons.Actions.Pause
+                    e.presentation.text = "Pausing…"
+                    e.presentation.description = "Waiting for the agent to make a tool call"
+                    e.presentation.isEnabled = false
+                }
+                McpPauseService.PauseState.PAUSED -> {
+                    e.presentation.icon = AllIcons.Actions.Resume
+                    e.presentation.text = "Resume Agent"
+                    e.presentation.description = "Unblock the deferred tool call and continue execution"
+                    e.presentation.isEnabled = true
+                }
             }
         }
-    }
 
-    override fun actionPerformed(e: AnActionEvent) {
-        val service = McpPauseService.getInstance(project)
-        service.setPaused(!service.isPaused())
+        override fun actionPerformed(e: AnActionEvent) {
+            val service = McpPauseService.getInstance(project)
+            service.setPaused(!service.isPaused())
+        }
     }
-}
 
     private inner class SendAction : AnAction(), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
@@ -2843,11 +2842,10 @@ private inner class PauseToggleAction : AnAction() {
         val entryId = consolePanel.addPromptEntry(trimmed, null)
         appendNewEntries()
         val selectedModelId = resolveSelectedModelId()
-        // Auto-resume if the user paused the agent — sending a message signals intent to continue.
-        if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
-            pausedByInputFocus = false
-            McpPauseService.getInstance(project).setPaused(false)
-        }
+        // Always clear pause state when the user sends a message — a blocked MCP thread must be
+        // unblocked regardless of whether the pause feature is currently enabled in settings.
+        pausedByInputFocus = false
+        McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId, trimmed, entryId)
         }
