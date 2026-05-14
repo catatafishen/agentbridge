@@ -1959,6 +1959,7 @@ private fun createSideButtonsPanel(): JComponent {
             contentWrappers.clear()
 
             if (open) {
+                toolWindow.title = ""
                 val tabNames = com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES
                 tabNames.forEachIndexed { i, name ->
                     val wrapper = JPanel(BorderLayout())
@@ -1987,6 +1988,7 @@ private fun createSideButtonsPanel(): JComponent {
                 contentTabListener = listener
                 contentManager.addContentManagerListener(listener)
             } else {
+                toolWindow.title = "AgentBridge"
                 val content = contentFactory.createContent(rootSplitter, "", false)
                 content.isCloseable = false
                 contentManager.addContent(content)
