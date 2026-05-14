@@ -1,7 +1,6 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Fix 12 applied — chip status changes use CSS-class-only updates instead of innerHTML replacement to
-eliminate spurious MutationObserver triggers during streaming
+**Status**: Fix 13 applied — OSR frame rate management restored (60fps during streaming, 30fps idle)
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
 **Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`, `chat.css`,
 `ToolChip.ts`, `ThinkingChip.ts`, `SubagentChip.ts`
@@ -579,12 +578,42 @@ the `chip-ring` span is always present and the `animation: spin` is paused by CS
 
 ---
 
+### Fix 13 — Restore OSR frame rate management (Fix 7 regression)
+
+**Root cause**: Commit `3213d47f` (May 11) removed `setWindowlessFrameRate()` calls under the belief they "did not
+demonstrably help." The user reported screen tearing "got worse again" after that commit. Without explicit frame rate
+control, the JCEF OSR browser renders at its default rate. On some JBR builds the default may be below 30fps — and
+even at 30fps, rapid streaming tokens arrive faster than one per frame, causing the OSR buffer to lag behind the DOM
+while Swing repaints at the display refresh rate.
+
+The removal also cleared the initial `setWindowlessFrameRate(30)` call that was made during browser initialisation,
+so the actual behaviour after removal depended on the JBR/CEF build default — which may vary.
+
+**Fix**: Restore `setFrameRate()` private helper (with `try/catch UnsupportedOperationException` for Remote Dev
+`BackendCefBrowser`, which was already present in the original code), restore the constants
+(`STREAMING_FRAME_RATE = 60`, `IDLE_FRAME_RATE = 30`), and add:
+
+- `setFrameRate(IDLE_FRAME_RATE)` at browser creation time (explicit baseline)
+- `setFrameRate(STREAMING_FRAME_RATE)` in `startStreaming()`
+- `setFrameRate(IDLE_FRAME_RATE)` in `finishResponse()` and `cancelAllRunning()`
+
+The scroll-bridge callbacks (`scrollStarted`/`scrollEnded`) are **not** restored — the `is-scrolling` CSS class and
+140ms idle timer remain the scroll-tearing mitigation. The original removal rationale stands for that part.
+
+**Why the boost helps even if scroll callbacks are absent**: at 30fps during streaming, each CEF paint frame is 33ms.
+Streaming tokens arrive every ~10–50ms. Without the 60fps boost, multiple tokens' DOM mutations land in the same CEF
+paint frame — making the per-token rAF pipeline unable to separate mutation and scroll paints as Fix 8 requires.
+At 60fps (16ms/frame), the two-rAF pattern reliably puts mutation and scroll into different frames.
+
+---
+
 ## Code Locations
 
 | File                       | Component                        | Purpose                                                                                              |
 |----------------------------|----------------------------------|------------------------------------------------------------------------------------------------------|
-| `ChatConsolePanel.kt`      | `startStreaming()`               | Marks `streaming=true`, disables smooth scroll                                                       |
-| `ChatConsolePanel.kt`      | `finishResponse()`               | Marks `streaming=false`, restores smooth scroll                                                      |
+| `ChatConsolePanel.kt`      | `setFrameRate()`                 | Wraps `setWindowlessFrameRate()` with UnsupportedOperationException guard (Remote Dev) (Fix 13)      |
+| `ChatConsolePanel.kt`      | `startStreaming()`               | Sets 60fps, marks `streaming=true`, disables smooth scroll                                           |
+| `ChatConsolePanel.kt`      | `finishResponse()`               | Sets 30fps, marks `streaming=false`, restores smooth scroll                                          |
 | `ChatConsolePanel.kt`      | `executeJs()`                    | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                                         |
 | `ChatContainer.ts`         | `_scrollRAF`                     | rAF debounce gate for scroll writes (now holds nested 2-rAF chain — Fix 8)                           |
 | `ChatContainer.ts`         | `_scheduleDeferredScroll()`      | Two-rAF deferral helper — separates DOM-mutation paint from scroll paint (Fix 8)                     |
@@ -700,3 +729,9 @@ When modifying the streaming pipeline, watch for:
     `animation: spin` is paused by `.status-complete .chip-ring { animation: none }` — no DOM node
     replacement is needed on status transitions.
 
+15. **Removing `setWindowlessFrameRate()` calls** (Fix 13) — do NOT remove or skip the `setFrameRate()` calls in
+    `startStreaming()`, `finishResponse()`, and the browser init block. Without explicit rate control, JCEF may default
+    to a rate below 30fps and the two-rAF separation in Fix 8 can no longer guarantee that mutation and scroll paints
+    land in different CEF frames. This was already removed and re-added once (`3213d47f` removed it, Fix 13 restored it).
+    The `BackendCefBrowser` crash is handled in `setFrameRate()` via `try/catch UnsupportedOperationException` — do not
+    remove the guard or use raw `browser.cefBrowser.setWindowlessFrameRate()` calls directly.
