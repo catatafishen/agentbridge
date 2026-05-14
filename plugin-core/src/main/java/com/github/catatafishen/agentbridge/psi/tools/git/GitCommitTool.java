@@ -1,8 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
-import com.github.catatafishen.agentbridge.psi.EdtUtil;
-import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
-import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.ui.renderers.GitCommitRenderer;
 import com.google.gson.JsonObject;
@@ -89,7 +86,6 @@ public final class GitCommitTool extends GitTool {
         if (commitAll) runGitIn(root, "add", "-A");
         if (!isAmend && hasNoStagedChanges(root)) return buildNothingToCommitHint(root);
 
-        showVcsToolWindow();
         String result = runGitIn(root, commitCommandArgs(args, message, isAmend));
         if (result.startsWith("Error")) return result;
 
@@ -120,20 +116,6 @@ public final class GitCommitTool extends GitTool {
     private boolean hasNoStagedChanges(@NotNull String root) {
         String staged = runGitInQuiet(root, "diff", "--cached", NAME_ONLY);
         return staged != null && staged.isEmpty();
-    }
-
-    private void showVcsToolWindow() {
-        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
-        EdtUtil.invokeLater(() -> {
-            var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-                .getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-            if (tw == null) return;
-            if (PsiBridgeService.isChatToolWindowActive(project)) {
-                tw.show();
-            } else {
-                tw.activate(null);
-            }
-        });
     }
 
     private static String[] commitCommandArgs(@NotNull JsonObject args, @NotNull String message, boolean isAmend) {

@@ -1,6 +1,7 @@
 # "Commit not found in VCS Log" Bug — Recurring Regression
 
-**Status**: Fixed again (latest fix on branch `fix/vcs-log-follow-navigation`)
+**Status**: Fixed again — Cause 6 removed (`showVcsToolWindow()` premature `tw.activate` in `GitCommitTool`, sonar
+refactoring `9a07ecd67c`)
 **Related**: [`FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md)
 
 > ⚠️ **This bug has regressed multiple times.** Read this document end-to-end before
@@ -17,7 +18,8 @@ When the agent runs `git_commit` (or `git_log` /
 
 1. A small red bubble appears: **"Commit `<hash>` could not be found"**.
 2. The wrong commit is highlighted in the log — typically the
-   *previous* HEAD (the parent of the commit we just created), or, in multi-repo projects, an unrelated commit from a different repository.
+   *previous* HEAD (the parent of the commit we just created), or, in multi-repo projects, an unrelated commit from a
+   different repository.
 
 The new commit is still made and visible at the top of the log when you scroll there manually, so the bug is
 *cosmetic* rather than data-corrupting — but it makes the
@@ -30,7 +32,8 @@ The new commit is still made and visible at the top of the log when you scroll t
 3. Observe the VCS Log open. The bubble appears in the bottom-right; the highlighted commit is
    *not* the one just created.
 
-In a multi-repo project the symptom is even more obvious — the wrong-repo case selects a commit from a sibling repository.
+In a multi-repo project the symptom is even more obvious — the wrong-repo case selects a commit from a sibling
+repository.
 
 ---
 
@@ -74,8 +77,8 @@ GitTool.showNewCommitInLog(repoRoot)
 
 ## Root causes
 
-The bug has had **four
-** distinct contributing causes. The current fix addresses all four. A regression in any one is enough to bring the bubble back.
+The bug has had **six** distinct contributing causes. The current fix addresses all six. A regression in any one is
+enough to bring the bubble back.
 
 ### Cause 1 — Wrong repo root in multi-repo projects
 
@@ -98,13 +101,16 @@ which added `runGitIn` everywhere else but missed the follow-along path.
 `PermanentGraph` is rebuilt and a fresh `DataPack` is published.
 
 If we navigate as soon as
-`isCommitIndexed` returns true, we hit a window where the storage already knows the hash but the visible graph still ends at the previous HEAD.
-`showRevisionInMainLog` then can't find the commit in the visible model and emits the bubble + selects the previous HEAD.
+`isCommitIndexed` returns true, we hit a window where the storage already knows the hash but the visible graph still
+ends at the previous HEAD.
+`showRevisionInMainLog` then can't find the commit in the visible model and emits the bubble + selects the previous
+HEAD.
 
 **Fix invariant**: the listener must wait for **both**:
 
 1. `isCommitIndexed(data, hash, root)` — storage knows the hash, *and*
-2. the compatibility-layer graph identity has changed — a fresh VCS Log graph/data-pack object has been published (so the visible graph contains the new commit).
+2. the compatibility-layer graph identity has changed — a fresh VCS Log graph/data-pack object has been published (so
+   the visible graph contains the new commit).
 
 > ⚠️ **Do not directly compare `data.getDataPack() != initialPack`** for the freshness check.
 > In newer IDEs, `getDataPack()` is a deprecated wrapper that returns a *new* DataPack
@@ -116,39 +122,63 @@ If we navigate as soon as
 
 ### Cause 3 — Wrong `showRevisionInMainLog` overload
 
-`VcsProjectLog.showRevisionInMainLog(project, hash)` is the project-wide overload. In multi-repo projects with the same hash present in multiple roots (e.g. submodules, worktrees, identical empty trees) it can resolve to the wrong root.
+`VcsProjectLog.showRevisionInMainLog(project, hash)` is the project-wide overload. In multi-repo projects with the same
+hash present in multiple roots (e.g. submodules, worktrees, identical empty trees) it can resolve to the wrong root.
 
 **Fix invariant**: always use the root-aware overload
 `showRevisionInMainLog(project, root, hash)` whenever a root is known. The chat-chip click handler (
-`ChatConsolePanel.kt:1795,1815`) doesn't know the root — it falls back to the 2-arg back-compat shim which uses the project-wide overload. That fallback is acceptable because chat-chip clicks operate on abbreviated hashes that were already resolved against the project base.
+`ChatConsolePanel.kt:1795,1815`) doesn't know the root — it falls back to the 2-arg back-compat shim which uses the
+project-wide overload. That fallback is acceptable because chat-chip clicks operate on abbreviated hashes that were
+already resolved against the project base.
 
 ### Cause 4 — Focus guard skipped the actual navigation
 
 The focus-stealing fix correctly changed the tool-window opening path to call
 `tw.show()` instead of `tw.activate(null)` while chat is active. A later implementation also returned early before
-`showRevisionInMainLog` when chat was active. That avoided focus steal, but it also meant follow-mode never selected the new commit in the VCS Log while the user was using chat — the normal commit path.
+`showRevisionInMainLog` when chat was active. That avoided focus steal, but it also meant follow-mode never selected the
+new commit in the VCS Log while the user was using chat — the normal commit path.
 
 **Fix invariant**: use `isChatToolWindowActive(project)` only to choose `tw.show()` vs
-`tw.activate(null)` when opening the VCS tool window. Once a fresh graph contains the commit in the target root, always call
+`tw.activate(null)` when opening the VCS tool window. Once a fresh graph contains the commit in the target root, always
+call
 `showRevisionInMainLog(project, root, hash)`.
 
 ### Cause 5 — VCS tool window activated before graph refresh (IntelliJ 2025.3 regression)
 
 In IntelliJ 2025.3,
-`tw.activate(null)` on the VCS tool window triggers a "highlight current revision" behavior: the log immediately attempts to navigate to the current HEAD. If
+`tw.activate(null)` on the VCS tool window triggers a "highlight current revision" behavior: the log immediately
+attempts to navigate to the current HEAD. If
 `tw.activate(null)` fires before the VCS log graph has been rebuilt (i.e. in the window after `git commit` but before
 `DataPackChangeListener` fires), HEAD is the new commit but it is not yet in the visible
 `PermanentGraph` → "commit not found" bubble.
 
 The previous implementation called `tw.activate(null)` at the top of the `showNewCommitInLog`
 invokeLater — before
-`showRevisionInLogAfterRefresh` and its listener ran. This was safe in earlier IntelliJ versions that did not auto-navigate on activation, but regressed in 2025.3.
+`showRevisionInLogAfterRefresh` and its listener ran. This was safe in earlier IntelliJ versions that did not
+auto-navigate on activation, but regressed in 2025.3.
 
 **Fix invariant**: the VCS tool window `activate`/`show` call must happen inside
 `navigateToRevisionInMainLog`, immediately before `showRevisionInMainLog` — i.e. only after the
 `DataPackChangeListener` (or the race-condition guard) has confirmed the graph is fresh and the commit is indexed.
 `showRevisionInLogAfterRefresh` now accepts an optional
 `Runnable preNavigationCallback`; `showNewCommitInLog` passes the tool-window open/show logic as that callback.
+
+### Cause 6 — Premature `tw.activate` before commit completes (sonar refactoring regression)
+
+The sonar refactoring commit `9a07ecd67c` (May 1) extracted a `showVcsToolWindow()` helper method in `GitCommitTool` and
+called it at line 92 — **before** `runGitIn(root, commitCommandArgs...)` at line 93. Because `showVcsToolWindow()` posts
+`invokeLater(tw.activate(null))`, the EDT can process that activation after the blocking `runGitIn` call completes (i.e.
+after the commit exists in git). At that point HEAD is the new commit, but the VCS log graph has not yet been refreshed.
+IntelliJ 2025.3's "highlight current revision" behavior fires on `tw.activate(null)`, tries to navigate to the new HEAD,
+finds it missing in the stale graph → "commit not found" bubble.
+
+This is a timing race: if the EDT processes the activation BEFORE `runGitIn` completes, HEAD is still the old commit
+(safely present in the graph, no bubble). Under load the activation fires AFTER the commit, HEAD is new, graph is stale.
+
+**Fix invariant**: `GitCommitTool.execute()` must never call `tw.activate(null)` or any `showVcsToolWindow()` helper
+directly. The VCS tool window is opened exclusively by the `openVcsTw` callback passed to `showNewCommitInLog()`, which
+fires only after the `DataPackChangeListener` confirms the graph contains the new commit. Refactoring helpers that call
+`tw.activate` are safe to add only inside that callback.
 
 ---
 
@@ -161,6 +191,8 @@ invokeLater — before
 | `c92b1231`                        | Multi-repo `git_*` tool support                                                         | Did not update the follow-along path → Cause 1 reintroduced                                                                 |
 | `fix/vcs-log-follow-navigation`   | Keep chat focus guard on tool-window opening only; make indexing root-specific          | Previous fix skipped `showRevisionInMainLog` while chat was active, and the index predicate checked any root                |
 | `fix/commit-not-found-regression` | Move `tw.activate(null)` into `navigateToRevisionInMainLog` via pre-navigation callback | Addresses Cause 5 — IntelliJ 2025.3 auto-highlights HEAD on activation before graph is rebuilt                              |
+| `9a07ecd67c` (sonar refactoring)  | Extracted `showVcsToolWindow()` helper in `GitCommitTool` for SonarCloud findings       | Called it BEFORE `runGitIn(commit)` — reintroduced premature `tw.activate(null)` (Cause 6)                                  |
+| `fix/recurring-regressions`       | Removed `showVcsToolWindow()` from `GitCommitTool.execute()` entirely                   | Cause 6 removed; `openVcsTw` callback in `showNewCommitInLog()` is the sole VCS TW opener                                   |
 
 ---
 
@@ -174,13 +206,15 @@ The two bugs pull in **opposite directions**:
   `tw.show()` vs `tw.activate(...)`, because the active tool window can change between scheduling and execution.
 
 - This bug requires the follow-along path to *actually
-  navigate* to the new commit. Tightening the focus guard too far (e.g. skipping navigation entirely whenever the chat is active) reintroduces this bug — the user enables "Follow Agent Files"
+  navigate* to the new commit. Tightening the focus guard too far (e.g. skipping navigation entirely whenever the chat
+  is active) reintroduces this bug — the user enables "Follow Agent Files"
   precisely so the log *does* navigate.
 
 **The contract** between the two bugs:
 
 - When the chat tool window is **active**: call `tw.show()` (does not steal focus)
-  but still navigate the visible log selection. Navigation is silent for the user unless they manually open the VCS Log tab.
+  but still navigate the visible log selection. Navigation is silent for the user unless they manually open the VCS Log
+  tab.
 - When the chat tool window is **not active**: call
   `tw.activate(null)` (full activation is fine because the user isn't focused on chat) and navigate.
 - In **both** cases, navigate via `showRevisionInMainLog` so the bubble doesn't appear and the right commit is selected.
@@ -198,9 +232,11 @@ Before merging *any* change to the files listed above, manually verify:
 - [ ] All callers (`GitCommitTool`, `GitLogTool`, `GitShowTool`) pass the resolved
   `root` from `resolveRepoRootOrError` — *not* `getProject().getBasePath()`.
 - [ ] `GitCommitTool.execute()` calls `showNewCommitInLog(root)` **after** the
-  `if (result.startsWith("Error")) return result;` check. Calling it before opens the log on a failed commit and looks identical to this bug.
+  `if (result.startsWith("Error")) return result;` check. Calling it before opens the log on a failed commit and looks
+  identical to this bug.
 - [ ] 
-  `PlatformApiCompat.showRevisionInLogAfterRefresh` snapshots the current graph identity through the compatibility helper —
+  `PlatformApiCompat.showRevisionInLogAfterRefresh` snapshots the current graph identity through the compatibility
+  helper —
   **not** a direct `data.getDataPack()`
   wrapper comparison.
 - [ ] The DataPackChangeListener navigation predicate requires both a changed graph identity AND
@@ -218,8 +254,12 @@ Before merging *any* change to the files listed above, manually verify:
   `GitCommitFollowAlongRepoRootTest.testShowNewCommitInLogReadsHeadFromSuppliedRoot`
   still passes.
 - [ ] Manual smoke test: with Follow Agent Files **on
-  **, ask the agent to make a commit; verify the VCS Log opens, no bubble appears, and the topmost commit is selected. Repeat in a multi-repo project (e.g. add a submodule or sibling repo)
+  **, ask the agent to make a commit; verify the VCS Log opens, no bubble appears, and the topmost commit is selected.
+  Repeat in a multi-repo project (e.g. add a submodule or sibling repo)
   and verify selection happens in the *correct* repo.
+- [ ] `GitCommitTool.execute()` does NOT call `tw.activate(null)` or any helper that calls it directly. The only
+  VCS tool window opener is the `openVcsTw` lambda inside `showNewCommitInLog()` (called after graph is confirmed fresh).
+  Grep for `showVcsToolWindow\|tw\.activate` in `GitCommitTool.java` before merging.
 
 ---
 
@@ -243,4 +283,11 @@ If the bubble reappears after a future change, in order:
    `getLogProviders().get(root) == null` — don't blow up, don't navigate to a stale root.
 
 5. **Does the focus guard return before `showRevisionInMainLog`?** That is Cause 4. Cross-check [
-   `FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md): the guard belongs on VCS tool-window show/activate, not on the log-selection navigation.
+   `FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md): the guard belongs on VCS tool-window show/activate, not on the
+   log-selection navigation.
+
+6. **Is `GitCommitTool.execute()` calling `tw.activate(null)` or any `showVcsToolWindow()` helper directly?** That is Cause 6.
+   The VCS tool window must only be opened via the `openVcsTw` callback inside `showNewCommitInLog()` — which fires only after
+   the `DataPackChangeListener` confirms the graph is fresh. Any direct `tw.activate()` call before that confirmation point
+   is a race that triggers IntelliJ 2025.3's "highlight current revision" on a stale graph. The sonar refactoring `9a07ecd67c`
+   reintroduced this as a separate `showVcsToolWindow()` method called even before `runGitIn(commit)` completed.
