@@ -11,7 +11,7 @@ invalid configs that required manual correction.
 
 ## What It Looks Like to the Agent
 
-The workflow is a three-step discovery → inspect → create loop:
+The workflow is a three-step **discover → inspect → create** loop:
 
 ### Step 1 — Discover available types
 
@@ -35,73 +35,83 @@ Available run configuration types (47):
 Use get_run_configuration_template to see available options for any type.
 ```
 
-### Step 2 — Inspect the template
+### Step 2 — Get the JSON schema
 
 ```
 get_run_configuration_template(type="PythonConfigurationType", factory_name="Flask Server")
 ```
 
-Returns the default XML for that type, plus a flat summary of patchable `<option>` keys:
+Returns a JSON schema describing every configurable option for that type, derived at runtime from the IDE's own
+serialization format:
 
 ```
-Template for 'Python' (type id: PythonConfigurationType, factory: Flask Server)
+JSON schema for 'Python' (type id: PythonConfigurationType, factory: Flask Server)
 
-Flat options (use as keys in create_run_configuration 'options' param):
-  SCRIPT_NAME="app.py"
-  WORKING_DIRECTORY=""
-  ENV_FILES=""
-  ...
-
-Full XML template:
-<component name="ProjectRunConfigurationManager">
-  <configuration name="Example" type="PythonConfigurationType" factoryName="Flask Server">
-    <option name="SCRIPT_NAME" value="app.py" />
-    <option name="WORKING_DIRECTORY" value="" />
+{
+  "type": "object",
+  "description": "Python (type id: PythonConfigurationType, factory: Flask Server)",
+  "properties": {
+    "SCRIPT_NAME": { "type": "string", "default": "app.py" },
+    "WORKING_DIRECTORY": { "type": "string", "default": "" },
+    "SDK_HOME": { "type": "string", "default": "" },
+    "envs": {
+      "type": "object",
+      "description": "Environment variables as key-value pairs",
+      "additionalProperties": { "type": "string" }
+    },
     ...
-  </configuration>
-</component>
+  }
+}
 
-Create with options:
-  create_run_configuration(name="My Config", type="PythonConfigurationType", options={KEY: value, ...})
-Or use raw_xml for complex nested options not expressible as flat key=value.
+Create with:
+  create_run_configuration(name="My Config", type="PythonConfigurationType", config={...from schema...})
 ```
 
-### Step 3 — Create with options
+### Step 3 — Create with config
 
 ```
 create_run_configuration(
   name="Run Flask Dev Server",
   type="PythonConfigurationType",
   factory_name="Flask Server",
-  options={
+  config={
     "SCRIPT_NAME": "src/app.py",
-    "WORKING_DIRECTORY": "$PROJECT_DIR$"
+    "WORKING_DIRECTORY": "$PROJECT_DIR$",
+    "envs": {"FLASK_DEBUG": "1"}
   },
-  env={"FLASK_DEBUG": "1"},
   shared=true
 )
 ```
 
-Returns:
+The `config` object is validated against the schema before any changes are applied. Unknown keys or wrong types
+return an immediate error listing every violation:
+
+```
+Error: Schema validation failed:
+  - Unknown option 'scrip_name'
+  - 'envs' must be an object
+```
+
+On success:
 
 ```
 Created run configuration: 'Run Flask Dev Server' [Python] (shared)
 Use run_configuration to execute it.
 ```
 
-### Fallback: raw_xml
-
-For config types with deeply nested XML (complex JVM classpaths, multi-source Docker compose, etc.) that cannot be
-expressed as flat `<option name=value>` entries, `raw_xml` still works exactly as before. The discovery tools help
-agents decide _when_ they need to fall back: if the XML template has no flat options, use `raw_xml`.
-
 ---
 
 ## What Happens Under the Hood
 
-### Tool layer (`ListRunConfigurationTypesTool`, `GetRunConfigurationTemplateTool`)
+### Tool layer
 
-These are thin read-only delegates to `RunConfigurationService`. No logic lives in the tool classes.
+Three read/write tools all delegate to `RunConfigurationService`:
+
+- `ListRunConfigurationTypesTool` — read-only; calls `listRunConfigurationTypes()`
+- `GetRunConfigurationTemplateTool` — read-only; calls `getRunConfigTemplate()`
+- `CreateRunConfigurationTool` — write; calls `createRunConfiguration()`
+
+No logic lives in the tool classes themselves.
 
 ### PlatformApiCompat — the EP cascade problem
 
@@ -113,68 +123,72 @@ even though Gradle compiles cleanly.
 All code that touches this EP lives in `PlatformApiCompat` to confine the cascade to one file:
 
 - `listAllConfigTypeDescriptors()` — iterates all registered types, builds a `ConfigTypeDescriptor` record per type
-- `findConfigurationType(String)` — delegates to `findConfigurationTypeBySearch`, case-insensitive substring match
+- `findConfigurationType(String)` — case-insensitive substring match on type ID and display name
 - `findFactory(ConfigurationType, String)` — picks a factory by name, or returns the first one if none specified
-- `checkRunConfigForError(RunConfiguration)` — calls `settings.checkConfiguration()` and maps the result to a
+- `checkRunConfigForError(RunConfiguration)` — calls `config.checkConfiguration()` and maps the result to a
   human-readable error string; distinguishes hard `RuntimeConfigurationError` (block creation) from soft
-  `RuntimeConfigurationWarning` (allow with note)
+  `RuntimeConfigurationWarning` (allow)
+
+### JSON schema generation in `getRunConfigTemplate`
+
+The schema is produced at runtime by asking IntelliJ to serialize a freshly-created instance of the requested type:
+
+```
+createConfiguration(name, factory)    // allocate default config
+→ config.writeExternal(element)       // serialize to JDOM XML
+→ xmlElementToJsonSchema(element)     // convert XML tree → JSON schema recursively
+→ pretty-print as JSON string
+```
+
+`xmlElementToJsonSchema` handles two IntelliJ XML serialization patterns:
+
+| Pattern | XML example                          | Schema key                    |
+|---------|--------------------------------------|-------------------------------|
+| A       | `<option name="KEY" value="VAL"/>`   | `KEY` (from `name` attribute) |
+| B       | `<ElementName>content</ElementName>` | `ElementName`                 |
+
+Type inference:
+
+- Default value `"true"` / `"false"` → `boolean` schema with boolean default
+- `<list><option value="x"/></list>` child → `array` schema with string items and defaults array
+- `<envs>` element → `object` schema with `additionalProperties: string` (env-var dict)
+- Otherwise → `string` schema with the default value
+- Nested objects recurse
 
 ### Serialization round-trip in `createRunConfigWithOptions`
 
-The options path avoids any per-type knowledge by using IntelliJ's own serialization:
+Config creation avoids any per-type knowledge by using IntelliJ's own serialization:
 
 ```
-createConfiguration(name, factory)          // RunManager allocates with defaults
-  → config.writeExternal(element)           // IDE serializes the config to JDOM XML
-  → applyOptionsToElement(element, options) // patch <option name="X" value="Y"/> children
-  → applyEnvToElement(element, env)         // inject/append <envs><env.../></envs>
-  → config.readExternal(element)            // IDE deserializes back into the config object
-  → setViaReflection(METHOD_SET_WORKING_DIR) // working_dir via best-effort reflection
-  → checkRunConfigForError(config)          // validate; reject if RuntimeConfigurationError
-  → saveNewConfig(runManager, settings)     // storeInDotIdeaFolder or storeInLocalWorkspace
+createConfiguration(name, factory)          // allocate with defaults
+→ config.writeExternal(element)             // serialize to JDOM XML
+→ xmlElementToJsonSchema(element)           // derive schema
+→ validateJsonAgainstSchema(config, schema) // reject unknown keys / wrong types
+→ mergeJsonConfigIntoXml(element, config)   // patch XML with agent's values
+→ config.readExternal(element)              // deserialize patched XML back into config
+→ setViaReflection(METHOD_SET_WORKING_DIR)  // working_dir if provided
+→ checkRunConfigForError(config)            // validate; reject RuntimeConfigurationError
+→ saveNewConfig(runManager, settings)       // storeInDotIdeaFolder or storeInLocalWorkspace
 ```
 
-`applyOptionsToElement` works generically: it looks for existing `<option name="X"/>` children and updates their
-`value` attribute, or appends a new `<option>` element if the name is not already present. This means it works for
-every config type that uses the standard flat-option XML format — which covers the vast majority of plugin-provided
-types.
+`mergeJsonConfigIntoXml` works recursively:
 
-`applyEnvToElement` finds or creates the `<envs>` element and appends `<env name="X" value="Y"/>` children,
-following the IntelliJ convention.
-
-### Routing in `createRunConfiguration`
-
-The existing `create_run_configuration` tool method now has an early branch:
-
-```java
-// If explicit options map provided, use the dynamic type-based path.
-if (args.has(PARAM_OPTIONS)) {
-    return createRunConfigWithOptions(name, type, args);
-}
-```
-
-Configs created without `options` continue through the original path (explicit `applyConfigProperties` +
-`applyTypeSpecificProperties`), so backward compatibility is fully preserved.
-
-### What `raw_xml` still covers
-
-Some config types serialize to XML that is deeply nested and cannot be reduced to flat `<option>` entries — for
-example, JVM classpaths with multiple `<classpathEntry>` children, or Docker run configs with bind-mount arrays.
-For these, the agent should get the template, recognize there are no (or few) flat options, and fall back to
-`raw_xml` with a full XML string. `list_run_configuration_types` + `get_run_configuration_template` still make
-this easier than before, since the agent can see the required structure rather than guessing.
+- **String / boolean** → updates Pattern A `<option name="K" value="V"/>` or creates it
+- **Array** → rebuilds `<option name="K"><list><option value="x"/>...</list></option>`
+- **Object with key `envs`** → special-cased: appends `<env name="K" value="V"/>` children
+- **Other objects** → recurses into the matching child element
 
 ---
 
 ## File Map
 
-| File                                   | Role                                                                                                   |
-|----------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `PlatformApiCompat.java`               | `listAllConfigTypeDescriptors`, `findFactory`, `checkRunConfigForError`, `ConfigTypeDescriptor` record |
-| `RunConfigurationService.java`         | `listRunConfigurationTypes`, `getRunConfigTemplate`, `createRunConfigWithOptions` + XML helpers        |
-| `ListRunConfigurationTypesTool.java`   | MCP tool, read-only, no params                                                                         |
-| `GetRunConfigurationTemplateTool.java` | MCP tool, read-only, `type` required + optional `factory_name`                                         |
-| `CreateRunConfigurationTool.java`      | Extended: added `options`, `factory_name` params; updated description                                  |
-| `ProjectToolFactory.java`              | Registers the two new tools                                                                            |
+| File                                   | Role                                                                                                        |
+|----------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| `PlatformApiCompat.java`               | `listAllConfigTypeDescriptors`, `findFactory`, `checkRunConfigForError`, `ConfigTypeDescriptor` record      |
+| `RunConfigurationService.java`         | `listRunConfigurationTypes`, `getRunConfigTemplate`, `createRunConfigWithOptions`, all schema/merge helpers |
+| `ListRunConfigurationTypesTool.java`   | MCP tool, read-only, no params                                                                              |
+| `GetRunConfigurationTemplateTool.java` | MCP tool, read-only, `type` required + optional `factory_name`; returns JSON schema                         |
+| `CreateRunConfigurationTool.java`      | MCP tool, `type` required, `config` JSON object validated against schema                                    |
+| `ProjectToolFactory.java`              | Registers the two new tools                                                                                 |
 
 See also: [ACCEPTED-API-WARNINGS.md](ACCEPTED-API-WARNINGS.md) for the EP cascade false-positive documentation.
