@@ -80,7 +80,7 @@ bash .agents/skills/pr-review/pr-issues.sh open 624
 
 - [ ] CI passing (all checks green)
 - [ ] No unresolved review threads
-- [ ] No merge conflicts (`mergeStateStatus` ≠ `DIRTY`)
+- [ ] Rebased onto latest master (always do this — don't just report BEHIND)
 - [ ] Clean commit history (fold review-fix noise into logical parent commits; keep atomic increments)
 
 ---
@@ -155,21 +155,22 @@ gh api graphql -f query='mutation {
 
 ---
 
-## Step 5 — Fix Merge Conflicts
+## Step 5 — Rebase onto Latest Master
+
+**Always rebase as part of every sweep — don't just report that a PR is behind.**
 
 ```bash
-gh pr view <PR> --repo catatafishen/agentbridge --json mergeStateStatus
+git_fetch(remote="origin")
+git_rebase(branch="origin/master")
+git_push(force=true)
 ```
 
-If `DIRTY`: fetch and rebase.
+Conflicts during rebase:
 
-```bash
-git fetch origin
-git rebase origin/master
-git push --force-with-lease
-```
+- **Clear conflicts** (e.g., a line was deleted in master and also modified in the branch, or two unrelated changes touch the same area): resolve using your best judgment — pick the version that preserves all intended changes.
+- **Unclear conflicts** (e.g., two diverging implementations of the same feature, or a large block rewritten in both): stop, describe both sides to the user, and ask which is the right implementation before resolving.
 
-If rebase drops commits already in master (duplicate changes from merged PRs), that's correct.
+If rebase drops commits already in master (duplicate changes from a merged sibling PR), that's correct — don't re-apply them.
 
 ---
 
