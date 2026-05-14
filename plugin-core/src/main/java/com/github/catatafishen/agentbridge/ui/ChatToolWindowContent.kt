@@ -1100,7 +1100,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             editor.contentComponent.addFocusListener(object : java.awt.event.FocusAdapter() {
                 override fun focusGained(e: java.awt.event.FocusEvent) {
                     val s = ChatInputSettings.getInstance()
-                    if (s.isPauseFeatureEnabled() && s.isPauseOnInputFocus()) {
+                    if (s.isPauseOnInputFocus()) {
                         val pauseService = McpPauseService.getInstance(project)
                         if (!pauseService.isPaused()) {
                             pausedByInputFocus = true
@@ -1384,9 +1384,7 @@ private fun createSideButtonsPanel(): JComponent {
         leftGroup.add(restartSessionGroup!!)
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.add(DisconnectOrStopAction())
-        if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
-            leftGroup.add(PauseToggleAction())
-        }
+        leftGroup.add(PauseToggleAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentControls", leftGroup, false

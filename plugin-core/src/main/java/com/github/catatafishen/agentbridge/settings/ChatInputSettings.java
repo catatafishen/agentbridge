@@ -137,19 +137,6 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
     // ── Pause feature ───────────────────────────────────────────────────────
 
     /**
-     * Whether the pause/resume toolbar button is visible. When enabled, a pause button
-     * appears below the stop button; clicking it defers incoming MCP tool calls until
-     * the user resumes.
-     */
-    public boolean isPauseFeatureEnabled() {
-        return myState.pauseFeatureEnabled;
-    }
-
-    public void setPauseFeatureEnabled(boolean enabled) {
-        myState.pauseFeatureEnabled = enabled;
-    }
-
-    /**
      * When true, the agent is automatically paused whenever the chat input area gains
      * keyboard focus, giving the user time to type a nudge without an in-flight tool call
      * racing ahead.
@@ -186,7 +173,6 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         public UnhandledNudgeMode unhandledNudgeMode = UnhandledNudgeMode.AUTO_SEND;
         @NotNull
         public ReprimandNudgeMode reprimandNudgeMode = ReprimandNudgeMode.ENABLED; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
-        public boolean pauseFeatureEnabled = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean pauseOnInputFocus = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 }

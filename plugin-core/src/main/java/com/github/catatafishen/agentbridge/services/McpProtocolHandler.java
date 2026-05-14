@@ -19,7 +19,6 @@ import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
-import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -542,9 +541,7 @@ public final class McpProtocolHandler {
 
         // Pause: defer execution before permission hook so the user can review the call,
         // send a nudge, or let the agent reconsider before any denial is issued.
-        if (ChatInputSettings.getInstance().isPauseFeatureEnabled()) {
-            McpPauseService.getInstance(project).awaitResumeIfPaused();
-        }
+        McpPauseService.getInstance(project).awaitResumeIfPaused();
 
         // Permission hook: deny/allow before any execution
         String permissionDenial = evaluatePermissionHook(toolName, arguments, hookStages);
