@@ -81,8 +81,7 @@ final class OpenCodeAgentConfig extends ProfileBasedAgentConfig {
 
     /**
      * Writes the OpenCode config file to disk so OpenCode can read it via
-     * {@code OPENCODE_CONFIG} env var. Includes MCP server config, tool permissions,
-     * and provider model modalities overrides.
+     * {@code OPENCODE_CONFIG} env var. Includes MCP server config and tool permissions.
      */
     private void writeConfigFile(@NotNull String projectBasePath, int mcpPort) {
         try {
@@ -98,8 +97,7 @@ final class OpenCodeAgentConfig extends ProfileBasedAgentConfig {
             }
 
             String configWithPermissions = mergePermissionsIntoConfig(resolved);
-            String configWithModalities = mergeProviderModalitiesIntoConfig(configWithPermissions);
-            String finalConfig = convertMcpServersToObject(configWithModalities);
+            String finalConfig = convertMcpServersToObject(configWithPermissions);
             String formatted = formatJsonSafely(finalConfig);
 
             Files.writeString(configPath, formatted, StandardCharsets.UTF_8);
@@ -109,78 +107,7 @@ final class OpenCodeAgentConfig extends ProfileBasedAgentConfig {
         }
     }
 
-    /**
-     * Merges provider model modalities overrides into the config JSON.
-     *
-     * <p><b>Root cause:</b> OpenCode v1.15.0 ships with a bundled {@code models-snapshot.js} that
-     * captured {@code qwen3.6-plus-free} before image support was added to models.dev. The v1.15.0
-     * snapshot records {@code attachment: false} and {@code modalities.input: ["text"]}, so OpenCode
-     * reports "this model does not support image input" on first launch (before the background
-     * models.dev refresh overwrites the on-disk cache).
-     *
-     * <p>In v1.2.27, the model was absent from the snapshot entirely, so OpenCode fetched the live
-     * models.dev entry — which already had image support — and images worked.
-     *
-     * <p>This override injects the correct capabilities directly into the generated
-     * {@code opencode.json} via the {@code provider.opencode.models} config path, which OpenCode's
-     * {@code ConfigProvider.Model} schema explicitly supports. The override is skipped if the user
-     * has already configured modalities for this model in their own config.
-     */
-    @NotNull
-    private static String mergeProviderModalitiesIntoConfig(@NotNull String configJson) {
-        try {
-            JsonObject root = JsonParser.parseString(configJson).getAsJsonObject();
-
-            JsonObject provider = root.has(PROVIDER_KEY) && root.get(PROVIDER_KEY).isJsonObject()
-                ? root.getAsJsonObject(PROVIDER_KEY)
-                : new JsonObject();
-
-            JsonObject opencode = provider.has(PROFILE_ID) && provider.get(PROFILE_ID).isJsonObject()
-                ? provider.getAsJsonObject(PROFILE_ID)
-                : new JsonObject();
-
-            JsonObject models = opencode.has(MODELS_KEY) && opencode.get(MODELS_KEY).isJsonObject()
-                ? opencode.getAsJsonObject(MODELS_KEY)
-                : new JsonObject();
-
-            // Only inject if the user has not already configured modalities for this model.
-            if (!models.has(QWEN_FREE_MODEL_ID)
-                || !models.getAsJsonObject(QWEN_FREE_MODEL_ID).has("modalities")) {
-
-                JsonObject qwenModel = models.has(QWEN_FREE_MODEL_ID) && models.get(QWEN_FREE_MODEL_ID).isJsonObject()
-                    ? models.getAsJsonObject(QWEN_FREE_MODEL_ID)
-                    : new JsonObject();
-
-                qwenModel.addProperty("attachment", true);
-
-                JsonArray inputModalities = new JsonArray();
-                inputModalities.add("text");
-                inputModalities.add("image");
-                JsonArray outputModalities = new JsonArray();
-                outputModalities.add("text");
-                JsonObject modalities = new JsonObject();
-                modalities.add("input", inputModalities);
-                modalities.add("output", outputModalities);
-                qwenModel.add("modalities", modalities);
-
-                models.add(QWEN_FREE_MODEL_ID, qwenModel);
-            }
-
-            opencode.add(MODELS_KEY, models);
-            provider.add(PROFILE_ID, opencode);
-            root.add(PROVIDER_KEY, provider);
-
-            return new Gson().toJson(root);
-        } catch (Exception e) {
-            LOG.warn("Failed to merge provider modalities into config", e);
-            return configJson;
-        }
-    }
-
     private static final String MCP_SERVERS_KEY = "mcpServers";
-    private static final String PROVIDER_KEY = "provider";
-    private static final String MODELS_KEY = "models";
-    private static final String QWEN_FREE_MODEL_ID = "qwen3.6-plus-free";
 
     /**
      * Converts {@code "mcpServers"} array to {@code "mcp"} object for OpenCode's expected format.
