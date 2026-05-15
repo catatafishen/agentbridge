@@ -52,3 +52,25 @@ export function hideRedundantTimestamp(msg: Element): void {
         prev = prev.previousElementSibling;
     }
 }
+
+/**
+ * Format an ISO timestamp for display.
+ * - Today: shows time only ("14:30")
+ * - Yesterday: "Yesterday 14:30"
+ * - Older: "May 14 14:30"
+ * Returns the raw string on parse failure.
+ */
+export function formatTs(isoOrLegacy: string): string {
+    if (!isoOrLegacy) return '';
+    const d = new Date(isoOrLegacy);
+    if (Number.isNaN(d.getTime())) return isoOrLegacy;
+    const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return timeStr;
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const datePrefix = d.toDateString() === yesterday.toDateString()
+        ? 'Yesterday'
+        : d.toLocaleDateString([], {month: 'short', day: 'numeric'});
+    return `${datePrefix} ${timeStr}`;
+}
