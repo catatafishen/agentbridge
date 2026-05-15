@@ -160,7 +160,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.McpPauseService"/>
 
-    <!-- Bridges query_turns MCP tool → Prompts side panel for follow-agent navigation -->
+    <!-- Bridges query_conversation_history MCP tool → Prompts side panel for follow-agent navigation -->
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.PromptDbService"/>
 

@@ -57,34 +57,35 @@ public final class QueryTurnsTool extends EditorTool {
 
     @Override
     public @NotNull String id() {
-        return "query_turns";
+        return "query_conversation_history";
     }
 
     @Override
     public @NotNull String displayName() {
-        return "Query Turns";
+        return "Query Conversation History";
     }
 
     @Override
     public @NotNull String description() {
         return """
-            Query conversation history with SQL-backed filters. Returns structured turn summaries \
-            with stable UUID identifiers — no fragile positional t<N> IDs.
+            Query conversation history with SQL-backed filters. Returns structured summaries of \
+            past conversations — what the user asked, what the agent replied, which tools were \
+            called, which files were touched — with stable UUID identifiers.
 
-            Default (no params): 5 most recent turns, prompt + assistant text only.
+            Default (no params): 5 most recent conversations, user message + agent reply only.
 
             Retrieval (pick at most one; omit for last 5):
-            - turn_id: fetch a specific turn by UUID
-            - session_id: fetch all turns in a session
-            - last_n + offset: most recent N turns (across all sessions)
+            - turn_id: fetch a specific conversation exchange by UUID
+            - session_id: fetch all exchanges in a session
+            - last_n + offset: most recent N exchanges (across all sessions)
 
             Content filters (each is a case-insensitive substring match):
-            - user_message: matches user prompt text AND human-typed nudges in that turn
-            - assistant_text: matches assistant reply text
-            - tool_name: turns where a tool matching this name was called (e.g. "read_file")
-            - file_path: turns where a file matching this path was touched by a tool
-            - branch: turns started on this git branch (prefix match)
-            - agent_name: turns from sessions where agent name contains this (e.g. "copilot")
+            - user_message: matches user prompt text AND human-typed nudges in that exchange
+            - assistant_text: matches agent reply text
+            - tool_name: exchanges where a tool matching this name was called (e.g. "read_file")
+            - file_path: exchanges where a file matching this path was touched by a tool
+            - branch: exchanges started on this git branch (prefix match)
+            - agent_name: exchanges from sessions where agent name contains this (e.g. "copilot")
             - since / until: time range (flexible formats: "5m", "2h", "2026-05-10", ISO 8601)
 
             Output control (all off by default):
@@ -92,9 +93,9 @@ public final class QueryTurnsTool extends EditorTool {
             - include_tool_calls: include tool name, arguments, and output size
             - max_chars: total character budget (default 8000)
 
-            Navigation: each turn includes prev_turn_id (UUID of the next-older turn).
-            To drill into a turn: query_turns(turn_id="uuid", include_tool_calls=true)
-            To page backward: query_turns(last_n=5, offset=5) or use the prev_turn_id.""";
+            Navigation: each result includes prev_turn_id (UUID of the next-older exchange).
+            To drill into an exchange: query_conversation_history(turn_id="uuid", include_tool_calls=true)
+            To page backward: query_conversation_history(last_n=5, offset=5) or use the prev_turn_id.""";
     }
 
     @Override

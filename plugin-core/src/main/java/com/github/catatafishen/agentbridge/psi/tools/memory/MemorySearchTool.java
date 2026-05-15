@@ -145,7 +145,7 @@ public final class MemorySearchTool extends Tool {
         String session = d.sourceSession();
         if (!turn.isEmpty() && !session.isEmpty()) {
             sb.append("Source: session ").append(session).append(", turn ").append(turn).append('\n');
-            sb.append("  → query_turns(session_id='").append(session).append("')\n");
+            sb.append("  → query_conversation_history(session_id='").append(session).append("')\n");
         }
         String commits = d.sourceCommits();
         if (!commits.isEmpty()) {

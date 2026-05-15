@@ -742,7 +742,7 @@ class ChatToolWindowContent(
         rootSplitter.firstComponent = side
         restoreSidePanelOpenState()
 
-        // When the agent calls query_turns with follow-agent enabled, open the side panel.
+        // When the agent calls query_conversation_history with follow-agent enabled, open the side panel.
         PromptDbService.getInstance(project).registerShowPanelCallback {
             if (rootSplitter.proportion < 0.01f) {
                 rootSplitter.proportion = defaultReviewProportion

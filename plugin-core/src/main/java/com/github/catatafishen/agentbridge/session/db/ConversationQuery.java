@@ -21,7 +21,7 @@ import java.util.Set;
  * Executes structured SQL queries against {@link ConversationDatabase} and returns
  * typed {@link TurnSummary} records.
  *
- * <p>This is the query engine for {@code query_turns} MCP tool and the
+ * <p>This is the query engine for {@code query_conversation_history} MCP tool and the
  * {@code PromptsPanel} filter controls. It has no IntelliJ platform dependencies —
  * all logic is pure JDBC, making it trivially testable against an in-memory SQLite DB.
  *
