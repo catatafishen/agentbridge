@@ -82,11 +82,15 @@ internal class PromptsPanel(
 
     private var advancedVisible = false
     private val advancedPanel = JPanel(GridBagLayout()).apply { isOpaque = false; isVisible = false }
-    private val advancedToggle = JLabel("Filters ▼").apply {
+    private val advancedToggle = JButton("Filters ▼").apply {
         font = JBUI.Fonts.miniFont()
         foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         border = JBUI.Borders.emptyTop(2)
+        isContentAreaFilled = false
+        isBorderPainted = false
+        isFocusPainted = true
+        horizontalAlignment = SwingConstants.LEFT
     }
 
     // ── List and loading state ───────────────────────────────────────────────
@@ -106,6 +110,7 @@ internal class PromptsPanel(
 
     private var displayedCount = PAGE_SIZE
     private var autoLoadingMore = false
+    private var initialLoadDone = false
 
     @Volatile
     private var historyEntries: List<EntryData> = emptyList()
@@ -204,9 +209,7 @@ internal class PromptsPanel(
         scopeThinking.addActionListener(scopeListener)
         scopeToolCalls.addActionListener(scopeListener)
 
-        advancedToggle.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) = toggleAdvanced()
-        })
+        advancedToggle.addActionListener { toggleAdvanced() }
 
         buildAdvancedPanel()
 
@@ -223,23 +226,19 @@ internal class PromptsPanel(
         }
         add(top, BorderLayout.NORTH)
 
-        // loadMorePanel lives inside the scroll area, above the promptList.
+        // loadMorePanel lives above the scroll area.
         // It is only visible when scrolled to the top and there are more items to load.
-        val listWrapper = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            add(loadMorePanel, BorderLayout.NORTH)
-            add(promptList, BorderLayout.CENTER)
-        }
         val centerPanel = JPanel(BorderLayout())
-        val scrollPane = JBScrollPane(listWrapper)
+        val scrollPane = JBScrollPane(promptList)
         scrollPane.border = JBUI.Borders.empty()
+        centerPanel.add(loadMorePanel, BorderLayout.NORTH)
         centerPanel.add(scrollPane, BorderLayout.CENTER)
         add(centerPanel, BorderLayout.CENTER)
 
         // Auto-load when the user scrolls to the very top and loadMorePanel is visible.
         scrollPane.viewport.addChangeListener {
             val vp = scrollPane.viewport
-            if (vp.viewPosition.y == 0 && loadMorePanel.isVisible && !autoLoadingMore) {
+            if (vp.viewPosition.y == 0 && loadMorePanel.isVisible && !autoLoadingMore && initialLoadDone) {
                 autoLoadingMore = true
                 try {
                     loadMore()
@@ -429,6 +428,7 @@ internal class PromptsPanel(
                 if (serial != historyLoadSerial.get()) return@invokeLater
                 historyEntries = entries
                 promptSessionMap = sessionMap
+                initialLoadDone = true
                 refresh()
             }
         }
