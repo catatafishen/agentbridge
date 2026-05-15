@@ -5,6 +5,12 @@
       "timeout": 10,
       "failSilently": true,
       "async": false
+    },
+    {
+      "script": "scripts/pr-description-reminder.sh",
+      "timeout": 10,
+      "failSilently": true,
+      "async": false
     }
   ]
 }
