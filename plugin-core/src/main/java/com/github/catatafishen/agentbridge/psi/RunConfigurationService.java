@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -175,8 +176,7 @@ public final class RunConfigurationService {
                         }
                         // Fallback: detect OS-level process exit even if processTerminated
                         // never fires (stuck reader threads, non-compliant handlers).
-                        com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor
-                            .scheduleHandlerExitFallback(handler, exitFuture);
+                        RunPanelExecutor.scheduleHandlerExitFallback(handler, exitFuture);
                     }
                 }
             });
@@ -206,11 +206,11 @@ public final class RunConfigurationService {
 
         try {
             int exitCode = exitFuture.get(waitSeconds, TimeUnit.SECONDS);
-            disconnect.run();
             return formatRunCompletionMessage(name, exitCode);
         } catch (java.util.concurrent.TimeoutException e) {
-            disconnect.run();
             return formatRunTimeoutMessage(name, waitSeconds);
+        } finally {
+            disconnect.run();
         }
     }
 
