@@ -139,6 +139,7 @@ internal class PromptsPanel(
     init {
         promptList.cellRenderer = BubbleRenderer()
         promptList.fixedCellHeight = -1
+        promptList.visibleRowCount = 0  // makes getScrollableTracksViewportWidth() return true
         promptList.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val idx = promptList.locationToIndex(e.point)
