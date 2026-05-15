@@ -11,8 +11,10 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -488,15 +490,6 @@ public final class ConversationQuery {
         }
     }
 
-    /**
-     * Loads recent tool calls across all turns, sorted by timestamp descending (newest first).
-     * Used by the MCP tab to populate historic tool calls on startup.
-     *
-     * @param limit         maximum number of entries to return
-     * @param beforeEventId if non-null, only return entries with event_id &lt; this value
-     *                      (cursor-based pagination using timestamp ordering)
-     * @return list of tool call history entries, newest first
-     */
     @NotNull
     public List<ToolCallHistoryEntry> loadToolCallHistory(int limit, @Nullable String beforeEventId) {
         synchronized (database) {
@@ -505,14 +498,19 @@ public final class ConversationQuery {
             try {
                 String sql;
                 if (beforeEventId != null) {
+                    // Stable cursor: (timestamp, event_id) tiebreaker avoids duplicates
+                    // when events share the same timestamp.
                     sql = """
                         SELECT e.id, tc.tool_name, tc.display_name, tc.category,
                                tc.arguments, tc.result, e.timestamp, tc.duration_ms,
                                tc.success, tc.status
                         FROM events e
                         JOIN tool_call_events tc ON e.id = tc.event_id
-                        WHERE e.timestamp < (SELECT timestamp FROM events WHERE id = ?)
-                        ORDER BY e.timestamp DESC
+                        WHERE tc.is_mcp = 1
+                          AND (e.timestamp, e.id) < (
+                              (SELECT timestamp FROM events WHERE id = ?), ?
+                          )
+                        ORDER BY e.timestamp DESC, e.id DESC
                         LIMIT ?
                         """;
                 } else {
@@ -522,40 +520,58 @@ public final class ConversationQuery {
                                tc.success, tc.status
                         FROM events e
                         JOIN tool_call_events tc ON e.id = tc.event_id
-                        ORDER BY e.timestamp DESC
+                        WHERE tc.is_mcp = 1
+                        ORDER BY e.timestamp DESC, e.id DESC
                         LIMIT ?
                         """;
                 }
+                List<ToolCallHistoryEntry> result;
+                List<String> eventIds;
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
                     int paramIdx = 1;
                     if (beforeEventId != null) {
                         ps.setString(paramIdx++, beforeEventId);
+                        ps.setString(paramIdx++, beforeEventId);
                     }
                     ps.setInt(paramIdx, limit);
                     ResultSet rs = ps.executeQuery();
-                    List<ToolCallHistoryEntry> result = new ArrayList<>();
+                    result = new ArrayList<>();
+                    eventIds = new ArrayList<>();
                     while (rs.next()) {
                         String eventId = rs.getString(1);
-                        String toolName = rs.getString(2);
-                        String displayName = nullToEmpty(rs.getString(3));
-                        if (displayName.isEmpty()) displayName = toolName;
-                        String category = rs.getString(4);
-                        String arguments = rs.getString(5);
-                        String resultText = rs.getString(6);
-                        Instant timestamp = parseInstant(rs.getString(7));
-                        long durationMs = rs.getLong(8);
-                        boolean success = rs.getInt(9) != 0;
-                        String status = rs.getString(10);
-
-                        List<HookStageEntry> hookStages = loadHookStages(conn, eventId);
+                        eventIds.add(eventId);
                         result.add(new ToolCallHistoryEntry(
-                            eventId, toolName, displayName, category,
-                            arguments, resultText, timestamp, durationMs,
-                            success, status, !hookStages.isEmpty(), hookStages
+                            eventId,
+                            rs.getString(2),
+                            nullToEmpty(rs.getString(3)).isEmpty()
+                                ? rs.getString(2) : nullToEmpty(rs.getString(3)),
+                            rs.getString(4),
+                            rs.getString(5),
+                            rs.getString(6),
+                            parseInstant(rs.getString(7)),
+                            rs.getLong(8),
+                            rs.getInt(9) != 0,
+                            rs.getString(10),
+                            false, List.of()
                         ));
                     }
-                    return result;
                 }
+                if (result.isEmpty()) return result;
+
+                // Batch-load hook stages for all event IDs at once (avoids N+1)
+                Map<String, List<HookStageEntry>> hookMap = loadHookStagesBatch(conn, eventIds);
+
+                // Rebuild entries with hook data
+                List<ToolCallHistoryEntry> enriched = new ArrayList<>(result.size());
+                for (ToolCallHistoryEntry entry : result) {
+                    List<HookStageEntry> hooks = hookMap.getOrDefault(entry.eventId(), List.of());
+                    enriched.add(new ToolCallHistoryEntry(
+                        entry.eventId(), entry.toolName(), entry.displayName(), entry.category(),
+                        entry.arguments(), entry.result(), entry.timestamp(), entry.durationMs(),
+                        entry.success(), entry.status(), !hooks.isEmpty(), hooks
+                    ));
+                }
+                return enriched;
             } catch (SQLException e) {
                 LOG.warn("Failed to load tool call history", e);
                 return List.of();
@@ -564,27 +580,34 @@ public final class ConversationQuery {
     }
 
     @NotNull
-    private List<HookStageEntry> loadHookStages(
-        @NotNull Connection conn, @NotNull String toolEventId) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT trigger_kind, entry_id, outcome, duration_ms, outcome_reason
-            FROM hook_executions
-            WHERE tool_event_id = ?
-            ORDER BY rowid
-            """)) {
-            ps.setString(1, toolEventId);
+    private Map<String, List<HookStageEntry>> loadHookStagesBatch(
+        @NotNull Connection conn, @NotNull List<String> eventIds) throws SQLException {
+        if (eventIds.isEmpty()) return Map.of();
+        // Build IN clause with placeholders
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < eventIds.size(); i++) {
+            if (i > 0) placeholders.append(',');
+            placeholders.append('?');
+        }
+        String sql = "SELECT tool_event_id, trigger_kind, entry_id, outcome, duration_ms, outcome_reason " +
+            "FROM hook_executions WHERE tool_event_id IN (" + placeholders + ") ORDER BY rowid";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = 0; i < eventIds.size(); i++) {
+                ps.setString(i + 1, eventIds.get(i));
+            }
             ResultSet rs = ps.executeQuery();
-            List<HookStageEntry> stages = new ArrayList<>();
+            Map<String, List<HookStageEntry>> map = new HashMap<>();
             while (rs.next()) {
-                stages.add(new HookStageEntry(
-                    nullToEmpty(rs.getString(1)),
+                String eventId = rs.getString(1);
+                map.computeIfAbsent(eventId, k -> new ArrayList<>()).add(new HookStageEntry(
                     nullToEmpty(rs.getString(2)),
                     nullToEmpty(rs.getString(3)),
-                    rs.getLong(4),
-                    rs.getString(5)
+                    nullToEmpty(rs.getString(4)),
+                    rs.getLong(5),
+                    rs.getString(6)
                 ));
             }
-            return stages;
+            return map;
         }
     }
 
