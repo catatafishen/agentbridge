@@ -18,18 +18,22 @@ import javax.swing.text.DefaultStyledDocument
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
  * tool chips with animated ring indicators, and collapsible thinking sections.
  *
+ * Agent text bubbles use [NativeMarkdownPane] to render markdown as HTML via
+ * [MarkdownRenderer], supporting tables, code blocks, headings, lists, bold,
+ * inline code, blockquotes, and clickable file/git links.
+ *
  * Visually matches the JCEF panel layout: user bubbles are right-aligned with
  * a blue tint, agent bubbles are left-aligned with a green tint, tool calls
  * appear as compact colored chips in a horizontal strip, and thinking text
  * is displayed in a collapsible gray block.
- *
- * Markdown is not rendered — text is displayed as-is.
  */
-class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPanelApi {
+class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
     var onLoadMoreRequested: (() -> Unit)? = null
+
+    private val fileNavigator = FileNavigator(project)
 
     private val contentPanel = JBPanel<JBPanel<*>>(null).apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -48,6 +52,7 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
 
     private var currentTurn: TurnContext? = null
     private val allChips = mutableMapOf<String, ToolChipComponent>()
+    private val allMarkdownPanes = mutableListOf<NativeMarkdownPane>()
     private val spinTimer = Timer(50) {
         allChips.values.filter { it.isSpinning() }.forEach { it.advanceSpin() }
     }.apply { isRepeats = true }
@@ -72,7 +77,7 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
         var thinkingDoc: DefaultStyledDocument? = null,
         var thinkingExpanded: Boolean = true,
         var textBubble: JPanel? = null,
-        var textDoc: DefaultStyledDocument? = null,
+        var markdownPane: NativeMarkdownPane? = null,
     )
 
     private fun ensureTurn(): TurnContext {
@@ -103,6 +108,7 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
     }
 
     private fun finalizeTurn() {
+        currentTurn?.markdownPane?.renderNow()
         currentTurn = null
     }
 
@@ -189,18 +195,19 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
 
     override fun appendText(text: String) {
         val turn = ensureTurn()
-        if (turn.textBubble == null) {
+        if (turn.markdownPane == null) {
             val bubble = RoundedPanel(NativeChatColors.AGENT_BUBBLE_BG).apply {
                 border = JBUI.Borders.empty(JBUI.scale(8), JBUI.scale(14), JBUI.scale(8), JBUI.scale(14))
                 alignmentX = Component.LEFT_ALIGNMENT
             }
-            val (doc, pane) = newTextPane()
+            val pane = NativeMarkdownPane(fileNavigator)
+            allMarkdownPanes += pane
             bubble.add(pane, BorderLayout.CENTER)
             turn.textBubble = bubble
-            turn.textDoc = doc
+            turn.markdownPane = pane
             turn.container.add(bubble)
         }
-        appendToDoc(turn.textDoc!!, text)
+        turn.markdownPane!!.appendMarkdown(text)
         scrollToBottom()
     }
 
@@ -348,6 +355,8 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
     }
 
     override fun clear() {
+        allMarkdownPanes.forEach { it.dispose() }
+        allMarkdownPanes.clear()
         contentPanel.removeAll()
         contentPanel.revalidate()
         contentPanel.repaint()
@@ -356,6 +365,8 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
         nudgeBubbles.clear()
         queuedMessages.clear()
         loadMoreButton = null
+        codeStatsLabel = null
+        currentModelLabel = null
         if (spinTimer.isRunning) spinTimer.stop()
         placeholderLabel = null
     }
@@ -369,6 +380,9 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
             add("${stats.durationMs / 1000}s")
             add("${stats.inputTokens}↑ ${stats.outputTokens}↓")
             if (stats.costUsd > 0) add("${"%.4f".format(stats.costUsd)}$")
+            if (stats.linesAdded > 0 || stats.linesRemoved > 0) {
+                add("+${stats.linesAdded} −${stats.linesRemoved}")
+            }
             if (stats.model.isNotEmpty()) add(stats.model.substringAfterLast('/').substringAfterLast(':'))
         }
         addRow(JBLabel(parts.joinToString(" · ")).apply {
@@ -439,12 +453,45 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
             alignmentX = Component.LEFT_ALIGNMENT
         }
         panel.add(JBLabel("<html>$question</html>"), BorderLayout.NORTH)
+
         val buttons = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
         options.forEach { opt ->
             buttons.add(JButton(opt).apply { addActionListener { onRespond(opt) } })
         }
-        panel.add(buttons, BorderLayout.SOUTH)
+
+        val countdownLabel = JBLabel().apply {
+            foreground = UIUtil.getContextHelpForeground()
+            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+        }
+
+        val extendButton = JButton("I need more time").apply {
+            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+            addActionListener {
+                val newDeadline = onExtend()
+                putClientProperty("deadline", newDeadline)
+            }
+        }
+        extendButton.putClientProperty("deadline", deadlineEpochMs)
+
+        val countdownTimer = Timer(1000) {
+            val dl = (extendButton.getClientProperty("deadline") as? Long) ?: deadlineEpochMs
+            val remaining = (dl - System.currentTimeMillis()) / 1000
+            if (remaining <= 0) {
+                countdownLabel.text = "⏱ Time expired"
+                onSuperseded()
+            } else {
+                countdownLabel.text = "⏱ ${remaining}s remaining"
+            }
+        }.apply { isRepeats = true }
+
+        val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply { isOpaque = false }
+        bottomRow.add(buttons)
+        bottomRow.add(extendButton)
+        bottomRow.add(countdownLabel)
+
+        panel.add(bottomRow, BorderLayout.SOUTH)
         addRow(panel)
+        countdownTimer.start()
     }
 
     override fun hasPendingAskUserRequest(): Boolean = false
@@ -526,20 +573,63 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
         removeQueuedMessage(entry.key)
     }
 
-    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) { /* No visual representation in native UI */
+    private var codeStatsLabel: JBLabel? = null
+
+    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {
+        if (linesAdded == 0 && linesRemoved == 0) return
+        val text = "📊 +$linesAdded / −$linesRemoved lines"
+        val label = codeStatsLabel
+        if (label != null) {
+            label.text = text
+        } else {
+            val newLabel = JBLabel(text).apply {
+                foreground = UIUtil.getContextHelpForeground()
+                font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
+                border = JBUI.Borders.empty(1, 0, 2, 0)
+                alignmentX = Component.LEFT_ALIGNMENT
+            }
+            codeStatsLabel = newLabel
+            addRow(newLabel)
+        }
     }
 
-    override fun setCurrentModel(modelId: String) { /* No visual representation in native UI */
+    private var currentModelLabel: JBLabel? = null
+
+    override fun setCurrentModel(modelId: String) {
+        updateMetaLabel(modelId.substringAfterLast('/').substringAfterLast(':'))
     }
 
-    override fun setCurrentProfile(profileId: String) { /* No visual representation in native UI */
+    override fun setCurrentProfile(profileId: String) {
+        // Profile is displayed in ProcessingTimerPanel — not duplicated here
     }
 
     override fun setCurrentAgent(
         agentName: String,
         profileId: String,
         clientType: String
-    ) { /* No visual representation in native UI */
+    ) {
+        val display = buildString {
+            append(agentName)
+            if (clientType.isNotEmpty()) append(" · $clientType")
+        }
+        updateMetaLabel(display)
+    }
+
+    private fun updateMetaLabel(text: String) {
+        if (text.isEmpty()) return
+        val label = currentModelLabel
+        if (label != null) {
+            label.text = "🤖 $text"
+        } else {
+            val newLabel = JBLabel("🤖 $text").apply {
+                foreground = UIUtil.getContextHelpForeground()
+                font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
+                border = JBUI.Borders.empty(1, 0, 2, 0)
+                alignmentX = Component.LEFT_ALIGNMENT
+            }
+            currentModelLabel = newLabel
+            addRow(newLabel)
+        }
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {
@@ -558,6 +648,7 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
     }
 
     override fun dispose() {
+        allMarkdownPanes.forEach { it.dispose() }
         if (spinTimer.isRunning) spinTimer.stop()
     }
 
