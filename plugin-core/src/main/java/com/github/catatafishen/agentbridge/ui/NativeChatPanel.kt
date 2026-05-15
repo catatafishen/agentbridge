@@ -29,6 +29,7 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
 
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
+    var onLoadMoreRequested: (() -> Unit)? = null
 
     private val contentPanel = JBPanel<JBPanel<*>>(null).apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -180,7 +181,8 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
         return java.util.UUID.randomUUID().toString()
     }
 
-    override fun removePromptEntry(entryId: String) {}
+    override fun removePromptEntry(entryId: String) { /* Native panel doesn't track entry IDs for removal */
+    }
 
     override fun startStreaming() { /* turn created lazily */
     }
@@ -351,6 +353,9 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
         contentPanel.repaint()
         currentTurn = null
         allChips.clear()
+        nudgeBubbles.clear()
+        queuedMessages.clear()
+        loadMoreButton = null
         if (spinTimer.isRunning) spinTimer.stop()
         placeholderLabel = null
     }
@@ -387,7 +392,9 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
         addRow(panel)
     }
 
-    override fun disableQuickReplies() {}
+    override fun disableQuickReplies() { /* Buttons are statically rendered; no disable mechanism needed */
+    }
+
     override fun cancelAllRunning() {
         finalizeTurn()
     }
@@ -442,24 +449,274 @@ class NativeChatPanel(@Suppress("UNUSED_PARAMETER") project: Project) : ChatPane
 
     override fun hasPendingAskUserRequest(): Boolean = false
     override fun consumePendingAskUserResponse(response: String): Boolean = false
-    override fun clearPendingAskUserRequest(reqId: String?) {}
+    override fun clearPendingAskUserRequest(reqId: String?) { /* Ask-user state is managed by JCEF panel only */
+    }
 
-    override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {}
-    override fun resolveNudgeBubble(id: String) {}
-    override fun removeNudgeBubble(id: String) {}
-    override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {}
-    override fun showQueuedMessage(id: String, text: String) {}
-    override fun removeQueuedMessage(id: String) {}
-    override fun removeQueuedMessageByText(text: String) {}
+    private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
-    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {}
-    override fun setCurrentModel(modelId: String) {}
-    override fun setCurrentProfile(profileId: String) {}
-    override fun setCurrentAgent(agentName: String, profileId: String, clientType: String) {}
-    override fun addContextFilesEntry(files: List<Pair<String, String>>) {}
+    override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
+        removeNudgeBubble(id)
+        val label = if (source.isReprimand) "⚡ $text" else "💬 $text"
+        val bubble = RoundedPanel(NativeChatColors.NUDGE_BG, borderColor = NativeChatColors.NUDGE_BORDER).apply {
+            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(10))
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        bubble.add(JBLabel("<html>$label</html>").apply {
+            foreground = NativeChatColors.NUDGE_FG
+            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
+        }, BorderLayout.CENTER)
+        nudgeBubbles[id] = bubble
+        addRow(bubble)
+    }
+
+    override fun resolveNudgeBubble(id: String) {
+        removeNudgeBubble(id)
+    }
+
+    override fun removeNudgeBubble(id: String) {
+        nudgeBubbles.remove(id)?.let {
+            contentPanel.remove(it)
+            contentPanel.revalidate()
+            contentPanel.repaint()
+        }
+    }
+
+    override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
+        val label = if (source.isReprimand) "⚡ $text" else "💬 $text"
+        val bubble = RoundedPanel(NativeChatColors.NUDGE_BG, borderColor = NativeChatColors.NUDGE_BORDER).apply {
+            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(10))
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        bubble.add(JBLabel("<html>$label</html>").apply {
+            foreground = NativeChatColors.NUDGE_FG
+            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
+        }, BorderLayout.CENTER)
+        addRow(bubble)
+    }
+
+    private val queuedMessages = mutableMapOf<String, JComponent>()
+
+    override fun showQueuedMessage(id: String, text: String) {
+        removeQueuedMessage(id)
+        val panel = RoundedPanel(NativeChatColors.QUEUED_BG, borderColor = NativeChatColors.QUEUED_BORDER).apply {
+            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(10))
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        panel.add(JBLabel("⏳ $text").apply {
+            foreground = NativeChatColors.QUEUED_FG
+            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
+            putClientProperty("queuedText", text)
+        }, BorderLayout.CENTER)
+        queuedMessages[id] = panel
+        addRow(panel)
+    }
+
+    override fun removeQueuedMessage(id: String) {
+        queuedMessages.remove(id)?.let {
+            contentPanel.remove(it)
+            contentPanel.revalidate()
+            contentPanel.repaint()
+        }
+    }
+
+    override fun removeQueuedMessageByText(text: String) {
+        val entry = queuedMessages.entries.firstOrNull { (_, panel) ->
+            (panel.components.firstOrNull() as? JBLabel)?.getClientProperty("queuedText") == text
+        } ?: return
+        removeQueuedMessage(entry.key)
+    }
+
+    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) { /* No visual representation in native UI */
+    }
+
+    override fun setCurrentModel(modelId: String) { /* No visual representation in native UI */
+    }
+
+    override fun setCurrentProfile(profileId: String) { /* No visual representation in native UI */
+    }
+
+    override fun setCurrentAgent(
+        agentName: String,
+        profileId: String,
+        clientType: String
+    ) { /* No visual representation in native UI */
+    }
+
+    override fun addContextFilesEntry(files: List<Pair<String, String>>) {
+        if (files.isEmpty()) return
+        val chipPanel = WrappingFlowPanel(JBUI.scale(4), JBUI.scale(2)).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        for ((name, _) in files) {
+            chipPanel.add(JBLabel("📄 $name").apply {
+                foreground = UIUtil.getContextHelpForeground()
+                font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+                border = JBUI.Borders.empty(1, 4)
+            })
+        }
+        addRow(chipPanel)
+    }
 
     override fun dispose() {
         if (spinTimer.isRunning) spinTimer.stop()
+    }
+
+    // ── History restore ────────────────────────────────────────────
+
+    /** Replays a batch of [EntryData] items into the Swing panel for conversation restoration. */
+    fun appendEntries(entries: List<EntryData>, @Suppress("UNUSED_PARAMETER") totalPromptCount: Int = -1) {
+        if (entries.isEmpty()) return
+        replayEntries(entries)
+    }
+
+    /** Prepends older entries at the top of the panel (for "Load More"). */
+    fun prependEntries(entries: List<EntryData>) {
+        if (entries.isEmpty()) return
+        val insertionPoint = loadMoreButton?.let { contentPanel.getComponentZOrder(it) + 1 } ?: 0
+        replayEntries(entries, insertionIndex = insertionPoint)
+    }
+
+    private var loadMoreButton: JComponent? = null
+
+    fun showLoadMore(deferredCount: Int) {
+        hideLoadMore()
+        val btn = JButton("▲ Load $deferredCount more messages").apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+            isFocusPainted = false
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+            addActionListener { onLoadMoreRequested?.invoke() }
+        }
+        contentPanel.add(btn, 0)
+        loadMoreButton = btn
+        contentPanel.revalidate()
+        contentPanel.repaint()
+    }
+
+    fun hideLoadMore() {
+        loadMoreButton?.let { contentPanel.remove(it) }
+        loadMoreButton = null
+        contentPanel.revalidate()
+        contentPanel.repaint()
+    }
+
+    /**
+     * Replays [EntryData] items into the panel using the existing ChatPanelApi methods.
+     * When [insertionIndex] >= 0, components are inserted at that position (for prepend);
+     * otherwise they are appended at the end.
+     */
+    private fun replayEntries(entries: List<EntryData>, insertionIndex: Int = -1) {
+        val savedAutoScroll = autoScrollEnabled
+        if (insertionIndex >= 0) autoScrollEnabled = false
+
+        val prevAddRow = if (insertionIndex >= 0) {
+            var nextIdx = insertionIndex
+            { comp: JComponent -> insertRowAt(comp, nextIdx); nextIdx += 2 /* comp + strut */ }
+        } else null
+
+        for (entry in entries) {
+            when (entry) {
+                is EntryData.Prompt -> {
+                    finalizeTurn()
+                    val ctxTriples = entry.contextFiles?.map { Triple(it.name, it.path, it.line) }
+                    if (prevAddRow != null) {
+                        addPromptEntryAt(entry.text, ctxTriples, prevAddRow)
+                    } else {
+                        addPromptEntry(entry.text, ctxTriples)
+                    }
+                }
+
+                is EntryData.Text -> {
+                    startStreaming()
+                    appendText(entry.raw)
+                }
+
+                is EntryData.Thinking -> {
+                    appendThinkingText(entry.raw)
+                    collapseThinking()
+                }
+
+                is EntryData.ToolCall -> {
+                    val status = entry.status ?: "complete"
+                    addToolCallEntry(entry.entryId, entry.title, entry.arguments, entry.kind, false)
+                    updateToolCall(entry.entryId, status, ChatPanelApi.ToolCallUpdate())
+                }
+
+                is EntryData.SubAgent -> {
+                    val status = entry.status ?: "complete"
+                    addSubAgentEntry(entry.entryId, entry.agentType, entry.description, entry.prompt)
+                    updateSubAgentResult(entry.entryId, status, entry.result, entry.description)
+                }
+
+                is EntryData.TurnStats -> {
+                    emitTurnStats(
+                        TurnStatsData(
+                            durationMs = entry.durationMs,
+                            inputTokens = entry.inputTokens.toInt(),
+                            outputTokens = entry.outputTokens.toInt(),
+                            costUsd = entry.costUsd,
+                            toolCallCount = entry.toolCallCount,
+                            linesAdded = entry.linesAdded,
+                            linesRemoved = entry.linesRemoved,
+                            model = entry.model,
+                            multiplier = entry.multiplier
+                        )
+                    )
+                }
+
+                is EntryData.SessionSeparator -> addSessionSeparator(entry.timestamp, entry.agent)
+                is EntryData.ContextFiles -> addContextFilesEntry(entry.files.map { it.name to it.path })
+                is EntryData.Status -> addInfoEntry("${entry.icon} ${entry.message}")
+                is EntryData.Nudge -> if (entry.sent) addNudgeEntry(entry.id, entry.text, entry.source)
+            }
+        }
+        finalizeTurn()
+
+        if (insertionIndex >= 0) autoScrollEnabled = savedAutoScroll
+        contentPanel.revalidate()
+        contentPanel.repaint()
+    }
+
+    private fun insertRowAt(comp: JComponent, index: Int) {
+        comp.alignmentX = Component.LEFT_ALIGNMENT
+        contentPanel.add(comp, index)
+        contentPanel.add(Box.createVerticalStrut(JBUI.scale(3)), index + 1)
+    }
+
+    private fun addPromptEntryAt(
+        text: String,
+        contextFiles: List<Triple<String, String, Int>>?,
+        addFn: (JComponent) -> Unit
+    ): String {
+        finalizeTurn()
+        val bubble = object : RoundedPanel(NativeChatColors.USER_BUBBLE_BG) {
+            override fun getMaximumSize(): Dimension {
+                val pw = parent?.width ?: JBUI.scale(600)
+                return Dimension((pw * 0.82).toInt().coerceAtLeast(JBUI.scale(200)), Int.MAX_VALUE)
+            }
+        }.apply {
+            border = JBUI.Borders.empty(JBUI.scale(6), JBUI.scale(14), JBUI.scale(6), JBUI.scale(14))
+        }
+        val (doc, pane) = newTextPane()
+        appendToDoc(doc, text)
+        bubble.add(pane, BorderLayout.CENTER)
+        if (!contextFiles.isNullOrEmpty()) {
+            val fileList = contextFiles.joinToString(", ") { (name, _, _) -> name }
+            bubble.add(JBLabel("📎 $fileList").apply {
+                foreground = UIUtil.getContextHelpForeground()
+                font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
+                border = JBUI.Borders.emptyTop(JBUI.scale(2))
+            }, BorderLayout.SOUTH)
+        }
+        val row = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(Box.createHorizontalGlue())
+            add(bubble)
+        }
+        addFn(row)
+        return java.util.UUID.randomUUID().toString()
     }
 
     /**

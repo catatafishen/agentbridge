@@ -140,6 +140,7 @@ class ChatToolWindowContent(
     private val authService = AuthLoginService(project)
     private lateinit var consolePanel: ChatPanelApi
     private lateinit var chatConsolePanel: ChatConsolePanel
+    private lateinit var broadcastPanel: BroadcastChatPanel
     private lateinit var responsePanelContainer: JBPanel<JBPanel<*>>
     private var copilotBanner: AuthSetupBanner? = null
     private var statusBanner: StatusBanner? = null
@@ -853,7 +854,7 @@ class ChatToolWindowContent(
         }
     }
 
-private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth: Int, isActive: Boolean) {
+    private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth: Int, isActive: Boolean) {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         val arc = JBUI.scale(8)
         g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
@@ -884,7 +885,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         )
     }
 
-/** Paints three small dots in the NW corner as a visual cue that this corner is draggable. */
+    /** Paints three small dots in the NW corner as a visual cue that this corner is draggable. */
     private fun paintNwCornerGrip(g2: Graphics2D, isActive: Boolean) {
         val baseColor = if (isActive) {
             JBUI.CurrentTheme.Focus.defaultButtonColor()
@@ -2136,7 +2137,8 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun isSelected(e: AnActionEvent): Boolean =
-            if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.isShowingNative() ?: false else false
+            if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.isShowingNative()
+                ?: false else false
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.toggle(state)
@@ -2309,9 +2311,10 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
     private fun createResponsePanel(): JComponent {
         chatConsolePanel = ChatConsolePanel(project)
         val nativeChatPanel = NativeChatPanel(project)
-        val broadcastPanel = BroadcastChatPanel(chatConsolePanel, nativeChatPanel)
-        consolePanel = broadcastPanel
-        chatConsolePanel.onLoadMoreRequested = ::onLoadMoreHistory
+        val bp = BroadcastChatPanel(chatConsolePanel, nativeChatPanel)
+        broadcastPanel = bp
+        consolePanel = bp
+        bp.onLoadMoreRequested = ::onLoadMoreHistory
         chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
             val nudgeService = AgentNudgeService.getInstance(project)
@@ -2967,9 +2970,9 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
     private fun restoreEntries(entries: List<EntryData>, hasMoreOnDisk: Boolean) {
         if (entries.isEmpty()) return
         val histSettings = ChatHistorySettings.getInstance(project)
-        chatConsolePanel.setDomMessageLimit(histSettings.domMessageLimit)
+        broadcastPanel.setDomMessageLimit(histSettings.domMessageLimit)
         conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore, hasMoreOnDisk)
-        chatConsolePanel.appendEntries(
+        broadcastPanel.appendEntries(
             conversationReplayer.recentEntries(),
             conversationReplayer.totalPromptCount()
         )
@@ -2980,7 +2983,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
 
     private fun showDeferredRestoreCount() {
         val deferred = conversationReplayer.remainingPromptCount()
-        if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
+        if (deferred > 0) broadcastPanel.showLoadMore(deferred)
     }
 
     private fun restoreTurnStats(turnStatsList: List<EntryData.TurnStats>) {
@@ -3113,15 +3116,15 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
     private fun onLoadMoreHistory() {
         val batchSize = ChatHistorySettings.getInstance(project).loadMoreBatchSize
         val batch = conversationReplayer.loadNextBatch(batchSize)
-        if (batch.isNotEmpty()) chatConsolePanel.prependEntries(batch)
+        if (batch.isNotEmpty()) broadcastPanel.prependEntries(batch)
         val remaining = conversationReplayer.remainingPromptCount()
         if (remaining > 0) {
-            chatConsolePanel.showLoadMore(remaining)
+            broadcastPanel.showLoadMore(remaining)
         } else {
             if (conversationReplayer.hasOlderHistoryOnDisk) {
                 LOG.info("Older history exists on disk but was not loaded (session too large for tail-read budget)")
             }
-            chatConsolePanel.hideLoadMore()
+            broadcastPanel.hideLoadMore()
         }
     }
 
