@@ -136,7 +136,7 @@ export class ToolCallsView extends PollableView {
     private _render(): void {
         // Controller returns newest-first; reverse for chronological order (newest at bottom).
         const items = ToolCallsController.getAll().reverse();
-        const noItems = items.length === 0 && ToolCallsController.isHistoryExhausted();
+        const noItems = items.length === 0;
         if (this.toggleEmptyState(this._empty, this._list, noItems)) return;
 
         // Show/hide "Load earlier" button
@@ -186,9 +186,9 @@ export class ToolCallsView extends PollableView {
         return this._container.scrollHeight - this._container.scrollTop - this._container.clientHeight < 50;
     }
 
-    /** Requests an older page of tool calls from the host. */
+    /** Requests an older page of tool calls from the host (push mode only). */
     private _loadMore(): void {
-        if (this._loadingMore || ToolCallsController.isHistoryExhausted()) return;
+        if (!this._pushMode || this._loadingMore || ToolCallsController.isHistoryExhausted()) return;
         this._loadingMore = true;
         const oldestId = ToolCallsController.oldestHistoricId();
         const fn = (window as any).loadMoreToolCalls;
@@ -196,7 +196,9 @@ export class ToolCallsView extends PollableView {
             fn(oldestId ?? '');
         }
         // Reset guard after a short delay to allow re-triggers if the call failed silently.
-        setTimeout(() => { this._loadingMore = false; }, 2000);
+        setTimeout(() => {
+            this._loadingMore = false;
+        }, 2000);
     }
 
     /**
@@ -207,7 +209,7 @@ export class ToolCallsView extends PollableView {
     }
 
     private _renderItem(item: ToolCallData): string {
-        const expanded = item.id === this._expandedId;
+        const expanded = String(item.id) === String(this._expandedId);
         const kindClass = this._kindCssClass(item.kind);
         const status = item.status || 'running';
         const duration = item.durationMs >= 0 ? this._formatDuration(item.durationMs) : '';

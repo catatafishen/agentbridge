@@ -114,10 +114,12 @@ const ToolCallsController = {
     },
 
     /**
-     * Clear all entries (live only — does not clear history exhaustion flag).
+     * Clear live entries only — preserves historic entries and the history-exhaustion flag.
      */
     clear(): void {
-        _items.clear();
+        for (const [key, item] of _items) {
+            if (!item.historic) _items.delete(key);
+        }
         _notify();
     },
 

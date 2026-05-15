@@ -154,6 +154,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                 }
                 return@executeOnPooledThread
             }
+            // If we got fewer entries than requested, there are no more pages
+            val exhausted = entries.size < HISTORY_PAGE_SIZE
             val sb = StringBuilder()
             for (entry in entries) {
                 sb.append("ToolCallsController.prependHistoric(")
@@ -161,6 +163,9 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                     .append(");")
             }
             sb.append("ToolCallsController.notifyChange();")
+            if (exhausted) {
+                sb.append("ToolCallsController.setHistoryExhausted(true);")
+            }
             ApplicationManager.getApplication().invokeLater {
                 executeJs(sb.toString())
             }
@@ -277,7 +282,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             sb.append(",\"toolName\":").append(escapeJson(entry.toolName()))
             val kind = registry?.findById(entry.toolName())?.kind()?.value() ?: entry.category()
             kind?.let { sb.append(",\"kind\":").append(escapeJson(it)) }
-            val status = if (entry.success()) "success" else "error"
+            val status = entry.status() ?: if (entry.success()) "success" else "error"
             sb.append(",\"status\":").append(escapeJson(status))
             sb.append(",\"timestamp\":").append(escapeJson(entry.timestamp().toString()))
             sb.append(",\"arguments\":").append(escapeJson(entry.arguments()))
