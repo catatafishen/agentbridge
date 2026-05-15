@@ -8,11 +8,14 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.UIUtil
+import java.nio.file.Files
+import java.nio.file.Path
 
 @Suppress("unused")
 class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
@@ -20,6 +23,7 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
     SearchableConfigurable {
 
     private val statusLabel = JBLabel()
+    private val refreshResultLabel = JBLabel()
     private val genericSettings = GenericSettings(AGENT_ID)
 
     override fun getId(): String = ID
@@ -77,11 +81,39 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
                     { genericSettings.setContextHistoryLimit(it) }
                 )
         }
+        separator()
+        row("Model definitions:") {
+            button("Refresh") { refreshModelDefinitions() }
+                .comment(
+                    "OpenCode bundles a snapshot of model capabilities that may be outdated. " +
+                        "If a model reports missing features (e.g. no image support), " +
+                        "click to clear the cache so OpenCode fetches the latest definitions " +
+                        "from models.dev on next launch."
+                )
+            cell(refreshResultLabel)
+        }
     }
 
     override fun reset() {
         super<BoundConfigurable>.reset()
         refreshStatusAsync()
+    }
+
+    private fun refreshModelDefinitions() {
+        refreshResultLabel.text = "Clearing cache..."
+        refreshResultLabel.foreground = UIUtil.getLabelForeground()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val deleted = deleteModelCache()
+            ApplicationManager.getApplication().invokeLater {
+                if (deleted) {
+                    refreshResultLabel.text = "✓ Cache cleared — restart OpenCode to fetch latest definitions"
+                    refreshResultLabel.foreground = JBColor(0x008000, 0x4EC94E)
+                } else {
+                    refreshResultLabel.text = "No cached model definitions found"
+                    refreshResultLabel.foreground = UIUtil.getContextHelpForeground()
+                }
+            }
+        }
     }
 
     private fun refreshStatusAsync() {
@@ -105,5 +137,41 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
         const val DEFAULT_CONTEXT_LIMIT_CHARS = 0
         const val ID = "com.github.catatafishen.agentbridge.client.opencode"
         private const val AGENT_ID = "opencode"
+
+        /**
+         * Resolves the OpenCode model cache directory based on the OS.
+         *
+         * - Linux: `$XDG_CACHE_HOME/opencode/` or `~/.cache/opencode/`
+         * - macOS: `~/Library/Caches/opencode/`
+         * - Windows: `%LOCALAPPDATA%/opencode/`
+         */
+        private fun resolveModelCacheDir(): Path {
+            val home = Path.of(System.getProperty("user.home"))
+            return when {
+                SystemInfo.isMac -> home.resolve("Library/Caches/opencode")
+                SystemInfo.isWindows -> {
+                    val localAppData = System.getenv("LOCALAPPDATA")
+                    if (localAppData != null) Path.of(localAppData, "opencode")
+                    else home.resolve("AppData/Local/opencode")
+                }
+
+                else -> {
+                    val xdgCache = System.getenv("XDG_CACHE_HOME")
+                    if (xdgCache != null) Path.of(xdgCache, "opencode")
+                    else home.resolve(".cache/opencode")
+                }
+            }
+        }
+
+        /**
+         * Deletes the cached `models.json` so OpenCode fetches fresh definitions
+         * from models.dev on next launch.
+         *
+         * @return true if a cache file was found and deleted
+         */
+        fun deleteModelCache(): Boolean {
+            val cacheFile = resolveModelCacheDir().resolve("models.json")
+            return Files.deleteIfExists(cacheFile)
+        }
     }
 }
