@@ -45,7 +45,9 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 }
 
 /**
- * Opens the AgentBridge root settings page programmatically.
+ * Opens the AgentBridge settings, landing on the first child page (UI/UX) so that the
+ * AgentBridge sub-tree is already expanded in the settings tree. The root page is a
+ * description only, so navigating directly to the first child saves the user one click.
  *
  * Defers the dialog to the next EDT cycle to avoid a BufferStrategy NPE that can occur
  * when a modal dialog is shown synchronously during mouse-event processing
@@ -54,6 +56,6 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 fun openAgentBridgeSettings(project: Project) {
     ApplicationManager.getApplication().invokeLater {
         ShowSettingsUtil.getInstance()
-            .showSettingsDialog(project, PluginSettingsConfigurable::class.java)
+            .showSettingsDialog(project, ChatInputConfigurable::class.java)
     }
 }
