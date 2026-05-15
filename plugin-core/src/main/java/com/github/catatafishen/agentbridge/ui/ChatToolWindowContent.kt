@@ -868,6 +868,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             g2.color = UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
             g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
         }
+        paintNwCornerGrip(g2, isActive)
     }
 
     private fun JComponent.paintInputSectionDivider(g2: Graphics2D, sideRailWidth: Int) {
@@ -880,6 +881,28 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             dividerX,
             height - insets.bottom - JBUI.scale(2)
         )
+    }
+
+/** Paints three small dots in the NW corner as a visual cue that this corner is draggable. */
+    private fun paintNwCornerGrip(g2: Graphics2D, isActive: Boolean) {
+        val baseColor = if (isActive) {
+            JBUI.CurrentTheme.Focus.defaultButtonColor()
+        } else {
+            UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+        }
+        val saved = g2.composite
+        g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.63f)
+        g2.color = baseColor
+        val dot = JBUI.scale(2)
+        val gap = JBUI.scale(3)
+        val off = JBUI.scale(5)
+        // Three dots in a triangular NW arrangement:
+        //  ● ●
+        //  ●
+        g2.fillRect(off, off, dot, dot)
+        g2.fillRect(off + dot + gap, off, dot, dot)
+        g2.fillRect(off, off + dot + gap, dot, dot)
+        g2.composite = saved
     }
 
     private fun createBottomSection(inputSection: JComponent): JBPanel<JBPanel<*>> =
@@ -904,24 +927,25 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         return splitPanel
     }
 
-private fun installInputResizeHandler(
+    private fun installInputResizeHandler(
         inputSection: JComponent,
         bottomSection: JComponent,
         splitPanel: JComponent,
         sideButtonsPanel: JComponent,
         props: com.intellij.ide.util.PropertiesComponent
     ) {
-        // N resize zone: the top edge of inputSection (painted stroke at ~y=1). 4px gives
-        // a comfortable grab area covering the visual border without intruding into content.
-        val nDragZone = JBUI.scale(4)
-        // W resize zone: 8px from the left edge of the component. Applied to both
-        // bottomSection (the gap before inputSection) and sideButtonsPanel (the visual border).
+        // N resize zone: covers the full 8px top inset of inputSection (comfortable grab area).
+        val nDragZone = JBUI.scale(8)
+        // W resize zone: 8px from the left edge, applied to both the outer gap and sideButtonsPanel.
         val wDragZone = JBUI.scale(8)
+        // NW corner: x ≤ nwCornerSize within the top inset triggers NW (wider than W-only zone).
+        val nwCornerSize = JBUI.scale(20)
+        // How far into sideButtonsPanel (y coords) the NW corner extends below the top inset.
+        val nwExtendedY = JBUI.scale(12)
 
         // --- Shared drag state ---
-        // Only one of these can be active per gesture since each handler owns its drag.
-        var heightDragStart: Pair<Int, Int>? = null  // (startScreenY, startHeight) for N or NW
-        var widthDragStart: Pair<Int, Int>? = null   // (startScreenX, startSideWidth) for W or NW
+        var heightDragStart: Pair<Int, Int>? = null  // (startScreenY, startHeight)
+        var widthDragStart: Pair<Int, Int>? = null   // (startScreenX, startSideWidth)
 
         fun startWidthDrag(screenX: Int) {
             val sideWidth = rootSplitter.firstComponent?.width ?: 0
@@ -949,28 +973,27 @@ private fun installInputResizeHandler(
         }
 
         // N (and NW corner) handler — attached to inputSection.
-        // inputSection has an 8px top inset, so y=0-7 has no children; events in that strip
-        // go directly to inputSection. The NW corner (x <= wDragZone, y <= nDragZone) is in
-        // the top-left of that inset — the visual top and left borders meet there.
+        // The 8px top inset has no children so events in y=0..7 go directly here.
+        // The NW corner (x ≤ nwCornerSize, y ≤ nDragZone) triggers both height and width drag.
         val nResizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 inputSection.cursor = when {
-                    e.y <= nDragZone && e.x <= wDragZone ->
+                    e.y <= nDragZone && e.x <= nwCornerSize ->
                         Cursor.getPredefinedCursor(Cursor.NW_RESIZE_CURSOR)
+
                     e.y <= nDragZone ->
                         Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
+
                     else -> Cursor.getDefaultCursor()
                 }
             }
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
                 if (e.y > nDragZone) return
-                if (e.x <= wDragZone) {
-                    // NW corner: start both height and width drag.
+                if (e.x <= nwCornerSize) {
                     heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
                     startWidthDrag(e.locationOnScreen.x)
                 } else {
-                    // N-only: start height drag.
                     heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
                 }
             }
@@ -994,29 +1017,34 @@ private fun installInputResizeHandler(
         inputSection.addMouseListener(nResizeHandler)
 
         // W handler on sideButtonsPanel — covers the visible left border of inputSection.
-        // sideButtonsPanel is the WEST child of inputSection, starting at x=0 in inputSection
-        // coordinates. Its toolbar has a 4px left inset, so x=0-3 is empty of button content.
-        // Attaching here lets users grab the visual border directly, not just the outer gap.
+        // The top nwExtendedY pixels of sideButtonsPanel (directly below the top inset) extend
+        // the NW corner downward so the visible corner of the input box triggers NW drag.
         val wSideHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
-                sideButtonsPanel.cursor = if (e.x <= wDragZone) {
-                    Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR)
-                } else {
-                    Cursor.getDefaultCursor()
+                sideButtonsPanel.cursor = when {
+                    e.x > wDragZone -> Cursor.getDefaultCursor()
+                    e.y <= nwExtendedY -> Cursor.getPredefinedCursor(Cursor.NW_RESIZE_CURSOR)
+                    else -> Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR)
                 }
             }
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) return
                 startWidthDrag(e.locationOnScreen.x)
+                if (e.y <= nwExtendedY) {
+                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                }
             }
 
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
                 applyWidthDrag(e.locationOnScreen.x)
+                applyHeightDrag(e.locationOnScreen.y)
             }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
+                if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
                 widthDragStart = null
+                heightDragStart = null
             }
 
             override fun mouseExited(e: java.awt.event.MouseEvent) {
@@ -1026,9 +1054,7 @@ private fun installInputResizeHandler(
         sideButtonsPanel.addMouseMotionListener(wSideHandler)
         sideButtonsPanel.addMouseListener(wSideHandler)
 
-        // W/NW handler on bottomSection — covers the 8px gap to the left of inputSection.
-        // This keeps the outer gap interactive for users who grab there, and handles NW for
-        // the portion of the gap above inputSection's top edge.
+        // W/NW handler on bottomSection — covers the 8px outer gap to the left of inputSection.
         val wResizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) {
@@ -1454,7 +1480,7 @@ private fun installInputResizeHandler(
         if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
     }
 
-private fun createSideButtonsPanel(): JComponent {
+    private fun createSideButtonsPanel(): JComponent {
         val leftGroup = DefaultActionGroup()
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
@@ -1538,15 +1564,18 @@ private fun createSideButtonsPanel(): JComponent {
                 McpPauseService.PauseState.RUNNING -> {
                     e.presentation.icon = AllIcons.Actions.Pause
                     e.presentation.text = "Pause Agent"
-                    e.presentation.description = "Defer the next tool call so you can review and send a nudge before it runs"
+                    e.presentation.description =
+                        "Defer the next tool call so you can review and send a nudge before it runs"
                     e.presentation.isEnabled = true
                 }
+
                 McpPauseService.PauseState.PENDING -> {
                     e.presentation.icon = AllIcons.Actions.Pause
                     e.presentation.text = "Pausing…"
                     e.presentation.description = "Waiting for the agent to make a tool call"
                     e.presentation.isEnabled = false
                 }
+
                 McpPauseService.PauseState.PAUSED -> {
                     e.presentation.icon = AllIcons.Actions.Resume
                     e.presentation.text = "Resume Agent"
@@ -1997,7 +2026,7 @@ private fun createSideButtonsPanel(): JComponent {
         }
     }
 
-/**
+    /**
      * Switches between single-content mode (side panel closed) and multi-content
      * tab mode (side panel open). In tab mode, each tab becomes a native IntelliJ
      * {@link com.intellij.ui.content.Content} tab rendered in the tool window header,
@@ -2076,7 +2105,7 @@ private fun createSideButtonsPanel(): JComponent {
         }
     }
 
-@Volatile
+    @Volatile
     private var autoScrollEnabled = true
 
     private inner class AutoScrollToggleAction : ToggleAction(
