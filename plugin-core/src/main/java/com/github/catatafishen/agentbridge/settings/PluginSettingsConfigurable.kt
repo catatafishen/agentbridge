@@ -2,7 +2,6 @@ package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
@@ -13,9 +12,10 @@ import javax.swing.JComponent
  * Root settings page for AgentBridge. Holds no settings of its own — child
  * pages (UI/UX, Storage, MCP, Agents, etc.) configure the various subsystems.
  *
- * Implements [SearchableConfigurable.Parent] with [isAutoExpandedByDefault] = true so
- * that the AgentBridge sub-tree is automatically expanded in the settings tree whenever
- * this page is selected, saving the user one click to reach child pages.
+ * Implements [SearchableConfigurable.Parent] so that IntelliJ treats this node
+ * as a group in the settings tree and expands it when selected, saving the user
+ * one click to reach child pages. [hasOwnContent] returns true so the description
+ * page is still shown.
  *
  * Built with the official IntelliJ Platform Kotlin UI DSL v2.
  */
@@ -27,11 +27,8 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 
     override fun getDisplayName(): String = "AgentBridge"
 
-    /** Auto-expand the sub-tree whenever this root node is selected. */
-    override fun isAutoExpandedByDefault(): Boolean = true
-
-    /** Children are declared via XML extension points, not programmatically. */
-    override fun getConfigurables(): Array<Configurable> = Configurable.EMPTY_ARRAY
+    /** Keep the root description page visible when this node is selected. */
+    override fun hasOwnContent(): Boolean = true
 
     override fun createComponent(): JComponent = panel {
         row {
@@ -58,9 +55,9 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 }
 
 /**
- * Opens the AgentBridge root settings page programmatically. The AgentBridge sub-tree
- * is automatically expanded because [PluginSettingsConfigurable.isAutoExpandedByDefault]
- * returns true.
+ * Opens the AgentBridge root settings page programmatically. Because
+ * [PluginSettingsConfigurable] implements [SearchableConfigurable.Parent], IntelliJ
+ * treats it as a group node and expands its children in the tree when it is selected.
  *
  * Defers the dialog to the next EDT cycle to avoid a BufferStrategy NPE that can occur
  * when a modal dialog is shown synchronously during mouse-event processing
