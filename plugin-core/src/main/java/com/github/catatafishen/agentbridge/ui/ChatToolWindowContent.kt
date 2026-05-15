@@ -693,7 +693,7 @@ class ChatToolWindowContent(
         innerInputToolbar.targetComponent = inputSection
 
         val bottomSection = createBottomSection(inputSection)
-        val splitPanel = createResizableSplitPanel(topPanel, bottomSection, inputSection)
+        val splitPanel = createResizableSplitPanel(topPanel, bottomSection, inputSection, sideButtonsPanel)
         panel.add(splitPanel, BorderLayout.CENTER)
 
         billing.loadBillingData()
@@ -892,76 +892,143 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
     private fun createResizableSplitPanel(
         topPanel: JComponent,
         bottomSection: JBPanel<JBPanel<*>>,
-        inputSection: JComponent
+        inputSection: JComponent,
+        sideButtonsPanel: JComponent
     ): JBPanel<JBPanel<*>> {
         val splitPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply { isOpaque = false }
         val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
-        installInputResizeHandler(inputSection, bottomSection, splitPanel, props)
+        installInputResizeHandler(inputSection, bottomSection, splitPanel, sideButtonsPanel, props)
         installSavedInputHeight(splitPanel, bottomSection, props.getInt(PREF_INPUT_PANEL_HEIGHT, 0))
         splitPanel.add(topPanel, BorderLayout.CENTER)
         splitPanel.add(bottomSection, BorderLayout.SOUTH)
         return splitPanel
     }
 
-    private data class ResizeState(var activeResize: Pair<Int, Int>? = null)
-
-    private fun installInputResizeHandler(
+private fun installInputResizeHandler(
         inputSection: JComponent,
         bottomSection: JComponent,
         splitPanel: JComponent,
+        sideButtonsPanel: JComponent,
         props: com.intellij.ide.util.PropertiesComponent
     ) {
-        val resizeState = ResizeState()
-        // N resize zone: matches the visual border of inputSection (painted stroke ~2px).
-        // 4px gives enough grab area without extending deep into the content.
+        // N resize zone: the top edge of inputSection (painted stroke at ~y=1). 4px gives
+        // a comfortable grab area covering the visual border without intruding into content.
         val nDragZone = JBUI.scale(4)
-        // W resize zone: matches the left inset of bottomSection (8px empty border).
-        // The full inset strip acts as the drag handle.
+        // W resize zone: 8px from the left edge of the component. Applied to both
+        // bottomSection (the gap before inputSection) and sideButtonsPanel (the visual border).
         val wDragZone = JBUI.scale(8)
 
-        // N resize: drag the top edge of inputSection to change the input panel height.
-        val nResizeHandler = object : java.awt.event.MouseAdapter() {
-            override fun mouseMoved(e: java.awt.event.MouseEvent) {
-                inputSection.cursor = if (e.y <= nDragZone) {
-                    Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
-                } else {
-                    Cursor.getDefaultCursor()
-                }
-            }
+        // --- Shared drag state ---
+        // Only one of these can be active per gesture since each handler owns its drag.
+        var heightDragStart: Pair<Int, Int>? = null  // (startScreenY, startHeight) for N or NW
+        var widthDragStart: Pair<Int, Int>? = null   // (startScreenX, startSideWidth) for W or NW
 
-            override fun mousePressed(e: java.awt.event.MouseEvent) {
-                if (e.y <= nDragZone) resizeState.activeResize = Pair(e.locationOnScreen.y, bottomSection.height)
-            }
+        fun startWidthDrag(screenX: Int) {
+            val sideWidth = rootSplitter.firstComponent?.width ?: 0
+            widthDragStart = Pair(screenX, sideWidth)
+        }
 
-            override fun mouseDragged(e: java.awt.event.MouseEvent) {
-                val (startY, startH) = resizeState.activeResize ?: return
-                val delta = startY - e.locationOnScreen.y
+        fun applyWidthDrag(screenX: Int) {
+            widthDragStart?.let { (startX, startSideWidth) ->
+                val deltaX = screenX - startX
+                val totalWidth = rootSplitter.width.takeIf { it > 0 } ?: return@let
+                rootSplitter.proportion =
+                    ((startSideWidth + deltaX).toFloat() / totalWidth).coerceIn(0.0f, 0.9f)
+            }
+        }
+
+        fun applyHeightDrag(screenY: Int) {
+            heightDragStart?.let { (startY, startH) ->
+                val delta = startY - screenY
                 bottomSection.preferredSize = Dimension(
                     bottomSection.width,
                     (startH + delta).coerceIn(minInputHeight(), maxInputHeight(splitPanel.height))
                 )
                 splitPanel.revalidate()
             }
+        }
+
+        // N (and NW corner) handler — attached to inputSection.
+        // inputSection has an 8px top inset, so y=0-7 has no children; events in that strip
+        // go directly to inputSection. The NW corner (x <= wDragZone, y <= nDragZone) is in
+        // the top-left of that inset — the visual top and left borders meet there.
+        val nResizeHandler = object : java.awt.event.MouseAdapter() {
+            override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                inputSection.cursor = when {
+                    e.y <= nDragZone && e.x <= wDragZone ->
+                        Cursor.getPredefinedCursor(Cursor.NW_RESIZE_CURSOR)
+                    e.y <= nDragZone ->
+                        Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
+                    else -> Cursor.getDefaultCursor()
+                }
+            }
+
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (e.y > nDragZone) return
+                if (e.x <= wDragZone) {
+                    // NW corner: start both height and width drag.
+                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                    startWidthDrag(e.locationOnScreen.x)
+                } else {
+                    // N-only: start height drag.
+                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                }
+            }
+
+            override fun mouseDragged(e: java.awt.event.MouseEvent) {
+                applyHeightDrag(e.locationOnScreen.y)
+                applyWidthDrag(e.locationOnScreen.x)
+            }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
-                if (resizeState.activeResize == null) return
-                resizeState.activeResize = null
-                props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                heightDragStart = null
+                widthDragStart = null
             }
 
             override fun mouseExited(e: java.awt.event.MouseEvent) {
-                if (resizeState.activeResize == null) inputSection.cursor = Cursor.getDefaultCursor()
+                if (heightDragStart == null) inputSection.cursor = Cursor.getDefaultCursor()
             }
         }
         inputSection.addMouseMotionListener(nResizeHandler)
         inputSection.addMouseListener(nResizeHandler)
 
-        // W/NW resize: drag the left margin of bottomSection to adjust the side panel width.
-        // bottomSection has an 8px left border — that strip is the W drag zone.
-        // The NW corner (x ≤ wDragZone 8px, y ≤ nDragZone 4px) simultaneously resizes height AND width.
-        var widthDragStart: Pair<Int, Int>? = null  // (startX, startSideWidth)
-        var nwHeightDragStart: Pair<Int, Int>? = null  // (startY, startHeight)
+        // W handler on sideButtonsPanel — covers the visible left border of inputSection.
+        // sideButtonsPanel is the WEST child of inputSection, starting at x=0 in inputSection
+        // coordinates. Its toolbar has a 4px left inset, so x=0-3 is empty of button content.
+        // Attaching here lets users grab the visual border directly, not just the outer gap.
+        val wSideHandler = object : java.awt.event.MouseAdapter() {
+            override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                sideButtonsPanel.cursor = if (e.x <= wDragZone) {
+                    Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR)
+                } else {
+                    Cursor.getDefaultCursor()
+                }
+            }
 
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (e.x > wDragZone) return
+                startWidthDrag(e.locationOnScreen.x)
+            }
+
+            override fun mouseDragged(e: java.awt.event.MouseEvent) {
+                applyWidthDrag(e.locationOnScreen.x)
+            }
+
+            override fun mouseReleased(e: java.awt.event.MouseEvent) {
+                widthDragStart = null
+            }
+
+            override fun mouseExited(e: java.awt.event.MouseEvent) {
+                if (widthDragStart == null) sideButtonsPanel.cursor = Cursor.getDefaultCursor()
+            }
+        }
+        sideButtonsPanel.addMouseMotionListener(wSideHandler)
+        sideButtonsPanel.addMouseListener(wSideHandler)
+
+        // W/NW handler on bottomSection — covers the 8px gap to the left of inputSection.
+        // This keeps the outer gap interactive for users who grab there, and handles NW for
+        // the portion of the gap above inputSection's top edge.
         val wResizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) {
@@ -977,34 +1044,21 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) return
-                val sideWidth = rootSplitter.firstComponent?.width ?: 0
-                widthDragStart = Pair(e.locationOnScreen.x, sideWidth)
+                startWidthDrag(e.locationOnScreen.x)
                 if (e.y <= nDragZone) {
-                    nwHeightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
                 }
             }
 
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
-                widthDragStart?.let { (startX, startSideWidth) ->
-                    val deltaX = e.locationOnScreen.x - startX
-                    val totalWidth = rootSplitter.width.takeIf { it > 0 } ?: return@let
-                    rootSplitter.proportion = ((startSideWidth + deltaX).toFloat() / totalWidth)
-                        .coerceIn(0.0f, 0.9f)
-                }
-                nwHeightDragStart?.let { (startY, startH) ->
-                    val delta = startY - e.locationOnScreen.y
-                    bottomSection.preferredSize = Dimension(
-                        bottomSection.width,
-                        (startH + delta).coerceIn(minInputHeight(), maxInputHeight(splitPanel.height))
-                    )
-                    splitPanel.revalidate()
-                }
+                applyWidthDrag(e.locationOnScreen.x)
+                applyHeightDrag(e.locationOnScreen.y)
             }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
-                if (nwHeightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
                 widthDragStart = null
-                nwHeightDragStart = null
+                heightDragStart = null
             }
 
             override fun mouseExited(e: java.awt.event.MouseEvent) {
