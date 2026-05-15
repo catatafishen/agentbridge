@@ -236,6 +236,20 @@ public final class ActiveAgentManager implements Disposable {
         return acpClient;
     }
 
+    /**
+     * Returns the agent client only if it is already running and healthy — never starts it.
+     * Use this from EDT code paths (e.g., UI refresh timers) where blocking startup is not allowed.
+     *
+     * @return the running client, or {@code null} if the agent has not been started yet
+     */
+    @Nullable
+    public AbstractAgentClient getClientIfRunning() {
+        if (started && acpClient != null && acpClient.isHealthy()) {
+            return acpClient;
+        }
+        return null;
+    }
+
     @Nullable
     public String checkAuthentication() {
         if (started && acpClient != null && acpClient.isHealthy()) {

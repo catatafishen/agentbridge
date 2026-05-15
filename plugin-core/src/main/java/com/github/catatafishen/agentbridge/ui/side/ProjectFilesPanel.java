@@ -167,7 +167,8 @@ final class ProjectFilesPanel extends JPanel {
     private void addSessionSection() {
         try {
             var manager = ActiveAgentManager.getInstance(project);
-            var client = manager.getClient();
+            var client = manager.getClientIfRunning();
+            if (client == null) return;
             Path sessionDir = client.getSessionDirectory();
             if (sessionDir == null || !Files.isDirectory(sessionDir)) return;
 
