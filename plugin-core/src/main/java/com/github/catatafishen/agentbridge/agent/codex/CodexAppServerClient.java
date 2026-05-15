@@ -378,6 +378,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         String model = resolveModel(sessionId, request.modelId());
         String rawPrompt = extractPromptText(request.prompt());
+        List<ContentBlock.Image> imageBlocks = extractImageBlocks(request.prompt());
         String fullPrompt = buildFullPrompt(rawPrompt, !sessionToThreadId.containsKey(sessionId)
             && loadCodexThreadId() == null);
 
@@ -396,7 +397,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         activeTurnLastOutputNanos = turnStartNanos;
 
         // Start the turn
-        String turnId = startTurn(threadId, fullPrompt, model, sessionId);
+        String turnId = startTurn(threadId, fullPrompt, imageBlocks, model, sessionId);
         activeTurnId = turnId;
 
         // Wait for turn completion, extending the timeout whenever Codex produces output.
@@ -666,19 +667,25 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         }
     }
 
-    /**
-     * Starts a turn within a thread and returns the turnId.
-     */
     @NotNull
     private String startTurn(@NotNull String threadId,
                              @NotNull String prompt,
+                             @NotNull List<ContentBlock.Image> images,
                              @NotNull String model,
                              @NotNull String sessionId) throws AgentException {
+        JsonArray input = new JsonArray();
+
         JsonObject textItem = new JsonObject();
         textItem.addProperty(F_TYPE, "text");
         textItem.addProperty(F_TEXT, prompt);
-        JsonArray input = new JsonArray();
         input.add(textItem);
+
+        for (ContentBlock.Image img : images) {
+            JsonObject imageItem = new JsonObject();
+            imageItem.addProperty(F_TYPE, "image");
+            imageItem.addProperty("url", "data:" + img.mimeType() + ";base64," + img.data());
+            input.add(imageItem);
+        }
 
         JsonObject params = new JsonObject();
         params.addProperty("threadId", threadId);
@@ -697,7 +704,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 throw new AgentException("turn/start response missing turn.id", null, true);
             }
             String turnId = turn.get(F_ID).getAsString();
-            LOG.info("Started Codex turn " + turnId + " in thread " + threadId);
+            LOG.info("Started Codex turn " + turnId + " in thread " + threadId
+                + (images.isEmpty() ? "" : " with " + images.size() + " image(s)"));
             return turnId;
         } catch (AgentException ae) {
             throw ae;
@@ -1541,6 +1549,16 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     @NotNull
     private static String extractPromptText(@NotNull List<ContentBlock> blocks) {
         return CodexMessageParser.extractPromptText(blocks);
+    }
+
+    private static List<ContentBlock.Image> extractImageBlocks(@NotNull List<ContentBlock> blocks) {
+        List<ContentBlock.Image> images = new ArrayList<>();
+        for (ContentBlock block : blocks) {
+            if (block instanceof ContentBlock.Image img) {
+                images.add(img);
+            }
+        }
+        return images;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
