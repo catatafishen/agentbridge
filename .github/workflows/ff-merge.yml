@@ -1,0 +1,54 @@
+name: Fast-Forward Merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to fast-forward merge"
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ff-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch PR metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh api /repos/${{ github.repository }}/pulls/${{ inputs.pr_number }})
+          STATE=$(echo "$PR" | jq -r '.state')
+          if [ "$STATE" != "open" ]; then
+            echo "❌ PR #${{ inputs.pr_number }} is not open (state: $STATE)"
+            exit 1
+          fi
+          echo "base=$(echo "$PR" | jq -r '.base.ref')" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(echo "$PR" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
+
+      - name: Check fast-forward feasibility
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMPARE=$(gh api "/repos/${{ github.repository }}/compare/${{ steps.pr.outputs.base }}...${{ steps.pr.outputs.head_sha }}")
+          BEHIND=$(echo "$COMPARE" | jq -r '.behind_by')
+          if [ "$BEHIND" != "0" ]; then
+            echo "❌ Branch is $BEHIND commit(s) behind '${{ steps.pr.outputs.base }}'."
+            echo "   Rebase locally to preserve commit hashes and signatures:"
+            echo "   git fetch origin && git rebase origin/${{ steps.pr.outputs.base }} && git push --force-with-lease"
+            exit 1
+          fi
+
+      - name: Fast-forward merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "/repos/${{ github.repository }}/git/refs/heads/${{ steps.pr.outputs.base }}" \
+            -f sha="${{ steps.pr.outputs.head_sha }}" \
+            -F force=false
+          echo "✅ Fast-forwarded '${{ steps.pr.outputs.base }}' to ${{ steps.pr.outputs.head_sha }}"
