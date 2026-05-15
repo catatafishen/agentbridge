@@ -234,8 +234,11 @@ internal class PromptsPanel(
             override fun getScrollableTracksViewportWidth() = promptList.scrollableTracksViewportWidth
             override fun getScrollableTracksViewportHeight() = false
             override fun getPreferredScrollableViewportSize(): Dimension = promptList.preferredScrollableViewportSize
-            override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int) = promptList.getScrollableUnitIncrement(r, o, d)
-            override fun getScrollableBlockIncrement(r: Rectangle, o: Int, d: Int) = promptList.getScrollableBlockIncrement(r, o, d)
+            override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int) =
+                promptList.getScrollableUnitIncrement(r, o, d)
+
+            override fun getScrollableBlockIncrement(r: Rectangle, o: Int, d: Int) =
+                promptList.getScrollableBlockIncrement(r, o, d)
         }.apply {
             isOpaque = false
             add(loadMorePanel, BorderLayout.NORTH)
