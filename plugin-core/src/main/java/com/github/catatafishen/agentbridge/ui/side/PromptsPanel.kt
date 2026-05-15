@@ -90,7 +90,7 @@ internal class PromptsPanel(
         isContentAreaFilled = false
         isBorderPainted = false
         isFocusPainted = true
-        horizontalAlignment = SwingConstants.LEFT
+        horizontalAlignment = SwingConstants.CENTER
     }
 
     // ── List and loading state ───────────────────────────────────────────────
@@ -226,14 +226,23 @@ internal class PromptsPanel(
         }
         add(top, BorderLayout.NORTH)
 
-        // loadMorePanel lives above the scroll area.
-        // It is only visible when scrolled to the top and there are more items to load.
-        val centerPanel = JPanel(BorderLayout())
-        val scrollPane = JBScrollPane(promptList)
+        // loadMorePanel lives inside the scrollable area, above the promptList.
+        // A Scrollable-delegating wrapper preserves JBList scroll behaviour while
+        // allowing loadMorePanel to sit above the list and scroll with the content.
+        val listWrapper = object : JPanel(BorderLayout()), Scrollable {
+            override fun getScrollableTracksViewportWidth() = promptList.scrollableTracksViewportWidth
+            override fun getScrollableTracksViewportHeight() = false
+            override fun getPreferredScrollableViewportSize(): Dimension = promptList.preferredScrollableViewportSize
+            override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int) = promptList.getScrollableUnitIncrement(r, o, d)
+            override fun getScrollableBlockIncrement(r: Rectangle, o: Int, d: Int) = promptList.getScrollableBlockIncrement(r, o, d)
+        }.apply {
+            isOpaque = false
+            add(loadMorePanel, BorderLayout.NORTH)
+            add(promptList, BorderLayout.CENTER)
+        }
+        val scrollPane = JBScrollPane(listWrapper)
         scrollPane.border = JBUI.Borders.empty()
-        centerPanel.add(loadMorePanel, BorderLayout.NORTH)
-        centerPanel.add(scrollPane, BorderLayout.CENTER)
-        add(centerPanel, BorderLayout.CENTER)
+        add(scrollPane, BorderLayout.CENTER)
 
         // Auto-load when the user scrolls to the very top and loadMorePanel is visible.
         scrollPane.viewport.addChangeListener {
