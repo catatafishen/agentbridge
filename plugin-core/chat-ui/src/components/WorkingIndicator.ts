@@ -65,22 +65,26 @@ export default class WorkingIndicator extends HTMLElement {
         this._extendBtn!.hidden = false;
         this.classList.add('working-countdown');
         this.hidden = false;
+        this.setAttribute('aria-label', 'Waiting for your response');
         this._stopTimer();
         this._render();
         this._interval = setInterval(() => this._render(), 1000);
     }
 
-    updateDeadline(deadlineEpochMs: number): void {
+    updateDeadline(deadlineEpochMs: number, reqId: string): void {
+        if (!this._countdownMode || this._countdownReqId !== reqId) return;
         this._deadlineMs = deadlineEpochMs;
         this.classList.remove('working-countdown--warn', 'working-countdown--danger');
         this._render();
     }
 
-    stopCountdown(): void {
+    stopCountdown(reqId?: string): void {
+        if (reqId && this._countdownReqId !== reqId) return;
         this._countdownMode = false;
         this._countdownReqId = '';
         this._extendBtn!.hidden = true;
         this.classList.remove('working-countdown', 'working-countdown--warn', 'working-countdown--danger');
+        this.setAttribute('aria-label', 'Working');
         // Revert to elapsed timer mode
         this._startTime = Date.now();
         this._render();

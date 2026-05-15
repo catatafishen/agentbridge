@@ -85,7 +85,7 @@ let lastCursor = '';
 document.addEventListener('mouseover', (e: MouseEvent) => {
     const el = e.target as HTMLElement;
     let c = 'default';
-    if (el.closest('a,.turn-chip,.chip-close,.prompt-ctx-chip,.quick-reply-btn,.code-action-btn')) c = 'pointer';
+    if (el.closest('a,.turn-chip,.chip-close,.prompt-ctx-chip,.quick-reply-btn,.code-action-btn,.working-extend')) c = 'pointer';
     else if (el.closest('.chip-strip')) c = 'grab';
     else if (el.closest('p,pre,code,li,td,th,.thinking-content,.streaming')) c = 'text';
     if (c !== lastCursor) {
