@@ -697,12 +697,12 @@ const ChatController = {
 
     updateAskUserDeadline(reqId: string, deadlineEpochMs: number): void {
         const wi = this._container()?.workingIndicator;
-        wi?.updateDeadline?.(deadlineEpochMs);
+        wi?.updateDeadline?.(deadlineEpochMs, reqId);
     },
 
     closeAskUserRequest(reqId: string, status: string): void {
         const wi = this._container()?.workingIndicator;
-        wi?.stopCountdown?.();
+        wi?.stopCountdown?.(reqId);
     },
 
     showQuickReplies(options: string[]): void {
