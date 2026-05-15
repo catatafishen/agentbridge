@@ -295,6 +295,7 @@ class ChatToolWindowContent(
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
             SidePanelToggleAction(),
+            NativeUiToggleAction(),
             Separator.create(),
             StatisticsAction(),
             SettingsAction()
@@ -2127,6 +2128,21 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         }
     }
 
+    private inner class NativeUiToggleAction : ToggleAction(
+        "Native UI",
+        "Switch between the native Swing chat panel and the JCEF web panel",
+        AllIcons.Actions.ToggleSoftWrap
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean =
+            if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.isShowingNative() ?: false else false
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.toggle(state)
+        }
+    }
+
     /** ComboBoxAction for model selection — matches Run panel dropdown style. */
     private inner class ModelSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -2292,7 +2308,9 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
 
     private fun createResponsePanel(): JComponent {
         chatConsolePanel = ChatConsolePanel(project)
-        consolePanel = chatConsolePanel
+        val nativeChatPanel = NativeChatPanel(project)
+        val broadcastPanel = BroadcastChatPanel(chatConsolePanel, nativeChatPanel)
+        consolePanel = broadcastPanel
         chatConsolePanel.onLoadMoreRequested = ::onLoadMoreHistory
         chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
