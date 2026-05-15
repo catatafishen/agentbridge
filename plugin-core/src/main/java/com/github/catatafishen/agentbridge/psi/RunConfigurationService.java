@@ -17,7 +17,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -151,8 +150,7 @@ public final class RunConfigurationService {
 
         var settingsRef = new java.util.concurrent.atomic.AtomicReference<com.intellij.execution.RunnerAndConfigurationSettings>();
         CompletableFuture<Void> launchFuture = new CompletableFuture<>();
-        var doneLatch = new java.util.concurrent.CountDownLatch(1);
-        var exitCodeRef = new java.util.concurrent.atomic.AtomicInteger(-1);
+        CompletableFuture<Integer> exitFuture = new CompletableFuture<>();
 
         // Subscribe before launching so we don't miss the processStarted event.
         Runnable disconnect = PlatformApiCompat.subscribeExecutionListener(project,
@@ -166,22 +164,19 @@ public final class RunConfigurationService {
                     if (s != null && envSettings != null && s.getName().equals(envSettings.getName())) {
                         handler.addProcessListener(new com.intellij.execution.process.ProcessListener() {
                             @Override
-                            public void startNotified(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent e) {
-                                // we wait for termination only
-                            }
-
-                            @Override
-                            public void onTextAvailable(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent e,
-                                                        @org.jetbrains.annotations.NotNull com.intellij.openapi.util.Key outputType) {
-                                // output is read via read_run_output after termination
-                            }
-
-                            @Override
                             public void processTerminated(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent event) {
-                                exitCodeRef.set(event.getExitCode());
-                                doneLatch.countDown();
+                                exitFuture.complete(event.getExitCode());
                             }
                         });
+                        // Race guard: the process may have already terminated before the
+                        // listener was added (extremely fast processes).
+                        if (handler.isProcessTerminated()) {
+                            exitFuture.complete(handler.getExitCode() != null ? handler.getExitCode() : 0);
+                        }
+                        // Fallback: detect OS-level process exit even if processTerminated
+                        // never fires (stuck reader threads, non-compliant handlers).
+                        com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor
+                            .scheduleHandlerExitFallback(handler, exitFuture);
                     }
                 }
             });
@@ -209,15 +204,14 @@ public final class RunConfigurationService {
             return e.getCause().getMessage();
         }
 
-        boolean finished = doneLatch.await(waitSeconds, TimeUnit.SECONDS);
-        disconnect.run();
-
-        if (!finished) {
+        try {
+            int exitCode = exitFuture.get(waitSeconds, TimeUnit.SECONDS);
+            disconnect.run();
+            return formatRunCompletionMessage(name, exitCode);
+        } catch (java.util.concurrent.TimeoutException e) {
+            disconnect.run();
             return formatRunTimeoutMessage(name, waitSeconds);
         }
-
-        int exitCode = exitCodeRef.get();
-        return formatRunCompletionMessage(name, exitCode);
     }
 
     public String createRunConfiguration(JsonObject args) throws Exception {

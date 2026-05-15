@@ -5,9 +5,12 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.intellij.execution.RunContentExecutor;
 import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.process.BaseProcessHandler;
 import com.intellij.execution.process.OSProcessHandler;
 import com.intellij.execution.process.ProcessEvent;
+import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.process.ProcessListener;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import org.jetbrains.annotations.NotNull;
@@ -28,6 +31,15 @@ import java.util.concurrent.TimeoutException;
  * {@link EdtUtil#invokeLater}, at the moment the Run panel tab is actually created.
  */
 public final class RunPanelExecutor {
+
+    private static final Logger LOG = Logger.getInstance(RunPanelExecutor.class);
+
+    /**
+     * Grace period after OS process exit before force-completing the exit future.
+     * Gives reader threads time to drain remaining buffered output before we
+     * bypass the normal {@code processTerminated} path.
+     */
+    static final long READER_GRACE_PERIOD_MS = 2000;
 
     private RunPanelExecutor() {
     }
@@ -79,6 +91,13 @@ public final class RunPanelExecutor {
                 exitFuture.complete(event.getExitCode());
             }
         });
+
+        // Fallback: detect process exit via Process.onExit() in case processTerminated
+        // never fires. This happens when reader threads are stuck (e.g. a child process
+        // inherited stdout/stderr and holds the pipe open after the main process exits).
+        // OSProcessHandler only fires processTerminated after ALL reader threads finish,
+        // which requires EOF on both stdout and stderr. A stuck reader prevents this.
+        scheduleProcessExitFallback(process, exitFuture);
 
         EdtUtil.invokeLater(() -> {
             try {
@@ -142,5 +161,58 @@ public final class RunPanelExecutor {
                                              @NotNull String title,
                                              int timeoutSec) throws Exception {
         return execute(project, cmd.createProcess(), cmd.getCommandLineString(), title, timeoutSec);
+    }
+
+    /**
+     * Schedules a fallback that completes the exit future when the OS process exits,
+     * even if {@code processTerminated} never fires.
+     *
+     * <p>{@link OSProcessHandler} fires {@code processTerminated} only after <b>all</b>
+     * reader threads finish (EOF on both stdout and stderr). If a child process inherits
+     * the pipe file descriptors and stays alive after the main process exits, the readers
+     * block indefinitely and {@code processTerminated} never fires — even though the Run
+     * panel shows all output and the process has exited at the OS level.
+     *
+     * <p>This fallback uses {@link Process#onExit()} to detect the OS-level exit
+     * independently. After a grace period ({@link #READER_GRACE_PERIOD_MS}) for reader
+     * threads to finish naturally, it force-completes the future.
+     *
+     * @param process    the OS process to monitor
+     * @param exitFuture the future to complete with the exit code
+     */
+    static void scheduleProcessExitFallback(Process process, CompletableFuture<Integer> exitFuture) {
+        process.onExit().thenAcceptAsync(p -> {
+            if (exitFuture.isDone()) return;
+            try {
+                Thread.sleep(READER_GRACE_PERIOD_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            if (exitFuture.complete(p.exitValue())) {
+                LOG.warn("processTerminated did not fire within " + READER_GRACE_PERIOD_MS
+                    + "ms after process exit — completed via Process.onExit() fallback");
+            }
+        });
+    }
+
+    /**
+     * Like {@link #scheduleProcessExitFallback(Process, CompletableFuture)} but for any
+     * {@link ProcessHandler}. Extracts the underlying {@link Process} from
+     * {@link BaseProcessHandler} subclasses (which covers {@link OSProcessHandler},
+     * {@code KillableProcessHandler}, {@code KillableColoredProcessHandler}, etc.).
+     *
+     * <p>If the handler is not a {@code BaseProcessHandler} (e.g. a virtual process handler
+     * from the External System framework), no fallback is scheduled and the caller must
+     * rely on the standard {@code processTerminated} mechanism.
+     *
+     * @param handler    the process handler to monitor
+     * @param exitFuture the future to complete with the exit code
+     */
+    public static void scheduleHandlerExitFallback(ProcessHandler handler,
+                                                   CompletableFuture<Integer> exitFuture) {
+        if (handler instanceof BaseProcessHandler<?> bph) {
+            scheduleProcessExitFallback(bph.getProcess(), exitFuture);
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.ClassResolverUtil;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor;
 import com.github.catatafishen.agentbridge.ui.renderers.TestResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
@@ -737,6 +738,11 @@ public final class RunTestsTool extends TestingTool {
      * wrappers where the UI shows "complete" but the handler never transitions to terminated).
      * {@code processTerminated} is the definitive event-driven signal and is more reliable.
      *
+     * <p>As a safety net, a {@link Process#onExit()} fallback is scheduled via
+     * {@link RunPanelExecutor#scheduleHandlerExitFallback} to detect process exit even
+     * when {@code processTerminated} never fires (e.g. stuck reader threads, certain
+     * Gradle or JUnit runner wrappers).
+     *
      * @return the process exit code on normal termination, or
      * {@link Integer#MIN_VALUE} on timeout or interruption
      */
@@ -752,6 +758,10 @@ public final class RunTestsTool extends TestingTool {
         if (handler.isProcessTerminated()) {
             doneFuture.complete(handler.getExitCode() != null ? handler.getExitCode() : 0);
         }
+        // Fallback: detect process exit via the underlying OS process in case
+        // processTerminated never fires. Covers stuck reader threads and handlers
+        // that don't properly fire processTerminated.
+        RunPanelExecutor.scheduleHandlerExitFallback(handler, doneFuture);
         try {
             return doneFuture.get(120, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
