@@ -193,6 +193,29 @@ class ConversationWriterTest {
     }
 
     @Test
+    void appendsTimestamplessEntryToExistingSession() throws Exception {
+        // First call: create session with a timestamped prompt
+        EntryData.Prompt prompt = new EntryData.Prompt(
+            "Hello", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1");
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(prompt));
+
+        // Second call: append only a ContextFiles entry (no timestamp by design).
+        // Before the fix, this threw IllegalArgumentException because
+        // extractStartedAt required a non-null timestamp in every batch.
+        EntryData.ContextFiles contextFiles = new EntryData.ContextFiles(
+            List.of(new FileRef("Image.png", "img/Image.png")), "ctx-1");
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(contextFiles));
+
+        // Verify the context file was written successfully
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT file_name FROM turn_context_files WHERE turn_id = 'turn-1'")) {
+            assertTrue(rs.next());
+            assertEquals("Image.png", rs.getString(1));
+        }
+    }
+
+    @Test
     void recordsHookExecution() throws Exception {
         // Standalone tool call — no turn.
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
