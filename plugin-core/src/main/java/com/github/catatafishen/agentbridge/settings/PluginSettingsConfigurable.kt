@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
@@ -29,6 +30,15 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 
     /** Keep the root description page visible when this node is selected. */
     override fun hasOwnContent(): Boolean = true
+
+    /**
+     * Children are declared via `plugin.xml` `projectConfigurable` extension points with
+     * `parentId="com.github.catatafishen.agentbridge.settings"`. This method returns an
+     * empty array; IntelliJ merges the extension-point children automatically.
+     * Required by older SDK versions where `SearchableConfigurable.Parent` inherits the
+     * abstract `getConfigurables()` from `Configurable.Composite`.
+     */
+    override fun getConfigurables(): Array<out Configurable> = emptyArray()
 
     override fun createComponent(): JComponent = panel {
         row {
