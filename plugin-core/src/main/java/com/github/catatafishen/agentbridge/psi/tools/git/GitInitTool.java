@@ -71,6 +71,9 @@ public final class GitInitTool extends GitTool {
         }
 
         java.io.File targetFile = new java.io.File(targetDir);
+        if (targetFile.exists() && !targetFile.isDirectory()) {
+            return "Error: path exists but is not a directory: " + targetDir;
+        }
         if (!targetFile.exists() && !targetFile.mkdirs()) {
             return "Error: could not create directory: " + targetDir;
         }
@@ -78,11 +81,18 @@ public final class GitInitTool extends GitTool {
         String result = runGitIn(targetDir, "init");
 
         // Refresh VCS mappings so IntelliJ recognizes the new .git directory.
-        // setDirectoryMapping registers the new root; refreshVcsState syncs VFS.
-        refreshVcsState();
-        String mappingPath = targetDir.equals(basePath) ? "" : targetDir;
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-            ProjectLevelVcsManager.getInstance(project).setDirectoryMapping(mappingPath, "Git"));
+        // Refresh the actual targetDir (not project base) so absolute/external paths are covered.
+        String resolvedTargetDir = targetDir;
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+            var root = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                .findFileByPath(resolvedTargetDir);
+            if (root != null) {
+                com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, root);
+            }
+            com.intellij.openapi.vcs.changes.VcsDirtyScopeManager.getInstance(project).markEverythingDirty();
+            String mappingPath = resolvedTargetDir.equals(basePath) ? "" : resolvedTargetDir;
+            ProjectLevelVcsManager.getInstance(project).setDirectoryMapping(mappingPath, "Git");
+        });
 
         StringBuilder sb = new StringBuilder();
         sb.append(result.trim());
