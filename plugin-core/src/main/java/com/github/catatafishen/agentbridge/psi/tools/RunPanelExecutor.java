@@ -13,6 +13,7 @@ import com.intellij.execution.process.ProcessListener;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.CompletableFuture;
@@ -163,37 +164,18 @@ public final class RunPanelExecutor {
         return execute(project, cmd.createProcess(), cmd.getCommandLineString(), title, timeoutSec);
     }
 
-    /**
-     * Schedules a fallback that completes the exit future when the OS process exits,
-     * even if {@code processTerminated} never fires.
-     *
-     * <p>{@link OSProcessHandler} fires {@code processTerminated} only after <b>all</b>
-     * reader threads finish (EOF on both stdout and stderr). If a child process inherits
-     * the pipe file descriptors and stays alive after the main process exits, the readers
-     * block indefinitely and {@code processTerminated} never fires — even though the Run
-     * panel shows all output and the process has exited at the OS level.
-     *
-     * <p>This fallback uses {@link Process#onExit()} to detect the OS-level exit
-     * independently. After a grace period ({@link #READER_GRACE_PERIOD_MS}) for reader
-     * threads to finish naturally, it force-completes the future.
-     *
-     * @param process    the OS process to monitor
-     * @param exitFuture the future to complete with the exit code
-     */
     static void scheduleProcessExitFallback(Process process, CompletableFuture<Integer> exitFuture) {
-        process.onExit().thenAcceptAsync(p -> {
-            if (exitFuture.isDone()) return;
-            try {
-                Thread.sleep(READER_GRACE_PERIOD_MS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            if (exitFuture.complete(p.exitValue())) {
-                LOG.warn("processTerminated did not fire within " + READER_GRACE_PERIOD_MS
-                    + "ms after process exit — completed via Process.onExit() fallback");
-            }
-        });
+        process.onExit().thenRunAsync(
+            () -> {
+                if (exitFuture.isDone()) return;
+                if (exitFuture.complete(process.exitValue())) {
+                    LOG.warn("processTerminated did not fire within " + READER_GRACE_PERIOD_MS
+                        + "ms after process exit — completed via Process.onExit() fallback");
+                }
+            },
+            CompletableFuture.delayedExecutor(READER_GRACE_PERIOD_MS, TimeUnit.MILLISECONDS,
+                AppExecutorUtil.getAppScheduledExecutorService())
+        );
     }
 
     /**
