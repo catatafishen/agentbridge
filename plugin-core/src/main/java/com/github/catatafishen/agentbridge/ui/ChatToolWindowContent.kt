@@ -958,7 +958,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
 
         // W/NW resize: drag the left margin of bottomSection to adjust the side panel width.
         // bottomSection has an 8px left border — that strip is the W drag zone.
-        // The NW corner (x ≤ 8, y ≤ 8) simultaneously resizes height AND width.
+        // The NW corner (x ≤ wDragZone 8px, y ≤ nDragZone 4px) simultaneously resizes height AND width.
         var widthDragStart: Pair<Int, Int>? = null  // (startX, startSideWidth)
         var nwHeightDragStart: Pair<Int, Int>? = null  // (startY, startHeight)
 
