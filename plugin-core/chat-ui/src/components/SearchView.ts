@@ -1,4 +1,5 @@
 import {PollableView} from './PollableView';
+import {formatTs} from '../helpers';
 
 type PromptItem = {
     id: string;
@@ -60,15 +61,9 @@ export class SearchView extends PollableView {
 
         this._list.innerHTML = visible.map(item => `
             <button class="pv-item" data-id="${this.escAttr(item.id)}" type="button">
-                <span class="pv-time">${this.esc(this._formatTime(item.timestamp))}</span>
+                <span class="pv-time">${this.esc(formatTs(item.timestamp))}</span>
                 <span class="pv-text">${this.esc(item.text)}</span>
             </button>`).join('');
     }
 
-    private _formatTime(timestamp: string): string {
-        if (!timestamp) return '';
-        const date = new Date(timestamp);
-        if (Number.isNaN(date.getTime())) return timestamp;
-        return date.toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
     }
-}

@@ -2,6 +2,7 @@ import {PollableView} from './PollableView';
 import type {HookStage, ToolCallData} from '../ToolCallsController';
 import ToolCallsController from '../ToolCallsController';
 import {highlight} from '../syntaxHighlight';
+import {formatTs} from '../helpers';
 
 /**
  * Web component for displaying MCP tool calls with an interactive pipeline visualization.
@@ -160,7 +161,7 @@ export class ToolCallsView extends PollableView {
                 const d = new Date(item.timestamp);
                 const minuteKey = `${d.toDateString()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
                 if (minuteKey !== lastMinuteKey) {
-                    html.push(`<div class="tcv-time-sep">${this._formatTs(d)}</div>`);
+                    html.push(`<div class="tcv-time-sep">${formatTs(item.timestamp)}</div>`);
                     lastMinuteKey = minuteKey;
                 }
             }
@@ -183,19 +184,6 @@ export class ToolCallsView extends PollableView {
 
     private _isAtBottom(): boolean {
         return this._container.scrollHeight - this._container.scrollTop - this._container.clientHeight < 50;
-    }
-
-    /** Format a Date for display: time only when today, prefixed with "Yesterday" or short date otherwise. */
-    private _formatTs(d: Date): string {
-        const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-        const now = new Date();
-        if (d.toDateString() === now.toDateString()) return timeStr;
-        const yesterday = new Date(now);
-        yesterday.setDate(now.getDate() - 1);
-        const datePrefix = d.toDateString() === yesterday.toDateString()
-            ? 'Yesterday'
-            : d.toLocaleDateString([], {month: 'short', day: 'numeric'});
-        return `${datePrefix} ${timeStr}`;
     }
 
     /** Requests an older page of tool calls from the host (push mode only). */
@@ -259,7 +247,7 @@ export class ToolCallsView extends PollableView {
             ? ''
             : `<span class="tcv-meta-item"><strong>${this.esc(item.title)}</strong></span>`;
         const toolRow = `<span class="tcv-meta-item">MCP: ${this.esc(item.toolName)}</span>`;
-        const ts = item.timestamp ? this._formatTs(new Date(item.timestamp)) : '';
+        const ts = item.timestamp ? formatTs(item.timestamp) : '';
         const tsRow = ts ? `<span class="tcv-meta-item tcv-meta-ts">${this.esc(ts)}</span>` : '';
         const metaSection = `<div class="tcv-meta-row">${nameRow}${toolRow}${tsRow}</div>`;
 
