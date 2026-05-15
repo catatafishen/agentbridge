@@ -109,6 +109,14 @@ class PromptOrchestrator(
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
 
+    /**
+     * Number of consecutive turns that completed with no content from the agent. Incremented on
+     * each empty turn; reset to zero on any turn that produces content. Two consecutive empty
+     * turns without any content in between are treated as definitive session corruption (not just
+     * a one-off failure such as image processing) and trigger [handleSessionCorrupted].
+     */
+    private var consecutiveEmptyTurns = 0
+
     private var pendingRawText = ""
     private var pendingPromptEntryId = ""
 
@@ -180,18 +188,23 @@ class PromptOrchestrator(
             // response) without throwing. Treat it as a cancellation so handlePromptCompletion
             // is not invoked and the stale thread interrupt doesn't leak into the next turn.
             if (stopped) throw InterruptedException("Stopped by user")
-            // If the agent returned end_turn but produced no content, distinguish between
-            // two failure modes:
-            //   1. Image attachment present → the agent likely rejected the image (e.g.
-            //      OpenCode silently swallows image-normalization errors and returns end_turn
-            //      with no events). Show a targeted error but keep the session alive.
-            //   2. No images → session state is likely corrupted (e.g. OpenCode compaction
-            //      broken). Reset the session and warn the user.
+            // If the agent returned end_turn but produced no content, we cannot tell from the
+            // ACP response whether the session is corrupted or whether a one-off failure
+            // occurred (e.g. OpenCode silently swallowing an image-processing HTTP error).
+            // Use consecutive-empty-turn count to distinguish:
+            //   - 1st consecutive empty turn → show a retry hint, keep the session intact.
+            //   - 2nd consecutive empty turn → definitive signal of session corruption; reset.
             if (!turnHadContent) {
-                val hadImages = attachments.any { it is PromptAttachment.ImageRef }
-                if (hadImages) handleImageProcessingFailed() else handleSessionCorrupted()
+                consecutiveEmptyTurns++
+                if (consecutiveEmptyTurns >= 2) {
+                    consecutiveEmptyTurns = 0
+                    handleSessionCorrupted()
+                } else {
+                    handleEmptyTurnRetry(attachments)
+                }
                 return
             }
+            consecutiveEmptyTurns = 0
             handlePromptCompletion(prompt)
         } catch (e: Exception) {
             handlePromptError(e)
@@ -560,28 +573,35 @@ class PromptOrchestrator(
     }
 
     /**
-     * Called when the agent returned `end_turn` with no content and the prompt included one or
-     * more image attachments. This typically means the agent silently failed to process the
-     * image (e.g. OpenCode swallows image-normalization errors and returns a bare `end_turn`
-     * rather than surfacing the HTTP error). The session itself is healthy — only the image
-     * processing failed — so we do NOT reset it.
+     * Called when the agent returned `end_turn` with no content on the FIRST occurrence (before
+     * the session is assumed corrupted). We cannot tell from the ACP response whether this was a
+     * one-off failure (e.g. OpenCode silently swallowing an image-processing HTTP error) or an
+     * early sign of session corruption. Show a retry-oriented error without resetting the session.
+     * If the next turn is also empty, [handleSessionCorrupted] fires.
+     *
+     * @param attachments the attachments from the failed turn, used to add a targeted hint to the
+     *                    error message when images were present
      */
-    private fun handleImageProcessingFailed() {
+    private fun handleEmptyTurnRetry(attachments: List<PromptAttachment>) {
         val agentName = agentManager.activeProfile.displayName
-        log.warn("$agentName: empty turn with image attachment — image processing likely failed")
+        log.warn("$agentName: empty turn (1 of 2 before session reset)")
 
         pendingBanner = null
         consolePanel().cancelAllRunning()
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
         callbacks.appendNewEntries()
 
+        val hadImages = attachments.any { it is PromptAttachment.ImageRef }
+        val hint = if (hadImages)
+            " The attached image may have caused this — try sending without the image."
+        else
+            " If this happens again, your session will be automatically reset."
+
         consolePanel().addErrorEntry(
-            "$agentName could not process the attached image. " +
-                "The image may be too large or in an unsupported format. " +
-                "Try resizing the image or converting it to PNG/JPEG and try again."
+            "$agentName returned an empty response.$hint"
         )
         ApplicationManager.getApplication().invokeLater {
-            statusBanner()?.showError("Image could not be processed — please try a different image.")
+            statusBanner()?.showWarning("Empty response — please try again.")
         }
     }
 
