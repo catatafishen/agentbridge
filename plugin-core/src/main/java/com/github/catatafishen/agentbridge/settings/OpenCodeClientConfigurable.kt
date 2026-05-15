@@ -100,19 +100,18 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
     }
 
     private fun refreshModelDefinitions() {
-        refreshResultLabel.text = "Clearing cache..."
-        refreshResultLabel.foreground = UIUtil.getLabelForeground()
-        ApplicationManager.getApplication().executeOnPooledThread {
+        try {
             val deleted = deleteModelCache()
-            ApplicationManager.getApplication().invokeLater {
-                if (deleted) {
-                    refreshResultLabel.text = "✓ Cache cleared — restart OpenCode to fetch latest definitions"
-                    refreshResultLabel.foreground = JBColor(0x008000, 0x4EC94E)
-                } else {
-                    refreshResultLabel.text = "No cached model definitions found"
-                    refreshResultLabel.foreground = UIUtil.getContextHelpForeground()
-                }
+            if (deleted) {
+                refreshResultLabel.text = "✓ Cache cleared — restart OpenCode to fetch latest definitions"
+                refreshResultLabel.foreground = JBColor(0x008000, 0x4EC94E)
+            } else {
+                refreshResultLabel.text = "No cached model definitions found"
+                refreshResultLabel.foreground = UIUtil.getContextHelpForeground()
             }
+        } catch (e: Exception) {
+            refreshResultLabel.text = "Error: ${e.message}"
+            refreshResultLabel.foreground = JBColor(0xCC0000, 0xFF6B6B)
         }
     }
 
