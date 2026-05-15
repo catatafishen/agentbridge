@@ -180,12 +180,16 @@ class PromptOrchestrator(
             // response) without throwing. Treat it as a cancellation so handlePromptCompletion
             // is not invoked and the stale thread interrupt doesn't leak into the next turn.
             if (stopped) throw InterruptedException("Stopped by user")
-            // If the agent returned end_turn but produced no content, the session state is
-            // likely corrupted (e.g. OpenCode's compaction state is broken). Handle it
-            // explicitly — NOT via handlePromptError, which shows a misleading "Reconnect"
-            // banner. We reset the session and tell the user clearly what happened.
+            // If the agent returned end_turn but produced no content, distinguish between
+            // two failure modes:
+            //   1. Image attachment present → the agent likely rejected the image (e.g.
+            //      OpenCode silently swallows image-normalization errors and returns end_turn
+            //      with no events). Show a targeted error but keep the session alive.
+            //   2. No images → session state is likely corrupted (e.g. OpenCode compaction
+            //      broken). Reset the session and warn the user.
             if (!turnHadContent) {
-                handleSessionCorrupted()
+                val hadImages = attachments.any { it is PromptAttachment.ImageRef }
+                if (hadImages) handleImageProcessingFailed() else handleSessionCorrupted()
                 return
             }
             handlePromptCompletion(prompt)
@@ -552,6 +556,32 @@ class PromptOrchestrator(
         )
         ApplicationManager.getApplication().invokeLater {
             statusBanner()?.showWarning("Session was reset — please resend your last message.")
+        }
+    }
+
+    /**
+     * Called when the agent returned `end_turn` with no content and the prompt included one or
+     * more image attachments. This typically means the agent silently failed to process the
+     * image (e.g. OpenCode swallows image-normalization errors and returns a bare `end_turn`
+     * rather than surfacing the HTTP error). The session itself is healthy — only the image
+     * processing failed — so we do NOT reset it.
+     */
+    private fun handleImageProcessingFailed() {
+        val agentName = agentManager.activeProfile.displayName
+        log.warn("$agentName: empty turn with image attachment — image processing likely failed")
+
+        pendingBanner = null
+        consolePanel().cancelAllRunning()
+        consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+        callbacks.appendNewEntries()
+
+        consolePanel().addErrorEntry(
+            "$agentName could not process the attached image. " +
+                "The image may be too large or in an unsupported format. " +
+                "Try resizing the image or converting it to PNG/JPEG and try again."
+        )
+        ApplicationManager.getApplication().invokeLater {
+            statusBanner()?.showError("Image could not be processed — please try a different image.")
         }
     }
 
