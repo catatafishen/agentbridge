@@ -285,6 +285,39 @@ class BroadcastChatPanel(
         jcefPanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
     }
 
+    // ── History / persistence — broadcast to both ───────────────────────────
+
+    var onLoadMoreRequested: (() -> Unit)?
+        get() = jcefPanel.onLoadMoreRequested
+        set(value) {
+            jcefPanel.onLoadMoreRequested = value
+            nativePanel.onLoadMoreRequested = value
+        }
+
+    fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) {
+        jcefPanel.appendEntries(entries, totalPromptCount)
+        nativePanel.appendEntries(entries, totalPromptCount)
+    }
+
+    fun prependEntries(entries: List<EntryData>) {
+        jcefPanel.prependEntries(entries)
+        nativePanel.prependEntries(entries)
+    }
+
+    fun showLoadMore(deferredCount: Int) {
+        jcefPanel.showLoadMore(deferredCount)
+        nativePanel.showLoadMore(deferredCount)
+    }
+
+    fun hideLoadMore() {
+        jcefPanel.hideLoadMore()
+        nativePanel.hideLoadMore()
+    }
+
+    fun setDomMessageLimit(limit: Int) {
+        jcefPanel.setDomMessageLimit(limit)
+    }
+
     // ── Read-only / interactive state — JCEF only ──────────────────────────────
 
     override fun hasContent(): Boolean = jcefPanel.hasContent()
