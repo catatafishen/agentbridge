@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.settings
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.ui.dsl.builder.panel
@@ -12,13 +13,25 @@ import javax.swing.JComponent
  * Root settings page for AgentBridge. Holds no settings of its own — child
  * pages (UI/UX, Storage, MCP, Agents, etc.) configure the various subsystems.
  *
+ * Implements [SearchableConfigurable.Parent] with [isAutoExpandedByDefault] = true so
+ * that the AgentBridge sub-tree is automatically expanded in the settings tree whenever
+ * this page is selected, saving the user one click to reach child pages.
+ *
  * Built with the official IntelliJ Platform Kotlin UI DSL v2.
  */
 class PluginSettingsConfigurable @Suppress("unused") constructor(
     @Suppress("UNUSED_PARAMETER") project: Project
-) : Configurable {
+) : SearchableConfigurable.Parent {
+
+    override fun getId(): String = "com.github.catatafishen.agentbridge.settings"
 
     override fun getDisplayName(): String = "AgentBridge"
+
+    /** Auto-expand the sub-tree whenever this root node is selected. */
+    override fun isAutoExpandedByDefault(): Boolean = true
+
+    /** Children are declared via XML extension points, not programmatically. */
+    override fun getConfigurables(): Array<Configurable> = Configurable.EMPTY_ARRAY
 
     override fun createComponent(): JComponent = panel {
         row {
@@ -45,9 +58,9 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 }
 
 /**
- * Opens the AgentBridge settings, landing on the first child page (UI/UX) so that the
- * AgentBridge sub-tree is already expanded in the settings tree. The root page is a
- * description only, so navigating directly to the first child saves the user one click.
+ * Opens the AgentBridge root settings page programmatically. The AgentBridge sub-tree
+ * is automatically expanded because [PluginSettingsConfigurable.isAutoExpandedByDefault]
+ * returns true.
  *
  * Defers the dialog to the next EDT cycle to avoid a BufferStrategy NPE that can occur
  * when a modal dialog is shown synchronously during mouse-event processing
@@ -56,6 +69,6 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 fun openAgentBridgeSettings(project: Project) {
     ApplicationManager.getApplication().invokeLater {
         ShowSettingsUtil.getInstance()
-            .showSettingsDialog(project, ChatInputConfigurable::class.java)
+            .showSettingsDialog(project, PluginSettingsConfigurable::class.java)
     }
 }
