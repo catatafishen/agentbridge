@@ -895,7 +895,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
         g2.color = baseColor
         val dot = JBUI.scale(2)
         val gap = JBUI.scale(3)
-        val off = JBUI.scale(5)
+        val off = JBUI.scale(6)
         // Three dots in a triangular NW arrangement:
         //  ● ●
         //  ●
@@ -1492,7 +1492,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
             "AgentControls", leftGroup, false
         )
         controlsToolbar.isReservePlaceAutoPopupIcon = false
-        controlsToolbar.component.border = JBUI.Borders.empty(4, 4, 4, 0)
+        controlsToolbar.component.border = JBUI.Borders.empty(8, 4, 4, 0)
         controlsToolbar.component.isOpaque = false
 
         return controlsToolbar.component
