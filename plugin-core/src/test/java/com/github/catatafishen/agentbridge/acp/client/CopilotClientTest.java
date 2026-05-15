@@ -236,13 +236,13 @@ class CopilotClientTest {
     }
 
     @Test
-    void buildReprimand_knownToolName() throws Exception {
+    void buildReprimand_executeKindListsEquivalents() throws Exception {
         String result = invokeBuildReprimand("execute");
         assertTrue(result.contains("run_command"), "execute kind should list run_command equivalent");
     }
 
     @Test
-    void buildReprimand_escalatesAfterThreeBypassesOnSameInstance() throws Exception {
+    void buildReprimand_escalatesAfterSecondBypass() throws Exception {
         CopilotClient client = allocateClient();
         Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
         m.setAccessible(true);
@@ -250,11 +250,9 @@ class CopilotClientTest {
         String first = (String) m.invoke(client, "read");
         assertFalse(first.contains("bypass #"), "first call should not escalate");
 
-        m.invoke(client, "edit");  // 2nd
-
-        String third = (String) m.invoke(client, "execute");
-        assertTrue(third.contains("bypass #3"), "third call should escalate with count");
-        assertTrue(third.contains("ALL file reads/writes/commands MUST go through AgentBridge"),
+        String second = (String) m.invoke(client, "edit");
+        assertTrue(second.contains("bypass #2"), "second call should escalate with count");
+        assertTrue(second.contains("ALL file reads/writes/commands MUST go through AgentBridge"),
             "escalation should include hard constraint");
     }
 
