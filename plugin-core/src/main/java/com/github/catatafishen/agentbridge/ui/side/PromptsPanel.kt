@@ -228,10 +228,16 @@ internal class PromptsPanel(
         add(top, BorderLayout.NORTH)
 
         // loadMorePanel lives inside the scrollable area, above the promptList.
-        // A Scrollable-delegating wrapper preserves JBList scroll behaviour while
-        // allowing loadMorePanel to sit above the list and scroll with the content.
+        // A Scrollable wrapper preserves JBList scroll behaviour while allowing
+        // loadMorePanel to sit above the list and scroll with the content.
+        // getScrollableTracksViewportWidth() returns true unconditionally so the
+        // viewport stretches the wrapper — and therefore promptList — to full width.
+        // We cannot delegate to promptList.scrollableTracksViewportWidth here because
+        // JList.getScrollableTracksViewportWidth() only returns true when its parent IS
+        // a JViewport; since promptList's parent is this wrapper (a JPanel), the
+        // delegation would always return false and cells would never fill the viewport.
         val listWrapper = object : JPanel(BorderLayout()), Scrollable {
-            override fun getScrollableTracksViewportWidth() = promptList.scrollableTracksViewportWidth
+            override fun getScrollableTracksViewportWidth() = true
             override fun getScrollableTracksViewportHeight() = false
             override fun getPreferredScrollableViewportSize(): Dimension = promptList.preferredScrollableViewportSize
             override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int) =

@@ -65,9 +65,12 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 }
 
 /**
- * Opens the AgentBridge root settings page programmatically. Because
- * [PluginSettingsConfigurable] implements [SearchableConfigurable.Parent], IntelliJ
- * treats it as a group node and expands its children in the tree when it is selected.
+ * Opens the AgentBridge settings, landing on the first child page (UI/UX). Navigating to
+ * a child is the only reliable way to ensure the AgentBridge sub-tree is expanded in the
+ * settings tree: IntelliJ always expands the parent to reveal the selected child.
+ * Navigating to the parent ([PluginSettingsConfigurable]) would land on the root description
+ * page but the sub-tree would remain collapsed — IntelliJ does not have a programmatic
+ * expand-on-navigate mechanism in the target SDK.
  *
  * Defers the dialog to the next EDT cycle to avoid a BufferStrategy NPE that can occur
  * when a modal dialog is shown synchronously during mouse-event processing
@@ -76,6 +79,6 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 fun openAgentBridgeSettings(project: Project) {
     ApplicationManager.getApplication().invokeLater {
         ShowSettingsUtil.getInstance()
-            .showSettingsDialog(project, PluginSettingsConfigurable::class.java)
+            .showSettingsDialog(project, ChatInputConfigurable::class.java)
     }
 }
