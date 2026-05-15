@@ -661,7 +661,7 @@ public final class CopilotClient extends AcpClient {
         sb.append("[System notice] ⚠️ ").append(consequence);
         sb.append(" Use AgentBridge instead: ").append(equivalents).append(".");
 
-        if (count > 2) {
+        if (count >= 2) {
             sb.append(" This is bypass #").append(count).append(" this session.")
                 .append(" ALL file reads/writes/commands MUST go through AgentBridge MCP tools.");
         }
@@ -679,6 +679,10 @@ public final class CopilotClient extends AcpClient {
                 "File read outside IDE buffer — the agent is now working with stale disk content, not what the editor shows.";
             case "edit" ->
                 "File written outside IDE buffer — the editor is now out of sync and unsaved edits may be lost.";
+            case "delete" ->
+                "File deleted outside IDE — the editor may still show the deleted file and VCS state is stale.";
+            case "move" ->
+                "File moved outside IDE — references and imports are not updated, and the editor shows the old location.";
             case "search" -> "Search ran outside IDE index — results miss unsaved edits and lack semantic context.";
             case "execute" ->
                 "Command ran outside IDE — bypassed audit hooks, bot identity injection, and follow-agent visibility.";
@@ -694,6 +698,8 @@ public final class CopilotClient extends AcpClient {
         return switch (kind) {
             case "read" -> "read_file, list_project_files, list_directory_tree";
             case "edit" -> "write_file, edit_text, create_file, replace_symbol_body";
+            case "delete" -> "delete_file";
+            case "move" -> "move_file";
             case "search" -> "search_text, search_symbols, find_file, find_references";
             case "execute" -> "run_command, run_in_terminal, git_* tools";
             default -> "read_file, write_file, edit_text, search_text, run_command";
