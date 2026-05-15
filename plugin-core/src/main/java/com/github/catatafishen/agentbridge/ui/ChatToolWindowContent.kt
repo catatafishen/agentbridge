@@ -1560,7 +1560,11 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
                 return
             }
             e.presentation.isVisible = true
-            when (McpPauseService.getInstance(project).getPauseState()) {
+            val state = McpPauseService.getInstance(project).getPauseState()
+            // Show a highlighted (pressed) background whenever pause is active or pending,
+            // so the user can see at a glance that the button is "on".
+            Toggleable.setSelected(e.presentation, state != McpPauseService.PauseState.RUNNING)
+            when (state) {
                 McpPauseService.PauseState.RUNNING -> {
                     e.presentation.icon = AllIcons.Actions.Pause
                     e.presentation.text = "Pause Agent"
