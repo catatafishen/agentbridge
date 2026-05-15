@@ -619,17 +619,19 @@ tasks {
     }
 
     named<VerifyPluginTask>("verifyPlugin") {
-        // The plugin verifier runs each IDE in a separate coroutine on Dispatchers.Default,
-        // which in Kotlin uses CoroutineScheduler (NOT ForkJoinPool.common). Multiple workers
-        // share a CachingJarFileSystemProvider that caches ZipFileSystem instances by URI.
-        // When one coroutine's thread is interrupted (e.g., during coroutine cancellation),
-        // the NIO channel closure propagates to all co-readers of the same cached ZipFileSystem,
-        // causing ClosedByInterruptException in other workers and a spurious CI failure.
+        // The plugin verifier runs each IDE in a separate thread via ExecutorWithProgress
+        // (a ThreadPoolExecutor), with concurrency = min(4, availableProcessors()).
+        // Multiple workers share a CachingJarFileSystemProvider that caches ZipFileSystem
+        // instances by URI. When one worker finishes and its ZipFileSystem is evicted/closed,
+        // other workers reading from the same cached filesystem get ClosedFileSystemException.
         //
-        // Fix: force the Kotlin CoroutineScheduler to 1 thread so all IDE checks run
-        // sequentially, eliminating the shared-filesystem race. ForkJoinPool.common.parallelism
-        // does NOT affect Kotlin's scheduler and must NOT be relied on for this purpose.
+        // Fix: force the JVM to report 1 available processor, which makes the verifier's
+        // ThreadPoolExecutor use a single thread (min(4, 1) = 1). This ensures all IDE
+        // checks run sequentially, eliminating the shared-filesystem race.
+        // The coroutine scheduler settings are also kept as a belt-and-suspenders measure
+        // since some verifier code paths use Kotlin coroutines.
         jvmArgs(
+            "-XX:ActiveProcessorCount=1",
             "-Dkotlinx.coroutines.scheduler.core.pool.size=1",
             "-Dkotlinx.coroutines.scheduler.max.pool.size=1",
         )
