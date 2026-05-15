@@ -1,0 +1,52 @@
+package com.github.catatafishen.agentbridge.ui
+
+import com.intellij.ui.Gray
+import com.intellij.ui.JBColor
+import java.awt.Color
+
+/**
+ * Color palette for the native Swing chat panel.
+ *
+ * Values are derived from the JCEF chat.css design tokens. Accent colors use
+ * alpha compositing so they blend naturally with both light and dark IDE themes.
+ */
+object NativeChatColors {
+    val THINK: JBColor = JBColor(Gray._100, Gray._176)
+
+    val USER_BUBBLE_BG = JBColor(Color(86, 156, 214, 25), Color(86, 156, 214, 31))
+    val AGENT_BUBBLE_BG = JBColor(Color(150, 200, 150, 12), Color(150, 200, 150, 15))
+
+    val THINK_BG = JBColor(Color(128, 128, 128, 15), Color(128, 128, 128, 20))
+    val THINK_BORDER = JBColor(Color(128, 128, 128, 30), Color(128, 128, 128, 41))
+
+    val ERROR = JBColor(Color(204, 0, 0), Color(255, 107, 107))
+    val ERROR_BG = JBColor(Color(199, 34, 34, 15), Color(199, 34, 34, 20))
+
+    private val KIND_READ = JBColor(Color(80, 150, 80), Color(120, 190, 120))
+    private val KIND_EDIT = JBColor(Color(175, 125, 65), Color(205, 155, 95))
+    private val KIND_EXECUTE = JBColor(Color(180, 75, 75), Color(210, 105, 105))
+    private val KIND_SEARCH = JBColor(Color(80, 135, 180), Color(110, 165, 210))
+    private val KIND_THINK = JBColor(Color(140, 125, 180), Color(170, 155, 210))
+    private val KIND_OTHER = JBColor(Color(130, 135, 140), Color(160, 165, 170))
+
+    fun kindColor(kind: String?): Color = when (kind?.lowercase()) {
+        "read" -> KIND_READ
+        "edit", "write", "move" -> KIND_EDIT
+        "execute", "delete" -> KIND_EXECUTE
+        "search" -> KIND_SEARCH
+        "think" -> KIND_THINK
+        else -> KIND_OTHER
+    }
+
+    /** 10% alpha background derived from the kind's accent color. */
+    fun kindBg(kind: String?): JBColor {
+        val base = kindColor(kind)
+        return JBColor(Color(base.red, base.green, base.blue, 26), Color(base.red, base.green, base.blue, 26))
+    }
+
+    /** 22% alpha border derived from the kind's accent color. */
+    fun kindBorder(kind: String?): JBColor {
+        val base = kindColor(kind)
+        return JBColor(Color(base.red, base.green, base.blue, 56), Color(base.red, base.green, base.blue, 56))
+    }
+}
