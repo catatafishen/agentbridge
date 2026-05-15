@@ -107,10 +107,19 @@ public final class ConversationWriter {
         @NotNull String clientId,
         @NotNull List<EntryData> entries
     ) throws SQLException {
-        String startedAt = extractStartedAt(entries);
+        String startedAt = extractStartedAtOrNull(entries);
+        if (startedAt == null && !sessionExists(conn, sessionId)) {
+            throw new IllegalArgumentException(
+                "None of the " + entries.size() + " entries carry a timestamp"
+                    + " — cannot determine session start time");
+        }
         conn.setAutoCommit(false);
         try {
-            ensureSession(conn, sessionId, agentName, clientId, startedAt);
+            // ensureSession uses INSERT OR IGNORE: if the session already exists, startedAt is
+            // irrelevant. Only pass a real timestamp when one is available.
+            if (startedAt != null) {
+                ensureSession(conn, sessionId, agentName, clientId, startedAt);
+            }
             for (EntryData entry : entries) {
                 writeEntry(conn, sessionId, clientId, entry);
             }
@@ -121,6 +130,15 @@ public final class ConversationWriter {
             throw e;
         } finally {
             conn.setAutoCommit(true);
+        }
+    }
+
+    private static boolean sessionExists(@NotNull Connection conn, @NotNull String sessionId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM sessions WHERE id = ? LIMIT 1")) {
+            ps.setString(1, sessionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 
@@ -732,21 +750,19 @@ public final class ConversationWriter {
     }
 
     /**
-     * Returns the first non-null, non-empty timestamp found in {@code entries}.
-     * Throws {@link IllegalArgumentException} if no entry carries a timestamp —
-     * callers must not proceed without a real timestamp (fail fast).
+     * Returns the first non-null, non-empty timestamp found in {@code entries}, or {@code null}
+     * if no entry carries a timestamp. Callers that need a timestamp for a new session must
+     * handle the null case explicitly.
      */
-    @NotNull
-    private static String extractStartedAt(@NotNull List<EntryData> entries) {
+    @Nullable
+    private static String extractStartedAtOrNull(@NotNull List<EntryData> entries) {
         for (EntryData entry : entries) {
             String ts = entry.getTimestamp();
             if (!ts.isEmpty()) {
                 return ts;
             }
         }
-        throw new IllegalArgumentException(
-            "None of the " + entries.size() + " entries carry a timestamp"
-                + " — cannot determine session start time");
+        return null;
     }
 
     /**
