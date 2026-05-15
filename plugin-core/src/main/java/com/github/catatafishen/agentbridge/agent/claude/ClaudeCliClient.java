@@ -299,6 +299,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         String resolvedModel = resolveModel(sessionId, request.modelId());
         boolean isNewSession = !cliSessionIds.containsKey(sessionId);
         String rawPrompt = extractPromptText(request.prompt());
+        List<ContentBlock.Image> imageBlocks = extractImageBlocks(request.prompt());
         String fullPrompt = buildFullPrompt(rawPrompt, isNewSession);
         List<String> cmd = buildCommand(sessionId, resolvedModel);
 
@@ -313,7 +314,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 cmd.add("--mcp-config");
                 cmd.add(mcpConfig.toString());
             }
-            String stopReason = runSubprocess(sessionId, cmd, fullPrompt, onChunk, onUpdate, cancelled);
+            String stopReason = runSubprocess(sessionId, cmd, fullPrompt, imageBlocks, onChunk, onUpdate, cancelled);
             return new PromptResponse(stopReason, null);
         } finally {
             if (mcpConfig != null) {
@@ -324,6 +325,20 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 }
             }
         }
+    }
+
+    /**
+     * Extract image content blocks from the prompt.
+     */
+    @NotNull
+    static List<ContentBlock.Image> extractImageBlocks(@NotNull List<ContentBlock> blocks) {
+        List<ContentBlock.Image> images = new ArrayList<>();
+        for (ContentBlock block : blocks) {
+            if (block instanceof ContentBlock.Image img) {
+                images.add(img);
+            }
+        }
+        return images;
     }
 
     /**
@@ -408,6 +423,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private String runSubprocess(@NotNull String sessionId,
                                  @NotNull List<String> cmd,
                                  @NotNull String prompt,
+                                 @NotNull List<ContentBlock.Image> imageBlocks,
                                  @Nullable Consumer<String> onChunk,
                                  @Nullable Consumer<SessionUpdate> onUpdate,
                                  @NotNull AtomicBoolean cancelled) throws AgentException {
@@ -440,7 +456,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             // handleStreamEvent closes stdin when the result event arrives; parseStreamOutput's
             // finally block closes it again as a safety net (double-close is a no-op).
             OutputStream stdin = proc.getOutputStream();
-            writeJsonPromptToStdin(stdin, prompt);
+            writeJsonPromptToStdin(stdin, prompt, imageBlocks);
 
             String stopReason = parseStreamOutput(sessionId, proc, stdin, onChunk, onUpdate, cancelled);
             proc.waitFor();
@@ -828,15 +844,28 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     /**
      * Builds the JSON user-message envelope required by {@code --input-format stream-json}.
-     * Format: {@code {"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}}
+     * Format: {@code {"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."},{"type":"image",...}]}}}
+     *
+     * <p>Images are added after the text block in Anthropic's native multimodal format:
+     * {@code {"type":"image","source":{"type":"base64","media_type":"<mime>","data":"<base64>"}}}</p>
      */
     @NotNull
-    static String buildJsonUserMessage(@NotNull String prompt) {
+    static String buildJsonUserMessage(@NotNull String prompt, @NotNull List<ContentBlock.Image> images) {
         JsonObject textBlock = new JsonObject();
         textBlock.addProperty("type", "text");
         textBlock.addProperty("text", prompt);
         JsonArray content = new JsonArray();
         content.add(textBlock);
+        for (ContentBlock.Image image : images) {
+            JsonObject sourceBlock = new JsonObject();
+            sourceBlock.addProperty("type", "base64");
+            sourceBlock.addProperty("media_type", image.mimeType());
+            sourceBlock.addProperty("data", image.data());
+            JsonObject imageBlock = new JsonObject();
+            imageBlock.addProperty("type", "image");
+            imageBlock.add("source", sourceBlock);
+            content.add(imageBlock);
+        }
         JsonObject message = new JsonObject();
         message.addProperty("role", "user");
         message.add("content", content);
@@ -879,10 +908,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         return stderrThread;
     }
 
-    private static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt)
+    private static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt,
+                                               @NotNull List<ContentBlock.Image> images)
         throws AgentException {
         try {
-            stdin.write(buildJsonUserMessage(prompt).getBytes(StandardCharsets.UTF_8));
+            stdin.write(buildJsonUserMessage(prompt, images).getBytes(StandardCharsets.UTF_8));
             stdin.write('\n');
             stdin.flush();
         } catch (IOException e) {

@@ -235,7 +235,7 @@ class ClaudeCliClientTest {
     class BuildJsonUserMessage {
         @Test
         void validStructure() {
-            String json = ClaudeCliClient.buildJsonUserMessage("Hello");
+            String json = ClaudeCliClient.buildJsonUserMessage("Hello", List.of());
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             assertEquals("user", parsed.get("type").getAsString());
             assertTrue(parsed.has("message"));
@@ -251,7 +251,7 @@ class ClaudeCliClientTest {
 
         @Test
         void preservesSpecialCharacters() {
-            String json = ClaudeCliClient.buildJsonUserMessage("\"quoted\" & <tags>");
+            String json = ClaudeCliClient.buildJsonUserMessage("\"quoted\" & <tags>", List.of());
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             String text = parsed.getAsJsonObject("message")
                 .getAsJsonArray("content").get(0).getAsJsonObject()
@@ -261,7 +261,7 @@ class ClaudeCliClientTest {
 
         @Test
         void emptyPrompt() {
-            String json = ClaudeCliClient.buildJsonUserMessage("");
+            String json = ClaudeCliClient.buildJsonUserMessage("", List.of());
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             String text = parsed.getAsJsonObject("message")
                 .getAsJsonArray("content").get(0).getAsJsonObject()
