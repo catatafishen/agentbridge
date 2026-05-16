@@ -119,10 +119,15 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             try {
                 rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
                 return Dimension(pw, rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1))
-            } catch (_: AssertionError) {
-                // javax.swing.text.StateInvariantError (package-private, extends AssertionError)
-                // is thrown when renderNow() replaced the document while a layout pass was
-                // already in flight. Fall through to super — the next validation cycle will
+            } catch (_: Throwable) {
+                // Multiple Swing internal exceptions can be thrown here when renderNow()
+                // replaced the document while a layout pass was already in flight:
+                //  - javax.swing.text.StateInvariantError (extends AssertionError):
+                //    GlyphView detects stale element references.
+                //  - ArrayIndexOutOfBoundsException (extends RuntimeException):
+                //    BoxView.updateChildSizes finds its sizes array stale after the
+                //    document was replaced but the view count changed.
+                // In both cases, fall through to super — the next validation cycle will
                 // have fresh views and produce the correct size.
             }
         }
