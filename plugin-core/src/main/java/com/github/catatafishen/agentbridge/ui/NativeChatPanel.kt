@@ -106,7 +106,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var thinkingContent: JPanel? = null,
         var thinkingDoc: DefaultStyledDocument? = null,
         var thinkingExpanded: Boolean = true,
-        var textBubble: JPanel? = null,
         var markdownPane: NativeMarkdownPane? = null,
     )
 
@@ -128,11 +127,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
 
             override fun getMaximumSize(): Dimension =
-                Dimension(Short.MAX_VALUE.toInt(), preferredSize.height)
+                Dimension(Short.MAX_VALUE.toInt(), Int.MAX_VALUE)
         }
-        container.add(createTimestampLabel(rightAligned = false).apply {
-            alignmentX = Component.LEFT_ALIGNMENT
-        })
+        val currentMinute = MessageFormatter.formatTimestamp(MessageFormatter.timestamp())
+        if (currentMinute != lastShownTimestampMinute) {
+            lastShownTimestampMinute = currentMinute
+            container.add(createTimestampLabel(rightAligned = false).apply {
+                alignmentX = Component.LEFT_ALIGNMENT
+            })
+        }
         container.add(chipStrip)
 
         val turn = TurnContext(container, chipStrip)
@@ -349,15 +352,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
-            val bubble = createBubble(NativeChatColors.AGENT_BUBBLE_BG).apply {
-                alignmentX = Component.LEFT_ALIGNMENT
-            }
+            val bubble = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
             val pane = NativeMarkdownPane(fileNavigator)
             allMarkdownPanes += pane
             bubble.add(pane, BorderLayout.CENTER)
-            turn.textBubble = bubble
             turn.markdownPane = pane
-            turn.container.add(bubble)
+            turn.container.add(alignBubble(bubble, rightAligned = false))
         }
         turn.markdownPane!!.appendMarkdown(text)
         scrollToBottom()
@@ -368,22 +368,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
-            val thinkBubble = RoundedPanel(NativeChatColors.THINK_BG, NativeChatColors.THINK_BORDER).apply {
-                alignmentX = Component.LEFT_ALIGNMENT
-                border = JBUI.Borders.empty(
-                    JBUI.scale(BUBBLE_V_PAD), JBUI.scale(BUBBLE_H_PAD),
-                    JBUI.scale(BUBBLE_V_PAD), JBUI.scale(BUBBLE_H_PAD)
-                )
-            }
+            val bubble = createBubble(NativeChatColors.THINK_BG)
             val (doc, pane) = newTextPane(fg = NativeChatColors.THINK)
-            pane.font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
-            thinkBubble.add(pane, BorderLayout.CENTER)
+            bubble.add(pane, BorderLayout.CENTER)
 
-            val contentWrapper = JPanel(BorderLayout()).apply {
-                isOpaque = false
-                alignmentX = Component.LEFT_ALIGNMENT
-                add(thinkBubble, BorderLayout.CENTER)
-            }
+            val contentWrapper = alignBubble(bubble, rightAligned = false)
             turn.thinkingDoc = doc
             turn.thinkingContent = contentWrapper
             turn.thinkingExpanded = true
@@ -728,11 +717,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
     /** Creates a right-aligned nudge row using the same bubble as user messages. */
-    private fun createNudgeRow(text: String, source: NudgeSource): JPanel {
-        val prefix = if (source.isReprimand) "⚡ $text" else "💬 $text"
-        val content = JBLabel("<html>$prefix</html>").apply {
+    private fun createNudgeRow(text: String): JPanel {
+        val content = JBLabel("<html>$text</html>").apply {
             foreground = UIUtil.getLabelForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
         }
         val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
         return row
@@ -740,7 +727,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
         removeNudgeBubble(id)
-        val row = createNudgeRow(text, source)
+        val row = createNudgeRow(text)
         nudgeBubbles[id] = row
         addRow(row)
     }
@@ -758,16 +745,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
-        addRow(createNudgeRow(text, source))
+        addRow(createNudgeRow(text))
     }
 
     private val queuedMessages = mutableMapOf<String, JComponent>()
 
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
-        val content = JBLabel("⏳ $text").apply {
+        val content = JBLabel("<html>$text</html>").apply {
             foreground = UIUtil.getLabelForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
             putClientProperty("queuedText", text)
         }
         val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
