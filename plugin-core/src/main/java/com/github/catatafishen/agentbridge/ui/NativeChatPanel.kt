@@ -105,7 +105,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val chipStrip = WrappingFlowPanel(JBUI.scale(4), JBUI.scale(2)).apply {
             alignmentX = Component.LEFT_ALIGNMENT
             isVisible = false
-            border = JBUI.Borders.empty(4, 0, 4, 0)
+            border = JBUI.Borders.empty(4, 0)
         }
 
         val container = object : JPanel() {
@@ -241,11 +241,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /**
      * Creates a rounded message bubble with consistent max-width.
      * All message types (user, agent, nudge, error, info) share this factory.
+     * No border — alignment and background color are the only differentiators.
      */
-    private fun createBubble(
-        bg: Color,
-        borderColor: Color? = null,
-    ): RoundedPanel = object : RoundedPanel(bg, borderColor) {
+    private fun createBubble(bg: Color): RoundedPanel = object : RoundedPanel(bg) {
         override fun getMaximumSize(): Dimension {
             val pw = parent?.width ?: JBUI.scale(600)
             return Dimension(
@@ -280,10 +278,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun createMessageRow(
         content: JComponent,
         bg: Color,
-        borderColor: Color? = null,
         rightAligned: Boolean = false,
     ): Pair<JPanel, RoundedPanel> {
-        val bubble = createBubble(bg, borderColor)
+        val bubble = createBubble(bg)
         bubble.add(content, BorderLayout.CENTER)
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -336,8 +333,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         hideWorkingIndicator()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
-            val thinkBubble = createBubble(NativeChatColors.THINK_BG, NativeChatColors.THINK_BORDER).apply {
+            val thinkBubble = RoundedPanel(NativeChatColors.THINK_BG, NativeChatColors.THINK_BORDER).apply {
                 alignmentX = Component.LEFT_ALIGNMENT
+                border = JBUI.Borders.empty(
+                    JBUI.scale(BUBBLE_V_PAD), JBUI.scale(BUBBLE_H_PAD),
+                    JBUI.scale(BUBBLE_V_PAD), JBUI.scale(BUBBLE_H_PAD)
+                )
             }
             val (doc, pane) = newTextPane(fg = NativeChatColors.THINK)
             pane.font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
@@ -973,6 +974,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /**
      * A JPanel that paints a rounded rectangle background behind its children.
      * Optionally draws a 1px rounded border when [borderColor] is non-null.
+     * Used directly for non-message elements (thinking panel); message bubbles
+     * go through [createBubble] which never passes a border.
      */
     private open class RoundedPanel(
         private val bgColor: Color,
