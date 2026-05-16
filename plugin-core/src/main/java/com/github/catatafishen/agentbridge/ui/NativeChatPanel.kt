@@ -239,9 +239,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     /**
-     * Creates a rounded message bubble with consistent max-width.
-     * All message types (user, agent, nudge, error, info) share this factory.
-     * No border — alignment and background color are the only differentiators.
+     * Factory: creates a rounded message bubble with capped width.
+     *
+     * <b>All</b> message types (user, agent, nudge, error, queued) share this factory.
+     * Only alignment and background colour differ.
      */
     private fun createBubble(bg: Color): RoundedPanel = object : RoundedPanel(bg) {
         override fun getMaximumSize(): Dimension {
@@ -250,6 +251,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 (pw * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
                 Int.MAX_VALUE
             )
+        }
+
+        override fun getPreferredSize(): Dimension {
+            val pref = super.getPreferredSize()
+            val max = maximumSize
+            return Dimension(pref.width.coerceAtMost(max.width), pref.height)
         }
     }.apply {
         border = JBUI.Borders.empty(
@@ -359,6 +366,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val chip = ThinkingChipComponent(active = true) {
                 turn.thinkingExpanded = !turn.thinkingExpanded
                 contentWrapper.isVisible = turn.thinkingExpanded
+                if (turn.thinkingExpanded) {
+                    contentWrapper.revalidate()
+                }
                 turn.container.revalidate()
                 turn.container.repaint()
             }
@@ -383,14 +393,26 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ) {
         val turn = ensureTurn()
         val resolvedKind = kind ?: "other"
-        toolCallData[id] = ToolCallData(title, resolvedKind, arguments)
-        val chip = ToolChipComponent(title, kind, "running") { showToolPopup(id) }
+        val displayTitle = resolveToolDisplayName(title)
+        toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
+        val chip = ToolChipComponent(displayTitle, kind, "running") { showToolPopup(id) }
         allChips[id] = chip
         turn.chipStrip.add(chip)
         turn.chipStrip.isVisible = true
         turn.chipStrip.revalidate()
         if (!spinTimer.isRunning) spinTimer.start()
         scrollToBottom()
+    }
+
+    /**
+     * Resolves a tool title to a human-readable display name.
+     * If the title looks like a raw tool ID (e.g. "agentbridge-read_file"),
+     * we look it up in the [ToolRegistry] for a friendlier name.
+     */
+    private fun resolveToolDisplayName(title: String): String {
+        if (title.contains(' ') || title.contains('(')) return title
+        val def = toolRegistry.findById(title)
+        return def?.displayName() ?: title
     }
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
@@ -1021,7 +1043,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         init {
             layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
             isOpaque = false
-            border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8))
+            border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(6), JBUI.scale(2), JBUI.scale(6))
 
             if (onClick != null) {
                 cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
@@ -1126,7 +1148,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         init {
             layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
             isOpaque = false
-            border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8))
+            border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(6), JBUI.scale(2), JBUI.scale(6))
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
 
             emojiLabel = JLabel("💭").apply { font = UIUtil.getLabelFont() }
