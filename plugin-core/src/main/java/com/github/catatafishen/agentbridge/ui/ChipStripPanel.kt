@@ -1,21 +1,14 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.*
+import java.awt.Cursor
+import java.awt.Dimension
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import javax.swing.*
 
-/**
- * A horizontally scrollable strip of tool chips with left/right navigation buttons.
- *
- * Layout: [ThinkingChip?] [‹] [chip1  chip2  chip3 ...] [›]
- *
- * - The thinking chip (if any) is pinned on the left, always visible outside the scroll area.
- * - Tool chips go inside the scrollable area; the last added chip is auto-scrolled into view.
- * - Nav buttons (‹/›) appear only when chips overflow the available width.
- *
- * Mirrors the JCEF `message-meta` / `.chip-strip` / `.chip-nav` layout.
- */
 class ChipStripPanel : JPanel() {
 
     private val toolChipInner = object : JPanel() {
@@ -25,7 +18,7 @@ class ChipStripPanel : JPanel() {
         }
     }
 
-    private val chipScrollPane = JScrollPane(toolChipInner).apply {
+    private val chipScrollPane = JBScrollPane(toolChipInner).apply {
         horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER
         border = JBUI.Borders.empty()
@@ -38,38 +31,59 @@ class ChipStripPanel : JPanel() {
     private val rightBtn = createNavBtn("›", +1)
 
     private var thinkingChip: JComponent? = null
-
-    /** Ordered list of tool chip components (excludes BoxLayout spacers). */
     private val toolChips = mutableListOf<JComponent>()
 
     private val hbar get() = chipScrollPane.horizontalScrollBar
 
+    private var dragStartX = 0
+    private var dragScrollStart = 0
+
     init {
         layout = BoxLayout(this, BoxLayout.X_AXIS)
         isOpaque = false
-        border = JBUI.Borders.empty(JBUI.scale(3), 0)
+        border = JBUI.Borders.empty(JBUI.scale(2), 0)
         add(leftBtn)
         add(chipScrollPane)
         add(rightBtn)
         hbar.addAdjustmentListener { updateNav() }
+
+        val dragListener = object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) {
+                dragStartX = e.x
+                dragScrollStart = hbar.value
+                chipScrollPane.viewport.cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+            }
+
+            override fun mouseReleased(e: MouseEvent) {
+                chipScrollPane.viewport.cursor = Cursor.getDefaultCursor()
+            }
+
+            override fun mouseDragged(e: MouseEvent) {
+                val delta = dragStartX - e.x
+                hbar.value = (dragScrollStart + delta).coerceIn(0, hbar.maximum - hbar.visibleAmount)
+                updateNav()
+            }
+        }
+        chipScrollPane.viewport.addMouseListener(dragListener)
+        chipScrollPane.viewport.addMouseMotionListener(dragListener)
+        toolChipInner.addMouseListener(dragListener)
+        toolChipInner.addMouseMotionListener(dragListener)
     }
 
-    /** Pins a thinking chip on the left, before the scroll area. At most one at a time. */
     fun addThinkingChip(chip: JComponent) {
         thinkingChip?.let { remove(it) }
         thinkingChip = chip
-        chip.alignmentY = Component.CENTER_ALIGNMENT
+        chip.alignmentY = CENTER_ALIGNMENT
         add(chip, 0)
         isVisible = true
         revalidate()
     }
 
-    /** Adds a tool chip into the scrollable area and auto-scrolls to make it visible. */
     fun addToolChip(chip: JComponent) {
         if (toolChips.isNotEmpty()) {
             toolChipInner.add(Box.createRigidArea(Dimension(JBUI.scale(4), 0)))
         }
-        chip.alignmentY = Component.CENTER_ALIGNMENT
+        chip.alignmentY = CENTER_ALIGNMENT
         toolChipInner.add(chip)
         toolChips += chip
         toolChipInner.revalidate()
@@ -92,16 +106,20 @@ class ChipStripPanel : JPanel() {
     }
 
     private fun createNavBtn(label: String, direction: Int): JButton {
+        val size = JBUI.scale(18)
         return JButton(label).apply {
             isVisible = false
             isFocusPainted = false
             isContentAreaFilled = false
             isBorderPainted = false
-            border = JBUI.Borders.empty(0, JBUI.scale(2))
+            border = JBUI.Borders.empty()
             foreground = UIUtil.getContextHelpForeground()
             font = UIUtil.getLabelFont()
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            alignmentY = Component.CENTER_ALIGNMENT
+            alignmentY = CENTER_ALIGNMENT
+            preferredSize = Dimension(size, size)
+            minimumSize = Dimension(size, size)
+            maximumSize = Dimension(size, size)
             addActionListener { scrollByChip(direction) }
         }
     }
@@ -112,7 +130,7 @@ class ChipStripPanel : JPanel() {
         if (direction > 0) {
             val scrollEnd = bar.value + viewportWidth
             val target = toolChips.firstOrNull { it.x + it.width > scrollEnd + 1 }
-            bar.value = if (target != null) target.x else bar.maximum
+            bar.value = target?.x ?: bar.maximum
         } else {
             val target = toolChips.reversed().firstOrNull { it.x < bar.value - 1 }
             bar.value = if (target != null) maxOf(0, target.x + target.width - viewportWidth) else 0
