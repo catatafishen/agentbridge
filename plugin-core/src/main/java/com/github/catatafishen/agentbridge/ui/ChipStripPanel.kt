@@ -33,8 +33,16 @@ class ChipStripPanel : JPanel() {
     }
 
     private val chipScrollPane = JBScrollPane(toolChipInner).apply {
-        horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        // AS_NEEDED lets the viewport allow toolChipInner to be wider than the visible area,
+        // which is what makes overflow-and-scroll work. NEVER would constrain the view to the
+        // viewport width and BoxLayout would squish chips. The scrollbar is hidden via size=0.
+        horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
         verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER
+        horizontalScrollBar.apply {
+            preferredSize = Dimension(0, 0)
+            minimumSize = Dimension(0, 0)
+            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 0)
+        }
         border = JBUI.Borders.empty()
         isOpaque = false
         viewport.isOpaque = false
@@ -47,6 +55,7 @@ class ChipStripPanel : JPanel() {
     private val rightBtn = createNavBtn("›", +1)
 
     private var thinkingChip: JComponent? = null
+    private var thinkingChipSpacer: JComponent? = null
     private val toolChips = mutableListOf<JComponent>()
 
     private val hbar get() = chipScrollPane.horizontalScrollBar
@@ -105,10 +114,14 @@ class ChipStripPanel : JPanel() {
 
     fun addThinkingChip(chip: JComponent) {
         thinkingChip?.let { remove(it) }
+        thinkingChipSpacer?.let { remove(it) }
         thinkingChip = chip
+        val spacer = Box.createRigidArea(Dimension(JBUI.scale(6), 0)) as JComponent
+        thinkingChipSpacer = spacer
         chip.alignmentY = CENTER_ALIGNMENT
         // Thinking chip is pinned left, outside the scrollable area — no drag listener.
         add(chip, 0)
+        add(spacer, 1)
         isVisible = true
         revalidate()
     }
