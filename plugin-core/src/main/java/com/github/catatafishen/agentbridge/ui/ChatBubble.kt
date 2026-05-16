@@ -47,9 +47,20 @@ open class RoundedPanel(
 fun createBubble(bg: Color, rightAligned: Boolean = false): Pair<JPanel, RoundedPanel> {
     val bubble = object : RoundedPanel(bg) {
         override fun getMaximumSize(): Dimension {
-            val pw = parent?.width ?: JBUI.scale(600)
+            // parent (the row) has width=0 before the first layout pass completes.
+            // Walk up the hierarchy to find the nearest laid-out ancestor so the
+            // bubble gets its correct max width on the very first measurement.
+            var containerWidth = parent?.width ?: 0
+            if (containerWidth == 0) {
+                var anc: Container? = parent?.parent
+                while (anc != null && containerWidth == 0) {
+                    containerWidth = anc.width
+                    anc = anc.parent
+                }
+            }
+            if (containerWidth == 0) containerWidth = JBUI.scale(600)
             return Dimension(
-                (pw * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
+                (containerWidth * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
                 Int.MAX_VALUE
             )
         }

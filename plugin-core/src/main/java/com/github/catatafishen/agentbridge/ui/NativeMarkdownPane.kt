@@ -7,6 +7,8 @@ import java.awt.Dimension
 import javax.swing.JEditorPane
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
+import javax.swing.plaf.TextUI
+import javax.swing.text.View
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.StyleSheet
 
@@ -73,13 +75,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
-        // Use the parent's maximum width rather than its current width.
-        // parent.width starts at 0 before the first layout pass completes, causing
-        // the bubble to start narrow and grow horizontally with each revalidate.
-        // parent.maximumSize.width is computed from the containing row's width and
-        // represents the correct allocated width regardless of the current layout state.
-        // Short.MAX_VALUE (32767) is the Swing placeholder for "unbounded" — fall back
-        // to the current width in that case.
         val pw = when {
             p.maximumSize.width in 1 until Short.MAX_VALUE.toInt() ->
                 p.maximumSize.width - ins.left - ins.right
@@ -89,6 +84,17 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
             else -> return super.getPreferredSize()
         }.takeIf { it > 0 } ?: return super.getPreferredSize()
+
+        // setSize() alone does not synchronously force the HTML view hierarchy to
+        // re-layout at pw — views retain their previous allocation until the next paint.
+        // Calling rootView.setSize() directly forces a layout pass at pw, so
+        // getPreferredSpan(Y_AXIS) returns the correct height for the current content.
+        val textUI = ui as? TextUI
+        if (textUI != null) {
+            val rootView = textUI.getRootView(this)
+            rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
+            return Dimension(pw, rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1))
+        }
         setSize(pw, Short.MAX_VALUE.toInt())
         return Dimension(pw, super.getPreferredSize().height)
     }
