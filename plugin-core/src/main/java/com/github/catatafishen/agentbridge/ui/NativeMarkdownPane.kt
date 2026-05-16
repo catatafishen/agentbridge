@@ -73,7 +73,22 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
-        val pw = (p.width - ins.left - ins.right).takeIf { it > 0 } ?: return super.getPreferredSize()
+        // Use the parent's maximum width rather than its current width.
+        // parent.width starts at 0 before the first layout pass completes, causing
+        // the bubble to start narrow and grow horizontally with each revalidate.
+        // parent.maximumSize.width is computed from the containing row's width and
+        // represents the correct allocated width regardless of the current layout state.
+        // Short.MAX_VALUE (32767) is the Swing placeholder for "unbounded" — fall back
+        // to the current width in that case.
+        val pw = when {
+            p.maximumSize.width in 1 until Short.MAX_VALUE.toInt() ->
+                p.maximumSize.width - ins.left - ins.right
+
+            p.width > 0 ->
+                p.width - ins.left - ins.right
+
+            else -> return super.getPreferredSize()
+        }.takeIf { it > 0 } ?: return super.getPreferredSize()
         setSize(pw, Short.MAX_VALUE.toInt())
         return Dimension(pw, super.getPreferredSize().height)
     }
