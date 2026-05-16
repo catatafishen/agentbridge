@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
 import java.awt.*
 import javax.swing.BoxLayout
 import javax.swing.JPanel

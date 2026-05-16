@@ -55,10 +55,15 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         }
     }
 
-    /** Appends a chunk of raw markdown (streaming). A debounced render is scheduled. */
+    /** Appends a chunk of raw markdown (streaming). Renders immediately on the first token; subsequent tokens are debounced. */
     fun appendMarkdown(text: String) {
+        val wasEmpty = rawText.isEmpty()
         rawText.append(text)
-        renderTimer.restart()
+        if (wasEmpty) {
+            renderNow()
+        } else {
+            renderTimer.restart()
+        }
     }
 
     /** Sets the full markdown text and renders immediately (for history replay). */

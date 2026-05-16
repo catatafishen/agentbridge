@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.ui
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Font
 
 fun createTurnStatsRow(stats: TurnStatsData): JBLabel {
     val text = buildList {

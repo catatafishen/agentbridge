@@ -3,8 +3,11 @@ package com.github.catatafishen.agentbridge.ui
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.*
-import javax.swing.*
+import java.awt.BorderLayout
+import java.awt.Component
+import javax.swing.JPanel
+import javax.swing.JSeparator
+import javax.swing.SwingConstants
 
 fun createSessionSeparatorRow(timestamp: String, agent: String): JPanel {
     val text = buildString {
