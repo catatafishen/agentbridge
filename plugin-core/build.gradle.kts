@@ -620,21 +620,19 @@ tasks {
 
     named<VerifyPluginTask>("verifyPlugin") {
         // The plugin verifier runs each IDE in a separate thread via ExecutorWithProgress
-        // (a ThreadPoolExecutor), with concurrency = min(4, availableProcessors()).
-        // Multiple workers share a CachingJarFileSystemProvider that caches ZipFileSystem
-        // instances by URI. When one worker finishes and its ZipFileSystem is evicted/closed,
-        // other workers reading from the same cached filesystem get ClosedFileSystemException.
+        // (a ThreadPoolExecutor). Multiple workers share a CachingJarFileSystemProvider that
+        // caches ZipFileSystem instances by URI. When one worker finishes and its ZipFileSystem
+        // is evicted/closed, other workers reading from the same cached filesystem get
+        // ClosedFileSystemException / ClosedByInterruptException — a sporadic false failure.
         //
-        // Fix: force the JVM to report 1 available processor, which makes the verifier's
-        // ThreadPoolExecutor use a single thread (min(4, 1) = 1). This ensures all IDE
-        // checks run sequentially, eliminating the shared-filesystem race.
-        // The coroutine scheduler settings are also kept as a belt-and-suspenders measure
-        // since some verifier code paths use Kotlin coroutines.
-        jvmArgs(
-            "-XX:ActiveProcessorCount=1",
-            "-Dkotlinx.coroutines.scheduler.core.pool.size=1",
-            "-Dkotlinx.coroutines.scheduler.max.pool.size=1",
-        )
+        // The concurrency level is controlled by getConcurrencyLevel() in verifier-cli, which
+        // reads the system property "intellij.plugin.verifier.concurrency.level" first. If unset,
+        // it falls back to max(8, min(maxByMemory, availableProcessors())) — note the floor of 8,
+        // which means -XX:ActiveProcessorCount=1 is completely ineffective.
+        //
+        // Fix: set "intellij.plugin.verifier.concurrency.level=1" to run all IDE checks
+        // sequentially, eliminating the shared-filesystem race condition.
+        jvmArgs("-Dintellij.plugin.verifier.concurrency.level=1")
     }
 }
 
