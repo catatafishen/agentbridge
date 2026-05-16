@@ -90,22 +90,6 @@ jobs:
         with:
           egress-policy: audit
 
-      # Ubuntu runners ship with ~14 GB free. IDE distributions easily exceed
-      # this budget — free pre-installed software we don't use to reclaim ~30 GB.
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
-        with:
-          tool-cache: false        # keep the JDK tool cache populated by setup-java
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Show available disk space
-        run: df -h /
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
@@ -131,9 +115,6 @@ jobs:
 
       - name: Create pluginVerifier cache directory
         run: mkdir -p ~/.pluginVerifier/extracted-plugins
-
-      - name: Show disk space before verification
-        run: df -h /
 
       - name: Verify plugin against ${{ matrix.ide.name }}
         # -PverifyIde selects a single IDE in pluginVerification.ides so this process
