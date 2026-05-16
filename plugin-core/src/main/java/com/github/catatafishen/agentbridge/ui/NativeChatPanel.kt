@@ -79,6 +79,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     fun setAutoScroll(enabled: Boolean) {
         autoScrollEnabled = enabled
+        if (enabled) scrollToBottom()
     }
 
     private var placeholderLabel: JBLabel? = null
@@ -113,9 +114,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         contentPanel.addComponentListener(object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
-                if (autoScrollEnabled) {
-                    scrollPane.verticalScrollBar.value = Int.MAX_VALUE
-                }
+                scrollToBottom()
             }
         })
     }
@@ -206,8 +205,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun scrollToBottom() {
-        if (!autoScrollEnabled) return
         SwingUtilities.invokeLater {
+            if (!autoScrollEnabled) return@invokeLater
             scrollPane.verticalScrollBar.value = Int.MAX_VALUE
         }
     }
