@@ -2,7 +2,9 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.util.ui.JBUI
 import java.awt.*
-import javax.swing.*
+import javax.swing.Box
+import javax.swing.BoxLayout
+import javax.swing.JPanel
 
 internal const val BUBBLE_V_PAD = 8
 private const val BUBBLE_H_PAD = 14

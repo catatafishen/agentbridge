@@ -11,6 +11,8 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import javax.swing.*
 
 /**
@@ -31,6 +33,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
     var onLoadMoreRequested: (() -> Unit)? = null
+    var onAutoScrollDisabled: (() -> Unit)? = null
+    var onAutoScrollEnabled: (() -> Unit)? = null
 
     private val fileNavigator = FileNavigator(project)
     private val toolRegistry = ToolRegistry.getInstance(project)
@@ -97,9 +101,23 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
             if (!e.valueIsAdjusting) {
                 val bar = scrollPane.verticalScrollBar
-                autoScrollEnabled = bar.value + bar.visibleAmount >= bar.maximum - 4
+                val atBottom = bar.value + bar.visibleAmount >= bar.maximum - 4
+                if (atBottom && !autoScrollEnabled) {
+                    autoScrollEnabled = true
+                    onAutoScrollEnabled?.invoke()
+                } else if (!atBottom && autoScrollEnabled) {
+                    autoScrollEnabled = false
+                    onAutoScrollDisabled?.invoke()
+                }
             }
         }
+        contentPanel.addComponentListener(object : ComponentAdapter() {
+            override fun componentResized(e: ComponentEvent) {
+                if (autoScrollEnabled) {
+                    scrollPane.verticalScrollBar.value = Int.MAX_VALUE
+                }
+            }
+        })
     }
 
     private class TurnContext(
@@ -190,7 +208,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun scrollToBottom() {
         if (!autoScrollEnabled) return
         SwingUtilities.invokeLater {
-            scrollPane.verticalScrollBar.value = scrollPane.verticalScrollBar.maximum
+            scrollPane.verticalScrollBar.value = Int.MAX_VALUE
         }
     }
 
