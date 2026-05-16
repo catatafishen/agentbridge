@@ -5,6 +5,7 @@ import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
 import javax.swing.JEditorPane
+import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
 import javax.swing.plaf.TextUI
@@ -87,7 +88,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         val kit = editorKit as? HTMLEditorKit ?: return
         kit.styleSheet = createStyleSheet()
         if (rawText.isNotEmpty()) {
-            renderNow()
+            // Defer until after updateUI() completes so the view hierarchy is fully
+            // rebuilt from the new stylesheet before we replace document content.
+            // Calling renderNow() synchronously here would set `text` while views are
+            // still in a transient state, causing stale-view BadLocationException crashes.
+            SwingUtilities.invokeLater { renderNow() }
         }
     }
 
@@ -111,8 +116,15 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         val textUI = ui as? TextUI
         if (textUI != null) {
             val rootView = textUI.getRootView(this)
-            rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
-            return Dimension(pw, rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1))
+            try {
+                rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
+                return Dimension(pw, rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1))
+            } catch (_: AssertionError) {
+                // javax.swing.text.StateInvariantError (package-private, extends AssertionError)
+                // is thrown when renderNow() replaced the document while a layout pass was
+                // already in flight. Fall through to super — the next validation cycle will
+                // have fresh views and produce the correct size.
+            }
         }
         setSize(pw, Short.MAX_VALUE.toInt())
         return Dimension(pw, super.getPreferredSize().height)
