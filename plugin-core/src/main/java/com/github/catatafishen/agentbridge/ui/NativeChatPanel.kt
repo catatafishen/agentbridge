@@ -263,6 +263,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             allMarkdownPanes += pane
         }
 
+    /** Creates a streaming bubble: an aligned row ready to add to a container, plus its pane. */
+    private fun createMarkdownBubble(bg: Color): Pair<JPanel, NativeMarkdownPane> {
+        val (row, bubble) = createBubble(bg)
+        val pane = NativeMarkdownPane(fileNavigator).also { allMarkdownPanes += it }
+        bubble.add(pane, BorderLayout.CENTER)
+        return row to pane
+    }
+
     /** Creates a complete message row: timestamp label + aligned bubble. */
     private fun createMessageRow(
         content: JComponent,
@@ -310,10 +318,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
-            val (row, bubble) = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
-            val pane = NativeMarkdownPane(fileNavigator)
-            allMarkdownPanes += pane
-            bubble.add(pane, BorderLayout.CENTER)
+            val (row, pane) = createMarkdownBubble(NativeChatColors.AGENT_BUBBLE_BG)
             turn.markdownPane = pane
             turn.container.add(row)
         }
@@ -326,9 +331,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
-            val (contentWrapper, bubble) = createBubble(NativeChatColors.THINK_BG)
-            val pane = NativeMarkdownPane(fileNavigator).also { allMarkdownPanes += it }
-            bubble.add(pane, BorderLayout.CENTER)
+            val (contentWrapper, pane) = createMarkdownBubble(NativeChatColors.THINK_BG)
 
             turn.thinkingPane = pane
             turn.thinkingWrapper = contentWrapper

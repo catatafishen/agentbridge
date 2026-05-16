@@ -5,6 +5,7 @@ import java.awt.*
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JPanel
+import javax.swing.JViewport
 
 internal const val BUBBLE_V_PAD = 8
 private const val BUBBLE_H_PAD = 14
@@ -49,22 +50,26 @@ open class RoundedPanel(
 fun createBubble(bg: Color, rightAligned: Boolean = false): Pair<JPanel, RoundedPanel> {
     val bubble = object : RoundedPanel(bg) {
         override fun getMaximumSize(): Dimension {
-            // parent (the row) has width=0 before the first layout pass completes.
-            // Walk up the hierarchy to find the nearest laid-out ancestor so the
-            // bubble gets its correct max width on the very first measurement.
-            var containerWidth = parent?.width ?: 0
-            if (containerWidth == 0) {
-                var anc: Container? = parent?.parent
-                while (anc != null && containerWidth == 0) {
-                    containerWidth = anc.width
-                    anc = anc.parent
+            // Walk up to the nearest JViewport — its width is set by ScrollPaneLayout
+            // before any content is measured, so it's always correct even on the very
+            // first layout pass of a brand-new turn container whose intermediate
+            // ancestors (contentWrapper, turn.container) are still width=0.
+            var insetH = 0
+            var anc: Container? = parent
+            while (anc != null) {
+                if (anc is JViewport && anc.width > 0) {
+                    val available = (anc.width - insetH).coerceAtLeast(0)
+                    return Dimension(
+                        (available * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
+                        Int.MAX_VALUE
+                    )
                 }
+                insetH += anc.insets.left + anc.insets.right
+                anc = anc.parent
             }
-            if (containerWidth == 0) containerWidth = JBUI.scale(600)
-            return Dimension(
-                (containerWidth * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
-                Int.MAX_VALUE
-            )
+            // Viewport not yet laid out (e.g., panel not yet shown): return unconstrained
+            // so NativeMarkdownPane falls back to p.width (previous pass) or super.
+            return Dimension(Short.MAX_VALUE.toInt(), Int.MAX_VALUE)
         }
 
         override fun getPreferredSize(): Dimension {
