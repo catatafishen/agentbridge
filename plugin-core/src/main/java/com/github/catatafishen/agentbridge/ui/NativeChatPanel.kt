@@ -365,6 +365,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contextFiles: List<Triple<String, String, Int>>?,
         bubbleHtml: String?
     ): String {
+        // Sending a prompt is an explicit "show me the response" signal.
+        // Re-enable auto-scroll so the working indicator and streaming reply are visible,
+        // regardless of where the user was scrolled before sending.
+        // Guarded against replay, where addPromptEntry is called to restore history.
+        if (!isReplaying) {
+            autoScrollEnabled = true
+            onAutoScrollEnabled?.invoke()
+        }
         return addPromptEntryAt(text, contextFiles) { row ->
             addRow(row, spacing = JBUI.scale(10))
         }
