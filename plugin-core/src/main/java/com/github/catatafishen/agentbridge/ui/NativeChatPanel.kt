@@ -79,6 +79,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var workingStartMs = 0L
     private val workingTimer = Timer(1000) { updateWorkingLabel() }.apply { isRepeats = true }
 
+    /**
+     * Set to true when a tool call or sub-agent reaches a terminal state.
+     * The next [appendThinkingText] or [appendText] call checks this flag via
+     * [maybeStartNewSegment] to finalize the current turn and start a fresh one,
+     * matching the JCEF panel's segment splitting behaviour.
+     */
+    private var toolJustCompleted = false
+
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
             if (!e.valueIsAdjusting) {
@@ -133,6 +141,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun finalizeTurn() {
         currentTurn?.markdownPane?.renderNow()
         currentTurn = null
+    }
+
+    /**
+     * Mirrors the JCEF panel's segment splitting: when a tool just completed and
+     * new content (thinking or text) arrives, finalize the current turn so the new
+     * content appears in a fresh visual section below the completed tool chips.
+     */
+    private fun maybeStartNewSegment() {
+        if (!toolJustCompleted) return
+        toolJustCompleted = false
+        finalizeTurn()
     }
 
     private fun addRow(comp: JComponent, spacing: Int = JBUI.scale(4)) {
@@ -320,6 +339,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun appendText(text: String) {
         hideWorkingIndicator()
+        maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
             val bubble = createBubble(NativeChatColors.AGENT_BUBBLE_BG).apply {
@@ -338,6 +358,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun appendThinkingText(text: String) {
         hideWorkingIndicator()
+        maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
             val thinkBubble = RoundedPanel(NativeChatColors.THINK_BG, NativeChatColors.THINK_BORDER).apply {
@@ -391,6 +412,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun addToolCallEntry(
         id: String, title: String, arguments: String?, kind: String?, isMcpHandled: Boolean
     ) {
+        // If text was streaming, finalize it before adding the tool chip —
+        // so the chip appears below the text, not interleaved with it.
+        if (currentTurn?.markdownPane != null) {
+            finalizeTurn()
+        }
         val turn = ensureTurn()
         val resolvedKind = kind ?: "other"
         val displayTitle = resolveToolDisplayName(title)
@@ -425,6 +451,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             update.kind?.let { data.status = status }
             if (update.autoDenied) data.autoDenied = true
             update.denialReason?.let { data.denialReason = it }
+        }
+        if (status == "complete" || status == "completed" || status == "failed" || status == "denied") {
+            toolJustCompleted = true
         }
         if (allChips.values.none { it.isSpinning() }) spinTimer.stop()
     }
