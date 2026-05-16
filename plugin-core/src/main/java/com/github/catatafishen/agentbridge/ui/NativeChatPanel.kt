@@ -173,7 +173,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 isOpaque = false
                 alignmentX = LEFT_ALIGNMENT
-                border = JBUI.Borders.empty(4, 0, 2, 0)
+                // 2px top creates a small visual gap from the preceding element;
+                // no bottom padding so chips sit close to the content below them.
+                border = JBUI.Borders.emptyTop(2)
             }
 
             override fun getMaximumSize(): Dimension =
