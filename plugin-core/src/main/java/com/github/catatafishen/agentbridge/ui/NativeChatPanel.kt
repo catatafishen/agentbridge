@@ -98,6 +98,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /** HH:mm of the last timestamp label shown. Used to suppress duplicate timestamps within the same minute. */
     private var lastShownTimestampMinute = ""
 
+    /**
+     * When set, overrides `MessageFormatter.timestamp()` for timestamp label creation and deduplication.
+     * Used during history replay so entries show their historical timestamps instead of "now".
+     */
+    private var overrideTimestamp: String? = null
+
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
             if (!e.valueIsAdjusting) {
@@ -114,7 +120,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         contentPanel.addComponentListener(object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
-                scrollToBottom()
+                if (autoScrollEnabled) scrollToBottom()
             }
         })
     }
@@ -148,7 +154,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             override fun getMaximumSize(): Dimension =
                 Dimension(Short.MAX_VALUE.toInt(), Int.MAX_VALUE)
         }
-        val currentMinute = MessageFormatter.formatTimestamp(MessageFormatter.timestamp())
+        val currentMinute = MessageFormatter.formatTimestamp(overrideTimestamp ?: MessageFormatter.timestamp())
         if (currentMinute != lastShownTimestampMinute) {
             lastShownTimestampMinute = currentMinute
             container.add(createTimestampLabel(rightAligned = false).apply {
@@ -181,17 +187,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun addRow(comp: JComponent, spacing: Int = JBUI.scale(4)) {
+        val shouldScroll = autoScrollEnabled
         placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
         comp.alignmentX = Component.LEFT_ALIGNMENT
         contentPanel.add(comp)
         contentPanel.add(Box.createVerticalStrut(spacing))
         contentPanel.revalidate()
-        scrollToBottom()
+        if (shouldScroll) scrollToBottom()
     }
 
     /** Creates a small right- or left-aligned timestamp label (HH:mm) with a full-date tooltip. */
     private fun createTimestampLabel(rightAligned: Boolean = false): JBLabel {
-        val iso = MessageFormatter.timestamp()
+        val iso = overrideTimestamp ?: MessageFormatter.timestamp()
         val ts = MessageFormatter.formatTimestamp(iso)
         val tooltip = MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.TOOLTIP)
         return JBLabel(ts).apply {
@@ -206,7 +213,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun scrollToBottom() {
         SwingUtilities.invokeLater {
-            if (!autoScrollEnabled) return@invokeLater
             scrollPane.verticalScrollBar.value = Int.MAX_VALUE
         }
     }
@@ -283,7 +289,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
         }
-        val currentMinute = MessageFormatter.formatTimestamp(MessageFormatter.timestamp())
+        val currentMinute = MessageFormatter.formatTimestamp(overrideTimestamp ?: MessageFormatter.timestamp())
         if (currentMinute != lastShownTimestampMinute) {
             lastShownTimestampMinute = currentMinute
             row.add(createTimestampLabel(rightAligned).apply {
@@ -828,6 +834,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         } else null
 
         for (entry in entries) {
+            overrideTimestamp = entry.timestamp.ifEmpty { null }
             when (entry) {
                 is EntryData.Prompt -> {
                     finalizeTurn()
@@ -883,6 +890,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 is EntryData.Nudge -> if (entry.sent) addNudgeEntry(entry.id, entry.text, entry.source)
             }
         }
+        overrideTimestamp = null
         finalizeTurn()
 
         if (insertionIndex >= 0) autoScrollEnabled = savedAutoScroll
