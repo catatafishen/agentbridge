@@ -1,10 +1,16 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import java.awt.Color
 import java.awt.Cursor
 import java.awt.Dimension
+import java.awt.Font
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.MouseAdapter
@@ -17,6 +23,9 @@ import javax.swing.*
  * The optional thinking chip is pinned to the left (outside the scroll area).
  * Tool chips are inside a [JBScrollPane] that is never explicitly scrolled by the
  * user's scroll wheel — navigation is handled by the nav buttons and drag-to-scroll.
+ *
+ * The nav buttons and scroll pane are wrapped in a [scrollSection] sub-panel so that
+ * the left nav button cannot visually collide with the thinking chip.
  *
  * **Drag-to-scroll**: the [dragListener] is added to each chip as well as the
  * viewport and inner panel, because mouse events on chip children don't propagate
@@ -53,6 +62,21 @@ class ChipStripPanel : JPanel() {
 
     private val leftBtn = createNavBtn("‹", -1)
     private val rightBtn = createNavBtn("›", +1)
+
+    /**
+     * Wraps [leftBtn], [chipScrollPane], and [rightBtn] together so that the nav
+     * buttons always flank the scrollable area and cannot overlap the thinking chip.
+     */
+    private val scrollSection = object : JPanel() {
+        init {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentY = CENTER_ALIGNMENT
+        }
+
+        override fun getMinimumSize(): Dimension = Dimension(0, BaseChipComponent.CHIP_HEIGHT)
+        override fun getMaximumSize(): Dimension = Dimension(Short.MAX_VALUE.toInt(), BaseChipComponent.CHIP_HEIGHT)
+    }
 
     private var thinkingChip: JComponent? = null
     private var thinkingChipSpacer: JComponent? = null
@@ -94,9 +118,10 @@ class ChipStripPanel : JPanel() {
         isOpaque = false
         border = JBUI.Borders.empty()
 
-        add(leftBtn)
-        add(chipScrollPane)
-        add(rightBtn)
+        scrollSection.add(leftBtn)
+        scrollSection.add(chipScrollPane)
+        scrollSection.add(rightBtn)
+        add(scrollSection)
 
         hbar.addAdjustmentListener { updateNav() }
 
@@ -120,6 +145,7 @@ class ChipStripPanel : JPanel() {
         thinkingChipSpacer = spacer
         chip.alignmentY = CENTER_ALIGNMENT
         // Thinking chip is pinned left, outside the scrollable area — no drag listener.
+        // Inserted before scrollSection so nav buttons always flank the scroll area.
         add(chip, 0)
         add(spacer, 1)
         isVisible = true
@@ -156,20 +182,35 @@ class ChipStripPanel : JPanel() {
     }
 
     private fun createNavBtn(label: String, direction: Int): JButton {
-        val size = JBUI.scale(18)
-        return JButton(label).apply {
+        val btnSize = JBUI.scale(18)
+        val bg = JBColor(Color(130, 130, 130, 30), Color(200, 200, 200, 30))
+        val bgHover = JBColor(Color(130, 130, 130, 60), Color(200, 200, 200, 60))
+        val borderCol = JBColor(Color(130, 130, 130, 80), Color(200, 200, 200, 80))
+        return object : JButton(label) {
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g2.color = if (model.isRollover) bgHover else bg
+                val r = JBUI.scale(4)
+                g2.fillRoundRect(0, 0, width, height, r, r)
+                g2.color = borderCol
+                g2.drawRoundRect(0, 0, width - 1, height - 1, r, r)
+                g2.dispose()
+                super.paintComponent(g)
+            }
+        }.apply {
             isVisible = false
             isFocusPainted = false
             isContentAreaFilled = false
             isBorderPainted = false
             border = JBUI.Borders.empty()
-            foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont()
+            foreground = UIUtil.getLabelForeground()
+            font = UIUtil.getLabelFont().deriveFont(JBUI.scaleFontSize(14f)).deriveFont(Font.BOLD)
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             alignmentY = CENTER_ALIGNMENT
-            preferredSize = Dimension(size, size)
-            minimumSize = Dimension(size, size)
-            maximumSize = Dimension(size, size)
+            preferredSize = Dimension(btnSize, btnSize)
+            minimumSize = Dimension(btnSize, btnSize)
+            maximumSize = Dimension(btnSize, btnSize)
             addActionListener { scrollByChip(direction) }
         }
     }
