@@ -72,6 +72,25 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderTimer.stop()
     }
 
+    /**
+     * Called by Swing whenever the Look and Feel changes. Rebuilds the stylesheet
+     * from the new theme colors and re-renders existing content so already-displayed
+     * bubbles update immediately (not just newly added ones).
+     *
+     * Guard: editorKit is only our HTMLEditorKit after the init block completes.
+     * During the super-constructor's initial updateUI() call it is still the default
+     * PlainEditorKit, so the cast returns null and we exit early without touching
+     * rawText (which isn't initialized yet at that point either).
+     */
+    override fun updateUI() {
+        super.updateUI()
+        val kit = editorKit as? HTMLEditorKit ?: return
+        kit.styleSheet = createStyleSheet()
+        if (rawText.isNotEmpty()) {
+            renderNow()
+        }
+    }
+
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
@@ -112,7 +131,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
         ss.addRule("body { margin: 0; padding: 0; color: $fg; font-family: ${font.family}; font-size: ${font.size}pt; line-height: 150%; }")
         ss.addRule("p { margin: 4px 0; }")
-        ss.addRule("code { background-color: $codeBg; font-family: monospace; font-size: ${codeFontPt}pt; }")
+        ss.addRule("code { background-color: $codeBg; font-family: monospace; font-size: ${codeFontPt}pt; padding: 0 4px; }")
         ss.addRule("pre { background-color: $codeBg; padding: 8px 12px; border-left: 3px solid $tblBorder; margin: 6px 0; line-height: 140%; }")
         ss.addRule("pre code { background-color: transparent; padding: 0; }")
         ss.addRule("table { border-collapse: collapse; margin: 6px 0; width: 100%; }")
