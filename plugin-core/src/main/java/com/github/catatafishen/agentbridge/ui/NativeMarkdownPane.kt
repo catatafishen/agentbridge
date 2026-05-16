@@ -147,10 +147,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         val codeFontPt = (font.size * 0.92).toInt()
 
         ss.addRule("body { margin: 0; padding: 0; color: $fg; font-family: ${font.family}; font-size: ${font.size}pt; line-height: 150%; }")
-        ss.addRule("p { margin: 4px 0; }")
-        ss.addRule("code { background-color: $codeBg; font-family: monospace; font-size: ${codeFontPt}pt; padding: 0 4px; }")
-        ss.addRule("pre { background-color: $codeBg; padding: 8px 12px; border-left: 3px solid $tblBorder; margin: 6px 0; line-height: 140%; }")
-        ss.addRule("pre code { background-color: transparent; padding: 0; }")
+        ss.addRule("p { margin: 2px 0; }")
+        ss.addRule("code { background-color: $codeBg; font-family: monospace; font-size: ${codeFontPt}pt; }")
+        ss.addRule("pre { background-color: $codeBg; padding: 8px 12px; border-left: 3px solid $tblBorder; margin: 6px 0; }")
+        ss.addRule("pre code { background-color: transparent; }")
         ss.addRule("table { border-collapse: collapse; margin: 6px 0; width: 100%; }")
         ss.addRule("th { font-weight: bold; border-bottom: 2px solid $tblBorder; padding: 4px 8px; text-align: left; color: $mutedFg; }")
         ss.addRule("td { border-bottom: 1px solid $tblBorder; padding: 4px 8px; }")
@@ -161,10 +161,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         ss.addRule("a { color: $link; }")
         ss.addRule("ul { margin: 4px 0; }")
         ss.addRule("ol { margin: 4px 0; }")
-        ss.addRule("li { margin: 3px 0; line-height: 150%; }")
-        ss.addRule("blockquote { border-left: 3px solid $tblBorder; background-color: $codeBg; margin: 6px 4px; padding: 2px 8px; color: $mutedFg; }")
+        ss.addRule("li { margin: 3px 0; }")
+        ss.addRule("blockquote { border-left: 3px solid $tblBorder; background-color: $codeBg; margin: 6px 4px; padding: 2px; color: $mutedFg; }")
         ss.addRule("hr { border: none; border-top: 1px solid $tblBorder; margin: 8px 0; }")
-        ss.addRule("b { font-weight: bold; }")
 
         return ss
     }

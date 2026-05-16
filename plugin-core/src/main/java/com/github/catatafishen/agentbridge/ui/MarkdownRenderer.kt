@@ -428,13 +428,13 @@ object MarkdownRenderer {
                 val colonIdx = content.indexOf(':')
                 val lineSpec = if (colonIdx > 0 && resolved.second != null) content.substring(colonIdx) else ""
                 val href = resolved.first + lineSpec
-                "<a href='openfile://$href'><code>${escapeHtml(content)}</code></a>"
+                "<a href='openfile://$href'><code>&thinsp;${escapeHtml(content)}&thinsp;</code></a>"
             }
 
             GIT_SHA_REGEX.matches(content) && isGitCommit(content) ->
-                "<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>"
+                "<a href='gitshow://$content'><code>&thinsp;${escapeHtml(content)}&thinsp;</code></a>"
 
-            else -> "<code>${escapeHtml(content)}</code>"
+            else -> "<code>&thinsp;${escapeHtml(content)}&thinsp;</code>"
         }
     }
 
