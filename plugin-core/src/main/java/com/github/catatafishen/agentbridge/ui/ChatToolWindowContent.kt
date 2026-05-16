@@ -2126,6 +2126,7 @@ class ChatToolWindowContent(
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             autoScrollEnabled = state
             chatConsolePanel.setAutoScroll(state)
+            if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.setAutoScroll(state)
         }
     }
 

@@ -72,6 +72,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }.apply { isRepeats = true }
 
     private var autoScrollEnabled = true
+
+    fun setAutoScroll(enabled: Boolean) {
+        autoScrollEnabled = enabled
+    }
+
     private var placeholderLabel: JBLabel? = null
     private var workingIndicator: JComponent? = null
     private var workingStartMs = 0L
@@ -100,7 +105,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private class TurnContext(
         val container: JPanel,
-        val chipStrip: JPanel,
+        val chipStrip: ChipStripPanel,
         var thinkingChip: ThinkingChipComponent? = null,
         var thinkingContent: JPanel? = null,
         var thinkingDoc: DefaultStyledDocument? = null,
@@ -111,10 +116,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun ensureTurn(): TurnContext {
         currentTurn?.let { return it }
 
-        val chipStrip = WrappingFlowPanel(JBUI.scale(4), JBUI.scale(2)).apply {
+        val chipStrip = ChipStripPanel().apply {
             alignmentX = Component.LEFT_ALIGNMENT
             isVisible = false
-            border = JBUI.Borders.empty(4, 0)
         }
 
         val container = object : JPanel() {
@@ -342,8 +346,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 turn.container.repaint()
             }
             turn.thinkingChip = chip
-            turn.chipStrip.add(chip, 0)
-            turn.chipStrip.isVisible = true
+            turn.chipStrip.addThinkingChip(chip)
         }
         appendToDoc(turn.thinkingDoc!!, text)
         scrollToBottom()
@@ -371,9 +374,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
         val chip = ToolChipComponent(displayTitle, kind, "running") { showToolPopup(id) }
         allChips[id] = chip
-        turn.chipStrip.add(chip)
-        turn.chipStrip.isVisible = true
-        turn.chipStrip.revalidate()
+        turn.chipStrip.addToolChip(chip)
         if (!spinTimer.isRunning) spinTimer.start()
         scrollToBottom()
     }

@@ -61,6 +61,9 @@ class ToolChipComponent(
         repaint()
     }
 
+    // Cap maximum size so BoxLayout.X_AXIS in ChipStripPanel doesn't stretch the chip.
+    override fun getMaximumSize(): Dimension = preferredSize
+
     override fun paintComponent(g: Graphics) {
         val g2 = g.create() as Graphics2D
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
