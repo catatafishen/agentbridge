@@ -87,6 +87,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private var toolJustCompleted = false
 
+    /** HH:mm of the last timestamp label shown. Used to suppress duplicate timestamps within the same minute. */
+    private var lastShownTimestampMinute = ""
+
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
             if (!e.valueIsAdjusting) {
@@ -313,9 +316,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
         }
-        row.add(createTimestampLabel(rightAligned).apply {
-            alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
-        })
+        val currentMinute = MessageFormatter.formatTimestamp(MessageFormatter.timestamp())
+        if (currentMinute != lastShownTimestampMinute) {
+            lastShownTimestampMinute = currentMinute
+            row.add(createTimestampLabel(rightAligned).apply {
+                alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
+            })
+        }
         row.add(alignBubble(bubble, rightAligned))
         return row to bubble
     }
@@ -538,6 +545,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun addSessionSeparator(timestamp: String, agent: String) {
         finalizeTurn()
+        lastShownTimestampMinute = ""
         val text = buildString {
             if (agent.isNotEmpty()) append("$agent · ")
             if (timestamp.length >= 10) append(timestamp.substring(0, 10)) else append(timestamp)
