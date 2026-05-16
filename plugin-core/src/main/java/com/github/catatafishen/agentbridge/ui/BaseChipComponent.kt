@@ -28,8 +28,8 @@ abstract class BaseChipComponent(kind: String?) : JPanel() {
         /** Fixed chip height — identical for all chip types. DPI-aware. */
         val CHIP_HEIGHT: Int get() = JBUI.scale(22)
 
-        /** Shared font for chip labels: 88% of the IDE label font. */
-        fun chipFont(): Font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
+        /** Shared font for chip labels: 2pt below the editor font size. */
+        fun chipFont(): Font = chatFont(-2)
     }
 
     init {

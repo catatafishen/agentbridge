@@ -6,7 +6,6 @@ import com.intellij.util.ui.UIUtil
 import java.awt.*
 import javax.swing.*
 
-/** Creates the horizontal separator panel shown at the start of a new session. */
 fun createSessionSeparatorRow(timestamp: String, agent: String): JPanel {
     val text = buildString {
         if (agent.isNotEmpty()) append("$agent · ")
@@ -19,7 +18,7 @@ fun createSessionSeparatorRow(timestamp: String, agent: String): JPanel {
         add(JSeparator(SwingConstants.HORIZONTAL), BorderLayout.CENTER)
         add(JBLabel(text).apply {
             foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
+            applyChatFont(-1)
             horizontalAlignment = SwingConstants.CENTER
         }, BorderLayout.SOUTH)
     }

@@ -28,7 +28,7 @@ class ToolChipComponent(
     private val ring = RingIndicator()
     private val label = JLabel(truncateLabel(title)).apply {
         foreground = kindCol
-        font = chipFont()
+        applyChatFont(-2)
         alignmentY = CENTER_ALIGNMENT
         putClientProperty("html.disable", true)
     }

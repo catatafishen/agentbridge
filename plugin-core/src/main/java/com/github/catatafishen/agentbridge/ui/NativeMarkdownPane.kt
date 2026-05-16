@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.intellij.openapi.util.Disposer
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
@@ -28,6 +30,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     private val rawText = StringBuilder()
     private val renderTimer = Timer(RENDER_DEBOUNCE_MS) { renderNow() }.apply { isRepeats = false }
+    private val schemeDisposable = Disposer.newDisposable("NativeMarkdownPane")
 
     init {
         contentType = "text/html"
@@ -45,6 +48,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             if (e.eventType == HyperlinkEvent.EventType.ACTIVATED) {
                 fileNavigator.handleFileLink(e.description)
             }
+        }
+
+        PlatformApiCompat.subscribeEditorColorSchemeChanges(schemeDisposable) {
+            SwingUtilities.invokeLater { rebuildStylesheet() }
         }
     }
 
@@ -68,32 +75,41 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         text = "<html><body>$html</body></html>"
     }
 
-    /** Stops the render timer. Call when the parent panel is disposed. */
+    /** Stops the render timer and disconnects the color scheme subscription. */
     fun dispose() {
         renderTimer.stop()
+        Disposer.dispose(schemeDisposable)
     }
 
     /**
-     * Called by Swing whenever the Look and Feel changes. Rebuilds the stylesheet
-     * from the new theme colors and re-renders existing content so already-displayed
-     * bubbles update immediately (not just newly added ones).
+     * Rebuilds the stylesheet from the current IDE theme and editor font size, and
+     * re-renders existing content. Called on LAF changes (via [updateUI]) and on
+     * editor color scheme changes (e.g. Alt+Shift+. / Alt+Shift+,).
      *
      * Guard: editorKit is only our HTMLEditorKit after the init block completes.
      * During the super-constructor's initial updateUI() call it is still the default
-     * PlainEditorKit, so the cast returns null and we exit early without touching
-     * rawText (which isn't initialized yet at that point either).
+     * PlainEditorKit, so the cast returns null and we exit early.
      */
-    override fun updateUI() {
-        super.updateUI()
+    private fun rebuildStylesheet() {
         val kit = editorKit as? HTMLEditorKit ?: return
         kit.styleSheet = createStyleSheet()
         if (rawText.isNotEmpty()) {
-            // Defer until after updateUI() completes so the view hierarchy is fully
-            // rebuilt from the new stylesheet before we replace document content.
-            // Calling renderNow() synchronously here would set `text` while views are
-            // still in a transient state, causing stale-view BadLocationException crashes.
             SwingUtilities.invokeLater { renderNow() }
         }
+    }
+
+    /**
+     * Called by Swing whenever the Look and Feel changes. Delegates to [rebuildStylesheet]
+     * which rebuilds from the new theme colors and re-renders existing content.
+     *
+     * Note: [rawText] is not yet initialized during the super-constructor's initial call,
+     * so [rebuildStylesheet]'s cast guard (editorKit as? HTMLEditorKit) exits early safely.
+     */
+    override fun updateUI() {
+        super.updateUI()
+        // Defer: updateUI() must fully complete before swapping the stylesheet, otherwise
+        // setting `text` while views are in a transient state causes BadLocationException.
+        SwingUtilities.invokeLater { rebuildStylesheet() }
     }
 
     override fun getPreferredSize(): Dimension {
@@ -143,10 +159,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         val codeBg = colorToHex(NativeChatColors.CODE_BG)
         val tblBorder = colorToHex(NativeChatColors.TABLE_BORDER)
         val link = colorToHex(NativeChatColors.LINK)
-        val font = UIUtil.getLabelFont()
-        val codeFontPt = (font.size * 0.92).toInt()
+        val labelFont = UIUtil.getLabelFont()
+        val basePt = PlatformApiCompat.getEditorFontSize()
+        val codeFontPt = (basePt * 0.92).toInt()
 
-        ss.addRule("body { margin: 0; padding: 0; color: $fg; font-family: ${font.family}; font-size: ${font.size}pt; line-height: 150%; }")
+        ss.addRule("body { margin: 0; padding: 0; color: $fg; font-family: ${labelFont.family}; font-size: ${basePt}pt; line-height: 150%; }")
         ss.addRule("p { margin: 2px 0; }")
         ss.addRule("code { background-color: $codeBg; font-family: monospace; font-size: ${codeFontPt}pt; }")
         ss.addRule("pre { background-color: $codeBg; padding: 8px 12px; border-left: 3px solid $tblBorder; margin: 6px 0; }")
@@ -154,10 +171,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         ss.addRule("table { border-collapse: collapse; margin: 6px 0; width: 100%; }")
         ss.addRule("th { font-weight: bold; border-bottom: 2px solid $tblBorder; padding: 4px 8px; text-align: left; color: $mutedFg; }")
         ss.addRule("td { border-bottom: 1px solid $tblBorder; padding: 4px 8px; }")
-        ss.addRule("h2 { font-size: ${font.size + 3}pt; font-weight: bold; margin: 10px 0 5px 0; border-bottom: 1px solid $tblBorder; padding-bottom: 3px; }")
-        ss.addRule("h3 { font-size: ${font.size + 1}pt; font-weight: bold; margin: 8px 0 4px 0; }")
-        ss.addRule("h4 { font-size: ${font.size}pt; font-weight: bold; margin: 6px 0 3px 0; }")
-        ss.addRule("h5 { font-size: ${font.size}pt; font-weight: bold; margin: 4px 0 2px 0; }")
+        ss.addRule("h2 { font-size: ${basePt + 3}pt; font-weight: bold; margin: 10px 0 5px 0; border-bottom: 1px solid $tblBorder; padding-bottom: 3px; }")
+        ss.addRule("h3 { font-size: ${basePt + 1}pt; font-weight: bold; margin: 8px 0 4px 0; }")
+        ss.addRule("h4 { font-size: ${basePt}pt; font-weight: bold; margin: 6px 0 3px 0; }")
+        ss.addRule("h5 { font-size: ${basePt}pt; font-weight: bold; margin: 4px 0 2px 0; }")
         ss.addRule("a { color: $link; }")
         ss.addRule("ul { margin: 4px 0; }")
         ss.addRule("ol { margin: 4px 0; }")

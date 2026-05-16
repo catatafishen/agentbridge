@@ -507,6 +507,19 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns the current editor font size from the global color scheme.
+     * This is the font size adjusted by {@code Alt+Shift+.} / {@code Alt+Shift+,}.
+     *
+     * <p><b>Why extracted:</b> Centralises all {@code EditorColorsManager} access alongside
+     * {@link #subscribeEditorColorSchemeChanges} so that Kotlin call sites do not need to
+     * import or call {@code EditorColorsManager} directly.</p>
+     */
+    public static int getEditorFontSize() {
+        return com.intellij.openapi.editor.colors.EditorColorsManager.getInstance()
+            .getGlobalScheme().getEditorFontSize();
+    }
+
+    /**
      * Returns {@code true} if the current IDE UI theme is dark.
      *
      * <p><b>Why extracted:</b> {@code UIThemeLookAndFeelInfo.isDark()} is only available from
