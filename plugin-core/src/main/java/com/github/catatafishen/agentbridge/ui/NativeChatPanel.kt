@@ -306,6 +306,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun appendText(text: String) {
         hideWorkingIndicator()
+        collapseThinking()
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
@@ -334,8 +335,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             turn.thinkingExpanded = true
 
             val chipStripIdx = turn.container.components.indexOf(turn.chipStrip)
-            turn.container.add(contentWrapper, chipStripIdx + 1)
-            turn.container.add(Box.createVerticalStrut(JBUI.scale(6)), chipStripIdx + 2)
+            turn.container.add(Box.createVerticalStrut(JBUI.scale(4)), chipStripIdx + 1)
+            turn.container.add(contentWrapper, chipStripIdx + 2)
+            turn.container.add(Box.createVerticalStrut(JBUI.scale(6)), chipStripIdx + 3)
 
             val chip = ThinkingChipComponent(active = true) {
                 turn.thinkingExpanded = !turn.thinkingExpanded
@@ -518,6 +520,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
         hideWorkingIndicator()
+        collapseThinking()
         finalizeTurn()
     }
 
