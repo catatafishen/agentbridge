@@ -37,8 +37,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         isEditable = false
         isOpaque = false
         border = JBUI.Borders.empty()
-        @Suppress("MagicConstant")
-        putClientProperty(HONOR_DISPLAY_PROPERTIES, true)
 
         val kit = HTMLEditorKit()
         kit.styleSheet = createStyleSheet()
