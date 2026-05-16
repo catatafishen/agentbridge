@@ -9,8 +9,6 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
 import javax.swing.*
 import javax.swing.text.BadLocationException
 import javax.swing.text.DefaultStyledDocument
@@ -89,6 +87,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** HH:mm of the last timestamp label shown. Used to suppress duplicate timestamps within the same minute. */
     private var lastShownTimestampMinute = ""
+    private val lineSpacingFactor = 0.3f
 
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
@@ -191,15 +190,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun showWorkingIndicator() {
         hideWorkingIndicator()
         workingStartMs = System.currentTimeMillis()
-        val bubble = createBubble(NativeChatColors.AGENT_BUBBLE_BG).apply {
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
+        val (row, bubble) = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
         bubble.add(JBLabel("Working…").apply {
             foreground = UIUtil.getContextHelpForeground()
             font = UIUtil.getLabelFont().deriveFont(Font.ITALIC)
             putClientProperty("workingLabel", true)
         }, BorderLayout.CENTER)
-        val row = alignBubble(bubble, rightAligned = false)
         workingIndicator = row
         addRow(row)
         workingTimer.start()
@@ -245,7 +241,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             font = UIUtil.getLabelFont()
         }
         val attrs = javax.swing.text.SimpleAttributeSet()
-        javax.swing.text.StyleConstants.setLineSpacing(attrs, LINE_SPACING_FACTOR)
+        javax.swing.text.StyleConstants.setLineSpacing(attrs, lineSpacingFactor)
         doc.setParagraphAttributes(0, doc.length, attrs, false)
         return doc to pane
     }
@@ -256,54 +252,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             doc.insertString(doc.length, text, null)
             if (atStart) {
                 val attrs = javax.swing.text.SimpleAttributeSet()
-                javax.swing.text.StyleConstants.setLineSpacing(attrs, LINE_SPACING_FACTOR)
+                javax.swing.text.StyleConstants.setLineSpacing(attrs, lineSpacingFactor)
                 doc.setParagraphAttributes(0, doc.length, attrs, false)
             }
         } catch (_: BadLocationException) { /* empty */
         }
-    }
-
-    /**
-     * Factory: creates a rounded message bubble with capped width.
-     *
-     * <b>All</b> message types (user, agent, nudge, error, queued) share this factory.
-     * Only alignment and background colour differ.
-     */
-    private fun createBubble(bg: Color): RoundedPanel = object : RoundedPanel(bg) {
-        override fun getMaximumSize(): Dimension {
-            val pw = parent?.width ?: JBUI.scale(600)
-            return Dimension(
-                (pw * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
-                Int.MAX_VALUE
-            )
-        }
-
-        override fun getPreferredSize(): Dimension {
-            val pref = super.getPreferredSize()
-            val max = maximumSize
-            return Dimension(pref.width.coerceAtMost(max.width), pref.height)
-        }
-    }.apply {
-        border = JBUI.Borders.empty(
-            JBUI.scale(BUBBLE_V_PAD),
-            JBUI.scale(BUBBLE_H_PAD),
-            JBUI.scale(BUBBLE_V_PAD),
-            JBUI.scale(BUBBLE_H_PAD)
-        )
-    }
-
-    /** Wraps a bubble in a horizontal row with alignment (left or right). */
-    private fun alignBubble(bubble: JComponent, rightAligned: Boolean): JPanel = JPanel().apply {
-        layout = BoxLayout(this, BoxLayout.X_AXIS)
-        isOpaque = false
-        if (rightAligned) {
-            add(Box.createHorizontalGlue())
-            add(bubble)
-        } else {
-            add(bubble)
-            add(Box.createHorizontalGlue())
-        }
-        alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
     }
 
     /** Creates a complete message row: timestamp label + aligned bubble. */
@@ -312,7 +265,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         bg: Color,
         rightAligned: Boolean = false,
     ): Pair<JPanel, RoundedPanel> {
-        val bubble = createBubble(bg)
+        val (alignedRow, bubble) = createBubble(bg, rightAligned)
         bubble.add(content, BorderLayout.CENTER)
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -326,7 +279,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
             })
         }
-        row.add(alignBubble(bubble, rightAligned))
+        row.add(alignedRow)
         return row to bubble
     }
 
@@ -352,12 +305,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
-            val bubble = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
+            val (row, bubble) = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
             val pane = NativeMarkdownPane(fileNavigator)
             allMarkdownPanes += pane
             bubble.add(pane, BorderLayout.CENTER)
             turn.markdownPane = pane
-            turn.container.add(alignBubble(bubble, rightAligned = false))
+            turn.container.add(row)
         }
         turn.markdownPane!!.appendMarkdown(text)
         scrollToBottom()
@@ -368,11 +321,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
-            val bubble = createBubble(NativeChatColors.THINK_BG)
+            val (contentWrapper, bubble) = createBubble(NativeChatColors.THINK_BG)
             val (doc, pane) = newTextPane(fg = NativeChatColors.THINK)
             bubble.add(pane, BorderLayout.CENTER)
 
-            val contentWrapper = alignBubble(bubble, rightAligned = false)
             turn.thinkingDoc = doc
             turn.thinkingContent = contentWrapper
             turn.thinkingExpanded = true
@@ -535,22 +487,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun addSessionSeparator(timestamp: String, agent: String) {
         finalizeTurn()
         lastShownTimestampMinute = ""
-        val text = buildString {
-            if (agent.isNotEmpty()) append("$agent · ")
-            if (timestamp.length >= 10) append(timestamp.substring(0, 10)) else append(timestamp)
-        }
-        val panel = JPanel(BorderLayout(0, 2)).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(8, 0, 4, 0)
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        panel.add(JSeparator(SwingConstants.HORIZONTAL), BorderLayout.CENTER)
-        panel.add(JBLabel(text).apply {
-            foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
-            horizontalAlignment = SwingConstants.CENTER
-        }, BorderLayout.SOUTH)
-        addRow(panel)
+        addRow(createSessionSeparatorRow(timestamp, agent))
     }
 
     override fun showPlaceholder(text: String) {
@@ -590,20 +527,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun emitTurnStats(stats: TurnStatsData) {
-        val parts = buildList {
-            add("${stats.durationMs / 1000}s")
-            add("${stats.inputTokens}↑ ${stats.outputTokens}↓")
-            if (stats.costUsd > 0) add("${"%.4f".format(stats.costUsd)}$")
-            if (stats.linesAdded > 0 || stats.linesRemoved > 0) {
-                add("+${stats.linesAdded} −${stats.linesRemoved}")
-            }
-            if (stats.model.isNotEmpty()) add(stats.model.substringAfterLast('/').substringAfterLast(':'))
-        }
-        addRow(JBLabel(parts.joinToString(" · ")).apply {
-            foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
-            border = JBUI.Borders.empty(1, 0, 5, 0)
-        })
+        addRow(createTurnStatsRow(stats))
     }
 
     override fun showQuickReplies(options: List<String>) {
@@ -1014,245 +938,5 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         addFn(row)
         showWorkingIndicator()
         return java.util.UUID.randomUUID().toString()
-    }
-
-    /**
-     * A JPanel that paints a rounded rectangle background behind its children.
-     * Optionally draws a 1px rounded border when [borderColor] is non-null.
-     * Used directly for non-message elements (thinking panel); message bubbles
-     * go through [createBubble] which never passes a border.
-     */
-    private open class RoundedPanel(
-        private val bgColor: Color,
-        private val borderColor: Color? = null,
-        private val radius: Int = JBUI.scale(10),
-    ) : JPanel(BorderLayout()) {
-        init {
-            isOpaque = false
-        }
-
-        override fun paintComponent(g: Graphics) {
-            val g2 = g.create() as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.color = bgColor
-            g2.fillRoundRect(0, 0, width, height, radius, radius)
-            borderColor?.let {
-                g2.color = it
-                g2.drawRoundRect(0, 0, width - 1, height - 1, radius, radius)
-            }
-            g2.dispose()
-        }
-    }
-
-    /**
-     * A compact tool chip with a spinning ring indicator and kind-based coloring.
-     * Matches the JCEF `<tool-chip>` component.
-     */
-    private class ToolChipComponent(
-        title: String, kind: String?, status: String,
-        private val onClick: (() -> Unit)? = null
-    ) : JPanel() {
-
-        private var currentStatus = status
-        private var spinAngle = 0
-        private val ringSize = JBUI.scale(8)
-        private val kindCol: Color = NativeChatColors.kindColor(kind)
-        private val bgCol: Color = NativeChatColors.kindBg(kind)
-        private val borderCol: Color = NativeChatColors.kindBorder(kind)
-        private val hoverBgCol: Color = NativeChatColors.kindBgHover(kind)
-        private val hoverBorderCol: Color = NativeChatColors.kindBorderHover(kind)
-        private var hovered = false
-
-        init {
-            layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
-            isOpaque = false
-            border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(6), JBUI.scale(2), JBUI.scale(6))
-
-            if (onClick != null) {
-                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            }
-
-            add(RingIndicator())
-            add(JLabel(truncateLabel(title)).apply {
-                foreground = kindCol
-                font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
-                putClientProperty("html.disable", true)
-            })
-
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    onClick?.invoke()
-                }
-
-                override fun mouseEntered(e: MouseEvent) {
-                    hovered = true
-                    repaint()
-                }
-
-                override fun mouseExited(e: MouseEvent) {
-                    hovered = false
-                    repaint()
-                }
-            })
-        }
-
-        fun isSpinning(): Boolean = currentStatus.lowercase() in listOf("running", "pending")
-
-        fun updateStatus(status: String) {
-            currentStatus = status
-            repaint()
-        }
-
-        fun advanceSpin() {
-            spinAngle = (spinAngle + 15) % 360
-            repaint()
-        }
-
-        override fun paintComponent(g: Graphics) {
-            val g2 = g.create() as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            val r = JBUI.scale(6)
-            g2.color = if (hovered) hoverBgCol else bgCol
-            g2.fillRoundRect(0, 0, width, height, r, r)
-            g2.color = if (hovered) hoverBorderCol else borderCol
-            g2.drawRoundRect(0, 0, width - 1, height - 1, r, r)
-            g2.dispose()
-        }
-
-        private inner class RingIndicator : JComponent() {
-            init {
-                preferredSize = Dimension(ringSize, ringSize)
-            }
-
-            override fun paintComponent(g: Graphics) {
-                val g2 = g.create() as Graphics2D
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                val s = ringSize - 2
-                when (currentStatus.lowercase()) {
-                    "running", "pending" -> {
-                        g2.color = kindCol
-                        g2.stroke = BasicStroke(1.5f)
-                        g2.drawArc(1, 1, s, s, spinAngle, 270)
-                    }
-
-                    "complete", "completed", "success", "done" -> {
-                        g2.color = kindCol
-                        g2.fillOval(1, 1, s, s)
-                    }
-
-                    else -> {
-                        g2.color = NativeChatColors.ERROR
-                        g2.stroke = BasicStroke(1.5f)
-                        g2.drawArc(1, 1, s, s, 0, 270)
-                    }
-                }
-                g2.dispose()
-            }
-        }
-
-        companion object {
-            private fun truncateLabel(text: String, max: Int = 50): String =
-                if (text.length > max) text.take(max - 1) + "…" else text
-        }
-    }
-
-    /**
-     * A clickable thinking chip with 💭 emoji. Toggles the associated thinking
-     * content panel between visible and hidden.
-     */
-    private class ThinkingChipComponent(
-        private var active: Boolean,
-        private val onToggle: () -> Unit,
-    ) : JPanel() {
-
-        private val emojiLabel: JLabel
-        private val textLabel: JLabel
-
-        init {
-            layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
-            isOpaque = false
-            border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(6), JBUI.scale(2), JBUI.scale(6))
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-
-            emojiLabel = JLabel("💭").apply { font = UIUtil.getLabelFont() }
-            textLabel = JLabel("Thought").apply {
-                foreground = NativeChatColors.THINK
-                font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
-            }
-            add(emojiLabel)
-            add(textLabel)
-
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) = onToggle()
-            })
-        }
-
-        fun setActive(isActive: Boolean) {
-            active = isActive
-            textLabel.text = if (isActive) "Thinking…" else "Thought"
-            repaint()
-        }
-
-        override fun paintComponent(g: Graphics) {
-            val g2 = g.create() as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            val r = JBUI.scale(6)
-            g2.color = NativeChatColors.THINK_BG
-            g2.fillRoundRect(0, 0, width, height, r, r)
-            g2.color = NativeChatColors.THINK_BORDER
-            g2.drawRoundRect(0, 0, width - 1, height - 1, r, r)
-            g2.dispose()
-        }
-    }
-
-    /**
-     * A flow-based panel that computes preferred height for the actual number
-     * of wrapped rows, so the parent BoxLayout allocates correct vertical space.
-     */
-    private class WrappingFlowPanel(
-        hgap: Int, vgap: Int
-    ) : JPanel(FlowLayout(FlowLayout.LEFT, hgap, vgap)) {
-
-        init {
-            isOpaque = false
-        }
-
-        override fun getPreferredSize(): Dimension {
-            val maxWidth = parent?.width?.takeIf { it > 0 } ?: return super.getPreferredSize()
-            val fl = layout as FlowLayout
-            val insets = this.insets
-            var x = insets.left
-            var y = insets.top
-            var rowHeight = 0
-
-            for (comp in components) {
-                if (!comp.isVisible) continue
-                val d = comp.preferredSize
-                if (x + d.width > maxWidth - insets.right && x > insets.left) {
-                    y += rowHeight + fl.vgap
-                    x = insets.left
-                    rowHeight = 0
-                }
-                x += d.width + fl.hgap
-                rowHeight = maxOf(rowHeight, d.height)
-            }
-            y += rowHeight + insets.bottom
-            return Dimension(maxWidth, y)
-        }
-
-        override fun getMaximumSize(): Dimension =
-            Dimension(Short.MAX_VALUE.toInt(), preferredSize.height)
-    }
-
-    companion object {
-        /** Maximum bubble width as a fraction of the container width (matching JCEF's 94%). */
-        private const val MAX_BUBBLE_WIDTH_FRACTION = 0.94
-
-        /** Consistent padding for all message bubbles (vertical / horizontal). */
-        private const val BUBBLE_V_PAD = 8
-        private const val BUBBLE_H_PAD = 14
-
-        /** Line-spacing factor for JTextPane content (0.3 ≈ 130% effective line height). */
-        private const val LINE_SPACING_FACTOR = 0.3f
     }
 }
