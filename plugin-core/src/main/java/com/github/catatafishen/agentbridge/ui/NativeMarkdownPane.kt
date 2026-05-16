@@ -20,7 +20,10 @@ import javax.swing.text.html.StyleSheet
  *
  * Markdown text is accumulated via [appendMarkdown] and converted to HTML using
  * [MarkdownRenderer.markdownToHtml] with file-link resolution from [FileNavigator].
- * Re-rendering is debounced (150 ms) during streaming to avoid excessive layout work.
+ * Re-rendering is throttled to at most [RENDER_INTERVAL_MS] ms (~30 fps) during streaming.
+ * Each chunk either renders immediately (if enough time has elapsed) or schedules a render
+ * at the end of the current interval window, so bursts of rapid tokens never suppress
+ * visible updates the way a debounce would.
  *
  * The embedded [HTMLEditorKit] stylesheet is generated from the current IDE theme
  * colors so that code blocks, tables, headings, and links look correct in both
@@ -29,7 +32,13 @@ import javax.swing.text.html.StyleSheet
 class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane() {
 
     private val rawText = StringBuilder()
-    private val renderTimer = Timer(RENDER_DEBOUNCE_MS) { renderNow() }.apply { isRepeats = false }
+
+    /** Timestamp (ms) of the most recent [renderNow] call; used by the streaming throttle. */
+    private var lastRenderTime = 0L
+
+    /** True while the render timer is scheduled within the current throttle window. */
+    private var renderScheduled = false
+    private val renderTimer = Timer(1) { renderNow() }.apply { isRepeats = false }
     private val schemeDisposable = Disposer.newDisposable("NativeMarkdownPane")
 
     init {
@@ -53,15 +62,37 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         }
     }
 
-    /** Appends a chunk of raw markdown (streaming). Renders immediately on the first token; subsequent tokens are debounced. */
+    /**
+     * Appends a chunk of raw markdown during streaming.
+     *
+     * Uses a **throttle** (not a debounce): if enough time has elapsed since the
+     * last render, the new content is rendered immediately. Otherwise, a render is
+     * scheduled for the end of the current [RENDER_INTERVAL_MS] window, so the last
+     * chunk in any burst is always shown.
+     *
+     * This mirrors the JCEF `appendStreamingText` strategy (rAF-batched re-render)
+     * and avoids the old debounce pitfall where rapid chunks would keep restarting
+     * the timer, suppressing all visible updates until the stream paused.
+     */
     fun appendMarkdown(text: String) {
         val wasEmpty = rawText.isEmpty()
         rawText.append(text)
         if (wasEmpty) {
+            // First token: always render immediately so the bubble appears at once.
             renderNow()
-        } else {
+            return
+        }
+        val elapsed = System.currentTimeMillis() - lastRenderTime
+        if (elapsed >= RENDER_INTERVAL_MS) {
+            renderTimer.stop()
+            renderScheduled = false
+            renderNow()
+        } else if (!renderScheduled) {
+            renderScheduled = true
+            renderTimer.initialDelay = (RENDER_INTERVAL_MS - elapsed).toInt().coerceAtLeast(1)
             renderTimer.restart()
         }
+        // else: a render is already scheduled within this interval window.
     }
 
     /** Sets the full markdown text and renders immediately (for history replay). */
@@ -71,9 +102,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderNow()
     }
 
-    /** Forces an immediate HTML render, cancelling any pending debounced render. */
+    /** Forces an immediate HTML render, resetting the throttle state. */
     fun renderNow() {
         renderTimer.stop()
+        renderScheduled = false
+        lastRenderTime = System.currentTimeMillis()
         val html = fileNavigator.markdownToHtml(rawText.toString())
         text = "<html><body>$html</body></html>"
     }
@@ -189,7 +222,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     }
 
     companion object {
-        private const val RENDER_DEBOUNCE_MS = 150
+        private const val RENDER_INTERVAL_MS = 30  // ~30fps cap; mirrors JCEF's rAF throttle
 
         private fun colorToHex(c: Color): String =
             "#%02x%02x%02x".format(c.red, c.green, c.blue)
