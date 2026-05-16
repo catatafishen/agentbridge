@@ -105,6 +105,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val chipStrip = WrappingFlowPanel(JBUI.scale(4), JBUI.scale(2)).apply {
             alignmentX = Component.LEFT_ALIGNMENT
             isVisible = false
+            border = JBUI.Borders.empty(4, 0, 4, 0)
         }
 
         val container = object : JPanel() {
@@ -309,7 +310,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun removePromptEntry(entryId: String) { /* Native panel doesn't track entry IDs for removal */
     }
 
-    override fun startStreaming() { /* turn created lazily */
+    override fun startStreaming() {
+        finalizeTurn()
     }
 
     override fun appendText(text: String) {
@@ -350,10 +352,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             turn.thinkingContent = contentWrapper
             turn.thinkingExpanded = true
 
-            val insertIdx = turn.container.components.indexOf(turn.textBubble).let {
-                if (it >= 0) it else turn.container.componentCount
-            }
-            turn.container.add(contentWrapper, insertIdx)
+            val chipStripIdx = turn.container.components.indexOf(turn.chipStrip)
+            turn.container.add(contentWrapper, chipStripIdx + 1)
 
             val chip = ThinkingChipComponent(active = true) {
                 turn.thinkingExpanded = !turn.thinkingExpanded
@@ -667,19 +667,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
-    /** Creates a right-aligned nudge row using the shared bubble component. */
+    /** Creates a right-aligned nudge row using the same bubble as user messages. */
     private fun createNudgeRow(text: String, source: NudgeSource): JPanel {
         val prefix = if (source.isReprimand) "⚡ $text" else "💬 $text"
         val content = JBLabel("<html>$prefix</html>").apply {
-            foreground = NativeChatColors.NUDGE_FG
+            foreground = UIUtil.getLabelForeground()
             font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
         }
-        val (row, _) = createMessageRow(
-            content,
-            NativeChatColors.NUDGE_BG,
-            NativeChatColors.NUDGE_BORDER,
-            rightAligned = true
-        )
+        val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
         return row
     }
 
@@ -711,16 +706,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
         val content = JBLabel("⏳ $text").apply {
-            foreground = NativeChatColors.QUEUED_FG
+            foreground = UIUtil.getLabelForeground()
             font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
             putClientProperty("queuedText", text)
         }
-        val (row, _) = createMessageRow(
-            content,
-            NativeChatColors.QUEUED_BG,
-            NativeChatColors.QUEUED_BORDER,
-            rightAligned = true
-        )
+        val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
         queuedMessages[id] = row
         addRow(row)
     }
