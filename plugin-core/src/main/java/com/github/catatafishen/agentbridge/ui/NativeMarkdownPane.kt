@@ -51,9 +51,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderTimer.restart()
     }
 
-    /** Returns all accumulated raw markdown text. */
-    fun getRawText(): String = rawText.toString()
-
     /** Sets the full markdown text and renders immediately (for history replay). */
     fun setCompleteMarkdown(text: String) {
         rawText.setLength(0)
@@ -73,13 +70,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderTimer.stop()
     }
 
-    /**
-     * The preferred width matches the parent container; the preferred height is
-     * calculated from the HTML layout so that the parent layout allocates the
-     * correct vertical space.
-     */
     override fun getPreferredSize(): Dimension {
-        val pw = parent?.width?.takeIf { it > 0 } ?: return super.getPreferredSize()
+        val p = parent ?: return super.getPreferredSize()
+        val ins = p.insets
+        val pw = (p.width - ins.left - ins.right).takeIf { it > 0 } ?: return super.getPreferredSize()
         setSize(pw, Short.MAX_VALUE.toInt())
         return Dimension(pw, super.getPreferredSize().height)
     }
@@ -111,7 +105,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         ss.addRule("ul { margin: 4px 0; }")
         ss.addRule("ol { margin: 4px 0; }")
         ss.addRule("li { margin: 3px 0; line-height: 150%; }")
-        ss.addRule("blockquote { border-left: 3px solid $tblBorder; margin: 6px 10px; color: $mutedFg; }")
+        ss.addRule("blockquote { border-left: 3px solid $tblBorder; background-color: $codeBg; margin: 6px 4px; padding: 2px 8px; color: $mutedFg; }")
         ss.addRule("hr { border: none; border-top: 1px solid $tblBorder; margin: 8px 0; }")
         ss.addRule("b { font-weight: bold; }")
 
