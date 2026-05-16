@@ -77,6 +77,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private var autoScrollEnabled = true
 
+    /** Guards the AdjustmentListener against reacting to programmatic scroll operations. */
+    private var suppressScrollListener = false
+
+    /**
+     * Tracks the last observed scrollbar value so the AdjustmentListener can tell the difference
+     * between the user scrolling up (value decreases) and the scrollbar max growing because new
+     * content was appended (value stays the same). Only a value decrease should disable auto-scroll.
+     */
+    private var lastScrollValue = 0
+
     fun setAutoScroll(enabled: Boolean) {
         autoScrollEnabled = enabled
         if (enabled) scrollToBottom()
@@ -106,16 +116,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
-            if (!e.valueIsAdjusting) {
+            if (!e.valueIsAdjusting && !suppressScrollListener) {
                 val bar = scrollPane.verticalScrollBar
-                val atBottom = bar.value + bar.visibleAmount >= bar.maximum - 4
+                val currentValue = bar.value
+                val atBottom = currentValue + bar.visibleAmount >= bar.maximum - 4
                 if (atBottom && !autoScrollEnabled) {
                     autoScrollEnabled = true
                     onAutoScrollEnabled?.invoke()
-                } else if (!atBottom && autoScrollEnabled) {
+                } else if (!atBottom && autoScrollEnabled && currentValue < lastScrollValue) {
+                    // Only disable auto-scroll when the user actively scrolled up (value decreased).
+                    // Ignore events where the max grew due to new content being appended — those
+                    // leave the value unchanged and should not disturb the auto-scroll state.
                     autoScrollEnabled = false
                     onAutoScrollDisabled?.invoke()
                 }
+                lastScrollValue = currentValue
             }
         }
         contentPanel.addComponentListener(object : ComponentAdapter() {
@@ -214,7 +229,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun scrollToBottom() {
         SwingUtilities.invokeLater {
-            scrollPane.verticalScrollBar.value = Int.MAX_VALUE
+            // Validate first so that the layout is fully settled and bar.maximum reflects
+            // all newly-added content before we clamp value to Int.MAX_VALUE.
+            scrollPane.validate()
+            suppressScrollListener = true
+            try {
+                scrollPane.verticalScrollBar.value = Int.MAX_VALUE
+            } finally {
+                suppressScrollListener = false
+            }
         }
     }
 
@@ -284,7 +307,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             return null
         }
         findLabel(indicator)?.text = "Working… ${elapsed}s"
-        scrollToBottom()
+        if (autoScrollEnabled) scrollToBottom()
     }
 
     /** Creates a markdown pane pre-filled with [text] and registers it for disposal. */
@@ -353,7 +376,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             turn.container.add(row)
         }
         turn.markdownPane!!.appendMarkdown(text)
-        scrollToBottom()
+        if (autoScrollEnabled) scrollToBottom()
     }
 
     override fun appendThinkingText(text: String) {
@@ -382,7 +405,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             turn.chipStrip.addThinkingChip(chip)
         }
         turn.thinkingPane!!.appendMarkdown(text)
-        scrollToBottom()
+        if (autoScrollEnabled) scrollToBottom()
     }
 
     override fun collapseThinking() {
@@ -412,7 +435,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         allChips[id] = chip
         turn.chipStrip.addToolChip(chip)
         if (!spinTimer.isRunning) spinTimer.start()
-        scrollToBottom()
+        if (autoScrollEnabled) scrollToBottom()
     }
 
     /**
