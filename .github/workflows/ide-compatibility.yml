@@ -3,6 +3,12 @@ name: IDE Compatibility Check
 # Runs automatically on every push to master and can be triggered manually
 # for any branch (e.g. to validate a PR before merging).
 #
+# Architecture:
+#   build-plugin  — compiles and packages the plugin ZIP once
+#   verify (×4)   — four parallel jobs, each verifying a single IDE in its own
+#                   process with its own isolated copy of JARs. No shared
+#                   CachingJarFileSystemProvider, no ClosedFileSystemException.
+#
 # Results are checked by publish-marketplace.yml: if this workflow has not
 # run for a given release commit, or if it failed, marketplace publishing
 # is blocked until the check passes.
@@ -25,11 +31,59 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  verify:
-    name: Verify (Marketplace Compatibility)
+  build-plugin:
+    name: Build Plugin
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          gradle-version: 'wrapper'
+          cache-disabled: true
+
+      - name: Build plugin
+        # Skip buildChatUi — the JS/CSS bundle is not needed for API compatibility checks.
+        run: gradle :plugin-core:buildPlugin --no-daemon --quiet -x :plugin-core:buildChatUi
+
+      - name: Upload plugin distribution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: plugin-distribution
+          path: plugin-core/build/distributions/*.zip
+          retention-days: 1
+
+  verify:
+    name: Verify – ${{ matrix.ide.name }}
+    needs: build-plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        ide:
+          - { id: IU, name: "IntelliJ IDEA Ultimate" }
+          - { id: PY, name: "PyCharm Professional" }
+          - { id: WS, name: "WebStorm" }
+          - { id: GO, name: "GoLand" }
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
@@ -69,17 +123,30 @@ jobs:
           gradle-version: 'wrapper'
           cache-disabled: true
 
+      - name: Download plugin distribution
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: plugin-distribution
+          path: plugin-core/build/distributions/
+
       - name: Create pluginVerifier cache directory
         run: mkdir -p ~/.pluginVerifier/extracted-plugins
 
-      - name: Show disk space before plugin verification
+      - name: Show disk space before verification
         run: df -h /
 
-      - name: Verify plugins (marketplace compatibility)
-        # Skip buildChatUi: the npm/JS build is not needed for API compatibility
-        # checks. The verifier only inspects class files and plugin descriptors.
-        run: gradle :plugin-core:verifyPlugin --no-daemon --quiet -x :plugin-core:buildChatUi
+      - name: Verify plugin against ${{ matrix.ide.name }}
+        # -PverifyIde selects a single IDE in pluginVerification.ides so this process
+        # owns all its JARs exclusively — no shared CachingJarFileSystemProvider.
+        # -x buildPlugin skips rebuilding since the artifact was downloaded above.
+        run: >
+          gradle :plugin-core:verifyPlugin
+          --no-daemon --quiet
+          -PverifyIde=${{ matrix.ide.id }}
+          -x :plugin-core:buildPlugin
+          -x :plugin-core:buildChatUi
 
-      - name: Show disk space after plugin verification
+      - name: Show disk space after verification
         if: always()
         run: df -h /
+
