@@ -1,51 +1,55 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import javax.swing.*
+import javax.swing.Box
+import javax.swing.JComponent
+import javax.swing.JLabel
 
 /**
  * A compact tool chip with a spinning ring indicator and kind-based coloring.
  * Matches the JCEF `<tool-chip>` component.
+ *
+ * Extends [BaseChipComponent] for consistent sizing and painting with [ThinkingChipComponent].
+ * Uses [BoxLayout.X_AXIS] so the chip never wraps regardless of panel width.
  */
 class ToolChipComponent(
     title: String,
     kind: String?,
     status: String,
     private val onClick: (() -> Unit)? = null,
-) : JPanel() {
+) : BaseChipComponent(kind) {
 
     private var currentStatus = status
     private var spinAngle = 0
     private val ringSize = JBUI.scale(8)
-    private val kindCol: Color = NativeChatColors.kindColor(kind)
-    private val bgCol: Color = NativeChatColors.kindBg(kind)
-    private val borderCol: Color = NativeChatColors.kindBorder(kind)
-    private val hoverBgCol: Color = NativeChatColors.kindBgHover(kind)
-    private val hoverBorderCol: Color = NativeChatColors.kindBorderHover(kind)
-    private var hovered = false
+    private val ring = RingIndicator()
+    private val label = JLabel(truncateLabel(title)).apply {
+        foreground = kindCol
+        font = chipFont()
+        alignmentY = CENTER_ALIGNMENT
+        putClientProperty("html.disable", true)
+    }
 
     init {
-        layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
-        isOpaque = false
-        border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(6), JBUI.scale(2), JBUI.scale(6))
-
         if (onClick != null) cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-
-        add(RingIndicator())
-        add(JLabel(truncateLabel(title)).apply {
-            foreground = kindCol
-            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
-            putClientProperty("html.disable", true)
-        })
-
+        add(ring)
+        add(Box.createRigidArea(Dimension(JBUI.scale(4), 0)))
+        add(label)
         addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) { onClick?.invoke() }
-            override fun mouseEntered(e: MouseEvent) { hovered = true; repaint() }
-            override fun mouseExited(e: MouseEvent) { hovered = false; repaint() }
+            override fun mouseClicked(e: MouseEvent) {
+                onClick?.invoke()
+            }
+
+            override fun mouseEntered(e: MouseEvent) {
+                hovered = true; repaint()
+            }
+
+            override fun mouseExited(e: MouseEvent) {
+                hovered = false; repaint()
+            }
         })
     }
 
@@ -61,23 +65,14 @@ class ToolChipComponent(
         repaint()
     }
 
-    // Cap maximum size so BoxLayout.X_AXIS in ChipStripPanel doesn't stretch the chip.
-    override fun getMaximumSize(): Dimension = preferredSize
-
-    override fun paintComponent(g: Graphics) {
-        val g2 = g.create() as Graphics2D
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        val r = JBUI.scale(6)
-        g2.color = if (hovered) hoverBgCol else bgCol
-        g2.fillRoundRect(0, 0, width, height, r, r)
-        g2.color = if (hovered) hoverBorderCol else borderCol
-        g2.drawRoundRect(0, 0, width - 1, height - 1, r, r)
-        g2.dispose()
-    }
-
     private inner class RingIndicator : JComponent() {
         init {
-            preferredSize = Dimension(ringSize, ringSize)
+            val s = ringSize
+            preferredSize = Dimension(s, s)
+            minimumSize = Dimension(s, s)
+            maximumSize = Dimension(s, s)
+            alignmentY = CENTER_ALIGNMENT
+            isOpaque = false
         }
 
         override fun paintComponent(g: Graphics) {
@@ -90,10 +85,12 @@ class ToolChipComponent(
                     g2.stroke = BasicStroke(1.5f)
                     g2.drawArc(1, 1, s, s, spinAngle, 270)
                 }
+
                 "complete", "completed", "success", "done" -> {
                     g2.color = kindCol
                     g2.fillOval(1, 1, s, s)
                 }
+
                 else -> {
                     g2.color = NativeChatColors.ERROR
                     g2.stroke = BasicStroke(1.5f)

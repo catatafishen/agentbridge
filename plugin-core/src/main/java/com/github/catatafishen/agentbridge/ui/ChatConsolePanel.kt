@@ -29,8 +29,14 @@ import java.awt.BorderLayout
 import javax.swing.JComponent
 
 /**
- * Chat panel — web-component-based implementation.
- * All rendering delegated to JS ChatController; Kotlin manages data model and bridge.
+ * JCEF/web-based chat panel — **deprecated, no further changes**.
+ *
+ * All active development happens in [NativeChatPanel]. This file exists only to keep
+ * the legacy JCEF path working until it is removed. Do **not** add features or fix
+ * visual bugs here — implement them in the native panel instead.
+ *
+ * Rendering is delegated to the JS `ChatController`; Kotlin manages the data model
+ * and the JS↔Kotlin bridge.
  */
 class ChatConsolePanel(
     private val project: Project,

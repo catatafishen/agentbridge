@@ -1,39 +1,44 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
-import java.awt.*
+import java.awt.Cursor
+import java.awt.Dimension
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import javax.swing.Box
 import javax.swing.JLabel
-import javax.swing.JPanel
 
+/**
+ * A chip representing the "Thinking…" / "Thought" state of an agent reasoning phase.
+ *
+ * Visually identical to a grey [ToolChipComponent] (same [BaseChipComponent] base),
+ * using a 💭 emoji instead of a ring indicator. Clicking toggles the thinking bubble.
+ * When [collapseWhenReady] is called, the collapse fires immediately if the mouse is
+ * not hovering — otherwise it defers until mouse-out.
+ */
 class ThinkingChipComponent(
     private var active: Boolean,
     private val onToggle: () -> Unit,
-) : JPanel() {
+) : BaseChipComponent(null) {
 
     private val emojiLabel: JLabel
     private val textLabel: JLabel
-    private var hovered = false
     private var pendingCollapseAction: (() -> Unit)? = null
 
-    private val chipBg get() = NativeChatColors.kindBg(null)
-    private val chipBorder get() = NativeChatColors.kindBorder(null)
-    private val chipFg get() = NativeChatColors.kindColor(null)
-
     init {
-        layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
-        isOpaque = false
-        border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(6), JBUI.scale(2), JBUI.scale(6))
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
 
-        emojiLabel = JLabel("💭").apply { font = UIUtil.getLabelFont() }
+        emojiLabel = JLabel("💭").apply {
+            font = chipFont()
+            alignmentY = CENTER_ALIGNMENT
+        }
         textLabel = JLabel(if (active) "Thinking…" else "Thought").apply {
-            foreground = chipFg
-            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
+            foreground = kindCol
+            font = chipFont()
+            alignmentY = CENTER_ALIGNMENT
         }
         add(emojiLabel)
+        add(Box.createRigidArea(Dimension(JBUI.scale(4), 0)))
         add(textLabel)
 
         addMouseListener(object : MouseAdapter() {
@@ -66,18 +71,5 @@ class ThinkingChipComponent(
         } else {
             action()
         }
-    }
-
-    override fun getMaximumSize(): Dimension = preferredSize
-
-    override fun paintComponent(g: Graphics) {
-        val g2 = g.create() as Graphics2D
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        val r = JBUI.scale(6)
-        g2.color = chipBg
-        g2.fillRoundRect(0, 0, width, height, r, r)
-        g2.color = chipBorder
-        g2.drawRoundRect(0, 0, width - 1, height - 1, r, r)
-        g2.dispose()
     }
 }
