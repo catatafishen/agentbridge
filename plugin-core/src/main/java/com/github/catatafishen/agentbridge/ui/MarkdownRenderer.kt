@@ -15,7 +15,7 @@ object MarkdownRenderer {
         // Split into named parts so S5843 (regex complexity) analysis doesn't flag the combined form.
         val absolutePath = """/[\w.\-]+(?:/[\w.\-]+)*\.\w+"""
         val relativePath = """(?:\.\.?/)?[\w.\-]+(?:/[\w.\-]+)+\.\w+"""
-        val lineCol = """(?::\d+(?::\d+)?)?"""
+        val lineCol = """(?::\d+(?:[:\-]\d+)?)?"""
         Regex("""(?<![:\w])(?:$absolutePath|$relativePath)$lineCol""")
     }
     private val GIT_SHA_REGEX = Regex("""^[0-9a-f]{7,40}$""")
@@ -424,7 +424,13 @@ object MarkdownRenderer {
     ): String {
         val resolved = resolveFileReference(content)
         return when {
-            resolved != null -> "<a href='openfile://${resolvedHref(resolved)}'><code>${escapeHtml(content)}</code></a>"
+            resolved != null -> {
+                val colonIdx = content.indexOf(':')
+                val lineSpec = if (colonIdx > 0 && resolved.second != null) content.substring(colonIdx) else ""
+                val href = resolved.first + lineSpec
+                "<a href='openfile://$href'><code>${escapeHtml(content)}</code></a>"
+            }
+
             GIT_SHA_REGEX.matches(content) && isGitCommit(content) ->
                 "<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>"
 
@@ -454,7 +460,12 @@ object MarkdownRenderer {
         rawTarget.startsWith("openfile://") || rawTarget.startsWith("gitshow://") ->
             "<a href='${escapeHtml(rawTarget)}'>$linkText</a>"
 
-        resolved != null -> "<a href='openfile://${escapeHtml(resolvedHref(resolved))}'>$linkText</a>"
+        resolved != null -> {
+            val colonIdx = rawTarget.indexOf(':')
+            val lineSpec = if (colonIdx > 0 && resolved.second != null) rawTarget.substring(colonIdx) else ""
+            "<a href='openfile://${escapeHtml(resolved.first + lineSpec)}'>$linkText</a>"
+        }
+
         GIT_SHA_REGEX.matches(rawTarget) && isGitCommit(rawTarget) ->
             "<a href='gitshow://${escapeHtml(rawTarget)}'>$linkText</a>"
 
@@ -463,9 +474,6 @@ object MarkdownRenderer {
 
         else -> "[${linkText}](${escapeHtml(rawTarget)})"
     }
-
-    private fun resolvedHref(resolved: Pair<String, Int?>): String =
-        resolved.first + if (resolved.second != null) ":${resolved.second}" else ""
 
     private fun formatBareUrl(urlText: String): String {
         val url = escapeHtml(urlText)
@@ -479,10 +487,11 @@ object MarkdownRenderer {
     ): String {
         var html = escapeHtml(text)
         html = FILE_PATH_REGEX.replace(html) { m ->
-            val pathPart = m.value.split(":")[0]
-            val line = m.value.split(":").getOrNull(1)?.toIntOrNull()
+            val parts = m.value.split(":")
+            val pathPart = parts[0]
+            val lineSpec = parts.getOrNull(1)
             val resolved = resolveFilePath(pathPart)
-            if (resolved != null) "<a href='openfile://$resolved${if (line != null) ":$line" else ""}'>${m.value}</a>"
+            if (resolved != null) "<a href='openfile://$resolved${lineSpec?.let { ":$it" } ?: ""}'>${m.value}</a>"
             else m.value
         }
         html = BARE_GIT_SHA_REGEX.replace(html) { m ->

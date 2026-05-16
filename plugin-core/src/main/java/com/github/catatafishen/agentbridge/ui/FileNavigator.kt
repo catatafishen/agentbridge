@@ -1,8 +1,10 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -15,6 +17,8 @@ import git4idea.repo.GitRepositoryManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+
+private data class PathLineRange(val path: String, val startLine: Int, val endLine: Int?)
 
 /** Handles file and git-commit link navigation from the chat JCEF panel. */
 class FileNavigator(private val project: Project) {
@@ -31,20 +35,36 @@ class FileNavigator(private val project: Project) {
     private val pendingChecks: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     fun handleFileLink(href: String) {
+        if (href.startsWith("http://") || href.startsWith("https://")) {
+            BrowserUtil.browse(href)
+            return
+        }
         if (href.startsWith("gitshow://")) {
             handleGitShowLink(href.removePrefix("gitshow://"))
             return
         }
         val pathAndLine = href.removePrefix("openfile://")
-        val (filePath, line) = parsePathAndLine(pathAndLine)
-        val normalizedPath = filePath.replace('\\', '/')
+        val parsed = parsePathAndLine(pathAndLine)
+        val normalizedPath = parsed.path.replace('\\', '/')
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
         ApplicationManager.getApplication().invokeLater {
             try {
                 val focus = !PsiBridgeService.isUserTypingInChat(project)
-                OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(focus)
+                if (parsed.endLine != null && parsed.startLine > 0) {
+                    val editor = FileEditorManager.getInstance(project)
+                        .openTextEditor(OpenFileDescriptor(project, vf, maxOf(0, parsed.startLine - 1), 0), focus)
+                    if (editor != null) {
+                        val doc = editor.document
+                        val startOffset = doc.getLineStartOffset(maxOf(0, parsed.startLine - 1))
+                        val endLine = minOf(doc.lineCount - 1, parsed.endLine - 1)
+                        val endOffset = doc.getLineEndOffset(endLine)
+                        editor.selectionModel.setSelection(startOffset, endOffset)
+                    }
+                } else {
+                    OpenFileDescriptor(project, vf, maxOf(0, parsed.startLine - 1), 0).navigate(focus)
+                }
             } catch (e: Exception) {
-                log.warn("Failed to navigate to file $normalizedPath:$line", e)
+                log.warn("Failed to navigate to file $normalizedPath:${parsed.startLine}", e)
             }
         }
     }
@@ -52,15 +72,21 @@ class FileNavigator(private val project: Project) {
     fun markdownToHtml(text: String): String =
         MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath, ::isGitCommit)
 
-    /** Splits a path-and-optional-line string, handling Windows drive letters (e.g. C:\...:42). */
-    private fun parsePathAndLine(pathAndLine: String): Pair<String, Int> {
+    private fun parsePathAndLine(pathAndLine: String): PathLineRange {
         val lastColon = pathAndLine.lastIndexOf(':')
         if (lastColon > 0) {
             val afterColon = pathAndLine.substring(lastColon + 1)
+            val path = pathAndLine.substring(0, lastColon)
+            val dashIdx = afterColon.indexOf('-')
+            if (dashIdx > 0) {
+                val start = afterColon.substring(0, dashIdx).toIntOrNull()
+                val end = afterColon.substring(dashIdx + 1).toIntOrNull()
+                if (start != null) return PathLineRange(path, start, end)
+            }
             val lineNum = afterColon.toIntOrNull()
-            if (lineNum != null) return Pair(pathAndLine.substring(0, lastColon), lineNum)
+            if (lineNum != null) return PathLineRange(path, lineNum, null)
         }
-        return Pair(pathAndLine, 0)
+        return PathLineRange(pathAndLine, 0, null)
     }
 
     private fun handleGitShowLink(hash: String) {
@@ -101,11 +127,11 @@ class FileNavigator(private val project: Project) {
         val indexed = dm != null && dm.storage.containsCommit(commitId)
         if (indexed || attemptsLeft <= 0) {
             ApplicationManager.getApplication().invokeLater {
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hash)
+                VcsProjectLog.showRevisionInMainLog(project, root, hash)
             }
             return
         }
-        com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().schedule({
+        AppExecutorUtil.getAppScheduledExecutorService().schedule({
             showRevisionWhenIndexed(root, hash, attemptsLeft - 1, delayMs)
         }, delayMs, TimeUnit.MILLISECONDS)
     }
@@ -178,7 +204,7 @@ class FileNavigator(private val project: Project) {
         val colonIdx = ref.indexOf(':')
         val (name, lineNum) = if (colonIdx > 0) {
             val afterColon = ref.substring(colonIdx + 1)
-            val num = afterColon.split(",", " ").firstOrNull()?.toIntOrNull()
+            val num = afterColon.split(",", " ", "-").firstOrNull()?.toIntOrNull()
             if (num != null) ref.substring(0, colonIdx) to num else ref to null
         } else ref to null
         val path = resolveFilePath(name)
