@@ -5,7 +5,6 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Font
 
-/** Creates the compact stats label shown after a completed agent turn. */
 fun createTurnStatsRow(stats: TurnStatsData): JBLabel {
     val text = buildList {
         add("${stats.durationMs / 1000}s")
@@ -16,7 +15,7 @@ fun createTurnStatsRow(stats: TurnStatsData): JBLabel {
     }.joinToString(" · ")
     return JBLabel(text).apply {
         foreground = UIUtil.getContextHelpForeground()
-        font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
+        applyChatFont(-1)
         border = JBUI.Borders.empty(1, 0, 5, 0)
     }
 }

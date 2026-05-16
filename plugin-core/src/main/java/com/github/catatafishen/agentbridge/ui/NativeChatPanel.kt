@@ -1,9 +1,11 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.intellij.ide.setToolTipText
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -87,6 +89,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private var lastScrollValue = 0
 
+    private val schemeDisposable = Disposer.newDisposable("NativeChatPanel")
+
     fun setAutoScroll(enabled: Boolean) {
         autoScrollEnabled = enabled
         if (enabled) scrollToBottom()
@@ -141,6 +145,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 if (autoScrollEnabled) scrollToBottom()
             }
         })
+        PlatformApiCompat.subscribeEditorColorSchemeChanges(schemeDisposable) {
+            SwingUtilities.invokeLater { updateAllChatFonts() }
+        }
     }
 
     private class TurnContext(
@@ -222,7 +229,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val tooltip = MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.TOOLTIP)
         return JBLabel(ts).apply {
             foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size * 0.92f)
+            applyChatFont(-1)
             horizontalAlignment = if (rightAligned) SwingConstants.RIGHT else SwingConstants.LEFT
             alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
             border = JBUI.Borders.empty(0, 2, 1, 2)
@@ -251,7 +258,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val (row, bubble) = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
         bubble.add(JBLabel("Working…").apply {
             foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont()
+            applyChatFont()
             putClientProperty("workingLabel", true)
         }, BorderLayout.CENTER)
         val container = JPanel().apply {
@@ -597,7 +604,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         options.forEach { opt ->
             panel.add(JButton(opt).apply {
                 addActionListener { onQuickReply?.invoke(opt) }
-                font = UIUtil.getLabelFont()
+                applyChatFont()
             })
         }
         addRow(panel)
@@ -660,11 +667,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         val countdownLabel = JBLabel().apply {
             foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+            applyChatFont(-1)
         }
 
         val extendButton = JButton("I need more time").apply {
-            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+            applyChatFont(-1)
             addActionListener {
                 val newDeadline = onExtend()
                 putClientProperty("deadline", newDeadline)
@@ -765,7 +772,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         } else {
             val newLabel = JBLabel(text).apply {
                 foreground = UIUtil.getContextHelpForeground()
-                font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
+                applyChatFont(-1)
                 border = JBUI.Borders.empty(1, 0, 2, 0)
                 alignmentX = Component.LEFT_ALIGNMENT
             }
@@ -804,7 +811,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         } else {
             val newLabel = JBLabel("🤖 $text").apply {
                 foreground = UIUtil.getContextHelpForeground()
-                font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
+                applyChatFont(-1, Font.ITALIC)
                 border = JBUI.Borders.empty(1, 0, 2, 0)
                 alignmentX = Component.LEFT_ALIGNMENT
             }
@@ -821,7 +828,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         for ((name, _) in files) {
             chipPanel.add(JBLabel("📄 $name").apply {
                 foreground = UIUtil.getContextHelpForeground()
-                font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+                applyChatFont(-1)
                 border = JBUI.Borders.empty(1, 4)
             })
         }
@@ -832,6 +839,31 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         allMarkdownPanes.forEach { it.dispose() }
         if (spinTimer.isRunning) spinTimer.stop()
         workingTimer.stop()
+        Disposer.dispose(schemeDisposable)
+    }
+
+    /**
+     * Walks [contentPanel]'s component tree and updates the font on every [JComponent]
+     * that was tagged with [CHAT_FONT_DELTA] via [applyChatFont]. Called when the IDE
+     * editor font size changes (Alt+Shift+. / Alt+Shift+,).
+     */
+    private fun updateAllChatFonts() {
+        updateChatFonts(contentPanel)
+        contentPanel.revalidate()
+        contentPanel.repaint()
+    }
+
+    private fun updateChatFonts(container: Container) {
+        for (child in container.components) {
+            if (child is JComponent) {
+                val delta = child.getClientProperty(CHAT_FONT_DELTA) as? Int
+                if (delta != null) {
+                    val style = (child.getClientProperty(CHAT_FONT_STYLE) as? Int) ?: Font.PLAIN
+                    child.font = chatFont(delta, style)
+                }
+            }
+            if (child is Container) updateChatFonts(child)
+        }
     }
 
     // ── History restore ────────────────────────────────────────────
@@ -857,7 +889,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             alignmentX = Component.LEFT_ALIGNMENT
             isFocusPainted = false
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size - 1f)
+            applyChatFont(-1)
             addActionListener { onLoadMoreRequested?.invoke() }
         }
         contentPanel.add(btn, 0)
@@ -973,7 +1005,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             wrapper.add(pane, BorderLayout.CENTER)
             wrapper.add(JBLabel("📎 $fileList").apply {
                 foreground = UIUtil.getContextHelpForeground()
-                font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
+                applyChatFont(-1)
                 border = JBUI.Borders.emptyTop(JBUI.scale(2))
             }, BorderLayout.SOUTH)
             wrapper

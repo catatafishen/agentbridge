@@ -29,12 +29,12 @@ class ThinkingChipComponent(
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
 
         emojiLabel = JLabel("💭").apply {
-            font = chipFont()
+            applyChatFont(-2)
             alignmentY = CENTER_ALIGNMENT
         }
         textLabel = JLabel(if (active) "Thinking…" else "Thought").apply {
             foreground = kindCol
-            font = chipFont()
+            applyChatFont(-2)
             alignmentY = CENTER_ALIGNMENT
         }
         add(emojiLabel)
