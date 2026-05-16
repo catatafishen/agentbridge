@@ -50,6 +50,18 @@ object NativeChatColors {
         return JBColor(Color(base.red, base.green, base.blue, 56), Color(base.red, base.green, base.blue, 56))
     }
 
+    /** 18% alpha hover background derived from the kind's accent color. */
+    fun kindBgHover(kind: String?): JBColor {
+        val base = kindColor(kind)
+        return JBColor(Color(base.red, base.green, base.blue, 46), Color(base.red, base.green, base.blue, 46))
+    }
+
+    /** 32% alpha hover border derived from the kind's accent color. */
+    fun kindBorderHover(kind: String?): JBColor {
+        val base = kindColor(kind)
+        return JBColor(Color(base.red, base.green, base.blue, 82), Color(base.red, base.green, base.blue, 82))
+    }
+
     val NUDGE_BG: JBColor = JBColor(Color(0xF0, 0xF0, 0xFF), Color(0x2A, 0x2A, 0x3A))
     val NUDGE_BORDER: JBColor = JBColor(Color(0xD0, 0xD0, 0xE8), Color(0x40, 0x40, 0x60))
     val NUDGE_FG: JBColor = JBColor(Color(0x50, 0x50, 0x70), Color(0xB0, 0xB0, 0xD0))

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -34,6 +35,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     var onLoadMoreRequested: (() -> Unit)? = null
 
     private val fileNavigator = FileNavigator(project)
+    private val toolRegistry = ToolRegistry.getInstance(project)
+
+    /** Stored tool call data for popup display when chips are clicked. */
+    private data class ToolCallData(
+        val title: String,
+        val kind: String,
+        val arguments: String? = null,
+        var status: String = "running",
+        var result: String? = null,
+        var description: String? = null,
+        var autoDenied: Boolean = false,
+        var denialReason: String? = null,
+    )
+
+    private val toolCallData = mutableMapOf<String, ToolCallData>()
 
     private val contentPanel = JBPanel<JBPanel<*>>(null).apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -99,6 +115,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             override fun getMaximumSize(): Dimension =
                 Dimension(Short.MAX_VALUE.toInt(), preferredSize.height)
         }
+        container.add(createTimestampLabel(rightAligned = false).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        })
         container.add(chipStrip)
 
         val turn = TurnContext(container, chipStrip)
@@ -112,13 +131,25 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         currentTurn = null
     }
 
-    private fun addRow(comp: JComponent) {
+    private fun addRow(comp: JComponent, spacing: Int = JBUI.scale(4)) {
         placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
         comp.alignmentX = Component.LEFT_ALIGNMENT
         contentPanel.add(comp)
-        contentPanel.add(Box.createVerticalStrut(JBUI.scale(3)))
+        contentPanel.add(Box.createVerticalStrut(spacing))
         contentPanel.revalidate()
         scrollToBottom()
+    }
+
+    /** Creates a small right- or left-aligned timestamp label (HH:mm). */
+    private fun createTimestampLabel(rightAligned: Boolean = false): JBLabel {
+        val ts = MessageFormatter.formatTimestamp(MessageFormatter.timestamp())
+        return JBLabel(ts).apply {
+            foreground = UIUtil.getContextHelpForeground()
+            font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size * 0.92f)
+            horizontalAlignment = if (rightAligned) SwingConstants.RIGHT else SwingConstants.LEFT
+            alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(0, 2, 1, 2)
+        }
     }
 
     private fun scrollToBottom() {
@@ -152,39 +183,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contextFiles: List<Triple<String, String, Int>>?,
         bubbleHtml: String?
     ): String {
-        finalizeTurn()
-
-        val bubble = object : RoundedPanel(NativeChatColors.USER_BUBBLE_BG) {
-            override fun getMaximumSize(): Dimension {
-                val pw = parent?.width ?: JBUI.scale(600)
-                return Dimension((pw * 0.82).toInt().coerceAtLeast(JBUI.scale(200)), Int.MAX_VALUE)
-            }
-        }.apply {
-            border = JBUI.Borders.empty(JBUI.scale(6), JBUI.scale(14), JBUI.scale(6), JBUI.scale(14))
+        return addPromptEntryAt(text, contextFiles) { row ->
+            addRow(row, spacing = JBUI.scale(10))
         }
-
-        val (doc, pane) = newTextPane()
-        appendToDoc(doc, text)
-        bubble.add(pane, BorderLayout.CENTER)
-
-        if (!contextFiles.isNullOrEmpty()) {
-            val fileList = contextFiles.joinToString(", ") { (name, _, _) -> name }
-            bubble.add(JBLabel("📎 $fileList").apply {
-                foreground = UIUtil.getContextHelpForeground()
-                font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
-                border = JBUI.Borders.emptyTop(JBUI.scale(2))
-            }, BorderLayout.SOUTH)
-        }
-
-        val row = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
-            isOpaque = false
-            alignmentX = Component.LEFT_ALIGNMENT
-            add(Box.createHorizontalGlue())
-            add(bubble)
-        }
-        addRow(row)
-        return java.util.UUID.randomUUID().toString()
     }
 
     override fun removePromptEntry(entryId: String) { /* Native panel doesn't track entry IDs for removal */
@@ -196,8 +197,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun appendText(text: String) {
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
-            val bubble = RoundedPanel(NativeChatColors.AGENT_BUBBLE_BG).apply {
-                border = JBUI.Borders.empty(JBUI.scale(8), JBUI.scale(14), JBUI.scale(8), JBUI.scale(14))
+            val bubble = object : RoundedPanel(NativeChatColors.AGENT_BUBBLE_BG) {
+                override fun getMaximumSize(): Dimension {
+                    val pw = parent?.width ?: JBUI.scale(600)
+                    return Dimension(
+                        (pw * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
+                        Int.MAX_VALUE
+                    )
+                }
+            }.apply {
+                border = JBUI.Borders.empty(JBUI.scale(8), JBUI.scale(16), JBUI.scale(8), JBUI.scale(16))
                 alignmentX = Component.LEFT_ALIGNMENT
             }
             val pane = NativeMarkdownPane(fileNavigator)
@@ -263,7 +272,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         id: String, title: String, arguments: String?, kind: String?, isMcpHandled: Boolean
     ) {
         val turn = ensureTurn()
-        val chip = ToolChipComponent(title, kind, "running")
+        val resolvedKind = kind ?: "other"
+        toolCallData[id] = ToolCallData(title, resolvedKind, arguments)
+        val chip = ToolChipComponent(title, kind, "running") { showToolPopup(id) }
         allChips[id] = chip
         turn.chipStrip.add(chip)
         turn.chipStrip.isVisible = true
@@ -275,7 +286,50 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
         val chip = allChips[id] ?: return
         chip.updateStatus(status)
+        toolCallData[id]?.let { data ->
+            data.status = status
+            update.details?.let { data.result = it }
+            update.description?.let { data.description = it }
+            update.kind?.let { data.status = status }
+            if (update.autoDenied) data.autoDenied = true
+            update.denialReason?.let { data.denialReason = it }
+        }
         if (allChips.values.none { it.isSpinning() }) spinTimer.stop()
+    }
+
+    private fun showToolPopup(toolId: String) {
+        val data = toolCallData[toolId] ?: return
+        val baseName = data.title.substringBefore('(').trim()
+        val toolDef = toolRegistry?.findById(baseName)
+        val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn) toolDef.description() else null
+        val failed = data.status == "failed"
+
+        val resultPanel = if (!data.result.isNullOrBlank()) {
+            com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers.codePanel(data.result!!)
+        } else {
+            JBLabel("No result available").apply { foreground = UIUtil.getContextHelpForeground() }
+        }
+        val paramsPanel = if (!data.arguments.isNullOrBlank()) {
+            com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers.jsonEditor(
+                ToolCallArgParser.prettyJson(data.arguments), project
+            )
+        } else null
+
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            ToolCallPopup.show(
+                ToolCallPopup.Request(
+                    project = project,
+                    title = data.title,
+                    kind = data.kind,
+                    paramsPanel = paramsPanel,
+                    resultPanel = resultPanel,
+                    toolDescription = mcpDescription,
+                    autoDenied = data.autoDenied,
+                    denialReason = data.denialReason,
+                    failed = failed
+                )
+            )
+        }
     }
 
     override fun addSubAgentEntry(
@@ -362,6 +416,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contentPanel.repaint()
         currentTurn = null
         allChips.clear()
+        toolCallData.clear()
         nudgeBubbles.clear()
         queuedMessages.clear()
         loadMoreButton = null
@@ -501,19 +556,30 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
-    override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
-        removeNudgeBubble(id)
+    /** Creates a right-aligned nudge row with reprimand/message styling. */
+    private fun createNudgeRow(text: String, source: NudgeSource): JPanel {
         val label = if (source.isReprimand) "⚡ $text" else "💬 $text"
         val bubble = RoundedPanel(NativeChatColors.NUDGE_BG, borderColor = NativeChatColors.NUDGE_BORDER).apply {
             border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(10))
-            alignmentX = Component.LEFT_ALIGNMENT
         }
         bubble.add(JBLabel("<html>$label</html>").apply {
             foreground = NativeChatColors.NUDGE_FG
             font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
         }, BorderLayout.CENTER)
-        nudgeBubbles[id] = bubble
-        addRow(bubble)
+        return JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(Box.createHorizontalGlue())
+            add(bubble)
+        }
+    }
+
+    override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
+        removeNudgeBubble(id)
+        val row = createNudgeRow(text, source)
+        nudgeBubbles[id] = row
+        addRow(row)
     }
 
     override fun resolveNudgeBubble(id: String) {
@@ -529,16 +595,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
-        val label = if (source.isReprimand) "⚡ $text" else "💬 $text"
-        val bubble = RoundedPanel(NativeChatColors.NUDGE_BG, borderColor = NativeChatColors.NUDGE_BORDER).apply {
-            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(10))
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        bubble.add(JBLabel("<html>$label</html>").apply {
-            foreground = NativeChatColors.NUDGE_FG
-            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC, UIUtil.getLabelFont().size - 1f)
-        }, BorderLayout.CENTER)
-        addRow(bubble)
+        addRow(createNudgeRow(text, source))
     }
 
     private val queuedMessages = mutableMapOf<String, JComponent>()
@@ -771,7 +828,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun insertRowAt(comp: JComponent, index: Int) {
         comp.alignmentX = Component.LEFT_ALIGNMENT
         contentPanel.add(comp, index)
-        contentPanel.add(Box.createVerticalStrut(JBUI.scale(3)), index + 1)
+        contentPanel.add(Box.createVerticalStrut(JBUI.scale(4)), index + 1)
     }
 
     private fun addPromptEntryAt(
@@ -783,7 +840,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val bubble = object : RoundedPanel(NativeChatColors.USER_BUBBLE_BG) {
             override fun getMaximumSize(): Dimension {
                 val pw = parent?.width ?: JBUI.scale(600)
-                return Dimension((pw * 0.82).toInt().coerceAtLeast(JBUI.scale(200)), Int.MAX_VALUE)
+                return Dimension((pw * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)), Int.MAX_VALUE)
             }
         }.apply {
             border = JBUI.Borders.empty(JBUI.scale(6), JBUI.scale(14), JBUI.scale(6), JBUI.scale(14))
@@ -800,12 +857,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }, BorderLayout.SOUTH)
         }
         val row = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
+        }
+        row.add(createTimestampLabel(rightAligned = true).apply {
+            alignmentX = Component.RIGHT_ALIGNMENT
+        })
+        val bubbleRow = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
             add(Box.createHorizontalGlue())
             add(bubble)
         }
+        bubbleRow.alignmentX = Component.RIGHT_ALIGNMENT
+        row.add(bubbleRow)
         addFn(row)
         return java.util.UUID.randomUUID().toString()
     }
@@ -841,7 +907,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      * Matches the JCEF `<tool-chip>` component.
      */
     private class ToolChipComponent(
-        title: String, kind: String?, status: String
+        title: String, kind: String?, status: String,
+        private val onClick: (() -> Unit)? = null
     ) : JPanel() {
 
         private var currentStatus = status
@@ -850,17 +917,40 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         private val kindCol: Color = NativeChatColors.kindColor(kind)
         private val bgCol: Color = NativeChatColors.kindBg(kind)
         private val borderCol: Color = NativeChatColors.kindBorder(kind)
+        private val hoverBgCol: Color = NativeChatColors.kindBgHover(kind)
+        private val hoverBorderCol: Color = NativeChatColors.kindBorderHover(kind)
+        private var hovered = false
 
         init {
             layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
             isOpaque = false
             border = JBUI.Borders.empty(JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8))
 
+            if (onClick != null) {
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            }
+
             add(RingIndicator())
             add(JLabel(truncateLabel(title)).apply {
                 foreground = kindCol
                 font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size * 0.88f)
                 putClientProperty("html.disable", true)
+            })
+
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    onClick?.invoke()
+                }
+
+                override fun mouseEntered(e: MouseEvent) {
+                    hovered = true
+                    repaint()
+                }
+
+                override fun mouseExited(e: MouseEvent) {
+                    hovered = false
+                    repaint()
+                }
             })
         }
 
@@ -880,9 +970,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val g2 = g.create() as Graphics2D
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             val r = JBUI.scale(6)
-            g2.color = bgCol
+            g2.color = if (hovered) hoverBgCol else bgCol
             g2.fillRoundRect(0, 0, width, height, r, r)
-            g2.color = borderCol
+            g2.color = if (hovered) hoverBorderCol else borderCol
             g2.drawRoundRect(0, 0, width - 1, height - 1, r, r)
             g2.dispose()
         }
@@ -1010,5 +1100,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         override fun getMaximumSize(): Dimension =
             Dimension(Short.MAX_VALUE.toInt(), preferredSize.height)
+    }
+
+    companion object {
+        /** Maximum bubble width as a fraction of the container width (matching JCEF's 94%). */
+        private const val MAX_BUBBLE_WIDTH_FRACTION = 0.94
     }
 }
