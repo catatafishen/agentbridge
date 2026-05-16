@@ -33,10 +33,14 @@ object MessageFormatter {
         COMPACT,
 
         /** MMM d, yyyy HH:mm — for session separators */
-        FULL
+        FULL,
+
+        /** EEEE, MMMM d yyyy HH:mm:ss — for hover tooltips */
+        TOOLTIP,
     }
 
     private val FULL_FORMAT = DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
+    private val TOOLTIP_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d yyyy HH:mm:ss")
 
     /**
      * Format an ISO 8601 timestamp for display.
@@ -48,6 +52,7 @@ object MessageFormatter {
             when (style) {
                 TimestampStyle.COMPACT -> "%02d:%02d".format(zdt.hour, zdt.minute)
                 TimestampStyle.FULL -> FULL_FORMAT.format(zdt)
+                TimestampStyle.TOOLTIP -> TOOLTIP_FORMAT.format(zdt)
             }
         } catch (_: Exception) {
             isoOrLegacy

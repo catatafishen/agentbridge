@@ -2,7 +2,9 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.intellij.ide.setToolTipText
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
@@ -10,7 +12,6 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
 import javax.swing.*
-
 
 /**
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
@@ -171,15 +172,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         scrollToBottom()
     }
 
-    /** Creates a small right- or left-aligned timestamp label (HH:mm). */
+    /** Creates a small right- or left-aligned timestamp label (HH:mm) with a full-date tooltip. */
     private fun createTimestampLabel(rightAligned: Boolean = false): JBLabel {
-        val ts = MessageFormatter.formatTimestamp(MessageFormatter.timestamp())
+        val iso = MessageFormatter.timestamp()
+        val ts = MessageFormatter.formatTimestamp(iso)
+        val tooltip = MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.TOOLTIP)
         return JBLabel(ts).apply {
             foreground = UIUtil.getContextHelpForeground()
             font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size * 0.92f)
             horizontalAlignment = if (rightAligned) SwingConstants.RIGHT else SwingConstants.LEFT
             alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
             border = JBUI.Borders.empty(0, 2, 1, 2)
+            setToolTipText(HtmlChunk.text(tooltip))
         }
     }
 
