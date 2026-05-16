@@ -433,16 +433,23 @@ intellijPlatform {
             )
         )
         ides {
+            // In CI, the verifyIde Gradle property selects a single IDE so that each
+            // verification job runs in its own process with its own isolated copy of IDE
+            // and plugin JARs — no shared CachingJarFileSystemProvider, no race conditions.
+            // Without the property (local dev or manual all-in-one run), all four IDEs
+            // are registered and run sequentially (see verifyPlugin jvmArgs below).
+            //
             // Use explicit stable versions only — recommended() also pulls in EAP builds
             // (IU-261, IU-262) which cause ClosedByInterruptException from resource exhaustion
             // when 6+ verifiers run in parallel on CI.
             // IntelliJ IDEA Community (IC) is no longer published as a separate artifact
             // since 2025.3 — JetBrains unified the distribution. Use Ultimate (IU) instead;
             // it covers the same platform API surface for compatibility verification.
-            create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3")
-            create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
-            create(IntelliJPlatformType.WebStorm, "2025.3")
-            create(IntelliJPlatformType.GoLand, "2025.3")
+            val target = if (project.hasProperty("verifyIde")) project.property("verifyIde") as String else null
+            if (target == null || target == "IU") create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3")
+            if (target == null || target == "PY") create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
+            if (target == null || target == "WS") create(IntelliJPlatformType.WebStorm, "2025.3")
+            if (target == null || target == "GO") create(IntelliJPlatformType.GoLand, "2025.3")
             // Note: Android Studio verification via Gradle plugin is broken
             // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
             // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
@@ -619,22 +626,18 @@ tasks {
     }
 
     named<VerifyPluginTask>("verifyPlugin") {
-        // The plugin verifier runs each IDE in a separate thread via ExecutorWithProgress
-        // (a ThreadPoolExecutor), with concurrency = min(4, availableProcessors()).
-        // Multiple workers share a CachingJarFileSystemProvider that caches ZipFileSystem
-        // instances by URI. When one worker finishes and its ZipFileSystem is evicted/closed,
-        // other workers reading from the same cached filesystem get ClosedFileSystemException.
+        // In CI, each verify job sets -PverifyIde=XY so only one IDE is registered in
+        // pluginVerification.ides — the verifier runs a single thread and there is no
+        // shared-filesystem race at all.
         //
-        // Fix: force the JVM to report 1 available processor, which makes the verifier's
-        // ThreadPoolExecutor use a single thread (min(4, 1) = 1). This ensures all IDE
-        // checks run sequentially, eliminating the shared-filesystem race.
-        // The coroutine scheduler settings are also kept as a belt-and-suspenders measure
-        // since some verifier code paths use Kotlin coroutines.
-        jvmArgs(
-            "-XX:ActiveProcessorCount=1",
-            "-Dkotlinx.coroutines.scheduler.core.pool.size=1",
-            "-Dkotlinx.coroutines.scheduler.max.pool.size=1",
-        )
+        // For local dev (no verifyIde property), all four IDEs run in the same process.
+        // The verifier uses getConcurrencyLevel() from the system property
+        // "intellij.plugin.verifier.concurrency.level"; its fallback is
+        // max(8, min(maxByMemory, availableProcessors())) which has a floor of 8.
+        // Multiple workers sharing CachingJarFileSystemProvider cause
+        // ClosedFileSystemException when one worker's ZipFileSystem is evicted while
+        // another is still reading it. Force concurrency=1 to run them sequentially.
+        jvmArgs("-Dintellij.plugin.verifier.concurrency.level=1")
     }
 }
 
