@@ -114,6 +114,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private var overrideTimestamp: String? = null
 
+    /** True while [replayEntries] is running; suppresses [showWorkingIndicator] during replay. */
+    private var isReplaying = false
+
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
             if (!e.valueIsAdjusting && !suppressScrollListener) {
@@ -242,12 +245,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun showWorkingIndicator() {
+        if (isReplaying) return
         hideWorkingIndicator()
         workingStartMs = System.currentTimeMillis()
         val (row, bubble) = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
         bubble.add(JBLabel("Working…").apply {
             foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont().deriveFont(Font.ITALIC)
+            font = UIUtil.getLabelFont()
             putClientProperty("workingLabel", true)
         }, BorderLayout.CENTER)
         val container = JPanel().apply {
@@ -369,6 +373,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun appendText(text: String) {
         collapseThinking()
         maybeStartNewSegment()
+        workingStartMs = System.currentTimeMillis()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
             val (row, pane) = createMarkdownBubble(NativeChatColors.AGENT_BUBBLE_BG)
@@ -381,6 +386,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun appendThinkingText(text: String) {
         maybeStartNewSegment()
+        workingStartMs = System.currentTimeMillis()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
             val (contentWrapper, pane) = createMarkdownBubble(NativeChatColors.THINK_BG)
@@ -875,6 +881,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun replayEntries(entries: List<EntryData>, insertionIndex: Int = -1) {
         val savedAutoScroll = autoScrollEnabled
         if (insertionIndex >= 0) autoScrollEnabled = false
+        isReplaying = true
 
         val prevAddRow = if (insertionIndex >= 0) {
             var nextIdx = insertionIndex
@@ -940,6 +947,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         overrideTimestamp = null
         finalizeTurn()
+        isReplaying = false
 
         if (insertionIndex >= 0) autoScrollEnabled = savedAutoScroll
         contentPanel.revalidate()
