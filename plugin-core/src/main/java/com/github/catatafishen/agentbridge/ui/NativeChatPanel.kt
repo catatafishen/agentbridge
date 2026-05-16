@@ -148,7 +148,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 isOpaque = false
                 alignmentX = LEFT_ALIGNMENT
-                border = JBUI.Borders.empty(4, 0)
+                border = JBUI.Borders.empty(4, 0, 2, 0)
             }
 
             override fun getMaximumSize(): Dimension =
@@ -165,7 +165,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         val turn = TurnContext(container, chipStrip)
         currentTurn = turn
-        addRow(container)
+        addRow(container, JBUI.scale(2))
         return turn
     }
 
@@ -192,6 +192,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         comp.alignmentX = Component.LEFT_ALIGNMENT
         contentPanel.add(comp)
         contentPanel.add(Box.createVerticalStrut(spacing))
+        moveWorkingToBottom()
         contentPanel.revalidate()
         if (shouldScroll) scrollToBottom()
     }
@@ -226,9 +227,34 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             font = UIUtil.getLabelFont().deriveFont(Font.ITALIC)
             putClientProperty("workingLabel", true)
         }, BorderLayout.CENTER)
-        workingIndicator = row
-        addRow(row)
+        val container = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(4, 0, 2, 0)
+        }
+        container.add(row)
+        workingIndicator = container
+        addRow(container, JBUI.scale(2))
         workingTimer.start()
+    }
+
+    /**
+     * Ensures [workingIndicator] is always the last row in [contentPanel].
+     * Called from [addRow] so that any new content added above leaves Working… anchored at the bottom.
+     */
+    private fun moveWorkingToBottom() {
+        val indicator = workingIndicator ?: return
+        val idx = contentPanel.components.indexOf(indicator)
+        if (idx < 0) return
+        val lastIdx = contentPanel.componentCount - 1
+        val strutAfter = idx + 1 <= lastIdx && contentPanel.getComponent(idx + 1) is Box.Filler
+        val isLast = if (strutAfter) idx == lastIdx - 1 else idx == lastIdx
+        if (isLast) return
+        if (strutAfter) contentPanel.remove(idx + 1)
+        contentPanel.remove(indicator)
+        contentPanel.add(indicator)
+        contentPanel.add(Box.createVerticalStrut(JBUI.scale(2)))
     }
 
     private fun hideWorkingIndicator() {
@@ -318,7 +344,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun appendText(text: String) {
-        hideWorkingIndicator()
         collapseThinking()
         maybeStartNewSegment()
         val turn = ensureTurn()
@@ -332,7 +357,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun appendThinkingText(text: String) {
-        hideWorkingIndicator()
         maybeStartNewSegment()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
@@ -592,6 +616,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         deadlineEpochMs: Long, onRespond: (String) -> Unit,
         onExtend: () -> Long, onSuperseded: () -> Unit,
     ) {
+        hideWorkingIndicator()
         val panel = JBPanel<JBPanel<*>>(BorderLayout(0, 4)).apply {
             isOpaque = false
             border = JBUI.Borders.empty(4, 0)
