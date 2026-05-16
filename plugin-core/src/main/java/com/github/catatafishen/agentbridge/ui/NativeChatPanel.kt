@@ -10,8 +10,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
 import javax.swing.*
-import javax.swing.text.BadLocationException
-import javax.swing.text.DefaultStyledDocument
+
 
 /**
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
@@ -92,7 +91,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** HH:mm of the last timestamp label shown. Used to suppress duplicate timestamps within the same minute. */
     private var lastShownTimestampMinute = ""
-    private val lineSpacingFactor = 0.3f
 
     init {
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
@@ -107,8 +105,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val container: JPanel,
         val chipStrip: ChipStripPanel,
         var thinkingChip: ThinkingChipComponent? = null,
-        var thinkingContent: JPanel? = null,
-        var thinkingDoc: DefaultStyledDocument? = null,
+        var thinkingWrapper: JPanel? = null,
+        var thinkingPane: NativeMarkdownPane? = null,
         var thinkingExpanded: Boolean = true,
         var markdownPane: NativeMarkdownPane? = null,
     )
@@ -149,6 +147,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun finalizeTurn() {
         currentTurn?.markdownPane?.renderNow()
+        currentTurn?.thinkingPane?.renderNow()
         currentTurn = null
     }
 
@@ -235,33 +234,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         scrollToBottom()
     }
 
-    private fun newTextPane(fg: Color? = null): Pair<DefaultStyledDocument, JTextPane> {
-        val doc = DefaultStyledDocument()
-        val pane = JTextPane(doc).apply {
-            isEditable = false
-            isOpaque = false
-            border = JBUI.Borders.empty()
-            foreground = fg ?: UIUtil.getLabelForeground()
-            font = UIUtil.getLabelFont()
+    /** Creates a markdown pane pre-filled with [text] and registers it for disposal. */
+    private fun createMarkdownPane(text: String): NativeMarkdownPane =
+        NativeMarkdownPane(fileNavigator).also { pane ->
+            pane.setCompleteMarkdown(text)
+            allMarkdownPanes += pane
         }
-        val attrs = javax.swing.text.SimpleAttributeSet()
-        javax.swing.text.StyleConstants.setLineSpacing(attrs, lineSpacingFactor)
-        doc.setParagraphAttributes(0, doc.length, attrs, false)
-        return doc to pane
-    }
-
-    private fun appendToDoc(doc: DefaultStyledDocument, text: String) {
-        try {
-            val atStart = doc.length == 0
-            doc.insertString(doc.length, text, null)
-            if (atStart) {
-                val attrs = javax.swing.text.SimpleAttributeSet()
-                javax.swing.text.StyleConstants.setLineSpacing(attrs, lineSpacingFactor)
-                doc.setParagraphAttributes(0, doc.length, attrs, false)
-            }
-        } catch (_: BadLocationException) { /* empty */
-        }
-    }
 
     /** Creates a complete message row: timestamp label + aligned bubble. */
     private fun createMessageRow(
@@ -326,38 +304,40 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
             val (contentWrapper, bubble) = createBubble(NativeChatColors.THINK_BG)
-            val (doc, pane) = newTextPane(fg = NativeChatColors.THINK)
+            val pane = NativeMarkdownPane(fileNavigator).also { allMarkdownPanes += it }
             bubble.add(pane, BorderLayout.CENTER)
 
-            turn.thinkingDoc = doc
-            turn.thinkingContent = contentWrapper
+            turn.thinkingPane = pane
+            turn.thinkingWrapper = contentWrapper
             turn.thinkingExpanded = true
 
             val chipStripIdx = turn.container.components.indexOf(turn.chipStrip)
             turn.container.add(contentWrapper, chipStripIdx + 1)
+            turn.container.add(Box.createVerticalStrut(JBUI.scale(6)), chipStripIdx + 2)
 
             val chip = ThinkingChipComponent(active = true) {
                 turn.thinkingExpanded = !turn.thinkingExpanded
                 contentWrapper.isVisible = turn.thinkingExpanded
-                if (turn.thinkingExpanded) {
-                    contentWrapper.revalidate()
-                }
+                if (turn.thinkingExpanded) contentWrapper.revalidate()
                 turn.container.revalidate()
                 turn.container.repaint()
             }
             turn.thinkingChip = chip
             turn.chipStrip.addThinkingChip(chip)
         }
-        appendToDoc(turn.thinkingDoc!!, text)
+        turn.thinkingPane!!.appendMarkdown(text)
         scrollToBottom()
     }
 
     override fun collapseThinking() {
         val turn = currentTurn ?: return
-        turn.thinkingChip?.setActive(false)
-        turn.thinkingContent?.isVisible = false
-        turn.thinkingExpanded = false
-        turn.container.revalidate()
+        val chip = turn.thinkingChip ?: return
+        chip.setActive(false)
+        chip.collapseWhenReady {
+            turn.thinkingWrapper?.isVisible = false
+            turn.thinkingExpanded = false
+            turn.container.revalidate()
+        }
     }
 
     override fun addToolCallEntry(
@@ -466,20 +446,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun addErrorEntry(message: String) {
         finalizeTurn()
-        val label = JBLabel("✗ $message").apply {
-            foreground = NativeChatColors.ERROR
-            font = UIUtil.getLabelFont()
-        }
-        val (row, _) = createMessageRow(label, NativeChatColors.ERROR_BG)
+        val (row, _) = createMessageRow(createMarkdownPane("✗ $message"), NativeChatColors.ERROR_BG)
         addRow(row)
     }
 
     override fun addInfoEntry(message: String) {
-        val label = JBLabel("ℹ $message").apply {
-            foreground = UIUtil.getContextHelpForeground()
-            font = UIUtil.getLabelFont()
-        }
-        val (row, _) = createMessageRow(label, NativeChatColors.AGENT_BUBBLE_BG)
+        val (row, _) = createMessageRow(createMarkdownPane("ℹ $message"), NativeChatColors.AGENT_BUBBLE_BG)
         addRow(row)
     }
 
@@ -643,10 +615,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** Creates a right-aligned nudge row using the same bubble as user messages. */
     private fun createNudgeRow(text: String): JPanel {
-        val content = JBLabel("<html>$text</html>").apply {
-            foreground = UIUtil.getLabelForeground()
-        }
-        val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        val (row, _) = createMessageRow(createMarkdownPane(text), NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
         return row
     }
 
@@ -677,11 +646,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
-        val content = JBLabel("<html>$text</html>").apply {
-            foreground = UIUtil.getLabelForeground()
-            putClientProperty("queuedText", text)
-        }
-        val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        val (row, _) = createMessageRow(createMarkdownPane(text), NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        row.putClientProperty("queuedText", text)
         queuedMessages[id] = row
         addRow(row)
     }
@@ -696,18 +662,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun removeQueuedMessageByText(text: String) {
         val entry = queuedMessages.entries.firstOrNull { (_, row) ->
-            findQueuedLabel(row) == text
+            row.getClientProperty("queuedText") == text
         } ?: return
         removeQueuedMessage(entry.key)
-    }
-
-    private fun findQueuedLabel(parent: Container): String? {
-        for (comp in parent.components) {
-            if (comp is JBLabel && comp.getClientProperty("queuedText") != null)
-                return comp.getClientProperty("queuedText") as? String
-            if (comp is Container) findQueuedLabel(comp)?.let { return it }
-        }
-        return null
     }
 
     private var codeStatsLabel: JBLabel? = null
@@ -918,10 +875,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         addFn: (JComponent) -> Unit
     ): String {
         finalizeTurn()
-        val (doc, pane) = newTextPane()
-        appendToDoc(doc, text)
-
-        val contentPanel = if (!contextFiles.isNullOrEmpty()) {
+        val pane = createMarkdownPane(text)
+        val content: JComponent = if (!contextFiles.isNullOrEmpty()) {
             val fileList = contextFiles.joinToString(", ") { (name, _, _) -> name }
             val wrapper = JPanel(BorderLayout()).apply { isOpaque = false }
             wrapper.add(pane, BorderLayout.CENTER)
@@ -934,8 +889,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         } else {
             pane
         }
-
-        val (row, _) = createMessageRow(contentPanel, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
         addFn(row)
         showWorkingIndicator()
         return java.util.UUID.randomUUID().toString()

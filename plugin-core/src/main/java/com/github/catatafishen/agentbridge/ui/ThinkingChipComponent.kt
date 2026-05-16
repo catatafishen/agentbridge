@@ -10,6 +10,10 @@ import javax.swing.*
 /**
  * A clickable chip that toggles the associated thinking content panel
  * between visible and hidden.
+ *
+ * Auto-collapses when [collapseWhenReady] is called, unless the user is
+ * hovering on the chip — in which case the collapse is deferred until
+ * the mouse leaves.
  */
 class ThinkingChipComponent(
     private var active: Boolean,
@@ -18,6 +22,8 @@ class ThinkingChipComponent(
 
     private val emojiLabel: JLabel
     private val textLabel: JLabel
+    private var hovered = false
+    private var pendingCollapseAction: (() -> Unit)? = null
 
     init {
         layout = FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)
@@ -35,6 +41,14 @@ class ThinkingChipComponent(
 
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = onToggle()
+            override fun mouseEntered(e: MouseEvent) { hovered = true }
+            override fun mouseExited(e: MouseEvent) {
+                hovered = false
+                pendingCollapseAction?.let { action ->
+                    pendingCollapseAction = null
+                    action()
+                }
+            }
         })
     }
 
@@ -42,6 +56,18 @@ class ThinkingChipComponent(
         active = isActive
         textLabel.text = if (isActive) "Thinking…" else "Thought"
         repaint()
+    }
+
+    /**
+     * Collapses the thinking content immediately if the chip is not hovered.
+     * If hovered, defers the collapse until the mouse leaves the chip.
+     */
+    fun collapseWhenReady(action: () -> Unit) {
+        if (hovered) {
+            pendingCollapseAction = action
+        } else {
+            action()
+        }
     }
 
     override fun paintComponent(g: Graphics) {
