@@ -42,6 +42,16 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private val renderTimer = Timer(1) { renderNow() }.apply { isRepeats = false }
     private val schemeDisposable = Disposer.newDisposable("NativeMarkdownPane")
 
+    /**
+     * Version counter incremented on every [renderNow] / [setCompleteMarkdown]. Used together
+     * with [cachedForWidth] to decide when [getPreferredSize] can skip the expensive
+     * HTML re-layout.
+     */
+    private var contentVersion = 0
+    private var cachedForWidth = -1
+    private var cachedForVersion = -1
+    private var cachedHeight = -1
+
     init {
         contentType = "text/html"
         isEditable = false
@@ -108,6 +118,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderTimer.stop()
         renderScheduled = false
         lastRenderTime = System.currentTimeMillis()
+        contentVersion++
         val html = fileNavigator.markdownToHtml(rawText.toString())
         text = "<html><body>$html</body></html>"
     }
@@ -149,6 +160,16 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         SwingUtilities.invokeLater { rebuildStylesheet() }
     }
 
+    /**
+     * The preferred width matches the parent container; the preferred height is
+     * calculated from the HTML layout so that the parent layout allocates the
+     * correct vertical space.
+     *
+     * Result is cached by (parent width, content version) to avoid repeating the expensive
+     * HTML re-layout on every call. [BoxLayout.checkRequests] calls [getPreferredSize]
+     * multiple times per layout pass; without the cache this caused 30+ second EDT freezes
+     * on large AI responses (confirmed by threadDumps-freeze-20260517-084456/084931).
+     */
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
@@ -162,6 +183,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             else -> return super.getPreferredSize()
         }.takeIf { it > 0 } ?: return super.getPreferredSize()
 
+        if (pw == cachedForWidth && contentVersion == cachedForVersion) {
+            return Dimension(pw, cachedHeight)
+        }
+
         // setSize() alone does not synchronously force the HTML view hierarchy to
         // re-layout at pw — views retain their previous allocation until the next paint.
         // Calling rootView.setSize() directly forces a layout pass at pw, so
@@ -171,7 +196,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             val rootView = textUI.getRootView(this)
             try {
                 rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
-                return Dimension(pw, rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1))
+                val h = rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1)
+                cachedForWidth = pw
+                cachedForVersion = contentVersion
+                cachedHeight = h
+                return Dimension(pw, h)
             } catch (_: Throwable) {
                 // Multiple Swing internal exceptions can be thrown here when renderNow()
                 // replaced the document while a layout pass was already in flight:
