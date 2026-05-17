@@ -127,7 +127,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 val bar = scrollPane.verticalScrollBar
                 val currentValue = bar.value
                 val atBottom = currentValue + bar.visibleAmount >= bar.maximum - 4
-                if (atBottom && !autoScrollEnabled) {
+                if (atBottom && !autoScrollEnabled && currentValue >= lastScrollValue) {
+                    // Re-enable only when the user scrolled back down to the bottom
+                    // (value increased or stayed the same). Guard against false positives
+                    // where JEditorPane.setText() briefly shrinks the document during
+                    // content replacement, causing maximum to drop and atBottom to become
+                    // true even though the user hasn't moved the scrollbar.
                     autoScrollEnabled = true
                     onAutoScrollEnabled?.invoke()
                 } else if (!atBottom && autoScrollEnabled && currentValue < lastScrollValue) {
@@ -769,9 +774,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         } ?: return
         removeQueuedMessage(entry.key)
     }
-
-    /** No-op: line diff is shown at end of turn via [emitTurnStats] and [LineDiffBar]. */
-    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) = Unit
 
     private var currentModelLabel: JBLabel? = null
 

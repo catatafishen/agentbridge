@@ -2,11 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
-import java.awt.Color
-import java.awt.Dimension
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.RenderingHints
+import java.awt.*
 import javax.swing.JComponent
 
 /**

@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import java.awt.Color
-import java.util.Locale
+import java.util.*
 
 /**
  * Pure formatting functions for timer and stats display in [ProcessingTimerPanel].
