@@ -42,7 +42,22 @@ class TimerDisplayFormatterTest {
 
     @Test
     void formatElapsedTime_oneHour() {
-        assertEquals("60m 0s", TimerDisplayFormatter.INSTANCE.formatElapsedTime(3600));
+        assertEquals("1h 0m", TimerDisplayFormatter.INSTANCE.formatElapsedTime(3600));
+    }
+
+    @Test
+    void formatElapsedTime_oneHourThirtyMinutes() {
+        assertEquals("1h 30m", TimerDisplayFormatter.INSTANCE.formatElapsedTime(5400));
+    }
+
+    @Test
+    void formatElapsedTime_twoHours() {
+        assertEquals("2h 0m", TimerDisplayFormatter.INSTANCE.formatElapsedTime(7200));
+    }
+
+    @Test
+    void formatElapsedTime_justUnderAnHour() {
+        assertEquals("59m 59s", TimerDisplayFormatter.INSTANCE.formatElapsedTime(3599));
     }
 
     // ── formatLinesAdded ────────────────────────────────────────────────
@@ -98,12 +113,12 @@ class TimerDisplayFormatterTest {
 
     @Test
     void formatToolCount_one_returnsBulletOneTool() {
-        assertEquals("\u2022 1 tools", TimerDisplayFormatter.INSTANCE.formatToolCount(1));
+        assertEquals("• 1 tools", TimerDisplayFormatter.INSTANCE.formatToolCount(1));
     }
 
     @Test
     void formatToolCount_hundred() {
-        assertEquals("\u2022 100 tools", TimerDisplayFormatter.INSTANCE.formatToolCount(100));
+        assertEquals("• 100 tools", TimerDisplayFormatter.INSTANCE.formatToolCount(100));
     }
 
     @Test
@@ -259,14 +274,14 @@ class TimerDisplayFormatterTest {
         String result = TimerDisplayFormatter.formatDiffCountHtml(5, 0, GREEN, RED);
         assertTrue(result.startsWith("<html>"), "should be wrapped in html");
         assertTrue(result.contains("+5"), "should contain +5");
-        assertFalse(result.contains("\u2212"), "should not contain minus sign");
+        assertFalse(result.contains("−"), "should not contain minus sign");
     }
 
     @Test
     void formatDiffCountHtml_onlyRemoved() {
         String result = TimerDisplayFormatter.formatDiffCountHtml(0, 3, GREEN, RED);
         assertTrue(result.startsWith("<html>"));
-        assertTrue(result.contains("\u22123"), "should contain −3");
+        assertTrue(result.contains("−3"), "should contain −3");
         assertFalse(result.contains("+"), "should not contain plus sign");
     }
 
@@ -275,7 +290,7 @@ class TimerDisplayFormatterTest {
         String result = TimerDisplayFormatter.formatDiffCountHtml(10, 4, GREEN, RED);
         assertTrue(result.startsWith("<html>"));
         assertTrue(result.contains("+10"));
-        assertTrue(result.contains("\u22124"));
+        assertTrue(result.contains("−4"));
         assertTrue(result.contains("#00aa00"), "should contain green hex color");
         assertTrue(result.contains("#cc0000"), "should contain red hex color");
     }

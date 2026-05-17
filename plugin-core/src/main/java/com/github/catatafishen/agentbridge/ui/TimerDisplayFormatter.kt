@@ -10,11 +10,16 @@ import java.util.Locale
 object TimerDisplayFormatter {
 
     /**
-     * Formats elapsed seconds as "Xs" (under a minute) or "Xm Ys" (a minute or more).
+     * Formats elapsed seconds as:
+     * - `"Xs"` under a minute
+     * - `"Xm Ys"` under an hour
+     * - `"Xh Ym"` an hour or more (seconds omitted at that granularity)
      */
-    fun formatElapsedTime(elapsedSeconds: Long): String =
-        if (elapsedSeconds < 60) "${elapsedSeconds}s"
-        else "${elapsedSeconds / 60}m ${elapsedSeconds % 60}s"
+    fun formatElapsedTime(elapsedSeconds: Long): String = when {
+        elapsedSeconds < 60 -> "${elapsedSeconds}s"
+        elapsedSeconds < 3600 -> "${elapsedSeconds / 60}m ${elapsedSeconds % 60}s"
+        else -> "${elapsedSeconds / 3600}h ${(elapsedSeconds % 3600) / 60}m"
+    }
 
     /**
      * Formats a line-added count for display: "+N" when positive, empty otherwise.
