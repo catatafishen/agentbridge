@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.intellij.ide.setToolTipText
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.HtmlChunk
@@ -512,7 +513,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             )
         } else null
 
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             ToolCallPopup.show(
                 ToolCallPopup.Request(
                     project = project,
@@ -814,19 +815,35 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
-    override fun addContextFilesEntry(files: List<Pair<String, String>>) {
-        if (files.isEmpty()) return
-        val chipPanel = WrappingFlowPanel(JBUI.scale(4), JBUI.scale(2)).apply {
-            alignmentX = Component.LEFT_ALIGNMENT
+    override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) {
+        ApplicationManager.getApplication().invokeLater {
+            val panel = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(2))).apply {
+                isOpaque = false
+                alignmentX = Component.LEFT_ALIGNMENT
+            }
+            for (img in images) {
+                val label = try {
+                    val bytes = java.util.Base64.getDecoder().decode(img.base64Data)
+                    val icon = scaledThumbnail(bytes, JBUI.scale(160))
+                    JLabel(icon).apply { setToolTipText(HtmlChunk.text(img.name)) }
+                } catch (_: Exception) {
+                    JBLabel("\uD83D\uDDBC ${img.name}").apply { applyChatFont(-1) }
+                }
+                panel.add(label)
+            }
+            addRow(panel)
         }
-        for ((name, _) in files) {
-            chipPanel.add(JBLabel("📄 $name").apply {
-                foreground = UIUtil.getContextHelpForeground()
-                applyChatFont(-1)
-                border = JBUI.Borders.empty(1, 4)
-            })
-        }
-        addRow(chipPanel)
+    }
+
+    private fun scaledThumbnail(bytes: ByteArray, maxSize: Int): ImageIcon {
+        val original = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(bytes))
+            ?: return ImageIcon()
+        val scale = maxSize.toDouble() / maxOf(original.width, original.height).coerceAtLeast(1)
+        if (scale >= 1.0) return ImageIcon(original)
+        val w = (original.width * scale).toInt()
+        val h = (original.height * scale).toInt()
+        val scaled = original.getScaledInstance(w, h, Image.SCALE_SMOOTH)
+        return ImageIcon(scaled)
     }
 
     override fun dispose() {
@@ -988,25 +1005,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun addPromptEntryAt(
         text: String,
-        contextFiles: List<Triple<String, String, Int>>?,
+        @Suppress("UNUSED_PARAMETER") contextFiles: List<Triple<String, String, Int>>?,
         addFn: (JComponent) -> Unit
     ): String {
         finalizeTurn()
         val pane = createMarkdownPane(text)
-        val content: JComponent = if (!contextFiles.isNullOrEmpty()) {
-            val fileList = contextFiles.joinToString(", ") { (name, _, _) -> name }
-            val wrapper = JPanel(BorderLayout()).apply { isOpaque = false }
-            wrapper.add(pane, BorderLayout.CENTER)
-            wrapper.add(JBLabel("📎 $fileList").apply {
-                foreground = UIUtil.getContextHelpForeground()
-                applyChatFont(-1)
-                border = JBUI.Borders.emptyTop(JBUI.scale(2))
-            }, BorderLayout.SOUTH)
-            wrapper
-        } else {
-            pane
-        }
-        val (row, _) = createMessageRow(content, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
         addFn(row)
         showWorkingIndicator()
         return java.util.UUID.randomUUID().toString()

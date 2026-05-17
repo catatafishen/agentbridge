@@ -2936,3 +2936,19 @@ pre.word-wrap code {
     text-decoration: underline;
 }
 
+/* ── Image thumbnails (pasted images below user bubble) ─────────── */
+.image-thumbnails {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    padding: var(--sp-2) 0 var(--sp-1);
+}
+
+.image-thumb {
+    max-width: 160px;
+    max-height: 160px;
+    border-radius: calc(var(--radius) - 2px);
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    object-fit: contain;
+    display: block;
+}
