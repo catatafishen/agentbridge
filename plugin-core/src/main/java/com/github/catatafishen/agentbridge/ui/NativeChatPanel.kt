@@ -590,7 +590,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         nudgeBubbles.clear()
         queuedMessages.clear()
         loadMoreButton = null
-        codeStatsLabel = null
         currentModelLabel = null
         if (spinTimer.isRunning) spinTimer.stop()
         placeholderLabel = null
@@ -771,25 +770,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         removeQueuedMessage(entry.key)
     }
 
-    private var codeStatsLabel: JBLabel? = null
-
-    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {
-        if (linesAdded == 0 && linesRemoved == 0) return
-        val text = "📊 +$linesAdded / −$linesRemoved lines"
-        val label = codeStatsLabel
-        if (label != null) {
-            label.text = text
-        } else {
-            val newLabel = JBLabel(text).apply {
-                foreground = UIUtil.getContextHelpForeground()
-                applyChatFont(-1)
-                border = JBUI.Borders.empty(1, 0, 2, 0)
-                alignmentX = Component.LEFT_ALIGNMENT
-            }
-            codeStatsLabel = newLabel
-            addRow(newLabel)
-        }
-    }
+    /** No-op: line diff is shown at end of turn via [emitTurnStats] and [LineDiffBar]. */
+    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) = Unit
 
     private var currentModelLabel: JBLabel? = null
 
