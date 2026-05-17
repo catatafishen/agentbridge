@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.HtmlChunk
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
@@ -55,6 +56,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     )
 
     private val toolCallData = mutableMapOf<String, ToolCallData>()
+
+    /** Buttons of the last-shown quick-reply strip; disabled on reply or new turn. */
+    private var currentQuickReplyButtons: List<JButton> = emptyList()
 
     private val contentPanel = JBPanel<JBPanel<*>>(null).apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -616,16 +620,33 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
         }
-        options.forEach { opt ->
-            panel.add(JButton(opt).apply {
-                addActionListener { onQuickReply?.invoke(opt) }
+        val buttons = mutableListOf<JButton>()
+        options.forEach { raw ->
+            val opt = parseQuickReplyOption(raw)
+            val btn = JButton(opt.label).apply {
                 applyChatFont()
-            })
+                foreground = when {
+                    opt.dismiss -> UIUtil.getContextHelpForeground()
+                    opt.color == QuickReplyColor.DANGER -> JBColor.RED
+                    opt.color == QuickReplyColor.PRIMARY -> USER_COLOR
+                    opt.color == QuickReplyColor.WARNING -> JBColor.ORANGE
+                    else -> null
+                }
+                addActionListener {
+                    currentQuickReplyButtons.forEach { it.isEnabled = false }
+                    if (!opt.dismiss) onQuickReply?.invoke(opt.label)
+                }
+            }
+            buttons.add(btn)
+            panel.add(btn)
         }
+        currentQuickReplyButtons = buttons
         addRow(panel)
     }
 
-    override fun disableQuickReplies() { /* Buttons are statically rendered; no disable mechanism needed */
+    override fun disableQuickReplies() {
+        currentQuickReplyButtons.forEach { it.isEnabled = false }
+        currentQuickReplyButtons = emptyList()
     }
 
     override fun cancelAllRunning() {

@@ -11,25 +11,64 @@ import javax.swing.UIManager
 
 // ── Theme colors ──────────────────────────────────────────────────────────────
 
-private fun getThemeColor(key: String, lightFallback: Color, darkFallback: Color): Color {
-    return UIManager.getColor(key) ?: JBColor(lightFallback, darkFallback)
-}
+private fun themeColorOrFallback(key: String, lightFallback: JBColor): Color =
+    UIManager.getColor(key) ?: lightFallback
 
 internal const val LINK_COLOR_KEY = "Component.linkColor"
 
 internal val USER_COLOR: Color
-    get() = getThemeColor(LINK_COLOR_KEY, Color(0x29, 0x79, 0xFF), Color(0x5C, 0x9D, 0xFF))
+    get() = themeColorOrFallback(LINK_COLOR_KEY, JBColor(0x2979FF, 0x5C9DFF))
 
 internal val TOOL_COLOR: Color
-    get() = getThemeColor("EditorTabs.selectedForeground", Color(0xAE, 0xA0, 0xDC), Color(0xB4, 0xA0, 0xDC))
+    get() = themeColorOrFallback("EditorTabs.selectedForeground", JBColor(0xAEA0DC, 0xB4A0DC))
 
 internal val THINK_COLOR: Color
-    get() = getThemeColor("Label.disabledForeground", Color(0x80, 0x80, 0x80), Color(0xB0, 0xB0, 0xB0))
+    get() = themeColorOrFallback("Label.disabledForeground", JBColor(0x808080, 0xB0B0B0))
 
 internal const val ICON_ERROR = "\u274C"
 
 /** Matches `[quick-reply: Option A | Option B | ...]` tags. */
-internal val QUICK_REPLY_TAG_REGEX = Regex("""\[\s*quick-reply:\s*([^\]]+)]""", RegexOption.MULTILINE)
+internal val QUICK_REPLY_TAG_REGEX = Regex("""\[\s*quick-reply:\s*([^]]+)]""", RegexOption.MULTILINE)
+
+/** Semantic color variants that may appear as a `:suffix` on a quick-reply option. */
+internal enum class QuickReplyColor { NONE, PRIMARY, DANGER, SUCCESS, WARNING }
+
+/**
+ * Parsed quick-reply option. [label] is the clean display text with any
+ * `:suffix` stripped. [color] indicates visual emphasis. [dismiss] means the
+ * button closes/disables the strip without submitting any text.
+ */
+internal data class QuickReplyOption(
+    val label: String,
+    val color: QuickReplyColor,
+    val dismiss: Boolean,
+)
+
+/**
+ * Mirrors the parsing in `QuickReplies.ts#parseOption`: only the *last* colon
+ * suffix is checked, and only recognised keywords are stripped. Colons inside
+ * the label text are preserved.
+ */
+internal fun parseQuickReplyOption(raw: String): QuickReplyOption {
+    val idx = raw.lastIndexOf(':')
+    if (idx > 0) {
+        val candidate = raw.substring(idx + 1).trim().lowercase()
+        if (candidate == "dismiss") {
+            return QuickReplyOption(raw.substring(0, idx).trim(), QuickReplyColor.NONE, dismiss = true)
+        }
+        val color = when (candidate) {
+            "primary" -> QuickReplyColor.PRIMARY
+            "danger" -> QuickReplyColor.DANGER
+            "success" -> QuickReplyColor.SUCCESS
+            "warning" -> QuickReplyColor.WARNING
+            else -> null
+        }
+        if (color != null) {
+            return QuickReplyOption(raw.substring(0, idx).trim(), color, dismiss = false)
+        }
+    }
+    return QuickReplyOption(raw, QuickReplyColor.NONE, dismiss = false)
+}
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -127,12 +166,6 @@ sealed class EntryData {
         var inputSizeBytes: Long = 0
         var outputSizeBytes: Long = 0
         var durationMs: Long = 0
-        var mcpErrorMessage: String? = null
-
-        /** Human-readable display name from the MCP tool class (e.g. "Read File"). */
-        var mcpDisplayName: String? = null
-
-        /** Canonical tool name from ACP: MCP name for bridged tools, kind for native tools. */
         var acpName: String? = null
     }
 
