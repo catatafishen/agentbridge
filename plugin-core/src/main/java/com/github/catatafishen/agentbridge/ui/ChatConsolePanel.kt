@@ -448,6 +448,28 @@ class ChatConsolePanel(
         entries.add(EntryData.ContextFiles(files.map { (name, path) -> FileRef(name, path) }))
     }
 
+    override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) {
+        val turnId = currentTurnId
+        val imgsJson = buildImageJsonArray(images)
+        executeJs("ChatController.addImageThumbnails('${escJs(turnId)}', $imgsJson)")
+    }
+
+    private fun buildImageJsonArray(images: List<ChatPanelApi.ImageAttachment>): String {
+        val sb = StringBuilder("[")
+        images.forEachIndexed { i, img ->
+            if (i > 0) sb.append(",")
+            sb.append(
+                """{"name":${com.google.gson.JsonPrimitive(img.name)},"data":"${img.base64Data}","mime":${
+                    com.google.gson.JsonPrimitive(
+                        img.mimeType
+                    )
+                }}"""
+            )
+        }
+        sb.append("]")
+        return sb.toString()
+    }
+
     override fun appendThinkingText(text: String) {
         maybeStartNewSegment()
         val thinkingTs = if (currentThinkingData == null) {

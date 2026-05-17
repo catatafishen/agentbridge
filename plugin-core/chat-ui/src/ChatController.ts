@@ -1058,6 +1058,22 @@ const ChatController = {
         }
     },
 
+    addImageThumbnails(entryId: string, images: Array<{ name: string, data: string, mime: string }>): void {
+        const msg = document.getElementById(entryId);
+        if (!msg) return;
+        const container = document.createElement('div');
+        container.className = 'image-thumbnails';
+        for (const img of images) {
+            const el = document.createElement('img');
+            el.src = `data:${img.mime};base64,${img.data}`;
+            el.alt = img.name;
+            el.title = img.name;
+            el.className = 'image-thumb';
+            container.appendChild(el);
+        }
+        msg.appendChild(container);
+    },
+
     removeQueuedMessage(id: string): void {
         document.getElementById('queued-' + id)?.remove();
     },

@@ -38,7 +38,22 @@ interface ChatPanelApi : Disposable {
     fun setCurrentModel(modelId: String)
     fun setCurrentProfile(profileId: String)
     fun setCurrentAgent(agentName: String, profileId: String, clientType: String = "")
-    fun addContextFilesEntry(files: List<Pair<String, String>>)
+
+    /**
+     * Records context file references. Default is a no-op; implementations may
+     * override to track files for export or history persistence.
+     */
+    fun addContextFilesEntry(files: List<Pair<String, String>>) {}
+
+    /**
+     * Displays image thumbnails below the most recently added user message bubble.
+     * Called after [addPromptEntry] when the prompt includes image attachments.
+     * Default is a no-op; implementations that can render images should override.
+     */
+    fun addImageThumbnails(images: List<ImageAttachment>) {}
+
+    /** Resolved image attachment ready for thumbnail display. */
+    data class ImageAttachment(val name: String, val base64Data: String, val mimeType: String)
 
     // ── Agent text (streaming) ─────────────────────────────────────
 

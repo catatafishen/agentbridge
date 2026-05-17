@@ -128,6 +128,11 @@ class BroadcastChatPanel(
         jcefPanel.addContextFilesEntry(files)
     }
 
+    override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) {
+        nativePanel.addImageThumbnails(images)
+        jcefPanel.addImageThumbnails(images)
+    }
+
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?, isMcpHandled: Boolean) {
         nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled)
         jcefPanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled)
