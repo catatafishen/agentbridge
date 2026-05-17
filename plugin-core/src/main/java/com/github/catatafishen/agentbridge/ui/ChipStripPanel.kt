@@ -28,6 +28,9 @@ import javax.swing.*
  */
 class ChipStripPanel : JPanel() {
 
+    /** Single source of truth for the row height — nav buttons and scroll pane all use this. */
+    private val rowHeight get() = BaseChipComponent.CHIP_HEIGHT
+
     private val toolChipInner = object : JPanel() {
         init {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
@@ -50,8 +53,8 @@ class ChipStripPanel : JPanel() {
         isOpaque = false
         viewport.isOpaque = false
         alignmentY = CENTER_ALIGNMENT
-        minimumSize = Dimension(0, BaseChipComponent.CHIP_HEIGHT)
-        maximumSize = Dimension(Short.MAX_VALUE.toInt(), BaseChipComponent.CHIP_HEIGHT)
+        minimumSize = Dimension(0, rowHeight)
+        maximumSize = Dimension(Short.MAX_VALUE.toInt(), rowHeight)
     }
 
     private val leftBtn = createNavBtn("‹", -1)
@@ -68,8 +71,8 @@ class ChipStripPanel : JPanel() {
             alignmentY = CENTER_ALIGNMENT
         }
 
-        override fun getMinimumSize(): Dimension = Dimension(0, BaseChipComponent.CHIP_HEIGHT)
-        override fun getMaximumSize(): Dimension = Dimension(Short.MAX_VALUE.toInt(), BaseChipComponent.CHIP_HEIGHT)
+        override fun getMinimumSize(): Dimension = Dimension(0, rowHeight)
+        override fun getMaximumSize(): Dimension = Dimension(Short.MAX_VALUE.toInt(), rowHeight)
     }
 
     private var thinkingChip: JComponent? = null
@@ -176,7 +179,7 @@ class ChipStripPanel : JPanel() {
     }
 
     private fun createNavBtn(label: String, direction: Int): JButton {
-        val btnSize = JBUI.scale(18)
+        val btnWidth = JBUI.scale(18)
         val bg = JBColor(Color(130, 130, 130, 30), Color(200, 200, 200, 30))
         val bgHover = JBColor(Color(130, 130, 130, 60), Color(200, 200, 200, 60))
         val borderCol = JBColor(Color(130, 130, 130, 80), Color(200, 200, 200, 80))
@@ -202,9 +205,9 @@ class ChipStripPanel : JPanel() {
             font = UIUtil.getLabelFont().deriveFont(JBUI.scaleFontSize(14f)).deriveFont(Font.BOLD)
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             alignmentY = CENTER_ALIGNMENT
-            preferredSize = Dimension(btnSize, btnSize)
-            minimumSize = Dimension(btnSize, btnSize)
-            maximumSize = Dimension(btnSize, btnSize)
+            preferredSize = Dimension(btnWidth, rowHeight)
+            minimumSize = Dimension(btnWidth, rowHeight)
+            maximumSize = Dimension(btnWidth, rowHeight)
             addActionListener { scrollByChip(direction) }
         }
     }
