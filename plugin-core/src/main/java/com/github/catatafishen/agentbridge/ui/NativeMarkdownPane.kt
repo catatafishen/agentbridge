@@ -7,6 +7,8 @@ import java.awt.Dimension
 import javax.swing.JEditorPane
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
+import javax.swing.plaf.TextUI
+import javax.swing.text.View
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.StyleSheet
 
@@ -25,6 +27,16 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     private val rawText = StringBuilder()
     private val renderTimer = Timer(RENDER_DEBOUNCE_MS) { renderNow() }.apply { isRepeats = false }
+
+    /**
+     * Version counter incremented on every [renderNow] / [setCompleteMarkdown]. Used together
+     * with [cachedForWidth] to decide when [getPreferredSize] can skip the expensive
+     * HTML re-layout.
+     */
+    private var contentVersion = 0
+    private var cachedForWidth = -1
+    private var cachedForVersion = -1
+    private var cachedHeight = -1
 
     init {
         contentType = "text/html"
@@ -64,6 +76,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     /** Forces an immediate HTML render, cancelling any pending debounced render. */
     fun renderNow() {
         renderTimer.stop()
+        contentVersion++
         val html = fileNavigator.markdownToHtml(rawText.toString())
         text = "<html><body>$html</body></html>"
     }
@@ -77,11 +90,44 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * The preferred width matches the parent container; the preferred height is
      * calculated from the HTML layout so that the parent layout allocates the
      * correct vertical space.
+     *
+     * Result is cached by (parent width, content version) to avoid repeating the expensive
+     * HTML re-layout on every call. [BoxLayout.checkRequests] calls [getPreferredSize]
+     * multiple times per layout pass; without the cache this caused 30+ second EDT freezes
+     * on large AI responses (see threadDumps-freeze-* in IntelliJ logs).
      */
     override fun getPreferredSize(): Dimension {
         val pw = parent?.width?.takeIf { it > 0 } ?: return super.getPreferredSize()
+        if (pw == cachedForWidth && contentVersion == cachedForVersion) {
+            return Dimension(pw, cachedHeight)
+        }
+        val h = computePreferredHeight(pw)
+        cachedForWidth = pw
+        cachedForVersion = contentVersion
+        cachedHeight = h
+        return Dimension(pw, h)
+    }
+
+    /**
+     * Computes the preferred height for a given width by performing the HTML layout.
+     * Uses [TextUI.getRootView] directly to avoid the side effects of calling [setSize]
+     * on the component itself (which would trigger another layout pass).
+     */
+    private fun computePreferredHeight(pw: Int): Int {
+        val textUI = ui as? TextUI
+        if (textUI != null) {
+            val rootView = textUI.getRootView(this)
+            try {
+                rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
+                return rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1)
+            } catch (_: Throwable) {
+                // BoxView/GlyphView can throw StateInvariantError (AssertionError) or
+                // ArrayIndexOutOfBoundsException if renderNow() replaced the document while
+                // a layout pass was already in flight. Fall through to the setSize fallback.
+            }
+        }
         setSize(pw, Short.MAX_VALUE.toInt())
-        return Dimension(pw, super.getPreferredSize().height)
+        return super.getPreferredSize().height
     }
 
     private fun createStyleSheet(): StyleSheet {
