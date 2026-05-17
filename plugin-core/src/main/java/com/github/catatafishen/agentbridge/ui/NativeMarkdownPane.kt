@@ -160,16 +160,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         SwingUtilities.invokeLater { rebuildStylesheet() }
     }
 
-    /**
-     * The preferred width matches the parent container; the preferred height is
-     * calculated from the HTML layout so that the parent layout allocates the
-     * correct vertical space.
-     *
-     * Result is cached by (parent width, content version) to avoid repeating the expensive
-     * HTML re-layout on every call. [BoxLayout.checkRequests] calls [getPreferredSize]
-     * multiple times per layout pass; without the cache this caused 30+ second EDT freezes
-     * on large AI responses (confirmed by threadDumps-freeze-20260517-084456/084931).
-     */
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
@@ -209,12 +199,21 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
                 //  - ArrayIndexOutOfBoundsException (extends RuntimeException):
                 //    BoxView.updateChildSizes finds its sizes array stale after the
                 //    document was replaced but the view count changed.
-                // In both cases, fall through to super — the next validation cycle will
+                //  - NullPointerException: TextLayout not yet computed (GlyphPainter2).
+                // Fall through to the fallback below. The next validation cycle will
                 // have fresh views and produce the correct size.
             }
         }
-        setSize(pw, Short.MAX_VALUE.toInt())
-        return Dimension(pw, super.getPreferredSize().height)
+        // Document is in a transient state. Prefer the last known height so the
+        // layout does not collapse while the document stabilises.
+        if (cachedHeight > 0) return Dimension(pw, cachedHeight)
+        // First render: attempt the slower JEditorPane path with the same guard.
+        return try {
+            setSize(pw, Short.MAX_VALUE.toInt())
+            Dimension(pw, super.getPreferredSize().height)
+        } catch (_: Throwable) {
+            Dimension(pw, 1)  // safe minimum; revalidated on next cycle
+        }
     }
 
     private fun createStyleSheet(): StyleSheet {
