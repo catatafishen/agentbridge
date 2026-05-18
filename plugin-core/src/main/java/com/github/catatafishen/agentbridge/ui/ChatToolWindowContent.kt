@@ -69,6 +69,7 @@ class ChatToolWindowContent(
         // top inset larger than any screen height the bounds.height goes negative, making
         // fillRect a no-op — nothing is drawn. Short.MAX_VALUE (×4 DPI = 131k px) is safe.
         it.setBlindZone { JBUI.insets(Short.MAX_VALUE.toInt(), 0, 0, 0) }
+        it.addPropertyChangeListener("proportion") { syncTabsIfNeeded() }
         it.secondComponent = mainPanel
         it.setHonorComponentsMinimumSize(false)
         // When the tool window is resized (by dragging its border), keep the chat pane
@@ -202,7 +203,6 @@ class ChatToolWindowContent(
             sidePanel?.selectReviewTab()
             if (rootSplitter.proportion < 0.01f) {
                 rootSplitter.proportion = defaultReviewProportion
-                updateSideTabContents(true)
             }
         }
         com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
@@ -748,9 +748,6 @@ class ChatToolWindowContent(
         PromptDbService.getInstance(project).registerShowPanelCallback {
             if (rootSplitter.proportion < 0.01f) {
                 rootSplitter.proportion = defaultReviewProportion
-                com.intellij.ide.util.PropertiesComponent.getInstance(project)
-                    .setValue(PREF_SIDE_PANEL_OPEN, true)
-                updateSideTabContents(true)
             }
         }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable) {
@@ -762,7 +759,6 @@ class ChatToolWindowContent(
         val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
         if (props.getBoolean(PREF_SIDE_PANEL_OPEN, false)) {
             rootSplitter.proportion = defaultReviewProportion
-            updateSideTabContents(true)
         }
     }
 
@@ -1007,7 +1003,6 @@ class ChatToolWindowContent(
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
                 if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                if (widthDragStart != null) syncTabsAfterWidthDrag(props)
                 heightDragStart = null
                 widthDragStart = null
             }
@@ -1042,7 +1037,6 @@ class ChatToolWindowContent(
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
                 if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                if (widthDragStart != null) syncTabsAfterWidthDrag(props)
                 widthDragStart = null
                 heightDragStart = null
             }
@@ -1083,7 +1077,6 @@ class ChatToolWindowContent(
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
                 if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                if (widthDragStart != null) syncTabsAfterWidthDrag(props)
                 widthDragStart = null
                 heightDragStart = null
             }
@@ -1096,22 +1089,18 @@ class ChatToolWindowContent(
         bottomSection.addMouseListener(wResizeHandler)
     }
 
-/**
- * Called from each drag-resize [mouseReleased] handler when a width drag was in progress.
- * Syncs the title-bar tab mode with the current [rootSplitter] proportion, exactly as the
- * [SidePanelToggleAction] does on click — so dragging the sidebar to/from zero-width also
- * shows/hides the multi-tab header.
- *
- * Only rebuilds tabs when the open/closed state has actually changed (crossing the 0.01 threshold)
- * to avoid an unnecessary round-trip through [ContentManager] on every drag-release.
- */
-private fun syncTabsAfterWidthDrag(props: com.intellij.ide.util.PropertiesComponent) {
-    val isOpen = rootSplitter.proportion >= 0.01f
-    val wasOpen = contentWrappers.isNotEmpty()
-    if (isOpen == wasOpen) return
-    updateSideTabContents(isOpen)
-    props.setValue(PREF_SIDE_PANEL_OPEN, isOpen)
-}
+    /**
+     * Called from the [rootSplitter] [java.beans.PropertyChangeListener] on every proportion change
+     * (drag or toggle button). Updates the title-bar tab mode when the open/closed threshold is
+     * crossed and persists the pref — the single source of truth for tab visibility.
+     */
+    private fun syncTabsIfNeeded() {
+        val isOpen = rootSplitter.proportion >= 0.01f
+        val wasOpen = contentWrappers.isNotEmpty()
+        if (isOpen == wasOpen) return
+        updateSideTabContents(isOpen)
+        com.intellij.ide.util.PropertiesComponent.getInstance(project).setValue(PREF_SIDE_PANEL_OPEN, isOpen)
+    }
 
     private fun installSavedInputHeight(
         splitPanel: JComponent,
@@ -2033,7 +2022,6 @@ private fun syncTabsAfterWidthDrag(props: com.intellij.ide.util.PropertiesCompon
                     val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
                 }
-                updateSideTabContents(true)
             } else {
                 // When hiding: record the current side panel width, collapse it,
                 // then shrink the tool window by that width to restore the original chat area size.
@@ -2042,10 +2030,7 @@ private fun syncTabsAfterWidthDrag(props: com.intellij.ide.util.PropertiesCompon
                 if (sideWidth > 0) {
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
                 }
-                updateSideTabContents(false)
             }
-            com.intellij.ide.util.PropertiesComponent.getInstance(project)
-                .setValue(PREF_SIDE_PANEL_OPEN, state)
         }
     }
 
