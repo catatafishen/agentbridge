@@ -142,6 +142,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private var placeholderLabel: JBLabel? = null
+    private var workingIndicatorWrapper: JPanel? = null
     private var workingIndicator: JComponent? = null
     private var workingLabel: JBLabel? = null
     private var workingStartMs = 0L
@@ -226,25 +227,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val showTimestamp = currentMinute != lastShownTimestampMinute
         if (showTimestamp) {
             lastShownTimestampMinute = currentMinute
-            // Timestamp label carries the 6px top gap when it leads the turn.
-            addRow(createTimestampLabel().apply {
-                border = JBUI.Borders.emptyTop(JBUI.scale(6))
-            })
+            addRow(createTimestampLabel())
         }
 
-        // Chip strip is added directly (not via addRow) to preserve its getMaximumSize()
-        // override — addRow sets maximumSize as a field which makes isMaximumSizeSet()=true
-        // and bypasses the override.
         val chipStrip = ChipStripPanel().apply {
-            alignmentX = Component.LEFT_ALIGNMENT
             isVisible = false
-            // 6px top gap only when no timestamp label precedes it this turn.
-            if (!showTimestamp) border = JBUI.Borders.emptyTop(JBUI.scale(6))
         }
-        contentPanel.add(chipStrip)
-        moveWorkingToBottom()
-        contentPanel.revalidate()
-        contentPanel.repaint()
+        addRow(chipStrip)
 
         val turn = TurnContext(chipStrip)
         currentTurn = turn
@@ -269,15 +258,39 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         finalizeTurn()
     }
 
-    private fun addRow(comp: JComponent, spacing: Int = JBUI.scale(4)) {
-        val shouldScroll = autoScrollEnabled
+    private fun addRow(comp: JComponent): JPanel {
         placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
-        comp.alignmentX = Component.LEFT_ALIGNMENT
-        contentPanel.add(comp)
-        contentPanel.add(Box.createVerticalStrut(spacing))
-        moveWorkingToBottom()
+        val container = rowContainer(comp)
+        val insertBefore = workingIndicatorWrapper
+        if (insertBefore != null) {
+            val idx = contentPanel.getComponentZOrder(insertBefore)
+            if (idx >= 0) contentPanel.add(container, idx) else contentPanel.add(container)
+        } else {
+            contentPanel.add(container)
+        }
         contentPanel.revalidate()
-        if (shouldScroll) scrollToBottom()
+        if (autoScrollEnabled) scrollToBottom()
+        return container
+    }
+
+    private fun rowContainer(comp: JComponent): JPanel {
+        val inset = JBUI.scale(ROW_SPACING)
+        return object : JPanel(BorderLayout()) {
+            override fun isVisible() = super.isVisible() && comp.isVisible
+            override fun getMaximumSize(): Dimension {
+                val compMax = comp.maximumSize
+                return if (compMax.height in 1 until Short.MAX_VALUE) {
+                    Dimension(Short.MAX_VALUE.toInt(), compMax.height + inset)
+                } else {
+                    Dimension(Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                }
+            }
+        }.apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyTop(inset)
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(comp, BorderLayout.CENTER)
+        }
     }
 
     /** Creates a small left-aligned timestamp label (HH:mm) with a full-date tooltip. */
@@ -329,50 +342,25 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
         bubble.add(label, BorderLayout.CENTER)
-        row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
         workingIndicator = row
         workingLabel = label
-        contentPanel.add(row)
-        contentPanel.add(Box.createVerticalStrut(JBUI.scale(2)))
+        val wrapper = rowContainer(row)
+        workingIndicatorWrapper = wrapper
+        contentPanel.add(wrapper)
         contentPanel.revalidate()
         if (autoScrollEnabled) scrollToBottom()
         workingTimer.start()
     }
 
-    /**
-     * Ensures [workingIndicator] is always the last row in [contentPanel].
-     * Called from [addRow] so that any new content added above leaves Working… anchored at the bottom.
-     */
-    private fun moveWorkingToBottom() {
-        val indicator = workingIndicator ?: return
-        val components = contentPanel.components
-        val idx = components.indexOf(indicator)
-        if (idx < 0) return
-        val lastContentIdx = components.size - 1
-        // Working indicator always has a trailing strut. Check if it's already last.
-        val strutIdx = if (idx + 1 <= lastContentIdx && components[idx + 1] is Box.Filler) idx + 1 else -1
-        val isLast = if (strutIdx >= 0) strutIdx == lastContentIdx else idx == lastContentIdx
-        if (isLast) return
-        if (strutIdx >= 0) contentPanel.remove(strutIdx)
-        contentPanel.remove(indicator)
-        contentPanel.add(indicator)
-        contentPanel.add(Box.createVerticalStrut(JBUI.scale(2)))
-    }
-
     private fun hideWorkingIndicator() {
         workingTimer.stop()
         workingLabel = null
-        workingIndicator?.let {
-            val idx = contentPanel.components.indexOf(it)
-            if (idx >= 0 && idx + 1 < contentPanel.componentCount &&
-                contentPanel.getComponent(idx + 1) is Box.Filler
-            ) {
-                contentPanel.remove(idx + 1)
-            }
+        workingIndicatorWrapper?.let {
             contentPanel.remove(it)
             contentPanel.revalidate()
             contentPanel.repaint()
         }
+        workingIndicatorWrapper = null
         workingIndicator = null
     }
 
@@ -447,7 +435,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             onAutoScrollEnabled?.invoke()
         }
         return addPromptEntryAt(text, contextFiles) { row ->
-            addRow(row, spacing = JBUI.scale(10))
+            addRow(row)
         }
     }
 
@@ -467,9 +455,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val (row, pane, bubbleRow) = createMarkdownBubble(agentBg(), agentBorder())
             turn.markdownPane = pane
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
-            // Always add top margin so the bubble has breathing room after the chip strip
-            // (or after the turn top border if no chips are present).
-            row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
             addRow(row)
         }
         turn.markdownPane!!.appendMarkdown(text)
@@ -667,11 +652,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contentPanel.revalidate()
         contentPanel.repaint()
         currentTurn = null
+        workingIndicatorWrapper = null
+        loadMoreContainer = null
         allChips.clear()
         toolCallData.clear()
         nudgeBubbles.clear()
         queuedMessages.clear()
-        loadMoreButton = null
         currentModelLabel = null
         if (spinTimer.isRunning) spinTimer.stop()
         placeholderLabel = null
@@ -836,8 +822,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
         removeNudgeBubble(id)
         val row = createNudgeRow(id, text, sent = false)
-        nudgeBubbles[id] = row
-        addRow(row)
+        nudgeBubbles[id] = addRow(row)
     }
 
     override fun resolveNudgeBubble(id: String) {
@@ -864,9 +849,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
-        row.putClientProperty("queuedText", text)
-        queuedMessages[id] = row
-        addRow(row)
+        val container = addRow(row)
+        container.putClientProperty("queuedText", text)
+        queuedMessages[id] = container
     }
 
     override fun removeQueuedMessage(id: String) {
@@ -932,25 +917,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) {
-        ApplicationManager.getApplication().invokeLater {
-            val panel = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(4), JBUI.scale(2))).apply {
-                isOpaque = false
-            }
-            for (img in images) {
-                val label = try {
-                    val bytes = java.util.Base64.getDecoder().decode(img.base64Data)
-                    val icon = scaledThumbnail(bytes, JBUI.scale(160))
-                    JLabel(icon).apply { setToolTipText(HtmlChunk.text(img.name)) }
-                } catch (_: Exception) {
-                    JBLabel("\uD83D\uDDBC ${img.name}").apply { applyChatFont(-1) }
-                }
-                panel.add(label)
-            }
-            addRow(panel)
-            // addRow forces LEFT_ALIGNMENT; override so BoxLayout right-aligns the thumbnail
-            // strip to match the user prompt bubble above it.
-            panel.alignmentX = Component.RIGHT_ALIGNMENT
+        val panel = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(4), JBUI.scale(2))).apply {
+            isOpaque = false
         }
+        for (img in images) {
+            val label = try {
+                val bytes = java.util.Base64.getDecoder().decode(img.base64Data)
+                val icon = scaledThumbnail(bytes, JBUI.scale(160))
+                JLabel(icon).apply { setToolTipText(HtmlChunk.text(img.name)) }
+            } catch (_: Exception) {
+                JBLabel("\uD83D\uDDBC ${img.name}").apply { applyChatFont(-1) }
+            }
+            panel.add(label)
+        }
+        addRow(panel)
     }
 
     private fun scaledThumbnail(bytes: ByteArray, maxSize: Int): ImageIcon {
@@ -1011,33 +991,32 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         replayEntries(entries)
     }
 
-    /** Prepends older entries at the top of the panel (for "Load More"). */
     fun prependEntries(entries: List<EntryData>) {
         if (entries.isEmpty()) return
-        val insertionPoint = loadMoreButton?.let { contentPanel.getComponentZOrder(it) + 1 } ?: 0
+        val insertionPoint = loadMoreContainer?.let { contentPanel.getComponentZOrder(it) + 1 } ?: 0
         replayEntries(entries, insertionIndex = insertionPoint)
     }
 
-    private var loadMoreButton: JComponent? = null
+    private var loadMoreContainer: JPanel? = null
 
     fun showLoadMore(deferredCount: Int) {
         hideLoadMore()
         val btn = JButton("▲ Load $deferredCount more messages").apply {
-            alignmentX = Component.LEFT_ALIGNMENT
             isFocusPainted = false
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             applyChatFont(-1)
             addActionListener { onLoadMoreRequested?.invoke() }
         }
-        contentPanel.add(btn, 0)
-        loadMoreButton = btn
+        val container = rowContainer(btn)
+        contentPanel.add(container, 0)
+        loadMoreContainer = container
         contentPanel.revalidate()
         contentPanel.repaint()
     }
 
     fun hideLoadMore() {
-        loadMoreButton?.let { contentPanel.remove(it) }
-        loadMoreButton = null
+        loadMoreContainer?.let { contentPanel.remove(it) }
+        loadMoreContainer = null
         contentPanel.revalidate()
         contentPanel.repaint()
     }
@@ -1054,7 +1033,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         val prevAddRow = if (insertionIndex >= 0) {
             var nextIdx = insertionIndex
-            { comp: JComponent -> insertRowAt(comp, nextIdx); nextIdx += 2 /* comp + strut */ }
+            { comp: JComponent -> insertRowAt(comp, nextIdx); nextIdx += 1 /* container */ }
         } else null
 
         for (entry in entries) {
@@ -1123,9 +1102,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun insertRowAt(comp: JComponent, index: Int) {
-        comp.alignmentX = Component.LEFT_ALIGNMENT
-        contentPanel.add(comp, index)
-        contentPanel.add(Box.createVerticalStrut(JBUI.scale(4)), index + 1)
+        val container = rowContainer(comp)
+        contentPanel.add(container, index)
     }
 
     private fun addPromptEntryAt(
@@ -1141,5 +1119,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         addFn(row)
         showWorkingIndicator()
         return java.util.UUID.randomUUID().toString()
+    }
+
+    companion object {
+        private const val ROW_SPACING = 8
     }
 }

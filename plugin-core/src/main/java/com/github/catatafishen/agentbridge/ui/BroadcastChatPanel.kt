@@ -5,6 +5,7 @@ import com.intellij.openapi.util.Disposer
 import java.awt.CardLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.SwingUtilities
 
 /**
  * Delegates all [ChatPanelApi] calls to both [jcefPanel] and [nativePanel]
@@ -18,6 +19,10 @@ import javax.swing.JPanel
  *
  * [hasPendingAskUserRequest] / [consumePendingAskUserResponse] / [clearPendingAskUserRequest]
  * are also delegated only to [jcefPanel] since interactive state must not be split.
+ *
+ * All calls to [nativePanel] are dispatched through [onEdt] to ensure they run on the
+ * Event Dispatch Thread, since [NativeChatPanel] is a Swing component. [jcefPanel] calls
+ * are thread-safe and do not need EDT dispatch.
  */
 class BroadcastChatPanel(
     val jcefPanel: ChatConsolePanel,
@@ -50,6 +55,11 @@ class BroadcastChatPanel(
         if (native) showNative() else showJcef()
     }
 
+    /** Runs [block] on the EDT. If already on EDT, runs immediately; otherwise posts via invokeLater. */
+    private fun onEdt(block: () -> Unit) {
+        if (SwingUtilities.isEventDispatchThread()) block() else SwingUtilities.invokeLater(block)
+    }
+
     // ── Callback vars ──────────────────────────────────────────────────────────
     // Stored here and fanned out to both panels.
 
@@ -74,72 +84,72 @@ class BroadcastChatPanel(
         contextFiles: List<Triple<String, String, Int>>?,
         bubbleHtml: String?
     ): String {
-        nativePanel.addPromptEntry(text, contextFiles, bubbleHtml)
+        onEdt { nativePanel.addPromptEntry(text, contextFiles, bubbleHtml) }
         return jcefPanel.addPromptEntry(text, contextFiles, bubbleHtml)
     }
 
     override fun removePromptEntry(entryId: String) {
-        nativePanel.removePromptEntry(entryId)
+        onEdt { nativePanel.removePromptEntry(entryId) }
         jcefPanel.removePromptEntry(entryId)
     }
 
     override fun startStreaming() {
-        nativePanel.startStreaming()
+        onEdt { nativePanel.startStreaming() }
         jcefPanel.startStreaming()
     }
 
     override fun appendText(text: String) {
-        nativePanel.appendText(text)
+        onEdt { nativePanel.appendText(text) }
         jcefPanel.appendText(text)
     }
 
     override fun appendThinkingText(text: String) {
-        nativePanel.appendThinkingText(text)
+        onEdt { nativePanel.appendThinkingText(text) }
         jcefPanel.appendThinkingText(text)
     }
 
     override fun collapseThinking() {
-        nativePanel.collapseThinking()
+        onEdt { nativePanel.collapseThinking() }
         jcefPanel.collapseThinking()
     }
 
     override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {
-        nativePanel.setCodeChangeStats(linesAdded, linesRemoved)
+        onEdt { nativePanel.setCodeChangeStats(linesAdded, linesRemoved) }
         jcefPanel.setCodeChangeStats(linesAdded, linesRemoved)
     }
 
     override fun setCurrentModel(modelId: String) {
-        nativePanel.setCurrentModel(modelId)
+        onEdt { nativePanel.setCurrentModel(modelId) }
         jcefPanel.setCurrentModel(modelId)
     }
 
     override fun setCurrentProfile(profileId: String) {
-        nativePanel.setCurrentProfile(profileId)
+        onEdt { nativePanel.setCurrentProfile(profileId) }
         jcefPanel.setCurrentProfile(profileId)
     }
 
     override fun setCurrentAgent(agentName: String, profileId: String, clientType: String) {
-        nativePanel.setCurrentAgent(agentName, profileId, clientType)
+        onEdt { nativePanel.setCurrentAgent(agentName, profileId, clientType) }
         jcefPanel.setCurrentAgent(agentName, profileId, clientType)
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {
-        nativePanel.addContextFilesEntry(files)
+        onEdt { nativePanel.addContextFilesEntry(files) }
         jcefPanel.addContextFilesEntry(files)
     }
 
     override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) {
-        nativePanel.addImageThumbnails(images)
+        onEdt { nativePanel.addImageThumbnails(images) }
         jcefPanel.addImageThumbnails(images)
     }
 
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?, isMcpHandled: Boolean) {
-        nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled)
+        onEdt { nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled) }
         jcefPanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled)
     }
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
-        nativePanel.updateToolCall(id, status, update)
+        onEdt { nativePanel.updateToolCall(id, status, update) }
         jcefPanel.updateToolCall(id, status, update)
     }
 
@@ -150,7 +160,7 @@ class BroadcastChatPanel(
         prompt: String?,
         initialState: ChatPanelApi.SubAgentInitialState
     ) {
-        nativePanel.addSubAgentEntry(id, agentType, description, prompt, initialState)
+        onEdt { nativePanel.addSubAgentEntry(id, agentType, description, prompt, initialState) }
         jcefPanel.addSubAgentEntry(id, agentType, description, prompt, initialState)
     }
 
@@ -162,7 +172,7 @@ class BroadcastChatPanel(
         autoDenied: Boolean,
         denialReason: String?
     ) {
-        nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
+        onEdt { nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason) }
         jcefPanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
     }
 
@@ -170,7 +180,7 @@ class BroadcastChatPanel(
         subAgentId: String, toolId: String, title: String,
         arguments: String?, kind: String?
     ) {
-        nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind)
+        onEdt { nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind) }
         jcefPanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind)
     }
 
@@ -178,92 +188,92 @@ class BroadcastChatPanel(
         toolId: String, status: String, details: String?, description: String?,
         autoDenied: Boolean, denialReason: String?
     ) {
-        nativePanel.updateSubAgentToolCall(toolId, status, details, description, autoDenied, denialReason)
+        onEdt { nativePanel.updateSubAgentToolCall(toolId, status, details, description, autoDenied, denialReason) }
         jcefPanel.updateSubAgentToolCall(toolId, status, details, description, autoDenied, denialReason)
     }
 
     override fun addErrorEntry(message: String) {
-        nativePanel.addErrorEntry(message)
+        onEdt { nativePanel.addErrorEntry(message) }
         jcefPanel.addErrorEntry(message)
     }
 
     override fun addInfoEntry(message: String) {
-        nativePanel.addInfoEntry(message)
+        onEdt { nativePanel.addInfoEntry(message) }
         jcefPanel.addInfoEntry(message)
     }
 
     override fun addSessionSeparator(timestamp: String, agent: String) {
-        nativePanel.addSessionSeparator(timestamp, agent)
+        onEdt { nativePanel.addSessionSeparator(timestamp, agent) }
         jcefPanel.addSessionSeparator(timestamp, agent)
     }
 
     override fun showPlaceholder(text: String) {
-        nativePanel.showPlaceholder(text)
+        onEdt { nativePanel.showPlaceholder(text) }
         jcefPanel.showPlaceholder(text)
     }
 
     override fun clear() {
-        nativePanel.clear()
+        onEdt { nativePanel.clear() }
         jcefPanel.clear()
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
-        nativePanel.finishResponse(toolCallCount, modelId, multiplier)
+        onEdt { nativePanel.finishResponse(toolCallCount, modelId, multiplier) }
         jcefPanel.finishResponse(toolCallCount, modelId, multiplier)
     }
 
     override fun emitTurnStats(stats: TurnStatsData) {
-        nativePanel.emitTurnStats(stats)
+        onEdt { nativePanel.emitTurnStats(stats) }
         jcefPanel.emitTurnStats(stats)
     }
 
     override fun showQuickReplies(options: List<String>) {
-        nativePanel.showQuickReplies(options)
+        onEdt { nativePanel.showQuickReplies(options) }
         jcefPanel.showQuickReplies(options)
     }
 
     override fun disableQuickReplies() {
-        nativePanel.disableQuickReplies()
+        onEdt { nativePanel.disableQuickReplies() }
         jcefPanel.disableQuickReplies()
     }
 
     override fun cancelAllRunning() {
-        nativePanel.cancelAllRunning()
+        onEdt { nativePanel.cancelAllRunning() }
         jcefPanel.cancelAllRunning()
     }
 
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
-        nativePanel.showNudgeBubble(id, text, source)
+        onEdt { nativePanel.showNudgeBubble(id, text, source) }
         jcefPanel.showNudgeBubble(id, text, source)
     }
 
     override fun resolveNudgeBubble(id: String) {
-        nativePanel.resolveNudgeBubble(id)
+        onEdt { nativePanel.resolveNudgeBubble(id) }
         jcefPanel.resolveNudgeBubble(id)
     }
 
     override fun removeNudgeBubble(id: String) {
-        nativePanel.removeNudgeBubble(id)
+        onEdt { nativePanel.removeNudgeBubble(id) }
         jcefPanel.removeNudgeBubble(id)
     }
 
     override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
-        nativePanel.addNudgeEntry(id, text, source)
+        onEdt { nativePanel.addNudgeEntry(id, text, source) }
         jcefPanel.addNudgeEntry(id, text, source)
     }
 
     override fun showQueuedMessage(id: String, text: String) {
-        nativePanel.showQueuedMessage(id, text)
+        onEdt { nativePanel.showQueuedMessage(id, text) }
         jcefPanel.showQueuedMessage(id, text)
     }
 
     override fun removeQueuedMessage(id: String) {
-        nativePanel.removeQueuedMessage(id)
+        onEdt { nativePanel.removeQueuedMessage(id) }
         jcefPanel.removeQueuedMessage(id)
     }
 
     override fun removeQueuedMessageByText(text: String) {
-        nativePanel.removeQueuedMessageByText(text)
+        onEdt { nativePanel.removeQueuedMessageByText(text) }
         jcefPanel.removeQueuedMessageByText(text)
     }
 
@@ -273,7 +283,7 @@ class BroadcastChatPanel(
         description: String,
         onRespond: (PermissionResponse) -> Unit
     ) {
-        nativePanel.showPermissionRequest(reqId, toolDisplayName, description, onRespond)
+        onEdt { nativePanel.showPermissionRequest(reqId, toolDisplayName, description, onRespond) }
         jcefPanel.showPermissionRequest(reqId, toolDisplayName, description, onRespond)
     }
 
@@ -286,7 +296,11 @@ class BroadcastChatPanel(
         onExtend: () -> Long,
         onSuperseded: () -> Unit,
     ) {
-        nativePanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
+        onEdt {
+            nativePanel.showAskUserRequest(
+                reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded
+            )
+        }
         jcefPanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
     }
 
@@ -301,22 +315,22 @@ class BroadcastChatPanel(
 
     fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) {
         jcefPanel.appendEntries(entries, totalPromptCount)
-        nativePanel.appendEntries(entries, totalPromptCount)
+        onEdt { nativePanel.appendEntries(entries, totalPromptCount) }
     }
 
     fun prependEntries(entries: List<EntryData>) {
         jcefPanel.prependEntries(entries)
-        nativePanel.prependEntries(entries)
+        onEdt { nativePanel.prependEntries(entries) }
     }
 
     fun showLoadMore(deferredCount: Int) {
         jcefPanel.showLoadMore(deferredCount)
-        nativePanel.showLoadMore(deferredCount)
+        onEdt { nativePanel.showLoadMore(deferredCount) }
     }
 
     fun hideLoadMore() {
         jcefPanel.hideLoadMore()
-        nativePanel.hideLoadMore()
+        onEdt { nativePanel.hideLoadMore() }
     }
 
     fun setDomMessageLimit(limit: Int) {

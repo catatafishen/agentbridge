@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
-import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.LARGE_CONTENT_LAYOUT_THRESHOLD
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.ui.JBUI
@@ -270,10 +269,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * the last token. Confirmed necessary by freeze dumps:
      * threadDumps-freeze-20260517-084456, 084931, 20260518-090325, 134417, 171222, 171611.
      *
-     * **Large-content guard**: for [rawText] beyond [LARGE_CONTENT_LAYOUT_THRESHOLD] chars,
-     * the full HTML layout triggers O(N²) work in [BoxView.updateLayoutArray] that can
-     * freeze the EDT for 30+ seconds even when only called once. A fast line-count estimate
-     * is used instead; accuracy is within ~20 % which is acceptable for chat bubbles.
      */
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
@@ -293,23 +288,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             return Dimension(pw, cachedHeight)
         }
 
-        // Very large content: full HTML layout triggers O(N²) work in BoxView.updateLayoutArray
-        // that causes 30+ second EDT freezes. Use a fast line-count estimate instead.
-        // Apply the same streaming deferral as small content: don't change the estimated
-        // height on every 30 ms render. A growing height → setBounds with new size →
-        // componentResized → BasicTextUI.rootView.setSize() → O(N²) layout on every token.
-        if (rawText.length > LARGE_CONTENT_LAYOUT_THRESHOLD) {
-            if (cachedHeight > 0 && pw == cachedForWidth && !forceRecompute) {
-                return Dimension(pw, cachedHeight)
-            }
-            val h = estimateHeightFromLineCount(pw)
-            cachedForWidth = pw
-            cachedForVersion = contentVersion
-            cachedHeight = h
-            forceRecompute = false
-            return Dimension(pw, h)
-        }
-
         // Stale cache (same width, content just changed): return immediately during streaming.
         // heightRevalidateTimer fires 500 ms after the last renderNow() and sets forceRecompute,
         // triggering one accurate layout after the stream ends.
@@ -318,7 +296,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         }
         forceRecompute = false
 
-        // Accurate layout for small/medium content (≤ LARGE_CONTENT_LAYOUT_THRESHOLD chars).
+        // Accurate layout.
         // setSize() alone does not synchronously force the HTML view hierarchy to re-layout
         // at pw — views retain their previous allocation until the next paint.
         // Calling rootView.setSize() directly forces a layout pass at pw, so
@@ -390,26 +368,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     private fun lineHeightEstimate(): Int = (UIUtil.getLabelFont().size * 1.7).toInt()
 
-    /**
-     * Fast O(N) height estimate used when [rawText] exceeds [LARGE_CONTENT_LAYOUT_THRESHOLD].
-     * Counts how many display lines each raw-markdown line would wrap into at the current
-     * font size and panel width, then multiplies by an approximate line height.
-     * Accuracy is within ~20 %; acceptable for chat bubbles in a scrollable panel.
-     */
-    private fun estimateHeightFromLineCount(pw: Int): Int {
-        val cpl = maxOf(
-            1,
-            charsPerLineEstimate().takeIf { it > 0 } ?: (pw / ((UIUtil.getLabelFont().size * 0.55).toInt()
-                .coerceAtLeast(1))))
-        val lh = lineHeightEstimate()
-        val lineCount = rawText.lines().sumOf { line -> maxOf(1, (line.length + cpl - 1) / cpl) }
-        val estimate = (lineCount + 2) * lh
-        // During active streaming (forceRecompute=false) prevent the bubble from collapsing.
-        // When forceRecompute=true (height revalidation after streaming ends) allow shrinking
-        // so over-estimated height doesn't leave permanent blank space at the bottom.
-        return if (forceRecompute) maxOf(estimate, 50) else estimate.coerceAtLeast(cachedHeight.coerceAtLeast(50))
-    }
-
     private fun createStyleSheet(): StyleSheet {
         val ss = StyleSheet()
 
@@ -446,14 +404,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     companion object {
         private const val RENDER_INTERVAL_MS = 30  // ~30fps cap; mirrors JCEF's rAF throttle
-
-        /**
-         * Raw markdown character threshold above which [getPreferredSize] switches from an
-         * accurate HTML layout to a fast line-count estimate. Beyond this size, the full
-         * HTML layout triggers O(N²) work in [BoxView.updateLayoutArray] that can freeze the
-         * EDT for 30+ seconds. 8 000 chars ≈ 1 200–1 500 words, covering most AI responses.
-         */
-        private const val LARGE_CONTENT_LAYOUT_THRESHOLD = 8_000
 
         private fun colorToHex(c: Color): String =
             "#%02x%02x%02x".format(c.red, c.green, c.blue)
