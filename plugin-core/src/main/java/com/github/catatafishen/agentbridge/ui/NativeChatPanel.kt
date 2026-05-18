@@ -409,7 +409,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         explicitBorder: Color? = null
     ): Triple<JPanel, NativeMarkdownPane, BubbleRow> {
         val bubbleRow = createBubble(bg, explicitBorder = explicitBorder)
-        val pane = NativeMarkdownPane(fileNavigator).also { allMarkdownPanes += it }
+        val pane = NativeMarkdownPane(fileNavigator).also {
+            it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
+            allMarkdownPanes += it
+        }
         bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         return Triple(bubbleRow.row, pane, bubbleRow)
     }

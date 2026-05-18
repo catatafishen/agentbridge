@@ -34,6 +34,14 @@ import javax.swing.text.html.StyleSheet
  */
 class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane() {
 
+    /**
+     * Called whenever this pane's height grows — either via the incremental line estimate
+     * in [appendMarkdown] or when [heightRevalidateTimer] fires an accurate snap.
+     * [NativeChatPanel] wires this to scroll-to-bottom so auto-scroll follows the
+     * expanding bubble without relying on [java.awt.event.ComponentListener].
+     */
+    var onHeightGrew: (() -> Unit)? = null
+
     private val rawText = StringBuilder()
 
     /** Returns the raw (unformatted) markdown text accumulated so far. */
@@ -78,6 +86,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private val heightRevalidateTimer = Timer(500) {
         forceRecompute = true
         revalidate()
+        onHeightGrew?.invoke()
     }.apply { isRepeats = false }
 
     init {
@@ -141,6 +150,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             if (linesAdded > 0) {
                 cachedHeight += linesAdded * lineHeightEstimate()
                 revalidate()
+                onHeightGrew?.invoke()
             }
         }
         val elapsed = System.currentTimeMillis() - lastRenderTime
@@ -200,6 +210,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         heightRevalidateTimer.stop()
         forceRecompute = true
         revalidate()
+        onHeightGrew?.invoke()
     }
 
     /** Rebuilds the stylesheet when the IDE editor font size changes. */
