@@ -423,16 +423,18 @@ object MarkdownRenderer {
         isGitCommit: (String) -> Boolean
     ): String {
         val resolved = resolveFileReference(content)
-        // &#8239; = U+202F NARROW NO-BREAK SPACE — same width as the thin space it replaces but
-        // non-breaking, so it never wraps to the next line leaving an empty highlighted box.
         return when {
             resolved != null -> {
                 val colonIdx = content.indexOf(':')
                 val lineSpec = if (colonIdx > 0 && resolved.second != null) content.substring(colonIdx) else ""
                 val href = escapeHtml(resolved.first + lineSpec)
-                "<a href='openfile://$href'><code>&#8239;${escapeHtml(content)}&#8239;</code></a>"
+                // The entire inline code span is a file reference — a plain link is enough;
+                // there's no need for the monospace/background code styling.
+                "<a href='openfile://$href'>${escapeHtml(content)}</a>"
             }
 
+            // &#8239; = U+202F NARROW NO-BREAK SPACE: non-breaking so the span never
+            // wraps to the next line leaving an empty highlighted box.
             GIT_SHA_REGEX.matches(content) && isGitCommit(content) ->
                 "<a href='gitshow://$content'><code>&#8239;${escapeHtml(content)}&#8239;</code></a>"
 
