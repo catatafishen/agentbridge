@@ -12,14 +12,13 @@ import java.awt.event.MouseEvent
 import javax.swing.*
 
 /**
- * A horizontally scrollable strip of tool chips with ‹/› navigation buttons.
+ * A two-row strip holding tool/thinking chips and an optional collapsible thought bubble.
  *
- * The optional thinking chip is pinned to the left (outside the scroll area).
- * Tool chips are inside a [JBScrollPane] that is never explicitly scrolled by the
- * user's scroll wheel — navigation is handled by the nav buttons and drag-to-scroll.
- *
- * The nav buttons and scroll pane are wrapped in a [scrollSection] sub-panel so that
- * the left nav button cannot visually collide with the thinking chip.
+ * Layout (BoxLayout.Y_AXIS):
+ * - [chipRow]: horizontal row with the optional thinking chip pinned left, then ‹/› nav
+ *   buttons flanking a scrollable area of tool chips.
+ * - [thinkingBubble]: optional thought bubble below [chipRow]. When hidden
+ *   ([isVisible] = false), it takes **zero** space — no border, no margin.
  *
  * **Drag-to-scroll**: the [dragListener] is added to each chip as well as the
  * viewport and inner panel, because mouse events on chip children don't propagate
@@ -75,9 +74,27 @@ class ChipStripPanel : JPanel() {
         override fun getMaximumSize(): Dimension = Dimension(Short.MAX_VALUE.toInt(), rowHeight)
     }
 
+    /**
+     * Horizontal chip row: optional thinking chip pinned left + [scrollSection].
+     * This is the first (top) row in the Y_AXIS layout of [ChipStripPanel].
+     */
+    private val chipRow = object : JPanel() {
+        init {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+        }
+
+        override fun getMinimumSize(): Dimension = Dimension(0, rowHeight)
+        override fun getMaximumSize(): Dimension = Dimension(Short.MAX_VALUE.toInt(), rowHeight)
+        override fun getPreferredSize(): Dimension = Dimension(super.getPreferredSize().width, rowHeight)
+    }
+
     private var thinkingChip: JComponent? = null
     private var thinkingChipSpacer: JComponent? = null
     private val toolChips = mutableListOf<JComponent>()
+
+    /** Optional thought bubble below [chipRow]. Null until [setThinkingBubble] is called. */
+    private var thinkingBubble: JPanel? = null
 
     private val hbar get() = chipScrollPane.horizontalScrollBar
 
@@ -111,14 +128,16 @@ class ChipStripPanel : JPanel() {
     }
 
     init {
-        layout = BoxLayout(this, BoxLayout.X_AXIS)
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
         isOpaque = false
         border = JBUI.Borders.empty()
 
         scrollSection.add(leftBtn)
         scrollSection.add(chipScrollPane)
         scrollSection.add(rightBtn)
-        add(scrollSection)
+
+        chipRow.add(scrollSection)
+        add(chipRow)
 
         hbar.addAdjustmentListener { updateNav() }
 
@@ -135,19 +154,61 @@ class ChipStripPanel : JPanel() {
     }
 
     fun addThinkingChip(chip: JComponent) {
-        thinkingChip?.let { remove(it) }
-        thinkingChipSpacer?.let { remove(it) }
+        thinkingChip?.let { chipRow.remove(it) }
+        thinkingChipSpacer?.let { chipRow.remove(it) }
         thinkingChip = chip
         val spacer = Box.createRigidArea(Dimension(JBUI.scale(6), 0)) as JComponent
         thinkingChipSpacer = spacer
         chip.alignmentY = CENTER_ALIGNMENT
-        // Thinking chip is pinned left, outside the scrollable area — no drag listener.
+        // Thinking chip pinned left, outside the scrollable area — no drag listener.
         // Inserted before scrollSection so nav buttons always flank the scroll area.
-        add(chip, 0)
-        add(spacer, 1)
+        chipRow.add(chip, 0)
+        chipRow.add(spacer, 1)
         isVisible = true
         revalidate()
     }
+
+    /**
+     * Sets the thought bubble shown below [chipRow].
+     *
+     * The bubble starts **hidden** — call [showThinkingBubble] to display it when
+     * thinking begins streaming. When hidden, it contributes zero height and zero
+     * spacing to the layout (BoxLayout skips invisible components entirely).
+     */
+    fun setThinkingBubble(bubble: JPanel) {
+        thinkingBubble?.let { remove(it) }
+        thinkingBubble = bubble
+        bubble.isVisible = false
+        bubble.alignmentX = LEFT_ALIGNMENT
+        add(bubble)
+        revalidate()
+    }
+
+    fun showThinkingBubble() {
+        thinkingBubble?.let {
+            it.isVisible = true
+            revalidate()
+            repaint()
+        }
+    }
+
+    fun hideThinkingBubble() {
+        thinkingBubble?.let {
+            it.isVisible = false
+            revalidate()
+            repaint()
+        }
+    }
+
+    fun toggleThinkingBubble() {
+        val bubble = thinkingBubble ?: return
+        bubble.isVisible = !bubble.isVisible
+        if (bubble.isVisible) bubble.revalidate()
+        revalidate()
+        repaint()
+    }
+
+    fun isThinkingBubbleVisible(): Boolean = thinkingBubble?.isVisible ?: false
 
     fun addToolChip(chip: JComponent) {
         if (toolChips.isNotEmpty()) {

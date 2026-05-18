@@ -44,14 +44,29 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private val schemeDisposable = Disposer.newDisposable("NativeMarkdownPane")
 
     /**
-     * Version counter incremented on every [renderNow] / [setCompleteMarkdown]. Used together
-     * with [cachedForWidth] to decide when [getPreferredSize] can skip the expensive
-     * HTML re-layout.
+     * Version counter incremented on every [renderNow]. Used together with [cachedForWidth]
+     * to decide when [getPreferredSize] can skip the expensive HTML re-layout.
      */
     private var contentVersion = 0
     private var cachedForWidth = -1
     private var cachedForVersion = -1
     private var cachedHeight = -1
+
+    /**
+     * Set to true when [heightRevalidateTimer] fires, forcing one accurate layout
+     * computation after streaming pauses.
+     */
+    private var forceRecompute = false
+
+    /**
+     * Fired 500 ms after the last [renderNow] call. Forces one accurate [getPreferredSize]
+     * computation once streaming has paused, so the bubble snaps to its correct final height
+     * without blocking the EDT on every token during the stream.
+     */
+    private val heightRevalidateTimer = Timer(500) {
+        forceRecompute = true
+        revalidate()
+    }.apply { isRepeats = false }
 
     init {
         contentType = "text/html"
@@ -127,6 +142,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderScheduled = false
         lastRenderTime = System.currentTimeMillis()
         contentVersion++
+        heightRevalidateTimer.restart()
         val html = fileNavigator.markdownToHtml(rawText.toString())
         text = "<html><body>$html</body></html>"
     }
@@ -139,6 +155,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     /** Stops the render timer and disconnects the color scheme subscription. */
     fun dispose() {
         renderTimer.stop()
+        heightRevalidateTimer.stop()
         Disposer.dispose(schemeDisposable)
     }
 
@@ -173,6 +190,25 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         SwingUtilities.invokeLater { rebuildStylesheet() }
     }
 
+    /**
+     * Computes the preferred height for the HTML content at the parent's available width.
+     *
+     * **Caching**: result is cached by `(parentWidth, contentVersion)`. Same width and
+     * unchanged content → return immediately.
+     *
+     * **Streaming deferral**: during active streaming, [contentVersion] changes on every
+     * [renderNow] call (~30 ms). The cache check above already prevents recomputing within
+     * a single layout pass, but the first call per token would still trigger an expensive
+     * layout. To avoid this, the method returns the stale cached height immediately while
+     * streaming, and [heightRevalidateTimer] forces one accurate recompute 500 ms after
+     * the last token. Confirmed necessary by freeze dumps:
+     * threadDumps-freeze-20260517-084456, 084931, 20260518-090325, 134417, 171222, 171611.
+     *
+     * **Large-content guard**: for [rawText] beyond [LARGE_CONTENT_LAYOUT_THRESHOLD] chars,
+     * the full HTML layout triggers O(N²) work in [BoxView.updateLayoutArray] that can
+     * freeze the EDT for 30+ seconds even when only called once. A fast line-count estimate
+     * is used instead; accuracy is within ~20 % which is acceptable for chat bubbles.
+     */
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
@@ -186,12 +222,33 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             else -> return super.getPreferredSize()
         }.takeIf { it > 0 } ?: return super.getPreferredSize()
 
+        // Exact cache hit: same width and same content.
         if (pw == cachedForWidth && contentVersion == cachedForVersion) {
             return Dimension(pw, cachedHeight)
         }
 
-        // setSize() alone does not synchronously force the HTML view hierarchy to
-        // re-layout at pw — views retain their previous allocation until the next paint.
+        // Very large content: full HTML layout triggers O(N²) work in BoxView.updateLayoutArray
+        // that causes 30+ second EDT freezes. Use a fast line-count estimate instead.
+        if (rawText.length > LARGE_CONTENT_LAYOUT_THRESHOLD) {
+            val h = estimateHeightFromLineCount(pw)
+            cachedForWidth = pw
+            cachedForVersion = contentVersion
+            cachedHeight = h
+            forceRecompute = false
+            return Dimension(pw, h)
+        }
+
+        // Stale cache (same width, content just changed): return immediately during streaming.
+        // heightRevalidateTimer fires 500 ms after the last renderNow() and sets forceRecompute,
+        // triggering one accurate layout after the stream ends.
+        if (cachedHeight > 0 && pw == cachedForWidth && !forceRecompute) {
+            return Dimension(pw, cachedHeight)
+        }
+        forceRecompute = false
+
+        // Accurate layout for small/medium content (≤ LARGE_CONTENT_LAYOUT_THRESHOLD chars).
+        // setSize() alone does not synchronously force the HTML view hierarchy to re-layout
+        // at pw — views retain their previous allocation until the next paint.
         // Calling rootView.setSize() directly forces a layout pass at pw, so
         // getPreferredSpan(Y_AXIS) returns the correct height for the current content.
         val textUI = ui as? TextUI
@@ -227,6 +284,23 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         } catch (_: Throwable) {
             Dimension(pw, 1)  // safe minimum; revalidated on next cycle
         }
+    }
+
+    /**
+     * Fast O(N) height estimate used when [rawText] exceeds [LARGE_CONTENT_LAYOUT_THRESHOLD].
+     * Counts how many display lines each raw-markdown line would wrap into at the current
+     * font size and panel width, then multiplies by an approximate line height.
+     * Accuracy is within ~20 %; acceptable for chat bubbles in a scrollable panel.
+     */
+    private fun estimateHeightFromLineCount(pw: Int): Int {
+        val fontSize = UIUtil.getLabelFont().size
+        val avgCharWidth = (fontSize * 0.55).toInt().coerceAtLeast(1)
+        val charsPerLine = maxOf(1, pw / avgCharWidth)
+        val lineHeight = (fontSize * 1.7).toInt()
+        val lineCount = rawText.lines().sumOf { line ->
+            maxOf(1, (line.length + charsPerLine - 1) / charsPerLine)
+        }
+        return ((lineCount + 2) * lineHeight).coerceAtLeast(cachedHeight.coerceAtLeast(50))
     }
 
     private fun createStyleSheet(): StyleSheet {
@@ -265,6 +339,14 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     companion object {
         private const val RENDER_INTERVAL_MS = 30  // ~30fps cap; mirrors JCEF's rAF throttle
+
+        /**
+         * Raw markdown character threshold above which [getPreferredSize] switches from an
+         * accurate HTML layout to a fast line-count estimate. Beyond this size, the full
+         * HTML layout triggers O(N²) work in [BoxView.updateLayoutArray] that can freeze the
+         * EDT for 30+ seconds. 8 000 chars ≈ 1 200–1 500 words, covering most AI responses.
+         */
+        private const val LARGE_CONTENT_LAYOUT_THRESHOLD = 8_000
 
         private fun colorToHex(c: Color): String =
             "#%02x%02x%02x".format(c.red, c.green, c.blue)
