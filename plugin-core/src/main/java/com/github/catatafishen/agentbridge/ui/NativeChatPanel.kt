@@ -1039,7 +1039,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
                 is EntryData.ToolCall -> {
                     val status = entry.status ?: "complete"
-                    addToolCallEntry(entry.entryId, entry.title, entry.arguments, entry.kind, false)
+                    addToolCallEntry(entry.entryId, entry.title, entry.arguments, entry.kind, entry.pluginTool != null)
                     updateToolCall(entry.entryId, status, ChatPanelApi.ToolCallUpdate())
                 }
 
