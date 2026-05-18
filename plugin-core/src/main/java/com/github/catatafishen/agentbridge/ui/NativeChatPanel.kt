@@ -920,17 +920,23 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val panel = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(4), JBUI.scale(2))).apply {
             isOpaque = false
         }
-        for (img in images) {
-            val label = try {
-                val bytes = java.util.Base64.getDecoder().decode(img.base64Data)
-                val icon = scaledThumbnail(bytes, JBUI.scale(160))
-                JLabel(icon).apply { setToolTipText(HtmlChunk.text(img.name)) }
-            } catch (_: Exception) {
-                JBLabel("\uD83D\uDDBC ${img.name}").apply { applyChatFont(-1) }
-            }
-            panel.add(label)
-        }
         addRow(panel)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val labels = images.map { img ->
+                try {
+                    val bytes = java.util.Base64.getDecoder().decode(img.base64Data)
+                    val icon = scaledThumbnail(bytes, JBUI.scale(160))
+                    JLabel(icon).apply { setToolTipText(HtmlChunk.text(img.name)) }
+                } catch (_: Exception) {
+                    JBLabel("\uD83D\uDDBC ${img.name}").apply { applyChatFont(-1) }
+                }
+            }
+            SwingUtilities.invokeLater {
+                labels.forEach { panel.add(it) }
+                panel.revalidate()
+                panel.repaint()
+            }
+        }
     }
 
     private fun scaledThumbnail(bytes: ByteArray, maxSize: Int): ImageIcon {

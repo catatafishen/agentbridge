@@ -64,9 +64,9 @@ object TimerDisplayFormatter {
      * 2 decimals otherwise.
      */
     fun formatCost(costUsd: Double): String = when {
-        costUsd <= 0.0 -> $$"$0.00"
-        costUsd < 0.01 -> $$"$$${String.format(Locale.ROOT, "%.4f", costUsd).trimEnd('0').trimEnd('.')}"
-        else -> $$"$$${String.format(Locale.ROOT, "%.2f", costUsd)}"
+        costUsd <= 0.0 -> "\$0.00"
+        costUsd < 0.01 -> "\$${String.format(Locale.ROOT, "%.4f", costUsd).trimEnd('0').trimEnd('.')}"
+        else -> "\$${String.format(Locale.ROOT, "%.2f", costUsd)}"
     }
 
     /**

@@ -168,8 +168,8 @@ class BubbleRow(
 /**
  * Creates a width-capped rounded bubble and its alignment wrapper in one call.
  *
- * - The bubble bottom corner on the alignment side is squared to visually anchor it.
- *   Left-aligned → bottom-left squared; right-aligned → bottom-right squared.
+ * - One corner on the alignment side is squared to visually anchor the bubble.
+ *   Left-aligned → top-left squared; right-aligned → bottom-right squared.
  * - A subtle border is drawn when the background maps to a known border color
  *   (see [NativeChatColors.bubbleBorder]).
  *
