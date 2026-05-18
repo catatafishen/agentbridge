@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.ui
 
-
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.ContainerAdapter

@@ -56,7 +56,7 @@ class FileNavigator(private val project: Project) {
                     if (editor != null) {
                         val doc = editor.document
                         val startOffset = doc.getLineStartOffset(maxOf(0, parsed.startLine - 1))
-                        val endLine = minOf(doc.lineCount - 1, parsed.endLine - 1)
+                        val endLine = maxOf(parsed.startLine - 1, minOf(doc.lineCount - 1, parsed.endLine - 1))
                         val endOffset = doc.getLineEndOffset(endLine)
                         editor.selectionModel.setSelection(startOffset, endOffset)
                     }

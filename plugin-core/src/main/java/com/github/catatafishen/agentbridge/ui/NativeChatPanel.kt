@@ -966,6 +966,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         ToolCallTracker.getInstance(project).removeListener(trackerListener)
         McpPauseService.getInstance(project).removeListener(pauseListener)
         allMarkdownPanes.forEach { it.dispose() }
+        turns.forEach { it.thinkingChip?.setActive(false) }
         if (spinTimer.isRunning) spinTimer.stop()
         if (autoScrollSafetyTimer.isRunning) autoScrollSafetyTimer.stop()
         workingTimer.stop()
@@ -1127,6 +1128,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun addPromptEntryAt(
         text: String,
+        // Part of the ChatPanelApi contract; context file display not yet implemented in native panel.
         @Suppress("UNUSED_PARAMETER") contextFiles: List<Triple<String, String, Int>>?,
         addFn: (JComponent) -> Unit
     ): String {

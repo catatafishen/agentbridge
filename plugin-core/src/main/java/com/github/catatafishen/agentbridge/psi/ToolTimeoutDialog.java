@@ -88,18 +88,18 @@ public final class ToolTimeoutDialog {
 
         String[] options = buildOptions(ext1Seconds, ext2Seconds);
 
-        AtomicInteger choiceIndex = new AtomicInteger(3); // default: "Cancel Now" / ESC
-        AtomicBoolean completedByFuture = new AtomicBoolean(false);
-        AtomicReference<JDialog> dialogRef = new AtomicReference<>();
-        CountDownLatch dialogReady = new CountDownLatch(1);
-        CountDownLatch dialogDone = new CountDownLatch(1);
+        DialogCoordination coord = new DialogCoordination(
+            new AtomicReference<>(),
+            new CountDownLatch(1),
+            new CountDownLatch(1),
+            new AtomicInteger(3), // default: "Cancel Now" / ESC
+            new AtomicBoolean(false));
 
-        registerFutureWatcher(toolFuture, dialogRef, dialogReady, completedByFuture);
-        scheduleDialogOnEdt(project, operationDescription, elapsedSeconds, options,
-            dialogRef, dialogReady, dialogDone, choiceIndex);
+        registerFutureWatcher(toolFuture, coord);
+        scheduleDialogOnEdt(project, operationDescription, elapsedSeconds, options, coord);
 
-        dialogDone.await();
-        return completedByFuture.get() ? COMPLETED : mapChoice(choiceIndex.get(), ext1Seconds, ext2Seconds);
+        coord.dialogDone().await();
+        return coord.completedByFuture().get() ? COMPLETED : mapChoice(coord.choiceIndex().get(), ext1Seconds, ext2Seconds);
     }
 
     private static String[] buildOptions(int ext1Seconds, int ext2Seconds) {
@@ -117,30 +117,35 @@ public final class ToolTimeoutDialog {
         return minutes + (minutes == 1 ? " Minute" : " Minutes");
     }
 
+    private record DialogCoordination(
+        AtomicReference<JDialog> dialogRef,
+        CountDownLatch dialogReady,
+        CountDownLatch dialogDone,
+        AtomicInteger choiceIndex,
+        AtomicBoolean completedByFuture) {
+    }
+
     /**
      * Registers a {@code whenComplete} callback on {@code toolFuture} that disposes the dialog
      * (via {@code ModalityState.any()}) as soon as the tool finishes.
      */
-    private static void registerFutureWatcher(CompletableFuture<?> toolFuture,
-                                              AtomicReference<JDialog> dialogRef,
-                                              CountDownLatch dialogReady,
-                                              AtomicBoolean completedByFuture) {
+    private static void registerFutureWatcher(CompletableFuture<?> toolFuture, DialogCoordination coord) {
         toolFuture.whenComplete((result, ex) -> {
             try {
                 // Wait for the dialog to be set before trying to close it.
-                if (!dialogReady.await(5, TimeUnit.SECONDS)) {
+                if (!coord.dialogReady().await(5, TimeUnit.SECONDS)) {
                     // EDT may still be pending (e.g., future completed just before invokeLater ran).
                     if (!toolFuture.isDone()) return;
-                    completedByFuture.set(true);
-                    if (!dialogReady.await(25, TimeUnit.SECONDS)) return;
+                    coord.completedByFuture().set(true);
+                    if (!coord.dialogReady().await(25, TimeUnit.SECONDS)) return;
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             }
-            JDialog dialog = dialogRef.get();
+            JDialog dialog = coord.dialogRef().get();
             if (dialog != null && dialog.isDisplayable()) {
-                completedByFuture.set(true);
+                coord.completedByFuture().set(true);
                 ApplicationManager.getApplication().invokeLater(dialog::dispose, ModalityState.any());
             }
         });
@@ -148,10 +153,7 @@ public final class ToolTimeoutDialog {
 
     private static void scheduleDialogOnEdt(Project project, String operationDescription,
                                             int elapsedSeconds, String[] options,
-                                            AtomicReference<JDialog> dialogRef,
-                                            CountDownLatch dialogReady,
-                                            CountDownLatch dialogDone,
-                                            AtomicInteger choiceIndex) {
+                                            DialogCoordination coord) {
         ApplicationManager.getApplication().invokeLater(() -> {
             try {
                 String message = operationDescription + " is still running after " + elapsedSeconds
@@ -166,20 +168,22 @@ public final class ToolTimeoutDialog {
                     options, options[0]);
                 JDialog dialog = pane.createDialog(frame, "Operation Still Running: " + operationDescription);
                 dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-                dialogRef.set(dialog);
-                dialogReady.countDown(); // unblock the watcher thread
+                coord.dialogRef().set(dialog);
+                coord.dialogReady().countDown(); // unblock the watcher thread
 
                 dialog.setVisible(true); // enters modal event loop; returns when disposed or clicked
                 dialog.dispose(); // free native resources; no-op if already disposed by watcher
-                choiceIndex.set(parseChoice(pane, options));
+                coord.choiceIndex().set(parseChoice(pane, options));
 
-                if (neverAsk.isSelected()) {
-                    ChatInputSettings.getInstance().setToolTimeoutDialogEnabled(false);
-                } else if (suppressSession.isSelected()) {
-                    suppressedForSession.set(true);
+                if (!coord.completedByFuture().get()) {
+                    if (neverAsk.isSelected()) {
+                        ChatInputSettings.getInstance().setToolTimeoutDialogEnabled(false);
+                    } else if (suppressSession.isSelected()) {
+                        suppressedForSession.set(true);
+                    }
                 }
             } finally {
-                dialogDone.countDown();
+                coord.dialogDone().countDown();
             }
         });
     }

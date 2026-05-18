@@ -429,7 +429,7 @@ object MarkdownRenderer {
             resolved != null -> {
                 val colonIdx = content.indexOf(':')
                 val lineSpec = if (colonIdx > 0 && resolved.second != null) content.substring(colonIdx) else ""
-                val href = resolved.first + lineSpec
+                val href = escapeHtml(resolved.first + lineSpec)
                 "<a href='openfile://$href'><code>&#8239;${escapeHtml(content)}&#8239;</code></a>"
             }
 
