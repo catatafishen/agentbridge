@@ -238,8 +238,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun finalizeTurn() {
         collapseThinking()
-        currentTurn?.markdownPane?.renderNow()
-        currentTurn?.thinkingPane?.renderNow()
+        currentTurn?.markdownPane?.notifyStreamDone()
+        // thinkingPane is handled by collapseThinking(); no second call needed.
         currentTurn = null
     }
 
@@ -482,6 +482,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun collapseThinking() {
         val turn = currentTurn ?: return
         val chip = turn.thinkingChip ?: return
+        turn.thinkingPane?.notifyStreamDone()
         chip.setActive(false)
         chip.collapseWhenReady {
             turn.chipStrip.hideThinkingBubble()
