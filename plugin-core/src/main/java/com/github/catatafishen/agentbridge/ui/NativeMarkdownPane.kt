@@ -184,7 +184,8 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         lastRenderTime = System.currentTimeMillis()
         contentVersion++
         heightRevalidateTimer.restart()
-        val html = fileNavigator.markdownToHtml(rawText.toString())
+        val displayText = QUICK_REPLY_TAG_REGEX.replace(rawText.toString(), "").trimEnd()
+        val html = fileNavigator.markdownToHtml(displayText)
         // Replace the stale document with a fresh empty one before setText(). When the existing
         // document's element tree is in a transient null state, AbstractDocument.handleRemove()
         // NPEs at Utilities.isComposedTextElement(null) because getCharacterElement(0) returns null.
