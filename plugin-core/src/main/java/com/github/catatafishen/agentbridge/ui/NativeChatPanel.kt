@@ -103,6 +103,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private var autoScrollEnabled = true
 
+    /**
+     * Fires every 300 ms while auto-scroll is active to recover from any scroll drift caused by
+     * layout timing (height-estimate updates, collapse animations, etc.). Started/stopped together
+     * with [autoScrollEnabled] so it never runs when the user has scrolled up intentionally.
+     */
+    private val autoScrollSafetyTimer = Timer(300) { scrollToBottom() }.apply { isRepeats = true }
+
     /** Guards the AdjustmentListener against reacting to programmatic scroll operations. */
     private var suppressScrollListener = false
 
@@ -138,7 +145,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     fun setAutoScroll(enabled: Boolean) {
         autoScrollEnabled = enabled
-        if (enabled) scrollToBottom()
+        if (enabled) {
+            scrollToBottom()
+            autoScrollSafetyTimer.start()
+        } else {
+            autoScrollSafetyTimer.stop()
+        }
     }
 
     private var placeholderLabel: JBLabel? = null
@@ -174,19 +186,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 val bar = scrollPane.verticalScrollBar
                 val currentValue = bar.value
                 val atBottom = currentValue + bar.visibleAmount >= bar.maximum - 4
-                if (atBottom && !autoScrollEnabled && currentValue > lastScrollValue) {
-                    // Re-enable only when the user actively scrolled DOWN to the bottom
-                    // (value strictly increased). Guard against false positives where
-                    // JEditorPane.setText() briefly shrinks the document during content
-                    // replacement, causing maximum to drop and atBottom to become true
-                    // while the scrollbar value is unchanged (V > V is false).
+                if (atBottom && !autoScrollEnabled && currentValue >= lastScrollValue) {
+                    // Re-enable when the user scrolled back to the bottom (or layout brought
+                    // them there). Uses >= so that a layout-induced max shrinkage that clamps
+                    // currentValue to exactly lastScrollValue still re-enables auto-scroll.
                     autoScrollEnabled = true
+                    autoScrollSafetyTimer.start()
                     onAutoScrollEnabled?.invoke()
-                } else if (!atBottom && autoScrollEnabled && currentValue < lastScrollValue) {
-                    // Only disable auto-scroll when the user actively scrolled up (value decreased).
-                    // Ignore events where the max grew due to new content being appended — those
-                    // leave the value unchanged and should not disturb the auto-scroll state.
+                } else if (!atBottom && autoScrollEnabled && lastScrollValue - currentValue > SCROLL_DISABLE_THRESHOLD_PX) {
+                    // Disable only on a meaningful upward scroll. Tiny value drops below the
+                    // threshold are sub-pixel rounding artefacts from layout passes and must
+                    // not suppress auto-scroll.
                     autoScrollEnabled = false
+                    autoScrollSafetyTimer.stop()
                     onAutoScrollDisabled?.invoke()
                 }
                 lastScrollValue = currentValue
@@ -955,6 +967,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         McpPauseService.getInstance(project).removeListener(pauseListener)
         allMarkdownPanes.forEach { it.dispose() }
         if (spinTimer.isRunning) spinTimer.stop()
+        if (autoScrollSafetyTimer.isRunning) autoScrollSafetyTimer.stop()
         workingTimer.stop()
         Disposer.dispose(schemeDisposable)
     }
@@ -1129,5 +1142,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     companion object {
         private const val ROW_SPACING = 8
+
+        /** Minimum upward pixel movement required to disable auto-scroll, guarding against sub-pixel layout rounding. */
+        private const val SCROLL_DISABLE_THRESHOLD_PX = 10
     }
 }
