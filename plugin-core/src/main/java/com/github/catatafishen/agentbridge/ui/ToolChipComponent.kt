@@ -1,31 +1,114 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.intellij.icons.AllIcons
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.Box
-import javax.swing.JComponent
+import javax.swing.Icon
 import javax.swing.JLabel
 
 /**
- * A compact tool chip with a spinning ring indicator and kind-based coloring.
+ * A compact tool chip with a status indicator and kind-based coloring.
  * Matches the JCEF `<tool-chip>` component.
  *
  * Extends [BaseChipComponent] for consistent sizing and painting with [ThinkingChipComponent].
- * Uses [BoxLayout.X_AXIS] so the chip never wraps regardless of panel width.
+ * Layout is horizontal (X_AXIS) so the chip never wraps regardless of panel width.
+ *
+ * Status indicator icons:
+ * - **running/pending**: IntelliJ built-in spinner frames (`AllIcons.Process.Step_1..8`)
+ * - **complete/success/done**: filled circle (agentbridge tools) or circle outline (other tools)
+ * - **else (failed/denied)**: filled broken arc — 270° sector (agentbridge) or outline arc (other)
  */
 class ToolChipComponent(
     title: String,
     kind: String?,
     status: String,
+    isMcpHandled: Boolean = false,
     private val onClick: (() -> Unit)? = null,
 ) : BaseChipComponent(kind) {
 
     private var currentStatus = status
-    private var spinAngle = 0
-    private val ringSize = JBUI.scale(8)
-    private val ring = RingIndicator()
+    private var spinFrame = 0
+
+    private val spinIcons = arrayOf(
+        AllIcons.Process.Step_1, AllIcons.Process.Step_2, AllIcons.Process.Step_3,
+        AllIcons.Process.Step_4, AllIcons.Process.Step_5, AllIcons.Process.Step_6,
+        AllIcons.Process.Step_7, AllIcons.Process.Step_8,
+    )
+
+    // Icon size matches the AllIcons.Process spinner frames (16 logical px).
+    private val iconSize = AllIcons.Process.Step_1.iconWidth
+
+    /** Filled circle using the chip's kind color — "success" state for agentbridge tools. */
+    private inner class FilledCircleIcon : Icon {
+        override fun getIconWidth() = iconSize
+        override fun getIconHeight() = iconSize
+        override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
+            val g2 = g.create() as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = kindCol
+            val pad = 3
+            g2.fillOval(x + pad, y + pad, iconSize - 2 * pad, iconSize - 2 * pad)
+            g2.dispose()
+        }
+    }
+
+    /** Circle outline using the chip's kind color — "success" state for other tools. */
+    private inner class OutlineCircleIcon : Icon {
+        override fun getIconWidth() = iconSize
+        override fun getIconHeight() = iconSize
+        override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
+            val g2 = g.create() as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = kindCol
+            g2.stroke = BasicStroke(1.5f)
+            val pad = 3
+            g2.drawOval(x + pad, y + pad, iconSize - 2 * pad - 1, iconSize - 2 * pad - 1)
+            g2.dispose()
+        }
+    }
+
+    /** 270° filled arc (pie sector) — "failed" state for agentbridge tools. */
+    private inner class FilledArcIcon : Icon {
+        override fun getIconWidth() = iconSize
+        override fun getIconHeight() = iconSize
+        override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
+            val g2 = g.create() as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = NativeChatColors.ERROR
+            val pad = 3
+            g2.fillArc(x + pad, y + pad, iconSize - 2 * pad, iconSize - 2 * pad, 0, 270)
+            g2.dispose()
+        }
+    }
+
+    /** 270° outline arc — "failed" state for other tools. */
+    private inner class OutlineArcIcon : Icon {
+        override fun getIconWidth() = iconSize
+        override fun getIconHeight() = iconSize
+        override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
+            val g2 = g.create() as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = NativeChatColors.ERROR
+            g2.stroke = BasicStroke(1.5f)
+            val pad = 3
+            g2.drawArc(x + pad, y + pad, iconSize - 2 * pad - 1, iconSize - 2 * pad - 1, 0, 270)
+            g2.dispose()
+        }
+    }
+
+    private val successIcon: Icon = if (isMcpHandled) FilledCircleIcon() else OutlineCircleIcon()
+    private val errorIcon: Icon = if (isMcpHandled) FilledArcIcon() else OutlineArcIcon()
+
+    private val statusLabel = JLabel(currentStatusIcon()).apply {
+        alignmentY = CENTER_ALIGNMENT
+        preferredSize = Dimension(iconSize, iconSize)
+        minimumSize = Dimension(iconSize, iconSize)
+        maximumSize = Dimension(iconSize, iconSize)
+    }
+
     private val label = JLabel(truncateLabel(title)).apply {
         foreground = kindCol
         applyChatFont(-2)
@@ -35,7 +118,7 @@ class ToolChipComponent(
 
     init {
         if (onClick != null) cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-        add(ring)
+        add(statusLabel)
         add(Box.createRigidArea(Dimension(JBUI.scale(4), 0)))
         add(label)
         addMouseListener(object : MouseAdapter() {
@@ -57,48 +140,21 @@ class ToolChipComponent(
 
     fun updateStatus(status: String) {
         currentStatus = status
+        statusLabel.icon = currentStatusIcon()
         repaint()
     }
 
     fun advanceSpin() {
-        spinAngle = (spinAngle + 15) % 360
-        repaint()
+        spinFrame = (spinFrame + 1) % 8
+        if (isSpinning()) {
+            statusLabel.icon = spinIcons[spinFrame]
+        }
     }
 
-    private inner class RingIndicator : JComponent() {
-        init {
-            val s = ringSize
-            preferredSize = Dimension(s, s)
-            minimumSize = Dimension(s, s)
-            maximumSize = Dimension(s, s)
-            alignmentY = CENTER_ALIGNMENT
-            isOpaque = false
-        }
-
-        override fun paintComponent(g: Graphics) {
-            val g2 = g.create() as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            val s = ringSize - 2
-            when (currentStatus.lowercase()) {
-                "running", "pending" -> {
-                    g2.color = kindCol
-                    g2.stroke = BasicStroke(1.5f)
-                    g2.drawArc(1, 1, s, s, spinAngle, 270)
-                }
-
-                "complete", "completed", "success", "done" -> {
-                    g2.color = kindCol
-                    g2.fillOval(1, 1, s, s)
-                }
-
-                else -> {
-                    g2.color = NativeChatColors.ERROR
-                    g2.stroke = BasicStroke(1.5f)
-                    g2.drawArc(1, 1, s, s, 0, 270)
-                }
-            }
-            g2.dispose()
-        }
+    private fun currentStatusIcon(): Icon = when (currentStatus.lowercase()) {
+        "running", "pending" -> spinIcons[spinFrame]
+        "complete", "completed", "success", "done" -> successIcon
+        else -> errorIcon
     }
 
     companion object {

@@ -147,12 +147,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 val bar = scrollPane.verticalScrollBar
                 val currentValue = bar.value
                 val atBottom = currentValue + bar.visibleAmount >= bar.maximum - 4
-                if (atBottom && !autoScrollEnabled && currentValue >= lastScrollValue) {
-                    // Re-enable only when the user scrolled back down to the bottom
-                    // (value increased or stayed the same). Guard against false positives
-                    // where JEditorPane.setText() briefly shrinks the document during
-                    // content replacement, causing maximum to drop and atBottom to become
-                    // true even though the user hasn't moved the scrollbar.
+                if (atBottom && !autoScrollEnabled && currentValue > lastScrollValue) {
+                    // Re-enable only when the user actively scrolled DOWN to the bottom
+                    // (value strictly increased). Guard against false positives where
+                    // JEditorPane.setText() briefly shrinks the document during content
+                    // replacement, causing maximum to drop and atBottom to become true
+                    // while the scrollbar value is unchanged (V > V is false).
                     autoScrollEnabled = true
                     onAutoScrollEnabled?.invoke()
                 } else if (!atBottom && autoScrollEnabled && currentValue < lastScrollValue) {
@@ -279,6 +279,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             suppressScrollListener = true
             try {
                 scrollPane.verticalScrollBar.value = Int.MAX_VALUE
+                // Capture the clamped position immediately so the AdjustmentListener has an
+                // accurate baseline for the next user-initiated scroll event (re-enable uses >).
+                lastScrollValue = scrollPane.verticalScrollBar.value
             } finally {
                 suppressScrollListener = false
             }
@@ -430,6 +433,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (turn.markdownPane == null) {
             val (row, pane) = createMarkdownBubble(agentBg(), agentBorder())
             turn.markdownPane = pane
+            // When a thinking chip is present, the thinkingWrapper's border provides spacing
+            // while it's visible. When collapsed, that border disappears — add a small top
+            // margin to the message bubble so it isn't flush against the chip strip.
+            if (turn.thinkingChip != null) row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
             turn.container.add(row)
         }
         turn.markdownPane!!.appendMarkdown(text)
@@ -490,7 +497,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val resolvedKind = kind ?: "other"
         val displayTitle = resolveToolDisplayName(title)
         toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
-        val chip = ToolChipComponent(displayTitle, kind, "running") { showToolPopup(id) }
+        val chip = ToolChipComponent(displayTitle, kind, "running", isMcpHandled) { showToolPopup(id) }
         allChips[id] = chip
         turn.chipStrip.addToolChip(chip)
         if (!spinTimer.isRunning) spinTimer.start()
