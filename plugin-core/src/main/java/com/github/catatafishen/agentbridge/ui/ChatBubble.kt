@@ -6,6 +6,7 @@ import java.awt.event.ContainerAdapter
 import java.awt.event.ContainerEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.geom.Path2D
 import javax.swing.*
 
 internal const val BUBBLE_V_PAD = 8
@@ -13,13 +14,23 @@ private const val BUBBLE_H_PAD = 14
 private const val MAX_BUBBLE_WIDTH_FRACTION = 0.94
 
 /**
- * A JPanel that paints a rounded rectangle background. Optionally draws a 1px border
- * when [borderColor] is non-null.
+ * Which corner of the bubble to leave unrounded (square).
+ * Used to "anchor" the bubble to its side: left-aligned bubbles square their bottom-left corner,
+ * right-aligned bubbles square their bottom-right corner.
+ */
+enum class BubbleCorner { NONE, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+/**
+ * A JPanel that paints a rounded rectangle background with optional per-corner squaring and border.
+ *
+ * - [squaredCorner] leaves one corner sharp so the bubble appears anchored to its alignment side.
+ * - [borderColor] draws a 1px border when non-null, matching the style of tool chip borders.
  */
 open class RoundedPanel(
     private val bgColor: Color,
     private val borderColor: Color? = null,
     private val radius: Int = JBUI.scale(10),
+    private val squaredCorner: BubbleCorner = BubbleCorner.NONE,
 ) : JPanel(BorderLayout()) {
 
     init {
@@ -29,13 +40,41 @@ open class RoundedPanel(
     override fun paintComponent(g: Graphics) {
         val g2 = g.create() as Graphics2D
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val r = radius.toFloat()
+        val brR = if (squaredCorner == BubbleCorner.BOTTOM_RIGHT) 0f else r
+        val blR = if (squaredCorner == BubbleCorner.BOTTOM_LEFT) 0f else r
+        // Fill covers the full component bounds.
         g2.color = bgColor
-        g2.fillRoundRect(0, 0, width, height, radius, radius)
+        g2.fill(cornerPath(0f, 0f, width.toFloat(), height.toFloat(), r, r, brR, blR))
+        // Stroke is inset by 0.5px so the 1px line falls within the component bounds.
         borderColor?.let {
             g2.color = it
-            g2.drawRoundRect(0, 0, width - 1, height - 1, radius, radius)
+            g2.draw(cornerPath(0.5f, 0.5f, width - 1f, height - 1f, r, r, brR, blR))
         }
         g2.dispose()
+    }
+
+    private companion object {
+        /**
+         * Builds a Path2D for a rounded rectangle with per-corner radii.
+         * Passing 0f for a radius leaves that corner sharp (square).
+         * Corners are ordered: top-left (tl), top-right (tr), bottom-right (br), bottom-left (bl).
+         */
+        fun cornerPath(x: Float, y: Float, w: Float, h: Float,
+                       tl: Float, tr: Float, br: Float, bl: Float): Path2D.Float {
+            val p = Path2D.Float()
+            p.moveTo(x + tl, y)
+            p.lineTo(x + w - tr, y)
+            if (tr > 0) p.quadTo(x + w, y, x + w, y + tr)
+            p.lineTo(x + w, y + h - br)
+            if (br > 0) p.quadTo(x + w, y + h, x + w - br, y + h)
+            p.lineTo(x + bl, y + h)
+            if (bl > 0) p.quadTo(x, y + h, x, y + h - bl)
+            p.lineTo(x, y + tl)
+            if (tl > 0) p.quadTo(x, y, x + tl, y)
+            p.closePath()
+            return p
+        }
     }
 }
 
@@ -127,6 +166,11 @@ class BubbleRow(
 /**
  * Creates a width-capped rounded bubble and its alignment wrapper in one call.
  *
+ * - The bubble bottom corner on the alignment side is squared to visually anchor it.
+ *   Left-aligned → bottom-left squared; right-aligned → bottom-right squared.
+ * - A subtle border is drawn when the background maps to a known border color
+ *   (see [NativeChatColors.bubbleBorder]).
+ *
  * Returns a [BubbleRow] that supports:
  * - Kotlin destructuring: `val (row, bubble) = createBubble(...)`
  * - Hover button registration: `bubbleRow.addHoverButton(icon, tooltip) { ... }`
@@ -135,7 +179,10 @@ class BubbleRow(
  * `bubble` is the [RoundedPanel] to add content to.
  */
 fun createBubble(bg: Color, rightAligned: Boolean = false): BubbleRow {
-    val bubble = object : RoundedPanel(bg) {
+    val borderColor = NativeChatColors.bubbleBorder(bg)
+    val squaredCorner = if (rightAligned) BubbleCorner.BOTTOM_RIGHT else BubbleCorner.BOTTOM_LEFT
+
+    val bubble = object : RoundedPanel(bg, borderColor, JBUI.scale(10), squaredCorner) {
         override fun getMaximumSize(): Dimension {
             // Walk up to the nearest JViewport — its width is set by ScrollPaneLayout
             // before any content is measured, so it's always correct even on the very

@@ -14,7 +14,10 @@ object NativeChatColors {
     val THINK: JBColor = JBColor(Gray._100, Gray._176)
 
     val USER_BUBBLE_BG = JBColor(Color(86, 156, 214, 25), Color(86, 156, 214, 31))
+    val USER_BUBBLE_BORDER = JBColor(Color(86, 156, 214, 45), Color(86, 156, 214, 55))
+
     val AGENT_BUBBLE_BG = JBColor(Color(150, 200, 150, 12), Color(150, 200, 150, 15))
+    val AGENT_BUBBLE_BORDER = JBColor(Color(150, 200, 150, 35), Color(150, 200, 150, 45))
 
     val THINK_BG = JBColor(Color(128, 128, 128, 15), Color(128, 128, 128, 20))
     val THINK_BORDER = JBColor(Color(128, 128, 128, 30), Color(128, 128, 128, 41))
@@ -65,4 +68,15 @@ object NativeChatColors {
     val CODE_BG: JBColor = JBColor(Color(0xEB, 0xEB, 0xEB), Color(0x33, 0x33, 0x33))
     val TABLE_BORDER: JBColor = JBColor(Color(0xD0, 0xD0, 0xD0), Color(0x44, 0x44, 0x44))
     val LINK: JBColor = JBColor(Color(0x24, 0x70, 0xB3), Color(0x58, 0x9D, 0xF6))
+
+    /**
+     * Returns the border color for a bubble background, or null for backgrounds that have no border
+     * (e.g. error bubbles). Uses identity comparison — callers must pass the singleton constants.
+     */
+    fun bubbleBorder(bg: Color): Color? = when (bg) {
+        USER_BUBBLE_BG -> USER_BUBBLE_BORDER
+        AGENT_BUBBLE_BG -> AGENT_BUBBLE_BORDER
+        THINK_BG -> THINK_BORDER
+        else -> null
+    }
 }
