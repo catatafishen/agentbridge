@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.acp.client.AcpClient
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -46,6 +47,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val fileNavigator = FileNavigator(project)
     private val toolRegistry = ToolRegistry.getInstance(project)
+
+    /**
+     * Accent color for the currently active agent, derived from its profile ID and any
+     * per-client custom color override. Bubbles created for agent content sample this color
+     * at creation time to produce their background and border.
+     */
+    private var currentAgentAccent: Color = ChatTheme.AGENT_COLOR
+
+    private fun agentBg(): Color = NativeChatColors.agentBubbleBg(currentAgentAccent)
+    private fun agentBorder(): Color = NativeChatColors.agentBubbleBorder(currentAgentAccent)
 
     /** Stored tool call data for popup display when chips are clicked. */
     private data class ToolCallData(
@@ -278,7 +289,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (isReplaying) return
         hideWorkingIndicator()
         workingStartMs = System.currentTimeMillis()
-        val (row, bubble) = createBubble(NativeChatColors.AGENT_BUBBLE_BG)
+        val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
         bubble.add(JBLabel("Working…").apply {
             foreground = UIUtil.getContextHelpForeground()
             applyChatFont()
@@ -352,8 +363,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
 
     /** Creates a streaming bubble: an aligned row ready to add to a container, plus its pane. */
-    private fun createMarkdownBubble(bg: Color): Pair<JPanel, NativeMarkdownPane> {
-        val (row, bubble) = createBubble(bg)
+    private fun createMarkdownBubble(bg: Color, explicitBorder: Color? = null): Pair<JPanel, NativeMarkdownPane> {
+        val (row, bubble) = createBubble(bg, explicitBorder = explicitBorder)
         val pane = NativeMarkdownPane(fileNavigator).also { allMarkdownPanes += it }
         bubble.add(pane, BorderLayout.CENTER)
         return row to pane
@@ -364,9 +375,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         content: JComponent,
         bg: Color,
         rightAligned: Boolean = false,
+        explicitBorder: Color? = null,
         onBubbleRow: ((BubbleRow) -> Unit)? = null,
     ): Pair<JPanel, RoundedPanel> {
-        val bubbleRow = createBubble(bg, rightAligned)
+        val bubbleRow = createBubble(bg, rightAligned, explicitBorder)
         onBubbleRow?.invoke(bubbleRow)
         bubbleRow.bubble.add(content, BorderLayout.CENTER)
         val row = JPanel().apply {
@@ -416,7 +428,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingStartMs = System.currentTimeMillis()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
-            val (row, pane) = createMarkdownBubble(NativeChatColors.AGENT_BUBBLE_BG)
+            val (row, pane) = createMarkdownBubble(agentBg(), agentBorder())
             turn.markdownPane = pane
             turn.container.add(row)
         }
@@ -577,7 +589,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun addInfoEntry(message: String) {
-        val (row, _) = createMessageRow(createMarkdownPane("ℹ $message"), NativeChatColors.AGENT_BUBBLE_BG)
+        val (row, _) = createMessageRow(createMarkdownPane("ℹ $message"), agentBg(), explicitBorder = agentBorder())
         addRow(row)
     }
 
@@ -832,6 +844,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         profileId: String,
         clientType: String
     ) {
+        // Resolve accent color: prefer per-client saved override, then SA_COLORS by profile.
+        val customAccent: Color? = if (clientType.isNotEmpty())
+            ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(clientType))?.color
+        else null
+        currentAgentAccent = customAccent
+            ?: if (profileId.isNotEmpty()) ChatTheme.SA_COLORS[ChatTheme.agentColorIndex(profileId)]
+            else ChatTheme.AGENT_COLOR
+
         val display = buildString {
             append(agentName)
             if (clientType.isNotEmpty()) append(" · $clientType")

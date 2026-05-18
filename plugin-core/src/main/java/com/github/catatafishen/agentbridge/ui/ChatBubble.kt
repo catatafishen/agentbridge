@@ -60,8 +60,10 @@ open class RoundedPanel(
          * Passing 0f for a radius leaves that corner sharp (square).
          * Corners are ordered: top-left (tl), top-right (tr), bottom-right (br), bottom-left (bl).
          */
-        fun cornerPath(x: Float, y: Float, w: Float, h: Float,
-                       tl: Float, tr: Float, br: Float, bl: Float): Path2D.Float {
+        fun cornerPath(
+            x: Float, y: Float, w: Float, h: Float,
+            tl: Float, tr: Float, br: Float, bl: Float
+        ): Path2D.Float {
             val p = Path2D.Float()
             p.moveTo(x + tl, y)
             p.lineTo(x + w - tr, y)
@@ -178,8 +180,8 @@ class BubbleRow(
  * `row` is the component to add to the parent container.
  * `bubble` is the [RoundedPanel] to add content to.
  */
-fun createBubble(bg: Color, rightAligned: Boolean = false): BubbleRow {
-    val borderColor = NativeChatColors.bubbleBorder(bg)
+fun createBubble(bg: Color, rightAligned: Boolean = false, explicitBorder: Color? = null): BubbleRow {
+    val borderColor = explicitBorder ?: NativeChatColors.bubbleBorder(bg)
     val squaredCorner = if (rightAligned) BubbleCorner.BOTTOM_RIGHT else BubbleCorner.BOTTOM_LEFT
 
     val bubble = object : RoundedPanel(bg, borderColor, JBUI.scale(10), squaredCorner) {
