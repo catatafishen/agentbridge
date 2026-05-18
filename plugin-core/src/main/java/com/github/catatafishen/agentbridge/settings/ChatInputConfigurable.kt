@@ -197,6 +197,28 @@ class ChatInputConfigurable(private val project: Project) :
                 )
                 .bindSelected({ s.isPauseOnInputFocus() }, { s.setPauseOnInputFocus(it) })
         }
+        separator()
+        row {
+            comment("Tool call timeout: how long to wait before asking what to do.")
+        }
+        row("Initial timeout (seconds):") {
+            spinner(10..3600, 5)
+                .comment(
+                    "Seconds to wait for a tool call before showing the \"still running\" dialog. " +
+                        "Default: 60. The dialog is not shown when you are reviewing diffs."
+                )
+                .bindIntValue({ s.toolTimeoutSeconds }, { s.toolTimeoutSeconds = it })
+        }
+        row("First wait extension (minutes):") {
+            spinner(1..120, 1)
+                .comment("First option in the \"still running\" dialog — wait this many extra minutes.")
+                .bindIntValue({ s.toolTimeoutExtension1Minutes }, { s.toolTimeoutExtension1Minutes = it })
+        }
+        row("Second wait extension (minutes):") {
+            spinner(1..120, 1)
+                .comment("Second option in the \"still running\" dialog — wait this many extra minutes.")
+                .bindIntValue({ s.toolTimeoutExtension2Minutes }, { s.toolTimeoutExtension2Minutes = it })
+        }
         onApply {
             val chatContent = ChatToolWindowContent.getInstance(project)
             chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)
