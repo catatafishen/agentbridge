@@ -10,6 +10,8 @@ import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolTimeoutDialog;
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService;
 import com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic;
 import com.github.catatafishen.agentbridge.services.hooks.HookExecutor;
@@ -77,7 +79,6 @@ public final class McpProtocolHandler {
     private static final int MAX_RESULT_CHARS = 80_000;
     private static final int RESOURCE_PAGE_SIZE = 200;
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
-    private static final int INITIAL_TIMEOUT_SECONDS = 30;
 
     private static final String SERVER_NAME = "agentbridge";
     private static final String SERVER_VERSION = BuildInfo.getVersion();
@@ -680,7 +681,8 @@ public final class McpProtocolHandler {
         });
 
         try {
-            return future.get(INITIAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            int initialTimeoutSeconds = ChatInputSettings.getInstance().getToolTimeoutSeconds();
+            return future.get(initialTimeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             int elapsedSeconds = (int) ((System.currentTimeMillis() - startMs) / 1000);
             return waitAfterTimeout(future, workerThread, toolName, displayName, elapsedSeconds);
@@ -699,6 +701,12 @@ public final class McpProtocolHandler {
                                     AtomicReference<Thread> workerThread,
                                     String toolName, @Nullable String displayName,
                                     int elapsedSeconds) {
+        // If the tool is blocked at the diff-review gate, the user is actively reviewing changes
+        // in the side panel — a timeout dialog would be confusing and intrusive. Wait silently.
+        if (AgentEditSession.getInstance(project).isGateActive()) {
+            return getFutureResult(future, workerThread, toolName, "diff review gate");
+        }
+
         // If another concurrent tool already has a dialog showing, skip ours and wait indefinitely
         // to avoid stacking modal dialogs on the user.
         if (!timeoutDialogActive.compareAndSet(false, true)) {
@@ -707,8 +715,12 @@ public final class McpProtocolHandler {
 
         int extra;
         try {
+            ChatInputSettings s = ChatInputSettings.getInstance();
+            int ext1Seconds = s.getToolTimeoutExtension1Minutes() * 60;
+            int ext2Seconds = s.getToolTimeoutExtension2Minutes() * 60;
             extra = ToolTimeoutDialog.askForExtension(
-                project, displayName != null ? displayName : toolName, elapsedSeconds, future);
+                project, displayName != null ? displayName : toolName, elapsedSeconds, future,
+                ext1Seconds, ext2Seconds);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             interruptWorker(workerThread);

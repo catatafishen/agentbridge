@@ -134,6 +134,41 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.reprimandNudgeMode = mode;
     }
 
+    // ── Tool timeout ────────────────────────────────────────────────────────
+
+    /**
+     * Seconds to wait for a tool call before showing the "still running" dialog. Default: 60.
+     */
+    public int getToolTimeoutSeconds() {
+        return myState.toolTimeoutSeconds;
+    }
+
+    public void setToolTimeoutSeconds(int seconds) {
+        myState.toolTimeoutSeconds = seconds;
+    }
+
+    /**
+     * Minutes for the first "wait longer" option in the tool timeout dialog. Default: 1.
+     */
+    public int getToolTimeoutExtension1Minutes() {
+        return myState.toolTimeoutExtension1Minutes;
+    }
+
+    public void setToolTimeoutExtension1Minutes(int minutes) {
+        myState.toolTimeoutExtension1Minutes = minutes;
+    }
+
+    /**
+     * Minutes for the second "wait longer" option in the tool timeout dialog. Default: 5.
+     */
+    public int getToolTimeoutExtension2Minutes() {
+        return myState.toolTimeoutExtension2Minutes;
+    }
+
+    public void setToolTimeoutExtension2Minutes(int minutes) {
+        myState.toolTimeoutExtension2Minutes = minutes;
+    }
+
     // ── Pause feature ───────────────────────────────────────────────────────
 
     /**
@@ -174,5 +209,8 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         @NotNull
         public ReprimandNudgeMode reprimandNudgeMode = ReprimandNudgeMode.ENABLED; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean pauseOnInputFocus = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public int toolTimeoutSeconds = 60; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public int toolTimeoutExtension1Minutes = 1; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public int toolTimeoutExtension2Minutes = 5; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 }
