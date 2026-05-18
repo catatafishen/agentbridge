@@ -2317,6 +2317,12 @@ class ChatToolWindowContent(
         consolePanel = bp
         bp.onLoadMoreRequested = ::onLoadMoreHistory
         chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
+        nativeChatPanel.onCancelNudge = { id ->
+            val text = AgentNudgeService.getInstance(project).getPendingNudgesText()
+            if (!text.isNullOrEmpty()) promptTextArea.text = text
+            clearAndRemoveNudge(id)
+            refreshShortcutHints()
+        }
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
             val nudgeService = AgentNudgeService.getInstance(project)
             nudgeService.removeQueuedMessage(text)

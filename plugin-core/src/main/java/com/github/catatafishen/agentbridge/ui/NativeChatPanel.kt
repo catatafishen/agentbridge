@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.intellij.icons.AllIcons
 import com.intellij.ide.setToolTipText
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -39,6 +40,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     var onLoadMoreRequested: (() -> Unit)? = null
     var onAutoScrollDisabled: (() -> Unit)? = null
     var onAutoScrollEnabled: (() -> Unit)? = null
+
+    /** Invoked when the user clicks the ↓ button on a pending nudge bubble. */
+    var onCancelNudge: ((id: String) -> Unit)? = null
 
     private val fileNavigator = FileNavigator(project)
     private val toolRegistry = ToolRegistry.getInstance(project)
@@ -360,9 +364,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         content: JComponent,
         bg: Color,
         rightAligned: Boolean = false,
+        onBubbleRow: ((BubbleRow) -> Unit)? = null,
     ): Pair<JPanel, RoundedPanel> {
-        val (alignedRow, bubble) = createBubble(bg, rightAligned)
-        bubble.add(content, BorderLayout.CENTER)
+        val bubbleRow = createBubble(bg, rightAligned)
+        onBubbleRow?.invoke(bubbleRow)
+        bubbleRow.bubble.add(content, BorderLayout.CENTER)
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
@@ -375,8 +381,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
             })
         }
-        row.add(alignedRow)
-        return row to bubble
+        row.add(bubbleRow.row)
+        return row to bubbleRow.bubble
     }
 
     override fun addPromptEntry(
@@ -751,15 +757,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
-    /** Creates a right-aligned nudge row using the same bubble as user messages. */
-    private fun createNudgeRow(text: String): JPanel {
-        val (row, _) = createMessageRow(createMarkdownPane(text), NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+    /** Creates a right-aligned nudge row with a ↓ hover button that restores the text to the input. */
+    private fun createNudgeRow(id: String, text: String): JPanel {
+        val (row, _) = createMessageRow(
+            createMarkdownPane(text), NativeChatColors.USER_BUBBLE_BG, rightAligned = true
+        ) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.MoveDown, "Restore to input") {
+                onCancelNudge?.invoke(id)
+            }
+        }
         return row
     }
 
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
         removeNudgeBubble(id)
-        val row = createNudgeRow(text)
+        val row = createNudgeRow(id, text)
         nudgeBubbles[id] = row
         addRow(row)
     }
@@ -777,7 +789,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
-        addRow(createNudgeRow(text))
+        addRow(createNudgeRow(id, text))
     }
 
     private val queuedMessages = mutableMapOf<String, JComponent>()
