@@ -54,6 +54,14 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedHeight = -1
 
     /**
+     * Chars accumulated in the current visual line since the last explicit (`\n`) or
+     * natural (char-count) line break. Used by [appendMarkdown] to cheaply detect
+     * when a line wraps and grow [cachedHeight] by one line-height immediately,
+     * without waiting for the [heightRevalidateTimer].
+     */
+    private var streamingLineChars = 0
+
+    /**
      * Set to true when [heightRevalidateTimer] fires, forcing one accurate layout
      * computation after streaming pauses.
      */
@@ -108,6 +116,12 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * This mirrors the JCEF `appendStreamingText` strategy (rAF-batched re-render)
      * and avoids the old debounce pitfall where rapid chunks would keep restarting
      * the timer, suppressing all visible updates until the stream paused.
+     *
+     * **Incremental height**: before the render throttle fires, each incoming chunk is
+     * scanned for visual line breaks (explicit `\n` and natural char-count wraps).
+     * For each line added, [cachedHeight] is bumped by one [lineHeightEstimate] and
+     * [revalidate] is called immediately — keeping the bubble growing in near-real-time
+     * without a full HTML layout.
      */
     fun appendMarkdown(text: String) {
         val wasEmpty = rawText.isEmpty()
@@ -116,6 +130,15 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             // First token: always render immediately so the bubble appears at once.
             renderNow()
             return
+        }
+        // Grow the cached height by one line per visual line added (explicit \n or char-count
+        // wrap). This avoids the 500 ms gap where new lines overflow the bubble without it growing.
+        if (cachedHeight > 0) {
+            val linesAdded = countAndAccumulateLinesAdded(text)
+            if (linesAdded > 0) {
+                cachedHeight += linesAdded * lineHeightEstimate()
+                revalidate()
+            }
         }
         val elapsed = System.currentTimeMillis() - lastRenderTime
         if (elapsed >= RENDER_INTERVAL_MS) {
@@ -134,7 +157,12 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     fun setCompleteMarkdown(text: String) {
         rawText.setLength(0)
         rawText.append(text)
+        streamingLineChars = 0
         renderNow()
+        // History replay: no streaming throttle — snap to accurate height immediately.
+        heightRevalidateTimer.stop()
+        forceRecompute = true
+        revalidate()
     }
 
     /** Forces an immediate HTML render, resetting the throttle state. */
@@ -152,6 +180,23 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // (guarded by `if (length > 0)`) and goes straight to insertString().
         document = (editorKit as HTMLEditorKit).createDefaultDocument()
         text = "<html><body>$html</body></html>"
+    }
+
+    /**
+     * Signals that this pane's streaming has ended. Renders any pending content, then
+     * cancels the [heightRevalidateTimer] and immediately triggers one accurate height
+     * layout — bypassing the 500 ms delay that exists to avoid expensive layouts during
+     * in-flight streaming.
+     *
+     * Called from [com.github.catatafishen.agentbridge.ui.NativeChatPanel.finalizeTurn]
+     * (markdown pane) and from [com.github.catatafishen.agentbridge.ui.NativeChatPanel.collapseThinking]
+     * (thinking pane).
+     */
+    fun notifyStreamDone() {
+        renderNow()
+        heightRevalidateTimer.stop()
+        forceRecompute = true
+        revalidate()
     }
 
     /** Rebuilds the stylesheet when the IDE editor font size changes. */
@@ -300,20 +345,51 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     }
 
     /**
+     * Counts the number of visual lines added by [text] and updates [streamingLineChars].
+     * Each explicit `\n` counts as one line. Each time [streamingLineChars] reaches
+     * [charsPerLineEstimate], a natural word-wrap line is counted.
+     */
+    private fun countAndAccumulateLinesAdded(text: String): Int {
+        val cpl = charsPerLineEstimate()
+        var lines = 0
+        for (ch in text) {
+            if (ch == '\n') {
+                streamingLineChars = 0
+                lines++
+            } else if (cpl > 0) {
+                streamingLineChars++
+                if (streamingLineChars >= cpl) {
+                    streamingLineChars = 0
+                    lines++
+                }
+            }
+        }
+        return lines
+    }
+
+    private fun charsPerLineEstimate(): Int {
+        val pw = cachedForWidth.takeIf { it > 0 } ?: parent?.width?.takeIf { it > 0 } ?: return 0
+        val fontSize = UIUtil.getLabelFont().size
+        val avgCharWidth = (fontSize * 0.55).toInt().coerceAtLeast(1)
+        return maxOf(1, pw / avgCharWidth)
+    }
+
+    private fun lineHeightEstimate(): Int = (UIUtil.getLabelFont().size * 1.7).toInt()
+
+    /**
      * Fast O(N) height estimate used when [rawText] exceeds [LARGE_CONTENT_LAYOUT_THRESHOLD].
      * Counts how many display lines each raw-markdown line would wrap into at the current
      * font size and panel width, then multiplies by an approximate line height.
      * Accuracy is within ~20 %; acceptable for chat bubbles in a scrollable panel.
      */
     private fun estimateHeightFromLineCount(pw: Int): Int {
-        val fontSize = UIUtil.getLabelFont().size
-        val avgCharWidth = (fontSize * 0.55).toInt().coerceAtLeast(1)
-        val charsPerLine = maxOf(1, pw / avgCharWidth)
-        val lineHeight = (fontSize * 1.7).toInt()
-        val lineCount = rawText.lines().sumOf { line ->
-            maxOf(1, (line.length + charsPerLine - 1) / charsPerLine)
-        }
-        return ((lineCount + 2) * lineHeight).coerceAtLeast(cachedHeight.coerceAtLeast(50))
+        val cpl = maxOf(
+            1,
+            charsPerLineEstimate().takeIf { it > 0 } ?: (pw / ((UIUtil.getLabelFont().size * 0.55).toInt()
+                .coerceAtLeast(1))))
+        val lh = lineHeightEstimate()
+        val lineCount = rawText.lines().sumOf { line -> maxOf(1, (line.length + cpl - 1) / cpl) }
+        return ((lineCount + 2) * lh).coerceAtLeast(cachedHeight.coerceAtLeast(50))
     }
 
     private fun createStyleSheet(): StyleSheet {
