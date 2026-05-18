@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.LARGE_CONTENT_LAYOUT_THRESHOLD
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.ui.JBUI
@@ -144,6 +145,12 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         contentVersion++
         heightRevalidateTimer.restart()
         val html = fileNavigator.markdownToHtml(rawText.toString())
+        // Replace the stale document with a fresh empty one before setText(). When the existing
+        // document's element tree is in a transient null state, AbstractDocument.handleRemove()
+        // NPEs at Utilities.isComposedTextElement(null) because getCharacterElement(0) returns null.
+        // A fresh document has length 0, so AbstractDocument.replace(0, 0, …) skips remove() entirely
+        // (guarded by `if (length > 0)`) and goes straight to insertString().
+        document = (editorKit as HTMLEditorKit).createDefaultDocument()
         text = "<html><body>$html</body></html>"
     }
 
