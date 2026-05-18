@@ -142,7 +142,7 @@ class MarkdownRendererTest {
         void headingWithInlineCodeFormatsBoth() {
             String html = render("## Use `map()` here");
             assertTrue(html.contains("<h3>"), html);
-            assertTrue(html.contains("<code>&thinsp;map()&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;map()&#8239;</code>"), html);
             assertTrue(html.contains("</h3>"), html);
         }
 
@@ -203,7 +203,7 @@ class MarkdownRendererTest {
         void boldContainingInlineCode() {
             String html = render("**use `foo()`**");
             assertTrue(html.contains("<b>"), html);
-            assertTrue(html.contains("<code>&thinsp;foo()&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;foo()&#8239;</code>"), html);
             assertTrue(html.contains("</b>"), html);
         }
     }
@@ -215,7 +215,7 @@ class MarkdownRendererTest {
         @Test
         void backtickCreatesCodeElement() {
             String html = render("Use `println`");
-            assertTrue(html.contains("<code>&thinsp;println&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;println&#8239;</code>"), html);
         }
 
         @Test
@@ -228,8 +228,8 @@ class MarkdownRendererTest {
         @Test
         void multipleInlineCodesInOneLine() {
             String html = render("Use `foo` and `bar`");
-            assertTrue(html.contains("<code>&thinsp;foo&thinsp;</code>"), html);
-            assertTrue(html.contains("<code>&thinsp;bar&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;foo&#8239;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;bar&#8239;</code>"), html);
         }
 
         @Test
@@ -237,7 +237,7 @@ class MarkdownRendererTest {
             String html = renderWithFileRef("`MyFile.kt`",
                 ref -> "MyFile.kt".equals(ref) ? new Pair<>("/path/MyFile.kt", null) : null);
             assertTrue(html.contains("<a href='openfile:///path/MyFile.kt'>"), html);
-            assertTrue(html.contains("<code>&thinsp;MyFile.kt&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;MyFile.kt&#8239;</code>"), html);
         }
 
         @Test
@@ -251,14 +251,14 @@ class MarkdownRendererTest {
         void inlineCodeWithGitShaResolvesToGitShowLink() {
             String html = renderWithGit("`abc1234`", "abc1234"::equals);
             assertTrue(html.contains("<a href='gitshow://abc1234'>"), html);
-            assertTrue(html.contains("<code>&thinsp;abc1234&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;abc1234&#8239;</code>"), html);
         }
 
         @Test
         void inlineCodeWithNonMatchingGitShaDoesNotResolve() {
             String html = renderWithGit("`abc1234`", sha -> false);
             assertFalse(html.contains("gitshow://"), html);
-            assertTrue(html.contains("<code>&thinsp;abc1234&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;abc1234&#8239;</code>"), html);
         }
 
         @Test
@@ -266,7 +266,7 @@ class MarkdownRendererTest {
             // "hello" doesn't match GIT_SHA_REGEX (not all hex chars)
             String html = renderWithGit("`hello`", sha -> true);
             assertFalse(html.contains("gitshow://"), html);
-            assertTrue(html.contains("<code>&thinsp;hello&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;hello&#8239;</code>"), html);
         }
     }
 
@@ -489,7 +489,7 @@ class MarkdownRendererTest {
         void blockquoteWithInlineFormatting() {
             String html = render("> Use **bold** and `code`");
             assertTrue(html.contains("<b>bold</b>"), html);
-            assertTrue(html.contains("<code>&thinsp;code&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;code&#8239;</code>"), html);
         }
 
         @Test
@@ -542,7 +542,7 @@ class MarkdownRendererTest {
         void listWithInlineCode() {
             String html = render("- Use `foo()`");
             assertTrue(html.contains("<li>"), html);
-            assertTrue(html.contains("<code>&thinsp;foo()&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;foo()&#8239;</code>"), html);
         }
 
         @Test
@@ -601,7 +601,7 @@ class MarkdownRendererTest {
 
         static Stream<Arguments> tableClosingScenarios() {
             return Stream.of(
-                Arguments.of("| **Bold** | `code` |\n|---|---|\n| normal | normal |", "<b>Bold</b>", "<code>&thinsp;code&thinsp;</code>"),
+                Arguments.of("| **Bold** | `code` |\n|---|---|\n| normal | normal |", "<b>Bold</b>", "<code>&#8239;code&#8239;</code>"),
                 Arguments.of("| H1 | H2 |\n|---|---|\n| D1 | D2 |\nParagraph after", "</table>", "<p>Paragraph after</p>"),
                 Arguments.of("| H1 | H2 |\n| --- | --- |\n| D1 | D2 |", "</table>", "<table>")
             );
@@ -979,7 +979,7 @@ class MarkdownRendererTest {
         @Test
         void codeInsideListItem() {
             String html = render("- Run `npm install` first");
-            assertTrue(html.contains("<li>Run <code>&thinsp;npm install&thinsp;</code> first</li>"), html);
+            assertTrue(html.contains("<li>Run <code>&#8239;npm install&#8239;</code> first</li>"), html);
         }
 
         @Test
@@ -1012,14 +1012,14 @@ class MarkdownRendererTest {
         void inlineCodeInsideBlockquote() {
             String html = render("> Use `println()`");
             assertTrue(html.contains("<blockquote>"), html);
-            assertTrue(html.contains("<code>&thinsp;println()&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;println()&#8239;</code>"), html);
         }
 
         @Test
         void boldAndCodeInSameParagraph() {
             String html = render("Use **bold** and `code` together");
             assertTrue(html.contains("<b>bold</b>"), html);
-            assertTrue(html.contains("<code>&thinsp;code&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;code&#8239;</code>"), html);
         }
 
         @Test
@@ -1034,9 +1034,9 @@ class MarkdownRendererTest {
             String md = "| **Header** | `code` |\n|---|---|\n| **bold** | `val` |";
             String html = render(md);
             assertTrue(html.contains("<b>Header</b>"), html);
-            assertTrue(html.contains("<code>&thinsp;code&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;code&#8239;</code>"), html);
             assertTrue(html.contains("<b>bold</b>"), html);
-            assertTrue(html.contains("<code>&thinsp;val&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;val&#8239;</code>"), html);
         }
 
         @Test
@@ -1071,7 +1071,7 @@ class MarkdownRendererTest {
             String html = render(md);
             assertTrue(html.contains("<h2>Project Setup</h2>"), html);
             assertTrue(html.contains("<li>Install <b>Java 17</b></li>"), html);
-            assertTrue(html.contains("<li>Run <code>&thinsp;gradle build&thinsp;</code></li>"), html);
+            assertTrue(html.contains("<li>Run <code>&#8239;gradle build&#8239;</code></li>"), html);
             assertTrue(html.contains("<a href='https://docs.example.com'>docs</a>"), html);
             assertTrue(html.contains("<blockquote>"), html);
             assertTrue(html.contains("<b>warning</b>"), html);
@@ -1131,7 +1131,7 @@ class MarkdownRendererTest {
                 ref -> "Config.kt".equals(ref) ? new Pair<>("/abs/Config.kt", null) : null,
                 ref -> "/src/main/Config.kt".equals(ref) ? "/src/main/Config.kt" : null,
                 sha -> false);
-            assertTrue(html.contains("<a href='openfile:///abs/Config.kt'><code>&thinsp;Config.kt&thinsp;</code></a>"), html);
+            assertTrue(html.contains("<a href='openfile:///abs/Config.kt'><code>&#8239;Config.kt&#8239;</code></a>"), html);
             assertTrue(html.contains("<a href='openfile:///src/main/Config.kt'>/src/main/Config.kt</a>"), html);
         }
 
@@ -1213,7 +1213,7 @@ class MarkdownRendererTest {
         @Test
         void specialCharactersInInlineCode() {
             String html = render("Use `a < b && c > d`");
-            assertTrue(html.contains("<code>&thinsp;a &lt; b &amp;&amp; c &gt; d&thinsp;</code>"), html);
+            assertTrue(html.contains("<code>&#8239;a &lt; b &amp;&amp; c &gt; d&#8239;</code>"), html);
         }
 
         @Test
