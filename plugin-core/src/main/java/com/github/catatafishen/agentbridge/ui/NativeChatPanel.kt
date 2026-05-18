@@ -390,9 +390,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         bg: Color,
         rightAligned: Boolean = false,
         explicitBorder: Color? = null,
+        noBorder: Boolean = false,
         onBubbleRow: ((BubbleRow) -> Unit)? = null,
     ): Pair<JPanel, RoundedPanel> {
-        val bubbleRow = createBubble(bg, rightAligned, explicitBorder)
+        val bubbleRow = createBubble(bg, rightAligned, explicitBorder, noBorder)
         onBubbleRow?.invoke(bubbleRow)
         bubbleRow.bubble.add(content, BorderLayout.CENTER)
         return bubbleRow.row to bubbleRow.bubble
@@ -772,13 +773,24 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
-    /** Creates a right-aligned nudge row with a ↓ hover button that restores the text to the input. */
-    private fun createNudgeRow(id: String, text: String): JPanel {
+    /**
+     * Creates a right-aligned nudge bubble row.
+     *
+     * @param sent `true` for nudges already sent to the agent (history replay): rendered with the
+     *   normal bubble border and no "Restore to input" button. `false` for pending nudges: rendered
+     *   borderless (visually lighter) with a hover button to restore the text to the input field.
+     */
+    private fun createNudgeRow(id: String, text: String, sent: Boolean): JPanel {
         val (row, _) = createMessageRow(
-            createMarkdownPane(text), NativeChatColors.USER_BUBBLE_BG, rightAligned = true
+            createMarkdownPane(text),
+            NativeChatColors.USER_BUBBLE_BG,
+            rightAligned = true,
+            noBorder = !sent,
         ) { bubbleRow ->
-            bubbleRow.addHoverButton(AllIcons.Actions.MoveDown, "Restore to input") {
-                onCancelNudge?.invoke(id)
+            if (!sent) {
+                bubbleRow.addHoverButton(AllIcons.Actions.MoveDown, "Restore to input") {
+                    onCancelNudge?.invoke(id)
+                }
             }
         }
         return row
@@ -786,7 +798,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
         removeNudgeBubble(id)
-        val row = createNudgeRow(id, text)
+        val row = createNudgeRow(id, text, sent = false)
         nudgeBubbles[id] = row
         addRow(row)
     }
@@ -804,7 +816,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
-        addRow(createNudgeRow(id, text))
+        addRow(createNudgeRow(id, text, sent = true))
     }
 
     private val queuedMessages = mutableMapOf<String, JComponent>()

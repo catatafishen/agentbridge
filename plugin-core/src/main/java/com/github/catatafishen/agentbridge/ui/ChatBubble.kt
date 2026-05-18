@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.intellij.ide.setToolTipText
+import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.ContainerAdapter
@@ -41,39 +43,36 @@ open class RoundedPanel(
         val g2 = g.create() as Graphics2D
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         val r = radius.toFloat()
-        val brR = if (squaredCorner == BubbleCorner.BOTTOM_RIGHT) 0f else r
-        val blR = if (squaredCorner == BubbleCorner.BOTTOM_LEFT) 0f else r
-        // Fill covers the full component bounds.
         g2.color = bgColor
-        g2.fill(cornerPath(0f, 0f, width.toFloat(), height.toFloat(), r, r, brR, blR))
-        // Stroke is inset by 0.5px so the 1px line falls within the component bounds.
+        g2.fill(cornerPath(0f, 0f, width.toFloat(), height.toFloat(), r, squaredCorner))
         borderColor?.let {
             g2.color = it
-            g2.draw(cornerPath(0.5f, 0.5f, width - 1f, height - 1f, r, r, brR, blR))
+            g2.draw(cornerPath(0.5f, 0.5f, width - 1f, height - 1f, r, squaredCorner))
         }
         g2.dispose()
     }
 
     private companion object {
         /**
-         * Builds a Path2D for a rounded rectangle with per-corner radii.
-         * Passing 0f for a radius leaves that corner sharp (square).
-         * Corners are ordered: top-left (tl), top-right (tr), bottom-right (br), bottom-left (bl).
+         * Builds a Path2D for a rounded rectangle where the top corners are always rounded
+         * and one optional bottom corner is squared (per [squaredCorner]).
          */
         fun cornerPath(
             x: Float, y: Float, w: Float, h: Float,
-            tl: Float, tr: Float, br: Float, bl: Float
+            radius: Float, squaredCorner: BubbleCorner,
         ): Path2D.Float {
+            val brR = if (squaredCorner == BubbleCorner.BOTTOM_RIGHT) 0f else radius
+            val blR = if (squaredCorner == BubbleCorner.BOTTOM_LEFT) 0f else radius
             val p = Path2D.Float()
-            p.moveTo(x + tl, y)
-            p.lineTo(x + w - tr, y)
-            if (tr > 0) p.quadTo(x + w, y, x + w, y + tr)
-            p.lineTo(x + w, y + h - br)
-            if (br > 0) p.quadTo(x + w, y + h, x + w - br, y + h)
-            p.lineTo(x + bl, y + h)
-            if (bl > 0) p.quadTo(x, y + h, x, y + h - bl)
-            p.lineTo(x, y + tl)
-            if (tl > 0) p.quadTo(x, y, x + tl, y)
+            p.moveTo(x + radius, y)
+            p.lineTo(x + w - radius, y)
+            p.quadTo(x + w, y, x + w, y + radius)
+            p.lineTo(x + w, y + h - brR)
+            if (brR > 0f) p.quadTo(x + w, y + h, x + w - brR, y + h)
+            p.lineTo(x + blR, y + h)
+            if (blR > 0f) p.quadTo(x, y + h, x, y + h - blR)
+            p.lineTo(x, y + radius)
+            p.quadTo(x, y, x + radius, y)
             p.closePath()
             return p
         }
@@ -111,7 +110,7 @@ class BubbleRow(
         }
         val sz = Dimension(JBUI.scale(20), JBUI.scale(20))
         hoverButtonsPanel.add(JButton(icon).apply {
-            toolTipText = tooltip
+            setToolTipText(HtmlChunk.text(tooltip))
             isContentAreaFilled = false
             isBorderPainted = false
             isFocusPainted = false
@@ -180,8 +179,13 @@ class BubbleRow(
  * `row` is the component to add to the parent container.
  * `bubble` is the [RoundedPanel] to add content to.
  */
-fun createBubble(bg: Color, rightAligned: Boolean = false, explicitBorder: Color? = null): BubbleRow {
-    val borderColor = explicitBorder ?: NativeChatColors.bubbleBorder(bg)
+fun createBubble(
+    bg: Color,
+    rightAligned: Boolean = false,
+    explicitBorder: Color? = null,
+    noBorder: Boolean = false
+): BubbleRow {
+    val borderColor = if (noBorder) null else (explicitBorder ?: NativeChatColors.bubbleBorder(bg))
     val squaredCorner = if (rightAligned) BubbleCorner.BOTTOM_RIGHT else BubbleCorner.BOTTOM_LEFT
 
     val bubble = object : RoundedPanel(bg, borderColor, JBUI.scale(10), squaredCorner) {
