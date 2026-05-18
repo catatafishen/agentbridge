@@ -198,7 +198,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private class TurnContext(
-        val container: JPanel,
         val chipStrip: ChipStripPanel,
         var thinkingChip: ThinkingChipComponent? = null,
         var thinkingPane: NativeMarkdownPane? = null,
@@ -208,36 +207,31 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun ensureTurn(): TurnContext {
         currentTurn?.let { return it }
 
+        val currentMinute = MessageFormatter.formatTimestamp(overrideTimestamp ?: MessageFormatter.timestamp())
+        val showTimestamp = currentMinute != lastShownTimestampMinute
+        if (showTimestamp) {
+            lastShownTimestampMinute = currentMinute
+            // Timestamp label carries the 6px top gap when it leads the turn.
+            addRow(createTimestampLabel(rightAligned = false).apply {
+                border = JBUI.Borders.emptyTop(JBUI.scale(6))
+            })
+        }
+
+        // Chip strip is added directly (not via addRow) to preserve its getMaximumSize()
+        // override — addRow sets maximumSize as a field which makes isMaximumSizeSet()=true
+        // and bypasses the override.
         val chipStrip = ChipStripPanel().apply {
             alignmentX = Component.LEFT_ALIGNMENT
             isVisible = false
+            // 6px top gap only when no timestamp label precedes it this turn.
+            if (!showTimestamp) border = JBUI.Borders.emptyTop(JBUI.scale(6))
         }
+        contentPanel.add(chipStrip)
+        contentPanel.revalidate()
+        contentPanel.repaint()
 
-        val container = object : JPanel() {
-            init {
-                layout = BoxLayout(this, BoxLayout.Y_AXIS)
-                isOpaque = false
-                alignmentX = LEFT_ALIGNMENT
-                // 6px top creates a clear visual gap from the preceding element;
-                // no bottom padding so chips sit close to the content below them.
-                border = JBUI.Borders.emptyTop(6)
-            }
-
-            override fun getMaximumSize(): Dimension =
-                Dimension(Short.MAX_VALUE.toInt(), Int.MAX_VALUE)
-        }
-        val currentMinute = MessageFormatter.formatTimestamp(overrideTimestamp ?: MessageFormatter.timestamp())
-        if (currentMinute != lastShownTimestampMinute) {
-            lastShownTimestampMinute = currentMinute
-            container.add(createTimestampLabel(rightAligned = false).apply {
-                alignmentX = Component.LEFT_ALIGNMENT
-            })
-        }
-        container.add(chipStrip)
-
-        val turn = TurnContext(container, chipStrip)
+        val turn = TurnContext(chipStrip)
         currentTurn = turn
-        addRow(container, JBUI.scale(2))
         return turn
     }
 
@@ -457,7 +451,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             // Always add top margin so the bubble has breathing room after the chip strip
             // (or after the turn top border if no chips are present).
             row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
-            turn.container.add(row)
+            addRow(row)
         }
         turn.markdownPane!!.appendMarkdown(text)
         if (autoScrollEnabled) scrollToBottom()
@@ -480,8 +474,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
             val chip = ThinkingChipComponent(active = true) {
                 turn.chipStrip.toggleThinkingBubble()
-                turn.container.revalidate()
-                turn.container.repaint()
+                turn.chipStrip.revalidate()
+                turn.chipStrip.repaint()
             }
             turn.thinkingChip = chip
             turn.chipStrip.addThinkingChip(chip)
@@ -496,7 +490,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         chip.setActive(false)
         chip.collapseWhenReady {
             turn.chipStrip.hideThinkingBubble()
-            turn.container.revalidate()
+            turn.chipStrip.revalidate()
         }
     }
 
