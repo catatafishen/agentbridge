@@ -681,7 +681,7 @@ public final class McpProtocolHandler {
         });
 
         try {
-            int initialTimeoutSeconds = ChatInputSettings.getInstance().getToolTimeoutSeconds();
+            int initialTimeoutSeconds = Math.max(1, ChatInputSettings.getInstance().getToolTimeoutSeconds());
             return future.get(initialTimeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             int elapsedSeconds = (int) ((System.currentTimeMillis() - startMs) / 1000);
@@ -722,8 +722,8 @@ public final class McpProtocolHandler {
         int extra;
         try {
             ChatInputSettings s = ChatInputSettings.getInstance();
-            int ext1Seconds = s.getToolTimeoutExtension1Minutes() * 60;
-            int ext2Seconds = s.getToolTimeoutExtension2Minutes() * 60;
+            int ext1Seconds = Math.max(1, s.getToolTimeoutExtension1Minutes() * 60);
+            int ext2Seconds = Math.max(1, s.getToolTimeoutExtension2Minutes() * 60);
             extra = ToolTimeoutDialog.askForExtension(
                 project, displayName != null ? displayName : toolName, elapsedSeconds, future,
                 ext1Seconds, ext2Seconds);

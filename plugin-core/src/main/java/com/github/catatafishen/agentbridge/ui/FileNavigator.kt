@@ -201,7 +201,9 @@ class FileNavigator(private val project: Project) {
     }
 
     private fun resolveFileReference(ref: String): Pair<String, Int?>? {
-        val colonIdx = ref.indexOf(':')
+        // Skip a Windows drive-letter colon (e.g. "C:") before searching for the line-number separator.
+        val searchFrom = if (ref.length > 2 && ref[1] == ':' && ref[0].isLetter()) 2 else 0
+        val colonIdx = ref.indexOf(':', searchFrom)
         val (name, lineNum) = if (colonIdx > 0) {
             val afterColon = ref.substring(colonIdx + 1)
             val num = afterColon.split(",", " ", "-").firstOrNull()?.toIntOrNull()
