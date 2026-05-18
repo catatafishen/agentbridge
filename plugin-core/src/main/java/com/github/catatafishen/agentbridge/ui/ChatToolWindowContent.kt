@@ -116,6 +116,14 @@ class ChatToolWindowContent(
     @Volatile
     private var pausedByInputFocus = false
 
+    /**
+     * Set when the user explicitly resumes after an auto-pause triggered by input-focus.
+     * While true, focus events will not re-trigger auto-pause — the agent should keep running.
+     * Reset to false when the input is cleared, so the next draft starts fresh.
+     */
+    @Volatile
+    private var userResumedWhileTyping = false
+
     @Volatile
     private var isSending = false
 
@@ -1209,7 +1217,10 @@ class ChatToolWindowContent(
             editor.contentComponent.addFocusListener(object : java.awt.event.FocusAdapter() {
                 override fun focusGained(e: java.awt.event.FocusEvent) {
                     val s = ChatInputSettings.getInstance()
-                    if (s.isPauseOnInputFocus()) {
+                    if (s.isPauseOnInputFocus()
+                        && promptTextArea.document.textLength > 0
+                        && !userResumedWhileTyping
+                    ) {
                         val pauseService = McpPauseService.getInstance(project)
                         if (!pauseService.isPaused()) {
                             pausedByInputFocus = true
@@ -1217,21 +1228,20 @@ class ChatToolWindowContent(
                         }
                     }
                 }
-
-                override fun focusLost(e: java.awt.event.FocusEvent) {
-                    if (pausedByInputFocus) {
-                        pausedByInputFocus = false
-                        McpPauseService.getInstance(project).setPaused(false)
-                    }
-                }
             })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                val isEmpty = event.document.textLength == 0
                 com.github.catatafishen.agentbridge.psi.PsiBridgeService.notifyChatInputChanged(
-                    project, event.document.textLength == 0
+                    project, isEmpty
                 )
+                if (isEmpty) {
+                    // Input cleared — reset auto-pause state so the next draft starts fresh.
+                    pausedByInputFocus = false
+                    userResumedWhileTyping = false
+                }
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
@@ -1599,6 +1609,12 @@ class ChatToolWindowContent(
 
         override fun actionPerformed(e: AnActionEvent) {
             val service = McpPauseService.getInstance(project)
+            if (service.isPaused() && pausedByInputFocus) {
+                // User is explicitly resuming an auto-pause triggered by input-focus.
+                // Remember this so focus events don't re-pause while input still has text.
+                pausedByInputFocus = false
+                userResumedWhileTyping = promptTextArea.document.textLength > 0
+            }
             service.setPaused(!service.isPaused())
         }
     }
