@@ -929,9 +929,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) {
         ApplicationManager.getApplication().invokeLater {
-            val panel = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(2))).apply {
+            val panel = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(4), JBUI.scale(2))).apply {
                 isOpaque = false
-                alignmentX = Component.LEFT_ALIGNMENT
             }
             for (img in images) {
                 val label = try {
@@ -944,6 +943,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 panel.add(label)
             }
             addRow(panel)
+            // addRow forces LEFT_ALIGNMENT; override so BoxLayout right-aligns the thumbnail
+            // strip to match the user prompt bubble above it.
+            panel.alignmentX = Component.RIGHT_ALIGNMENT
         }
     }
 
