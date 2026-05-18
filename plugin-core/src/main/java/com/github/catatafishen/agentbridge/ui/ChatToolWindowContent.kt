@@ -1369,6 +1369,7 @@ private fun syncTabsAfterWidthDrag(props: com.intellij.ide.util.PropertiesCompon
 
     /** Submits a human nudge to the pending queue, which triggers the nudge listener to show the bubble. */
     private fun submitNudge(text: String) {
+        McpPauseService.getInstance(project).setPaused(false)
         AgentNudgeService.getInstance(project).addNudge(text, NudgeSource.HUMAN, true)
         refreshShortcutHints()
     }
