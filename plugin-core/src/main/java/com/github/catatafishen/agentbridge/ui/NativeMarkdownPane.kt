@@ -36,6 +36,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     private val rawText = StringBuilder()
 
+    /** Returns the raw (unformatted) markdown text accumulated so far. */
+    fun getRawText(): String = rawText.toString()
+
     /** Timestamp (ms) of the most recent [renderNow] call; used by the streaming throttle. */
     private var lastRenderTime = 0L
 

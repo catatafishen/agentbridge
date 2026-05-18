@@ -19,6 +19,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import javax.swing.*
@@ -376,12 +377,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             allMarkdownPanes += pane
         }
 
-    /** Creates a streaming bubble: an aligned row ready to add to a container, plus its pane. */
-    private fun createMarkdownBubble(bg: Color, explicitBorder: Color? = null): Pair<JPanel, NativeMarkdownPane> {
-        val (row, bubble) = createBubble(bg, explicitBorder = explicitBorder)
+    /** Creates a streaming bubble: an aligned row ready to add to a container, plus its pane and [BubbleRow]. */
+    private fun createMarkdownBubble(
+        bg: Color,
+        explicitBorder: Color? = null
+    ): Triple<JPanel, NativeMarkdownPane, BubbleRow> {
+        val bubbleRow = createBubble(bg, explicitBorder = explicitBorder)
         val pane = NativeMarkdownPane(fileNavigator).also { allMarkdownPanes += it }
-        bubble.add(pane, BorderLayout.CENTER)
-        return row to pane
+        bubbleRow.bubble.add(pane, BorderLayout.CENTER)
+        return Triple(bubbleRow.row, pane, bubbleRow)
     }
 
     /** Creates a message row: an aligned bubble (no timestamp — timestamps live above the chip row). */
@@ -430,8 +434,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingStartMs = System.currentTimeMillis()
         val turn = ensureTurn()
         if (turn.markdownPane == null) {
-            val (row, pane) = createMarkdownBubble(agentBg(), agentBorder())
+            val (row, pane, bubbleRow) = createMarkdownBubble(agentBg(), agentBorder())
             turn.markdownPane = pane
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
             // Always add top margin so the bubble has breathing room after the chip strip
             // (or after the turn top border if no chips are present).
             row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
@@ -446,9 +451,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingStartMs = System.currentTimeMillis()
         val turn = ensureTurn()
         if (turn.thinkingChip == null) {
-            val (contentWrapper, pane) = createMarkdownBubble(NativeChatColors.THINK_BG)
+            val (contentWrapper, pane, bubbleRow) = createMarkdownBubble(NativeChatColors.THINK_BG)
 
             turn.thinkingPane = pane
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
 
             // Top gap between chip row and the thinking bubble; collapses with the panel
             // when hidden because BoxLayout skips invisible components entirely.
@@ -588,12 +594,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun addErrorEntry(message: String) {
         finalizeTurn()
-        val (row, _) = createMessageRow(createMarkdownPane("✗ $message"), NativeChatColors.ERROR_BG)
+        val pane = createMarkdownPane("✗ $message")
+        val (row, _) = createMessageRow(pane, NativeChatColors.ERROR_BG) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        }
         addRow(row)
     }
 
     override fun addInfoEntry(message: String) {
-        val (row, _) = createMessageRow(createMarkdownPane("ℹ $message"), agentBg(), explicitBorder = agentBorder())
+        val pane = createMarkdownPane("ℹ $message")
+        val (row, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        }
         addRow(row)
     }
 
@@ -773,16 +785,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
 
-    /**
-     * Creates a right-aligned nudge bubble row.
-     *
-     * @param sent `true` for nudges already sent to the agent (history replay): rendered with the
-     *   normal bubble border and no "Restore to input" button. `false` for pending nudges: rendered
-     *   borderless (visually lighter) with a hover button to restore the text to the input field.
-     */
     private fun createNudgeRow(id: String, text: String, sent: Boolean): JPanel {
+        val pane = createMarkdownPane(text)
         val (row, _) = createMessageRow(
-            createMarkdownPane(text),
+            pane,
             NativeChatColors.USER_BUBBLE_BG,
             rightAligned = true,
             noBorder = !sent,
@@ -792,6 +798,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     onCancelNudge?.invoke(id)
                 }
             }
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         return row
     }
@@ -823,7 +830,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
-        val (row, _) = createMessageRow(createMarkdownPane(text), NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        val pane = createMarkdownPane(text)
+        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        }
         row.putClientProperty("queuedText", text)
         queuedMessages[id] = row
         addRow(row)
@@ -928,6 +938,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (spinTimer.isRunning) spinTimer.stop()
         workingTimer.stop()
         Disposer.dispose(schemeDisposable)
+    }
+
+    private fun copyToClipboard(text: String) {
+        val selection = StringSelection(text)
+        Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, selection)
     }
 
     /**
@@ -1087,7 +1102,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ): String {
         finalizeTurn()
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true)
+        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        }
         addFn(row)
         showWorkingIndicator()
         return java.util.UUID.randomUUID().toString()
