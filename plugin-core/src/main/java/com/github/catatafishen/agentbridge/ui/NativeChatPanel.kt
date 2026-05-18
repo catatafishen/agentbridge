@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 
 import com.intellij.openapi.application.ApplicationManager
@@ -527,7 +528,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val resolvedKind = kind ?: "other"
         val displayTitle = resolveToolDisplayName(title)
         toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
-        val chip = ToolChipComponent(displayTitle, kind, "running", isMcpHandled) { showToolPopup(id) }
+        val chip = ToolChipComponent(displayTitle, kind, "running", isMcpHandled, McpServerSettings.getInstance(project)) { showToolPopup(id) }
         allChips[id] = chip
         turn.chipStrip.addToolChip(chip)
         if (!spinTimer.isRunning) spinTimer.start()

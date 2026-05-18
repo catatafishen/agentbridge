@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import javax.swing.BoxLayout
@@ -12,14 +13,17 @@ import javax.swing.JPanel
  * Provides a horizontal no-wrap [BoxLayout] container with a fixed chip height,
  * kind-derived colors, rounded-rect painting with hover highlight, and consistent
  * sizing overrides so both chip types render identically in height.
+ *
+ * @param settings per-project [McpServerSettings] used to resolve user color overrides.
+ *   Pass `null` to use the default palette.
  */
-abstract class BaseChipComponent(kind: String?) : JPanel() {
+abstract class BaseChipComponent(kind: String?, settings: McpServerSettings?) : JPanel() {
 
-    protected val kindCol: Color = NativeChatColors.kindColor(kind)
-    protected val bgCol: Color = NativeChatColors.kindBg(kind)
-    protected val borderCol: Color = NativeChatColors.kindBorder(kind)
-    protected val hoverBgCol: Color = NativeChatColors.kindBgHover(kind)
-    protected val hoverBorderCol: Color = NativeChatColors.kindBorderHover(kind)
+    protected val kindCol: Color = NativeChatColors.kindColor(kind, settings)
+    protected val bgCol: Color = NativeChatColors.kindBg(kindCol)
+    protected val borderCol: Color = NativeChatColors.kindBorder(kindCol)
+    protected val hoverBgCol: Color = NativeChatColors.kindBgHover(kindCol)
+    protected val hoverBorderCol: Color = NativeChatColors.kindBorderHover(kindCol)
 
     /** Toggled by the subclass's hover mouse listener; drives [paintComponent]. */
     var hovered = false
