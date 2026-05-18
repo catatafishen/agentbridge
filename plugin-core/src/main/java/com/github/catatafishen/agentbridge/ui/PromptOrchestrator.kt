@@ -463,14 +463,20 @@ class PromptOrchestrator(
         pendingBanner = null
 
         val client = agentManager.client
+        val capturedToolCount = turnToolCallCount
+        val capturedModelId = turnModelId
         if (client.supportsMultiplier()) {
             val multiplier = getModelMultiplier(turnModelId)
-            consolePanel().finishResponse(turnToolCallCount, turnModelId, multiplier ?: "")
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().finishResponse(capturedToolCount, capturedModelId, multiplier ?: "")
+            }
             billing.recordTurnCompleted(multiplier)
             callbacks.onTimerSetLastTurnMultiplier(multiplier)
             callbacks.onTimerRecordUsage(0, 0, 0.0)
         } else {
-            consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().finishResponse(capturedToolCount, capturedModelId, "")
+            }
             callbacks.onTimerSetLastTurnMultiplier(null)
             callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
         }
@@ -496,13 +502,14 @@ class PromptOrchestrator(
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
         val turnEndGitBranch = captureGitBranch()
-        consolePanel().emitTurnStats(
-            TurnStatsData(
-                turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
-                turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
-                commitHashes, turnStartGitBranch, turnEndGitBranch
-            )
+        val stats = TurnStatsData(
+            turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
+            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
+            commitHashes, turnStartGitBranch, turnEndGitBranch
         )
+        ApplicationManager.getApplication().invokeLater {
+            consolePanel().emitTurnStats(stats)
+        }
 
         val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage
         if (nextMsg != null) {
@@ -552,15 +559,19 @@ class PromptOrchestrator(
         currentSessionId = null
         callbacks.updateSessionInfo()
 
-        consolePanel().cancelAllRunning()
-        consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+        val sessionErrorToolCount = turnToolCallCount
+        val sessionErrorModelId = turnModelId
+        ApplicationManager.getApplication().invokeLater {
+            consolePanel().cancelAllRunning()
+            consolePanel().finishResponse(sessionErrorToolCount, sessionErrorModelId, "")
+        }
         callbacks.appendNewEntries()
 
-        consolePanel().addErrorEntry(
-            "Session not resumed — $agentName returned an empty response. " +
-                "Your session has been reset. Please resend your message to continue."
-        )
         ApplicationManager.getApplication().invokeLater {
+            consolePanel().addErrorEntry(
+                "Session not resumed — $agentName returned an empty response. " +
+                    "Your session has been reset. Please resend your message to continue."
+            )
             statusBanner()?.showWarning("Session was reset — please resend your last message.")
         }
     }
@@ -589,7 +600,10 @@ class PromptOrchestrator(
 
             is SessionUpdate.AgentThoughtChunk -> {
                 turnHadContent = true
-                if (!stopped) consolePanel().appendThinkingText(update.text())
+                val text = update.text()
+                ApplicationManager.getApplication().invokeLater {
+                    if (!stopped) consolePanel().appendThinkingText(text)
+                }
             }
 
             is SessionUpdate.TurnUsage -> {
@@ -649,16 +663,17 @@ class PromptOrchestrator(
             agentManager.client.setSubAgentActive(true)
             AgentNudgeService.getInstance(project).setNudgesHeld(true)
             agentManager.settings.setActiveAgentLabel(agentType)
-            consolePanel().setCurrentAgent(
-                agentType,
-                agentManager.activeProfile.id,
-                agentManager.activeProfile.clientCssClass
-            )
             val description =
                 toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
             val record =
                 acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT)
-            consolePanel().addSubAgentEntry(record.recordId, agentType, description, toolCall.subAgentPrompt())
+            val prompt = toolCall.subAgentPrompt()
+            val profileId = agentManager.activeProfile.id
+            val cssClass = agentManager.activeProfile.clientCssClass
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().setCurrentAgent(agentType, profileId, cssClass)
+                consolePanel().addSubAgentEntry(record.recordId, agentType, description, prompt)
+            }
         } else if (activeSubAgentId != null) {
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
@@ -671,19 +686,18 @@ class PromptOrchestrator(
                 kind,
                 ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL
             )
-            consolePanel().addSubAgentToolCall(
-                parentRecord?.recordId ?: activeSubAgentId!!,
-                record.recordId,
-                title,
-                arguments,
-                kind
-            )
+            val parentId = parentRecord?.recordId ?: activeSubAgentId!!
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().addSubAgentToolCall(parentId, record.recordId, title, arguments, kind)
+            }
         } else {
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
             val record =
                 acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR)
-            consolePanel().addToolCallEntry(record.recordId, title, arguments, kind, record.isCorrelated)
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().addToolCallEntry(record.recordId, title, arguments, kind, record.isCorrelated)
+            }
         }
 
         // Automatic file navigation for "follow agent" feature.
@@ -779,46 +793,56 @@ class PromptOrchestrator(
                 return
             }
             activeSubAgentStack.remove(toolCallId)
-            if (activeSubAgentStack.isEmpty()) {
+            val noMoreSubAgents = activeSubAgentStack.isEmpty()
+            if (noMoreSubAgents) {
                 agentManager.client.setSubAgentActive(false)
                 AgentNudgeService.getInstance(project).setNudgesHeld(false)
                 agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().setCurrentAgent(
-                    agentManager.activeProfile.displayName,
-                    agentManager.activeProfile.id,
-                    agentManager.activeProfile.clientCssClass
+            }
+            val profileDisplayName = if (noMoreSubAgents) agentManager.activeProfile.displayName else null
+            val profileId = if (noMoreSubAgents) agentManager.activeProfile.id else null
+            val profileCssClass = if (noMoreSubAgents) agentManager.activeProfile.clientCssClass else null
+            ApplicationManager.getApplication().invokeLater {
+                if (profileDisplayName != null) consolePanel().setCurrentAgent(
+                    profileDisplayName,
+                    profileId!!,
+                    profileCssClass!!
+                )
+                consolePanel().updateSubAgentResult(
+                    recordId,
+                    uiStatus,
+                    update.result,
+                    update.description,
+                    update.autoDenied,
+                    update.denialReason
                 )
             }
-            consolePanel().updateSubAgentResult(
-                recordId,
-                uiStatus,
-                update.result,
-                update.description,
-                update.autoDenied,
-                update.denialReason
-            )
         } else if (update.isInternal) {
-            consolePanel().updateSubAgentToolCall(
-                recordId,
-                uiStatus,
-                update.result,
-                update.description,
-                update.autoDenied,
-                update.denialReason
-            )
-        } else {
-            consolePanel().updateToolCall(
-                recordId, uiStatus,
-                ChatPanelApi.ToolCallUpdate(
-                    details = update.result,
-                    description = update.description,
-                    autoDenied = update.autoDenied,
-                    denialReason = update.denialReason,
-                    arguments = update.arguments,
-                    title = update.title,
-                    kind = update.kind
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().updateSubAgentToolCall(
+                    recordId,
+                    uiStatus,
+                    update.result,
+                    update.description,
+                    update.autoDenied,
+                    update.denialReason
                 )
-            )
+            }
+        } else {
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().updateToolCall(
+                    recordId, uiStatus,
+                    ChatPanelApi.ToolCallUpdate(
+                        details = update.result,
+                        description = update.description,
+                        autoDenied = update.autoDenied,
+                        denialReason = update.denialReason,
+                        arguments = update.arguments,
+                        title = update.title,
+                        kind = update.kind
+                    )
+                )
+            }
         }
     }
 
@@ -830,12 +854,14 @@ class PromptOrchestrator(
             isClientHealthy = agentManager.isClientHealthy,
         )
 
-        if (c.shouldRestorePrompt) {
-            consolePanel().removePromptEntry(pendingPromptEntryId)
+        val errorToolCount = turnToolCallCount
+        val errorModelId = turnModelId
+        val promptEntryToRestore = if (c.shouldRestorePrompt) pendingPromptEntryId else null
+        ApplicationManager.getApplication().invokeLater {
+            if (promptEntryToRestore != null) consolePanel().removePromptEntry(promptEntryToRestore)
+            consolePanel().cancelAllRunning()
+            consolePanel().finishResponse(errorToolCount, errorModelId, "")
         }
-
-        consolePanel().cancelAllRunning()
-        consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
         callbacks.appendNewEntries()
 
         if (c.shouldRestorePrompt) {
@@ -845,8 +871,10 @@ class PromptOrchestrator(
         if (c.isAuthError) {
             log.info("Authentication error detected: ${c.displayMessage}")
             authService.markAuthError(c.displayMessage)
-            copilotBanner()?.triggerCheck()
-            consolePanel().addErrorEntry("Error: ${c.displayMessage}")
+            ApplicationManager.getApplication().invokeLater { copilotBanner()?.triggerCheck() }
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().addErrorEntry("Error: ${c.displayMessage}")
+            }
             e.printStackTrace()
             return
         }
@@ -862,13 +890,17 @@ class PromptOrchestrator(
         }
 
         if (!stopped) {
-            consolePanel().addErrorEntry("Error: ${c.displayMessage}")
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().addErrorEntry("Error: ${c.displayMessage}")
+            }
         }
         if (!c.isCancelled) {
             val bannerMsg = if (c.shouldRestorePrompt)
                 "${c.displayMessage} — your message has been restored to the input box"
             else c.displayMessage
-            statusBanner()?.showError(bannerMsg, "Reconnect") { reconnectAfterError() }
+            ApplicationManager.getApplication().invokeLater {
+                statusBanner()?.showError(bannerMsg, "Reconnect") { reconnectAfterError() }
+            }
         }
 
         e.printStackTrace()

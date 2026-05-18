@@ -403,7 +403,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
                 .coerceAtLeast(1))))
         val lh = lineHeightEstimate()
         val lineCount = rawText.lines().sumOf { line -> maxOf(1, (line.length + cpl - 1) / cpl) }
-        return ((lineCount + 2) * lh).coerceAtLeast(cachedHeight.coerceAtLeast(50))
+        val estimate = (lineCount + 2) * lh
+        // During active streaming (forceRecompute=false) prevent the bubble from collapsing.
+        // When forceRecompute=true (height revalidation after streaming ends) allow shrinking
+        // so over-estimated height doesn't leave permanent blank space at the bottom.
+        return if (forceRecompute) maxOf(estimate, 50) else estimate.coerceAtLeast(cachedHeight.coerceAtLeast(50))
     }
 
     private fun createStyleSheet(): StyleSheet {

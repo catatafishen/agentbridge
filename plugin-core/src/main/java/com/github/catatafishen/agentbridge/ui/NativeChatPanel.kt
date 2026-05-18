@@ -242,6 +242,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             if (!showTimestamp) border = JBUI.Borders.emptyTop(JBUI.scale(6))
         }
         contentPanel.add(chipStrip)
+        moveWorkingToBottom()
         contentPanel.revalidate()
         contentPanel.repaint()
 
