@@ -1007,12 +1007,9 @@ class ChatToolWindowContent(
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
                 if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                if (widthDragStart != null) syncTabsAfterWidthDrag(props)
                 heightDragStart = null
                 widthDragStart = null
-            }
-
-            override fun mouseExited(e: java.awt.event.MouseEvent) {
-                if (heightDragStart == null) inputSection.cursor = Cursor.getDefaultCursor()
             }
         }
         inputSection.addMouseMotionListener(nResizeHandler)
@@ -1045,6 +1042,7 @@ class ChatToolWindowContent(
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
                 if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                if (widthDragStart != null) syncTabsAfterWidthDrag(props)
                 widthDragStart = null
                 heightDragStart = null
             }
@@ -1085,6 +1083,7 @@ class ChatToolWindowContent(
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
                 if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                if (widthDragStart != null) syncTabsAfterWidthDrag(props)
                 widthDragStart = null
                 heightDragStart = null
             }
@@ -1096,6 +1095,23 @@ class ChatToolWindowContent(
         bottomSection.addMouseMotionListener(wResizeHandler)
         bottomSection.addMouseListener(wResizeHandler)
     }
+
+/**
+ * Called from each drag-resize [mouseReleased] handler when a width drag was in progress.
+ * Syncs the title-bar tab mode with the current [rootSplitter] proportion, exactly as the
+ * [SidePanelToggleAction] does on click — so dragging the sidebar to/from zero-width also
+ * shows/hides the multi-tab header.
+ *
+ * Only rebuilds tabs when the open/closed state has actually changed (crossing the 0.01 threshold)
+ * to avoid an unnecessary round-trip through [ContentManager] on every drag-release.
+ */
+private fun syncTabsAfterWidthDrag(props: com.intellij.ide.util.PropertiesComponent) {
+    val isOpen = rootSplitter.proportion >= 0.01f
+    val wasOpen = contentWrappers.isNotEmpty()
+    if (isOpen == wasOpen) return
+    updateSideTabContents(isOpen)
+    props.setValue(PREF_SIDE_PANEL_OPEN, isOpen)
+}
 
     private fun installSavedInputHeight(
         splitPanel: JComponent,
