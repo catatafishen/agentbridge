@@ -350,7 +350,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingIndicator?.let {
             val idx = contentPanel.components.indexOf(it)
             if (idx >= 0 && idx + 1 < contentPanel.componentCount &&
-                contentPanel.getComponent(idx + 1) is Box.Filler) {
+                contentPanel.getComponent(idx + 1) is Box.Filler
+            ) {
                 contentPanel.remove(idx + 1)
             }
             contentPanel.remove(it)
@@ -487,6 +488,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         chip.collapseWhenReady {
             turn.chipStrip.hideThinkingBubble()
             turn.chipStrip.revalidate()
+            // The collapse shrinks the panel, which can scroll us away from the bottom.
+            // Re-anchor immediately so auto-scroll is not lost.
+            if (autoScrollEnabled) scrollToBottom()
         }
     }
 
