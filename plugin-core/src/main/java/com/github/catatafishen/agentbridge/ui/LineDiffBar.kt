@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.*
@@ -20,7 +21,7 @@ import javax.swing.JComponent
  */
 class LineDiffBar(val added: Int, val removed: Int) : JComponent() {
 
-    private val segH = JBUI.scale(15)
+    private val segH get() = JBUI.scale(PlatformApiCompat.getEditorFontSize() + 2)
     private val hPad = JBUI.scale(5)
     private val gap = JBUI.scale(2)
     private val arc = JBUI.scale(3)
@@ -54,11 +55,11 @@ class LineDiffBar(val added: Int, val removed: Int) : JComponent() {
             val text = "+$added"
             val w = fm.stringWidth(text) + hPad * 2
             g2.color = ADDED_BG
-            g2.fillRoundRect(x, 0, w, segH, arc, arc)
+            g2.fillRoundRect(0, 0, w, segH, arc, arc)
             g2.color = ADDED_FG
             g2.font = font
-            g2.drawString(text, x + hPad, ty)
-            x += w + if (removed > 0) gap else 0
+            g2.drawString(text, hPad, ty)
+            x = w + if (removed > 0) gap else 0
         }
 
         if (removed > 0) {

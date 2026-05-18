@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.acp.client.AcpClient
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.services.ToolCallRecord
+import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.intellij.icons.AllIcons
 import com.intellij.ide.setToolTipText
@@ -111,6 +113,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val schemeDisposable = Disposer.newDisposable("NativeChatPanel")
 
+    /**
+     * Updates chip icons from outline→filled when MCP correlation arrives after chip creation.
+     * The chip is always created with isMcpHandled=false (MCP hasn't run yet at ACP report time).
+     */
+    private val trackerListener = object : ToolCallTracker.Listener {
+        override fun onCorrelated(record: ToolCallRecord) {
+            allChips[record.recordId]?.setMcpHandled()
+        }
+    }
+
     fun setAutoScroll(enabled: Boolean) {
         autoScrollEnabled = enabled
         if (enabled) scrollToBottom()
@@ -173,6 +185,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         PlatformApiCompat.subscribeEditorColorSchemeChanges(schemeDisposable) {
             SwingUtilities.invokeLater { updateAllChatFonts() }
         }
+        ToolCallTracker.getInstance(project).addListener(trackerListener)
     }
 
     private class TurnContext(
@@ -915,6 +928,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun dispose() {
+        ToolCallTracker.getInstance(project).removeListener(trackerListener)
         allMarkdownPanes.forEach { it.dispose() }
         if (spinTimer.isRunning) spinTimer.stop()
         workingTimer.stop()
@@ -928,6 +942,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private fun updateAllChatFonts() {
         updateChatFonts(contentPanel)
+        allMarkdownPanes.forEach { it.onFontSizeChanged() }
         contentPanel.revalidate()
         contentPanel.repaint()
     }

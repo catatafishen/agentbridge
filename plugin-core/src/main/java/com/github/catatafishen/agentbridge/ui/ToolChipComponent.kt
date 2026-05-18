@@ -77,7 +77,7 @@ class ToolChipComponent(
         override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
             val g2 = g.create() as Graphics2D
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.color = NativeChatColors.ERROR
+            g2.color = kindCol
             val pad = 3
             g2.fillArc(x + pad, y + pad, iconSize - 2 * pad, iconSize - 2 * pad, 0, 270)
             g2.dispose()
@@ -91,7 +91,7 @@ class ToolChipComponent(
         override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
             val g2 = g.create() as Graphics2D
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.color = NativeChatColors.ERROR
+            g2.color = kindCol
             g2.stroke = BasicStroke(1.5f)
             val pad = 3
             g2.drawArc(x + pad, y + pad, iconSize - 2 * pad - 1, iconSize - 2 * pad - 1, 0, 270)
@@ -99,8 +99,8 @@ class ToolChipComponent(
         }
     }
 
-    private val successIcon: Icon = if (isMcpHandled) FilledCircleIcon() else OutlineCircleIcon()
-    private val errorIcon: Icon = if (isMcpHandled) FilledArcIcon() else OutlineArcIcon()
+    private var successIcon: Icon = if (isMcpHandled) FilledCircleIcon() else OutlineCircleIcon()
+    private var errorIcon: Icon = if (isMcpHandled) FilledArcIcon() else OutlineArcIcon()
 
     private val statusLabel = JLabel(currentStatusIcon()).apply {
         alignmentY = CENTER_ALIGNMENT
@@ -149,6 +149,19 @@ class ToolChipComponent(
         if (isSpinning()) {
             statusLabel.icon = spinIcons[spinFrame]
         }
+    }
+
+    /**
+     * Upgrades this chip's icons from the "other tool" (outline) variants to the
+     * "agentbridge MCP" (filled) variants. Called when [ToolCallTracker] fires
+     * [onCorrelated][com.github.catatafishen.agentbridge.services.ToolCallTracker.Listener.onCorrelated]
+     * after the chip was already created with [isMcpHandled]=false.
+     */
+    fun setMcpHandled() {
+        successIcon = FilledCircleIcon()
+        errorIcon = FilledArcIcon()
+        statusLabel.icon = currentStatusIcon()
+        repaint()
     }
 
     private fun currentStatusIcon(): Icon = when (currentStatus.lowercase()) {

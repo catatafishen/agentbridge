@@ -131,6 +131,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         text = "<html><body>$html</body></html>"
     }
 
+    /** Rebuilds the stylesheet when the IDE editor font size changes. */
+    fun onFontSizeChanged() {
+        rebuildStylesheet()
+    }
+
     /** Stops the render timer and disconnects the color scheme subscription. */
     fun dispose() {
         renderTimer.stop()

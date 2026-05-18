@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import javax.swing.BoxLayout
@@ -24,11 +25,8 @@ abstract class BaseChipComponent(kind: String?) : JPanel() {
     var hovered = false
 
     companion object {
-        /** Fixed chip height — identical for all chip types. DPI-aware. */
-        val CHIP_HEIGHT: Int get() = JBUI.scale(22)
-
-        /** Shared font for chip labels: 2pt below the editor font size. */
-        fun chipFont(): Font = chatFont(-2)
+        /** Chip height tracks editor font size so text never clips when the user scales up. DPI-aware. */
+        val CHIP_HEIGHT: Int get() = JBUI.scale(PlatformApiCompat.getEditorFontSize() + 9)
     }
 
     init {
