@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.util.ui.JBUI
 import java.awt.*
@@ -26,8 +27,9 @@ class ToolChipComponent(
     kind: String?,
     status: String,
     isMcpHandled: Boolean = false,
+    settings: McpServerSettings? = null,
     private val onClick: (() -> Unit)? = null,
-) : BaseChipComponent(kind) {
+) : BaseChipComponent(kind, settings) {
 
     private var currentStatus = status
     private var spinFrame = 0

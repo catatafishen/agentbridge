@@ -12,7 +12,7 @@ import kotlin.math.sin
 class ThinkingChipComponent(
     private var active: Boolean,
     private val onToggle: () -> Unit,
-) : BaseChipComponent(null) {
+) : BaseChipComponent("think", null) {
 
     private val emojiLabel: JLabel
     private val textLabel: JLabel
