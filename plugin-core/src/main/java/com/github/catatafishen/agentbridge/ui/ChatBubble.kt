@@ -17,10 +17,10 @@ private const val MAX_BUBBLE_WIDTH_FRACTION = 0.94
 
 /**
  * Which corner of the bubble to leave unrounded (square).
- * Used to "anchor" the bubble to its side: left-aligned bubbles square their bottom-left corner,
+ * Used to "anchor" the bubble to its side: left-aligned bubbles square their top-left corner,
  * right-aligned bubbles square their bottom-right corner.
  */
-enum class BubbleCorner { NONE, BOTTOM_LEFT, BOTTOM_RIGHT }
+enum class BubbleCorner { NONE, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
 /**
  * A JPanel that paints a rounded rectangle background with optional per-corner squaring and border.
@@ -54,25 +54,26 @@ open class RoundedPanel(
 
     private companion object {
         /**
-         * Builds a Path2D for a rounded rectangle where the top corners are always rounded
-         * and one optional bottom corner is squared (per [squaredCorner]).
+         * Builds a Path2D for a rounded rectangle where one optional corner is squared
+         * (per [squaredCorner]) and all others are rounded with [radius].
          */
         fun cornerPath(
             x: Float, y: Float, w: Float, h: Float,
             radius: Float, squaredCorner: BubbleCorner,
         ): Path2D.Float {
+            val tlR = if (squaredCorner == BubbleCorner.TOP_LEFT) 0f else radius
             val brR = if (squaredCorner == BubbleCorner.BOTTOM_RIGHT) 0f else radius
             val blR = if (squaredCorner == BubbleCorner.BOTTOM_LEFT) 0f else radius
             val p = Path2D.Float()
-            p.moveTo(x + radius, y)
+            p.moveTo(x + tlR, y)
             p.lineTo(x + w - radius, y)
             p.quadTo(x + w, y, x + w, y + radius)
             p.lineTo(x + w, y + h - brR)
             if (brR > 0f) p.quadTo(x + w, y + h, x + w - brR, y + h)
             p.lineTo(x + blR, y + h)
             if (blR > 0f) p.quadTo(x, y + h, x, y + h - blR)
-            p.lineTo(x, y + radius)
-            p.quadTo(x, y, x + radius, y)
+            p.lineTo(x, y + tlR)
+            if (tlR > 0f) p.quadTo(x, y, x + tlR, y)
             p.closePath()
             return p
         }
@@ -186,7 +187,7 @@ fun createBubble(
     noBorder: Boolean = false
 ): BubbleRow {
     val borderColor = if (noBorder) null else (explicitBorder ?: NativeChatColors.bubbleBorder(bg))
-    val squaredCorner = if (rightAligned) BubbleCorner.BOTTOM_RIGHT else BubbleCorner.BOTTOM_LEFT
+    val squaredCorner = if (rightAligned) BubbleCorner.BOTTOM_RIGHT else BubbleCorner.TOP_LEFT
 
     val bubble = object : RoundedPanel(bg, borderColor, JBUI.scale(10), squaredCorner) {
         override fun getMaximumSize(): Dimension {
