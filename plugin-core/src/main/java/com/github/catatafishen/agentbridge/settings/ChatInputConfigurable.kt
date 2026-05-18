@@ -195,11 +195,17 @@ class ChatInputConfigurable(private val project: Project) :
                     "Automatically pauses the agent when you click into the chat input, " +
                         "and resumes when the input loses focus."
                 )
-                .bindSelected({ s.isPauseOnInputFocus() }, { s.setPauseOnInputFocus(it) })
+                .bindSelected({ s.isPauseOnInputFocus }, { s.isPauseOnInputFocus = it })
         }
         separator()
         row {
             comment("Tool call timeout: how long to wait before asking what to do.")
+        }
+        lateinit var timeoutDialogEnabled: Cell<JBCheckBox>
+        row {
+            timeoutDialogEnabled = checkBox("Show timeout dialog for slow tool calls")
+                .comment("When disabled, slow tool calls wait silently until they complete or are cancelled.")
+                .bindSelected({ s.isToolTimeoutDialogEnabled }, { s.isToolTimeoutDialogEnabled = it })
         }
         row("Initial timeout (seconds):") {
             spinner(10..3600, 5)
@@ -208,16 +214,19 @@ class ChatInputConfigurable(private val project: Project) :
                         "Default: 60. The dialog is not shown when you are reviewing diffs."
                 )
                 .bindIntValue({ s.toolTimeoutSeconds }, { s.toolTimeoutSeconds = it })
+                .enabledIf(timeoutDialogEnabled.selected)
         }
         row("First wait extension (minutes):") {
-            spinner(1..120, 1)
+            spinner(1..60, 1)
                 .comment("First option in the \"still running\" dialog — wait this many extra minutes.")
                 .bindIntValue({ s.toolTimeoutExtension1Minutes }, { s.toolTimeoutExtension1Minutes = it })
+                .enabledIf(timeoutDialogEnabled.selected)
         }
         row("Second wait extension (minutes):") {
-            spinner(1..120, 1)
+            spinner(1..60, 1)
                 .comment("Second option in the \"still running\" dialog — wait this many extra minutes.")
                 .bindIntValue({ s.toolTimeoutExtension2Minutes }, { s.toolTimeoutExtension2Minutes = it })
+                .enabledIf(timeoutDialogEnabled.selected)
         }
         onApply {
             val chatContent = ChatToolWindowContent.getInstance(project)

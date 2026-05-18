@@ -137,6 +137,18 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
     // ── Tool timeout ────────────────────────────────────────────────────────
 
     /**
+     * When {@code false}, the timeout dialog is never shown; slow tool calls wait silently.
+     * The user can set this to {@code false} via the dialog's "Never ask again" checkbox.
+     */
+    public boolean isToolTimeoutDialogEnabled() {
+        return myState.toolTimeoutDialogEnabled;
+    }
+
+    public void setToolTimeoutDialogEnabled(boolean enabled) {
+        myState.toolTimeoutDialogEnabled = enabled;
+    }
+
+    /**
      * Seconds to wait for a tool call before showing the "still running" dialog. Default: 60.
      */
     public int getToolTimeoutSeconds() {
@@ -212,5 +224,6 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         public int toolTimeoutSeconds = 60; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutExtension1Minutes = 1; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutExtension2Minutes = 5; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean toolTimeoutDialogEnabled = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 }

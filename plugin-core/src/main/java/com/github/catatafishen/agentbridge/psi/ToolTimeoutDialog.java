@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
@@ -32,6 +33,19 @@ public final class ToolTimeoutDialog {
      * The caller should read the result directly from the future.
      */
     public static final int COMPLETED = -1;
+
+    /**
+     * Set to {@code true} when the user picks "Don't ask for this session" in the dialog.
+     * Resets when the IDE restarts (in-memory only).
+     */
+    private static final AtomicBoolean suppressedForSession = new AtomicBoolean(false);
+
+    /**
+     * Whether the user chose "Don't ask for this session" during a prior timeout dialog.
+     */
+    public static boolean isSuppressedForSession() {
+        return suppressedForSession.get();
+    }
 
     private ToolTimeoutDialog() {
     }
@@ -132,9 +146,6 @@ public final class ToolTimeoutDialog {
         });
     }
 
-    /**
-     * Schedules dialog creation and display on the EDT via {@code invokeLater}.
-     */
     private static void scheduleDialogOnEdt(Project project, String operationDescription,
                                             int elapsedSeconds, String[] options,
                                             AtomicReference<JDialog> dialogRef,
@@ -145,9 +156,12 @@ public final class ToolTimeoutDialog {
             try {
                 String message = operationDescription + " is still running after " + elapsedSeconds
                     + " seconds.\nWhat would you like to do?";
+                JCheckBox suppressSession = new JCheckBox("Don't ask for this session");
+                JCheckBox neverAsk = new JCheckBox("Never ask again");
                 Frame frame = WindowManager.getInstance().getFrame(project);
                 JOptionPane pane = new JOptionPane(
-                    message, JOptionPane.WARNING_MESSAGE,
+                    new Object[]{message, suppressSession, neverAsk},
+                    JOptionPane.WARNING_MESSAGE,
                     JOptionPane.DEFAULT_OPTION, Messages.getWarningIcon(),
                     options, options[0]);
                 JDialog dialog = pane.createDialog(frame, "Operation Still Running: " + operationDescription);
@@ -158,6 +172,12 @@ public final class ToolTimeoutDialog {
                 dialog.setVisible(true); // enters modal event loop; returns when disposed or clicked
                 dialog.dispose(); // free native resources; no-op if already disposed by watcher
                 choiceIndex.set(parseChoice(pane, options));
+
+                if (neverAsk.isSelected()) {
+                    ChatInputSettings.getInstance().setToolTimeoutDialogEnabled(false);
+                } else if (suppressSession.isSelected()) {
+                    suppressedForSession.set(true);
+                }
             } finally {
                 dialogDone.countDown();
             }

@@ -707,6 +707,12 @@ public final class McpProtocolHandler {
             return getFutureResult(future, workerThread, toolName, "diff review gate");
         }
 
+        // If the user has disabled the dialog (permanently or for this session), wait silently.
+        if (!ChatInputSettings.getInstance().isToolTimeoutDialogEnabled()
+            || ToolTimeoutDialog.isSuppressedForSession()) {
+            return getFutureResult(future, workerThread, toolName, "suppressed wait");
+        }
+
         // If another concurrent tool already has a dialog showing, skip ours and wait indefinitely
         // to avoid stacking modal dialogs on the user.
         if (!timeoutDialogActive.compareAndSet(false, true)) {
