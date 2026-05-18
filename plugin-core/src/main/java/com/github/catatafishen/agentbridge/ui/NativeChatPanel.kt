@@ -422,10 +422,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             turn.thinkingWrapper = contentWrapper
             turn.thinkingExpanded = true
 
+            // Pad the wrapper itself so spacing collapses with it when hidden.
+            // Standalone struts would remain visible even when contentWrapper.isVisible = false.
+            contentWrapper.border = JBUI.Borders.empty(JBUI.scale(4), 0, JBUI.scale(4), 0)
             val chipStripIdx = turn.container.components.indexOf(turn.chipStrip)
-            turn.container.add(Box.createVerticalStrut(JBUI.scale(4)), chipStripIdx + 1)
-            turn.container.add(contentWrapper, chipStripIdx + 2)
-            turn.container.add(Box.createVerticalStrut(JBUI.scale(6)), chipStripIdx + 3)
+            turn.container.add(contentWrapper, chipStripIdx + 1)
 
             val chip = ThinkingChipComponent(active = true) {
                 turn.thinkingExpanded = !turn.thinkingExpanded
