@@ -12,6 +12,7 @@ import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
 import javax.swing.plaf.TextUI
+import javax.swing.text.DefaultCaret
 import javax.swing.text.View
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.StyleSheet
@@ -57,6 +58,13 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         isEditable = false
         isOpaque = false
         border = JBUI.Borders.empty()
+
+        // Prevent StyledEditorKit's AttributeTracker from calling getParagraphElement()
+        // during setText() — which NPEs when the document root element is transiently null
+        // while being replaced. NEVER_UPDATE is safe here because the pane is read-only.
+        val caret = DefaultCaret()
+        caret.updatePolicy = DefaultCaret.NEVER_UPDATE
+        setCaret(caret)
 
         val kit = HTMLEditorKit()
         kit.styleSheet = createStyleSheet()
