@@ -251,9 +251,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun scrollToBottom() {
         SwingUtilities.invokeLater {
-            // Validate first so that the layout is fully settled and bar.maximum reflects
-            // all newly-added content before we clamp value to Int.MAX_VALUE.
-            scrollPane.validate()
+            // Do NOT call scrollPane.validate() here. A synchronous validate() walks every
+            // NativeMarkdownPane in the chat history and triggers a full Swing HTML layout
+            // (BasicTextUI$RootView.setSize + BoxView.updateLayoutArray) which is O(n²) in
+            // the document size — causing 30+ second EDT freezes for long responses.
+            //
+            // The layout pass we need has already been queued by contentPanel.revalidate()
+            // (called in addRow() before scrollToBottom()) and runs on the EDT before our
+            // invokeLater fires. The componentResized listener on contentPanel also fires
+            // after every layout, providing a second correct-position scroll for deferred
+            // renders. bar.maximum is therefore always up-to-date when we read it here.
             suppressScrollListener = true
             try {
                 scrollPane.verticalScrollBar.value = Int.MAX_VALUE
