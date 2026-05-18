@@ -130,6 +130,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private var placeholderLabel: JBLabel? = null
     private var workingIndicator: JComponent? = null
+    private var workingLabel: JBLabel? = null
     private var workingStartMs = 0L
     private val workingTimer = Timer(1000) { updateWorkingLabel() }.apply { isRepeats = true }
 
@@ -307,21 +308,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (isReplaying) return
         hideWorkingIndicator()
         workingStartMs = System.currentTimeMillis()
-        val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
-        bubble.add(JBLabel("Working…").apply {
+        val label = JBLabel("Working…").apply {
             foreground = UIUtil.getContextHelpForeground()
             applyChatFont()
-            putClientProperty("workingLabel", true)
-        }, BorderLayout.CENTER)
-        val container = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            isOpaque = false
-            alignmentX = Component.LEFT_ALIGNMENT
-            border = JBUI.Borders.empty(4, 0, 2, 0)
         }
-        container.add(row)
-        workingIndicator = container
-        addRow(container, JBUI.scale(2))
+        val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
+        bubble.add(label, BorderLayout.CENTER)
+        row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
+        workingIndicator = row
+        workingLabel = label
+        contentPanel.add(row)
+        contentPanel.add(Box.createVerticalStrut(JBUI.scale(2)))
+        contentPanel.revalidate()
+        if (autoScrollEnabled) scrollToBottom()
         workingTimer.start()
     }
 
@@ -331,13 +330,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private fun moveWorkingToBottom() {
         val indicator = workingIndicator ?: return
-        val idx = contentPanel.components.indexOf(indicator)
+        val components = contentPanel.components
+        val idx = components.indexOf(indicator)
         if (idx < 0) return
-        val lastIdx = contentPanel.componentCount - 1
-        val strutAfter = idx + 1 <= lastIdx && contentPanel.getComponent(idx + 1) is Box.Filler
-        val isLast = if (strutAfter) idx == lastIdx - 1 else idx == lastIdx
+        val lastContentIdx = components.size - 1
+        // Working indicator always has a trailing strut. Check if it's already last.
+        val strutIdx = if (idx + 1 <= lastContentIdx && components[idx + 1] is Box.Filler) idx + 1 else -1
+        val isLast = if (strutIdx >= 0) strutIdx == lastContentIdx else idx == lastContentIdx
         if (isLast) return
-        if (strutAfter) contentPanel.remove(idx + 1)
+        if (strutIdx >= 0) contentPanel.remove(strutIdx)
         contentPanel.remove(indicator)
         contentPanel.add(indicator)
         contentPanel.add(Box.createVerticalStrut(JBUI.scale(2)))
@@ -345,12 +346,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun hideWorkingIndicator() {
         workingTimer.stop()
+        workingLabel = null
         workingIndicator?.let {
-            // Find index and remove trailing strut BEFORE removing the indicator itself
             val idx = contentPanel.components.indexOf(it)
-            if (idx >= 0 && idx + 1 < contentPanel.componentCount) {
-                val next = contentPanel.getComponent(idx + 1)
-                if (next is Box.Filler) contentPanel.remove(next)
+            if (idx >= 0 && idx + 1 < contentPanel.componentCount &&
+                contentPanel.getComponent(idx + 1) is Box.Filler) {
+                contentPanel.remove(idx + 1)
             }
             contentPanel.remove(it)
             contentPanel.revalidate()
@@ -360,17 +361,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun updateWorkingLabel() {
-        val indicator = workingIndicator ?: return
+        val label = workingLabel ?: return
         val elapsed = (System.currentTimeMillis() - workingStartMs) / 1000
-        fun findLabel(parent: Container): JBLabel? {
-            for (comp in parent.components) {
-                if (comp is JBLabel && comp.getClientProperty("workingLabel") == true) return comp
-                if (comp is Container) findLabel(comp)?.let { return it }
-            }
-            return null
-        }
-        findLabel(indicator)?.text = "Working… ${elapsed}s"
-        if (autoScrollEnabled) scrollToBottom()
+        label.text = "Working… ${elapsed}s"
+        // No scrollToBottom() here — the streaming path handles scrolling during active
+        // streaming, and when idle the working indicator height is fixed so no scroll is needed.
     }
 
     /** Creates a markdown pane pre-filled with [text] and registers it for disposal. */
