@@ -8,11 +8,11 @@ import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.intellij.icons.AllIcons
-import com.intellij.ide.setToolTipText
+
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.util.text.HtmlChunk
+
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -316,7 +316,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             horizontalAlignment = SwingConstants.LEFT
             alignmentX = Component.LEFT_ALIGNMENT
             border = JBUI.Borders.empty(0, 2, 1, 2)
-            setToolTipText(HtmlChunk.text(tooltip))
+            toolTipText = tooltip
         }
     }
 
@@ -938,7 +938,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 try {
                     val bytes = java.util.Base64.getDecoder().decode(img.base64Data)
                     val icon = scaledThumbnail(bytes, JBUI.scale(160))
-                    JLabel(icon).apply { setToolTipText(HtmlChunk.text(img.name)) }
+                    JLabel(icon).apply { toolTipText = img.name }
                 } catch (_: Exception) {
                     JBLabel("\uD83D\uDDBC ${img.name}").apply { applyChatFont(-1) }
                 }

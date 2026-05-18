@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.intellij.ide.setToolTipText
-import com.intellij.openapi.util.text.HtmlChunk
+
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.ContainerAdapter
@@ -111,7 +110,7 @@ class BubbleRow(
         }
         val sz = Dimension(JBUI.scale(20), JBUI.scale(20))
         hoverButtonsPanel.add(JButton(icon).apply {
-            setToolTipText(HtmlChunk.text(tooltip))
+            toolTipText = tooltip
             isContentAreaFilled = false
             isBorderPainted = false
             isFocusPainted = false
