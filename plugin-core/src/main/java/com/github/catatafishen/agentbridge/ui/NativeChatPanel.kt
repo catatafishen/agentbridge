@@ -185,6 +185,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         PlatformApiCompat.subscribeEditorColorSchemeChanges(schemeDisposable) {
             SwingUtilities.invokeLater { updateAllChatFonts() }
         }
+        PlatformApiCompat.subscribeLafChanges(schemeDisposable) {
+            SwingUtilities.invokeLater {
+                val bg = UIUtil.getPanelBackground()
+                contentPanel.background = bg
+                scrollPane.background = bg
+                scrollPane.viewport.background = bg
+                contentPanel.repaint()
+            }
+        }
         ToolCallTracker.getInstance(project).addListener(trackerListener)
     }
 
@@ -192,9 +201,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val container: JPanel,
         val chipStrip: ChipStripPanel,
         var thinkingChip: ThinkingChipComponent? = null,
-        var thinkingWrapper: JPanel? = null,
         var thinkingPane: NativeMarkdownPane? = null,
-        var thinkingExpanded: Boolean = true,
         var markdownPane: NativeMarkdownPane? = null,
     )
 
@@ -211,9 +218,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 isOpaque = false
                 alignmentX = LEFT_ALIGNMENT
-                // 2px top creates a small visual gap from the preceding element;
+                // 6px top creates a clear visual gap from the preceding element;
                 // no bottom padding so chips sit close to the content below them.
-                border = JBUI.Borders.emptyTop(2)
+                border = JBUI.Borders.emptyTop(6)
             }
 
             override fun getMaximumSize(): Dimension =
@@ -235,6 +242,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun finalizeTurn() {
+        collapseThinking()
         currentTurn?.markdownPane?.renderNow()
         currentTurn?.thinkingPane?.renderNow()
         currentTurn = null
@@ -446,10 +454,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (turn.markdownPane == null) {
             val (row, pane) = createMarkdownBubble(agentBg(), agentBorder())
             turn.markdownPane = pane
-            // When a thinking chip is present, the thinkingWrapper's border provides spacing
-            // while it's visible. When collapsed, that border disappears — add a small top
-            // margin to the message bubble so it isn't flush against the chip strip.
-            if (turn.thinkingChip != null) row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
+            // Always add top margin so the bubble has breathing room after the chip strip
+            // (or after the turn top border if no chips are present).
+            row.border = JBUI.Borders.emptyTop(JBUI.scale(4))
             turn.container.add(row)
         }
         turn.markdownPane!!.appendMarkdown(text)
@@ -464,19 +471,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val (contentWrapper, pane) = createMarkdownBubble(NativeChatColors.THINK_BG)
 
             turn.thinkingPane = pane
-            turn.thinkingWrapper = contentWrapper
-            turn.thinkingExpanded = true
 
-            // Pad the wrapper itself so spacing collapses with it when hidden.
-            // Standalone struts would remain visible even when contentWrapper.isVisible = false.
-            contentWrapper.border = JBUI.Borders.empty(JBUI.scale(4), 0, JBUI.scale(4), 0)
-            val chipStripIdx = turn.container.components.indexOf(turn.chipStrip)
-            turn.container.add(contentWrapper, chipStripIdx + 1)
+            // Top gap between chip row and the thinking bubble; collapses with the panel
+            // when hidden because BoxLayout skips invisible components entirely.
+            contentWrapper.border = JBUI.Borders.emptyTop(JBUI.scale(4))
+            turn.chipStrip.setThinkingBubble(contentWrapper)
+            turn.chipStrip.showThinkingBubble()
 
             val chip = ThinkingChipComponent(active = true) {
-                turn.thinkingExpanded = !turn.thinkingExpanded
-                contentWrapper.isVisible = turn.thinkingExpanded
-                if (turn.thinkingExpanded) contentWrapper.revalidate()
+                turn.chipStrip.toggleThinkingBubble()
                 turn.container.revalidate()
                 turn.container.repaint()
             }
@@ -492,8 +495,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val chip = turn.thinkingChip ?: return
         chip.setActive(false)
         chip.collapseWhenReady {
-            turn.thinkingWrapper?.isVisible = false
-            turn.thinkingExpanded = false
+            turn.chipStrip.hideThinkingBubble()
             turn.container.revalidate()
         }
     }
@@ -1028,7 +1030,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 }
 
                 is EntryData.Text -> {
-                    startStreaming()
                     appendText(entry.raw)
                 }
 
