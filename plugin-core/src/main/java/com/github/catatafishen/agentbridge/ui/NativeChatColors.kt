@@ -70,6 +70,17 @@ object NativeChatColors {
     val LINK: JBColor = JBColor(Color(0x24, 0x70, 0xB3), Color(0x58, 0x9D, 0xF6))
 
     /**
+     * Background color for a dynamic agent bubble using an accent color sampled from [ChatTheme.SA_COLORS].
+     * Uses a fixed alpha so the color adapts to the accent without requiring a full [JBColor] wrapper.
+     */
+    fun agentBubbleBg(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 15)
+
+    /**
+     * Border color for a dynamic agent bubble — slightly more opaque than the background.
+     */
+    fun agentBubbleBorder(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 45)
+
+    /**
      * Returns the border color for a bubble background, or null for backgrounds that have no border
      * (e.g. error bubbles). Uses identity comparison — callers must pass the singleton constants.
      */
