@@ -229,7 +229,13 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
         // Very large content: full HTML layout triggers O(N²) work in BoxView.updateLayoutArray
         // that causes 30+ second EDT freezes. Use a fast line-count estimate instead.
+        // Apply the same streaming deferral as small content: don't change the estimated
+        // height on every 30 ms render. A growing height → setBounds with new size →
+        // componentResized → BasicTextUI.rootView.setSize() → O(N²) layout on every token.
         if (rawText.length > LARGE_CONTENT_LAYOUT_THRESHOLD) {
+            if (cachedHeight > 0 && pw == cachedForWidth && !forceRecompute) {
+                return Dimension(pw, cachedHeight)
+            }
             val h = estimateHeightFromLineCount(pw)
             cachedForWidth = pw
             cachedForVersion = contentVersion
