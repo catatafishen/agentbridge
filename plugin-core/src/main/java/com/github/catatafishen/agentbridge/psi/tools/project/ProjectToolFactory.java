@@ -23,6 +23,7 @@ public final class ProjectToolFactory {
         boolean hasJava) {
         var tools = new ArrayList<Tool>();
         tools.add(new GetProjectInfoTool(project));
+        tools.add(new ReloadProjectModelTool(project));
         if (hasJava) {
             tools.add(new BuildProjectTool(project));
         }
