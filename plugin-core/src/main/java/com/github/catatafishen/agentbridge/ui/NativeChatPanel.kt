@@ -213,7 +213,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (showTimestamp) {
             lastShownTimestampMinute = currentMinute
             // Timestamp label carries the 6px top gap when it leads the turn.
-            addRow(createTimestampLabel(rightAligned = false).apply {
+            addRow(createTimestampLabel().apply {
                 border = JBUI.Borders.emptyTop(JBUI.scale(6))
             })
         }
@@ -265,16 +265,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (shouldScroll) scrollToBottom()
     }
 
-    /** Creates a small right- or left-aligned timestamp label (HH:mm) with a full-date tooltip. */
-    private fun createTimestampLabel(rightAligned: Boolean = false): JBLabel {
+    /** Creates a small left-aligned timestamp label (HH:mm) with a full-date tooltip. */
+    private fun createTimestampLabel(): JBLabel {
         val iso = overrideTimestamp ?: MessageFormatter.timestamp()
         val ts = MessageFormatter.formatTimestamp(iso)
         val tooltip = MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.TOOLTIP)
         return JBLabel(ts).apply {
             foreground = UIUtil.getContextHelpForeground()
             applyChatFont(-1)
-            horizontalAlignment = if (rightAligned) SwingConstants.RIGHT else SwingConstants.LEFT
-            alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
+            horizontalAlignment = SwingConstants.LEFT
+            alignmentX = Component.LEFT_ALIGNMENT
             border = JBUI.Borders.empty(0, 2, 1, 2)
             setToolTipText(HtmlChunk.text(tooltip))
         }
@@ -384,7 +384,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         return row to pane
     }
 
-    /** Creates a complete message row: timestamp label + aligned bubble. */
+    /** Creates a message row: an aligned bubble (no timestamp — timestamps live above the chip row). */
     private fun createMessageRow(
         content: JComponent,
         bg: Color,
@@ -395,20 +395,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val bubbleRow = createBubble(bg, rightAligned, explicitBorder)
         onBubbleRow?.invoke(bubbleRow)
         bubbleRow.bubble.add(content, BorderLayout.CENTER)
-        val row = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            isOpaque = false
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        val currentMinute = MessageFormatter.formatTimestamp(overrideTimestamp ?: MessageFormatter.timestamp())
-        if (currentMinute != lastShownTimestampMinute) {
-            lastShownTimestampMinute = currentMinute
-            row.add(createTimestampLabel(rightAligned).apply {
-                alignmentX = if (rightAligned) Component.RIGHT_ALIGNMENT else Component.LEFT_ALIGNMENT
-            })
-        }
-        row.add(bubbleRow.row)
-        return row to bubbleRow.bubble
+        return bubbleRow.row to bubbleRow.bubble
     }
 
     override fun addPromptEntry(
