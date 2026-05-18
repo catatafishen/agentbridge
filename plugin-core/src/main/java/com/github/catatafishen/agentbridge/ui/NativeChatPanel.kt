@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.acp.client.AcpClient
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -124,6 +125,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
+    private val pauseListener = McpPauseService.PauseListener { state ->
+        SwingUtilities.invokeLater {
+            when (state) {
+                McpPauseService.PauseState.PAUSED,
+                McpPauseService.PauseState.PENDING -> pauseWorkingIndicator()
+
+                McpPauseService.PauseState.RUNNING -> resumeWorkingIndicator()
+            }
+        }
+    }
+
     fun setAutoScroll(enabled: Boolean) {
         autoScrollEnabled = enabled
         if (enabled) scrollToBottom()
@@ -197,6 +209,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
         }
         ToolCallTracker.getInstance(project).addListener(trackerListener)
+        McpPauseService.getInstance(project).addListener(pauseListener)
     }
 
     private class TurnContext(
@@ -368,6 +381,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         label.text = "Working… ${elapsed}s"
         // No scrollToBottom() here — the streaming path handles scrolling during active
         // streaming, and when idle the working indicator height is fixed so no scroll is needed.
+    }
+
+    private fun pauseWorkingIndicator() {
+        val label = workingLabel ?: return
+        workingTimer.stop()
+        label.text = "Paused"
+    }
+
+    private fun resumeWorkingIndicator() {
+        val label = workingLabel ?: return
+        workingStartMs = System.currentTimeMillis()
+        label.text = "Working\u2026"
+        workingTimer.start()
     }
 
     /** Creates a markdown pane pre-filled with [text] and registers it for disposal. */
@@ -934,6 +960,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun dispose() {
         ToolCallTracker.getInstance(project).removeListener(trackerListener)
+        McpPauseService.getInstance(project).removeListener(pauseListener)
         allMarkdownPanes.forEach { it.dispose() }
         if (spinTimer.isRunning) spinTimer.stop()
         workingTimer.stop()
