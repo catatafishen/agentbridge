@@ -283,7 +283,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun addRow(comp: JComponent): JPanel {
         placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
         val container = rowContainer(comp)
+        // Insert before the working indicator, or before queued messages when no indicator is
+        // present (the gap between turns while queued messages are still waiting).
         val insertBefore = workingIndicatorWrapper
+            ?: queuedMessages.values.minByOrNull { contentPanel.getComponentZOrder(it) }
         if (insertBefore != null) {
             val idx = contentPanel.getComponentZOrder(insertBefore)
             if (idx >= 0) contentPanel.add(container, idx) else contentPanel.add(container)
@@ -368,7 +371,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingLabel = label
         val wrapper = rowContainer(row)
         workingIndicatorWrapper = wrapper
-        contentPanel.add(wrapper)
+        // Insert before any queued messages so they remain at the very bottom.
+        val firstQueuedIdx = queuedMessages.values
+            .mapNotNull { contentPanel.getComponentZOrder(it).takeIf { i -> i >= 0 } }
+            .minOrNull()
+        if (firstQueuedIdx != null) contentPanel.add(wrapper, firstQueuedIdx)
+        else contentPanel.add(wrapper)
         contentPanel.revalidate()
         if (autoScrollEnabled) scrollToBottom()
         workingTimer.start()
@@ -874,11 +882,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+        val (row, _) = createMessageRow(pane, NativeChatColors.QUEUED_BUBBLE_BG, rightAligned = true) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
-        val container = addRow(row)
+        // Queued messages live below the working indicator — append to the very end.
+        placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
+        val container = rowContainer(row)
         container.putClientProperty("queuedText", text)
+        contentPanel.add(container)
+        contentPanel.revalidate()
+        if (autoScrollEnabled) scrollToBottom()
         queuedMessages[id] = container
     }
 
