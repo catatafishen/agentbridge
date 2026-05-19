@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.github.catatafishen.agentbridge.ui.ChatPanelApi;
 import com.github.catatafishen.agentbridge.ui.NativeChatPanel;
@@ -86,11 +87,17 @@ public final class PromptUserTool extends InfrastructureTool {
             return "Error: at least one reply option is required";
         }
 
-        ChatConsolePanel jcefPanel = ChatConsolePanel.Companion.getInstance(project);
-        NativeChatPanel nativePanel = NativeChatPanel.Companion.getInstance(project);
-        // Prefer JCEF panel (renders the ask-user bubble inline), then native chat panel,
-        // then fall back to a modal dialog if no chat panel is open.
-        ChatPanelApi panel = jcefPanel != null ? jcefPanel : nativePanel;
+        BroadcastChatPanel broadcastPanel = BroadcastChatPanel.Companion.getInstance(project);
+        ChatPanelApi panel;
+        if (broadcastPanel != null) {
+            // Prefer BroadcastChatPanel — it dispatches to both JCEF and native panels simultaneously,
+            // ensuring the question and options are visible regardless of which panel mode is active.
+            panel = broadcastPanel;
+        } else {
+            ChatConsolePanel jcefPanel = ChatConsolePanel.Companion.getInstance(project);
+            NativeChatPanel nativePanel = NativeChatPanel.Companion.getInstance(project);
+            panel = jcefPanel != null ? jcefPanel : nativePanel;
+        }
         if (panel == null) {
             return askViaDialog(question, options);
         }

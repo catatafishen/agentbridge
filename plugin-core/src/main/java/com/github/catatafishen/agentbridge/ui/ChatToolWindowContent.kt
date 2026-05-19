@@ -2352,7 +2352,7 @@ class ChatToolWindowContent(
     private fun createResponsePanel(): JComponent {
         chatConsolePanel = ChatConsolePanel(project)
         val nativeChatPanel = NativeChatPanel(project)
-        val bp = BroadcastChatPanel(chatConsolePanel, nativeChatPanel)
+        val bp = BroadcastChatPanel(project, chatConsolePanel, nativeChatPanel)
         broadcastPanel = bp
         consolePanel = bp
         bp.toggle(ChatInputSettings.getInstance().isUseNativeView)

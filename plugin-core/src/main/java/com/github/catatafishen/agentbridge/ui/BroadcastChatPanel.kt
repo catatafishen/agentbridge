@@ -1,8 +1,10 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import java.awt.CardLayout
+import java.util.concurrent.ConcurrentHashMap
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
@@ -25,6 +27,7 @@ import javax.swing.SwingUtilities
  * are thread-safe and do not need EDT dispatch.
  */
 class BroadcastChatPanel(
+    private val project: Project,
     val jcefPanel: ChatConsolePanel,
     val nativePanel: NativeChatPanel,
 ) : ChatPanelApi {
@@ -32,6 +35,14 @@ class BroadcastChatPanel(
     companion object {
         private const val CARD_JCEF = "jcef"
         private const val CARD_NATIVE = "native"
+
+        private val instances = ConcurrentHashMap<Project, BroadcastChatPanel>()
+
+        fun getInstance(project: Project): BroadcastChatPanel? = instances[project]
+    }
+
+    init {
+        instances[project] = this
     }
 
     private val cardContainer = JPanel(CardLayout()).apply {
@@ -43,15 +54,8 @@ class BroadcastChatPanel(
 
     fun showJcef() = (cardContainer.layout as CardLayout).show(cardContainer, CARD_JCEF)
     fun showNative() = (cardContainer.layout as CardLayout).show(cardContainer, CARD_NATIVE)
-    fun isShowingNative(): Boolean {
-        // CardLayout has no public getter, so track it ourselves
-        return _showingNative
-    }
-
-    private var _showingNative = false
 
     fun toggle(native: Boolean) {
-        _showingNative = native
         if (native) showNative() else showJcef()
     }
 
@@ -356,6 +360,7 @@ class BroadcastChatPanel(
     // ── Dispose ────────────────────────────────────────────────────────────────
 
     override fun dispose() {
+        instances.remove(project, this)
         Disposer.dispose(jcefPanel)
         Disposer.dispose(nativePanel)
     }
