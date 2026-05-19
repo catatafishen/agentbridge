@@ -967,7 +967,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         ToolCallTracker.getInstance(project).removeListener(trackerListener)
         McpPauseService.getInstance(project).removeListener(pauseListener)
         allMarkdownPanes.forEach { it.dispose() }
-        turns.forEach { it.thinkingChip?.setActive(false) }
+        currentTurn?.thinkingChip?.setActive(false)
         if (spinTimer.isRunning) spinTimer.stop()
         if (autoScrollSafetyTimer.isRunning) autoScrollSafetyTimer.stop()
         workingTimer.stop()
