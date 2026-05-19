@@ -137,7 +137,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         SwingUtilities.invokeLater {
             when (state) {
                 McpPauseService.PauseState.PAUSED,
-                McpPauseService.PauseState.PENDING -> pauseWorkingIndicator()
+                McpPauseService.PauseState.PENDING -> pauseWorkingIndicator(state)
 
                 McpPauseService.PauseState.RUNNING -> resumeWorkingIndicator()
             }
@@ -385,10 +385,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // streaming, and when idle the working indicator height is fixed so no scroll is needed.
     }
 
-    private fun pauseWorkingIndicator() {
+    private fun pauseWorkingIndicator(state: McpPauseService.PauseState) {
         val label = workingLabel ?: return
         workingTimer.stop()
-        label.text = "Paused"
+        label.text = if (state == McpPauseService.PauseState.PAUSED) "Paused" else "Pausing\u2026"
     }
 
     private fun resumeWorkingIndicator() {

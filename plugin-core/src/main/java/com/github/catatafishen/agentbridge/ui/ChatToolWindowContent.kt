@@ -112,9 +112,9 @@ class ChatToolWindowContent(
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
     private val queuedTexts = ArrayDeque<String>()
 
-    /** Tracks whether the current pause was triggered by auto-pause-on-typing logic. */
+    /** Tracks whether the current pause was triggered by typing in the input box. */
     @Volatile
-    private var pausedByInputFocus = false
+    private var pausedByTyping = false
 
     /**
      * Set when the user explicitly resumes after an auto-pause triggered by typing.
@@ -1214,6 +1214,17 @@ class ChatToolWindowContent(
             editor.setBorder(null)
             editor.scrollPane.verticalScrollBar.preferredSize =
                 Dimension(JBUI.scale(10), editor.scrollPane.verticalScrollBar.preferredSize.height)
+            // Auto-resume when focus leaves and the input box is empty: the pause was triggered by
+            // typing, but there is nothing to send — no reason to keep the agent blocked.
+            editor.contentComponent.addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusLost(e: java.awt.event.FocusEvent) {
+                    if (pausedByTyping && editor.document.textLength == 0) {
+                        pausedByTyping = false
+                        userResumedWhileTyping = false
+                        McpPauseService.getInstance(project).setPaused(false)
+                    }
+                }
+            })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
@@ -1224,26 +1235,29 @@ class ChatToolWindowContent(
                 )
                 if (isEmpty) {
                     // Input cleared — reset auto-pause state so the next draft starts fresh.
-                    pausedByInputFocus = false
+                    pausedByTyping = false
                     userResumedWhileTyping = false
-                } else if (!pausedByInputFocus && !userResumedWhileTyping
+                } else if (!pausedByTyping && !userResumedWhileTyping
                     && ChatInputSettings.getInstance().isPauseOnInputFocus()
                 ) {
                     // First keystroke with text in the input — auto-pause if not already paused.
                     val pauseService = McpPauseService.getInstance(project)
                     if (!pauseService.isPaused()) {
-                        pausedByInputFocus = true
+                        pausedByTyping = true
                         pauseService.setPaused(true)
                     }
                 }
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
-                    // Refresh Send button enabled-state immediately on every keystroke.
-                    // ActionToolbar's default polling cycle (~500ms) makes the button feel
-                    // sluggish to enable/disable when text appears/disappears.
+                    // Refresh input toolbar (Send button) and controls toolbar (Pause button) immediately
+                    // on every keystroke. ActionToolbar's default polling cycle (~500ms) makes buttons
+                    // feel sluggish to enable/disable when text appears/disappears.
                     if (::innerInputToolbar.isInitialized) {
                         innerInputToolbar.updateActionsAsync()
+                    }
+                    if (::controlsToolbar.isInitialized) {
+                        controlsToolbar.updateActionsAsync()
                     }
                 }
             }
@@ -1318,7 +1332,7 @@ class ChatToolWindowContent(
         val selectedModelId = resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
         // unblocked regardless of whether the pause feature is currently enabled in settings.
-        pausedByInputFocus = false
+        pausedByTyping = false
         McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId)
@@ -1603,10 +1617,10 @@ class ChatToolWindowContent(
 
         override fun actionPerformed(e: AnActionEvent) {
             val service = McpPauseService.getInstance(project)
-            if (service.isPaused() && pausedByInputFocus) {
+            if (service.isPaused() && pausedByTyping) {
                 // User is explicitly resuming an auto-pause triggered by typing.
                 // Remember this so document changes don't re-pause while input still has text.
-                pausedByInputFocus = false
+                pausedByTyping = false
                 userResumedWhileTyping = promptTextArea.document.textLength > 0
             }
             service.setPaused(!service.isPaused())
@@ -3086,7 +3100,7 @@ class ChatToolWindowContent(
         val selectedModelId = resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
         // unblocked regardless of whether the pause feature is currently enabled in settings.
-        pausedByInputFocus = false
+        pausedByTyping = false
         McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId, trimmed, entryId)
