@@ -425,8 +425,9 @@ object MarkdownRenderer {
         val resolved = resolveFileReference(content)
         return when {
             resolved != null -> {
-                val colonIdx = content.indexOf(':')
-                val lineSpec = if (colonIdx > 0 && resolved.second != null) content.substring(colonIdx) else ""
+                // Use the already-resolved line number directly to avoid re-parsing content,
+                // which would break on Windows drive-letter colons (e.g. C:\path\File.kt:42).
+                val lineSpec = if (resolved.second != null) ":${resolved.second}" else ""
                 val href = escapeHtml(resolved.first + lineSpec)
                 // The entire inline code span is a file reference — a plain link is enough;
                 // there's no need for the monospace/background code styling.

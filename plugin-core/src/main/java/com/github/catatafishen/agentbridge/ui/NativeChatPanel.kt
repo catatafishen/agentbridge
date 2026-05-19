@@ -528,7 +528,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val resolvedKind = kind ?: "other"
         val displayTitle = resolveToolDisplayName(title)
         toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
-        val chip = ToolChipComponent(displayTitle, kind, "running", isMcpHandled, McpServerSettings.getInstance(project)) { showToolPopup(id) }
+        val chip = ToolChipComponent(
+            displayTitle,
+            kind,
+            "running",
+            isMcpHandled,
+            McpServerSettings.getInstance(project)
+        ) { showToolPopup(id) }
         allChips[id] = chip
         turn.chipStrip.addToolChip(chip)
         if (!spinTimer.isRunning) spinTimer.start()
