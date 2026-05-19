@@ -8,18 +8,13 @@ import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
-import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
-import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
-import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
-import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
-import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
@@ -95,17 +90,12 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     private static final String F_COMMAND = "command";
     private static final String AGENTBRIDGE_PREFIX = "agentbridge_";
     private static final String TYPE_MCP_TOOL_CALL = "mcpToolCall";
-    private static final String MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX = "mcp_tool_call_approval_";
     private static final String AGENTS_MD = "AGENTS.md";
 
     // ── Additional string constants ──────────────────────────────────────────
 
     private static final String F_MODEL = "model";
-    private static final String F_QUESTION = "question";
-    private static final String F_OPTIONS = "options";
-    private static final String F_REASON = "reason";
     private static final String CMD_CONFIG = "--config";
-    private static final String DECISION_ACCEPT = "accept";
 
     private static final long TURN_WAIT_POLL_MILLIS = 1000;
 
@@ -200,14 +190,6 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
      */
     private final Map<String, Map<String, String>> sessionOptions = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> sessionCancelled = new ConcurrentHashMap<>();
-    private final Map<String, java.util.Set<String>> sessionApprovalAllows = new ConcurrentHashMap<>();
-
-    /**
-     * Tracks in-flight MCP tool calls: {@code callId → toolName}.
-     * Populated from {@code item/started} notifications, consumed by {@code item/tool/requestUserInput}
-     * to resolve tool names for permission checks, cleaned up on {@code item/completed}.
-     */
-    private final Map<String, String> pendingMcpToolNames = new ConcurrentHashMap<>();
 
     // Active turn state — one turn at a time over stdio
     private volatile String activeTurnId;
@@ -224,7 +206,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
      */
     private volatile boolean reasoningActive = false;
 
-    private final AtomicReference<Consumer<PermissionPrompt>> permissionRequestListener = new AtomicReference<>();
+    private final CodexApprovalHandler approvalHandler;
 
     private String resolvedBinaryPath;
 
@@ -239,6 +221,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         this.project = project;
         this.mcpPort = mcpPort;
         this.transport = new JsonRpcTransport(project);
+        this.approvalHandler = new CodexApprovalHandler(project, this::sendResponse);
         transport.setMessageHandler(this);
     }
 
@@ -308,7 +291,6 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     public void cancelSession(@NotNull String sessionId) {
         AtomicBoolean flag = sessionCancelled.get(sessionId);
         if (flag != null) flag.set(true);
-        sessionApprovalAllows.remove(sessionId);
         // Interrupt the active turn if it belongs to this session
         String turnId = activeTurnId;
         if (turnId != null && sessionId.equals(activeTurnSessionId)) {
@@ -330,7 +312,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
 
     @Override
     public void setPermissionRequestListener(@Nullable Consumer<PermissionPrompt> listener) {
-        this.permissionRequestListener.set(listener);
+        approvalHandler.setPermissionRequestListener(listener);
     }
 
     @Override
@@ -764,12 +746,12 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
 
         switch (method) {
             case "item/commandExecution/requestApproval", "item/fileChange/requestApproval" ->
-                handleNativeApprovalRequest(id, method, params);
-            case "item/tool/requestUserInput" -> handleUserInputRequest(id, params);
+                approvalHandler.handleNativeApprovalRequest(id, method, params, activeTurnSessionId, activeTurnCallback.get());
+            case "item/tool/requestUserInput" -> approvalHandler.handleUserInputRequest(id, params);
             case "item/tool/call" -> {
                 String toolName = params.has(F_TOOL) ? params.get(F_TOOL).getAsString() : "unknown";
                 if ("request_user_input".equals(toolName) && project != null) {
-                    handleNativeAskUserRequest(id, params);
+                    approvalHandler.handleNativeAskUserRequest(id, params, activeTurnCallback.get());
                 } else {
                     LOG.info("Declining client-side tool call: " + toolName);
                     JsonObject error = new JsonObject();
@@ -813,133 +795,6 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         }
     }
 
-    /**
-     * Handles {@code item/tool/requestUserInput} — a generic user-input mechanism that
-     * Codex uses both for MCP tool call approvals and potentially other question types.
-     *
-     * <p>MCP tool approval questions are identified by ID prefix {@code mcp_tool_call_approval_}
-     * (matching Codex's {@code MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}). These are auto-approved
-     * at the protocol level for ALLOW/ASK tools (the real permission enforcement happens in
-     * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService#callTool}),
-     * and declined early for DENY tools to avoid unnecessary MCP round-trips.</p>
-     *
-     * <p>Non-approval questions are forwarded to the user via {@link PromptUserTool}.</p>
-     *
-     * <p><b>Wire format</b> (per Codex app-server protocol spec):</p>
-     * <pre>
-     * Response: { answers: { questionId: { answers: ["label"] } } }
-     * </pre>
-     *
-     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ToolRequestUserInputResponse.ts">ToolRequestUserInputResponse</a>
-     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">mcp_tool_call.rs</a>
-     */
-    private void handleUserInputRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
-        JsonArray questions = params.has("questions") ? params.getAsJsonArray("questions") : new JsonArray();
-        String itemId = params.has("itemId") ? params.get("itemId").getAsString() : "";
-
-        JsonObject answers = new JsonObject();
-        for (JsonElement elem : questions) {
-            if (!elem.isJsonObject()) continue;
-            JsonObject q = elem.getAsJsonObject();
-            String qId = q.has(F_ID) ? q.get(F_ID).getAsString() : "";
-
-            String answerLabel;
-            if (isMcpToolApprovalQuestion(qId)) {
-                answerLabel = resolveMcpToolApprovalAnswer(itemId, qId);
-            } else {
-                answerLabel = askUserForQuestionAnswer(q);
-            }
-
-            JsonObject answerObj = new JsonObject();
-            JsonArray answerArr = new JsonArray();
-            answerArr.add(answerLabel);
-            answerObj.add("answers", answerArr);
-            answers.add(qId, answerObj);
-        }
-        JsonObject result = new JsonObject();
-        result.add("answers", answers);
-        sendResponse(id, result);
-    }
-
-    /**
-     * Matches Codex's {@code MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}: questions whose ID
-     * starts with {@code mcp_tool_call_approval_} are MCP tool call approval prompts.
-     */
-    private static boolean isMcpToolApprovalQuestion(@NotNull String questionId) {
-        return questionId.startsWith(MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX);
-    }
-
-    /**
-     * Resolves an MCP tool approval answer using the plugin's shared permission infrastructure.
-     *
-     * <p>Looks up the tool name from the {@link #pendingMcpToolNames} cache (populated by
-     * {@code item/started} notifications) and checks {@link ToolLayerSettings#getToolPermission}.
-     * DENY tools are declined at this level to avoid an unnecessary MCP round-trip.
-     * ALLOW and ASK tools are auto-approved here — matching the Copilot CLI approach where real
-     * permission enforcement happens at the MCP server layer
-     * ({@link com.github.catatafishen.agentbridge.psi.PsiBridgeService#callTool}).</p>
-     *
-     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">
-     * Codex MCP_TOOL_APPROVAL_ACCEPT / CANCEL constants</a>
-     */
-    @NotNull
-    private String resolveMcpToolApprovalAnswer(@NotNull String itemId, @NotNull String questionId) {
-        String toolName = pendingMcpToolNames.get(itemId);
-        if (toolName != null) {
-            ToolPermission permission = resolveNativeApprovalPermission(toolName);
-            if (permission == ToolPermission.DENY) {
-                LOG.info("Declining MCP tool at Codex protocol level: " + toolName + " (DENY in settings)");
-                return "Cancel";
-            }
-        }
-        LOG.info("Auto-approving MCP tool at Codex protocol level: " + questionId
-            + (toolName != null ? " (tool=" + toolName + ")" : " (tool name not cached)"));
-        return "Allow for this session";
-    }
-
-    @NotNull
-    private String askUserForQuestionAnswer(@NotNull JsonObject question) {
-        String questionText = question.has(F_QUESTION) ? question.get(F_QUESTION).getAsString() : "";
-        List<String> optionLabels = extractOptionLabels(question);
-
-        JsonObject toolArgs = new JsonObject();
-        toolArgs.addProperty(F_QUESTION, questionText);
-        if (!optionLabels.isEmpty()) {
-            JsonArray opts = new JsonArray();
-            optionLabels.forEach(opts::add);
-            toolArgs.add(F_OPTIONS, opts);
-        }
-
-        try {
-            String response = new PromptUserTool(project).execute(toolArgs);
-            // If the response matches an option label, use it directly
-            for (String label : optionLabels) {
-                if (label.equalsIgnoreCase(response.trim())) return label;
-            }
-            return response.trim();
-        } catch (Exception e) {
-            LOG.warn("PromptUserTool failed for Codex requestUserInput question", e);
-            // Return the last option (typically "Cancel") as a safe fallback
-            return optionLabels.isEmpty() ? "Cancel" : optionLabels.getLast();
-        }
-    }
-
-    /**
-     * Extracts the list of option labels from a question object's "options" array.
-     */
-    @NotNull
-    private static List<String> extractOptionLabels(@NotNull JsonObject question) {
-        List<String> labels = new ArrayList<>();
-        if (question.has(F_OPTIONS) && question.get(F_OPTIONS).isJsonArray()) {
-            for (JsonElement opt : question.getAsJsonArray(F_OPTIONS)) {
-                if (opt.isJsonObject() && opt.getAsJsonObject().has("label")) {
-                    labels.add(opt.getAsJsonObject().get("label").getAsString());
-                }
-            }
-        }
-        return labels;
-    }
-
     // ── Notification handling ─────────────────────────────────────────────────
 
     private void handleTextDelta(@NotNull JsonObject params) {
@@ -965,11 +820,11 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         JsonObject item = params.getAsJsonObject(F_ITEM);
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
 
-        // Cache tool name for in-flight MCP calls (used by handleUserInputRequest for permission checks)
+        // Cache tool name for in-flight MCP calls (used by approval handler for permission checks)
         if (TYPE_MCP_TOOL_CALL.equals(type) && item.has(F_ID) && item.has(F_TOOL)) {
             String rawTool = item.get(F_TOOL).getAsString();
             String toolName = rawTool.startsWith(AGENTBRIDGE_PREFIX) ? rawTool.substring(AGENTBRIDGE_PREFIX.length()) : rawTool;
-            pendingMcpToolNames.put(item.get(F_ID).getAsString(), toolName);
+            approvalHandler.trackPendingMcpTool(item.get(F_ID).getAsString(), toolName);
         }
 
         Consumer<SessionUpdate> cb = activeTurnCallback.get();
@@ -993,7 +848,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
 
         // Always update pending tool tracking, regardless of active turn callback
         if (TYPE_MCP_TOOL_CALL.equals(type) && item.has(F_ID)) {
-            pendingMcpToolNames.remove(item.get(F_ID).getAsString());
+            approvalHandler.removePendingMcpTool(item.get(F_ID).getAsString());
         }
 
         Consumer<SessionUpdate> cb = activeTurnCallback.get();
@@ -1117,241 +972,6 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
 
     static String buildCommandArgsJson(@NotNull String command) {
         return "{\"command\":\"" + command.replace("\"", "\\\"") + "\"}";
-    }
-
-    private void handleNativeAskUserRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
-        JsonObject arguments = params.has(F_ARGUMENTS) && params.get(F_ARGUMENTS).isJsonObject()
-            ? params.getAsJsonObject(F_ARGUMENTS) : new JsonObject();
-
-        String question = findQuestionTextInArgs(arguments);
-        if (question == null || question.isEmpty()) {
-            question = "The agent has a question for you. Please provide your response.";
-        }
-
-        JsonObject toolArgs = new JsonObject();
-        toolArgs.addProperty(F_QUESTION, question);
-        JsonArray options = extractOptionsArray(arguments);
-        toolArgs.add(F_OPTIONS, options);
-
-        // Emit a ToolCall chip so the user sees the prompt_user tool being invoked
-        String chipId = UUID.randomUUID().toString();
-        Consumer<SessionUpdate> cb = activeTurnCallback.get();
-        if (cb != null) {
-            cb.accept(new SessionUpdate.ToolCall(chipId, "prompt_user", "prompt_user", SessionUpdate.ToolKind.OTHER,
-                toolArgs.toString(), null, null, null, null, null));
-        }
-
-        String userResponse;
-        try {
-            userResponse = new PromptUserTool(project).execute(toolArgs);
-        } catch (Exception e) {
-            LOG.warn("PromptUserTool failed during Codex native request_user_input", e);
-            userResponse = "Error: failed to get user input";
-        }
-
-        if (cb != null) {
-            boolean success = !userResponse.startsWith("Error");
-            cb.accept(new SessionUpdate.ToolCallUpdate(chipId,
-                success ? SessionUpdate.ToolCallStatus.COMPLETED : SessionUpdate.ToolCallStatus.FAILED,
-                success ? userResponse : null, success ? null : userResponse, null));
-        }
-
-        // Send response back to Codex
-        JsonObject textBlock = new JsonObject();
-        textBlock.addProperty(F_TYPE, F_TEXT);
-        textBlock.addProperty(F_TEXT, userResponse);
-        JsonArray content = new JsonArray();
-        content.add(textBlock);
-        JsonObject resp = new JsonObject();
-        resp.add("content", content);
-        sendResponse(id, resp);
-    }
-
-    /**
-     * Searches for the question text in a JSON object by trying common field names in priority order.
-     */
-    @Nullable
-    private static String findQuestionTextInArgs(@NotNull JsonObject arguments) {
-        for (String key : List.of(F_QUESTION, "prompt", F_MESSAGE, F_TEXT)) {
-            if (arguments.has(key) && arguments.get(key).isJsonPrimitive()) {
-                String val = arguments.get(key).getAsString().trim();
-                if (!val.isEmpty()) return val;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Extracts the options array from a JSON object, falling back to a default "Continue" option.
-     */
-    @NotNull
-    private static JsonArray extractOptionsArray(@NotNull JsonObject arguments) {
-        if (arguments.has(F_OPTIONS) && arguments.get(F_OPTIONS).isJsonArray()) {
-            return arguments.getAsJsonArray(F_OPTIONS);
-        }
-        JsonArray defaultOpts = new JsonArray();
-        defaultOpts.add("Continue");
-        return defaultOpts;
-    }
-
-    private void handleNativeApprovalRequest(@NotNull JsonElement id, @NotNull String method, @NotNull JsonObject params) {
-        String sessionId = activeTurnSessionId;
-        String permissionKey = method.contains("commandExecution") ? "run_command" : "write_file";
-        ToolPermission permission = resolveNativeApprovalPermission(permissionKey);
-
-        if (sessionId != null && isSessionApprovalAllowed(sessionId, permissionKey)) {
-            LOG.info("Allowing native approval from session cache: " + method + " -> " + permissionKey);
-            sendNativeApprovalDecision(id, DECISION_ACCEPT);
-            return;
-        }
-
-        switch (permission) {
-            case ALLOW -> {
-                LOG.info("Allowing native approval from settings: " + method + " -> " + permissionKey);
-                sendNativeApprovalDecision(id, DECISION_ACCEPT);
-                if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
-            }
-            case DENY -> {
-                LOG.info("Denying native approval from settings: " + method + " -> " + permissionKey);
-                sendNativeApprovalDecision(id, "decline");
-                emitToolDeclinedBanner(method, params);
-            }
-            case ASK -> {
-                PermissionResponse response = requestNativeApproval(method, permissionKey, params);
-                switch (response) {
-                    case ALLOW_SESSION -> {
-                        if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
-                        sendNativeApprovalDecision(id, "acceptForSession");
-                    }
-                    case ALLOW_ONCE -> sendNativeApprovalDecision(id, DECISION_ACCEPT);
-                    case DENY -> {
-                        sendNativeApprovalDecision(id, "decline");
-                        emitToolDeclinedBanner(method, params);
-                    }
-                    default -> throw new IllegalStateException("Unexpected value: " + response);
-                }
-            }
-            default -> throw new IllegalStateException("Unexpected value: " + permission);
-        }
-    }
-
-    private ToolPermission resolveNativeApprovalPermission(@NotNull String permissionKey) {
-        if (project == null) {
-            return ToolPermission.DENY;
-        }
-        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
-        return settings.getToolPermission(permissionKey);
-    }
-
-    private boolean isSessionApprovalAllowed(@NotNull String sessionId, @NotNull String permissionKey) {
-        java.util.Set<String> allowed = sessionApprovalAllows.get(sessionId);
-        return allowed != null && allowed.contains(permissionKey);
-    }
-
-    private void allowSessionApproval(@NotNull String sessionId, @NotNull String permissionKey) {
-        sessionApprovalAllows.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(permissionKey);
-    }
-
-    private PermissionResponse requestNativeApproval(@NotNull String method,
-                                                     @NotNull String permissionKey,
-                                                     @NotNull JsonObject params) {
-        String displayName = "item/commandExecution/requestApproval".equals(method)
-            ? "Run command"
-            : "Edit file";
-        String description = buildNativeApprovalDescription(method, params);
-        CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
-
-        String promptId = method + ":" + permissionKey + ":" + UUID.randomUUID();
-        PermissionPrompt prompt = new PermissionPrompt() {
-            @Override
-            public String toolCallId() {
-                return promptId;
-            }
-
-            @Override
-            public String toolName() {
-                return displayName;
-            }
-
-            @Override
-            public @Nullable String arguments() {
-                return description;
-            }
-
-            @Override
-            public List<String> options() {
-                return List.of("allow_once", "allow_session", "deny");
-            }
-
-            @Override
-            public void allow(String optionId) {
-                if (optionId != null && optionId.contains("session")) {
-                    future.complete(PermissionResponse.ALLOW_SESSION);
-                } else {
-                    future.complete(PermissionResponse.ALLOW_ONCE);
-                }
-            }
-
-            @Override
-            public void deny(String reason) {
-                future.complete(PermissionResponse.DENY);
-            }
-        };
-
-        Consumer<PermissionPrompt> listener = permissionRequestListener.get();
-        if (listener != null) {
-            listener.accept(prompt);
-        } else if (project != null) {
-            PermissionPromptProvider promptProvider = PermissionPromptProvider.getInstance(project);
-            if (promptProvider != null) {
-                String reqId = UUID.randomUUID().toString();
-                promptProvider.showPermissionPrompt(reqId, displayName, description, future::complete);
-            }
-        }
-
-        try {
-            PermissionResponse response = future.get(120, TimeUnit.SECONDS);
-            return response != null ? response : PermissionResponse.DENY;
-        } catch (java.util.concurrent.TimeoutException e) {
-            LOG.info("Native approval timed out for " + method);
-            return PermissionResponse.DENY;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return PermissionResponse.DENY;
-        } catch (java.util.concurrent.ExecutionException e) {
-            LOG.warn("Native approval failed for " + method, e);
-            return PermissionResponse.DENY;
-        }
-    }
-
-    private static String buildNativeApprovalDescription(@NotNull String method, @NotNull JsonObject params) {
-        return CodexMessageParser.buildNativeApprovalDescription(method, params);
-    }
-
-    private void sendNativeApprovalDecision(@NotNull JsonElement id, @NotNull String decision) {
-        JsonObject result = new JsonObject();
-        result.addProperty("decision", decision);
-        sendResponse(id, result);
-    }
-
-    private void emitToolDeclinedBanner(@NotNull String method, @NotNull JsonObject params) {
-        // Surface a soft warning if the model is trying to use native tools
-        Consumer<SessionUpdate> cb = activeTurnCallback.get();
-        if (cb == null) return;
-        String detail;
-        if (params.has(F_COMMAND) && !params.get(F_COMMAND).isJsonNull()) {
-            JsonElement command = params.get(F_COMMAND);
-            detail = command.isJsonPrimitive() ? command.getAsString() : command.toString();
-        } else if (params.has(F_REASON) && !params.get(F_REASON).isJsonNull()) {
-            JsonElement reason = params.get(F_REASON);
-            detail = reason.isJsonPrimitive() ? reason.getAsString() : reason.toString();
-        } else {
-            detail = method;
-        }
-        cb.accept(new SessionUpdate.Banner(
-            "Native tool declined: " + detail + ". Use MCP tools instead.",
-            SessionUpdate.BannerLevel.WARNING,
-            SessionUpdate.ClearOn.NEXT_SUCCESS));
     }
 
     private void emitUsageStats(@NotNull JsonObject usage, @NotNull Consumer<SessionUpdate> cb) {

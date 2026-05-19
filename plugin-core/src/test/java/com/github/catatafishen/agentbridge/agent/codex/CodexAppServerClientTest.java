@@ -174,10 +174,8 @@ class CodexAppServerClientTest {
         return (int) m.invoke(null, obj, field);
     }
 
-    private static boolean invokeIsMcpToolApprovalQuestion(String questionId) throws Exception {
-        Method m = CodexAppServerClient.class.getDeclaredMethod("isMcpToolApprovalQuestion", String.class);
-        m.setAccessible(true);
-        return (boolean) m.invoke(null, questionId);
+    private static boolean invokeIsMcpToolApprovalQuestion(String questionId) {
+        return CodexApprovalHandler.isMcpToolApprovalQuestion(questionId);
     }
 
     // ── createDefaultProfile (public static) ────────────────────────────
@@ -239,17 +237,17 @@ class CodexAppServerClientTest {
     class IsMcpToolApprovalQuestion {
 
         @Test
-        void matchingPrefix_returnsTrue() throws Exception {
+        void matchingPrefix_returnsTrue() {
             assertTrue(invokeIsMcpToolApprovalQuestion("mcp_tool_call_approval_abc123"));
         }
 
         @Test
-        void nonMatchingString_returnsFalse() throws Exception {
+        void nonMatchingString_returnsFalse() {
             assertFalse(invokeIsMcpToolApprovalQuestion("some_other_question_id"));
         }
 
         @Test
-        void emptyString_returnsFalse() throws Exception {
+        void emptyString_returnsFalse() {
             assertFalse(invokeIsMcpToolApprovalQuestion(""));
         }
     }
