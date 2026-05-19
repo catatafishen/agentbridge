@@ -1,14 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.bridge.ContextFileRef
-import com.github.catatafishen.agentbridge.bridge.EntryData
-import com.github.catatafishen.agentbridge.bridge.MessageFormatter
-import com.github.catatafishen.agentbridge.bridge.NudgeSource
-import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider
-import com.github.catatafishen.agentbridge.bridge.PermissionPromptProviderHolder
-import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.github.catatafishen.agentbridge.bridge.*
+import com.github.catatafishen.agentbridge.session.ConversationEntryStore
 import com.intellij.openapi.project.Project
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Consumer
 import javax.swing.JComponent
@@ -40,36 +34,21 @@ class BroadcastChatPanel(
 
     override val component: JComponent = nativePanel.component
 
-    // ── Entry tracking ─────────────────────────────────────────────────────────
+    // ── Entry tracking (delegated to ConversationEntryStore) ───────────────────
 
-    private val _allEntries = mutableListOf<EntryData>()
-    private var _currentText: EntryData.Text? = null
-    private var _currentThinking: EntryData.Thinking? = null
-    private val _toolCallEntries = mutableMapOf<String, EntryData.ToolCall>()
-    private val _subAgentEntries = mutableMapOf<String, EntryData.SubAgent>()
-    private val _entriesChangeListeners = mutableListOf<Runnable>()
+    val entryStore = ConversationEntryStore()
 
-    private var _currentAgent = ""
+    fun getEntries(): List<EntryData> = entryStore.getEntries()
 
-    private fun timestamp() = MessageFormatter.timestamp()
+    fun entriesSnapshot(): List<EntryData> = entryStore.entriesSnapshot()
 
-    private fun fireEntriesChanged() = _entriesChangeListeners.forEach { it.run() }
-
-    fun getEntries(): List<EntryData> = _allEntries.toList()
-
-    fun entriesSnapshot(): List<EntryData> = ArrayList(_allEntries)
-
-    fun isEntryRendered(entryId: String): Boolean = _allEntries.any { it.entryId == entryId }
+    fun isEntryRendered(entryId: String): Boolean = entryStore.isEntryTracked(entryId)
 
     fun scrollToEntry(entryId: String) = nativePanel.scrollToEntry(entryId)
 
-    fun addEntriesChangeListener(listener: Runnable) {
-        _entriesChangeListeners.add(listener)
-    }
+    fun addEntriesChangeListener(listener: Runnable) = entryStore.addChangeListener(listener)
 
-    fun removeEntriesChangeListener(listener: Runnable) {
-        _entriesChangeListeners.remove(listener)
-    }
+    fun removeEntriesChangeListener(listener: Runnable) = entryStore.removeChangeListener(listener)
 
     // ── Callback vars ─────────────────────────────────────────────────────────
 
@@ -94,40 +73,27 @@ class BroadcastChatPanel(
     ): String {
         val entryId = nativePanel.addPromptEntry(text, contextFiles, bubbleHtml)
         val ctxRefs = contextFiles?.map { (name, path, line) -> ContextFileRef(name, path, line) }
-        val entry = EntryData.Prompt(text, timestamp(), ctxRefs, id = entryId)
-        _allEntries.add(entry)
-        fireEntriesChanged()
+        entryStore.addPromptEntry(text, ctxRefs, entryId)
         return entryId
     }
 
     override fun removePromptEntry(entryId: String) {
-        _allEntries.removeIf { it.entryId == entryId }
+        entryStore.removePromptEntry(entryId)
         nativePanel.removePromptEntry(entryId)
     }
 
     override fun startStreaming() {
-        _currentText = null
-        _currentThinking = null
+        entryStore.startStreaming()
         nativePanel.startStreaming()
     }
 
     override fun appendText(text: String) {
-        val current = _currentText
-        if (current == null) {
-            _currentText = EntryData.Text(text, timestamp(), _currentAgent).also { _allEntries.add(it) }
-        } else {
-            current.raw += text
-        }
+        entryStore.appendText(text)
         nativePanel.appendText(text)
     }
 
     override fun appendThinkingText(text: String) {
-        val current = _currentThinking
-        if (current == null) {
-            _currentThinking = EntryData.Thinking(text, timestamp(), _currentAgent).also { _allEntries.add(it) }
-        } else {
-            current.raw += text
-        }
+        entryStore.appendThinkingText(text)
         nativePanel.appendThinkingText(text)
     }
 
@@ -141,7 +107,7 @@ class BroadcastChatPanel(
     override fun setCurrentProfile(profileId: String) = nativePanel.setCurrentProfile(profileId)
 
     override fun setCurrentAgent(agentName: String, profileId: String, clientType: String) {
-        _currentAgent = agentName
+        entryStore.setCurrentAgent(agentName)
         nativePanel.setCurrentAgent(agentName, profileId, clientType)
     }
 
@@ -158,24 +124,12 @@ class BroadcastChatPanel(
         kind: String?,
         isMcpHandled: Boolean
     ) {
-        val entry = EntryData.ToolCall(
-            title, arguments, kind ?: "other",
-            timestamp = timestamp(), agent = _currentAgent, entryId = id
-        )
-        _allEntries.add(entry)
-        _toolCallEntries[id] = entry
+        entryStore.addToolCallEntry(id, title, arguments, kind)
         nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled)
     }
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
-        _toolCallEntries[id]?.let { entry ->
-            entry.status = status
-            update.details?.let { entry.result = it }
-            update.description?.let { entry.description = it }
-            update.kind?.let { entry.kind = it }
-            entry.autoDenied = update.autoDenied
-            update.denialReason?.let { entry.denialReason = it }
-        }
+        entryStore.updateToolCall(id, status, update)
         nativePanel.updateToolCall(id, status, update)
     }
 
@@ -186,16 +140,7 @@ class BroadcastChatPanel(
         prompt: String?,
         initialState: ChatPanelApi.SubAgentInitialState
     ) {
-        val entry = EntryData.SubAgent(
-            agentType, description, prompt,
-            result = initialState.result,
-            status = initialState.status,
-            autoDenied = initialState.autoDenied,
-            denialReason = initialState.denialReason,
-            timestamp = timestamp(), agent = _currentAgent, entryId = id
-        )
-        _allEntries.add(entry)
-        _subAgentEntries[id] = entry
+        entryStore.addSubAgentEntry(id, agentType, description, prompt, initialState)
         nativePanel.addSubAgentEntry(id, agentType, description, prompt, initialState)
     }
 
@@ -207,12 +152,7 @@ class BroadcastChatPanel(
         autoDenied: Boolean,
         denialReason: String?
     ) {
-        _subAgentEntries[id]?.let { entry ->
-            entry.status = status
-            result?.let { entry.result = it }
-            entry.autoDenied = autoDenied
-            denialReason?.let { entry.denialReason = it }
-        }
+        entryStore.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
         nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
     }
 
@@ -230,45 +170,26 @@ class BroadcastChatPanel(
 
     override fun addInfoEntry(message: String) = nativePanel.addInfoEntry(message)
 
-    override fun addSessionSeparator(timestamp: String, agent: String) =
+    override fun addSessionSeparator(timestamp: String, agent: String) {
+        entryStore.addSessionSeparator(timestamp, agent)
         nativePanel.addSessionSeparator(timestamp, agent)
+    }
 
     override fun showPlaceholder(text: String) = nativePanel.showPlaceholder(text)
 
     override fun clear() {
-        _allEntries.clear()
-        _currentText = null
-        _currentThinking = null
-        _toolCallEntries.clear()
-        _subAgentEntries.clear()
+        entryStore.clear()
         nativePanel.clear()
-        fireEntriesChanged()
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
-        _currentText = null
-        _currentThinking = null
+        entryStore.finishResponse()
         nativePanel.finishResponse(toolCallCount, modelId, multiplier)
-        fireEntriesChanged()
     }
 
     override fun emitTurnStats(stats: TurnStatsData) {
-        val entry = EntryData.TurnStats(
-            turnId = UUID.randomUUID().toString(),
-            durationMs = stats.durationMs,
-            inputTokens = stats.inputTokens.toLong(),
-            outputTokens = stats.outputTokens.toLong(),
-            costUsd = stats.costUsd,
-            toolCallCount = stats.toolCallCount,
-            linesAdded = stats.linesAdded,
-            linesRemoved = stats.linesRemoved,
-            model = stats.model,
-            multiplier = stats.multiplier,
-            timestamp = timestamp(),
-        )
-        _allEntries.add(entry)
+        entryStore.emitTurnStats(stats)
         nativePanel.emitTurnStats(stats)
-        fireEntriesChanged()
     }
 
     override fun showQuickReplies(options: List<String>) = nativePanel.showQuickReplies(options)
@@ -284,8 +205,10 @@ class BroadcastChatPanel(
 
     override fun removeNudgeBubble(id: String) = nativePanel.removeNudgeBubble(id)
 
-    override fun addNudgeEntry(id: String, text: String, source: NudgeSource) =
+    override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
+        entryStore.addNudgeEntry(id, text, source)
         nativePanel.addNudgeEntry(id, text, source)
+    }
 
     override fun showQueuedMessage(id: String, text: String) = nativePanel.showQueuedMessage(id, text)
 
