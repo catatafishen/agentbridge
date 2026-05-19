@@ -51,6 +51,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /** Invoked when the user clicks the ↓ button on a pending nudge bubble. */
     var onCancelNudge: ((id: String) -> Unit)? = null
 
+    /** Invoked when the user clicks the ↓ button on a queued message bubble to restore it to the input. */
+    var onRestoreQueuedMessage: ((id: String, text: String) -> Unit)? = null
+
     private val fileNavigator = FileNavigator(project)
     private val toolRegistry = ToolRegistry.getInstance(project)
 
@@ -911,7 +914,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(pane, NativeChatColors.QUEUED_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+        val (row, _) = createMessageRow(pane, NativeChatColors.QUEUED_BUBBLE_BG, rightAligned = true, noBorder = true) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.MoveDown, "Restore to input") {
+                onRestoreQueuedMessage?.invoke(id, pane.getRawText())
+            }
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         // Queued messages live below the working indicator — append to the very end.

@@ -496,21 +496,25 @@ class PromptOrchestrator(
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
         val turnEndGitBranch = captureGitBranch()
-        consolePanel().emitTurnStats(
-            TurnStatsData(
-                turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
-                turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
-                commitHashes, turnStartGitBranch, turnEndGitBranch
-            )
+        val stats = TurnStatsData(
+            turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
+            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
+            commitHashes, turnStartGitBranch, turnEndGitBranch
         )
 
         val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage
         if (nextMsg != null) {
             callbacks.onQueuedMessageConsumed(nextMsg)
+            // Emit turn stats and promote the queued message in a single EDT dispatch so turn stats
+            // always land before the new prompt entry — avoiding the race where a separate invokeLater
+            // for the dequeue fires before the one for emitTurnStats.
             ApplicationManager.getApplication().invokeLater {
+                consolePanel().emitTurnStats(stats)
                 consolePanel().removeQueuedMessageByText(nextMsg)
                 callbacks.sendPromptDirectly(nextMsg)
             }
+        } else {
+            consolePanel().emitTurnStats(stats)
         }
 
         ApplicationManager.getApplication().invokeLater {

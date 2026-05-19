@@ -2371,6 +2371,18 @@ class ChatToolWindowContent(
                 refreshShortcutHints()
             }
         }
+        nativeChatPanel.onRestoreQueuedMessage = { id, text ->
+            val nudgeService = AgentNudgeService.getInstance(project)
+            nudgeService.removeQueuedMessage(text)
+            val lastIdx = queuedTexts.indexOfLast { it == text }
+            if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
+            promptTextArea.text = if (promptTextArea.text.isEmpty()) text else "$text\n\n${promptTextArea.text}"
+            promptTextArea.requestFocusInWindow()
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel.removeQueuedMessage(id)
+                refreshShortcutHints()
+            }
+        }
         chatConsolePanel.onAutoScrollDisabled = {
             autoScrollEnabled = false
             ActivityTracker.getInstance().inc()
