@@ -1,9 +1,12 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptProviderHolder
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.intellij.openapi.project.Project
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Consumer
 import javax.swing.JComponent
 
 /**
@@ -17,7 +20,7 @@ import javax.swing.JComponent
 class BroadcastChatPanel(
     val project: Project,
     val nativePanel: NativeChatPanel,
-) : ChatPanelApi {
+) : ChatPanelApi, PermissionPromptProvider {
 
     companion object {
         private val instances = ConcurrentHashMap<Project, BroadcastChatPanel>()
@@ -28,6 +31,7 @@ class BroadcastChatPanel(
 
     init {
         instances[project] = this
+        PermissionPromptProviderHolder.register(project, this)
     }
 
     override val component: JComponent = nativePanel.component
@@ -324,6 +328,15 @@ class BroadcastChatPanel(
         onSuperseded: () -> Unit,
     ) = nativePanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
 
+    // ── PermissionPromptProvider (Java interface bridge) ────────────────────────
+
+    override fun showPermissionPrompt(
+        reqId: String,
+        toolDisplayName: String,
+        description: String,
+        onRespond: Consumer<PermissionResponse>
+    ) = showPermissionRequest(reqId, toolDisplayName, description) { onRespond.accept(it) }
+
     // ── History management ─────────────────────────────────────────────────────
 
     var onLoadMoreRequested: (() -> Unit)?
@@ -367,6 +380,7 @@ class BroadcastChatPanel(
 
     override fun dispose() {
         instances.remove(project, this)
+        PermissionPromptProviderHolder.unregister(project)
         nativePanel.dispose()
     }
 }
