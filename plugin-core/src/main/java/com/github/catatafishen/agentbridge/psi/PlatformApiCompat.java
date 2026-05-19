@@ -970,16 +970,32 @@ public final class PlatformApiCompat {
     );
 
     /**
+     * Finds a plugin descriptor by plugin ID using the public {@code PluginManager.getPlugins()} API.
+     *
+     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} is annotated
+     * {@code @ApiStatus.Internal} — the entire {@code PluginManagerCore} class is internal.
+     * The public replacement is to search through {@code PluginManager.getPlugins()}, which is
+     * the non-internal facade. This helper centralises the iteration so callers remain clean.</p>
+     */
+    private static @Nullable com.intellij.ide.plugins.IdeaPluginDescriptor findPluginById(@NotNull String pluginId) {
+        com.intellij.openapi.extensions.PluginId id = com.intellij.openapi.extensions.PluginId.getId(pluginId);
+        for (var descriptor : com.intellij.ide.plugins.PluginManager.getPlugins()) {
+            if (id.equals(descriptor.getPluginId())) return descriptor;
+        }
+        return null;
+    }
+
+    /**
      * Returns the plugin name and version string for our plugin, or null if unavailable.
      *
-     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} has the same
-     * annotation mismatch as {@code isPluginInstalled} — the parameter type differs between
-     * IDE versions. Cascading: {@code descriptor.getName()} and {@code descriptor.getVersion()}
-     * fail because the return type of {@code getPlugin} is unresolved.</p>
+     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} is internal
+     * (the whole class is {@code @ApiStatus.Internal}). We use the public
+     * {@link #findPluginById} helper instead. Cascading: {@code descriptor.getName()} and
+     * {@code descriptor.getVersion()} fail against the unresolved return type in the daemon
+     * — routing through this method confines the false positives.</p>
      */
     public static @Nullable String getPluginVersionInfo(@NotNull String pluginId) {
-        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
-            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        var descriptor = findPluginById(pluginId);
         if (descriptor == null) return null;
         return formatPluginVersionInfo(descriptor.getName(), descriptor.getVersion());
     }
@@ -1225,28 +1241,26 @@ public final class PlatformApiCompat {
     /**
      * Returns the classloader for a plugin by its ID, or null if the plugin is not installed.
      *
-     * <p><b>Why extracted:</b> Same {@code PluginManagerCore.getPlugin(PluginId)} annotation
-     * mismatch as {@link #getPluginVersionInfo}. Additionally, {@code descriptor.getPluginClassLoader()}
-     * cannot be resolved because the return type of {@code getPlugin} is unresolved.</p>
+     * <p><b>Why extracted:</b> Same {@code PluginManagerCore} internal-API issue as
+     * {@link #getPluginVersionInfo}. Additionally, {@code descriptor.getPluginClassLoader()}
+     * cannot be resolved because the return type of the old internal call was unresolved
+     * in the IDE daemon. Uses the public {@link #findPluginById} helper.</p>
      */
     public static @Nullable ClassLoader getPluginClassLoader(@NotNull String pluginId) {
-        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
-            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        var descriptor = findPluginById(pluginId);
         return descriptor != null ? descriptor.getPluginClassLoader() : null;
     }
 
     /**
      * Returns the filesystem path to a plugin's installation directory, or null if unavailable.
      *
-     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} has a different
-     * {@code @NotNull} annotation between IDE versions, causing the daemon to report
-     * "cannot be applied to (PluginId)". Cascading: {@code descriptor.getPluginPath()} also
-     * fails because the return type of {@code getPlugin} is unresolved. The Gradle build
-     * compiles without errors.</p>
+     * <p><b>Why extracted:</b> Same {@code PluginManagerCore} internal-API issue as
+     * {@link #getPluginVersionInfo}. {@code descriptor.getPluginPath()} also
+     * fails against the unresolved return type in the IDE daemon. Uses the public
+     * {@link #findPluginById} helper.</p>
      */
     public static @Nullable java.nio.file.Path getPluginPath(@NotNull String pluginId) {
-        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
-            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        var descriptor = findPluginById(pluginId);
         return descriptor != null ? descriptor.getPluginPath() : null;
     }
 
@@ -1847,17 +1861,32 @@ public final class PlatformApiCompat {
     /**
      * Creates a {@link com.intellij.ui.jcef.JBCefJSQuery} for the given JCEF browser.
      *
-     * <p><b>Why extracted:</b> {@code JBCefJSQuery.create(JBCefBrowser)} is deprecated in
-     * favor of {@code create(JBCefBrowserBase)}, but {@code JBCefBrowser} does not extend
-     * {@code JBCefBrowserBase} in all supported IDE SDK versions. This wrapper isolates the
-     * deprecation in one place instead of suppressing it at every call site.</p>
+     * <p><b>Why extracted:</b> {@code JBCefJSQuery.create(JBCefBrowser)} is scheduled for
+     * removal in favour of {@code create(JBCefBrowserBase)}. {@code JBCefBrowser} extends
+     * {@code JBCefBrowserBase} in all supported IDE SDK versions (verified in 2024.3–2026.2),
+     * so passing a {@code JBCefBrowserBase} reference here is safe. This wrapper keeps the
+     * call site clean and confines any future API change to one place.</p>
      */
-    // JBCefJSQuery.create(JBCefBrowser) is the only overload compatible with JBCefBrowser across
-    // all supported SDK versions (2024.3-2025.2). The recommended create(JBCefBrowserBase) requires
-    // JBCefBrowser to extend JBCefBrowserBase, which is not guaranteed across all targeted versions.
-    @SuppressWarnings("deprecation")
     public static @NotNull com.intellij.ui.jcef.JBCefJSQuery createJSQuery(
-        @NotNull com.intellij.ui.jcef.JBCefBrowser browser) {
+        @NotNull com.intellij.ui.jcef.JBCefBrowserBase browser) {
         return com.intellij.ui.jcef.JBCefJSQuery.create(browser);
+    }
+
+    /**
+     * Builds a fuzzy case-insensitive {@link com.intellij.psi.codeStyle.MinusculeMatcher}
+     * for the given filename search pattern.
+     *
+     * <p><b>Why extracted:</b> {@code NameUtil.buildMatcher(String, MatchingCaseSensitivity)}
+     * and the {@code NameUtil.MatchingCaseSensitivity} enum are both scheduled for removal in
+     * a future IntelliJ release. The replacement builder API
+     * ({@code NameUtil.buildMatcher(String).build()}) does not yet offer a clear case-sensitivity
+     * equivalent across all supported versions. This wrapper centralises the usage so it can be
+     * migrated in one place once the replacement stabilises.</p>
+     */
+    @SuppressWarnings("UnstableApiUsage")
+    // NameUtil.buildMatcher(String, MatchingCaseSensitivity) is @ScheduledForRemoval; no stable replacement yet
+    public static @NotNull com.intellij.psi.codeStyle.MinusculeMatcher buildFilenameMatcher(@NotNull String pattern) {
+        return com.intellij.psi.codeStyle.NameUtil.buildMatcher(pattern,
+            com.intellij.psi.codeStyle.NameUtil.MatchingCaseSensitivity.NONE);
     }
 }

@@ -8,7 +8,6 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
-import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.dsl.builder.bindIntValue
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
@@ -51,7 +50,17 @@ class McpGroupConfigurable(private val project: Project) :
         row("Transport mode:") {
             comboBox(TransportMode.entries.toList())
                 .applyToComponent {
-                    renderer = SimpleListCellRenderer.create<TransportMode>("") { it.displayName }
+                    renderer = object : com.intellij.ui.SimpleListCellRenderer<TransportMode>() {
+                        override fun customize(
+                            list: javax.swing.JList<out TransportMode>,
+                            value: TransportMode?,
+                            index: Int,
+                            selected: Boolean,
+                            hasFocus: Boolean
+                        ) {
+                            text = value?.displayName ?: ""
+                        }
+                    }
                 }
                 .bindItem({ settings.transportMode }, {
                     settings.transportMode = it ?: TransportMode.STREAMABLE_HTTP

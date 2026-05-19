@@ -80,11 +80,19 @@ class ChatInputConfigurable(private val project: Project) :
             comboBox(listOf("#", "@", ""))
                 .comment("Character that opens the file search popup in the chat input.")
                 .applyToComponent {
-                    renderer = com.intellij.ui.SimpleListCellRenderer.create<String>("") { value ->
-                        when (value) {
-                            "#" -> "# (VS Code style)"
-                            "@" -> "@ (AI Assistant style)"
-                            else -> "Disabled"
+                    renderer = object : com.intellij.ui.SimpleListCellRenderer<String>() {
+                        override fun customize(
+                            list: javax.swing.JList<out String>,
+                            value: String?,
+                            index: Int,
+                            selected: Boolean,
+                            hasFocus: Boolean
+                        ) {
+                            text = when (value) {
+                                "#" -> "# (VS Code style)"
+                                "@" -> "@ (AI Assistant style)"
+                                else -> "Disabled"
+                            }
                         }
                     }
                 }
@@ -157,10 +165,19 @@ class ChatInputConfigurable(private val project: Project) :
                 )
                 .applyToComponent {
                     renderer =
-                        com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.UnhandledNudgeMode>("") { value ->
-                            when (value) {
-                                ChatInputSettings.UnhandledNudgeMode.AUTO_SEND -> "Auto-send as a new prompt"
-                                ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT -> "Restore into chat input"
+                        object : com.intellij.ui.SimpleListCellRenderer<ChatInputSettings.UnhandledNudgeMode>() {
+                            override fun customize(
+                                list: javax.swing.JList<out ChatInputSettings.UnhandledNudgeMode>,
+                                value: ChatInputSettings.UnhandledNudgeMode?,
+                                index: Int,
+                                selected: Boolean,
+                                hasFocus: Boolean
+                            ) {
+                                text = when (value) {
+                                    ChatInputSettings.UnhandledNudgeMode.AUTO_SEND -> "Auto-send as a new prompt"
+                                    ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT -> "Restore into chat input"
+                                    null -> ""
+                                }
                             }
                         }
                 }
@@ -179,12 +196,20 @@ class ChatInputConfigurable(private val project: Project) :
                 )
                 .applyToComponent {
                     renderer =
-                        com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.ReprimandNudgeMode>("") { value ->
-                            when (value) {
-                                ChatInputSettings.ReprimandNudgeMode.ENABLED -> "Enabled"
-                                ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> "Send silently"
-                                ChatInputSettings.ReprimandNudgeMode.DISABLED -> "Disabled"
-                                null -> "Enabled"
+                        object : com.intellij.ui.SimpleListCellRenderer<ChatInputSettings.ReprimandNudgeMode>() {
+                            override fun customize(
+                                list: javax.swing.JList<out ChatInputSettings.ReprimandNudgeMode>,
+                                value: ChatInputSettings.ReprimandNudgeMode?,
+                                index: Int,
+                                selected: Boolean,
+                                hasFocus: Boolean
+                            ) {
+                                text = when (value) {
+                                    ChatInputSettings.ReprimandNudgeMode.ENABLED -> "Enabled"
+                                    ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> "Send silently"
+                                    ChatInputSettings.ReprimandNudgeMode.DISABLED -> "Disabled"
+                                    null -> "Enabled"
+                                }
                             }
                         }
                 }

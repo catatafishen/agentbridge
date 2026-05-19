@@ -340,9 +340,17 @@ class AcpConnectPanel(
 
     private fun createProfileSelector(): JComponent {
         refreshProfileCombo()
-        profileCombo.renderer = SimpleListCellRenderer.create { label, value, _ ->
-            val name = value?.displayName ?: ""
-            label.text = if (value?.isExperimental == true) "$name (experimental)" else name
+        profileCombo.renderer = object : SimpleListCellRenderer<AgentProfile>() {
+            override fun customize(
+                list: javax.swing.JList<out AgentProfile>,
+                value: AgentProfile?,
+                index: Int,
+                selected: Boolean,
+                hasFocus: Boolean
+            ) {
+                val name = value?.displayName ?: ""
+                text = if (value?.isExperimental == true) "$name (experimental)" else name
+            }
         }
         profileCombo.alignmentX = LEFT_ALIGNMENT
         profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
@@ -376,8 +384,16 @@ class AcpConnectPanel(
         panel.add(Box.createVerticalStrut(JBUI.scale(4)))
 
         refreshSessionCombo()
-        sessionCombo.renderer = SimpleListCellRenderer.create { label, value, _ ->
-            label.text = value?.displayText ?: ""
+        sessionCombo.renderer = object : SimpleListCellRenderer<SessionChoice>() {
+            override fun customize(
+                list: javax.swing.JList<out SessionChoice>,
+                value: SessionChoice?,
+                index: Int,
+                selected: Boolean,
+                hasFocus: Boolean
+            ) {
+                text = value?.displayText ?: ""
+            }
         }
         sessionCombo.alignmentX = LEFT_ALIGNMENT
         sessionCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
@@ -437,7 +453,8 @@ class AcpConnectPanel(
         connection.subscribe(
             PsiBridgeService.TOOL_CALL_TOPIC,
             PsiBridgeService.ToolCallListener { event ->
-                ApplicationManager.getApplication().invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
+                ApplicationManager.getApplication()
+                    .invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
             })
     }
 
@@ -580,12 +597,20 @@ class AcpConnectPanel(
         }
         list.font = JBUI.Fonts.create(Font.MONOSPACED, UIUtil.getLabelFont().size)
         list.visibleRowCount = minOf(toolCallEntries.size, 15)
-        list.cellRenderer = SimpleListCellRenderer.create { label, value, _ ->
-            label.text = value ?: ""
-            if (label.text.contains("  \u2717  ")) {
-                label.foreground = JBUI.CurrentTheme.Label.errorForeground()
+        list.cellRenderer = object : SimpleListCellRenderer<String>() {
+            override fun customize(
+                list: javax.swing.JList<out String>,
+                value: String?,
+                index: Int,
+                selected: Boolean,
+                hasFocus: Boolean
+            ) {
+                text = value ?: ""
+                if (text.contains("  \u2717  ")) {
+                    foreground = JBUI.CurrentTheme.Label.errorForeground()
+                }
+                font = JBUI.Fonts.create(Font.MONOSPACED, UIUtil.getLabelFont().size)
             }
-            label.font = JBUI.Fonts.create(Font.MONOSPACED, UIUtil.getLabelFont().size)
         }
 
         val scrollPane = JBScrollPane(list)
@@ -697,6 +722,7 @@ class AcpConnectPanel(
                         onSignIn = { startInlineAuth() },
                         onRetry = { doConnect() }
                     )
+
                 authService.isAuthenticationError(message) && profile.terminalSignInCommand != null -> {
                     val signInCmd = profile.terminalSignInCommand!!
                     statusBanner.showAuthError(
@@ -705,8 +731,10 @@ class AcpConnectPanel(
                         onRetry = { doConnect() }
                     )
                 }
+
                 authService.isAuthenticationError(message) ->
                     statusBanner.showError("$message — check your credentials and click Connect to retry.")
+
                 else -> statusBanner.showError(message)
             }
         }

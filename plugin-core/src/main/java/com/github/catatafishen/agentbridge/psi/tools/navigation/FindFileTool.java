@@ -1,12 +1,12 @@
 package com.github.catatafishen.agentbridge.psi.tools.navigation;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.codeStyle.MinusculeMatcher;
-import com.intellij.psi.codeStyle.NameUtil;
 import com.intellij.psi.search.FilenameIndex;
 import com.intellij.psi.search.GlobalSearchScope;
 import org.jetbrains.annotations.NotNull;
@@ -175,7 +175,7 @@ public final class FindFileTool extends NavigationTool {
             return new MatchPredicate(
                 query,
                 query.toLowerCase(Locale.ROOT),
-                NameUtil.buildMatcher("*" + query, NameUtil.MatchingCaseSensitivity.NONE),
+                PlatformApiCompat.buildFilenameMatcher("*" + query),
                 glob,
                 query.indexOf('/') >= 0 || query.indexOf('\\') >= 0
             );
