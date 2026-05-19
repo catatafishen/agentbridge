@@ -205,15 +205,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 lastScrollValue = currentValue
             }
         }
-        // Any mouse wheel interaction immediately disables auto-scroll. The adjustment listener
-        // above re-enables it when the user scrolls back to the bottom.
-        scrollPane.addMouseWheelListener {
-            if (autoScrollEnabled) {
-                autoScrollEnabled = false
-                autoScrollSafetyTimer.stop()
-                onAutoScrollDisabled?.invoke()
-            }
-        }
         contentPanel.addComponentListener(object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
                 if (autoScrollEnabled) scrollToBottom()
