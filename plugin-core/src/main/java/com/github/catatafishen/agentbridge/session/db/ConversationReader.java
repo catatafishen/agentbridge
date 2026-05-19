@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.session.db;
 
-import com.github.catatafishen.agentbridge.ui.ContextFileRef;
-import com.github.catatafishen.agentbridge.ui.EntryData;
-import com.github.catatafishen.agentbridge.ui.NudgeSource;
+import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;

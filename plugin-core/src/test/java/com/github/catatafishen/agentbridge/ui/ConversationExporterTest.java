@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.bridge.FileRef;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

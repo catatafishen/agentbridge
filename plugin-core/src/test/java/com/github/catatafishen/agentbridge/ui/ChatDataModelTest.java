@@ -1,5 +1,8 @@
 package com.github.catatafishen.agentbridge.ui;
 
+import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.bridge.FileRef;
 import kotlin.text.MatchResult;
 import kotlin.text.Regex;
 import org.junit.jupiter.api.Test;

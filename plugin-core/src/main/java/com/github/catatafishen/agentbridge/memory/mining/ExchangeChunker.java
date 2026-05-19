@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.memory.mining;
 
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;

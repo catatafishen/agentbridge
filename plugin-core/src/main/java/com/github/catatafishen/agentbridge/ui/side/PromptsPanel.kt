@@ -5,7 +5,7 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel
-import com.github.catatafishen.agentbridge.ui.EntryData
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project

@@ -7,7 +7,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.agentbridge.session.v2.SessionFileRotation;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;

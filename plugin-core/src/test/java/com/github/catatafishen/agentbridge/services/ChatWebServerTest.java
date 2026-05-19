@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.ui.MessageFormatter;
+import com.github.catatafishen.agentbridge.bridge.MessageFormatter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
