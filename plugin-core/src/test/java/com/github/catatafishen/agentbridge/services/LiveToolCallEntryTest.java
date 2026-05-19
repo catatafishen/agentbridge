@@ -97,7 +97,7 @@ class LiveToolCallEntryTest {
     @Test
     void empty_strings_handled_gracefully() {
         LiveToolCallEntry entry = new LiveToolCallEntry(
-            1, "test", "test", "", null, "", Instant.now(), -1, null, null, false, List.of());
+            1, "test", "test", "", null, "", Instant.now(), -1, null, null, false, List.of(), false);
         assertEquals("", entry.input());
         assertEquals("", entry.output());
     }
@@ -105,18 +105,41 @@ class LiveToolCallEntryTest {
     @Test
     void isRunning_when_success_is_null() {
         LiveToolCallEntry running = new LiveToolCallEntry(
-            1, "test", "test", "{}", null, "", Instant.now(), -1, null, null, false, List.of());
+            1, "test", "test", "{}", null, "", Instant.now(), -1, null, null, false, List.of(), false);
         assertTrue(running.isRunning());
     }
 
     @Test
     void isRunning_false_when_success_is_set() {
         LiveToolCallEntry done = new LiveToolCallEntry(
-            1, "test", "test", "{}", null, "ok", Instant.now(), 10, true, null, false, List.of());
+            1, "test", "test", "{}", null, "ok", Instant.now(), 10, true, null, false, List.of(), false);
         assertFalse(done.isRunning());
 
         LiveToolCallEntry failed = new LiveToolCallEntry(
-            2, "test", "test", "{}", null, "err", Instant.now(), 5, false, null, false, List.of());
+            2, "test", "test", "{}", null, "err", Instant.now(), 5, false, null, false, List.of(), false);
         assertFalse(failed.isRunning());
+    }
+
+    @Test
+    void withDisplayName_sets_acpTitleSet_flag() {
+        LiveToolCallEntry entry = LiveToolCallEntry.started("run_command", "Run Command", "{}", null, null, false);
+        assertFalse(entry.acpTitleSet());
+
+        LiveToolCallEntry promoted = entry.withDisplayName("Run failing tests");
+        assertEquals("Run failing tests", promoted.displayName());
+        assertTrue(promoted.acpTitleSet());
+        assertFalse(entry.acpTitleSet(), "original entry must not be mutated");
+    }
+
+    @Test
+    void acpTitleSet_preserved_through_completed_and_withHookStages() {
+        LiveToolCallEntry entry = LiveToolCallEntry.started("run_command", "Run Command", "{}", null, null, false)
+            .withDisplayName("Run failing tests");
+
+        LiveToolCallEntry done = entry.completed("ok", 10, true);
+        assertTrue(done.acpTitleSet());
+
+        LiveToolCallEntry withHooks = entry.withHookStages(List.of());
+        assertTrue(withHooks.acpTitleSet());
     }
 }

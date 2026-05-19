@@ -578,6 +578,17 @@ public final class McpProtocolHandler {
         ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
         boolean hasHooks = hookConfig != null && !hookConfig.isEmpty();
         long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks, originalInputJson);
+
+        // If ACP has already correlated this call before MCP started executing, apply the
+        // richer ACP title to the chip immediately so it shows the better name from the start.
+        ToolCallRecord preCorrelatedRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
+        if (preCorrelatedRecord != null) {
+            String earlyAcpTitle = preCorrelatedRecord.getAcpTitle();
+            if (earlyAcpTitle != null && !earlyAcpTitle.equals(displayName)) {
+                liveService.setDisplayName(callId, earlyAcpTitle);
+            }
+        }
+
         long callStartMs = System.currentTimeMillis();
 
         try {
