@@ -18,6 +18,10 @@ object NativeChatColors {
     val USER_BUBBLE_BG = JBColor(Color(86, 156, 214, 25), Color(86, 156, 214, 31))
     val USER_BUBBLE_BORDER = JBColor(Color(86, 156, 214, 45), Color(86, 156, 214, 55))
 
+    /** Muted variant of the user bubble used for messages that are queued but not yet sent. */
+    val QUEUED_BUBBLE_BG = JBColor(Color(86, 156, 214, 12), Color(86, 156, 214, 16))
+    val QUEUED_BUBBLE_BORDER = JBColor(Color(86, 156, 214, 22), Color(86, 156, 214, 28))
+
     val AGENT_BUBBLE_BG = JBColor(Color(150, 200, 150, 12), Color(150, 200, 150, 15))
     val AGENT_BUBBLE_BORDER = JBColor(Color(150, 200, 150, 35), Color(150, 200, 150, 45))
 
@@ -78,6 +82,7 @@ object NativeChatColors {
      */
     fun bubbleBorder(bg: Color): Color? = when (bg) {
         USER_BUBBLE_BG -> USER_BUBBLE_BORDER
+        QUEUED_BUBBLE_BG -> QUEUED_BUBBLE_BORDER
         AGENT_BUBBLE_BG -> AGENT_BUBBLE_BORDER
         THINK_BG -> THINK_BORDER
         else -> null
