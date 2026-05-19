@@ -123,19 +123,25 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var lastScrollValue = 0
 
     /**
-     * Disables auto-scroll on the first wheel interaction while auto-scroll is active.
-     * Self-removes on fire so it is single-use and never registered while auto-scroll is off.
+     * Disables auto-scroll when the user scrolls UP while auto-scroll is active.
+     * Down-scroll events (rotation >= 0) are treated as no-ops so that trailing
+     * wheel events from the same gesture that reached the bottom cannot flip
+     * auto-scroll back off after the AdjustmentListener just re-enabled it.
+     * Self-removes only on an up-scroll (when auto-scroll is actually being disabled).
      * Re-registered via [setAutoScroll] or [SwingUtilities.invokeLater] in the
-     * AdjustmentListener so that a trailing wheel DOWN event from the same scroll gesture
-     * that reached the bottom cannot immediately flip auto-scroll back off.
+     * AdjustmentListener when auto-scroll transitions back on.
      */
-    private val mouseWheelDisabler: MouseWheelListener = MouseWheelListener {
-        if (autoScrollEnabled) {
-            autoScrollEnabled = false
-            autoScrollSafetyTimer.stop()
-            onAutoScrollDisabled?.invoke()
+    private val mouseWheelDisabler: MouseWheelListener = MouseWheelListener { e ->
+        if (e.wheelRotation < 0) {
+            // Scroll up — disable auto-scroll and stop listening.
+            if (autoScrollEnabled) {
+                autoScrollEnabled = false
+                autoScrollSafetyTimer.stop()
+                onAutoScrollDisabled?.invoke()
+            }
+            scrollPane.removeMouseWheelListener(mouseWheelDisabler)
         }
-        scrollPane.removeMouseWheelListener(mouseWheelDisabler)
+        // Scroll down (rotation >= 0): no-op — auto-scroll remains active.
     }
 
     private val schemeDisposable = Disposer.newDisposable("NativeChatPanel")
