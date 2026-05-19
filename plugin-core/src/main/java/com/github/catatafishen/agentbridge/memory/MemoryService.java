@@ -13,13 +13,11 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import org.apache.lucene.store.LockObtainFailedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
-
-import org.apache.lucene.store.LockObtainFailedException;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
