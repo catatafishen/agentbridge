@@ -190,10 +190,9 @@ class ChatInputConfigurable(private val project: Project) :
         }
         separator()
         row {
-            checkBox("Auto-pause when chat input is focused")
+            checkBox("Auto-pause when typing")
                 .comment(
-                    "Automatically pauses the agent when you click into the chat input " +
-                        "and have a draft message."
+                    "Automatically pauses the agent when you start typing in the chat input."
                 )
                 .bindSelected({ s.isPauseOnInputFocus }, { s.isPauseOnInputFocus = it })
         }
