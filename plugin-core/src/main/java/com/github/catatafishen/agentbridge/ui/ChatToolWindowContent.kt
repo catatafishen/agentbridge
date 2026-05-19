@@ -1213,17 +1213,6 @@ class ChatToolWindowContent(
             editor.setBorder(null)
             editor.scrollPane.verticalScrollBar.preferredSize =
                 Dimension(JBUI.scale(10), editor.scrollPane.verticalScrollBar.preferredSize.height)
-            // Auto-resume when focus leaves and the input box is empty: the pause was triggered by
-            // typing, but there is nothing to send — no reason to keep the agent blocked.
-            editor.contentComponent.addFocusListener(object : java.awt.event.FocusAdapter() {
-                override fun focusLost(e: java.awt.event.FocusEvent) {
-                    if (pausedByTyping && editor.document.textLength == 0) {
-                        pausedByTyping = false
-                        userResumedWhileTyping = false
-                        McpPauseService.getInstance(project).setPaused(false)
-                    }
-                }
-            })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
@@ -1233,9 +1222,16 @@ class ChatToolWindowContent(
                     project, isEmpty
                 )
                 if (isEmpty) {
-                    // Input cleared — reset auto-pause state so the next draft starts fresh.
-                    pausedByTyping = false
-                    userResumedWhileTyping = false
+                    // Input cleared — if the pause was triggered by typing, auto-resume now.
+                    // No need to wait for focus loss; an empty input means there's nothing to
+                    // send, so keeping the agent blocked serves no purpose.
+                    if (pausedByTyping) {
+                        pausedByTyping = false
+                        userResumedWhileTyping = false
+                        McpPauseService.getInstance(project).setPaused(false)
+                    } else {
+                        userResumedWhileTyping = false
+                    }
                 } else if (!pausedByTyping && !userResumedWhileTyping
                     && ChatInputSettings.getInstance().isPauseOnInputFocus()
                 ) {
