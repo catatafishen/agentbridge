@@ -43,7 +43,7 @@ class HtmlToolRendererSupportTest {
             Arguments.of("- item1\n- item2", "item1"),
             Arguments.of("- item1\n- item2", "item2"),
             Arguments.of("text", "font-family:"),
-            Arguments.of("Use `println()`", "<code>println()</code>"),
+            Arguments.of("Use `println()`", "<code>&#8239;println()&#8239;</code>"),
             Arguments.of("[click](https://example.com)", "https://example.com")
         );
     }

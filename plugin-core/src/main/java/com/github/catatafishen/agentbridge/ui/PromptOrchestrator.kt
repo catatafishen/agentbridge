@@ -292,7 +292,7 @@ class PromptOrchestrator(
     }
 
     private fun addContextEntries(attachments: List<PromptAttachment>, contextItems: List<ContextItemData>) {
-        if (attachments.isNotEmpty() && contextItems.isNotEmpty()) {
+        if (contextItems.isNotEmpty()) {
             // Record context files for export and conversation persistence.
             // Visual display is handled inline via chip links in the message bubble.
             val contextFiles = contextItems.map { Pair(it.name, it.path) }

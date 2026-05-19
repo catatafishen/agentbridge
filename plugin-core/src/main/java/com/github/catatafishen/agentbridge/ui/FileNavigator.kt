@@ -44,7 +44,7 @@ class FileNavigator(private val project: Project) {
             return
         }
         val pathAndLine = href.removePrefix("openfile://")
-        val parsed = parsePathAndLine(pathAndLine)
+        val parsed = parsePathLineRange(pathAndLine)
         val normalizedPath = parsed.path.replace('\\', '/')
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
         ApplicationManager.getApplication().invokeLater {
@@ -72,7 +72,24 @@ class FileNavigator(private val project: Project) {
     fun markdownToHtml(text: String): String =
         MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath, ::isGitCommit)
 
-    private fun parsePathAndLine(pathAndLine: String): PathLineRange {
+    companion object {
+        /**
+         * Parses `path[:lineNumber]` into its two components.
+         * Returns the path and line number (0 if absent).
+         * Exposed as a companion function so [FileNavigatorTest] can call it directly.
+         */
+        @JvmStatic
+        fun parsePathAndLine(pathAndLine: String): Pair<String, Int> {
+            val lastColon = pathAndLine.lastIndexOf(':')
+            if (lastColon > 0) {
+                val lineNum = pathAndLine.substring(lastColon + 1).toIntOrNull()
+                if (lineNum != null) return Pair(pathAndLine.substring(0, lastColon), lineNum)
+            }
+            return Pair(pathAndLine, 0)
+        }
+    }
+
+    private fun parsePathLineRange(pathAndLine: String): PathLineRange {
         val lastColon = pathAndLine.lastIndexOf(':')
         if (lastColon > 0) {
             val afterColon = pathAndLine.substring(lastColon + 1)

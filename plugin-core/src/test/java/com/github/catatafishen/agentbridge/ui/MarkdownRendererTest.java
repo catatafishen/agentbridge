@@ -236,8 +236,8 @@ class MarkdownRendererTest {
         void inlineCodeWithFileReferenceResolvesToLink() {
             String html = renderWithFileRef("`MyFile.kt`",
                 ref -> "MyFile.kt".equals(ref) ? new Pair<>("/path/MyFile.kt", null) : null);
-            assertTrue(html.contains("<a href='openfile:///path/MyFile.kt'>"), html);
-            assertTrue(html.contains("<code>&#8239;MyFile.kt&#8239;</code>"), html);
+            assertTrue(html.contains("<a href='openfile:///path/MyFile.kt'>MyFile.kt</a>"), html);
+            assertFalse(html.contains("<code>"), html);
         }
 
         @Test
@@ -1131,7 +1131,7 @@ class MarkdownRendererTest {
                 ref -> "Config.kt".equals(ref) ? new Pair<>("/abs/Config.kt", null) : null,
                 ref -> "/src/main/Config.kt".equals(ref) ? "/src/main/Config.kt" : null,
                 sha -> false);
-            assertTrue(html.contains("<a href='openfile:///abs/Config.kt'><code>&#8239;Config.kt&#8239;</code></a>"), html);
+            assertTrue(html.contains("<a href='openfile:///abs/Config.kt'>Config.kt</a>"), html);
             assertTrue(html.contains("<a href='openfile:///src/main/Config.kt'>/src/main/Config.kt</a>"), html);
         }
 
