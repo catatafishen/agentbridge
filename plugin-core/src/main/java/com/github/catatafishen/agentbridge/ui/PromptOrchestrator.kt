@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.model.ContentBlock
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient
+import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService

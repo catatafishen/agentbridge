@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.session.v2;
 
-import com.github.catatafishen.agentbridge.ui.ContextFileRef;
-import com.github.catatafishen.agentbridge.ui.EntryData;
-import com.github.catatafishen.agentbridge.ui.FileRef;
+import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.bridge.FileRef;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 

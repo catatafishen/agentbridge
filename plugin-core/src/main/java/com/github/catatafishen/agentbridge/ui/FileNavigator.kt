@@ -1,4 +1,5 @@
 package com.github.catatafishen.agentbridge.ui
+import com.github.catatafishen.agentbridge.bridge.FileRef
 
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.intellij.ide.BrowserUtil

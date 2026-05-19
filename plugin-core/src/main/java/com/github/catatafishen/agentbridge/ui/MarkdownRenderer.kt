@@ -1,4 +1,5 @@
 package com.github.catatafishen.agentbridge.ui
+import com.github.catatafishen.agentbridge.bridge.FileRef
 
 /**
  * Converts a subset of Markdown to HTML for display in the chat panel.

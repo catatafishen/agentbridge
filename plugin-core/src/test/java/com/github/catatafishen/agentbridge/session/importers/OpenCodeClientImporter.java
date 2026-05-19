@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.session.importers;
 
 import com.github.catatafishen.agentbridge.session.exporters.OpenCodeClientExporter;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;

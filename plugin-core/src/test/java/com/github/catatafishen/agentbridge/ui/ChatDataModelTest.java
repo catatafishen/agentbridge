@@ -1,4 +1,7 @@
 package com.github.catatafishen.agentbridge.ui;
+import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
+import com.github.catatafishen.agentbridge.bridge.FileRef;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 
 import kotlin.text.MatchResult;
 import kotlin.text.Regex;

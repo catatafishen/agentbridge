@@ -1,4 +1,5 @@
 package com.github.catatafishen.agentbridge.ui;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;

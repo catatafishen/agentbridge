@@ -1,5 +1,6 @@
-package com.github.catatafishen.agentbridge.ui
+package com.github.catatafishen.agentbridge.bridge
 
+import com.github.catatafishen.agentbridge.ui.toolSubtitleKey
 import com.google.gson.JsonParser
 import java.time.Instant
 import java.time.ZoneId

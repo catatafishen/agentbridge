@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.ui;
+package com.github.catatafishen.agentbridge.bridge;
 
 import org.junit.jupiter.api.Test;
 

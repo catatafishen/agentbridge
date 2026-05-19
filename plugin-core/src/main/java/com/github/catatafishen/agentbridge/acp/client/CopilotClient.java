@@ -12,7 +12,7 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
-import com.github.catatafishen.agentbridge.ui.NudgeSource;
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;

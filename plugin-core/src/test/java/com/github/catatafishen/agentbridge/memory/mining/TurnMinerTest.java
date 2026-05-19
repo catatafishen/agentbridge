@@ -4,7 +4,7 @@ import com.github.catatafishen.agentbridge.memory.embedding.Embedder;
 import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.memory.wal.WriteAheadLog;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.session.migration;
 
 import com.github.catatafishen.agentbridge.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.agentbridge.ui.ConversationSerializer;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;

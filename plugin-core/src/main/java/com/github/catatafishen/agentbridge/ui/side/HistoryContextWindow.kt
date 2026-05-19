@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.NativeChatPanel
-import com.github.catatafishen.agentbridge.ui.EntryData
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer

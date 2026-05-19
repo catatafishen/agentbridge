@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.memory.mining;
 
 import com.github.catatafishen.agentbridge.memory.MemorySettings;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.util.concurrency.AppExecutorUtil;

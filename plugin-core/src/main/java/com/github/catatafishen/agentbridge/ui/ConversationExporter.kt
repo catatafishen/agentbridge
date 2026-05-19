@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
+import com.github.catatafishen.agentbridge.bridge.EntryData
 
+import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
