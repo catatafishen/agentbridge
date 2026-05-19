@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
-import com.intellij.ui.Gray
 import com.intellij.ui.JBColor
 import java.awt.Color
 
@@ -15,7 +14,6 @@ import java.awt.Color
  * and honors per-project user overrides from [McpServerSettings].
  */
 object NativeChatColors {
-    val THINK: JBColor = JBColor(Gray._100, Gray._176)
 
     val USER_BUBBLE_BG = JBColor(Color(86, 156, 214, 25), Color(86, 156, 214, 31))
     val USER_BUBBLE_BORDER = JBColor(Color(86, 156, 214, 45), Color(86, 156, 214, 55))
@@ -41,8 +39,7 @@ object NativeChatColors {
         "edit", "write", "move" -> ToolKindColors.editColor(settings)
         "execute", "delete" -> ToolKindColors.executeColor(settings)
         "search" -> ToolKindColors.searchColor(settings)
-        "think" -> ChatTheme.KIND_THINK_COLOR
-        else -> ChatTheme.KIND_OTHER_COLOR
+        else -> ChatTheme.THINK_COLOR
     }
 
     /** 10% alpha background derived from the kind's accent color. */

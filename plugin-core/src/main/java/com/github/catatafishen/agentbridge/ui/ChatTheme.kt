@@ -35,9 +35,8 @@ object ChatTheme {
     )
 
     // Tool kind chip colors — semantic categories (kept for external API compatibility)
-    val KIND_THINK_COLOR: JBColor = JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210))
-    val KIND_OTHER_COLOR: JBColor = JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170))
-
+    // "think" and "other" use the shared grey THINK_COLOR; only the four configurable
+    // kinds (read/search/edit/execute) have dedicated colors.
     fun buildCssVars(): String = buildCssVars(null)
 
     /**
@@ -167,7 +166,7 @@ object ChatTheme {
         val kindExecute = ToolKindColors.executeColor(mcpSettings)
         sb.append("--kind-read:${rgb(kindRead)};--kind-search:${rgb(kindSearch)};")
         sb.append("--kind-edit:${rgb(kindEdit)};--kind-execute:${rgb(kindExecute)};")
-        sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
+        sb.append("--kind-think:${rgb(THINK_COLOR)};--kind-other:${rgb(THINK_COLOR)};")
         val diffAdd = ToolRenderers.SUCCESS_COLOR as Color
         val diffDel = ToolRenderers.FAIL_COLOR as Color
         sb.append("--diff-add:${rgb(diffAdd)};--diff-del:${rgb(diffDel)};")

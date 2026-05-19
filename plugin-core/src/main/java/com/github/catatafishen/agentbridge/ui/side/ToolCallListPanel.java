@@ -381,14 +381,14 @@ final class ToolCallListPanel extends JPanel implements Disposable {
     }
 
     private Color colorForKind(String kind) {
-        if (kind == null) return ChatTheme.INSTANCE.getKIND_OTHER_COLOR();
+        if (kind == null) return ChatTheme.INSTANCE.getTHINK_COLOR();
         McpServerSettings settings = McpServerSettings.getInstance(project);
         return switch (kind.toLowerCase(Locale.ROOT)) {
             case "read", "file", "git_read" -> ToolKindColors.readColor(settings);
             case "search" -> ToolKindColors.searchColor(settings);
             case "edit", "delete", "move", "write", "git_write" -> ToolKindColors.editColor(settings);
             case "execute", "run", "terminal", "shell" -> ToolKindColors.executeColor(settings);
-            default -> ChatTheme.INSTANCE.getKIND_OTHER_COLOR();
+            default -> ChatTheme.INSTANCE.getTHINK_COLOR();
         };
     }
 
