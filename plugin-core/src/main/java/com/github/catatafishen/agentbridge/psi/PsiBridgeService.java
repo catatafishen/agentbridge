@@ -708,13 +708,13 @@ public final class PsiBridgeService implements Disposable {
         if (arguments != null) context.add("args", arguments);
         String argsJson = context.toString();
 
-        com.github.catatafishen.agentbridge.ui.BroadcastChatPanel chatPanel =
-            com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
+        com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider promptProvider =
+            com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
 
         com.github.catatafishen.agentbridge.bridge.PermissionResponse response;
         try {
-            response = chatPanel != null
-                ? askViaChatPanel(displayName, reqId, argsJson, chatPanel)
+            response = promptProvider != null
+                ? askViaChatPanel(displayName, reqId, argsJson, promptProvider)
                 : askViaModalDialog(displayName, arguments);
         } catch (java.util.concurrent.TimeoutException e) {
             LOG.info("PSI Bridge: ASK timed out for " + toolName);
@@ -750,15 +750,12 @@ public final class PsiBridgeService implements Disposable {
     @NotNull
     private com.github.catatafishen.agentbridge.bridge.PermissionResponse askViaChatPanel(
         String displayName, String reqId, String argsJson,
-        com.github.catatafishen.agentbridge.ui.BroadcastChatPanel chatPanel)
+        com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider promptProvider)
         throws java.util.concurrent.TimeoutException, InterruptedException, java.util.concurrent.ExecutionException {
         java.util.concurrent.CompletableFuture<com.github.catatafishen.agentbridge.bridge.PermissionResponse> future =
             new java.util.concurrent.CompletableFuture<>();
         EdtUtil.invokeLater(() ->
-            chatPanel.showPermissionRequest(reqId, displayName, argsJson, result -> {
-                future.complete(result);
-                return kotlin.Unit.INSTANCE;
-            })
+            promptProvider.showPermissionPrompt(reqId, displayName, argsJson, future::complete)
         );
         return future.get(120, java.util.concurrent.TimeUnit.SECONDS);
     }
