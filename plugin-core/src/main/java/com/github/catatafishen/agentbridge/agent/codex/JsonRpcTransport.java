@@ -45,7 +45,9 @@ final class JsonRpcTransport {
 
     // ── Callback interface ───────────────────────────────────────────────────
 
-    /** Callback for non-response messages (server requests and notifications). */
+    /**
+     * Callback for non-response messages (server requests and notifications).
+     */
     interface MessageHandler {
         void onServerRequest(@NotNull JsonObject msg);
 
@@ -142,6 +144,17 @@ final class JsonRpcTransport {
         JsonObject msg = new JsonObject();
         msg.add(F_ID, id);
         msg.add(F_RESULT, result);
+        writeMessage(msg);
+    }
+
+    /**
+     * Send a JSON-RPC error response to a server-originated request.
+     * Uses the standard {@code error} field (not {@code result}) per JSON-RPC 2.0 spec.
+     */
+    void sendErrorResponse(@NotNull JsonElement id, @NotNull JsonObject error) {
+        JsonObject msg = new JsonObject();
+        msg.add(F_ID, id);
+        msg.add("error", error);
         writeMessage(msg);
     }
 

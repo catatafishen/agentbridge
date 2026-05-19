@@ -248,6 +248,23 @@ class JsonRpcTransportTest {
             assertTrue(msg.getAsJsonObject("result").get("success").getAsBoolean());
             assertFalse(msg.has("method"));
         }
+
+        @Test
+        void sendErrorResponse_writesJsonWithIdAndError() {
+            JsonObject error = new JsonObject();
+            error.addProperty("code", -32601);
+            error.addProperty("message", "Method not found");
+
+            transport.sendErrorResponse(new JsonPrimitive(7), error);
+
+            String written = captured.toString(StandardCharsets.UTF_8);
+            JsonObject msg = JsonParser.parseString(written.trim()).getAsJsonObject();
+            assertEquals(7, msg.get("id").getAsInt());
+            assertTrue(msg.has("error"));
+            assertFalse(msg.has("result"));
+            assertEquals(-32601, msg.getAsJsonObject("error").get("code").getAsInt());
+            assertEquals("Method not found", msg.getAsJsonObject("error").get("message").getAsString());
+        }
     }
 
     @Nested
@@ -369,7 +386,9 @@ class JsonRpcTransportTest {
             mockedSettings.close();
         }
 
-        /** Invoke the private processLine method via reflection on the test thread. */
+        /**
+         * Invoke the private processLine method via reflection on the test thread.
+         */
         private void invokeProcessLine(String line) throws Exception {
             var method = JsonRpcTransport.class.getDeclaredMethod("processLine", String.class);
             method.setAccessible(true);
@@ -383,7 +402,7 @@ class JsonRpcTransportTest {
             invokeProcessLine(line);
 
             verify(handler).onServerRequest(argThat(msg ->
-                    msg.has("method") && msg.get("method").getAsString().equals("item/tool/call")
+                msg.has("method") && msg.get("method").getAsString().equals("item/tool/call")
             ));
         }
 
@@ -394,7 +413,7 @@ class JsonRpcTransportTest {
             invokeProcessLine(line);
 
             verify(handler).onNotification(argThat(msg ->
-                    msg.has("method") && msg.get("method").getAsString().equals("turn/updated")
+                msg.has("method") && msg.get("method").getAsString().equals("turn/updated")
             ));
         }
 

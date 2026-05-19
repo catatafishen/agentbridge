@@ -725,6 +725,10 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         transport.sendResponse(id, result);
     }
 
+    private void sendErrorResponse(@NotNull JsonElement id, @NotNull JsonObject error) {
+        transport.sendErrorResponse(id, error);
+    }
+
     // ── Message classification (delegation to transport) ─────────────────────
 
     static MessageType classifyMessageType(@NotNull JsonObject msg) {
@@ -779,12 +783,12 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
                 }
             }
             default -> {
-                // Unknown server request — respond with error result
+                // Unknown server request — respond with JSON-RPC error
                 LOG.warn("Unknown server request method: " + method);
                 JsonObject error = new JsonObject();
                 error.addProperty("code", -32601);
                 error.addProperty(F_MESSAGE, "Method not found: " + method);
-                sendResponse(id, error);
+                sendErrorResponse(id, error);
             }
         }
     }
