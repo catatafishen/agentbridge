@@ -12,6 +12,7 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -135,7 +136,7 @@ public final class CopilotClient extends AcpClient {
      * and are not preceded by alphanumeric or identifier characters.
      */
     private static final java.util.regex.Pattern ABS_PATH_PATTERN =
-        java.util.regex.Pattern.compile("(?<![a-zA-Z0-9_])/(?!/)([^\\s\"'<>|;{}()\\\\]+)");
+        java.util.regex.Pattern.compile("(?<!\\w)/(?!/)([^\\s\"'<>|;{}()\\\\]+)");
 
     // ─── Lifecycle ───────────────────────────────────
 
@@ -624,21 +625,24 @@ public final class CopilotClient extends AcpClient {
             // agent's current context, so reprimanding would be confusing and spurious.
             if (isRestoringHistory()) return update;
 
-            String title = toolCall.title();
-            boolean isBuiltIn = !isMcpToolTitle(title)
-                && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
-                || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX)));
-            if (isBuiltIn && shouldReprimand(title) && touchesProjectFiles(toolCall)) {
-                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode mode =
-                    com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getReprimandNudgeMode();
-                if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
-                    boolean showBubble = mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED;
-                    String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
-                    AgentNudgeService.getInstance(project).addNudge(buildReprimand(kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
-                }
-            }
+            maybeAddReprimandForBuiltinTool(toolCall);
         }
         return update;
+    }
+
+    private void maybeAddReprimandForBuiltinTool(SessionUpdate.ToolCall toolCall) {
+        String title = toolCall.title();
+        boolean isBuiltIn = !isMcpToolTitle(title)
+            && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
+            || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX)));
+        if (isBuiltIn && shouldReprimand(title) && touchesProjectFiles(toolCall)) {
+            ChatInputSettings.ReprimandNudgeMode mode = ChatInputSettings.getInstance().getReprimandNudgeMode();
+            if (mode != ChatInputSettings.ReprimandNudgeMode.DISABLED) {
+                boolean showBubble = mode == ChatInputSettings.ReprimandNudgeMode.ENABLED;
+                String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
+                AgentNudgeService.getInstance(project).addNudge(buildReprimand(kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
+            }
+        }
     }
 
     /**

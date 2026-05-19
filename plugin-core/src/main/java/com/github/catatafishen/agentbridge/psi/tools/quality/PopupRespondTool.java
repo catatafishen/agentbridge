@@ -173,6 +173,15 @@ public final class PopupRespondTool extends QualityTool {
         // Take the slot before invoking — replay may itself attempt to register a new pending
         // (chained popup case), and we want the slot free for that. If replay fails we don't
         // resurrect it: the agent should re-issue the original call.
+        return takeAndReplay(pps, replayable, chosen, popupId);
+    }
+
+    private String takeAndReplay(
+        @NotNull PendingPopupService pps,
+        @NotNull Replayable replayable,
+        @NotNull PopupChoice chosen,
+        @NotNull String popupId
+    ) {
         PendingPopupService.Pending taken = pps.take(popupId);
         if (taken == null) {
             return "Error: pending popup vanished between peek and take (race). Please retry.";

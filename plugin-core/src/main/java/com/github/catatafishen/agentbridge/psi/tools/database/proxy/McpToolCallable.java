@@ -11,7 +11,8 @@ import java.lang.reflect.Method;
  * {@code McpTool.call(JsonObject, Continuation)} via reflection without requiring the
  * mcpserver plugin to be on the compile classpath.
  */
-@SuppressWarnings("rawtypes") // raw Function2 required — type params aren't available without mcpserver on compile classpath
+@SuppressWarnings("rawtypes")
+// raw Function2 required — type params aren't available without mcpserver on compile classpath
 final class McpToolCallable implements kotlin.jvm.functions.Function2 {
 
     private final Method callMethod;
@@ -34,7 +35,7 @@ final class McpToolCallable implements kotlin.jvm.functions.Function2 {
         try {
             return callMethod.invoke(tool, argsJsonObject, continuation);
         } catch (Exception e) {
-            throw new RuntimeException("McpTool.call() failed via reflection", e);
+            throw new IllegalStateException("McpTool.call() failed via reflection", e);
         }
     }
 }
