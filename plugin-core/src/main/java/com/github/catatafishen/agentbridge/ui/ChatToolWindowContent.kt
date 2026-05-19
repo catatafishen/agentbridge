@@ -1,12 +1,11 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.bridge.EntryData
-import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.acp.model.Model
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
+import com.github.catatafishen.agentbridge.bridge.EntryData
+import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
-import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
@@ -96,17 +95,17 @@ class ChatToolWindowContent(
     private var chatPanel: JComponent? = null
     private var chatSessionInitialized = false
 
-    // Shared model list (populated from ACP)
-    @Volatile
-    private var loadedModels: List<Model> = emptyList()
-    private var modelLoadGeneration = 0
+    // Model management (delegated to ModelSelectorService)
+    private lateinit var modelSelector: ModelSelectorService
 
-    // Prompt tab fields
-    @Volatile
-    private var selectedModelIndex = -1
-
-    @Volatile
-    private var modelsStatusText: String? = MSG_LOADING
+    // Delegating properties — existing code accesses these; they route to modelSelector.
+    private val loadedModels get() = modelSelector.loadedModels
+    private var selectedModelIndex
+        get() = modelSelector.selectedModelIndex
+        set(value) {
+            modelSelector.selectedModelIndex = value
+        }
+    private val modelsStatusText get() = modelSelector.modelsStatusText
     private lateinit var controlsToolbar: ActionToolbar
     private lateinit var innerInputToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
@@ -273,6 +272,35 @@ class ChatToolWindowContent(
     }
 
     private fun setupUI() {
+        modelSelector = ModelSelectorService(project, agentManager, object : ModelSelectorService.Callbacks {
+            override fun onModelSelected(modelId: String) {
+                consolePanel.setCurrentModel(modelId)
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    try {
+                        val sessionId = promptOrchestrator.currentSessionId
+                        if (sessionId != null) agentManager.client.setModel(sessionId, modelId)
+                    } catch (e: Exception) {
+                        LOG.warn("Failed to set model $modelId via web", e)
+                    }
+                }
+            }
+
+            override fun onModelsLoadFailed(error: Exception) {
+                val errorMsg = error.message ?: MSG_UNKNOWN_ERROR
+                if (PromptErrorClassifier.isCLINotFoundError(error)) {
+                    agentManager.isConnected = false
+                    restartSessionGroup?.updateIconForDisconnect()
+                    connectPanel.showError(errorMsg)
+                    cardLayout.show(mainPanel, CARD_CONNECT)
+                } else {
+                    statusBanner?.showError(errorMsg)
+                    if (authService.isAuthenticationError(errorMsg)) {
+                        authService.markAuthError(errorMsg)
+                        copilotBanner?.triggerCheck()
+                    }
+                }
+            }
+        })
         setupTitleBarActions()
         wireUpWebServerCallbacks()
 
@@ -286,11 +314,10 @@ class ChatToolWindowContent(
         if (agentManager.isAutoConnect) {
             // Show "Connecting…" state and trigger auto-connect flow
             connectPanel.showConnecting()
-            loadModelsAsync(
+            modelSelector.loadModelsAsync(
                 onSuccess = { models ->
-                    loadedModels = models
                     buildAndShowChatPanel()
-                    restoreModelSelection(models)
+                    modelSelector.restoreModelSelection(models)
                     statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
                 },
                 onFailure = { error ->
@@ -367,11 +394,10 @@ class ChatToolWindowContent(
         if (::promptOrchestrator.isInitialized) resetSessionState()
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
-        loadModelsAsync(
+        modelSelector.loadModelsAsync(
             onSuccess = { models ->
-                loadedModels = models
                 buildAndShowChatPanel()
-                restoreModelSelection(models)
+                modelSelector.restoreModelSelection(models)
                 statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
             },
             onFailure = { error ->
@@ -402,16 +428,14 @@ class ChatToolWindowContent(
         LOG.info("disconnectFromAgent: stopping agent and switching to connect panel")
         // Invalidate any in-flight loadModelsAsync() threads so they don't restart the agent
         // or apply stale model results after the user has explicitly disconnected.
-        ++modelLoadGeneration
+        modelSelector.invalidateLoads()
         try {
             agentManager.stop()
         } catch (e: Exception) {
             LOG.warn("Error stopping agent", e)
         }
         agentManager.isConnected = false
-        loadedModels = emptyList()
-        selectedModelIndex = -1
-        modelsStatusText = null
+        modelSelector.reset()
         connectPanel.resetConnectButton()
         connectPanel.refreshMcpStatus()
         cardLayout.show(mainPanel, CARD_CONNECT)
@@ -422,13 +446,6 @@ class ChatToolWindowContent(
 
     // ── Web server state helpers ──────────────────────────────────────────────
 
-    private fun buildModelsJson(): String {
-        if (loadedModels.isEmpty()) return "[]"
-        return "[" + loadedModels.joinToString(",") { m ->
-            "{\"id\":${com.google.gson.Gson().toJson(m.id())},\"name\":${com.google.gson.Gson().toJson(m.name())}}"
-        } + "]"
-    }
-
     private fun buildProfilesJson(): String {
         val profiles = agentManager.availableProfiles.toList()
         if (profiles.isEmpty()) return "[]"
@@ -438,25 +455,9 @@ class ChatToolWindowContent(
         } + "]"
     }
 
-    private fun selectModelById(modelId: String) {
-        val idx = loadedModels.indexOfFirst { it.id() == modelId }
-        if (idx < 0) return
-        selectedModelIndex = idx
-        agentManager.settings.setSelectedModel(modelId)
-        consolePanel.setCurrentModel(modelId)
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val sessionId = promptOrchestrator.currentSessionId
-                if (sessionId != null) agentManager.client.setModel(sessionId, modelId)
-            } catch (e: Exception) {
-                LOG.warn("Failed to set model $modelId via web", e)
-            }
-        }
-    }
-
     private fun notifyWebServerConnected() {
         val ws = ChatWebServer.getInstance(project) ?: return
-        val modelsJson = buildModelsJson()
+        val modelsJson = modelSelector.buildModelsJson()
         val profilesJson = buildProfilesJson()
         ws.setConnected(true)
         ws.setModelsJson(modelsJson)
@@ -777,7 +778,7 @@ class ChatToolWindowContent(
         }
 
         fun loadModels() {
-            loadModelsAsync(onSuccess = { models -> loadedModels = models })
+            modelSelector.loadModelsAsync(onSuccess = {})
         }
 
         copilotBanner = createCopilotSetupBanner {
@@ -1325,7 +1326,7 @@ class ChatToolWindowContent(
         appendNewEntries()
         promptTextArea.text = ""
 
-        val selectedModelId = resolveSelectedModelId()
+        val selectedModelId = modelSelector.resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
         // unblocked regardless of whether the pause feature is currently enabled in settings.
         pausedByTyping = false
@@ -2166,7 +2167,7 @@ class ChatToolWindowContent(
             val group = DefaultActionGroup()
             val supportsMultiplier = agentManager.client.supportsMultiplier()
             loadedModels.forEachIndexed { index, model ->
-                val cost = if (supportsMultiplier) getModelMultiplier(model.id()) else null
+                val cost = if (supportsMultiplier) modelSelector.getModelMultiplier(model.id()) else null
                 group.add(createModelSelectionAction(model, index, cost))
             }
             return group
@@ -2199,26 +2200,8 @@ class ChatToolWindowContent(
             picker.onModelSelected = { index ->
                 if (index != selectedModelIndex && index in loadedModels.indices) {
                     val model = loadedModels[index]
-                    selectedModelIndex = index
-                    agentManager.settings.setSelectedModel(model.id())
+                    modelSelector.selectModelById(model.id())
                     LOG.debug("Model selected: ${model.id()} (index=$index)")
-                    ApplicationManager.getApplication().invokeLater {
-                        consolePanel.setCurrentModel(model.id())
-                    }
-                    ApplicationManager.getApplication().executeOnPooledThread {
-                        try {
-                            val client = agentManager.client
-                            val sessionId = promptOrchestrator.currentSessionId
-                            if (sessionId != null) {
-                                client.setModel(sessionId, model.id())
-                                LOG.debug("Model switched to ${model.id()} on session $sessionId")
-                            } else {
-                                LOG.debug("No active session; model ${model.id()} will be used on next session")
-                            }
-                        } catch (ex: Exception) {
-                            LOG.warn("Failed to set model ${model.id()} via session/set_model", ex)
-                        }
-                    }
                 }
             }
             picker.onFavoriteToggled = { modelId ->
@@ -2236,20 +2219,11 @@ class ChatToolWindowContent(
         }
 
         override fun update(e: AnActionEvent) {
-            e.presentation.text = currentModelSelectorText()
+            e.presentation.text = modelSelector.currentDisplayText
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
             // Hide entirely when models loaded successfully but list is empty
             // (agent uses configOptions for model selection instead)
             e.presentation.isVisible = modelsStatusText != null || loadedModels.isNotEmpty()
-        }
-    }
-
-    private fun currentModelSelectorText(): String {
-        modelsStatusText?.let { return it }
-        return if (selectedModelIndex in loadedModels.indices) {
-            loadedModels[selectedModelIndex].name()
-        } else {
-            MSG_LOADING
         }
     }
 
@@ -2258,26 +2232,8 @@ class ChatToolWindowContent(
         return object : AnAction(label) {
             override fun actionPerformed(e: AnActionEvent) {
                 if (index == selectedModelIndex) return
-                selectedModelIndex = index
-                agentManager.settings.setSelectedModel(model.id())
+                modelSelector.selectModelById(model.id())
                 LOG.debug("Model selected: ${model.id()} (index=$index)")
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.setCurrentModel(model.id())
-                }
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    try {
-                        val client = agentManager.client
-                        val sessionId = promptOrchestrator.currentSessionId
-                        if (sessionId != null) {
-                            client.setModel(sessionId, model.id())
-                            LOG.debug("Model switched to ${model.id()} on session $sessionId")
-                        } else {
-                            LOG.debug("No active session; model ${model.id()} will be used on next session")
-                        }
-                    } catch (ex: Exception) {
-                        LOG.warn("Failed to set model ${model.id()} via session/set_model", ex)
-                    }
-                }
             }
 
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -2301,11 +2257,10 @@ class ChatToolWindowContent(
             }
         }
         resetSessionKeepingHistory()
-        loadModelsAsync(
+        modelSelector.loadModelsAsync(
             onSuccess = { models ->
-                loadedModels = models
                 buildAndShowChatPanel()
-                restoreModelSelection(models)
+                modelSelector.restoreModelSelection(models)
                 statusBanner?.showInfo("Switched to agent: $slug")
             },
             onFailure = { error ->
@@ -2451,7 +2406,7 @@ class ChatToolWindowContent(
             }
         })
         ws.setOnSelectModel(java.util.function.Consumer { modelId ->
-            ApplicationManager.getApplication().invokeLater { selectModelById(modelId) }
+            ApplicationManager.getApplication().invokeLater { modelSelector.selectModelById(modelId) }
         })
         ws.setOnLoadMore(Runnable {
             ApplicationManager.getApplication().invokeLater { onLoadMoreHistory() }
@@ -3062,7 +3017,7 @@ class ChatToolWindowContent(
         setSendingState(true)
         val entryId = consolePanel.addPromptEntry(trimmed, null)
         appendNewEntries()
-        val selectedModelId = resolveSelectedModelId()
+        val selectedModelId = modelSelector.resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
         // unblocked regardless of whether the pause feature is currently enabled in settings.
         pausedByTyping = false
@@ -3236,126 +3191,6 @@ class ChatToolWindowContent(
         conversationStore.archive()
         persistedEntryCount = 0
     }
-
-    private fun getModelMultiplier(modelId: String): String? {
-        return try {
-            agentManager.client.getModelMultiplier(modelId)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun restoreModelSelection(models: List<Model>) {
-        val savedModel = agentManager.settings.selectedModel
-        LOG.debug("Restoring model selection: saved='$savedModel', current='${agentManager.client.currentModelId}', available=${models.map { it.id() }}")
-        if (savedModel != null) {
-            val idx = models.indexOfFirst { it.id() == savedModel }
-            if (idx >= 0) {
-                selectedModelIndex = idx; LOG.debug("Restored model index=$idx"); return
-            }
-            LOG.debug("Saved model '$savedModel' not found in available models")
-        }
-        // Fall back to the agent-reported current model from session/new
-        val currentModelId = agentManager.client.currentModelId
-        if (currentModelId != null) {
-            val idx = models.indexOfFirst { it.id() == currentModelId }
-            if (idx >= 0) {
-                selectedModelIndex = idx; LOG.debug("Selected agent-reported model index=$idx"); return
-            }
-        }
-        if (models.isNotEmpty()) selectedModelIndex = 0
-    }
-
-    private fun resolveSelectedModelId(): String {
-        loadedModels.getOrNull(selectedModelIndex)?.id()?.takeIf { it.isNotEmpty() }?.let { return it }
-        return agentManager.client.currentModelId?.takeIf { it.isNotEmpty() } ?: ""
-    }
-
-    private fun loadModelsAsync(
-        onSuccess: (List<Model>) -> Unit,
-        onFailure: ((Exception) -> Unit)? = null
-    ) {
-        val generation = ++modelLoadGeneration
-        ApplicationManager.getApplication().invokeLater {
-            loadedModels = emptyList()
-            modelsStatusText = MSG_LOADING
-            selectedModelIndex = -1
-        }
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val models = fetchModelsWithRetry()
-                ApplicationManager.getApplication().invokeLater {
-                    if (generation == modelLoadGeneration) {
-                        onModelsLoaded(models, onSuccess)
-                    } else {
-                        LOG.info("Discarding stale model load (gen $generation, current $modelLoadGeneration)")
-                    }
-                }
-            } catch (e: Exception) {
-                val errorMsg = e.message ?: MSG_UNKNOWN_ERROR
-                LOG.warn("Failed to load models: $errorMsg")
-                ApplicationManager.getApplication().invokeLater {
-                    if (generation == modelLoadGeneration) {
-                        onModelsLoadFailed(e)
-                        onFailure?.invoke(e)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun fetchModelsWithRetry(): List<Model> {
-        // Wait for any in-progress session export to complete before starting the agent.
-        // Without this, createSession() reads a stale or missing resumeSessionId because
-        // the export from the previous agent runs concurrently on a pooled thread.
-        SessionSwitchService.getInstance(project).awaitPendingExport(10_000)
-
-        val startGeneration = modelLoadGeneration
-        var lastError: Exception? = null
-        for (attempt in 1..3) {
-            if (attempt > 1) {
-                // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
-                // this retry backoff runs on a pooled thread (executeOnPooledThread), not EDT.
-                // An Alarm or coroutine delay would add complexity without benefit for a simple retry loop.
-                Thread.sleep(2000L)
-                // If the user disconnected during the sleep, abort rather than restarting the agent.
-                if (modelLoadGeneration != startGeneration) return emptyList()
-            }
-            try {
-                return agentManager.client.getAvailableModels()
-            } catch (e: Exception) {
-                lastError = e
-                if (authService.isAuthenticationError(e.message ?: "") || isCLINotFoundError(e)) break
-            }
-        }
-        throw lastError ?: RuntimeException(MSG_UNKNOWN_ERROR)
-    }
-
-    private fun onModelsLoaded(models: List<Model>, onSuccess: (List<Model>) -> Unit) {
-        loadedModels = models
-        modelsStatusText = null
-        restoreModelSelection(models)
-        onSuccess(models)
-    }
-
-    private fun onModelsLoadFailed(lastError: Exception) {
-        val errorMsg = lastError.message ?: MSG_UNKNOWN_ERROR
-        modelsStatusText = "Unavailable"
-        if (isCLINotFoundError(lastError)) {
-            agentManager.isConnected = false
-            restartSessionGroup?.updateIconForDisconnect()
-            connectPanel.showError(errorMsg)
-            cardLayout.show(mainPanel, CARD_CONNECT)
-        } else {
-            statusBanner?.showError(errorMsg)
-            if (authService.isAuthenticationError(errorMsg)) {
-                authService.markAuthError(errorMsg)
-                copilotBanner?.triggerCheck()
-            }
-        }
-    }
-
-    private fun isCLINotFoundError(e: Exception): Boolean = PromptErrorClassifier.isCLINotFoundError(e)
 
     /** Tree node for the Plans tab — display name is shown in the tree. */
     private class FileTreeNode(
