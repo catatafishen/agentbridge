@@ -362,12 +362,13 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     private fun charsPerLineEstimate(): Int {
         val pw = cachedForWidth.takeIf { it > 0 } ?: parent?.width?.takeIf { it > 0 } ?: return 0
-        val fontSize = UIUtil.getLabelFont().size
+        val fontSize = PlatformApiCompat.getEditorFontSize()
         val avgCharWidth = (fontSize * 0.55).toInt().coerceAtLeast(1)
         return maxOf(1, pw / avgCharWidth)
     }
 
-    private fun lineHeightEstimate(): Int = (UIUtil.getLabelFont().size * 1.7).toInt()
+    // Must match the CSS body rule: line-height: 150%
+    private fun lineHeightEstimate(): Int = (PlatformApiCompat.getEditorFontSize() * 1.5).toInt()
 
     private fun createStyleSheet(): StyleSheet {
         val ss = StyleSheet()
