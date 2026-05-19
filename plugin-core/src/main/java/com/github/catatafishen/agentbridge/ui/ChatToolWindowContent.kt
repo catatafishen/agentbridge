@@ -304,7 +304,6 @@ class ChatToolWindowContent(
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
             SidePanelToggleAction(),
-            NativeUiToggleAction(),
             Separator.create(),
             StatisticsAction(),
             SettingsAction()
@@ -2156,20 +2155,8 @@ class ChatToolWindowContent(
         }
     }
 
-    private inner class NativeUiToggleAction : ToggleAction(
-        "Native UI",
-        "Switch between the native Swing chat panel and the JCEF web panel",
-        AllIcons.Actions.ToggleSoftWrap
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun isSelected(e: AnActionEvent): Boolean =
-            if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.isShowingNative()
-                ?: false else false
-
-        override fun setSelected(e: AnActionEvent, state: Boolean) {
-            if (::consolePanel.isInitialized) (consolePanel as? BroadcastChatPanel)?.toggle(state)
-        }
+    fun setNativeViewEnabled(native: Boolean) {
+        if (::broadcastPanel.isInitialized) broadcastPanel.toggle(native)
     }
 
     /** ComboBoxAction for model selection — matches Run panel dropdown style. */
@@ -2341,6 +2328,7 @@ class ChatToolWindowContent(
         val bp = BroadcastChatPanel(chatConsolePanel, nativeChatPanel)
         broadcastPanel = bp
         consolePanel = bp
+        bp.toggle(ChatInputSettings.getInstance().isUseNativeView)
         bp.onLoadMoreRequested = ::onLoadMoreHistory
         chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
         nativeChatPanel.onCancelNudge = { id ->

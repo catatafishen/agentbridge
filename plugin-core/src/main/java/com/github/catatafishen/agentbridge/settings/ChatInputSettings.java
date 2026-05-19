@@ -181,6 +181,20 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.toolTimeoutExtension2Minutes = minutes;
     }
 
+    // ── Chat view ───────────────────────────────────────────────────────────
+
+    /**
+     * When true (default), the native Swing chat panel is shown.
+     * When false, the JCEF web panel is used instead.
+     */
+    public boolean isUseNativeView() {
+        return myState.useNativeView;
+    }
+
+    public void setUseNativeView(boolean useNative) {
+        myState.useNativeView = useNative;
+    }
+
     // ── Pause feature ───────────────────────────────────────────────────────
 
     /**
@@ -220,6 +234,7 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         public UnhandledNudgeMode unhandledNudgeMode = UnhandledNudgeMode.AUTO_SEND;
         @NotNull
         public ReprimandNudgeMode reprimandNudgeMode = ReprimandNudgeMode.ENABLED; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean useNativeView = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean pauseOnInputFocus = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutSeconds = 60; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutExtension1Minutes = 1; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.

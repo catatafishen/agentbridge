@@ -105,6 +105,11 @@ class ChatInputConfigurable(private val project: Project) :
                 )
         }
         row {
+            checkBox("Use native Swing chat panel")
+                .comment("Shows the native Swing-based chat view. Disable to fall back to the JCEF web panel.")
+                .bindSelected({ s.isUseNativeView }, { s.isUseNativeView = it })
+        }
+        row {
             checkBox("Enable smooth scrolling in chat panel")
                 .comment("⚠ May cause screen tearing on some systems")
                 .bindSelected({ mcp.isSmoothScrollEnabled }, {
@@ -231,6 +236,7 @@ class ChatInputConfigurable(private val project: Project) :
             val chatContent = ChatToolWindowContent.getInstance(project)
             chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)
             chatContent?.setShortcutHintsVisible()
+            chatContent?.setNativeViewEnabled(s.isUseNativeView)
         }
     }
 }
