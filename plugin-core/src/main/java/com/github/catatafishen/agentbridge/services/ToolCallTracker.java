@@ -160,22 +160,14 @@ public final class ToolCallTracker {
         }
 
         // Priority 1: args hash match against unmatched MCP records
-        if (args != null) {
-            String argsHash = ToolCallHasher.computeBaseHash(args);
-            ToolCallRecord mcpFirst = findNewestUnmatchedMcpRecord(argsHash);
-            if (mcpFirst != null) {
-                mcpFirst.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
-                acpIdToRecordId.put(acpClientId, mcpFirst.getRecordId());
-                if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, mcpFirst.getRecordId());
-                LOG.info("ToolCallTracker [ACP]: correlated via hash=" + argsHash + " → " + mcpFirst.getRecordId());
-                fireOnCorrelated(mcpFirst);
-                flushOlderUncorrelatedMcpRecords(mcpFirst.getRecordId());
-                return mcpFirst;
-            }
+        String argsHash = args != null ? ToolCallHasher.computeBaseHash(args) : null;
+        if (argsHash != null) {
+            ToolCallRecord matched = tryAcpCorrelateByArgsHash(
+                argsHash, acpClientId, acpName, acpTitle, args, routingType, seq, toolUseId);
+            if (matched != null) return matched;
         }
 
         // No existing MCP record — create new ACP-first record
-        String argsHash = args != null ? ToolCallHasher.computeBaseHash(args) : null;
         String recordId = allocateRecordId();
         ToolCallRecord callRecord = new ToolCallRecord(recordId, argsHash);
         callRecord.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
@@ -202,29 +194,8 @@ public final class ToolCallTracker {
 
         // Priority 0: toolUseId direct match
         if (toolUseId != null) {
-            String existingRecordId = toolUseIdToRecordId.get(toolUseId);
-            if (existingRecordId == null) {
-                // ACP may have registered with same toolUseId under a different key scheme —
-                // check if there's a record that has this ACP client ID matching.
-                // (In practice Claude sends toolUseId in _meta that matches the ACP tool_use.id)
-                for (ToolCallRecord r : liveRecords.values()) {
-                    if (toolUseId.equals(r.getAcpClientId()) && r.getMcpToolName() == null) {
-                        r.setMcpFields(toolName, args, kind, startTime);
-                        toolUseIdToRecordId.put(toolUseId, r.getRecordId());
-                        LOG.info("ToolCallTracker [MCP]: correlated via acpClientId=" + toolUseId + " → " + r.getRecordId());
-                        fireOnCorrelated(r);
-                        return r;
-                    }
-                }
-            } else {
-                ToolCallRecord callRecord = liveRecords.get(existingRecordId);
-                if (callRecord != null && callRecord.getMcpToolName() == null) {
-                    callRecord.setMcpFields(toolName, args, kind, startTime);
-                    LOG.info("ToolCallTracker [MCP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
-                    fireOnCorrelated(callRecord);
-                    return callRecord;
-                }
-            }
+            ToolCallRecord correlated = tryMcpCorrelateByToolUseId(toolName, args, kind, startTime, toolUseId);
+            if (correlated != null) return correlated;
         }
 
         // Priority 1: args hash match against unmatched ACP records
@@ -249,6 +220,55 @@ public final class ToolCallTracker {
         LOG.info("ToolCallTracker [MCP]: new record " + recordId + " tool=" + toolName);
         fireOnMcpRegistered(callRecord);
         return callRecord;
+    }
+
+    @Nullable
+    private ToolCallRecord tryAcpCorrelateByArgsHash(
+        @NotNull String argsHash,
+        @NotNull String acpClientId, @Nullable String acpName, @NotNull String acpTitle,
+        @NotNull JsonObject args, @NotNull ToolCallRecord.RoutingType routingType, int seq,
+        @Nullable String toolUseId
+    ) {
+        ToolCallRecord mcpFirst = findNewestUnmatchedMcpRecord(argsHash);
+        if (mcpFirst == null) return null;
+        mcpFirst.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
+        acpIdToRecordId.put(acpClientId, mcpFirst.getRecordId());
+        if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, mcpFirst.getRecordId());
+        LOG.info("ToolCallTracker [ACP]: correlated via hash=" + argsHash + " → " + mcpFirst.getRecordId());
+        fireOnCorrelated(mcpFirst);
+        flushOlderUncorrelatedMcpRecords(mcpFirst.getRecordId());
+        return mcpFirst;
+    }
+
+    @Nullable
+    private ToolCallRecord tryMcpCorrelateByToolUseId(
+        @NotNull String toolName, @NotNull JsonObject args, @Nullable String kind,
+        long startTime, @NotNull String toolUseId
+    ) {
+        String existingRecordId = toolUseIdToRecordId.get(toolUseId);
+        if (existingRecordId == null) {
+            // ACP may have registered with same toolUseId under a different key scheme —
+            // check if there's a record that has this ACP client ID matching.
+            // (In practice Claude sends toolUseId in _meta that matches the ACP tool_use.id)
+            for (ToolCallRecord r : liveRecords.values()) {
+                if (toolUseId.equals(r.getAcpClientId()) && r.getMcpToolName() == null) {
+                    r.setMcpFields(toolName, args, kind, startTime);
+                    toolUseIdToRecordId.put(toolUseId, r.getRecordId());
+                    LOG.info("ToolCallTracker [MCP]: correlated via acpClientId=" + toolUseId + " → " + r.getRecordId());
+                    fireOnCorrelated(r);
+                    return r;
+                }
+            }
+        } else {
+            ToolCallRecord callRecord = liveRecords.get(existingRecordId);
+            if (callRecord != null && callRecord.getMcpToolName() == null) {
+                callRecord.setMcpFields(toolName, args, kind, startTime);
+                LOG.info("ToolCallTracker [MCP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
+                fireOnCorrelated(callRecord);
+                return callRecord;
+            }
+        }
+        return null;
     }
 
     // ── Completion ───────────────────────────────────────────────────────────

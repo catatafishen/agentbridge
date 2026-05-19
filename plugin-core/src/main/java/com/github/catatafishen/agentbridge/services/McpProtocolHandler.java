@@ -562,8 +562,6 @@ public final class McpProtocolHandler {
             meta.toolUseId(), originalArguments, gateResult.prefix);
     }
 
-    @SuppressWarnings("java:S107")
-    // Parameters are all semantically distinct; a wrapper object would add indirection without clarity
     private JsonObject executeToolCall(JsonObject msg, String toolName, JsonObject arguments,
                                        PreHookApplication preHookResult,
                                        List<HookStageResult> hookStages,
@@ -581,13 +579,7 @@ public final class McpProtocolHandler {
 
         // If ACP has already correlated this call before MCP started executing, apply the
         // richer ACP title to the chip immediately so it shows the better name from the start.
-        ToolCallRecord preCorrelatedRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
-        if (preCorrelatedRecord != null) {
-            String earlyAcpTitle = preCorrelatedRecord.getAcpTitle();
-            if (earlyAcpTitle != null && !earlyAcpTitle.equals(displayName)) {
-                liveService.setDisplayName(callId, earlyAcpTitle);
-            }
-        }
+        applyAcpTitleIfPresent(callId, toolUseId, displayName);
 
         long callStartMs = System.currentTimeMillis();
 
@@ -602,13 +594,7 @@ public final class McpProtocolHandler {
             // Enrich the live entry display name with the ACP title once it is available.
             // ACP registers before MCP executes, so the record (and its acpTitle) should
             // already exist by the time callTool() returns.
-            ToolCallRecord trackerRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
-            if (trackerRecord != null) {
-                String acpTitle = trackerRecord.getAcpTitle();
-                if (acpTitle != null && !acpTitle.equals(displayName)) {
-                    liveService.setDisplayName(callId, acpTitle);
-                }
-            }
+            applyAcpTitleIfPresent(callId, toolUseId, displayName);
 
             long durationMs = System.currentTimeMillis() - callStartMs;
             var postOutcome = applyPostHook(toolName, arguments, resultText, hookStages);
@@ -658,6 +644,16 @@ public final class McpProtocolHandler {
             return buildToolResult(msg, finalOutput, isError);
         } finally {
             McpCallContext.clear();
+        }
+    }
+
+    private void applyAcpTitleIfPresent(long callId, @Nullable String toolUseId, String displayName) {
+        ToolCallRecord trackerRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
+        if (trackerRecord != null) {
+            String acpTitle = trackerRecord.getAcpTitle();
+            if (acpTitle != null && !acpTitle.equals(displayName)) {
+                LiveToolCallService.getInstance(project).setDisplayName(callId, acpTitle);
+            }
         }
     }
 

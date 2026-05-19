@@ -25,11 +25,6 @@ class ModelGrouper(private val favorites: Set<String>) {
         private const val OTHER = "Other"
     }
 
-    /**
-     * Returns ordered groups: Favorites (if non-empty), then providers
-     * alphabetically with "Other" last. Each entry preserves the original
-     * flat index so model selection still works via the existing `loadedModels` list.
-     */
     fun group(models: List<Model>): List<Group> {
         if (models.isEmpty()) return emptyList()
 
@@ -43,11 +38,7 @@ class ModelGrouper(private val favorites: Set<String>) {
         val (favs, rest) = indexed.partition { it.isFavorite }
 
         // Group rest by provider
-        val providerGroups: LinkedHashMap<String, MutableList<GroupedModel>> = linkedMapOf()
-        for (item in rest) {
-            val provider = ModelProvider.getProvider(models[item.index]) ?: OTHER
-            providerGroups.getOrPut(provider) { mutableListOf() }.add(item)
-        }
+        val providerGroups = rest.groupBy { ModelProvider.getProvider(models[it.index]) ?: OTHER }
 
         // Sort providers alphabetically, Other last
         val sortedProviders = providerGroups.keys.sortedWith(

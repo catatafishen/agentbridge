@@ -88,8 +88,8 @@ public final class PromptUserTool extends InfrastructureTool {
 
         ChatConsolePanel jcefPanel = ChatConsolePanel.Companion.getInstance(project);
         NativeChatPanel nativePanel = NativeChatPanel.Companion.getInstance(project);
-        // Prefer JCEF (renders the ask-user bubble inline); fall back to native chat panel;
-        // last resort is a modal dialog if no chat panel is open.
+        // Prefer JCEF panel (renders the ask-user bubble inline), then native chat panel,
+        // then fall back to a modal dialog if no chat panel is open.
         ChatPanelApi panel = jcefPanel != null ? jcefPanel : nativePanel;
         if (panel == null) {
             return askViaDialog(question, options);
