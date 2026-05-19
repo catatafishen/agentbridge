@@ -122,11 +122,20 @@ public final class CopilotClient extends AcpClient {
     );
 
     /**
-     * Per-session counter of native tool bypass events. Used by {@link #buildReprimand}
-     * to escalate wording when the agent repeatedly ignores the nudge.
+     * Per-turn counter of native tool bypass events. Used by {@link #buildReprimand}
+     * to escalate wording when the agent repeatedly ignores the nudge within the same turn.
+     * Reset to zero at the start of each new turn by {@link #beforeSendPrompt}.
      */
     private final java.util.concurrent.atomic.AtomicInteger nativeToolBypassCount =
         new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * Compiled pattern for extracting absolute Unix file paths from tool argument strings.
+     * Matches sequences starting with {@code /} that are not URL double-slashes ({@code //})
+     * and are not preceded by alphanumeric or identifier characters.
+     */
+    private static final java.util.regex.Pattern ABS_PATH_PATTERN =
+        java.util.regex.Pattern.compile("(?<![a-zA-Z0-9_])/(?!/)([^\\s\"'<>|;{}()\\\\]+)");
 
     // ─── Lifecycle ───────────────────────────────────
 
@@ -619,7 +628,7 @@ public final class CopilotClient extends AcpClient {
             boolean isBuiltIn = !isMcpToolTitle(title)
                 && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
                 || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX)));
-            if (isBuiltIn && shouldReprimand(title)) {
+            if (isBuiltIn && shouldReprimand(title) && touchesProjectFiles(toolCall)) {
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode mode =
                     com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getReprimandNudgeMode();
                 if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
@@ -634,15 +643,64 @@ public final class CopilotClient extends AcpClient {
 
     /**
      * Clears the human nudge slot at turn start so user input from the previous turn
-     * doesn't leak into the new prompt. The reprimand slot is intentionally left intact:
-     * if the model ended a turn after a built-in tool was denied (without calling any MCP
-     * tool to consume the reprimand), the reprimand must survive to be delivered in the
-     * first MCP call of the next turn.
+     * doesn't leak into the new prompt. Also resets the per-turn bypass counter so
+     * escalation wording starts fresh each turn.
+     * <p>
+     * The reprimand slot is intentionally left intact: if the model ended a turn after
+     * a built-in tool was denied (without calling any MCP tool to consume the reprimand),
+     * the reprimand must survive to be delivered in the first MCP call of the next turn.
      */
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
         AgentNudgeService.getInstance(project).clearHumanNudges();
+        nativeToolBypassCount.set(0);
         return request;
+    }
+
+    /**
+     * Returns {@code true} when the tool call likely operates on files within the project
+     * directory — triggering a reprimand is appropriate. Returns {@code false} when all
+     * detectable absolute paths are outside the project (e.g. {@code /tmp/}, system logs,
+     * external build output) — no reprimand needed in that case.
+     *
+     * <p>Falls back to {@code true} (conservative: reprimand) when:
+     * <ul>
+     *   <li>The project base path is unavailable</li>
+     *   <li>No absolute paths are found in the arguments (relative paths likely resolve to project root)</li>
+     * </ul>
+     */
+    private boolean touchesProjectFiles(SessionUpdate.ToolCall toolCall) {
+        String projectDir = project.getBasePath();
+        if (projectDir == null) return true;
+
+        // ACP locations — pre-parsed file paths provided by the CLI
+        List<String> locations = toolCall.filePaths();
+        if (!locations.isEmpty()) {
+            return locations.stream().anyMatch(p -> p.startsWith(projectDir));
+        }
+
+        // Fall back to scanning raw arguments for absolute Unix paths
+        String args = toolCall.arguments();
+        if (args == null || args.isBlank()) return true;
+
+        List<String> absPaths = extractAbsolutePaths(args);
+        if (absPaths.isEmpty()) return true; // no absolute paths → assume project-relative
+
+        return absPaths.stream().anyMatch(p -> p.startsWith(projectDir));
+    }
+
+    /**
+     * Extracts all absolute Unix path tokens from a raw argument string.
+     * Matches {@code /...} sequences that are not URL double-slashes and are not
+     * preceded by identifier characters.
+     */
+    private static List<String> extractAbsolutePaths(String text) {
+        java.util.regex.Matcher m = ABS_PATH_PATTERN.matcher(text);
+        List<String> paths = new ArrayList<>();
+        while (m.find()) {
+            paths.add(m.group());
+        }
+        return paths;
     }
 
     /**
