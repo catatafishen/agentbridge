@@ -121,6 +121,22 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private var lastScrollValue = 0
 
+    /**
+     * Disables auto-scroll on the first wheel interaction while auto-scroll is active.
+     * Self-removes on fire so it is single-use and never registered while auto-scroll is off.
+     * Re-registered via [setAutoScroll] or [SwingUtilities.invokeLater] in the
+     * AdjustmentListener so that a trailing wheel DOWN event from the same scroll gesture
+     * that reached the bottom cannot immediately flip auto-scroll back off.
+     */
+    private val mouseWheelDisabler = MouseWheelListener {
+        if (autoScrollEnabled) {
+            autoScrollEnabled = false
+            autoScrollSafetyTimer.stop()
+            onAutoScrollDisabled?.invoke()
+        }
+        scrollPane.removeMouseWheelListener(mouseWheelDisabler)
+    }
+
     private val schemeDisposable = Disposer.newDisposable("NativeChatPanel")
 
     /**
@@ -149,8 +165,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (enabled) {
             scrollToBottom()
             autoScrollSafetyTimer.start()
+            scrollPane.removeMouseWheelListener(mouseWheelDisabler)
+            scrollPane.addMouseWheelListener(mouseWheelDisabler)
         } else {
             autoScrollSafetyTimer.stop()
+            scrollPane.removeMouseWheelListener(mouseWheelDisabler)
         }
     }
 
@@ -194,6 +213,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     autoScrollEnabled = true
                     autoScrollSafetyTimer.start()
                     onAutoScrollEnabled?.invoke()
+                    // Re-register wheel disabler via invokeLater so it does not fire for the
+                    // wheel event that just triggered this re-enable. In Swing, the AdjustmentEvent
+                    // is dispatched synchronously inside JScrollPane.processMouseWheelEvent before
+                    // the registered MouseWheelListeners are called. Deferring registration ensures
+                    // the current event's listener chain completes before the disabler is active.
+                    SwingUtilities.invokeLater {
+                        scrollPane.removeMouseWheelListener(mouseWheelDisabler)
+                        scrollPane.addMouseWheelListener(mouseWheelDisabler)
+                    }
                 } else if (!atBottom && autoScrollEnabled && lastScrollValue - currentValue > SCROLL_DISABLE_THRESHOLD_PX) {
                     // Disable only on a meaningful upward scroll. Tiny value drops below the
                     // threshold are sub-pixel rounding artefacts from layout passes and must
@@ -205,6 +233,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 lastScrollValue = currentValue
             }
         }
+        // Wheel disabler starts registered because auto-scroll is on by default.
+        scrollPane.addMouseWheelListener(mouseWheelDisabler)
         contentPanel.addComponentListener(object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
                 if (autoScrollEnabled) scrollToBottom()
