@@ -5,7 +5,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -83,6 +86,54 @@ class GitCommitToolStaticMethodsTest {
             args.addProperty("message", "test commit");
             args.addProperty("amend", true);
             assertTrue(GitCommitTool.resolveCommitAll(args));
+        }
+    }
+
+    @Nested
+    @DisplayName("parseAuthorNameEmail")
+    class ParseAuthorNameEmail {
+
+        @Test
+        @DisplayName("parses standard 'Name <email>' format")
+        void parsesStandardFormat() {
+            String[] result = GitCommitTool.parseAuthorNameEmail("github-copilot-developer <github-copilot-developer@users.noreply.github.com>");
+            assertNotNull(result);
+            assertEquals(2, result.length);
+            assertEquals("github-copilot-developer", result[0]);
+            assertEquals("github-copilot-developer@users.noreply.github.com", result[1]);
+        }
+
+        @Test
+        @DisplayName("parses author with spaces in name")
+        void parsesNameWithSpaces() {
+            String[] result = GitCommitTool.parseAuthorNameEmail("John Doe <john@example.com>");
+            assertNotNull(result);
+            assertEquals("John Doe", result[0]);
+            assertEquals("john@example.com", result[1]);
+        }
+
+        @Test
+        @DisplayName("returns null when angle brackets are missing")
+        void returnsNullForMissingBrackets() {
+            assertNull(GitCommitTool.parseAuthorNameEmail("No Brackets Here"));
+        }
+
+        @Test
+        @DisplayName("returns null when name is empty")
+        void returnsNullForEmptyName() {
+            assertNull(GitCommitTool.parseAuthorNameEmail("<email@example.com>"));
+        }
+
+        @Test
+        @DisplayName("returns null when email is empty")
+        void returnsNullForEmptyEmail() {
+            assertNull(GitCommitTool.parseAuthorNameEmail("Name <>"));
+        }
+
+        @Test
+        @DisplayName("returns null for empty string")
+        void returnsNullForEmptyString() {
+            assertNull(GitCommitTool.parseAuthorNameEmail(""));
         }
     }
 }

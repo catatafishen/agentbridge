@@ -120,15 +120,43 @@ public final class GitCommitTool extends GitTool {
 
     private static String[] commitCommandArgs(@NotNull JsonObject args, @NotNull String message, boolean isAmend) {
         List<String> cmdArgs = new ArrayList<>();
+        String author = args.has(PARAM_AUTHOR) && !args.get(PARAM_AUTHOR).getAsString().isEmpty()
+            ? args.get(PARAM_AUTHOR).getAsString() : null;
+        if (author != null) {
+            // Also override the committer identity so the commit isn't attributed to whoever's
+            // git config is active on the machine (typically the developer using the IDE).
+            String[] nameEmail = parseAuthorNameEmail(author);
+            if (nameEmail != null) {
+                cmdArgs.add("-c");
+                cmdArgs.add("user.name=" + nameEmail[0]);
+                cmdArgs.add("-c");
+                cmdArgs.add("user.email=" + nameEmail[1]);
+            }
+        }
         cmdArgs.add("commit");
         if (isAmend) cmdArgs.add("--amend");
-        if (args.has(PARAM_AUTHOR) && !args.get(PARAM_AUTHOR).getAsString().isEmpty()) {
+        if (author != null) {
             cmdArgs.add("--author");
-            cmdArgs.add(args.get(PARAM_AUTHOR).getAsString());
+            cmdArgs.add(author);
         }
         cmdArgs.add("-m");
         cmdArgs.add(message);
         return cmdArgs.toArray(String[]::new);
+    }
+
+    /**
+     * Parses a git author string in {@code "Name <email>"} format.
+     *
+     * @return two-element array {@code [name, email]}, or {@code null} if the format is not recognized.
+     */
+    static @Nullable String[] parseAuthorNameEmail(@NotNull String author) {
+        int lt = author.lastIndexOf('<');
+        int gt = author.lastIndexOf('>');
+        if (lt < 0 || gt <= lt) return null;
+        String name = author.substring(0, lt).trim();
+        String email = author.substring(lt + 1, gt).trim();
+        if (name.isEmpty() || email.isEmpty()) return null;
+        return new String[]{name, email};
     }
 
     private void pruneApprovedReviewRows(@NotNull String root) {
