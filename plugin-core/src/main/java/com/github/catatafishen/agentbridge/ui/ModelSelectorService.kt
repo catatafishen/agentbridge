@@ -5,9 +5,12 @@ import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.MSG_LOADING
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.MSG_UNKNOWN_ERROR
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Manages model loading, selection, and multiplier resolution for the chat prompt.
@@ -39,11 +42,11 @@ class ModelSelectorService(
     var modelsStatusText: String? = MSG_LOADING
         private set
 
-    private var loadGeneration = 0
+    private val loadGeneration = AtomicInteger(0)
 
     /** Invalidates in-flight load requests so they discard their results. */
     fun invalidateLoads() {
-        ++loadGeneration
+        loadGeneration.incrementAndGet()
     }
 
     /** Resets state for disconnect (clears models, index, status). */
@@ -64,10 +67,14 @@ class ModelSelectorService(
         }
 
     fun buildModelsJson(): String {
-        if (loadedModels.isEmpty()) return "[]"
-        return "[" + loadedModels.joinToString(",") { m ->
-            "{\"id\":${com.google.gson.Gson().toJson(m.id())},\"name\":${com.google.gson.Gson().toJson(m.name())}}"
-        } + "]"
+        val array = JsonArray()
+        for (m in loadedModels) {
+            val obj = JsonObject()
+            obj.addProperty("id", m.id())
+            obj.addProperty("name", m.name())
+            array.add(obj)
+        }
+        return array.toString()
     }
 
     fun selectModelById(modelId: String) {
@@ -91,15 +98,11 @@ class ModelSelectorService(
         }
     }
 
-    /**
-     * Loads models asynchronously from the agent. On success, restores the previously
-     * selected model and calls [onSuccess]. On failure, invokes [Callbacks.onModelsLoadFailed].
-     */
     fun loadModelsAsync(
         onSuccess: (List<Model>) -> Unit,
         onFailure: ((Exception) -> Unit)? = null
     ) {
-        val generation = ++loadGeneration
+        val generation = loadGeneration.incrementAndGet()
         ApplicationManager.getApplication().invokeLater {
             loadedModels = emptyList()
             modelsStatusText = MSG_LOADING
@@ -109,17 +112,17 @@ class ModelSelectorService(
             try {
                 val models = fetchModelsWithRetry(generation)
                 ApplicationManager.getApplication().invokeLater {
-                    if (generation == loadGeneration) {
+                    if (generation == loadGeneration.get()) {
                         onModelsLoaded(models, onSuccess)
                     } else {
-                        log.info("Discarding stale model load (gen $generation, current $loadGeneration)")
+                        log.info("Discarding stale model load (gen $generation, current ${loadGeneration.get()})")
                     }
                 }
             } catch (e: Exception) {
                 val errorMsg = e.message ?: MSG_UNKNOWN_ERROR
                 log.warn("Failed to load models: $errorMsg")
                 ApplicationManager.getApplication().invokeLater {
-                    if (generation == loadGeneration) {
+                    if (generation == loadGeneration.get()) {
                         modelsStatusText = "Unavailable"
                         callbacks.onModelsLoadFailed(e)
                         onFailure?.invoke(e)
@@ -156,7 +159,7 @@ class ModelSelectorService(
         for (attempt in 1..3) {
             if (attempt > 1) {
                 Thread.sleep(2000L)
-                if (loadGeneration != startGeneration) return emptyList()
+                if (loadGeneration.get() != startGeneration) return emptyList()
             }
             try {
                 return agentManager.client.getAvailableModels()
