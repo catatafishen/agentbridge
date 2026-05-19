@@ -9,7 +9,7 @@ import javax.swing.UIManager
  * Exports a conversation (list of [EntryData]) to plain text,
  * compressed summary, or a self-contained HTML document.
  *
- * Extracted from [ChatConsolePanel] to keep conversation-export concerns separate.
+ * Extracted from the old JCEF chat panel to keep conversation-export concerns separate.
  */
 internal class ConversationExporter(private val entries: List<EntryData>) {
 

@@ -6,7 +6,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Gets the path and content of the currently active chat HTML.
+ * Returns the plain-text conversation transcript from the native chat panel.
  */
 public final class GetChatHtmlTool extends EditorTool {
 
@@ -21,21 +21,22 @@ public final class GetChatHtmlTool extends EditorTool {
 
     @Override
     public @NotNull String displayName() {
-        return "Get Chat HTML";
+        return "Get Chat Conversation";
     }
 
     @Override
     public @NotNull String description() {
-        return "Get the path and content of the currently active chat HTML";
+        return "Get the plain-text conversation transcript from the chat panel. " +
+            "Returns all messages visible in the native chat panel. " +
+            "Requires the Copilot tool window to be open.";
     }
-
-    
 
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -47,14 +48,10 @@ public final class GetChatHtmlTool extends EditorTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        var panel = com.github.catatafishen.agentbridge.ui.ChatConsolePanel.Companion.getInstance(project);
+        var panel = com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
         if (panel == null) {
             return "Error: Chat panel not found. Is the Copilot tool window open?";
         }
-        String html = panel.getPageHtml();
-        if (html == null) {
-            return "Error: Could not retrieve page HTML. Browser may not be ready.";
-        }
-        return html;
+        return panel.getConversationText();
     }
 }

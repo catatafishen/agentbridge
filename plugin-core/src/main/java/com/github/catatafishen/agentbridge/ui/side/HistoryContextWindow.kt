@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.session.db.ConversationService
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
+import com.github.catatafishen.agentbridge.ui.NativeChatPanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -50,7 +50,7 @@ internal class HistoryContextWindow private constructor(
     private var hasEarlier = false
     private var hasLater = false
 
-    private val chatPanel = ChatConsolePanel(project, registerAsMain = false)
+    private val chatPanel = NativeChatPanel(project)
 
     private val loadEarlierLabel = makeLoadMoreLabel("↑ Load earlier")
     private val loadLaterLabel = makeLoadMoreLabel("↓ Load later")
@@ -79,7 +79,6 @@ internal class HistoryContextWindow private constructor(
         defaultCloseOperation = DISPOSE_ON_CLOSE
         isResizable = true
 
-        chatPanel.setDomMessageLimit(100_000)
 
         loadEarlierLabel.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = loadEarlier()

@@ -58,7 +58,7 @@ class ChatToolWindowContent(
     // Splitter wrapping the card layout: side panel on LEFT, chat on RIGHT.
     // Collapsed by default (proportion 0.0f). The user can drag, double-click, or use
     // the title-bar toggle to expand. The side panel is built lazily the first time the
-    // chat panel is created so it has access to the ChatConsolePanel for the Prompts tab.
+    // user opens it.
     private var sidePanel: com.github.catatafishen.agentbridge.ui.side.SidePanel? = null
     private val rootSplitter = com.intellij.ui.OnePixelSplitter(
         /* vertical = */ false, /* proportion = */ 0.0f
@@ -148,7 +148,6 @@ class ChatToolWindowContent(
     private val billing = BillingManager()
     private val authService = AuthLoginService(project)
     private lateinit var consolePanel: ChatPanelApi
-    private lateinit var chatConsolePanel: ChatConsolePanel
     private lateinit var broadcastPanel: BroadcastChatPanel
     private lateinit var responsePanelContainer: JBPanel<JBPanel<*>>
     private var copilotBanner: AuthSetupBanner? = null
@@ -736,7 +735,7 @@ class ChatToolWindowContent(
 
     private fun attachSidePanel(sessionStatsPanel: com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel) {
         val side =
-            com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
+            com.github.catatafishen.agentbridge.ui.side.SidePanel(project, broadcastPanel, sessionStatsPanel).apply {
                 border = JBUI.Borders.empty(4)
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
@@ -2146,13 +2145,8 @@ class ChatToolWindowContent(
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             autoScrollEnabled = state
-            chatConsolePanel.setAutoScroll(state)
             if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.setAutoScroll(state)
         }
-    }
-
-    fun setNativeViewEnabled(native: Boolean) {
-        if (::broadcastPanel.isInitialized) broadcastPanel.toggle(native)
     }
 
     /** ComboBoxAction for model selection — matches Run panel dropdown style. */
@@ -2319,38 +2313,16 @@ class ChatToolWindowContent(
     }
 
     private fun createResponsePanel(): JComponent {
-        chatConsolePanel = ChatConsolePanel(project)
         val nativeChatPanel = NativeChatPanel(project)
-        val bp = BroadcastChatPanel(chatConsolePanel, nativeChatPanel)
+        val bp = BroadcastChatPanel(project, nativeChatPanel)
         broadcastPanel = bp
         consolePanel = bp
-        bp.toggle(ChatInputSettings.getInstance().isUseNativeView)
         bp.onLoadMoreRequested = ::onLoadMoreHistory
-        chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
         nativeChatPanel.onCancelNudge = { id ->
             val text = AgentNudgeService.getInstance(project).getPendingNudgesText()
             if (!text.isNullOrEmpty()) promptTextArea.text = text
             clearAndRemoveNudge(id)
             refreshShortcutHints()
-        }
-        chatConsolePanel.onCancelQueuedMessage = { id, text ->
-            val nudgeService = AgentNudgeService.getInstance(project)
-            nudgeService.removeQueuedMessage(text)
-            // Drop the most-recent matching entry so Up-arrow recall reflects what's still queued.
-            val lastIdx = queuedTexts.indexOfLast { it == text }
-            if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
-            ApplicationManager.getApplication().invokeLater {
-                consolePanel.removeQueuedMessage(id)
-                refreshShortcutHints()
-            }
-        }
-        chatConsolePanel.onAutoScrollDisabled = {
-            autoScrollEnabled = false
-            ActivityTracker.getInstance().inc()
-        }
-        chatConsolePanel.onAutoScrollEnabled = {
-            autoScrollEnabled = true
-            ActivityTracker.getInstance().inc()
         }
         broadcastPanel.nativePanel.onAutoScrollDisabled = {
             autoScrollEnabled = false
@@ -2460,12 +2432,12 @@ class ChatToolWindowContent(
         }
         ws.setOnCancelNudge { id ->
             ApplicationManager.getApplication().invokeLater {
-                chatConsolePanel.onCancelNudge?.invoke(id)
+                broadcastPanel.nativePanel.onCancelNudge?.invoke(id)
             }
         }
         ws.setOnPermissionResponse(java.util.function.Consumer { data ->
             ApplicationManager.getApplication().invokeLater {
-                chatConsolePanel.handleWebPermissionResponse(data)
+                broadcastPanel.handleWebPermissionResponse(data)
             }
         })
         ws.setOnSelectModel(java.util.function.Consumer { modelId ->
@@ -2941,7 +2913,7 @@ class ChatToolWindowContent(
      */
     private fun appendNewEntries() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+        val allEntries = conversationReplayer.deferredEntries() + broadcastPanel.getEntries()
         val newEntries = allEntries.drop(persistedEntryCount)
         if (newEntries.isEmpty()) return
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
@@ -2968,7 +2940,7 @@ class ChatToolWindowContent(
         val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
         if (!settings.isEnabled || !settings.isAutoMineOnTurnComplete) return
 
-        val entries = chatConsolePanel.getEntries()
+        val entries = broadcastPanel.getEntries()
         if (entries.isEmpty()) return
 
         val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
@@ -2995,7 +2967,6 @@ class ChatToolWindowContent(
     private fun restoreEntries(entries: List<EntryData>, hasMoreOnDisk: Boolean) {
         if (entries.isEmpty()) return
         val histSettings = ChatHistorySettings.getInstance(project)
-        broadcastPanel.setDomMessageLimit(histSettings.domMessageLimit)
         conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore, hasMoreOnDisk)
         broadcastPanel.appendEntries(
             conversationReplayer.recentEntries(),
@@ -3242,7 +3213,7 @@ class ChatToolWindowContent(
         // Mine remaining entries before archiving (safety net for missed turns)
         val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
         if (settings.isEnabled && settings.isAutoMineOnSessionArchive) {
-            val entries = chatConsolePanel.getEntries()
+            val entries = broadcastPanel.getEntries()
             if (entries.isNotEmpty()) {
                 val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
                 tracker.startTurnMining()

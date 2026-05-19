@@ -24,7 +24,7 @@ import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
+import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -1473,7 +1473,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         if (listener != null) {
             listener.accept(prompt);
         } else if (project != null) {
-            ChatConsolePanel chatPanel = ChatConsolePanel.Companion.getInstance(project);
+            BroadcastChatPanel chatPanel = BroadcastChatPanel.getInstance(project);
             if (chatPanel != null) {
                 String reqId = UUID.randomUUID().toString();
                 chatPanel.showPermissionRequest(reqId, displayName, description, response -> {

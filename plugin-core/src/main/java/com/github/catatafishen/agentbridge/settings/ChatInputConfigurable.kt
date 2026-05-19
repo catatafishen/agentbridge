@@ -2,7 +2,6 @@ package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.CleanupSettings
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
@@ -105,17 +104,9 @@ class ChatInputConfigurable(private val project: Project) :
                 )
         }
         row {
-            checkBox("Use native Swing chat panel")
-                .comment("Shows the native Swing-based chat view. Disable to fall back to the JCEF web panel.")
-                .bindSelected({ s.isUseNativeView }, { s.isUseNativeView = it })
-        }
-        row {
             checkBox("Enable smooth scrolling in chat panel")
                 .comment("⚠ May cause screen tearing on some systems")
-                .bindSelected({ mcp.isSmoothScrollEnabled }, {
-                    mcp.isSmoothScrollEnabled = it
-                    ChatConsolePanel.getInstance(project)?.setSmoothScroll(it)
-                })
+                .bindSelected({ mcp.isSmoothScrollEnabled }, { mcp.isSmoothScrollEnabled = it })
         }
         row {
             checkBox("Show turn stats below messages (duration, tokens, lines changed)")
@@ -123,10 +114,7 @@ class ChatInputConfigurable(private val project: Project) :
                     "Displays a summary footer below the last message of each agent turn. " +
                         "Disabling saves vertical space."
                 )
-                .bindSelected({ mcp.isShowTurnStats }, {
-                    mcp.isShowTurnStats = it
-                    ChatConsolePanel.getInstance(project)?.setShowTurnStats(it)
-                })
+                .bindSelected({ mcp.isShowTurnStats }, { mcp.isShowTurnStats = it })
         }
         separator()
         row("Scratch file retention (hours, 0 = forever):") {
@@ -236,7 +224,6 @@ class ChatInputConfigurable(private val project: Project) :
             val chatContent = ChatToolWindowContent.getInstance(project)
             chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)
             chatContent?.setShortcutHintsVisible()
-            chatContent?.setNativeViewEnabled(s.isUseNativeView)
         }
     }
 }

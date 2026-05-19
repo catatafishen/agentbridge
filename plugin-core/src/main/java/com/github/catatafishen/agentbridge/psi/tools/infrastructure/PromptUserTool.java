@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
+import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -84,7 +84,7 @@ public final class PromptUserTool extends InfrastructureTool {
             return "Error: at least one reply option is required";
         }
 
-        ChatConsolePanel panel = ChatConsolePanel.Companion.getInstance(project);
+        BroadcastChatPanel panel = BroadcastChatPanel.getInstance(project);
         if (panel == null) {
             return askViaDialog(question, options);
         }
@@ -122,7 +122,7 @@ public final class PromptUserTool extends InfrastructureTool {
      * available from that older contract.
      */
     private static void showAskUserRequestCompat(
-        @NotNull ChatConsolePanel panel,
+        @NotNull com.github.catatafishen.agentbridge.ui.ChatPanelApi panel,
         @NotNull String reqId,
         @NotNull String question,
         @NotNull List<String> options,
