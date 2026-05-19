@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * @param category      legacy field carrying the tool kind wire value (e.g. "read", "edit")
  * @param hasHooks      whether this tool call has active hook configuration
  * @param hookStages    ordered list of hook stage results captured during execution (empty if no hooks fired)
+ * @param acpTitleSet   true once the display name has been promoted to an ACP-provided title; prevents
+ *                      a subsequent MCP-derived name from downgrading it back
  */
 public record LiveToolCallEntry(
     long callId,
@@ -38,7 +40,8 @@ public record LiveToolCallEntry(
     @Nullable Boolean success,
     @Nullable String category,
     boolean hasHooks,
-    @NotNull List<HookStageResult> hookStages
+    @NotNull List<HookStageResult> hookStages,
+    boolean acpTitleSet
 ) {
     static final int MAX_IO_CHARS = 8_000;
     private static final AtomicLong ID_SEQ = new AtomicLong();
@@ -55,7 +58,7 @@ public record LiveToolCallEntry(
         return new LiveToolCallEntry(
             ID_SEQ.incrementAndGet(), toolName, displayName,
             truncate(input), truncateNullable(originalInput), "", Instant.now(), -1, null, category, hasHooks,
-            List.of());
+            List.of(), false);
     }
 
     /**
@@ -64,7 +67,7 @@ public record LiveToolCallEntry(
     public LiveToolCallEntry completed(@NotNull String output, long durationMs, boolean success) {
         return new LiveToolCallEntry(
             callId, toolName, displayName, input, originalInput, truncate(output),
-            timestamp, durationMs, success, category, hasHooks, hookStages);
+            timestamp, durationMs, success, category, hasHooks, hookStages, acpTitleSet);
     }
 
     /**
@@ -73,17 +76,17 @@ public record LiveToolCallEntry(
     public LiveToolCallEntry withHookStages(@NotNull List<HookStageResult> stages) {
         return new LiveToolCallEntry(
             callId, toolName, displayName, input, originalInput, output,
-            timestamp, durationMs, success, category, hasHooks, List.copyOf(stages));
+            timestamp, durationMs, success, category, hasHooks, List.copyOf(stages), acpTitleSet);
     }
 
     /**
-     * Returns a copy with the given display name (used when ACP correlation provides a
-     * more descriptive title than the original tool definition name).
+     * Returns a copy with the given display name and marks {@link #acpTitleSet} as true.
+     * Used when ACP correlation provides a more descriptive title than the original tool definition name.
      */
     public LiveToolCallEntry withDisplayName(@NotNull String newDisplayName) {
         return new LiveToolCallEntry(
             callId, toolName, newDisplayName, input, originalInput, output,
-            timestamp, durationMs, success, category, hasHooks, hookStages);
+            timestamp, durationMs, success, category, hasHooks, hookStages, true);
     }
 
     /**

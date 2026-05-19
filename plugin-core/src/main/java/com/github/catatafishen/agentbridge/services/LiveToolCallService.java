@@ -84,15 +84,21 @@ public final class LiveToolCallService {
     }
 
     /**
-     * Updates the display name for an in-flight or completed entry. Called after ACP correlation
-     * provides a richer title (e.g. with argument summaries) than the original tool definition name.
+     * Updates the display name for an in-flight or completed entry. Called when ACP correlation
+     * provides a richer title than the original MCP tool definition name.
+     * <p>
+     * No-op if the entry already carries an ACP-sourced title (i.e. {@link LiveToolCallEntry#acpTitleSet()}
+     * is true), so a later MCP-derived name can never downgrade a better ACP title.
      * Safe no-op if the entry has already been evicted.
      */
     public synchronized void setDisplayName(long callId, @NotNull String displayName) {
         for (int i = entries.size() - 1; i >= 0; i--) {
             if (entries.get(i).callId() == callId) {
-                entries.set(i, entries.get(i).withDisplayName(displayName));
-                fireChanged();
+                LiveToolCallEntry entry = entries.get(i);
+                if (!entry.acpTitleSet()) {
+                    entries.set(i, entry.withDisplayName(displayName));
+                    fireChanged();
+                }
                 return;
             }
         }

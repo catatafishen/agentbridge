@@ -151,6 +151,31 @@ class LiveToolCallServiceTest {
     }
 
     @Test
+    void setDisplayName_updates_display_name() {
+        long callId = service.recordStart("run_command", "Run Command", "{}", null, false, null);
+        service.setDisplayName(callId, "Run failing tests");
+
+        assertEquals("Run failing tests", service.getEntries().getFirst().displayName());
+        assertTrue(service.getEntries().getFirst().acpTitleSet());
+    }
+
+    @Test
+    void setDisplayName_no_downgrade_once_acp_title_set() {
+        long callId = service.recordStart("run_command", "Run Command", "{}", null, false, null);
+        service.setDisplayName(callId, "Run failing tests");
+        service.setDisplayName(callId, "Run Command"); // attempt to downgrade — must be ignored
+
+        assertEquals("Run failing tests", service.getEntries().getFirst().displayName());
+    }
+
+    @Test
+    void setDisplayName_unknown_callId_is_noop() {
+        service.recordStart("tool", "Tool", "{}", null, false, null);
+        service.setDisplayName(999_999, "Other"); // safe no-op
+        assertEquals("Tool", service.getEntries().getFirst().displayName());
+    }
+
+    @Test
     void completion_survives_eviction() {
         // Record first entry, remember its callId
         long earlyCallId = service.recordStart("tool_0", "Tool 0", "{}", null, false, null);
