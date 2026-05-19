@@ -1467,6 +1467,10 @@ class ChatToolWindowContent(
         override fun actionPerformed(e: AnActionEvent) { /* hints are display-only */ }
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = false
+        }
+
         override fun createCustomComponent(presentation: Presentation, place: String): JComponent =
             PromptShortcutHintPanel.createHintCell(stroke, label)
     }
