@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.session;
 
 import com.github.catatafishen.agentbridge.session.exporters.CodexClientExporter;
 import com.github.catatafishen.agentbridge.session.importers.CodexClientImporter;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

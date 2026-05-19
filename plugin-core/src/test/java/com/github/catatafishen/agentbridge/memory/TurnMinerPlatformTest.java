@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.memory;
 
 import com.github.catatafishen.agentbridge.memory.mining.TurnMiner;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;

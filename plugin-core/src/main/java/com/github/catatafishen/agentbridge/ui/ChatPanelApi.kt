@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.intellij.openapi.Disposable
 import javax.swing.JComponent

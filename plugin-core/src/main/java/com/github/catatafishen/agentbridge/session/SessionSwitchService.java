@@ -16,7 +16,7 @@ import com.github.catatafishen.agentbridge.session.exporters.OpenCodeClientExpor
 import com.github.catatafishen.agentbridge.settings.JunieClientConfigurable;
 import com.github.catatafishen.agentbridge.settings.KiroClientConfigurable;
 import com.github.catatafishen.agentbridge.settings.OpenCodeClientConfigurable;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;

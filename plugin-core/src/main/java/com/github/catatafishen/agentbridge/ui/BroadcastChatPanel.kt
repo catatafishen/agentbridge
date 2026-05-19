@@ -1,5 +1,9 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.ContextFileRef
+import com.github.catatafishen.agentbridge.bridge.EntryData
+import com.github.catatafishen.agentbridge.bridge.MessageFormatter
+import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptProviderHolder
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse

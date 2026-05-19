@@ -9,7 +9,7 @@ import com.github.catatafishen.agentbridge.memory.kg.TripleExtractor;
 import com.github.catatafishen.agentbridge.memory.store.DrawerDocument;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.memory.validation.EvidenceExtractor;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.util.concurrency.AppExecutorUtil;

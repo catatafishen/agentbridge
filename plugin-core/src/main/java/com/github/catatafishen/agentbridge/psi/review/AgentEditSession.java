@@ -4,7 +4,7 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
-import com.github.catatafishen.agentbridge.ui.NudgeSource;
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;

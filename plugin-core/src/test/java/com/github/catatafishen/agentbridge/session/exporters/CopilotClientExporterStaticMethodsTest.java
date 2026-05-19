@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.session.exporters;
 
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

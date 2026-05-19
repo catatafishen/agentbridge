@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
 
@@ -147,7 +148,7 @@ object ToolCallArgParser {
 
     /**
      * Normalizes a stored chip status string to a valid CSS class token.
-     * Non-canonical values fall back to [MessageFormatter.ChipStatus.FAILED].
+     * Non-canonical values fall back to [com.github.catatafishen.agentbridge.bridge.MessageFormatter.ChipStatus.FAILED].
      */
     fun normalizeChipStatus(raw: String?): String {
         return when (raw) {

@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.session.db;
 
-import com.github.catatafishen.agentbridge.ui.ContextFileRef;
-import com.github.catatafishen.agentbridge.ui.EntryData;
-import com.github.catatafishen.agentbridge.ui.FileRef;
+import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.bridge.FileRef;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -3,7 +3,7 @@ package com.github.catatafishen.agentbridge.session;
 import com.github.catatafishen.agentbridge.session.exporters.AnthropicClientExporter;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.importers.AnthropicClientImporter;
-import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;

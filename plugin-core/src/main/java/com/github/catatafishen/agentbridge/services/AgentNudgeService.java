@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
-import com.github.catatafishen.agentbridge.ui.NudgeSource;
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui;
 
+import com.github.catatafishen.agentbridge.bridge.MessageFormatter;
 import kotlin.Pair;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
