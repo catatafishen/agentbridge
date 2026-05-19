@@ -92,12 +92,12 @@ class BroadcastChatPanel(
         contextFiles: List<Triple<String, String, Int>>?,
         bubbleHtml: String?
     ): String {
+        val entryId = nativePanel.addPromptEntry(text, contextFiles, bubbleHtml)
         val ctxRefs = contextFiles?.map { (name, path, line) -> ContextFileRef(name, path, line) }
-        val entry = EntryData.Prompt(text, timestamp(), ctxRefs)
+        val entry = EntryData.Prompt(text, timestamp(), ctxRefs, id = entryId)
         _allEntries.add(entry)
-        val result = nativePanel.addPromptEntry(text, contextFiles, bubbleHtml)
         fireEntriesChanged()
-        return result
+        return entryId
     }
 
     override fun removePromptEntry(entryId: String) {

@@ -2341,6 +2341,14 @@ class ChatToolWindowContent(
                 }
             }
         }
+        nativeChatPanel.onRestoreQueuedMessage = { _, text ->
+            ApplicationManager.getApplication().invokeLater {
+                promptTextArea.text = text
+                val idx = queuedTexts.lastIndexOf(text)
+                if (idx >= 0) queuedTexts.removeAt(idx)
+                refreshShortcutHints()
+            }
+        }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
 
         // Subscribe to nudge lifecycle events. The listener manages all nudge UI:

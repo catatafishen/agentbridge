@@ -6,7 +6,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.function.Consumer;
 
 /**
- * Abstraction for displaying permission and ask-user prompts.
+ * Abstraction for displaying tool permission prompts to the user.
  * <p>
  * Backend services ({@code PsiBridgeService}, {@code CodexAppServerClient}) depend on this
  * interface instead of the UI class directly, inverting the dependency so the backend layer
