@@ -708,8 +708,8 @@ public final class PsiBridgeService implements Disposable {
         if (arguments != null) context.add("args", arguments);
         String argsJson = context.toString();
 
-        com.github.catatafishen.agentbridge.ui.ChatConsolePanel chatPanel =
-            com.github.catatafishen.agentbridge.ui.ChatConsolePanel.Companion.getInstance(project);
+        com.github.catatafishen.agentbridge.ui.BroadcastChatPanel chatPanel =
+            com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
 
         com.github.catatafishen.agentbridge.bridge.PermissionResponse response;
         try {
@@ -750,7 +750,7 @@ public final class PsiBridgeService implements Disposable {
     @NotNull
     private com.github.catatafishen.agentbridge.bridge.PermissionResponse askViaChatPanel(
         String displayName, String reqId, String argsJson,
-        com.github.catatafishen.agentbridge.ui.ChatConsolePanel chatPanel)
+        com.github.catatafishen.agentbridge.ui.BroadcastChatPanel chatPanel)
         throws java.util.concurrent.TimeoutException, InterruptedException, java.util.concurrent.ExecutionException {
         java.util.concurrent.CompletableFuture<com.github.catatafishen.agentbridge.bridge.PermissionResponse> future =
             new java.util.concurrent.CompletableFuture<>();

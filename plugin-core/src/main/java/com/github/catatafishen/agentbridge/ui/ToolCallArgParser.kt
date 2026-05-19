@@ -5,7 +5,7 @@ import com.google.gson.JsonParser
 
 /**
  * Pure parsing and extraction functions for tool-call arguments and results.
- * Extracted from [ChatConsolePanel] to enable unit testing without Swing/JCEF dependencies.
+ * Extracted from the old JCEF chat panel to enable unit testing without Swing/JCEF dependencies.
  */
 object ToolCallArgParser {
 

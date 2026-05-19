@@ -2,9 +2,6 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
-import com.github.catatafishen.agentbridge.ui.ChatPanelApi;
-import com.github.catatafishen.agentbridge.ui.NativeChatPanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -87,17 +84,7 @@ public final class PromptUserTool extends InfrastructureTool {
             return "Error: at least one reply option is required";
         }
 
-        BroadcastChatPanel broadcastPanel = BroadcastChatPanel.Companion.getInstance(project);
-        ChatPanelApi panel;
-        if (broadcastPanel != null) {
-            // Prefer BroadcastChatPanel — it dispatches to both JCEF and native panels simultaneously,
-            // ensuring the question and options are visible regardless of which panel mode is active.
-            panel = broadcastPanel;
-        } else {
-            ChatConsolePanel jcefPanel = ChatConsolePanel.Companion.getInstance(project);
-            NativeChatPanel nativePanel = NativeChatPanel.Companion.getInstance(project);
-            panel = jcefPanel != null ? jcefPanel : nativePanel;
-        }
+        BroadcastChatPanel panel = BroadcastChatPanel.getInstance(project);
         if (panel == null) {
             return askViaDialog(question, options);
         }
@@ -135,7 +122,7 @@ public final class PromptUserTool extends InfrastructureTool {
      * available from that older contract.
      */
     private static void showAskUserRequestCompat(
-        @NotNull ChatPanelApi panel,
+        @NotNull com.github.catatafishen.agentbridge.ui.ChatPanelApi panel,
         @NotNull String reqId,
         @NotNull String question,
         @NotNull List<String> options,

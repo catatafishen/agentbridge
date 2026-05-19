@@ -48,7 +48,7 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
         // here: in IntelliJ 2024.3+ the full Swing component tree, including JCEF bitmaps, is
         // forwarded to the thin client over the Gateway Rd protocol. The real UI is shown and
         // works correctly in the thin client.
-        if (isJbc || isRds || !jcefSupported) {
+        if (isJbc || isRds) {
             Content content = ContentFactory.getInstance().createContent(
                 buildThinClientPlaceholder(), "", false
             );

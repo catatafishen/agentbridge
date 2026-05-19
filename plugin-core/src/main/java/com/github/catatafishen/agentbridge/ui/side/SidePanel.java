@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.PromptDbService;
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
+import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
@@ -59,7 +59,7 @@ public final class SidePanel extends JPanel implements Disposable {
     private final transient Project project;
     private final TodoPanel todoPanel;
 
-    public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
+    public SidePanel(@NotNull Project project, @NotNull BroadcastChatPanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
         this.project = project;

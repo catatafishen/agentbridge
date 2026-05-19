@@ -81,6 +81,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val toolCallData = mutableMapOf<String, ToolCallData>()
 
+    /** Maps prompt entryId → rendered row container; used by [scrollToEntry]. */
+    private val _promptEntryComponents = mutableMapOf<String, JPanel>()
+
     /** Buttons of the last-shown quick-reply strip; disabled on reply or new turn. */
     private var currentQuickReplyButtons: List<JButton> = emptyList()
 
@@ -181,6 +184,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             autoScrollSafetyTimer.stop()
             scrollPane.removeMouseWheelListener(mouseWheelDisabler)
         }
+    }
+
+    fun scrollToEntry(entryId: String) {
+        val comp = _promptEntryComponents[entryId] ?: return
+        comp.scrollRectToVisible(Rectangle(0, 0, comp.width, comp.height))
     }
 
     private var placeholderLabel: JBLabel? = null
@@ -496,9 +504,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             autoScrollEnabled = true
             onAutoScrollEnabled?.invoke()
         }
-        return addPromptEntryAt(text, contextFiles) { row ->
-            addRow(row)
-        }
+        return addPromptEntryAt(text, contextFiles) { row -> addRow(row) }
     }
 
     override fun removePromptEntry(entryId: String) { /* Native panel doesn't track entry IDs for removal */
@@ -724,6 +730,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         loadMoreContainer = null
         allChips.clear()
         toolCallData.clear()
+        _promptEntryComponents.clear()
         nudgeBubbles.clear()
         queuedMessages.clear()
         currentModelLabel = null
@@ -1118,7 +1125,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         val prevAddRow = if (insertionIndex >= 0) {
             var nextIdx = insertionIndex
-            { comp: JComponent -> insertRowAt(comp, nextIdx); nextIdx += 1 /* container */ }
+            { comp: JComponent -> insertRowAt(comp, nextIdx).also { nextIdx += 1 } }
         } else null
 
         for (entry in entries) {
@@ -1128,7 +1135,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     finalizeTurn()
                     val ctxTriples = entry.contextFiles?.map { Triple(it.name, it.path, it.line) }
                     if (prevAddRow != null) {
-                        addPromptEntryAt(entry.text, ctxTriples, prevAddRow)
+                        addPromptEntryAt(entry.text, ctxTriples, entry.entryId, prevAddRow)
                     } else {
                         addPromptEntry(entry.text, ctxTriples)
                     }
@@ -1186,25 +1193,27 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contentPanel.repaint()
     }
 
-    private fun insertRowAt(comp: JComponent, index: Int) {
+    private fun insertRowAt(comp: JComponent, index: Int): JPanel {
         val container = rowContainer(comp)
         contentPanel.add(container, index)
+        return container
     }
 
     private fun addPromptEntryAt(
         text: String,
         // Part of the ChatPanelApi contract; context file display not yet implemented in native panel.
         @Suppress("UNUSED_PARAMETER") contextFiles: List<Triple<String, String, Int>>?,
-        addFn: (JComponent) -> Unit
+        entryId: String = java.util.UUID.randomUUID().toString(),
+        addFn: (JComponent) -> JPanel
     ): String {
         finalizeTurn()
         val pane = createMarkdownPane(text)
         val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
-        addFn(row)
+        _promptEntryComponents[entryId] = addFn(row)
         showWorkingIndicator()
-        return java.util.UUID.randomUUID().toString()
+        return entryId
     }
 
     companion object {

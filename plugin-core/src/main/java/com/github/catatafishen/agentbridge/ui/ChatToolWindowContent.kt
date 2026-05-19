@@ -13,7 +13,6 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
-import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
@@ -59,7 +58,7 @@ class ChatToolWindowContent(
     // Splitter wrapping the card layout: side panel on LEFT, chat on RIGHT.
     // Collapsed by default (proportion 0.0f). The user can drag, double-click, or use
     // the title-bar toggle to expand. The side panel is built lazily the first time the
-    // chat panel is created so it has access to the ChatConsolePanel for the Prompts tab.
+    // user opens it.
     private var sidePanel: com.github.catatafishen.agentbridge.ui.side.SidePanel? = null
     private val rootSplitter = com.intellij.ui.OnePixelSplitter(
         /* vertical = */ false, /* proportion = */ 0.0f
@@ -110,8 +109,7 @@ class ChatToolWindowContent(
     private lateinit var innerInputToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
-    private lateinit var shortcutHintGroup: DefaultActionGroup
-    private lateinit var shortcutHintToolbar: ActionToolbar
+    private lateinit var shortcutHintPanel: PromptShortcutHintPanel
     private val queuedTexts = ArrayDeque<String>()
 
     /** Tracks whether the current pause was triggered by typing in the input box. */
@@ -150,7 +148,6 @@ class ChatToolWindowContent(
     private val billing = BillingManager()
     private val authService = AuthLoginService(project)
     private lateinit var consolePanel: ChatPanelApi
-    private lateinit var chatConsolePanel: ChatConsolePanel
     private lateinit var broadcastPanel: BroadcastChatPanel
     private lateinit var responsePanelContainer: JBPanel<JBPanel<*>>
     private var copilotBanner: AuthSetupBanner? = null
@@ -738,7 +735,7 @@ class ChatToolWindowContent(
 
     private fun attachSidePanel(sessionStatsPanel: com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel) {
         val side =
-            com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
+            com.github.catatafishen.agentbridge.ui.side.SidePanel(project, broadcastPanel, sessionStatsPanel).apply {
                 border = JBUI.Borders.empty(4)
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
@@ -1199,14 +1196,10 @@ class ChatToolWindowContent(
             createOrchestratorCallbacks()
         )
 
-        // Shortcut hint toolbar — same component type as the side buttons, giving native overflow.
-        shortcutHintGroup = DefaultActionGroup()
-        shortcutHintToolbar = ActionManager.getInstance()
-            .createActionToolbar("AgentShortcutHints", shortcutHintGroup, true).apply {
-                isReservePlaceAutoPopupIcon = false
-                component.isOpaque = false
-                component.border = JBUI.Borders.empty()
-            }
+        // Shortcut hint bar — initialized here so input wiring below can reference it.
+        shortcutHintPanel = PromptShortcutHintPanel()
+        shortcutHintPanel.isVisible =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
 
         promptTextArea.addSettingsProvider { editor ->
             setupPromptDragDrop(editor)
@@ -1278,7 +1271,7 @@ class ChatToolWindowContent(
 
         val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            add(shortcutHintToolbar.component, BorderLayout.CENTER)
+            add(shortcutHintPanel, BorderLayout.CENTER)
             add(innerInputToolbar.component, BorderLayout.EAST)
         }
         row.add(footerPanel, BorderLayout.SOUTH)
@@ -1395,7 +1388,7 @@ class ChatToolWindowContent(
     }
 
     fun setShortcutHintsVisible() {
-        if (!::shortcutHintGroup.isInitialized) return
+        if (!::shortcutHintPanel.isInitialized) return
         refreshShortcutHints()
     }
 
@@ -1409,7 +1402,7 @@ class ChatToolWindowContent(
      *   hint is appended so the user knows they can recall it.
      */
     private fun refreshShortcutHints() {
-        if (!::shortcutHintGroup.isInitialized) return
+        if (!::shortcutHintPanel.isInitialized) return
         val list = mutableListOf<Pair<KeyStroke, String>>()
         if (isSending) {
             list += PromptShortcutAction.resolveKeystroke(
@@ -1446,33 +1439,8 @@ class ChatToolWindowContent(
         if (activeBubbleId != null || queuedTexts.isNotEmpty()) {
             list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
         }
-        val showHints = ChatInputSettings.getInstance().isShowShortcutHints
-        shortcutHintGroup.removeAll()
-        if (showHints) {
-            list.forEach { (stroke, label) -> shortcutHintGroup.add(ShortcutHintAction(stroke, label)) }
-        }
-        shortcutHintToolbar.updateActionsAsync()
-        shortcutHintToolbar.component.isVisible = showHints
-    }
-
-    private class ShortcutHintAction(
-        private val stroke: KeyStroke,
-        private val label: String
-    ) : AnAction(), CustomComponentAction {
-
-        init {
-            templatePresentation.text = "${PromptShortcutHintPanel.keystrokeText(stroke)} $label"
-        }
-
-        override fun actionPerformed(e: AnActionEvent) { /* hints are display-only */ }
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-        override fun update(e: AnActionEvent) {
-            e.presentation.isEnabled = false
-        }
-
-        override fun createCustomComponent(presentation: Presentation, place: String): JComponent =
-            PromptShortcutHintPanel.createHintCell(stroke, label)
+        shortcutHintPanel.setShortcuts(list)
+        shortcutHintPanel.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
     }
 
     private fun setSendingState(sending: Boolean) {
@@ -2177,13 +2145,8 @@ class ChatToolWindowContent(
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             autoScrollEnabled = state
-            chatConsolePanel.setAutoScroll(state)
             if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.setAutoScroll(state)
         }
-    }
-
-    fun setNativeViewEnabled(native: Boolean) {
-        if (::broadcastPanel.isInitialized) broadcastPanel.toggle(native)
     }
 
     /** ComboBoxAction for model selection — matches Run panel dropdown style. */
@@ -2350,50 +2313,16 @@ class ChatToolWindowContent(
     }
 
     private fun createResponsePanel(): JComponent {
-        chatConsolePanel = ChatConsolePanel(project)
         val nativeChatPanel = NativeChatPanel(project)
-        val bp = BroadcastChatPanel(project, chatConsolePanel, nativeChatPanel)
+        val bp = BroadcastChatPanel(project, nativeChatPanel)
         broadcastPanel = bp
         consolePanel = bp
-        bp.toggle(ChatInputSettings.getInstance().isUseNativeView)
         bp.onLoadMoreRequested = ::onLoadMoreHistory
-        chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
         nativeChatPanel.onCancelNudge = { id ->
             val text = AgentNudgeService.getInstance(project).getPendingNudgesText()
             if (!text.isNullOrEmpty()) promptTextArea.text = text
             clearAndRemoveNudge(id)
             refreshShortcutHints()
-        }
-        chatConsolePanel.onCancelQueuedMessage = { id, text ->
-            val nudgeService = AgentNudgeService.getInstance(project)
-            nudgeService.removeQueuedMessage(text)
-            // Drop the most-recent matching entry so Up-arrow recall reflects what's still queued.
-            val lastIdx = queuedTexts.indexOfLast { it == text }
-            if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
-            ApplicationManager.getApplication().invokeLater {
-                consolePanel.removeQueuedMessage(id)
-                refreshShortcutHints()
-            }
-        }
-        nativeChatPanel.onRestoreQueuedMessage = { id, text ->
-            val nudgeService = AgentNudgeService.getInstance(project)
-            nudgeService.removeQueuedMessage(text)
-            val lastIdx = queuedTexts.indexOfLast { it == text }
-            if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
-            promptTextArea.text = if (promptTextArea.text.isEmpty()) text else "$text\n\n${promptTextArea.text}"
-            promptTextArea.requestFocusInWindow()
-            ApplicationManager.getApplication().invokeLater {
-                consolePanel.removeQueuedMessage(id)
-                refreshShortcutHints()
-            }
-        }
-        chatConsolePanel.onAutoScrollDisabled = {
-            autoScrollEnabled = false
-            ActivityTracker.getInstance().inc()
-        }
-        chatConsolePanel.onAutoScrollEnabled = {
-            autoScrollEnabled = true
-            ActivityTracker.getInstance().inc()
         }
         broadcastPanel.nativePanel.onAutoScrollDisabled = {
             autoScrollEnabled = false
@@ -2503,12 +2432,12 @@ class ChatToolWindowContent(
         }
         ws.setOnCancelNudge { id ->
             ApplicationManager.getApplication().invokeLater {
-                chatConsolePanel.onCancelNudge?.invoke(id)
+                broadcastPanel.nativePanel.onCancelNudge?.invoke(id)
             }
         }
         ws.setOnPermissionResponse(java.util.function.Consumer { data ->
             ApplicationManager.getApplication().invokeLater {
-                chatConsolePanel.handleWebPermissionResponse(data)
+                broadcastPanel.handleWebPermissionResponse(data)
             }
         })
         ws.setOnSelectModel(java.util.function.Consumer { modelId ->
@@ -2984,7 +2913,7 @@ class ChatToolWindowContent(
      */
     private fun appendNewEntries() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+        val allEntries = conversationReplayer.deferredEntries() + broadcastPanel.getEntries()
         val newEntries = allEntries.drop(persistedEntryCount)
         if (newEntries.isEmpty()) return
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
@@ -3011,7 +2940,7 @@ class ChatToolWindowContent(
         val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
         if (!settings.isEnabled || !settings.isAutoMineOnTurnComplete) return
 
-        val entries = chatConsolePanel.getEntries()
+        val entries = broadcastPanel.getEntries()
         if (entries.isEmpty()) return
 
         val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
@@ -3038,7 +2967,6 @@ class ChatToolWindowContent(
     private fun restoreEntries(entries: List<EntryData>, hasMoreOnDisk: Boolean) {
         if (entries.isEmpty()) return
         val histSettings = ChatHistorySettings.getInstance(project)
-        broadcastPanel.setDomMessageLimit(histSettings.domMessageLimit)
         conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore, hasMoreOnDisk)
         broadcastPanel.appendEntries(
             conversationReplayer.recentEntries(),
@@ -3285,7 +3213,7 @@ class ChatToolWindowContent(
         // Mine remaining entries before archiving (safety net for missed turns)
         val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
         if (settings.isEnabled && settings.isAutoMineOnSessionArchive) {
-            val entries = chatConsolePanel.getEntries()
+            val entries = broadcastPanel.getEntries()
             if (entries.isNotEmpty()) {
                 val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
                 tracker.startTurnMining()

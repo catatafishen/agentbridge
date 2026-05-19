@@ -4,10 +4,8 @@ import com.github.catatafishen.agentbridge.services.PromptDbService
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
+import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel
 import com.github.catatafishen.agentbridge.ui.EntryData
-import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
-import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -34,7 +32,7 @@ private const val BRANCH_PREVIEW_SIZE = 5
 
 internal class PromptsPanel(
     private val project: Project,
-    private val chatConsole: ChatConsolePanel
+    private val chatConsole: BroadcastChatPanel
 ) : JPanel(BorderLayout()), Disposable {
 
     private data class PromptItem(
