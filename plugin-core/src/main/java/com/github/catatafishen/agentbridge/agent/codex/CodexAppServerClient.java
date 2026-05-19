@@ -8,6 +8,7 @@ import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
@@ -21,14 +22,11 @@ import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
-import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
-import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -39,7 +37,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,7 +49,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -71,7 +67,7 @@ import java.util.function.Consumer;
  * disabled at server-startup time via {@code --config features.shell_tool=false} and
  * {@code --config features.unified_exec=false}.</p>
  */
-public final class CodexAppServerClient extends AbstractAgentClient {
+public final class CodexAppServerClient extends AbstractAgentClient implements JsonRpcTransport.MessageHandler {
 
     private static final Logger LOG = Logger.getInstance(CodexAppServerClient.class);
 
@@ -82,7 +78,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private static final String F_ID = "id";
     private static final String F_METHOD = "method";
     private static final String F_PARAMS = "params";
-    private static final String F_RESULT = "result";
     private static final String F_ERROR = "error";
     private static final String F_TYPE = "type";
     private static final String F_TEXT = "text";
@@ -169,12 +164,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private final int mcpPort;
 
     private final AtomicReference<Process> appServerProcess = new AtomicReference<>();
-    private final AtomicReference<OutputStream> stdin = new AtomicReference<>();
-    private volatile boolean connected = false;
+    private final JsonRpcTransport transport;
     private final AtomicReference<List<Model>> dynamicModels = new AtomicReference<>();
-
-    private final AtomicInteger nextId = new AtomicInteger(1);
-    private final Map<Integer, CompletableFuture<JsonObject>> pendingRequests = new ConcurrentHashMap<>();
 
     /**
      * Plugin session ID → Codex thread ID.
@@ -247,6 +238,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         this.registry = registry;
         this.project = project;
         this.mcpPort = mcpPort;
+        this.transport = new JsonRpcTransport(project);
+        transport.setMessageHandler(this);
     }
 
     // ── Identity ─────────────────────────────────────────────────────────────
@@ -272,15 +265,11 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public void stop() {
-        connected = false;
-        pendingRequests.forEach((id, f) -> f.completeExceptionally(new AgentException("Client stopped", null, false)));
-        pendingRequests.clear();
+        transport.shutdown();
         CompletableFuture<String> turn = activeTurnResult.get();
         if (turn != null) turn.completeExceptionally(new AgentException("Client stopped", null, false));
         activeTurnResult.set(null);
         activeTurnCallback.set(null);
-        closeQuietly(stdin.get());
-        stdin.set(null);
         Process proc = appServerProcess.get();
         if (proc != null) {
             proc.destroyForcibly();
@@ -297,12 +286,12 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public boolean isConnected() {
-        return connected;
+        return transport.isConnected();
     }
 
     @Override
     public boolean isHealthy() {
-        return isConnected() && appServerProcess.get() != null && appServerProcess.get().isAlive();
+        return transport.isConnected() && appServerProcess.get() != null && appServerProcess.get().isAlive();
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────────
@@ -470,17 +459,15 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             }
             pb.redirectErrorStream(false);
             appServerProcess.set(pb.start());
-            stdin.set(appServerProcess.get().getOutputStream());
 
             // Drain stderr on a daemon thread
             startStderrDrainer(appServerProcess.get());
 
-            // Start reader thread
-            startReaderThread(appServerProcess.get());
+            // Attach transport (starts reader thread)
+            transport.attach(appServerProcess.get());
 
             // Perform JSON-RPC initialize handshake
             initialize();
-            connected = true;
             LOG.info("codex app-server ready");
         } catch (IOException e) {
             throw new AgentException("Failed to start codex app-server: " + e.getMessage(), e, true);
@@ -725,209 +712,46 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     // ── JSON-RPC messaging ────────────────────────────────────────────────────
 
-    /**
-     * Sends a JSON-RPC request and returns a CompletableFuture resolved by the reader thread.
-     */
     @NotNull
     private CompletableFuture<JsonObject> sendRequest(@NotNull String method, @NotNull JsonObject params) {
-        int id = nextId.getAndIncrement();
-        CompletableFuture<JsonObject> future = new CompletableFuture<>();
-        pendingRequests.put(id, future);
-
-        JsonObject msg = new JsonObject();
-        msg.addProperty(F_ID, id);
-        msg.addProperty(F_METHOD, method);
-        msg.add(F_PARAMS, params);
-
-        if (!writeMessage(msg)) {
-            pendingRequests.remove(id);
-            future.completeExceptionally(new AgentException("Failed to write to codex app-server", null, true));
-        }
-        return future;
+        return transport.sendRequest(method, params);
     }
 
-    /**
-     * Sends a JSON-RPC notification (no ID, no response expected).
-     */
     private void sendNotification(@NotNull String method, @NotNull JsonObject params) {
-        JsonObject msg = new JsonObject();
-        msg.addProperty(F_METHOD, method);
-        msg.add(F_PARAMS, params);
-        writeMessage(msg);
+        transport.sendNotification(method, params);
     }
 
-    /**
-     * Sends a JSON-RPC response to a server-initiated request.
-     */
     private void sendResponse(@NotNull JsonElement id, @NotNull JsonElement result) {
-        JsonObject msg = new JsonObject();
-        msg.add(F_ID, id);
-        msg.add(F_RESULT, result);
-        writeMessage(msg);
+        transport.sendResponse(id, result);
     }
 
-    private boolean writeMessage(@NotNull JsonObject msg) {
-        OutputStream out = stdin.get();
-        if (out == null) return false;
-        try {
-            String json = msg.toString();
-            if (isDebugLoggingEnabled()) {
-                LOG.info("[Codex] >>> " + json);
-            }
-            synchronized (out) {
-                out.write(json.getBytes(StandardCharsets.UTF_8));
-                out.write('\n');
-                out.flush();
-            }
-            return true;
-        } catch (IOException e) {
-            LOG.debug("codex app-server: write failed: " + e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean isDebugLoggingEnabled() {
-        return project != null && McpServerSettings.getInstance(project).isDebugLoggingEnabled();
-    }
-
-    // ── Reader thread ─────────────────────────────────────────────────────────
-
-    private void startReaderThread(@NotNull Process proc) {
-        Thread reader = new Thread(() -> {
-            try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    line = line.trim();
-                    if (line.isEmpty()) continue;
-                    processLine(line);
-                }
-            } catch (IOException e) {
-                if (connected) LOG.warn("codex app-server reader ended: " + e.getMessage());
-            } finally {
-                connected = false;
-                CompletableFuture<String> turn = activeTurnResult.get();
-                if (turn != null && !turn.isDone()) {
-                    turn.completeExceptionally(new AgentException("codex app-server disconnected", null, true));
-                }
-                pendingRequests.forEach((id, f) ->
-                    f.completeExceptionally(new AgentException("codex app-server disconnected", null, true)));
-                pendingRequests.clear();
-            }
-        }, "codex-app-server-reader");
-        reader.setDaemon(true);
-        reader.start();
-    }
-
-    /**
-     * Parses a single JSONL line from the app-server and dispatches it.
-     */
-    private void processLine(@NotNull String line) {
-        try {
-            JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
-            if (isDebugLoggingEnabled()) {
-                LOG.info("[Codex] <<< " + line);
-            }
-            if (activeTurnResult.get() != null && !activeTurnResult.get().isDone()) {
-                activeTurnLastOutputNanos = System.nanoTime();
-            }
-            dispatchMessage(msg);
-        } catch (RuntimeException e) {
-            LOG.warn("codex app-server: could not parse line: " + line, e);
-        }
-    }
-
-    /**
-     * Routes an incoming JSONL message to the appropriate handler.
-     *
-     * <p>Three categories:
-     * <ol>
-     *   <li>Response to our request: has numeric {@code id} and {@code result}/{@code error} fields.</li>
-     *   <li>Notification from server: has {@code method} but no {@code id} (or null {@code id}).</li>
-     *   <li>Server-initiated request: has both {@code method} and a non-null {@code id} — e.g. approval requests.</li>
-     * </ol>
-     */
-    private void dispatchMessage(@NotNull JsonObject msg) {
-        switch (classifyMessageType(msg)) {
-            case RESPONSE -> handleResponse(msg);
-            case SERVER_REQUEST -> handleServerRequest(msg);
-            case NOTIFICATION -> handleNotification(msg);
-            default -> {
-                // Ignore — UNKNOWN message type requires no action
-            }
-        }
-    }
+    // ── Message classification (delegation to transport) ─────────────────────
 
     static MessageType classifyMessageType(@NotNull JsonObject msg) {
-        boolean hasId = msg.has("id") && !msg.get("id").isJsonNull();
-        boolean hasMethod = msg.has(F_METHOD);
-        boolean hasResult = msg.has(F_RESULT) || msg.has(F_ERROR);
-        if (hasId && hasResult && !hasMethod) return MessageType.RESPONSE;
-        if (hasMethod && hasId) return MessageType.SERVER_REQUEST;
-        if (hasMethod) return MessageType.NOTIFICATION;
-        return MessageType.UNKNOWN;
-    }
-
-    private void handleResponse(@NotNull JsonObject msg) {
-        JsonElement idEl = msg.get(F_ID);
-        if (idEl.isJsonPrimitive() && idEl.getAsJsonPrimitive().isNumber()) {
-            int id = idEl.getAsInt();
-            CompletableFuture<JsonObject> f = pendingRequests.remove(id);
-            if (f != null) {
-                completeResponseFuture(f, msg);
-            }
-        }
-    }
-
-    /**
-     * Resolves a pending-request future from the given JSON-RPC result/error message.
-     */
-    private void completeResponseFuture(@NotNull CompletableFuture<JsonObject> f,
-                                        @NotNull JsonObject msg) {
-        if (msg.has(F_ERROR)) {
-            JsonObject err = msg.getAsJsonObject(F_ERROR);
-            String errMsg = extractJsonRpcErrorMessage(err);
-            if (isCodexAuthError(errMsg)) {
-                // Wording must trigger AuthCommandBuilder.isAuthenticationError so
-                // PromptOrchestrator fires the SetupBanner. The plugin never reads
-                // local credential stores; auth state is observed only from runtime
-                // signals like this one. See docs/AUTH-HANDLING.md.
-                f.completeExceptionally(new AgentException(
-                    "Codex not authenticated: " + errMsg
-                        + " — run 'codex login' in a terminal, then retry.",
-                    null, false));
-            } else {
-                f.completeExceptionally(new AgentException("JSON-RPC error: " + errMsg, null, false));
-            }
-        } else {
-            JsonElement result = msg.get(F_RESULT);
-            f.complete(result.isJsonObject() ? result.getAsJsonObject() : new JsonObject());
-        }
+        JsonRpcTransport.MessageType type = JsonRpcTransport.classifyMessageType(msg);
+        return switch (type) {
+            case RESPONSE -> MessageType.RESPONSE;
+            case SERVER_REQUEST -> MessageType.SERVER_REQUEST;
+            case NOTIFICATION -> MessageType.NOTIFICATION;
+            case UNKNOWN -> MessageType.UNKNOWN;
+        };
     }
 
     static String extractJsonRpcErrorMessage(@NotNull JsonObject errorObj) {
-        return errorObj.has(F_MESSAGE) ? errorObj.get(F_MESSAGE).getAsString() : errorObj.toString();
+        return JsonRpcTransport.extractJsonRpcErrorMessage(errorObj);
     }
 
-    /**
-     * Heuristic check for Codex auth-failure messages. Patterns include:
-     * "not authenticated", "Unauthorized", "401", "Invalid API key", "Please run codex login".
-     */
     static boolean isCodexAuthError(@Nullable String text) {
-        if (text == null) return false;
-        String lower = text.toLowerCase(java.util.Locale.ROOT);
-        return lower.contains("not authenticated")
-            || lower.contains("unauthorized")
-            || lower.contains("authentication required")
-            || lower.contains("invalid api key")
-            || lower.contains("please run codex login")
-            || lower.contains("please log in")
-            || lower.contains("401");
+        return JsonRpcTransport.isCodexAuthError(text);
     }
 
-    // ── Server-initiated request handling ────────────────────────────────────
+    // ── MessageHandler interface ─────────────────────────────────────────────
 
-    private void handleServerRequest(@NotNull JsonObject msg) {
+    @Override
+    public void onServerRequest(@NotNull JsonObject msg) {
+        if (activeTurnResult.get() != null && !activeTurnResult.get().isDone()) {
+            activeTurnLastOutputNanos = System.nanoTime();
+        }
         String method = msg.get(F_METHOD).getAsString();
         JsonElement id = msg.get(F_ID);
         JsonObject params = msg.has(F_PARAMS) ? msg.getAsJsonObject(F_PARAMS) : new JsonObject();
@@ -955,16 +779,33 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 }
             }
             default -> {
-                // Unknown server request — send a generic error response
+                // Unknown server request — respond with error result
                 LOG.warn("Unknown server request method: " + method);
                 JsonObject error = new JsonObject();
                 error.addProperty("code", -32601);
                 error.addProperty(F_MESSAGE, "Method not found: " + method);
-                JsonObject errResp = new JsonObject();
-                errResp.add(F_ID, id);
-                errResp.add(F_ERROR, error);
-                writeMessage(errResp);
+                sendResponse(id, error);
             }
+        }
+    }
+
+    @Override
+    public void onNotification(@NotNull JsonObject msg) {
+        if (activeTurnResult.get() != null && !activeTurnResult.get().isDone()) {
+            activeTurnLastOutputNanos = System.nanoTime();
+        }
+        String method = msg.get(F_METHOD).getAsString();
+        JsonObject params = msg.has(F_PARAMS) ? msg.getAsJsonObject(F_PARAMS) : new JsonObject();
+
+        switch (method) {
+            case "item/agentMessage/delta" -> handleTextDelta(params);
+            case "item/reasoning/summaryTextDelta", "item/reasoning/textDelta" -> handleReasoningDelta(params);
+            case "item/started" -> handleItemStarted(params);
+            case "item/completed" -> handleItemCompleted(params);
+            case "turn/completed" -> handleTurnCompleted(params);
+            case "turn/failed" -> handleTurnFailed(params);
+            // turn/started, thread/started, item/reasoning/textDelta, etc. — no action needed
+            default -> LOG.debug("codex notification: " + method);
         }
     }
 
@@ -1096,22 +937,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     // ── Notification handling ─────────────────────────────────────────────────
-
-    private void handleNotification(@NotNull JsonObject msg) {
-        String method = msg.get(F_METHOD).getAsString();
-        JsonObject params = msg.has(F_PARAMS) ? msg.getAsJsonObject(F_PARAMS) : new JsonObject();
-
-        switch (method) {
-            case "item/agentMessage/delta" -> handleTextDelta(params);
-            case "item/reasoning/summaryTextDelta", "item/reasoning/textDelta" -> handleReasoningDelta(params);
-            case "item/started" -> handleItemStarted(params);
-            case "item/completed" -> handleItemCompleted(params);
-            case "turn/completed" -> handleTurnCompleted(params);
-            case "turn/failed" -> handleTurnFailed(params);
-            // turn/started, thread/started, item/reasoning/textDelta, etc. — no action needed
-            default -> LOG.debug("codex notification: " + method);
-        }
-    }
 
     private void handleTextDelta(@NotNull JsonObject params) {
         Consumer<SessionUpdate> cb = activeTurnCallback.get();
@@ -1575,16 +1400,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     private void ensureConnected() throws AgentException {
-        if (!connected) throw new AgentException("Codex app-server not connected", null, false);
-    }
-
-    private static void closeQuietly(@Nullable OutputStream stream) {
-        if (stream == null) return;
-        try {
-            stream.close();
-        } catch (IOException ignored) {
-            // Intentionally ignored — cleanup path, nothing to recover
-        }
+        if (!transport.isConnected()) throw new AgentException("Codex app-server not connected", null, false);
     }
 
     private static void startStderrDrainer(@NotNull Process proc) {
