@@ -7,8 +7,6 @@ import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.db.ConversationService
-import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
-import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
@@ -42,7 +40,6 @@ class ChatToolWindowContent(
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatToolWindowContent::class.java)
         const val MSG_LOADING = "Loading..."
         const val MSG_UNKNOWN_ERROR = "Unknown error"
-        const val AGENT_WORK_DIR = ".agent-work"
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
         private const val PREF_SIDE_PANEL_OPEN = "agentbridge.sidePanelOpen"
@@ -155,18 +152,7 @@ class ChatToolWindowContent(
     private var statusBanner: StatusBanner? = null
     private var inlineAuthProcess: Process? = null
 
-    private val conversationStore = ConversationService.getInstance(project)
-    private val conversationReplayer = ConversationReplayer()
-
-    // Throttled incremental save during streaming (avoid data loss on crash)
-    private val saveIntervalMs = 30_000L
-
-    @Volatile
-    private var lastIncrementalSaveMs = 0L
-
-    /** Number of entries already persisted to disk for the current session (deferred + panel). */
-    @Volatile
-    private var persistedEntryCount = 0
+    private val persistenceManager = ConversationPersistenceManager(project, ConversationService.getInstance(project))
 
     private lateinit var contextManager: PromptContextManager
 
@@ -177,7 +163,7 @@ class ChatToolWindowContent(
         subscribeToFocusRestoreEvents()
         subscribeToToolWindowFocus()
         // Initialise the session store's agent name from the currently active profile.
-        conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+        persistenceManager.setCurrentAgent(agentManager.activeProfile.displayName)
     }
 
     /**
@@ -348,11 +334,11 @@ class ChatToolWindowContent(
                 agentManager.activeProfile.clientCssClass
             )
             consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
-            appendNewEntries()
+            persistenceManager.appendNewEntries()
         }
         ensureSidePanelAvailable()
         if (!chatSessionInitialized) {
-            archiveConversation()
+            persistenceManager.archiveConversation()
             // Set agent color immediately so it is queued in pendingJs before the browser loads.
             // Without this there is a race: the browser becomes ready (pendingJs flushed empty) before
             // addSeparatorNow runs, so a message sent in that window shows the default color.
@@ -362,7 +348,7 @@ class ChatToolWindowContent(
                 agentManager.activeProfile.clientCssClass
             )
             chatSessionInitialized = true
-            restoreConversation(onComplete = addSeparatorNow)
+            persistenceManager.restoreConversation(onComplete = addSeparatorNow)
         } else {
             addSeparatorNow()
         }
@@ -390,7 +376,7 @@ class ChatToolWindowContent(
         // Always sync the session store agent name on connect — switchAgent only fires
         // the listener when the profile changes, so reconnecting to the same profile
         // after a disconnect would leave currentAgent stale.
-        conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+        persistenceManager.setCurrentAgent(agentManager.activeProfile.displayName)
         if (::promptOrchestrator.isInitialized) resetSessionState()
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
@@ -803,7 +789,7 @@ class ChatToolWindowContent(
 
     private fun registerAgentSwitchBannerRefresh() {
         agentManager.addSwitchListener {
-            conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+            persistenceManager.setCurrentAgent(agentManager.activeProfile.displayName)
             promptOrchestrator.currentSessionId = null
             promptOrchestrator.conversationSummaryInjected = false
             ApplicationManager.getApplication().invokeLater {
@@ -1137,10 +1123,10 @@ class ChatToolWindowContent(
 
     private fun createOrchestratorCallbacks() = PromptOrchestratorCallbacks(
         onSendingStateChanged = ::setSendingState,
-        appendNewEntries = ::appendNewEntries,
-        appendNewEntriesThrottled = ::appendNewEntriesThrottled,
+        appendNewEntries = { persistenceManager.appendNewEntries() },
+        appendNewEntriesThrottled = { persistenceManager.appendNewEntriesThrottled() },
         notifyIfUnfocused = ::notifyIfUnfocused,
-        saveTurnStatistics = ::saveTurnStatistics,
+        saveTurnStatistics = { prompt, toolCalls, modelId -> persistenceManager.saveTurnStatistics(prompt, toolCalls, modelId) },
         updateSessionInfo = ::updateSessionInfo,
         requestFocusAfterTurn = { promptTextArea.requestFocusInWindow() },
         onTimerIncrementToolCalls = {
@@ -1158,7 +1144,7 @@ class ChatToolWindowContent(
         onClientUpdate = ::handleClientUpdate,
         sendPromptDirectly = ::sendPromptDirectly,
         restorePromptText = ::restorePromptText,
-        onTurnMineEntries = ::mineEntriesAfterTurn,
+        onTurnMineEntries = { sessionId, agentName -> persistenceManager.mineEntriesAfterTurn(sessionId, agentName) },
         onQueuedMessageConsumed = { text ->
             // Remove the LAST matching entry so that when the same text was queued multiple
             // times, "recall most recent queued message" ordering remains intact (Up-arrow
@@ -1323,7 +1309,7 @@ class ChatToolWindowContent(
         } else null
         val bubbleHtml = buildBubbleHtml(rawText, contextItems)
         val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
-        appendNewEntries()
+        persistenceManager.appendNewEntries()
         promptTextArea.text = ""
 
         val selectedModelId = modelSelector.resolveSelectedModelId()
@@ -1822,7 +1808,7 @@ class ChatToolWindowContent(
         init {
             // Listen for agent switches and update icon; also keep session store in sync.
             agentManager.addSwitchListener {
-                conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+                persistenceManager.setCurrentAgent(agentManager.activeProfile.displayName)
                 updateIconForActiveAgent()
             }
         }
@@ -2274,7 +2260,67 @@ class ChatToolWindowContent(
         val bp = BroadcastChatPanel(project, nativeChatPanel)
         broadcastPanel = bp
         consolePanel = bp
-        bp.onLoadMoreRequested = ::onLoadMoreHistory
+        bp.onLoadMoreRequested = { persistenceManager.onLoadMoreHistory() }
+        persistenceManager.setCallbacks(object : ConversationPersistenceManager.Callbacks {
+            override fun getAllEntries(): List<EntryData> =
+                persistenceManager.deferredEntries() + broadcastPanel.getEntries()
+
+            override fun getPanelEntries(): List<EntryData> = broadcastPanel.getEntries()
+
+            override fun appendEntries(entries: List<EntryData>, totalPromptCount: Int) =
+                broadcastPanel.appendEntries(entries, totalPromptCount)
+
+            override fun prependEntries(entries: List<EntryData>) =
+                broadcastPanel.prependEntries(entries)
+
+            override fun showLoadMore(remaining: Int) = broadcastPanel.showLoadMore(remaining)
+
+            override fun hideLoadMore() = broadcastPanel.hideLoadMore()
+
+            override fun restoreTurnStats(
+                stats: ConversationPersistenceManager.RestoredSessionStats,
+                lastTurn: ConversationPersistenceManager.RestoredLastTurnStats
+            ) {
+                processingTimerPanel.restoreSessionStats(
+                    ProcessingTimerPanel.RestoredSessionStats(
+                        totalTimeMs = stats.totalTimeMs,
+                        totalInputTokens = stats.totalInputTokens,
+                        totalOutputTokens = stats.totalOutputTokens,
+                        totalCostUsd = stats.totalCostUsd,
+                        totalToolCalls = stats.totalToolCalls,
+                        totalLinesAdded = stats.totalLinesAdded,
+                        totalLinesRemoved = stats.totalLinesRemoved,
+                        turnCount = stats.turnCount
+                    )
+                )
+                processingTimerPanel.restoreLastTurnStats(
+                    ProcessingTimerPanel.RestoredLastTurnStats(
+                        elapsedSec = lastTurn.elapsedSec,
+                        inputTokens = lastTurn.inputTokens,
+                        outputTokens = lastTurn.outputTokens,
+                        costUsd = lastTurn.costUsd,
+                        toolCalls = lastTurn.toolCalls,
+                        linesAdded = lastTurn.linesAdded,
+                        linesRemoved = lastTurn.linesRemoved,
+                        multiplier = lastTurn.multiplier
+                    )
+                )
+            }
+
+            override fun restoreBillingCounters(turnCount: Int, totalPremiumMultiplier: Double) {
+                billing.restoreSessionCounters(turnCount, totalPremiumMultiplier)
+            }
+
+            override fun getAgentDisplayName(): String = agentManager.activeProfile.displayName
+
+            override fun getModelMultiplier(modelId: String): String? = try {
+                agentManager.client.getModelMultiplier(modelId)
+            } catch (_: Exception) {
+                null
+            }
+
+            override fun supportsMultiplier(): Boolean = agentManager.client.supportsMultiplier()
+        })
         nativeChatPanel.onCancelNudge = { id ->
             val text = AgentNudgeService.getInstance(project).getPendingNudgesText()
             if (!text.isNullOrEmpty()) promptTextArea.text = text
@@ -2349,7 +2395,7 @@ class ChatToolWindowContent(
                     val source = entries.firstOrNull { it.source() == NudgeSource.HUMAN }?.source()
                         ?: entries.first().source()
                     consolePanel.addNudgeEntry(bubbleId, mergedText, source)
-                    appendNewEntries()
+                    persistenceManager.appendNewEntries()
                     refreshShortcutHints()
                 }
             }
@@ -2409,7 +2455,7 @@ class ChatToolWindowContent(
             ApplicationManager.getApplication().invokeLater { modelSelector.selectModelById(modelId) }
         })
         ws.setOnLoadMore(Runnable {
-            ApplicationManager.getApplication().invokeLater { onLoadMoreHistory() }
+            ApplicationManager.getApplication().invokeLater { persistenceManager.onLoadMoreHistory() }
         })
     }
 
@@ -2872,118 +2918,6 @@ class ChatToolWindowContent(
         }
     }
 
-    /**
-     * Appends any entries written since the last persist to disk (append-only, no overwrite).
-     * Tracks [persistedEntryCount] so only genuinely new entries are flushed each call.
-     */
-    private fun appendNewEntries() {
-        lastIncrementalSaveMs = System.currentTimeMillis()
-        val allEntries = conversationReplayer.deferredEntries() + broadcastPanel.getEntries()
-        val newEntries = allEntries.drop(persistedEntryCount)
-        if (newEntries.isEmpty()) return
-        conversationStore.appendEntriesAsync(project.basePath, newEntries)
-        persistedEntryCount = allEntries.size
-    }
-
-    /**
-     * Appends new entries if at least [saveIntervalMs] elapsed since the last append.
-     * Called after each tool-call completion during streaming so that long-running turns
-     * are periodically persisted and survive IDE crashes.
-     */
-    private fun appendNewEntriesThrottled() {
-        val now = System.currentTimeMillis()
-        if (now - lastIncrementalSaveMs >= saveIntervalMs) {
-            appendNewEntries()
-        }
-    }
-
-    /**
-     * Mines the current turn's entries into semantic memory (async, non-blocking).
-     * Called by PromptOrchestrator after each turn completes.
-     */
-    private fun mineEntriesAfterTurn(sessionId: String, agentName: String) {
-        val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
-        if (!settings.isEnabled || !settings.isAutoMineOnTurnComplete) return
-
-        val entries = broadcastPanel.getEntries()
-        if (entries.isEmpty()) return
-
-        val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
-        tracker.startTurnMining()
-
-        val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
-        miner.mineTurn(entries, sessionId, agentName)
-            .whenComplete { _, _ -> tracker.stop() }
-    }
-
-    private fun restoreConversation(onComplete: () -> Unit = {}) {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            V1ToV2Migrator.migrateIfNeeded(project.basePath)
-            val result = conversationStore.loadRecentEntries(project.basePath)
-            val entries = result?.entries() ?: emptyList()
-            val hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
-            ApplicationManager.getApplication().invokeLater {
-                restoreEntries(entries, hasMoreOnDisk)
-                onComplete()
-            }
-        }
-    }
-
-    private fun restoreEntries(entries: List<EntryData>, hasMoreOnDisk: Boolean) {
-        if (entries.isEmpty()) return
-        val histSettings = ChatHistorySettings.getInstance(project)
-        conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore, hasMoreOnDisk)
-        broadcastPanel.appendEntries(
-            conversationReplayer.recentEntries(),
-            conversationReplayer.totalPromptCount()
-        )
-        showDeferredRestoreCount()
-        restoreTurnStats(entries.filterIsInstance<EntryData.TurnStats>())
-        persistedEntryCount = conversationReplayer.totalLoadedCount()
-    }
-
-    private fun showDeferredRestoreCount() {
-        val deferred = conversationReplayer.remainingPromptCount()
-        if (deferred > 0) broadcastPanel.showLoadMore(deferred)
-    }
-
-    private fun restoreTurnStats(turnStatsList: List<EntryData.TurnStats>) {
-        val lastStats = turnStatsList.lastOrNull() ?: return
-        if (!::processingTimerPanel.isInitialized) return
-        restoreBillingCounters(turnStatsList)
-        processingTimerPanel.restoreSessionStats(
-            ProcessingTimerPanel.RestoredSessionStats(
-                totalTimeMs = lastStats.totalDurationMs,
-                totalInputTokens = lastStats.totalInputTokens,
-                totalOutputTokens = lastStats.totalOutputTokens,
-                totalCostUsd = lastStats.totalCostUsd,
-                totalToolCalls = lastStats.totalToolCalls,
-                totalLinesAdded = lastStats.totalLinesAdded,
-                totalLinesRemoved = lastStats.totalLinesRemoved,
-                turnCount = turnStatsList.size
-            )
-        )
-        processingTimerPanel.restoreLastTurnStats(
-            ProcessingTimerPanel.RestoredLastTurnStats(
-                elapsedSec = lastStats.durationMs / 1000,
-                inputTokens = lastStats.inputTokens.toInt(),
-                outputTokens = lastStats.outputTokens.toInt(),
-                costUsd = if (lastStats.costUsd > 0.0) lastStats.costUsd else null,
-                toolCalls = lastStats.toolCallCount,
-                linesAdded = lastStats.linesAdded,
-                linesRemoved = lastStats.linesRemoved,
-                multiplier = lastStats.multiplier
-            )
-        )
-    }
-
-    private fun restoreBillingCounters(turnStatsList: List<EntryData.TurnStats>) {
-        val totalPremium = turnStatsList.sumOf {
-            BillingCalculator.parseMultiplier(it.multiplier.ifEmpty { "1x" })
-        }
-        billing.restoreSessionCounters(turnStatsList.size, totalPremium)
-    }
-
     /** Send a quick-reply directly without touching the user's input field. */
     private fun sendQuickReply(text: String) {
         if (isSending) return
@@ -3002,7 +2936,7 @@ class ChatToolWindowContent(
             statusBanner?.dismissCurrent()
             setSendingState(true)
             consolePanel.addPromptEntry(trimmed, null)
-            appendNewEntries()
+            persistenceManager.appendNewEntries()
             ApplicationManager.getApplication().executeOnPooledThread {
                 client.executeSlashCommand(trimmed) { _ ->
                     ApplicationManager.getApplication().invokeLater {
@@ -3016,7 +2950,7 @@ class ChatToolWindowContent(
         statusBanner?.dismissCurrent()
         setSendingState(true)
         val entryId = consolePanel.addPromptEntry(trimmed, null)
-        appendNewEntries()
+        persistenceManager.appendNewEntries()
         val selectedModelId = modelSelector.resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
         // unblocked regardless of whether the pause feature is currently enabled in settings.
@@ -3074,21 +3008,6 @@ class ChatToolWindowContent(
         autocompletePopup?.showInBestPositionFor(promptTextArea.editor ?: return)
     }
 
-    private fun onLoadMoreHistory() {
-        val batchSize = ChatHistorySettings.getInstance(project).loadMoreBatchSize
-        val batch = conversationReplayer.loadNextBatch(batchSize)
-        if (batch.isNotEmpty()) broadcastPanel.prependEntries(batch)
-        val remaining = conversationReplayer.remainingPromptCount()
-        if (remaining > 0) {
-            broadcastPanel.showLoadMore(remaining)
-        } else {
-            if (conversationReplayer.hasOlderHistoryOnDisk) {
-                LOG.info("Older history exists on disk but was not loaded (session too large for tail-read budget)")
-            }
-            broadcastPanel.hideLoadMore()
-        }
-    }
-
     fun getComponent(): JComponent = rootSplitter
 
     private fun resetSessionState() {
@@ -3109,11 +3028,11 @@ class ChatToolWindowContent(
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
         updateSessionInfo()
-        archiveConversation()
+        persistenceManager.archiveConversation()
         // Delete .current-session-id so the next save creates a brand-new v2 session.
         // This is separate from archive() because archive() must NOT delete the ID during
         // agent switches — doExport still needs the session ID for subsequent export steps.
-        conversationStore.resetCurrentSessionId(project.basePath)
+        persistenceManager.resetCurrentSessionId()
         ApplicationManager.getApplication().invokeLater {
             if (::planRoot.isInitialized) {
                 planRoot.removeAllChildren()
@@ -3146,50 +3065,6 @@ class ChatToolWindowContent(
             com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
             com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
         }
-    }
-
-    private fun saveTurnStatistics(prompt: String, toolCalls: Int, modelId: String) {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val statsDir = java.io.File(project.basePath ?: return@executeOnPooledThread, AGENT_WORK_DIR)
-                statsDir.mkdirs()
-                val statsFile = java.io.File(statsDir, "usage-stats.jsonl")
-                val entry = com.google.gson.JsonObject().apply {
-                    addProperty("timestamp", java.time.Instant.now().toString())
-                    addProperty("prompt", prompt.take(200))
-                    addProperty("model", modelId)
-                    if (agentManager.client.supportsMultiplier()) {
-                        val multiplier = try {
-                            agentManager.client.getModelMultiplier(modelId)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (multiplier != null) addProperty("multiplier", multiplier)
-                    }
-                    addProperty("toolCalls", toolCalls)
-                }
-                statsFile.appendText(entry.toString() + "\n")
-            } catch (_: Exception) { /* best-effort */
-            }
-        }
-    }
-
-    private fun archiveConversation() {
-        // Mine remaining entries before archiving (safety net for missed turns)
-        val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
-        if (settings.isEnabled && settings.isAutoMineOnSessionArchive) {
-            val entries = broadcastPanel.getEntries()
-            if (entries.isNotEmpty()) {
-                val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
-                tracker.startTurnMining()
-                val sessionId = conversationStore.getCurrentSessionId(project.basePath)
-                val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
-                miner.mineTurn(entries, sessionId, agentManager.activeProfile.displayName)
-                    .whenComplete { _, _ -> tracker.stop() }
-            }
-        }
-        conversationStore.archive()
-        persistedEntryCount = 0
     }
 
     /** Tree node for the Plans tab — display name is shown in the tree. */
