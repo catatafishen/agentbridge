@@ -17,6 +17,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+
+import org.apache.lucene.store.LockObtainFailedException;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -37,6 +40,7 @@ public final class MemoryService implements Disposable {
     private volatile WriteAheadLog wal;
     private volatile KnowledgeGraph knowledgeGraph;
     private volatile boolean initialized;
+    private volatile boolean initializationFailed;
     private final Object initLock = new Object();
 
     public MemoryService(@NotNull Project project) {
@@ -127,9 +131,9 @@ public final class MemoryService implements Disposable {
     }
 
     private void ensureInitialized() {
-        if (initialized) return;
+        if (initialized || initializationFailed) return;
         synchronized (initLock) {
-            if (initialized) return;
+            if (initialized || initializationFailed) return;
             try {
                 Path memoryDir = getMemoryBasePath();
                 migrateLegacyMemoryDir(project.getBasePath(), memoryDir);
@@ -165,7 +169,20 @@ public final class MemoryService implements Disposable {
                 Disposer.register(this, refactorListener);
 
                 LOG.info("MemoryService initialized for project: " + project.getName());
+            } catch (LockObtainFailedException e) {
+                initializationFailed = true;
+                store = null;
+                embeddingService = null;
+                knowledgeGraph = null;
+                LOG.warn("Memory tools are unavailable for project '" + project.getName() + "': " +
+                    "the Lucene index is locked by another IDE instance sharing the same project directory. " +
+                    "To use memory in both instances simultaneously, switch to the 'User Home' or 'Custom' " +
+                    "storage location in Settings → Tools → AgentBridge → Storage.");
             } catch (IOException e) {
+                initializationFailed = true;
+                store = null;
+                embeddingService = null;
+                knowledgeGraph = null;
                 LOG.error("Failed to initialize MemoryService", e);
             }
         }
