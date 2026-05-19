@@ -24,6 +24,7 @@ import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.MouseWheelListener
 import javax.swing.*
 
 /**
@@ -128,7 +129,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      * AdjustmentListener so that a trailing wheel DOWN event from the same scroll gesture
      * that reached the bottom cannot immediately flip auto-scroll back off.
      */
-    private val mouseWheelDisabler = MouseWheelListener {
+    private val mouseWheelDisabler: MouseWheelListener = MouseWheelListener {
         if (autoScrollEnabled) {
             autoScrollEnabled = false
             autoScrollSafetyTimer.stop()
@@ -201,6 +202,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var isReplaying = false
 
     init {
+        instances[project] = this
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
             if (!e.valueIsAdjusting && !suppressScrollListener) {
                 val bar = scrollPane.verticalScrollBar
@@ -1013,6 +1015,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun dispose() {
+        instances.remove(project, this)
         ToolCallTracker.getInstance(project).removeListener(trackerListener)
         McpPauseService.getInstance(project).removeListener(pauseListener)
         allMarkdownPanes.forEach { it.dispose() }
@@ -1197,5 +1200,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         /** Minimum upward pixel movement required to disable auto-scroll, guarding against sub-pixel layout rounding. */
         private const val SCROLL_DISABLE_THRESHOLD_PX = 10
+
+        /** Active panels keyed by project — used by MCP tools to deliver in-chat requests. */
+        private val instances = java.util.concurrent.ConcurrentHashMap<Project, NativeChatPanel>()
+
+        fun getInstance(project: Project): NativeChatPanel? = instances[project]
     }
 }

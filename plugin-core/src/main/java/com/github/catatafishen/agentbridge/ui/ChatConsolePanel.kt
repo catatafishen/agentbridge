@@ -12,6 +12,7 @@ import com.github.catatafishen.agentbridge.settings.ScratchTypeSettings
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel.Companion.instances
 import com.github.catatafishen.agentbridge.ui.MessageFormatter.ChipStatus
 import com.github.catatafishen.agentbridge.ui.renderers.ArgumentAwareRenderer
+
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.google.gson.JsonParser
 import com.intellij.openapi.application.ApplicationManager
