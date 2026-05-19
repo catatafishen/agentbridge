@@ -13,6 +13,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
+import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
@@ -109,7 +110,8 @@ class ChatToolWindowContent(
     private lateinit var innerInputToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
-    private lateinit var shortcutHintPanel: PromptShortcutHintPanel
+    private lateinit var shortcutHintGroup: DefaultActionGroup
+    private lateinit var shortcutHintToolbar: ActionToolbar
     private val queuedTexts = ArrayDeque<String>()
 
     /** Tracks whether the current pause was triggered by typing in the input box. */
@@ -1197,10 +1199,14 @@ class ChatToolWindowContent(
             createOrchestratorCallbacks()
         )
 
-        // Shortcut hint bar — initialized here so input wiring below can reference it.
-        shortcutHintPanel = PromptShortcutHintPanel()
-        shortcutHintPanel.isVisible =
-            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+        // Shortcut hint toolbar — same component type as the side buttons, giving native overflow.
+        shortcutHintGroup = DefaultActionGroup()
+        shortcutHintToolbar = ActionManager.getInstance()
+            .createActionToolbar("AgentShortcutHints", shortcutHintGroup, true).apply {
+                isReservePlaceAutoPopupIcon = false
+                component.isOpaque = false
+                component.border = JBUI.Borders.empty()
+            }
 
         promptTextArea.addSettingsProvider { editor ->
             setupPromptDragDrop(editor)
@@ -1272,7 +1278,7 @@ class ChatToolWindowContent(
 
         val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            add(shortcutHintPanel, BorderLayout.CENTER)
+            add(shortcutHintToolbar.component, BorderLayout.CENTER)
             add(innerInputToolbar.component, BorderLayout.EAST)
         }
         row.add(footerPanel, BorderLayout.SOUTH)
@@ -1389,7 +1395,7 @@ class ChatToolWindowContent(
     }
 
     fun setShortcutHintsVisible() {
-        if (!::shortcutHintPanel.isInitialized) return
+        if (!::shortcutHintGroup.isInitialized) return
         refreshShortcutHints()
     }
 
@@ -1403,7 +1409,7 @@ class ChatToolWindowContent(
      *   hint is appended so the user knows they can recall it.
      */
     private fun refreshShortcutHints() {
-        if (!::shortcutHintPanel.isInitialized) return
+        if (!::shortcutHintGroup.isInitialized) return
         val list = mutableListOf<Pair<KeyStroke, String>>()
         if (isSending) {
             list += PromptShortcutAction.resolveKeystroke(
@@ -1440,8 +1446,29 @@ class ChatToolWindowContent(
         if (activeBubbleId != null || queuedTexts.isNotEmpty()) {
             list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
         }
-        shortcutHintPanel.setShortcuts(list)
-        shortcutHintPanel.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
+        val showHints = ChatInputSettings.getInstance().isShowShortcutHints
+        shortcutHintGroup.removeAll()
+        if (showHints) {
+            list.forEach { (stroke, label) -> shortcutHintGroup.add(ShortcutHintAction(stroke, label)) }
+        }
+        shortcutHintToolbar.updateActionsAsync()
+        shortcutHintToolbar.component.isVisible = showHints
+    }
+
+    private class ShortcutHintAction(
+        private val stroke: KeyStroke,
+        private val label: String
+    ) : AnAction(), CustomComponentAction {
+
+        init {
+            templatePresentation.text = "${PromptShortcutHintPanel.keystrokeText(stroke)} $label"
+        }
+
+        override fun actionPerformed(e: AnActionEvent) { /* hints are display-only */ }
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent =
+            PromptShortcutHintPanel.createHintCell(stroke, label)
     }
 
     private fun setSendingState(sending: Boolean) {
