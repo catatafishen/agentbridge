@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.project;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
@@ -9,6 +10,8 @@ import org.jetbrains.annotations.NotNull;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Triggers a project model reload for every registered external build system
@@ -94,31 +97,44 @@ public final class ReloadProjectModelTool extends ProjectTool {
             Class<?> externalSystemUtilClass = Class.forName(
                 "com.intellij.openapi.externalSystem.util.ExternalSystemUtil");
 
-            StringBuilder sb = new StringBuilder();
-            int synced = 0;
-            for (Object manager : managers) {
-                String name = getSystemName(manager);
-                if (refresh(externalSystemUtilClass, manager)) {
-                    sb.append("✓ ").append(name).append("\n");
-                    synced++;
-                } else {
-                    sb.append("✗ ").append(name).append(" (refresh failed — see IDE log)\n");
+            CompletableFuture<String> future = new CompletableFuture<>();
+            EdtUtil.invokeLater(() -> {
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    int synced = 0;
+                    for (Object manager : managers) {
+                        String name = getSystemName(manager);
+                        if (refresh(externalSystemUtilClass, manager)) {
+                            sb.append("✓ ").append(name).append("\n");
+                            synced++;
+                        } else {
+                            sb.append("✗ ").append(name).append(" (refresh failed — see IDE log)\n");
+                        }
+                    }
+                    if (synced == 0) {
+                        future.complete("Error: Refresh failed for all " + managers.size()
+                            + " build system(s). See IDE log for details.");
+                        return;
+                    }
+                    sb.append("\nProject model reload triggered for ").append(synced)
+                        .append(" build system(s). Indexing will run in the background.");
+                    future.complete(sb.toString());
+                } catch (Exception e) {
+                    LOG.warn("ReloadProjectModelTool refresh error", e);
+                    future.complete("Error triggering project model reload: " + e.getMessage());
                 }
-            }
+            });
 
-            if (synced == 0) {
-                return "Error: Refresh failed for all " + managers.size()
-                    + " build system(s). See IDE log for details.";
-            }
-
-            sb.append("\nProject model reload triggered for ").append(synced)
-                .append(" build system(s). Indexing will run in the background.");
-            return sb.toString();
+            return future.get(30, TimeUnit.SECONDS);
 
         } catch (ClassNotFoundException e) {
             return "External System API not available in this IDE installation. "
                 + "Trigger a sync manually: Gradle tool window → Reload, "
                 + "or File → Sync Project with Gradle Files.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("reload_project_model interrupted", e);
+            return "Error: Operation interrupted";
         } catch (Exception e) {
             LOG.warn("ReloadProjectModelTool error", e);
             return "Error triggering project model reload: " + e.getMessage();
