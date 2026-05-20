@@ -196,6 +196,17 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.pauseOnInputFocus = enabled;
     }
 
+    /**
+     * When true, the "paused while typing" bubble will not be shown again.
+     */
+    public boolean isPauseTypingBubbleDismissed() {
+        return myState.pauseTypingBubbleDismissed;
+    }
+
+    public void setPauseTypingBubbleDismissed(boolean dismissed) {
+        myState.pauseTypingBubbleDismissed = dismissed;
+    }
+
     // ── PersistentStateComponent ────────────────────────────────────────────
 
     @Override
@@ -220,7 +231,8 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         public UnhandledNudgeMode unhandledNudgeMode = UnhandledNudgeMode.AUTO_SEND;
         @NotNull
         public ReprimandNudgeMode reprimandNudgeMode = ReprimandNudgeMode.ENABLED; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
-        public boolean pauseOnInputFocus = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean pauseOnInputFocus = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean pauseTypingBubbleDismissed = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutSeconds = 60; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutExtension1Minutes = 1; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public int toolTimeoutExtension2Minutes = 5; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.

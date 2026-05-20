@@ -133,6 +133,19 @@ class ChatToolWindowContent(
     @Volatile
     private var activeBubbleId: String? = null
 
+    /** Balloon shown when the agent is paused due to typing; null when not visible. */
+    private var pauseTypingBalloon: com.intellij.openapi.ui.popup.Balloon? = null
+
+    private val pauseTypingBubbleListener = McpPauseService.PauseListener { state ->
+        SwingUtilities.invokeLater {
+            when (state) {
+                McpPauseService.PauseState.PAUSED -> if (pausedByTyping) showPauseTypingBubble()
+                McpPauseService.PauseState.RUNNING,
+                McpPauseService.PauseState.PENDING -> dismissPauseTypingBubble()
+            }
+        }
+    }
+
     /** Human-typed portion of the pending nudge bubble — for restore-to-input when a turn ends unhandled. */
     @Volatile
     private var pendingHumanText: String? = null
@@ -253,12 +266,12 @@ class ChatToolWindowContent(
      */
     private fun wireUpWebServerCallbacks() {
         ChatWebServer.getInstance(project)?.also { ws ->
-            ws.setOnConnect(java.util.function.Consumer { profileId ->
+            ws.setOnConnect { profileId ->
                 ApplicationManager.getApplication().invokeLater { connectToAgent(profileId, null) }
-            })
-            ws.setOnDisconnect(Runnable {
+            }
+            ws.setOnDisconnect {
                 ApplicationManager.getApplication().invokeLater { disconnectFromAgent() }
-            })
+            }
             ws.setProfilesJson(buildProfilesJson())
         }
     }
@@ -1240,7 +1253,7 @@ class ChatToolWindowContent(
             editor.setPlaceholder(promptPlaceholder())
             editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps =
-                com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
+                ChatInputSettings.getInstance().isSoftWrapsEnabled
             editor.setBorder(null)
             editor.scrollPane.verticalScrollBar.preferredSize =
                 Dimension(JBUI.scale(10), editor.scrollPane.verticalScrollBar.preferredSize.height)
@@ -1264,11 +1277,11 @@ class ChatToolWindowContent(
                         userResumedWhileTyping = false
                     }
                 } else if (!pausedByTyping && !userResumedWhileTyping
-                    && ChatInputSettings.getInstance().isPauseOnInputFocus()
+                    && ChatInputSettings.getInstance().isPauseOnInputFocus
                 ) {
                     // First keystroke with text in the input — auto-pause if not already paused.
                     val pauseService = McpPauseService.getInstance(project)
-                    if (!pauseService.isPaused()) {
+                    if (!pauseService.isPaused) {
                         pausedByTyping = true
                         pauseService.setPaused(true)
                     }
@@ -1576,7 +1589,81 @@ class ChatToolWindowContent(
         controlsToolbar.component.border = JBUI.Borders.empty(8, 4, 4, 0)
         controlsToolbar.component.isOpaque = false
 
+        McpPauseService.getInstance(project).addListener(pauseTypingBubbleListener)
+
         return controlsToolbar.component
+    }
+
+    private fun showPauseTypingBubble() {
+        if (pauseTypingBalloon != null) return
+        val settings = ChatInputSettings.getInstance()
+        if (settings.isPauseTypingBubbleDismissed) return
+        if (!controlsToolbar.component.isShowing) return
+
+        val msgLabel = JBLabel("<html>Agent is paused while you type a prompt.</html>")
+
+        val disableLink = com.intellij.ui.HyperlinkLabel("Disable feature")
+        val dontShowLink = com.intellij.ui.HyperlinkLabel("Don't show again")
+
+        val actionsRow = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            add(disableLink)
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(dontShowLink)
+            add(Box.createHorizontalGlue())
+        }
+
+        val content = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            border = JBUI.Borders.empty(2, 4, 4, 8)
+            msgLabel.alignmentX = JComponent.LEFT_ALIGNMENT
+            actionsRow.alignmentX = JComponent.LEFT_ALIGNMENT
+            add(msgLabel)
+            add(Box.createVerticalStrut(JBUI.scale(4)))
+            add(actionsRow)
+        }
+
+        val balloon = JBPopupFactory.getInstance()
+            .createBalloonBuilder(content)
+            .setHideOnClickOutside(false)
+            .setHideOnAction(false)
+            .setHideOnKeyOutside(false)
+            .setBlockClicksThroughBalloon(false)
+            .setAnimationCycle(150)
+            .createBalloon()
+
+        pauseTypingBalloon = balloon
+
+        disableLink.addHyperlinkListener {
+            settings.isPauseOnInputFocus = false
+            pauseTypingBalloon = null
+            balloon.hide()
+            pausedByTyping = false
+            McpPauseService.getInstance(project).setPaused(false)
+        }
+
+        dontShowLink.addHyperlinkListener {
+            settings.isPauseTypingBubbleDismissed = true
+            pauseTypingBalloon = null
+            balloon.hide()
+        }
+
+        balloon.show(
+            com.intellij.ui.awt.RelativePoint(
+                controlsToolbar.component,
+                Point(controlsToolbar.component.width / 2, 0)
+            ),
+            com.intellij.openapi.ui.popup.Balloon.Position.above
+        )
+    }
+
+    private fun dismissPauseTypingBubble() {
+        pauseTypingBalloon?.let { balloon ->
+            pauseTypingBalloon = null
+            balloon.hide()
+        }
     }
 
     /**
@@ -1613,10 +1700,10 @@ class ChatToolWindowContent(
                 val component = inputEvent.source as? Component ?: return
                 val group = DefaultActionGroup()
                 addSessionManagementSection(group)
-                val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+                val popup = JBPopupFactory.getInstance()
                     .createActionGroupPopup(
                         null, group, e.dataContext,
-                        com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.MNEMONICS, false
+                        JBPopupFactory.ActionSelectionAid.MNEMONICS, false
                     )
                 popup.showUnderneathOf(component)
             }
@@ -1672,17 +1759,17 @@ class ChatToolWindowContent(
 
         override fun actionPerformed(e: AnActionEvent) {
             val service = McpPauseService.getInstance(project)
-            if (service.isPaused() && pausedByTyping) {
+            if (service.isPaused && pausedByTyping) {
                 // User is explicitly resuming an auto-pause triggered by typing.
                 // Remember this so document changes don't re-pause while input still has text.
                 pausedByTyping = false
                 userResumedWhileTyping = promptTextArea.document.textLength > 0
             }
-            service.setPaused(!service.isPaused())
+            service.setPaused(!service.isPaused)
         }
     }
 
-    private inner class SendAction : AnAction(), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
+    private inner class SendAction : AnAction(), CustomComponentAction {
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
             "/icons/send.svg", SendAction::class.java
         )
@@ -1864,9 +1951,9 @@ class ChatToolWindowContent(
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(ev: AnActionEvent) = pasteToScratchHandler.handleCreateScratch()
             })
-            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
+            val popup = JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
-                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.MNEMONICS, false
+                JBPopupFactory.ActionSelectionAid.MNEMONICS, false
             )
             popup.showUnderneathOf(component)
         }
@@ -1917,9 +2004,9 @@ class ChatToolWindowContent(
             addAgentSelectionSection(group)
             addSessionOptionsSection(group)
             if (group.childrenCount == 0) return
-            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
+            val popup = JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
-                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.MNEMONICS, false
+                JBPopupFactory.ActionSelectionAid.MNEMONICS, false
             )
             popup.showUnderneathOf(component)
         }
@@ -2080,38 +2167,38 @@ class ChatToolWindowContent(
         }
     }
 
-private inner class SidePanelToggleAction : AnAction(
-    "Show Side Panel",
-    "Show or hide the side panel (Review, Project Files, Prompts)",
-    AllIcons.General.ChevronRight
-) {
-    override fun getActionUpdateThread() = ActionUpdateThread.EDT
+    private inner class SidePanelToggleAction : AnAction(
+        "Show Side Panel",
+        "Show or hide the side panel (Review, Project Files, Prompts)",
+        AllIcons.General.ChevronRight
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
-    override fun update(e: AnActionEvent) {
-        val isOpen = rootSplitter.proportion >= 0.01f
-        e.presentation.icon = if (isOpen) AllIcons.General.ChevronLeft else AllIcons.General.ChevronRight
-        e.presentation.text = if (isOpen) "Hide Side Panel" else "Show Side Panel"
-    }
+        override fun update(e: AnActionEvent) {
+            val isOpen = rootSplitter.proportion >= 0.01f
+            e.presentation.icon = if (isOpen) AllIcons.General.ChevronLeft else AllIcons.General.ChevronRight
+            e.presentation.text = if (isOpen) "Hide Side Panel" else "Show Side Panel"
+        }
 
-    override fun actionPerformed(e: AnActionEvent) {
-        val isOpen = rootSplitter.proportion >= 0.01f
-        if (!isOpen) {
-            ensureSidePanelAvailable()
-            val chatWidth = rootSplitter.width
-            rootSplitter.proportion = defaultReviewProportion
-            if (chatWidth > 0) {
-                val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
-                (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
-            }
-        } else {
-            val sideWidth = rootSplitter.firstComponent?.width ?: 0
-            rootSplitter.proportion = 0.0f
-            if (sideWidth > 0) {
-                (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
+        override fun actionPerformed(e: AnActionEvent) {
+            val isOpen = rootSplitter.proportion >= 0.01f
+            if (!isOpen) {
+                ensureSidePanelAvailable()
+                val chatWidth = rootSplitter.width
+                rootSplitter.proportion = defaultReviewProportion
+                if (chatWidth > 0) {
+                    val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
+                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
+                }
+            } else {
+                val sideWidth = rootSplitter.firstComponent?.width ?: 0
+                rootSplitter.proportion = 0.0f
+                if (sideWidth > 0) {
+                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
+                }
             }
         }
     }
-}
 
     /**
      * Switches between single-content mode (side panel closed) and multi-content
@@ -2143,13 +2230,13 @@ private inner class SidePanelToggleAction : AnAction(
                     val wrapper = JPanel(BorderLayout())
                     contentWrappers.add(wrapper)
                     val displayName = if (i == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
-                        (sidePanel?.getPlanTitle() ?: name) else name
+                        (sidePanel?.planTitle ?: name) else name
                     val content = contentFactory.createContent(wrapper, displayName, false)
                     content.isCloseable = false
                     contentManager.addContent(content)
                 }
 
-                val activeIdx = (sidePanel?.getSelectedTab() ?: 0).coerceIn(0, contentWrappers.lastIndex)
+                val activeIdx = (sidePanel?.selectedTab ?: 0).coerceIn(0, contentWrappers.lastIndex)
                 contentWrappers[activeIdx].add(rootSplitter, BorderLayout.CENTER)
                 contentManager.setSelectedContent(contentManager.getContent(activeIdx)!!, false)
 
@@ -2245,7 +2332,7 @@ private inner class SidePanelToggleAction : AnAction(
         private fun createGroupedPopup(disposeCallback: Runnable?): com.intellij.openapi.ui.popup.JBPopup {
             val models = loadedModels.toList()
             if (models.isEmpty()) {
-                return com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createComponentPopupBuilder(
+                return JBPopupFactory.getInstance().createComponentPopupBuilder(
                     JBLabel("No models available"), null
                 ).createPopup()
             }
@@ -2259,7 +2346,7 @@ private inner class SidePanelToggleAction : AnAction(
                 if (index != selectedModelIndex && index in loadedModels.indices) {
                     val model = loadedModels[index]
                     modelSelector.selectModelById(model.id())
-                    LOG.debug("Model selected: ${model.id()} (index=$index)")
+                    LOG.debug("Model selected via picker: ${model.id()} (index=$index)")
                 }
             }
             picker.onFavoriteToggled = { modelId ->
@@ -2291,7 +2378,7 @@ private inner class SidePanelToggleAction : AnAction(
             override fun actionPerformed(e: AnActionEvent) {
                 if (index == selectedModelIndex) return
                 modelSelector.selectModelById(model.id())
-                LOG.debug("Model selected: ${model.id()} (index=$index)")
+                LOG.debug("Model selected via action: ${model.id()} (index=$index)")
             }
 
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -2518,17 +2605,17 @@ private inner class SidePanelToggleAction : AnAction(
                 broadcastPanel.nativePanel.onCancelNudge?.invoke(id)
             }
         }
-        ws.setOnPermissionResponse(java.util.function.Consumer { data ->
+        ws.setOnPermissionResponse { data ->
             ApplicationManager.getApplication().invokeLater {
                 broadcastPanel.handleWebPermissionResponse(data)
             }
-        })
-        ws.setOnSelectModel(java.util.function.Consumer { modelId ->
+        }
+        ws.setOnSelectModel { modelId ->
             ApplicationManager.getApplication().invokeLater { modelSelector.selectModelById(modelId) }
-        })
-        ws.setOnLoadMore(Runnable {
+        }
+        ws.setOnLoadMore {
             ApplicationManager.getApplication().invokeLater { persistenceManager.onLoadMoreHistory() }
-        })
+        }
     }
 
     private fun onQueueMessageClicked() {
