@@ -53,6 +53,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -132,7 +133,7 @@ public abstract class AcpClient extends AbstractClient {
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
-    private final List<AbstractClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
+    private final List<AbstractClient.AgentConfigOption> availableConfigOptions = new CopyOnWriteArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
     /**
      * Conversation history replayed by the agent during {@code session/load}.
