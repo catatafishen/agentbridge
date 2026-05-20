@@ -292,6 +292,9 @@ internal class PromptEditorSetup(
             KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
             KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK)
         )
+        // Use IdeEventQueue preprocessor to intercept paste keystrokes before the editor
+        // processes them — this avoids double-paste and focus side effects that occur when
+        // handling paste at the action level (the editor's default paste would fire first)
         com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
             { event ->
                 handlePastePreprocess(event, editor, contentComponent, pasteStrokes)
@@ -318,6 +321,8 @@ internal class PromptEditorSetup(
                     com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                         val doc = editor.document
                         val end = offset + trigger.length
+                        // Guard: document may have changed between documentChanged() and this
+                        // invokeLater callback — verify the trigger text is still at the expected offset
                         if (end <= doc.textLength && doc.getText(
                                 com.intellij.openapi.util.TextRange(offset, end)
                             ) == trigger
@@ -379,6 +384,8 @@ internal class PromptEditorSetup(
             return false
         }
 
+        // Check image flavor first — many apps put both image and string on the clipboard
+        // simultaneously. Images should take priority since they indicate intentional image paste.
         if (contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)) {
             val image = try {
                 contents.getTransferData(java.awt.datatransfer.DataFlavor.imageFlavor) as? Image
@@ -395,6 +402,7 @@ internal class PromptEditorSetup(
         }
 
         if (contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
+            // DataFlavor.javaFileListFlavor returns Object at runtime; cast is safe per the flavor contract
             @Suppress("UNCHECKED_CAST")
             val files = try {
                 contents.getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor)
@@ -420,6 +428,7 @@ internal class PromptEditorSetup(
             val transferable = dtde.transferable
 
             if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
+                // DataFlavor.javaFileListFlavor returns Object at runtime; cast is safe per the flavor contract
                 @Suppress("UNCHECKED_CAST")
                 val files = transferable.getTransferData(
                     java.awt.datatransfer.DataFlavor.javaFileListFlavor
