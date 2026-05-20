@@ -447,9 +447,9 @@ intellijPlatform {
             // it covers the same platform API surface for compatibility verification.
             val target = if (project.hasProperty("verifyIde")) project.property("verifyIde") as String else null
             if (target == null || target == "IU") create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3")
-            if (target == null || target == "PY") create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
-            if (target == null || target == "WS") create(IntelliJPlatformType.WebStorm, "2025.3")
-            if (target == null || target == "GO") create(IntelliJPlatformType.GoLand, "2025.3")
+            if (target == null || target == "PY") create(IntelliJPlatformType.PyCharmProfessional, "2026.1")
+            if (target == null || target == "WS") create(IntelliJPlatformType.WebStorm, "2026.1")
+            if (target == null || target == "GO") create(IntelliJPlatformType.GoLand, "2026.1")
             // Track the latest GA release to catch removed/deprecated API issues early.
             // JetBrains stopped publishing LATEST-EAP-SNAPSHOT in their Maven repos and changed
             // the EAP artifact naming convention (idea-BUILD.tar.gz instead of ideaIU-*.tar.gz),
