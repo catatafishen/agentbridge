@@ -674,6 +674,71 @@ class AcpMessageParserTest {
         assertEquals("binary not found", tcu.error());
     }
 
+    @Test
+    void parsesConfigOptionUpdate_fullListFormat() {
+        JsonObject params = updateParams("config_option_update");
+        JsonArray configOptions = new JsonArray();
+        JsonObject effort = new JsonObject();
+        effort.addProperty("id", "reasoning_effort");
+        effort.addProperty("label", "Reasoning effort");
+        effort.addProperty("selectedValueId", "medium");
+        JsonArray values = new JsonArray();
+        for (String v : new String[]{"low", "medium", "high", "x-high"}) {
+            JsonObject val = new JsonObject();
+            val.addProperty("id", v);
+            val.addProperty("label", Character.toUpperCase(v.charAt(0)) + v.substring(1));
+            values.add(val);
+        }
+        effort.add("values", values);
+        configOptions.add(effort);
+        params.add("configOptions", configOptions);
+
+        var update = (SessionUpdate.ConfigOptionsChanged) parser.parse(params);
+        assertNotNull(update);
+        assertEquals(1, update.options().size());
+        var opt = update.options().getFirst();
+        assertEquals(4, opt.values().size());
+        assertEquals("x-high", opt.values().get(3).id());
+        assertEquals("X-high", opt.values().get(3).label());
+    }
+
+    @Test
+    void parsesConfigOptionUpdate_copilotWireFormat() {
+        // Copilot uses "name"/"options"/"value"/"currentValue" instead of ACP spec names
+        JsonObject params = updateParams("config_option_update");
+        params.addProperty("id", "reasoning_effort");
+        params.addProperty("name", "Reasoning effort");
+        params.addProperty("currentValue", "x-high");
+        JsonArray options = new JsonArray();
+        JsonObject lo = new JsonObject();
+        lo.addProperty("value", "low");
+        lo.addProperty("name", "Low");
+        options.add(lo);
+        JsonObject xhi = new JsonObject();
+        xhi.addProperty("value", "x-high");
+        xhi.addProperty("name", "X-High");
+        options.add(xhi);
+        params.add("options", options);
+
+        var update = (SessionUpdate.ConfigOptionsChanged) parser.parse(params);
+        assertNotNull(update);
+        assertEquals(1, update.options().size());
+        var opt = update.options().getFirst();
+        assertEquals(2, opt.values().size());
+        assertEquals("x-high", opt.values().get(1).id());
+        assertEquals("X-High", opt.values().get(1).label());
+    }
+
+    @Test
+    void parsesConfigOptionUpdate_emptyYieldsEmptyOptions() {
+        // A notification with no recognized structure should produce an empty ConfigOptionsChanged
+        // (and a warning log), not null.
+        JsonObject params = updateParams("config_option_update");
+        var update = parser.parse(params);
+        assertInstanceOf(SessionUpdate.ConfigOptionsChanged.class, update);
+        assertEquals(0, ((SessionUpdate.ConfigOptionsChanged) update).options().size());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private JsonObject updateParams(String sessionUpdateType) {

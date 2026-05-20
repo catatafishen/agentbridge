@@ -597,7 +597,8 @@ class PromptOrchestrator(
             is SessionUpdate.Banner -> handleStreamingBanner(update)
             is SessionUpdate.Plan -> handleClientUpdate(update)
             is SessionUpdate.AvailableCommandsChanged,
-            is SessionUpdate.AvailableModesChanged -> { /* handled by AcpClient internally */
+            is SessionUpdate.AvailableModesChanged,
+            is SessionUpdate.ConfigOptionsChanged -> { /* handled by AcpClient internally */
             }
 
             is SessionUpdate.UserMessageChunk -> { /* replayed user messages during session/load — no-op during streaming */

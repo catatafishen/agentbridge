@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-
 import com.github.catatafishen.agentbridge.acp.protocol.InitializeRequest;
 import com.github.catatafishen.agentbridge.acp.protocol.InitializeResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
@@ -511,8 +510,8 @@ public abstract class AcpClient extends AbstractClient {
         for (NewSessionResponse.SessionConfigOption opt : options) {
             List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                  .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
-                  .toList();
+                .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
+                .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String label = opt.label() != null ? opt.label() : optId;
             result.add(new AbstractClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
@@ -524,6 +523,41 @@ public abstract class AcpClient extends AbstractClient {
         availableConfigOptions.clear();
         availableConfigOptions.addAll(mapConfigOptionsStatic(response.configOptions()));
         LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
+    }
+
+    /**
+     * Updates available config options from a {@code config_option_update} notification.
+     * <p>
+     * If the notification provides a full list (multiple options or a single option with an id
+     * that already exists), existing options with matching ids are replaced and any new ones
+     * are appended. This preserves options that the notification did not mention.
+     */
+    private void updateConfigOptionsFromNotification(
+        @NotNull List<NewSessionResponse.SessionConfigOption> incoming) {
+        for (NewSessionResponse.SessionConfigOption opt : incoming) {
+            List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
+                : opt.values().stream()
+                .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
+                .toList();
+            String optId = opt.id() != null ? opt.id() : "";
+            String optLabel = opt.label() != null ? opt.label() : optId;
+            AbstractClient.AgentConfigOption updated =
+                new AbstractClient.AgentConfigOption(optId, optLabel, opt.description(), vals, opt.selectedValueId());
+
+            boolean replaced = false;
+            for (int i = 0; i < availableConfigOptions.size(); i++) {
+                if (availableConfigOptions.get(i).id().equals(optId)) {
+                    availableConfigOptions.set(i, updated);
+                    replaced = true;
+                    break;
+                }
+            }
+            if (!replaced) {
+                availableConfigOptions.add(updated);
+            }
+        }
+        LOG.debug(displayName() + ": config_option_update applied — "
+            + availableConfigOptions.size() + " option(s) total");
     }
 
     /**
@@ -543,7 +577,7 @@ public abstract class AcpClient extends AbstractClient {
      *
      * @return the loaded session ID (same as {@code sessionId} param)
      * @throws ClientSessionException if the agent does not support session loading
-     * @throws Exception             if the RPC call fails
+     * @throws Exception              if the RPC call fails
      * @see <a href="https://agentclientprotocol.com/protocol/session-setup">ACP Session Setup</a>
      */
     protected String loadSession(String cwd, String sessionId) throws ClientSessionException, InterruptedException, ExecutionException, TimeoutException {
@@ -1523,13 +1557,21 @@ public abstract class AcpClient extends AbstractClient {
 
         JsonObject updateObj = normalizeSessionUpdateParams(params);
 
+        SessionUpdate update = messageParser.parse(updateObj);
+
+        // Config option updates refresh internal state regardless of whether a consumer is registered.
+        if (update instanceof SessionUpdate.ConfigOptionsChanged(
+            List<NewSessionResponse.SessionConfigOption> options
+        )) {
+            updateConfigOptionsFromNotification(options);
+        }
+
         Consumer<SessionUpdate> consumer = updateConsumer;
         if (consumer == null) {
             LOG.debug("Session update received but no consumer registered");
             return;
         }
 
-        SessionUpdate update = messageParser.parse(updateObj);
         if (update != null) {
             update = processUpdate(update);
             if (update != null) {
