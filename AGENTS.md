@@ -502,3 +502,23 @@ These files demonstrate good separation and should be used as reference:
   complex enough to warrant a test.
 - **Don't add section-comment banners** to organize logic within a UI class. If you need section headers, the file is
   too large — extract instead.
+
+## Refactoring Rule: Tests Follow Interfaces
+
+When refactoring code into new classes with public interfaces (callbacks, companion methods, utility objects), **always
+add corresponding unit tests** for the extracted logic. The whole point of extraction is testability — an extracted class
+without tests is only half the job.
+
+- **Extract pure decision logic** into `companion object` or standalone `object` classes (e.g., `XxxLogic`)
+- **Test the pure functions directly** — no IDE fixtures needed for decision logic
+- **Cover boundary conditions** — thresholds, empty inputs, precedence rules, edge cases
+- **Name tests by behavior** — `"pending ask-user takes precedence over is sending"` not `"test case 3"`
+
+This rule applies any time you:
+1. Extract a class from a UI component
+2. Create a new `Callbacks` or `Host` interface
+3. Move decision logic into a companion/utility object
+4. Create a new service with testable business logic
+
+If the extracted code has no testable pure logic (e.g., it's purely UI wiring), document why in the PR description.
+
