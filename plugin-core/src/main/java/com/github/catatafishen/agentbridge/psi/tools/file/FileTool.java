@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor;
 import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.WriteAction;
@@ -459,11 +460,14 @@ public abstract class FileTool extends Tool {
         int lineCount = doc.getLineCount();
         if (startLine <= 0 || endLine <= 0 || startLine > lineCount) return;
 
-        // When a review session is active, edit highlights are managed persistently
-        // by AgentEditHighlighter; skip the 2.5s transient flash to avoid double-marking.
+        // When a review session is active AND persistent highlights are enabled,
+        // AgentEditHighlighter already marks edits persistently — skip the transient flash
+        // to avoid double-marking. If persistent highlights are disabled, the flash is the
+        // only visual feedback, so it must fire regardless of session state.
         Project project = editor.getProject();
         if (color == HIGHLIGHT_EDIT && project != null
-            && AgentEditSession.getInstance(project).isActive()) {
+            && AgentEditSession.getInstance(project).isActive()
+            && McpServerSettings.getInstance(project).isShowEditorHighlights()) {
             return;
         }
 
