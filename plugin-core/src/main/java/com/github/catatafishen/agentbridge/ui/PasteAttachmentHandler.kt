@@ -25,7 +25,7 @@ import javax.imageio.ImageIO
  * chat prompt. Saves the bytes/files into the AgentBridge storage directory's `pastes/`
  * subfolder and inserts an inline context chip referencing the saved file.
  *
- * Image attachments are also encoded as inline base64 [com.github.catatafishen.agentbridge.acp.model.ContentBlock.Image]
+ * Image attachments are also encoded as inline base64 [com.github.catatafishen.agentbridge.model.ContentBlock.Image]
  * blocks at prompt-send time (see [PromptContextManager.buildPromptAttachments]).
  */
 internal class PasteAttachmentHandler(

@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
-import com.github.catatafishen.agentbridge.acp.model.Model;
-import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.Model;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Nested;

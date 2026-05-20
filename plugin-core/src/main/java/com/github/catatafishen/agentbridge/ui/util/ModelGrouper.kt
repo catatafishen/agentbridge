@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.util
 
-import com.github.catatafishen.agentbridge.acp.model.Model
+import com.github.catatafishen.agentbridge.model.Model
 
 /**
  * Groups a flat model list by provider for the model picker popup.

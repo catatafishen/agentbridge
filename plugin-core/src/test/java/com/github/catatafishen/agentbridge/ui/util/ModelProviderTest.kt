@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.util
 
-import com.github.catatafishen.agentbridge.acp.model.Model
+import com.github.catatafishen.agentbridge.model.Model
 import com.google.gson.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

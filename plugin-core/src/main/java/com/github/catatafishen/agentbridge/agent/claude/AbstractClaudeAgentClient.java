@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
-import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
-import com.github.catatafishen.agentbridge.acp.model.Model;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.Model;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentException;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;

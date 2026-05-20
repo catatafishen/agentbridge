@@ -1,5 +1,9 @@
 package com.github.catatafishen.agentbridge.acp.model;
 
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.Model;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.acp.model.ResourceReference
+import com.github.catatafishen.agentbridge.model.ResourceReference
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project

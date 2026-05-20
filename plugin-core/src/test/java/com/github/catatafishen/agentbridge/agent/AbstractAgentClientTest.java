@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.agent;
 
-import com.github.catatafishen.agentbridge.acp.model.Model;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
-import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;

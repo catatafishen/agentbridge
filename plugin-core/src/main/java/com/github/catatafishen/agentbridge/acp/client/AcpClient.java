@@ -1,15 +1,15 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
-import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
-import com.github.catatafishen.agentbridge.acp.model.ContentBlockSerializer;
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.ContentBlockSerializer;
 import com.github.catatafishen.agentbridge.acp.model.InitializeRequest;
 import com.github.catatafishen.agentbridge.acp.model.InitializeResponse;
-import com.github.catatafishen.agentbridge.acp.model.Model;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
 import com.github.catatafishen.agentbridge.acp.model.NewSessionResponseDeserializer;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
-import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.agentbridge.acp.transport.JsonRpcException;
 import com.github.catatafishen.agentbridge.acp.transport.JsonRpcTransport;

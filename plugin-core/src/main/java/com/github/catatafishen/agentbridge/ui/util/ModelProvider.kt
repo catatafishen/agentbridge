@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.util
 
-import com.github.catatafishen.agentbridge.acp.model.Model
+import com.github.catatafishen.agentbridge.model.Model
 
 /**
  * Extracts provider information from ACP [Model] names.
