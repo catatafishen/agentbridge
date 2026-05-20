@@ -1122,6 +1122,10 @@ class ChatToolWindowContent(
      * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
      * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
      * the guard this would re-enter [syncTabsIfNeeded] mid-update and produce the 4-click oscillation.
+     *
+     * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
+     * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
+     * the guard this would re-enter [syncTabsIfNeeded] mid-update and produce the 4-click oscillation.
      */
     private fun syncTabsIfNeeded() {
         if (isUpdatingContentTabs) return
