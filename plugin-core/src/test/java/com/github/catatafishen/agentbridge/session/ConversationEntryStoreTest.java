@@ -304,6 +304,102 @@ class ConversationEntryStoreTest {
         assertEquals(1, entries.size());
     }
 
+    // ── Thread safety ──────────────────────────────────────────────────────────
+
+    @Test
+    void concurrentAppendText_noExceptions() throws Exception {
+        store.startStreaming();
+        int threadCount = 8;
+        int iterationsPerThread = 500;
+        var latch = new java.util.concurrent.CountDownLatch(threadCount);
+        var errors = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        for (int t = 0; t < threadCount; t++) {
+            int threadIdx = t;
+            new Thread(() -> {
+                try {
+                    for (int i = 0; i < iterationsPerThread; i++) {
+                        store.appendText("t" + threadIdx + "-" + i + " ");
+                    }
+                } catch (Exception e) {
+                    errors.incrementAndGet();
+                } finally {
+                    latch.countDown();
+                }
+            }).start();
+        }
+
+        assertTrue(latch.await(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(0, errors.get());
+        // All text should be in a single entry (first append creates it, rest append)
+        var entries = store.getEntries();
+        assertEquals(1, entries.size());
+    }
+
+    @Test
+    void concurrentMixedOperations_noExceptions() throws Exception {
+        int threadCount = 4;
+        int iterationsPerThread = 200;
+        var latch = new java.util.concurrent.CountDownLatch(threadCount);
+        var errors = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        // Thread 1: appendText
+        new Thread(() -> {
+            try {
+                store.startStreaming();
+                for (int i = 0; i < iterationsPerThread; i++) store.appendText("x");
+            } catch (Exception e) {
+                errors.incrementAndGet();
+            } finally {
+                latch.countDown();
+            }
+        }).start();
+
+        // Thread 2: addToolCallEntry
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < iterationsPerThread; i++)
+                    store.addToolCallEntry("tc-" + i, "Tool " + i, null, null);
+            } catch (Exception e) {
+                errors.incrementAndGet();
+            } finally {
+                latch.countDown();
+            }
+        }).start();
+
+        // Thread 3: read snapshots
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < iterationsPerThread; i++) {
+                    store.entriesSnapshot();
+                    store.getEntries();
+                }
+            } catch (Exception e) {
+                errors.incrementAndGet();
+            } finally {
+                latch.countDown();
+            }
+        }).start();
+
+        // Thread 4: addSubAgentEntry
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < iterationsPerThread; i++)
+                    store.addSubAgentEntry("sa-" + i, "explore", "desc", null,
+                        new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null));
+            } catch (Exception e) {
+                errors.incrementAndGet();
+            } finally {
+                latch.countDown();
+            }
+        }).start();
+
+        assertTrue(latch.await(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(0, errors.get());
+        // Should have entries from all threads
+        assertTrue(store.getEntries().size() >= iterationsPerThread);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private TurnStatsData makeTurnStats() {
