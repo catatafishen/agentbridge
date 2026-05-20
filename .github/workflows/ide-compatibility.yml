@@ -8,7 +8,7 @@ name: IDE Compatibility Check
 #   verify (×5)   — five parallel jobs, each verifying a single IDE in its own
 #                   process with its own isolated copy of JARs. No shared
 #                   CachingJarFileSystemProvider, no ClosedFileSystemException.
-#                   Verifies: IU 2025.3 (min), PY 2025.3, WS 2025.3, GO 2025.3,
+#                   Verifies: IU 2025.3 (legacy/min), PY 2026.1, WS 2026.1, GO 2026.1,
 #                   and IU 2026.1 (latest stable, to catch API removals early).
 #
 # Results are checked by publish-marketplace.yml: if this workflow has not
@@ -82,10 +82,10 @@ jobs:
       fail-fast: false
       matrix:
         ide:
-          - { id: IU, name: "IntelliJ IDEA Ultimate" }
-          - { id: PY, name: "PyCharm Professional" }
-          - { id: WS, name: "WebStorm" }
-          - { id: GO, name: "GoLand" }
+          - { id: IU, name: "IntelliJ IDEA Ultimate 2025.3 (legacy)" }
+          - { id: PY, name: "PyCharm Professional 2026.1" }
+          - { id: WS, name: "WebStorm 2026.1" }
+          - { id: GO, name: "GoLand 2026.1" }
           - { id: IU-EAP, name: "IntelliJ IDEA Ultimate 2026.1" }
     steps:
       - name: Harden Runner
