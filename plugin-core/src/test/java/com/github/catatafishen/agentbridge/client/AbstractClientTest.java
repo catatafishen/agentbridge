@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AbstractAgentClientTest {
+class AbstractClientTest {
 
     private TestAgentClient client;
 
@@ -28,7 +28,7 @@ class AbstractAgentClientTest {
 
     // Concrete test subclass
 
-    private static class TestAgentClient extends AbstractAgentClient {
+    private static class TestAgentClient extends AbstractClient {
         private boolean connected = false;
         private List<Model> models = List.of();
         private String currentModeSlug = null;
@@ -251,7 +251,7 @@ class AbstractAgentClientTest {
 
         @Test
         void modelDisplayModeReturnsNone() {
-            assertEquals(AbstractAgentClient.ModelDisplayMode.NONE, client.modelDisplayMode());
+            assertEquals(AbstractClient.ModelDisplayMode.NONE, client.modelDisplayMode());
         }
 
         @Test
@@ -306,7 +306,7 @@ class AbstractAgentClientTest {
     class InnerRecords {
         @Test
         void agentModeFieldsAccessible() {
-            var mode = new AbstractAgentClient.AgentMode("ask", "Ask Mode", "Ask questions");
+            var mode = new AbstractClient.AgentMode("ask", "Ask Mode", "Ask questions");
             assertEquals("ask", mode.slug());
             assertEquals("Ask Mode", mode.name());
             assertEquals("Ask questions", mode.description());
@@ -314,9 +314,9 @@ class AbstractAgentClientTest {
 
         @Test
         void agentConfigOptionFieldsAccessible() {
-            var value1 = new AbstractAgentClient.AgentConfigOptionValue("low", "Low");
-            var value2 = new AbstractAgentClient.AgentConfigOptionValue("high", "High");
-            var option = new AbstractAgentClient.AgentConfigOption(
+            var value1 = new AbstractClient.AgentConfigOptionValue("low", "Low");
+            var value2 = new AbstractClient.AgentConfigOptionValue("high", "High");
+            var option = new AbstractClient.AgentConfigOption(
                 "effort", "Effort Level", "Controls thinking effort",
                 List.of(value1, value2), "low"
             );
@@ -329,7 +329,7 @@ class AbstractAgentClientTest {
 
         @Test
         void agentConfigOptionValueFieldsAccessible() {
-            var value = new AbstractAgentClient.AgentConfigOptionValue("medium", "Medium");
+            var value = new AbstractClient.AgentConfigOptionValue("medium", "Medium");
             assertEquals("medium", value.id());
             assertEquals("Medium", value.label());
         }

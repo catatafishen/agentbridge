@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.google.gson.JsonObject;
@@ -47,14 +47,14 @@ final class CommandOverrideAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @NotNull String findAgentBinary() throws AgentException {
+    public @NotNull String findAgentBinary() throws ClientException {
         List<String> tokens = parseCommand();
         if (tokens.isEmpty()) {
-            throw new AgentException("No start command configured.", null, false);
+            throw new ClientException("No start command configured.", null, false);
         }
         String binary = tokens.getFirst();
         if (new File(binary).isAbsolute() && !new File(binary).exists()) {
-            throw new AgentException("Binary not found: " + binary, null, false);
+            throw new ClientException("Binary not found: " + binary, null, false);
         }
         resolvedBinaryPath = binary;
         return binary;

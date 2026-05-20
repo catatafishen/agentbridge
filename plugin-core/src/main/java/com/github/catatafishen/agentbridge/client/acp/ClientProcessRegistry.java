@@ -15,17 +15,17 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Note: shutdown hooks do <em>not</em> run on SIGKILL — that is unpreventable.
  */
-final class AgentProcessRegistry {
+final class ClientProcessRegistry {
 
     private static final Set<Process> PROCESSES = ConcurrentHashMap.newKeySet();
 
     static {
-        Thread hook = new Thread(AgentProcessRegistry::killAll, "agentbridge-process-cleanup");
+        Thread hook = new Thread(ClientProcessRegistry::killAll, "agentbridge-process-cleanup");
         hook.setDaemon(false);
         Runtime.getRuntime().addShutdownHook(hook);
     }
 
-    private AgentProcessRegistry() {}
+    private ClientProcessRegistry() {}
 
     static void register(Process process) {
         PROCESSES.add(process);

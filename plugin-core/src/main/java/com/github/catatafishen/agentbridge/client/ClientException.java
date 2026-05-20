@@ -3,24 +3,24 @@ package com.github.catatafishen.agentbridge.client;
 /**
  * Exception thrown when agent operations fail.
  */
-public class AgentException extends Exception {
+public class ClientException extends Exception {
     private final boolean recoverable;
     private final int errorCode;
     private final String errorData;
 
-    public AgentException(String message) {
+    public ClientException(String message) {
         this(message, null, true, 0, null);
     }
 
-    public AgentException(String message, Throwable cause) {
+    public ClientException(String message, Throwable cause) {
         this(message, cause, true, 0, null);
     }
 
-    public AgentException(String message, Throwable cause, boolean recoverable) {
+    public ClientException(String message, Throwable cause, boolean recoverable) {
         this(message, cause, recoverable, 0, null);
     }
 
-    public AgentException(String message, Throwable cause, boolean recoverable, int errorCode, String errorData) {
+    public ClientException(String message, Throwable cause, boolean recoverable, int errorCode, String errorData) {
         super(message, cause);
         this.recoverable = recoverable;
         this.errorCode = errorCode;

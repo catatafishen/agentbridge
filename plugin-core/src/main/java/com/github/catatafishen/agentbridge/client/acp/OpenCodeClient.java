@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -73,8 +73,8 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
-    public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
-        List<AbstractAgentClient.AgentMode> agents = new ArrayList<>(builtInAgents());
+    public List<AbstractClient.AgentMode> getAvailableAgents() {
+        List<AbstractClient.AgentMode> agents = new ArrayList<>(builtInAgents());
         String basePath = project.getBasePath();
         if (basePath != null) {
             agents.addAll(ProjectAgentScanner.scanAgentDirectories(
@@ -88,12 +88,12 @@ public final class OpenCodeClient extends AcpClient {
         return agents;
     }
 
-    static List<AbstractAgentClient.AgentMode> builtInAgents() {
+    static List<AbstractClient.AgentMode> builtInAgents() {
         return List.of(
-            new AbstractAgentClient.AgentMode(BUILD_AGENT, "Build", "Default primary agent with full tool access"),
-            new AbstractAgentClient.AgentMode(PLAN_AGENT, "Plan", "Read-only planning mode with guarded edits and bash"),
-            new AbstractAgentClient.AgentMode(GENERAL_AGENT, "General", "General-purpose subagent for complex tasks"),
-            new AbstractAgentClient.AgentMode(EXPLORE_AGENT, "Explore", "Fast read-only subagent for codebase exploration")
+            new AbstractClient.AgentMode(BUILD_AGENT, "Build", "Default primary agent with full tool access"),
+            new AbstractClient.AgentMode(PLAN_AGENT, "Plan", "Read-only planning mode with guarded edits and bash"),
+            new AbstractClient.AgentMode(GENERAL_AGENT, "General", "General-purpose subagent for complex tasks"),
+            new AbstractClient.AgentMode(EXPLORE_AGENT, "Explore", "Fast read-only subagent for codebase exploration")
         );
     }
 

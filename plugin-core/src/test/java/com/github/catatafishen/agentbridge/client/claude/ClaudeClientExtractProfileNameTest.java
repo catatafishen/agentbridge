@@ -8,62 +8,62 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * Unit tests for {@link ClaudeCliClient#extractProfileName(List)}.
+ * Unit tests for {@link ClaudeClient#extractProfileName(List)}.
  */
-class ClaudeCliClientExtractProfileNameTest {
+class ClaudeClientExtractProfileNameTest {
 
     @Test
     void returnsProfileName_whenPresent() {
         List<String> args = List.of("--acp", "--profile", "my-profile", "--stdio");
-        assertEquals("my-profile", ClaudeCliClient.extractProfileName(args));
+        assertEquals("my-profile", ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void returnsNull_whenNotPresent() {
         List<String> args = List.of("--acp", "--stdio");
-        assertNull(ClaudeCliClient.extractProfileName(args));
+        assertNull(ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void returnsNull_forEmptyList() {
-        assertNull(ClaudeCliClient.extractProfileName(List.of()));
+        assertNull(ClaudeClient.extractProfileName(List.of()));
     }
 
     @Test
     void returnsNull_whenProfileIsLastElement() {
         // --profile at the end with no following value
         List<String> args = List.of("--acp", "--profile");
-        assertNull(ClaudeCliClient.extractProfileName(args));
+        assertNull(ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void returnsFirstProfile_whenMultiplePresent() {
         List<String> args = List.of("--profile", "first", "--profile", "second");
-        assertEquals("first", ClaudeCliClient.extractProfileName(args));
+        assertEquals("first", ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void returnsProfileName_atStartOfList() {
         List<String> args = List.of("--profile", "start-profile", "--verbose");
-        assertEquals("start-profile", ClaudeCliClient.extractProfileName(args));
+        assertEquals("start-profile", ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void doesNotMatchPartialFlag() {
         // "--profiles" is not "--profile"
         List<String> args = List.of("--profiles", "not-a-match", "--acp");
-        assertNull(ClaudeCliClient.extractProfileName(args));
+        assertNull(ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void returnsProfileName_withHyphenatedValue() {
         List<String> args = List.of("--acp", "--profile", "my-complex-profile-name");
-        assertEquals("my-complex-profile-name", ClaudeCliClient.extractProfileName(args));
+        assertEquals("my-complex-profile-name", ClaudeClient.extractProfileName(args));
     }
 
     @Test
     void singleNonProfileArg_returnsNull() {
         List<String> args = List.of("--verbose");
-        assertNull(ClaudeCliClient.extractProfileName(args));
+        assertNull(ClaudeClient.extractProfileName(args));
     }
 }

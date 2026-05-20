@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * Describes a client-specific session option that the UI should render as a dropdown.
  *
- * <p>Returned by {@link AbstractAgentClient#listSessionOptions()}. Each option has a stable
+ * <p>Returned by {@link AbstractClient#listSessionOptions()}. Each option has a stable
  * {@link #key} (used for storage and command-line mapping), a human-readable
  * {@link #displayName}, a fixed set of {@link #values}, and an optional {@link #labels} map
  * for overriding how individual values are displayed in the UI.</p>

@@ -20,16 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for pure static methods in {@link ClaudeCliClient} that are untested
- * by {@link ClaudeCliClientTest} (which covers extractErrorText, safeGetInt, safeGetDouble).
+ * Tests for pure static methods in {@link ClaudeClient} that are untested
+ * by {@link ClaudeClientTest} (which covers extractErrorText, safeGetInt, safeGetDouble).
  */
-class ClaudeCliClientStaticMethodsTest {
+class ClaudeClientStaticMethodsTest {
 
     // ── buildJsonUserMessage (package-private static) ───────────────────────
 
     @Test
     void buildJsonUserMessage_createsValidJsonEnvelope() {
-        String result = ClaudeCliClient.buildJsonUserMessage("Hello", List.of());
+        String result = ClaudeClient.buildJsonUserMessage("Hello", List.of());
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
 
         assertEquals("user", parsed.get("type").getAsString());
@@ -48,7 +48,7 @@ class ClaudeCliClientStaticMethodsTest {
     @Test
     void buildJsonUserMessage_preservesSpecialCharacters() {
         String prompt = "Line1\nLine2\twith \"quotes\"";
-        String result = ClaudeCliClient.buildJsonUserMessage(prompt, List.of());
+        String result = ClaudeClient.buildJsonUserMessage(prompt, List.of());
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
 
         String text = parsed.getAsJsonObject("message")
@@ -61,7 +61,7 @@ class ClaudeCliClientStaticMethodsTest {
 
     @Test
     void buildJsonUserMessage_handlesEmptyPrompt() {
-        String result = ClaudeCliClient.buildJsonUserMessage("", List.of());
+        String result = ClaudeClient.buildJsonUserMessage("", List.of());
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
         String text = parsed.getAsJsonObject("message")
             .getAsJsonArray("content")
@@ -72,7 +72,7 @@ class ClaudeCliClientStaticMethodsTest {
 
     @Test
     void buildJsonUserMessage_hasCorrectStructure() {
-        String result = ClaudeCliClient.buildJsonUserMessage("test", List.of());
+        String result = ClaudeClient.buildJsonUserMessage("test", List.of());
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
 
         assertTrue(parsed.has("type"), "Top-level should have 'type'");
@@ -85,7 +85,7 @@ class ClaudeCliClientStaticMethodsTest {
 
     @Test
     void buildJsonUserMessage_contentBlockHasTextType() {
-        String result = ClaudeCliClient.buildJsonUserMessage("prompt", List.of());
+        String result = ClaudeClient.buildJsonUserMessage("prompt", List.of());
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
         JsonObject block = parsed.getAsJsonObject("message")
             .getAsJsonArray("content")
@@ -96,7 +96,7 @@ class ClaudeCliClientStaticMethodsTest {
     @Test
     void buildJsonUserMessage_withImages_addsAnthropicImageBlocks() {
         ContentBlock.Image img = new ContentBlock.Image("iVBORw0KGgo=", "image/png");
-        String result = ClaudeCliClient.buildJsonUserMessage("Describe this:", List.of(img));
+        String result = ClaudeClient.buildJsonUserMessage("Describe this:", List.of(img));
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
 
         JsonArray content = parsed.getAsJsonObject("message").getAsJsonArray("content");
@@ -115,7 +115,7 @@ class ClaudeCliClientStaticMethodsTest {
     void buildJsonUserMessage_withMultipleImages_addsAllImageBlocksAfterText() {
         ContentBlock.Image img1 = new ContentBlock.Image("data1=", "image/png");
         ContentBlock.Image img2 = new ContentBlock.Image("data2=", "image/jpeg");
-        String result = ClaudeCliClient.buildJsonUserMessage("Compare:", List.of(img1, img2));
+        String result = ClaudeClient.buildJsonUserMessage("Compare:", List.of(img1, img2));
         JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
 
         JsonArray content = parsed.getAsJsonObject("message").getAsJsonArray("content");
@@ -136,7 +136,7 @@ class ClaudeCliClientStaticMethodsTest {
             new ContentBlock.Text("hello"),
             new ContentBlock.Resource(new ContentBlock.ResourceLink("file://a", "a.txt", null, "content", null))
         );
-        assertTrue(ClaudeCliClient.extractImageBlocks(blocks).isEmpty());
+        assertTrue(ClaudeClient.extractImageBlocks(blocks).isEmpty());
     }
 
     @Test
@@ -146,7 +146,7 @@ class ClaudeCliClientStaticMethodsTest {
             new ContentBlock.Text("describe this"),
             img
         );
-        List<ContentBlock.Image> result = ClaudeCliClient.extractImageBlocks(blocks);
+        List<ContentBlock.Image> result = ClaudeClient.extractImageBlocks(blocks);
         assertEquals(1, result.size());
         assertEquals("abc=", result.get(0).data());
         assertEquals("image/png", result.get(0).mimeType());
@@ -157,27 +157,27 @@ class ClaudeCliClientStaticMethodsTest {
         ContentBlock.Image img1 = new ContentBlock.Image("data1=", "image/png");
         ContentBlock.Image img2 = new ContentBlock.Image("data2=", "image/jpeg");
         List<ContentBlock> blocks = List.of(new ContentBlock.Text("text"), img1, img2);
-        List<ContentBlock.Image> result = ClaudeCliClient.extractImageBlocks(blocks);
+        List<ContentBlock.Image> result = ClaudeClient.extractImageBlocks(blocks);
         assertEquals(2, result.size());
     }
 
     @Test
     void extractImageBlocks_returnsEmptyForEmptyInput() {
-        assertTrue(ClaudeCliClient.extractImageBlocks(List.of()).isEmpty());
+        assertTrue(ClaudeClient.extractImageBlocks(List.of()).isEmpty());
     }
 
     // ── extractToolResultContent (package-private static) ───────────────────
 
     @Test
     void extractToolResultContent_returnsEmptyForNoContentField() {
-        assertEquals("", ClaudeCliClient.extractToolResultContent(new JsonObject()));
+        assertEquals("", ClaudeClient.extractToolResultContent(new JsonObject()));
     }
 
     @Test
     void extractToolResultContent_returnsStringContent() {
         JsonObject event = new JsonObject();
         event.addProperty("content", "Hello world");
-        assertEquals("Hello world", ClaudeCliClient.extractToolResultContent(event));
+        assertEquals("Hello world", ClaudeClient.extractToolResultContent(event));
     }
 
     @Test
@@ -194,7 +194,7 @@ class ClaudeCliClientStaticMethodsTest {
 
         JsonObject event = new JsonObject();
         event.add("content", content);
-        assertEquals("First. Second.", ClaudeCliClient.extractToolResultContent(event));
+        assertEquals("First. Second.", ClaudeClient.extractToolResultContent(event));
     }
 
     @Test
@@ -203,7 +203,7 @@ class ClaudeCliClientStaticMethodsTest {
         content.add("plain string");
         JsonObject event = new JsonObject();
         event.add("content", content);
-        assertEquals("plain string", ClaudeCliClient.extractToolResultContent(event));
+        assertEquals("plain string", ClaudeClient.extractToolResultContent(event));
     }
 
     @Test
@@ -214,7 +214,7 @@ class ClaudeCliClientStaticMethodsTest {
         content.add(nested);
         JsonObject event = new JsonObject();
         event.add("content", content);
-        assertEquals("", ClaudeCliClient.extractToolResultContent(event));
+        assertEquals("", ClaudeClient.extractToolResultContent(event));
     }
 
     @Test
@@ -223,7 +223,7 @@ class ClaudeCliClientStaticMethodsTest {
         contentObj.addProperty("key", "value");
         JsonObject event = new JsonObject();
         event.add("content", contentObj);
-        String result = ClaudeCliClient.extractToolResultContent(event);
+        String result = ClaudeClient.extractToolResultContent(event);
         assertTrue(result.contains("key"));
         assertTrue(result.contains("value"));
     }
@@ -384,19 +384,19 @@ class ClaudeCliClientStaticMethodsTest {
 
     static {
         try {
-            EXTRACT_ERROR_TEXT = ClaudeCliClient.class
+            EXTRACT_ERROR_TEXT = ClaudeClient.class
                 .getDeclaredMethod("extractErrorText", JsonElement.class);
             EXTRACT_ERROR_TEXT.setAccessible(true);
 
-            SAFE_GET_INT = ClaudeCliClient.class
+            SAFE_GET_INT = ClaudeClient.class
                 .getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
             SAFE_GET_INT.setAccessible(true);
 
-            SAFE_GET_DOUBLE = ClaudeCliClient.class
+            SAFE_GET_DOUBLE = ClaudeClient.class
                 .getDeclaredMethod("safeGetDouble", JsonObject.class, String.class);
             SAFE_GET_DOUBLE.setAccessible(true);
 
-            RESPOND_TO_CONTROL_REQUEST = ClaudeCliClient.class
+            RESPOND_TO_CONTROL_REQUEST = ClaudeClient.class
                 .getDeclaredMethod("respondToControlRequest", JsonObject.class, OutputStream.class);
             RESPOND_TO_CONTROL_REQUEST.setAccessible(true);
         } catch (NoSuchMethodException e) {

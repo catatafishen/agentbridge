@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -72,68 +72,68 @@ class PromptErrorClassifierTest {
         assertEquals("Request cancelled", result.getDisplayMessage());
     }
 
-    // ── classify: AgentException recoverable ────────────────────────────
+    // ── classify: ClientException recoverable ────────────────────────────
 
     @Test
     void classify_recoverableAgentException_isRecoverable() {
-        var ex = new AgentException("timeout", null, true);
+        var ex = new ClientException("timeout", null, true);
         var result = classify(ex, false, NO_AUTH, true);
         assertTrue(result.isRecoverable());
     }
 
     @Test
     void classify_recoverableAgentException_shouldRestorePromptWhenNoContent() {
-        var ex = new AgentException("timeout", null, true);
+        var ex = new ClientException("timeout", null, true);
         var result = classify(ex, false, NO_AUTH, true);
         assertTrue(result.getShouldRestorePrompt());
     }
 
     @Test
     void classify_recoverableAgentException_notCancelled() {
-        var ex = new AgentException("timeout", null, true);
+        var ex = new ClientException("timeout", null, true);
         var result = classify(ex, false, NO_AUTH, true);
         assertFalse(result.isCancelled());
     }
 
     @Test
     void classify_recoverableAgentException_prefixesMessageWithAcpError() {
-        var ex = new AgentException("timeout", null, true);
+        var ex = new ClientException("timeout", null, true);
         var result = classify(ex, false, NO_AUTH, true);
         assertEquals("ACP error: timeout", result.getDisplayMessage());
     }
 
-    // ── classify: AgentException non-recoverable ────────────────────────
+    // ── classify: ClientException non-recoverable ────────────────────────
 
     @Test
     void classify_nonRecoverableAgentException_isNotRecoverable() {
-        var ex = new AgentException("fatal error", null, false);
+        var ex = new ClientException("fatal error", null, false);
         var result = classify(ex, false, NO_AUTH, true);
         assertFalse(result.isRecoverable());
     }
 
     @Test
     void classify_nonRecoverableAgentException_shouldRestorePromptWhenNoContent() {
-        var ex = new AgentException("fatal error", null, false);
+        var ex = new ClientException("fatal error", null, false);
         var result = classify(ex, false, NO_AUTH, true);
         assertTrue(result.getShouldRestorePrompt());
     }
 
-    // ── classify: AgentException with auth error ────────────────────────
+    // ── classify: ClientException with auth error ────────────────────────
 
     @Test
     void classify_agentExceptionWithAuthError_isAuthError() {
-        var ex = new AgentException("auth token expired", null, true);
+        var ex = new ClientException("auth token expired", null, true);
         var result = classify(ex, false, AUTH_CONTAINS, true);
         assertTrue(result.isAuthError());
     }
 
     @Test
     void classify_agentExceptionWithAuthError_displayMessageContainsAuthMessage() {
-        var ex = new AgentException("auth token expired", null, true);
+        var ex = new ClientException("auth token expired", null, true);
         var result = classify(ex, false, AUTH_CONTAINS, true);
         // The message is set to the cause message that matched the auth check.
         // Since the exception itself matches, msg = causeMsg = "auth token expired"
-        // Then the AgentException prefix logic: since it doesn't start with "(" → "ACP error: auth token expired"
+        // Then the ClientException prefix logic: since it doesn't start with "(" → "ACP error: auth token expired"
         assertEquals("ACP error: auth token expired", result.getDisplayMessage());
     }
 
@@ -220,11 +220,11 @@ class PromptErrorClassifierTest {
         assertEquals("Unknown error", result.getDisplayMessage());
     }
 
-    // ── classify: AgentException message starting with "(" ──────────────
+    // ── classify: ClientException message starting with "(" ──────────────
 
     @Test
     void classify_agentExceptionMessageStartingWithParen_noPrefixAdded() {
-        var ex = new AgentException("(error code 42)", null, false);
+        var ex = new ClientException("(error code 42)", null, false);
         var result = classify(ex, false, NO_AUTH, true);
         assertEquals("(error code 42)", result.getDisplayMessage());
     }
@@ -276,20 +276,20 @@ class PromptErrorClassifierTest {
         assertFalse(result.isProcessCrashWithRecovery());
     }
 
-    // ── classify: default AgentException constructor (recoverable) ──────
+    // ── classify: default ClientException constructor (recoverable) ──────
 
     @Test
     void classify_defaultAgentExceptionConstructor_isRecoverable() {
-        var ex = new AgentException("default");
+        var ex = new ClientException("default");
         var result = classify(ex, false, NO_AUTH, true);
         assertTrue(result.isRecoverable());
     }
 
-    // ── classify: AgentException with full constructor ──────────────────
+    // ── classify: ClientException with full constructor ──────────────────
 
     @Test
     void classify_agentExceptionWithErrorCodeAndData_prefixesMessage() {
-        var ex = new AgentException("rate limited", null, true, 429, "{\"retry_after\":30}");
+        var ex = new ClientException("rate limited", null, true, 429, "{\"retry_after\":30}");
         var result = classify(ex, false, NO_AUTH, true);
         assertEquals("ACP error: rate limited", result.getDisplayMessage());
     }
@@ -351,20 +351,20 @@ class PromptErrorClassifierTest {
 
     @Test
     void isCLINotFoundError_nonRecoverableAgentException_returnsTrue() {
-        var ex = new AgentException("CLI not found", null, false);
+        var ex = new ClientException("CLI not found", null, false);
         assertTrue(PromptErrorClassifier.INSTANCE.isCLINotFoundError(ex));
     }
 
     @Test
     void isCLINotFoundError_recoverableAgentException_returnsFalse() {
-        var ex = new AgentException("not found");
+        var ex = new ClientException("not found");
         // Default constructor is recoverable
         assertFalse(PromptErrorClassifier.INSTANCE.isCLINotFoundError(ex));
     }
 
     @Test
     void isCLINotFoundError_wrappedNonRecoverableAgentExceptionInCauseChain_returnsTrue() {
-        var agentEx = new AgentException("not found", null, false);
+        var agentEx = new ClientException("not found", null, false);
         var wrapper = new RuntimeException("wrapper", agentEx);
         assertTrue(PromptErrorClassifier.INSTANCE.isCLINotFoundError(wrapper));
     }
@@ -383,7 +383,7 @@ class PromptErrorClassifierTest {
 
     @Test
     void isCLINotFoundError_deeplyNestedNonRecoverableAgentException_returnsTrue() {
-        var agentEx = new AgentException("binary missing", null, false);
+        var agentEx = new ClientException("binary missing", null, false);
         var mid = new RuntimeException("mid", agentEx);
         var outer = new RuntimeException("outer", mid);
         assertTrue(PromptErrorClassifier.INSTANCE.isCLINotFoundError(outer));
@@ -391,7 +391,7 @@ class PromptErrorClassifierTest {
 
     @Test
     void isCLINotFoundError_deeplyNestedRecoverableAgentException_returnsFalse() {
-        var agentEx = new AgentException("timeout", null, true);
+        var agentEx = new ClientException("timeout", null, true);
         var mid = new RuntimeException("mid", agentEx);
         var outer = new RuntimeException("outer", mid);
         assertFalse(PromptErrorClassifier.INSTANCE.isCLINotFoundError(outer));

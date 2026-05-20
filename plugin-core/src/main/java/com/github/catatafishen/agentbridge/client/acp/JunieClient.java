@@ -2,8 +2,8 @@ package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.AgentSessionException;
-import com.github.catatafishen.agentbridge.client.AgentStartException;
+import com.github.catatafishen.agentbridge.client.ClientSessionException;
+import com.github.catatafishen.agentbridge.client.ClientStartException;
 import com.github.catatafishen.agentbridge.client.acp.junie.JunieKeyStore;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
@@ -201,9 +201,9 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
-    protected String loadSession(String cwd, String sessionId) throws AgentSessionException {
+    protected String loadSession(String cwd, String sessionId) throws ClientSessionException {
         // Throw here so createSession falls through to session/new where we add resumeSessionId.
-        throw new AgentSessionException(
+        throw new ClientSessionException(
             "Junie uses resumeSessionId in session/new — skipping session/load");
     }
 
@@ -312,7 +312,7 @@ public final class JunieClient extends AcpClient {
      * the error queue via a broken permission response.
      */
     @Override
-    protected void beforeCreateSession(String cwd) throws AgentStartException {
+    protected void beforeCreateSession(String cwd) throws ClientStartException {
         if (!restartBeforeNextSession) return;
         restartBeforeNextSession = false;
         LOG.info("Junie: restarting process to clear poisoned permission-response queue");

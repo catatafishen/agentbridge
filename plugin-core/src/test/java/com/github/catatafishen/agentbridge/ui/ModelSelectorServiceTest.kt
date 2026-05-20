@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.model.Model
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient
+import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentUiSettings
 import com.intellij.openapi.project.Project
@@ -15,7 +15,7 @@ class ModelSelectorServiceTest {
 
     private lateinit var project: Project
     private lateinit var agentManager: ActiveAgentManager
-    private lateinit var client: AbstractAgentClient
+    private lateinit var client: AbstractClient
     private lateinit var settings: AgentUiSettings
     private lateinit var callbacks: ModelSelectorService.Callbacks
     private lateinit var service: ModelSelectorService
@@ -24,7 +24,7 @@ class ModelSelectorServiceTest {
     fun setUp() {
         project = mock(Project::class.java)
         agentManager = mock(ActiveAgentManager::class.java)
-        client = mock(AbstractAgentClient::class.java)
+        client = mock(AbstractClient::class.java)
         settings = mock(AgentUiSettings::class.java)
         callbacks = mock(ModelSelectorService.Callbacks::class.java)
 

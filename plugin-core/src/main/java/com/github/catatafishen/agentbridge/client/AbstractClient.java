@@ -15,10 +15,10 @@ import java.util.function.Consumer;
  * Unified abstract base class for all agent types: ACP-based (Copilot, Junie, Kiro, OpenCode, Hermes Agent)
  * and non-ACP (Claude CLI, Anthropic Direct).
  * <p>
- * Replaces the {@link AgentConnector} interface and {@code bridge.AgentClient} interface.
+ * Replaces the {@link ClientConnector} interface and {@code bridge.AgentClient} interface.
  * Extended by {@code AcpClient} and {@code AbstractClaudeAgentClient}.
  */
-public abstract class AbstractAgentClient {
+public abstract class AbstractClient {
 
     // ─── Identity ────────────────────────────────────
 
@@ -37,7 +37,7 @@ public abstract class AbstractAgentClient {
     /**
      * Start the agent process and perform handshake.
      */
-    // S112: throws Exception is intentional — subclasses (AcpClient, ClaudeCliClient, etc.) throw
+    // S112: throws Exception is intentional — subclasses (AcpClient, ClaudeClient, etc.) throw
     // different checked exceptions during process startup. Narrowing would be a breaking API change.
     public abstract void start() throws Exception; // NOSONAR java:S112
 

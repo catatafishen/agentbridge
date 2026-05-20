@@ -17,7 +17,7 @@ import java.util.function.Function;
  * Hardcoded registry of available agent clients.
  * No dynamic profiles — each agent is a known class.
  */
-public final class AgentRegistry {
+public final class ClientRegistry {
 
     /**
      * Describes an available agent without creating an instance.
@@ -25,7 +25,7 @@ public final class AgentRegistry {
     public record AgentDescriptor(
             String id,
             String displayName,
-            Function<Project, AbstractAgentClient> factory
+            Function<Project, AbstractClient> factory
     ) {}
 
     private static final Map<String, AgentDescriptor> AGENTS = new LinkedHashMap<>();
@@ -39,10 +39,10 @@ public final class AgentRegistry {
         // Claude clients are registered once they support a single-arg Project constructor.
     }
 
-    private AgentRegistry() {}
+    private ClientRegistry() {}
 
     private static void register(String id, String displayName,
-                                 Function<Project, AbstractAgentClient> factory) {
+                                 Function<Project, AbstractClient> factory) {
         AGENTS.put(id, new AgentDescriptor(id, displayName, factory));
     }
 
@@ -67,7 +67,7 @@ public final class AgentRegistry {
      * @param project the IntelliJ project
      * @return a new client instance, or null if the agent ID is unknown
      */
-    public static @Nullable AbstractAgentClient create(String agentId, Project project) {
+    public static @Nullable AbstractClient create(String agentId, Project project) {
         AgentDescriptor descriptor = AGENTS.get(agentId);
         return descriptor != null ? descriptor.factory().apply(project) : null;
     }

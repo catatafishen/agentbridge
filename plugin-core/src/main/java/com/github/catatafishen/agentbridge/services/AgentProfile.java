@@ -118,7 +118,7 @@ public final class AgentProfile {
      *
      * <p>Each entry is a bare model ID or alias (e.g. {@code "claude-opus-4-6"}).
      * When non-empty, these are appended to the built-in model list returned by
-     * {@code ClaudeCliClient.getAvailableModels()} — duplicates of built-in IDs
+     * {@code ClaudeClient.getAvailableModels()} — duplicates of built-in IDs
      * are silently dropped.  Empty means "use built-in defaults only".</p>
      *
      * <p>This field exists because the Claude CLI has no stable

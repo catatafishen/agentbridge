@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
@@ -282,7 +282,7 @@ class AuthLoginService(private val project: Project) {
             // Claude CLI: no programmatic logout. The plugin does not touch credential stores
             // (files, OS keychain). Users must run `claude /logout` themselves or delete their
             // credentials manually. See docs/AUTH-HANDLING.md.
-            if (agentId == ClaudeCliClient.PROFILE_ID) {
+            if (agentId == ClaudeClient.PROFILE_ID) {
                 LOG.info("Claude CLI logout: no-op (plugin does not manage Claude credentials)")
                 clearPendingAuthError()
                 return

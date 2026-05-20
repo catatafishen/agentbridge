@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.session;
 
-import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexClient;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.GenericSettings;
@@ -235,7 +235,7 @@ public final class SessionSwitchService implements Disposable {
 
             // Store the resume ID in PropertiesComponent for same-process agent switches.
             PropertiesComponent.getInstance(project)
-                .setValue(ClaudeCliClient.PROFILE_ID + ".cliResumeSessionId", newSessionId);
+                .setValue(ClaudeClient.PROFILE_ID + ".cliResumeSessionId", newSessionId);
 
             // Also persist to a file — PropertiesComponent values set during dispose()
             // are lost on plugin hot-reload because IntelliJ flushes project state to disk
@@ -340,9 +340,9 @@ public final class SessionSwitchService implements Disposable {
         Path dbPath = CodexClientExporter.defaultDbPath();
         String threadId = CodexClientExporter.exportSession(entries, sessionsDir, dbPath, basePath);
         if (threadId != null) {
-            // Set the thread ID so CodexAppServerClient will try thread/resume on next startup
+            // Set the thread ID so CodexClient will try thread/resume on next startup
             PropertiesComponent.getInstance(project)
-                .setValue(CodexAppServerClient.PROFILE_ID + ".codexThreadId", threadId);
+                .setValue(CodexClient.PROFILE_ID + ".codexThreadId", threadId);
             LOG.info("Exported v2 session to Codex thread: " + threadId);
         }
     }
@@ -459,8 +459,8 @@ public final class SessionSwitchService implements Disposable {
      * @return the export target category string
      */
     static String classifyExportTarget(@NotNull String profileId) {
-        if (ClaudeCliClient.PROFILE_ID.equals(profileId)) return "claude";
-        if (CodexAppServerClient.PROFILE_ID.equals(profileId)) return "codex";
+        if (ClaudeClient.PROFILE_ID.equals(profileId)) return "claude";
+        if (CodexClient.PROFILE_ID.equals(profileId)) return "codex";
         if (AgentProfileManager.KIRO_PROFILE_ID.equals(profileId)) return "kiro";
         if (AgentProfileManager.JUNIE_PROFILE_ID.equals(profileId)) return "junie";
         if (AgentProfileManager.OPENCODE_PROFILE_ID.equals(profileId)) return "opencode";
@@ -655,12 +655,12 @@ public final class SessionSwitchService implements Disposable {
      * ({@link PropertiesComponent}) and the file-based fallback on disk.
      *
      * <p>Call this when the user explicitly requests a fresh session (no resume),
-     * so that {@link ClaudeCliClient#createSession}
+     * so that {@link ClaudeClient#createSession}
      * does not find a stale resume ID and pass {@code --resume} to the CLI.</p>
      */
     public void clearClaudeResumeState() {
         PropertiesComponent.getInstance(project)
-            .unsetValue(ClaudeCliClient.PROFILE_ID + ".cliResumeSessionId");
+            .unsetValue(ClaudeClient.PROFILE_ID + ".cliResumeSessionId");
         String basePath = project.getBasePath();
         if (basePath != null) {
             try {

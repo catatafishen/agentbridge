@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class CodexAppServerClientTest {
+class CodexClientTest {
 
     // ── extractTurnErrorMessage (private static) ────────────────────────
 
@@ -157,19 +157,19 @@ class CodexAppServerClientTest {
     // ── Reflection helpers ──────────────────────────────────────────────
 
     private static String invokeExtractTurnErrorMessage(JsonObject turn) throws Exception {
-        Method m = CodexAppServerClient.class.getDeclaredMethod("extractTurnErrorMessage", JsonObject.class);
+        Method m = CodexClient.class.getDeclaredMethod("extractTurnErrorMessage", JsonObject.class);
         m.setAccessible(true);
         return (String) m.invoke(null, turn);
     }
 
     private static Object invokeParseModelEntry(JsonElement el) throws Exception {
-        Method m = CodexAppServerClient.class.getDeclaredMethod("parseModelEntry", JsonElement.class);
+        Method m = CodexClient.class.getDeclaredMethod("parseModelEntry", JsonElement.class);
         m.setAccessible(true);
         return m.invoke(null, el);
     }
 
     private static int invokeSafeGetInt(JsonObject obj, String field) throws Exception {
-        Method m = CodexAppServerClient.class.getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
+        Method m = CodexClient.class.getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
         m.setAccessible(true);
         return (int) m.invoke(null, obj, field);
     }
@@ -183,7 +183,7 @@ class CodexAppServerClientTest {
     @Nested
     class CreateDefaultProfile {
 
-        private final AgentProfile profile = CodexAppServerClient.createDefaultProfile();
+        private final AgentProfile profile = CodexClient.createDefaultProfile();
 
         @Test
         void returnsNonNullProfile() {
@@ -262,8 +262,8 @@ class CodexAppServerClientTest {
             JsonObject msg = new JsonObject();
             msg.addProperty("id", 1);
             msg.add("result", new JsonObject());
-            assertEquals(CodexAppServerClient.MessageType.RESPONSE,
-                CodexAppServerClient.classifyMessageType(msg));
+            assertEquals(CodexClient.MessageType.RESPONSE,
+                CodexClient.classifyMessageType(msg));
         }
 
         @Test
@@ -271,8 +271,8 @@ class CodexAppServerClientTest {
             JsonObject msg = new JsonObject();
             msg.addProperty("id", 2);
             msg.add("error", new JsonObject());
-            assertEquals(CodexAppServerClient.MessageType.RESPONSE,
-                CodexAppServerClient.classifyMessageType(msg));
+            assertEquals(CodexClient.MessageType.RESPONSE,
+                CodexClient.classifyMessageType(msg));
         }
 
         @Test
@@ -280,16 +280,16 @@ class CodexAppServerClientTest {
             JsonObject msg = new JsonObject();
             msg.addProperty("id", 3);
             msg.addProperty("method", "item/tool/call");
-            assertEquals(CodexAppServerClient.MessageType.SERVER_REQUEST,
-                CodexAppServerClient.classifyMessageType(msg));
+            assertEquals(CodexClient.MessageType.SERVER_REQUEST,
+                CodexClient.classifyMessageType(msg));
         }
 
         @Test
         void notification_hasMethod_noId() {
             JsonObject msg = new JsonObject();
             msg.addProperty("method", "turn/updated");
-            assertEquals(CodexAppServerClient.MessageType.NOTIFICATION,
-                CodexAppServerClient.classifyMessageType(msg));
+            assertEquals(CodexClient.MessageType.NOTIFICATION,
+                CodexClient.classifyMessageType(msg));
         }
 
         @Test
@@ -297,14 +297,14 @@ class CodexAppServerClientTest {
             JsonObject msg = new JsonObject();
             msg.add("id", JsonNull.INSTANCE);
             msg.addProperty("method", "turn/updated");
-            assertEquals(CodexAppServerClient.MessageType.NOTIFICATION,
-                CodexAppServerClient.classifyMessageType(msg));
+            assertEquals(CodexClient.MessageType.NOTIFICATION,
+                CodexClient.classifyMessageType(msg));
         }
 
         @Test
         void unknown_emptyObject() {
-            assertEquals(CodexAppServerClient.MessageType.UNKNOWN,
-                CodexAppServerClient.classifyMessageType(new JsonObject()));
+            assertEquals(CodexClient.MessageType.UNKNOWN,
+                CodexClient.classifyMessageType(new JsonObject()));
         }
     }
 
@@ -315,28 +315,28 @@ class CodexAppServerClientTest {
 
         @Test
         void positiveMcpPort_includesMcpConfig() {
-            List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/usr/bin/codex", 8080);
+            List<String> cmd = CodexClient.buildServerCommandStatic("/usr/bin/codex", 8080);
             assertTrue(cmd.contains("mcp_servers.agentbridge.url=http://localhost:8080/mcp"),
                 "Expected MCP config entry");
         }
 
         @Test
         void zeroMcpPort_excludesMcpConfig() {
-            List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/usr/bin/codex", 0);
+            List<String> cmd = CodexClient.buildServerCommandStatic("/usr/bin/codex", 0);
             assertTrue(cmd.stream().noneMatch(s -> s.contains("mcp_servers")),
                 "Should not contain MCP config when port is 0");
         }
 
         @Test
         void alwaysContainsBinaryPathAndAppServer() {
-            List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/path/to/codex", 0);
+            List<String> cmd = CodexClient.buildServerCommandStatic("/path/to/codex", 0);
             assertEquals("/path/to/codex", cmd.get(0));
             assertEquals("app-server", cmd.get(1));
         }
 
         @Test
         void alwaysDisablesShellAndUnifiedExec() {
-            List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/bin/codex", 0);
+            List<String> cmd = CodexClient.buildServerCommandStatic("/bin/codex", 0);
             assertTrue(cmd.contains("features.shell_tool=false"),
                 "Should disable shell_tool");
             assertTrue(cmd.contains("features.unified_exec=false"),
@@ -351,18 +351,18 @@ class CodexAppServerClientTest {
 
         @Test
         void simpleCommand_noQuotes() {
-            assertEquals("{\"command\":\"ls -la\"}", CodexAppServerClient.buildCommandArgsJson("ls -la"));
+            assertEquals("{\"command\":\"ls -la\"}", CodexClient.buildCommandArgsJson("ls -la"));
         }
 
         @Test
         void commandWithQuotes_properlyEscaped() {
             assertEquals("{\"command\":\"echo \\\"hello\\\"\"}",
-                CodexAppServerClient.buildCommandArgsJson("echo \"hello\""));
+                CodexClient.buildCommandArgsJson("echo \"hello\""));
         }
 
         @Test
         void emptyCommand() {
-            assertEquals("{\"command\":\"\"}", CodexAppServerClient.buildCommandArgsJson(""));
+            assertEquals("{\"command\":\"\"}", CodexClient.buildCommandArgsJson(""));
         }
     }
 
@@ -375,14 +375,14 @@ class CodexAppServerClientTest {
         void hasMessageField_returnsIt() {
             JsonObject err = new JsonObject();
             err.addProperty("message", "rate limit exceeded");
-            assertEquals("rate limit exceeded", CodexAppServerClient.extractJsonRpcErrorMessage(err));
+            assertEquals("rate limit exceeded", CodexClient.extractJsonRpcErrorMessage(err));
         }
 
         @Test
         void noMessageField_returnsToString() {
             JsonObject err = new JsonObject();
             err.addProperty("code", -32600);
-            assertEquals(err.toString(), CodexAppServerClient.extractJsonRpcErrorMessage(err));
+            assertEquals(err.toString(), CodexClient.extractJsonRpcErrorMessage(err));
         }
     }
 
@@ -393,67 +393,67 @@ class CodexAppServerClientTest {
 
         @Test
         void nullInput_returnsFalse() {
-            assertFalse(CodexAppServerClient.isCodexAuthError(null));
+            assertFalse(CodexClient.isCodexAuthError(null));
         }
 
         @Test
         void emptyInput_returnsFalse() {
-            assertFalse(CodexAppServerClient.isCodexAuthError(""));
+            assertFalse(CodexClient.isCodexAuthError(""));
         }
 
         @Test
         void notAuthenticated_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("Not authenticated with Codex"));
+            assertTrue(CodexClient.isCodexAuthError("Not authenticated with Codex"));
         }
 
         @Test
         void notAuthenticated_caseInsensitive() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("NOT AUTHENTICATED"));
+            assertTrue(CodexClient.isCodexAuthError("NOT AUTHENTICATED"));
         }
 
         @Test
         void unauthorized_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("Unauthorized request"));
+            assertTrue(CodexClient.isCodexAuthError("Unauthorized request"));
         }
 
         @Test
         void authenticationRequired_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("Authentication required"));
+            assertTrue(CodexClient.isCodexAuthError("Authentication required"));
         }
 
         @Test
         void invalidApiKey_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("Invalid API key supplied"));
+            assertTrue(CodexClient.isCodexAuthError("Invalid API key supplied"));
         }
 
         @Test
         void pleaseRunCodexLogin_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("Please run codex login to continue"));
+            assertTrue(CodexClient.isCodexAuthError("Please run codex login to continue"));
         }
 
         @Test
         void pleaseLogIn_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("Please log in via the CLI"));
+            assertTrue(CodexClient.isCodexAuthError("Please log in via the CLI"));
         }
 
         @Test
         void http401_returnsTrue() {
-            assertTrue(CodexAppServerClient.isCodexAuthError("HTTP 401 returned"));
+            assertTrue(CodexClient.isCodexAuthError("HTTP 401 returned"));
         }
 
         @Test
         void unrelatedError_returnsFalse() {
-            assertFalse(CodexAppServerClient.isCodexAuthError("Tool 'apply_patch' failed: bad diff"));
+            assertFalse(CodexClient.isCodexAuthError("Tool 'apply_patch' failed: bad diff"));
         }
 
         @Test
         void rateLimit_returnsFalse() {
-            assertFalse(CodexAppServerClient.isCodexAuthError("Rate limit exceeded"));
+            assertFalse(CodexClient.isCodexAuthError("Rate limit exceeded"));
         }
 
         @Test
         void networkError_returnsFalse() {
-            assertFalse(CodexAppServerClient.isCodexAuthError("Connection refused"));
+            assertFalse(CodexClient.isCodexAuthError("Connection refused"));
         }
     }
 }

@@ -5,8 +5,8 @@ import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
@@ -65,9 +65,9 @@ import java.util.function.Consumer;
  * disabled at server-startup time via {@code --config features.shell_tool=false} and
  * {@code --config features.unified_exec=false}.</p>
  */
-public final class CodexAppServerClient extends AbstractAgentClient implements JsonRpcTransport.MessageHandler {
+public final class CodexClient extends AbstractClient implements JsonRpcTransport.MessageHandler {
 
-    private static final Logger LOG = Logger.getInstance(CodexAppServerClient.class);
+    private static final Logger LOG = Logger.getInstance(CodexClient.class);
 
     public static final String PROFILE_ID = "codex";
 
@@ -213,11 +213,11 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
 
     private String resolvedBinaryPath;
 
-    public CodexAppServerClient(@NotNull AgentProfile profile,
-                                @NotNull AgentConfig config,
-                                @Nullable ToolRegistry registry,
-                                @NotNull Project project,
-                                int mcpPort) {
+    public CodexClient(@NotNull AgentProfile profile,
+                       @NotNull AgentConfig config,
+                       @Nullable ToolRegistry registry,
+                       @NotNull Project project,
+                       int mcpPort) {
         this.profile = profile;
         this.config = config;
         this.registry = registry;
@@ -243,17 +243,17 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     @Override
-    public void start() throws AgentException {
+    public void start() throws ClientException {
         resolvedBinaryPath = resolveBinary();
         launchAppServer();
-        LOG.info("CodexAppServerClient started");
+        LOG.info("CodexClient started");
     }
 
     @Override
     public void stop() {
         transport.shutdown();
         CompletableFuture<String> turn = activeTurnResult.get();
-        if (turn != null) turn.completeExceptionally(new AgentException("Client stopped", null, false));
+        if (turn != null) turn.completeExceptionally(new ClientException("Client stopped", null, false));
         activeTurnResult.set(null);
         activeTurnCallback.set(null);
         Process proc = appServerProcess.get();
@@ -381,8 +381,8 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             return new PromptResponse(stopReason, null);
         } catch (java.util.concurrent.ExecutionException e) {
             Throwable cause = e.getCause();
-            if (cause instanceof AgentException ae) throw ae;
-            throw new AgentException("Codex turn failed: " + e.getMessage(), e, true);
+            if (cause instanceof ClientException ae) throw ae;
+            throw new ClientException("Codex turn failed: " + e.getMessage(), e, true);
         } finally {
             activeTurnId = null;
             activeTurnResult.set(null);
@@ -404,7 +404,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     private String awaitTurnResult(@NotNull CompletableFuture<String> turnResult,
                                    @NotNull String turnId,
                                    long turnStartNanos)
-        throws InterruptedException, java.util.concurrent.ExecutionException, AgentException {
+        throws InterruptedException, java.util.concurrent.ExecutionException, ClientException {
         long turnTimeoutNanos = TimeUnit.SECONDS.toNanos(getTurnTimeoutSeconds());
         long inactivityTimeoutNanos = TimeUnit.SECONDS.toNanos(getInactivityTimeoutSeconds());
         while (true) {
@@ -416,10 +416,10 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
                 sendInterrupt(turnId);
                 if (turnDeadlineNanos <= inactivityDeadlineNanos) {
                     long elapsedSec = TimeUnit.NANOSECONDS.toSeconds(now - turnStartNanos);
-                    throw new AgentException("Codex turn timed out after " + elapsedSec + " seconds", null, true);
+                    throw new ClientException("Codex turn timed out after " + elapsedSec + " seconds", null, true);
                 }
                 long silenceSec = TimeUnit.NANOSECONDS.toSeconds(now - activeTurnLastOutputNanos);
-                throw new AgentException("Codex turn timed out after " + silenceSec + " seconds of inactivity", null, true);
+                throw new ClientException("Codex turn timed out after " + silenceSec + " seconds of inactivity", null, true);
             }
 
             long waitMillis = Math.clamp(TimeUnit.NANOSECONDS.toMillis(remainingNanos), 1L, TURN_WAIT_POLL_MILLIS);
@@ -433,7 +433,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         }
     }
 
-    private void launchAppServer() throws AgentException {
+    private void launchAppServer() throws ClientException {
         List<String> cmd = buildServerCommand();
         try {
             LOG.info("Starting codex app-server: " + String.join(" ", cmd));
@@ -456,7 +456,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             initialize();
             LOG.info("codex app-server ready");
         } catch (IOException e) {
-            throw new AgentException("Failed to start codex app-server: " + e.getMessage(), e, true);
+            throw new ClientException("Failed to start codex app-server: " + e.getMessage(), e, true);
         }
     }
 
@@ -487,7 +487,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
 
     // ── JSON-RPC initialize handshake ────────────────────────────────────────
 
-    private void initialize() throws AgentException {
+    private void initialize() throws ClientException {
         JsonObject clientInfo = new JsonObject();
         clientInfo.addProperty("name", "intellij-copilot-plugin");
         clientInfo.addProperty("title", "IntelliJ AgentBridge");
@@ -503,9 +503,9 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             sendRequest("initialize", params).get(15, TimeUnit.SECONDS);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            throw new AgentException("codex app-server initialize interrupted", ie, true);
+            throw new ClientException("codex app-server initialize interrupted", ie, true);
         } catch (Exception e) {
-            throw new AgentException("codex app-server initialize failed: " + e.getMessage(), e, true);
+            throw new ClientException("codex app-server initialize failed: " + e.getMessage(), e, true);
         }
 
         // Send initialized notification (no ID, no response expected)
@@ -514,13 +514,13 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         fetchModelList();
     }
 
-    private void fetchModelList() throws AgentException {
+    private void fetchModelList() throws ClientException {
         JsonObject params = new JsonObject();
         params.addProperty("includeHidden", false);
         try {
             JsonObject result = sendRequest("model/list", params).get(10, TimeUnit.SECONDS);
             if (result == null || !result.has("data") || !result.get("data").isJsonArray()) {
-                throw new AgentException("model/list returned unexpected format: " + result, null, true);
+                throw new ClientException("model/list returned unexpected format: " + result, null, true);
             }
             List<Model> models = new ArrayList<>();
             for (JsonElement el : result.getAsJsonArray("data")) {
@@ -528,17 +528,17 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
                 if (model != null) models.add(model);
             }
             if (models.isEmpty()) {
-                throw new AgentException("model/list returned no models", null, true);
+                throw new ClientException("model/list returned no models", null, true);
             }
             dynamicModels.set(Collections.unmodifiableList(models));
             LOG.info("Loaded " + models.size() + " Codex model(s) from model/list");
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            throw new AgentException("model/list interrupted", ie, true);
-        } catch (AgentException ae) {
+            throw new ClientException("model/list interrupted", ie, true);
+        } catch (ClientException ae) {
             throw ae;
         } catch (Exception e) {
-            throw new AgentException("model/list failed: " + e.getMessage(), e, true);
+            throw new ClientException("model/list failed: " + e.getMessage(), e, true);
         }
     }
 
@@ -553,7 +553,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
      * Creates a new Codex thread for a plugin session and returns its threadId.
      */
     @NotNull
-    private String startThread(@NotNull String sessionId, @NotNull String model) throws AgentException {
+    private String startThread(@NotNull String sessionId, @NotNull String model) throws ClientException {
         String cwd = sessionCwd.getOrDefault(sessionId,
             project != null && project.getBasePath() != null ? project.getBasePath() : ".");
 
@@ -567,20 +567,20 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             JsonObject result = sendRequest("thread/start", params).get(15, TimeUnit.SECONDS);
             JsonObject thread = result.getAsJsonObject(F_THREAD);
             if (thread == null || !thread.has(F_ID)) {
-                throw new AgentException("thread/start response missing thread.id", null, true);
+                throw new ClientException("thread/start response missing thread.id", null, true);
             }
             String threadId = thread.get(F_ID).getAsString();
             sessionToThreadId.put(sessionId, threadId);
             persistCodexThreadId(threadId);
             LOG.info("Created Codex thread " + threadId + " for session " + sessionId);
             return threadId;
-        } catch (AgentException ae) {
+        } catch (ClientException ae) {
             throw ae;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            throw new AgentException("thread/start interrupted", ie, true);
+            throw new ClientException("thread/start interrupted", ie, true);
         } catch (Exception e) {
-            throw new AgentException("thread/start failed: " + e.getMessage(), e, true);
+            throw new ClientException("thread/start failed: " + e.getMessage(), e, true);
         }
     }
 
@@ -588,14 +588,14 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
      * Returns a thread ID for the session, resuming a persisted thread if available or starting a new one.
      */
     @NotNull
-    private String getOrResumeThread(@NotNull String sessionId, @NotNull String model) throws AgentException {
+    private String getOrResumeThread(@NotNull String sessionId, @NotNull String model) throws ClientException {
         String savedThreadId = loadCodexThreadId();
         if (savedThreadId != null) {
             try {
                 String resumed = resumeThread(savedThreadId, model, sessionId);
                 LOG.info("Resumed Codex thread " + resumed + " for session " + sessionId);
                 return resumed;
-            } catch (AgentException e) {
+            } catch (ClientException e) {
                 LOG.warn("thread/resume failed (thread may be expired), starting new thread: " + e.getMessage());
                 persistCodexThreadId(null);
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
@@ -615,7 +615,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
      */
     @NotNull
     private String resumeThread(@NotNull String threadId, @NotNull String model,
-                                @NotNull String sessionId) throws AgentException {
+                                @NotNull String sessionId) throws ClientException {
         JsonObject params = new JsonObject();
         params.addProperty("threadId", threadId);
         params.addProperty(F_MODEL, model);
@@ -624,19 +624,19 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             JsonObject result = sendRequest("thread/resume", params).get(15, TimeUnit.SECONDS);
             JsonObject thread = result.getAsJsonObject(F_THREAD);
             if (thread == null || !thread.has(F_ID)) {
-                throw new AgentException("thread/resume response missing thread.id", null, true);
+                throw new ClientException("thread/resume response missing thread.id", null, true);
             }
             String resumedId = thread.get(F_ID).getAsString();
             sessionToThreadId.put(sessionId, resumedId);
             persistCodexThreadId(resumedId);
             return resumedId;
-        } catch (AgentException ae) {
+        } catch (ClientException ae) {
             throw ae;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            throw new AgentException("thread/resume interrupted", ie, true);
+            throw new ClientException("thread/resume interrupted", ie, true);
         } catch (Exception e) {
-            throw new AgentException("thread/resume failed: " + e.getMessage(), e, true);
+            throw new ClientException("thread/resume failed: " + e.getMessage(), e, true);
         }
     }
 
@@ -645,7 +645,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
                              @NotNull String prompt,
                              @NotNull List<ContentBlock.Image> images,
                              @NotNull String model,
-                             @NotNull String sessionId) throws AgentException {
+                             @NotNull String sessionId) throws ClientException {
         JsonArray input = new JsonArray();
 
         JsonObject textItem = new JsonObject();
@@ -674,19 +674,19 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             JsonObject result = sendRequest("turn/start", params).get(15, TimeUnit.SECONDS);
             JsonObject turn = result.getAsJsonObject(F_TURN);
             if (turn == null || !turn.has(F_ID)) {
-                throw new AgentException("turn/start response missing turn.id", null, true);
+                throw new ClientException("turn/start response missing turn.id", null, true);
             }
             String turnId = turn.get(F_ID).getAsString();
             LOG.info("Started Codex turn " + turnId + " in thread " + threadId
                 + (images.isEmpty() ? "" : " with " + images.size() + " image(s)"));
             return turnId;
-        } catch (AgentException ae) {
+        } catch (ClientException ae) {
             throw ae;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            throw new AgentException("turn/start interrupted", ie, true);
+            throw new ClientException("turn/start interrupted", ie, true);
         } catch (Exception e) {
-            throw new AgentException("turn/start failed: " + e.getMessage(), e, true);
+            throw new ClientException("turn/start failed: " + e.getMessage(), e, true);
         }
     }
 
@@ -1014,11 +1014,11 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     @NotNull
-    private String resolveModel(@NotNull String sessionId, @Nullable String requestModel) throws AgentException {
+    private String resolveModel(@NotNull String sessionId, @Nullable String requestModel) throws ClientException {
         if (requestModel != null && !requestModel.isEmpty()) return requestModel;
         String stored = sessionModels.get(sessionId);
         if (stored != null && !stored.isEmpty()) return stored;
-        throw new AgentException("No model selected — please select a model before sending a prompt", null, false);
+        throw new ClientException("No model selected — please select a model before sending a prompt", null, false);
     }
 
     @Nullable
@@ -1027,8 +1027,8 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
         return opts != null ? opts.get(key) : null;
     }
 
-    private void ensureConnected() throws AgentException {
-        if (!transport.isConnected()) throw new AgentException("Codex app-server not connected", null, false);
+    private void ensureConnected() throws ClientException {
+        if (!transport.isConnected()) throw new ClientException("Codex app-server not connected", null, false);
     }
 
     private static void startStderrDrainer(@NotNull Process proc) {
@@ -1050,11 +1050,11 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     // ── Binary resolution ─────────────────────────────────────────────────────
 
     @NotNull
-    private String resolveBinary() throws AgentException {
+    private String resolveBinary() throws ClientException {
         String custom = profile.getCustomBinaryPath();
         if (!custom.isEmpty()) {
             if (Files.isExecutable(Path.of(custom))) return custom;
-            throw new AgentException("Codex binary not found at: " + custom, null, false);
+            throw new ClientException("Codex binary not found at: " + custom, null, false);
         }
         for (String name : candidateNames()) {
             // Use BinaryDetector which spawns a login shell — finds npm global installs,
@@ -1062,7 +1062,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
             String found = BinaryDetector.findBinaryPath(name);
             if (found != null) return found;
         }
-        throw new AgentException(
+        throw new ClientException(
             "Codex CLI not found. Install with: npm install -g @openai/codex, then run 'codex login'.",
             null, false);
     }

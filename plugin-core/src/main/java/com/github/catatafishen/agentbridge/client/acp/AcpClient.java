@@ -9,10 +9,10 @@ import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.client.AgentPromptException;
-import com.github.catatafishen.agentbridge.client.AgentSessionException;
-import com.github.catatafishen.agentbridge.client.AgentStartException;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientPromptException;
+import com.github.catatafishen.agentbridge.client.ClientSessionException;
+import com.github.catatafishen.agentbridge.client.ClientStartException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
@@ -69,7 +69,7 @@ import java.util.stream.Collectors;
  *
  * @see <a href="https://agentclientprotocol.com">Agent Client Protocol</a>
  */
-public abstract class AcpClient extends AbstractAgentClient {
+public abstract class AcpClient extends AbstractClient {
 
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
 
@@ -129,11 +129,11 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     protected @Nullable String requestedResumeId;
     private final List<Model> availableModels = new ArrayList<>();
-    private final List<AbstractAgentClient.AgentMode> availableModes = new ArrayList<>();
+    private final List<AbstractClient.AgentMode> availableModes = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
-    private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
+    private final List<AbstractClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
     /**
      * Conversation history replayed by the agent during {@code session/load}.
@@ -205,7 +205,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public final void start() throws AgentStartException {
+    public final void start() throws ClientStartException {
         try {
             LOG.info(displayName() + " starting...");
             int mcpPort = resolveMcpPort();
@@ -230,7 +230,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         } catch (Exception e) {
             LOG.warn(displayName() + " startup failed at: " + getStartupStepFromException(e), e);
             stop();
-            throw new AgentStartException("Failed to start " + displayName(), e);
+            throw new ClientStartException("Failed to start " + displayName(), e);
         }
     }
 
@@ -294,7 +294,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             }
             createSession(cwd);
             return null; // Auth successful
-        } catch (AgentSessionException e) {
+        } catch (ClientSessionException e) {
             // Check if it's an auth error
             Throwable cause = e;
             while (cause != null) {
@@ -355,7 +355,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public final String createSession(String cwd) throws AgentSessionException {
+    public final String createSession(String cwd) throws ClientSessionException {
         // Reuse the existing session if we already have one for the same working directory.
         // eagerFetchModels() creates a session at startup — avoid a redundant second session/new.
         if (currentSessionId != null && cwd != null && cwd.equals(launchCwd)) {
@@ -391,9 +391,9 @@ public abstract class AcpClient extends AbstractAgentClient {
             return currentSessionId;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AgentSessionException("Session creation interrupted for " + displayName(), e);
+            throw new ClientSessionException("Session creation interrupted for " + displayName(), e);
         } catch (Exception e) {
-            throw new AgentSessionException("Failed to create session for " + displayName(), e);
+            throw new ClientSessionException("Failed to create session for " + displayName(), e);
         }
     }
 
@@ -485,10 +485,10 @@ public abstract class AcpClient extends AbstractAgentClient {
         LOG.info(displayName() + ": " + source + " returned " + models.size() + " model(s): [" + ids + "]");
     }
 
-    static List<AbstractAgentClient.AgentMode> mapModesStatic(@Nullable List<NewSessionResponse.AvailableMode> modes) {
+    static List<AbstractClient.AgentMode> mapModesStatic(@Nullable List<NewSessionResponse.AvailableMode> modes) {
         if (modes == null) return List.of();
         return modes.stream()
-            .map(m -> new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()))
+            .map(m -> new AbstractClient.AgentMode(m.slug(), m.name(), m.description()))
             .toList();
     }
 
@@ -504,18 +504,18 @@ public abstract class AcpClient extends AbstractAgentClient {
         }
     }
 
-    static List<AbstractAgentClient.AgentConfigOption> mapConfigOptionsStatic(
+    static List<AbstractClient.AgentConfigOption> mapConfigOptionsStatic(
         @Nullable List<NewSessionResponse.SessionConfigOption> options) {
         if (options == null) return List.of();
-        List<AbstractAgentClient.AgentConfigOption> result = new ArrayList<>();
+        List<AbstractClient.AgentConfigOption> result = new ArrayList<>();
         for (NewSessionResponse.SessionConfigOption opt : options) {
-            List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
+            List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                  .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                  .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
                   .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String label = opt.label() != null ? opt.label() : optId;
-            result.add(new AbstractAgentClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
+            result.add(new AbstractClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
         }
         return result;
     }
@@ -542,13 +542,13 @@ public abstract class AcpClient extends AbstractAgentClient {
      * </ul>
      *
      * @return the loaded session ID (same as {@code sessionId} param)
-     * @throws AgentSessionException if the agent does not support session loading
+     * @throws ClientSessionException if the agent does not support session loading
      * @throws Exception             if the RPC call fails
      * @see <a href="https://agentclientprotocol.com/protocol/session-setup">ACP Session Setup</a>
      */
-    protected String loadSession(String cwd, String sessionId) throws AgentSessionException, InterruptedException, ExecutionException, TimeoutException {
+    protected String loadSession(String cwd, String sessionId) throws ClientSessionException, InterruptedException, ExecutionException, TimeoutException {
         if (!supportsSessionResumption()) {
-            throw new AgentSessionException(
+            throw new ClientSessionException(
                 displayName() + " does not advertise loadSession capability");
         }
         return sendLoadSessionRequest("session/load", cwd, sessionId);
@@ -737,7 +737,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final PromptResponse sendPrompt(PromptRequest request,
-                                           Consumer<SessionUpdate> onUpdate) throws AgentPromptException {
+                                           Consumer<SessionUpdate> onUpdate) throws ClientPromptException {
         try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
@@ -750,7 +750,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             return gson.fromJson(result, PromptResponse.class);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AgentPromptException("Prompt interrupted for " + displayName(), e);
+            throw new ClientPromptException("Prompt interrupted for " + displayName(), e);
         } catch (Exception e) {
             // On timeout, cancel the remote session so the agent stops working
             if (e instanceof java.util.concurrent.TimeoutException && currentSessionId != null) {
@@ -766,7 +766,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             String msg = rootMsg != null
                 ? ERR_PROMPT_FAILED_PREFIX + displayName() + ": " + rootMsg
                 : ERR_PROMPT_FAILED_PREFIX + displayName();
-            throw new AgentPromptException(msg, e);
+            throw new ClientPromptException(msg, e);
         } finally {
             afterPromptComplete();
         }
@@ -869,7 +869,7 @@ public abstract class AcpClient extends AbstractAgentClient {
      * Called at the very start of {@code createSession}, before the {@code session/new} RPC.
      * Override to perform per-session setup, e.g. restarting a poisoned process.
      */
-    protected void beforeCreateSession(String cwd) throws AgentStartException {
+    protected void beforeCreateSession(String cwd) throws ClientStartException {
         // default: no-op
     }
 
@@ -907,7 +907,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public final List<AbstractAgentClient.AgentMode> getAvailableModes() {
+    public final List<AbstractClient.AgentMode> getAvailableModes() {
         return Collections.unmodifiableList(availableModes);
     }
 
@@ -932,7 +932,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public final List<AbstractAgentClient.AgentConfigOption> getAvailableConfigOptions() {
+    public final List<AbstractClient.AgentConfigOption> getAvailableConfigOptions() {
         return Collections.unmodifiableList(availableConfigOptions);
     }
 
@@ -946,24 +946,24 @@ public abstract class AcpClient extends AbstractAgentClient {
      * primary model selector would render a duplicate model dropdown.</p>
      */
     static List<SessionOption> filterSessionOptionsStatic(
-        @NotNull List<AbstractAgentClient.AgentConfigOption> configOptions,
+        @NotNull List<AbstractClient.AgentConfigOption> configOptions,
         @NotNull Set<String> sessionModelIds) {
         return configOptions.stream()
             .filter(opt -> {
                 if (sessionModelIds.isEmpty()) return true;
                 Set<String> optValueIds = opt.values().stream()
-                    .map(AbstractAgentClient.AgentConfigOptionValue::id)
+                    .map(AbstractClient.AgentConfigOptionValue::id)
                     .collect(Collectors.toSet());
                 return !sessionModelIds.equals(optValueIds) && !sessionModelIds.containsAll(optValueIds);
             })
             .map(opt -> {
                 List<String> valueIds = opt.values().stream()
-                    .map(AbstractAgentClient.AgentConfigOptionValue::id)
+                    .map(AbstractClient.AgentConfigOptionValue::id)
                     .toList();
                 Map<String, String> labels = opt.values().stream()
                     .collect(Collectors.toMap(
-                        AbstractAgentClient.AgentConfigOptionValue::id,
-                        AbstractAgentClient.AgentConfigOptionValue::label,
+                        AbstractClient.AgentConfigOptionValue::id,
+                        AbstractClient.AgentConfigOptionValue::label,
                         (a, b) -> a,
                         LinkedHashMap::new));
                 return new SessionOption(opt.id(), opt.label(), valueIds, labels, opt.selectedValueId());
@@ -1220,7 +1220,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
         LOG.info("Environment size: " + pb.environment().size() + " variables");
         Process process = pb.start();
-        AgentProcessRegistry.register(process);
+        ClientProcessRegistry.register(process);
         return process;
     }
 
@@ -1933,7 +1933,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     protected void destroyProcess() {
-        AgentProcessRegistry.unregister(agentProcess);
+        ClientProcessRegistry.unregister(agentProcess);
         destroyProcessTree(agentProcess);
     }
 

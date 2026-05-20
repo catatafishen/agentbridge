@@ -5,8 +5,8 @@ import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.client.acp.KiroClient
-import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient
-import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient
+import com.github.catatafishen.agentbridge.client.codex.CodexClient
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.db.ConversationService
@@ -1960,8 +1960,8 @@ class ChatToolWindowContent(
                 // See docs/AUTH-HANDLING.md.
                 val agentId = agentManager.getActiveProfile().id
                 val isClaudeOrCodex =
-                    agentId == ClaudeCliClient.PROFILE_ID
-                        || agentId == CodexAppServerClient.PROFILE_ID
+                    agentId == ClaudeClient.PROFILE_ID
+                        || agentId == CodexClient.PROFILE_ID
                 e.presentation.isEnabledAndVisible = !isClaudeOrCodex
             }
 

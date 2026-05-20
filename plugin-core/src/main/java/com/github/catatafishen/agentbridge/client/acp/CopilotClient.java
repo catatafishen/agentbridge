@@ -4,8 +4,8 @@ import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.client.AgentSessionException;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
@@ -180,13 +180,13 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
-    public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
-        List<AbstractAgentClient.AgentMode> agents = new ArrayList<>(List.of(
-            new AbstractAgentClient.AgentMode(DEFAULT_AGENT_SLUG, "Intellij-Default",
+    public List<AbstractClient.AgentMode> getAvailableAgents() {
+        List<AbstractClient.AgentMode> agents = new ArrayList<>(List.of(
+            new AbstractClient.AgentMode(DEFAULT_AGENT_SLUG, "Intellij-Default",
                 "Full IntelliJ toolset with abuse-detection instructions"),
-            new AbstractAgentClient.AgentMode(AGENT_SLUG_EXPLORE, "Intellij-Explore",
+            new AbstractClient.AgentMode(AGENT_SLUG_EXPLORE, "Intellij-Explore",
                 "Read-only code navigation, no file edits or shell execution"),
-            new AbstractAgentClient.AgentMode(AGENT_SLUG_EDIT, "Intellij-Edit",
+            new AbstractClient.AgentMode(AGENT_SLUG_EDIT, "Intellij-Edit",
                 "Focused editing and refactoring tools, no system shell")
         ));
 
@@ -237,9 +237,9 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
-    protected String loadSession(String cwd, String sessionId) throws AgentSessionException {
+    protected String loadSession(String cwd, String sessionId) throws ClientSessionException {
         // The --resume CLI flag is the only mechanism, and it is broken in ACP mode as of v1.0.12.
-        throw new AgentSessionException(
+        throw new ClientSessionException(
             "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
                 + "The --resume CLI flag is passed at launch but is currently ignored.");
     }

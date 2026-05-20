@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
@@ -39,10 +39,10 @@ public interface AgentConfig {
      * Find the agent binary on the system.
      *
      * @return absolute path to the agent binary
-     * @throws AgentException if the binary cannot be found
+     * @throws ClientException if the binary cannot be found
      */
     @NotNull
-    String findAgentBinary() throws AgentException;
+    String findAgentBinary() throws ClientException;
 
     /**
      * Build the ProcessBuilder for launching the agent in ACP mode.
@@ -51,11 +51,11 @@ public interface AgentConfig {
      * @param projectBasePath project root (for config-dir, working directory)
      * @param mcpPort         port the MCP HTTP server listens on (for stdio proxy)
      * @return configured ProcessBuilder ready to start
-     * @throws AgentException if the command cannot be built
+     * @throws ClientException if the command cannot be built
      */
     @NotNull
     ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath,
-                                   int mcpPort) throws AgentException;
+                                   int mcpPort) throws ClientException;
 
     /**
      * Extract agent-specific data from the ACP {@code initialize} response.
