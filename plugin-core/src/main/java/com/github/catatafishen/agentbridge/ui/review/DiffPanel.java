@@ -520,8 +520,8 @@ public final class DiffPanel extends JPanel implements Disposable {
         private final Project project;
 
         ShowEditorHighlightsToggleAction(@NotNull Project project) {
-            super("Show Editor Highlights",
-                "Paint agent-edit background colors in the editor. Disable when git diff colors are sufficient",
+            super("Show Persisted Highlights",
+                "Paint persistent agent-edit background colors in the editor while a review session is active. Real-time follow-agent flash highlights are always shown regardless of this setting.",
                 AllIcons.Actions.Highlighting);
             this.project = project;
         }
