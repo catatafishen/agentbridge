@@ -330,7 +330,9 @@ class AcpMessageParser {
                     options.add(parseConfigOption(e.getAsJsonObject()));
                 }
             }
-        } else if (params.has("id")) {
+        } else if (params.has("id")
+            && params.get("id").isJsonPrimitive()
+            && !params.get("id").getAsString().isBlank()) {
             // Single-option update: the notification IS the option descriptor.
             NewSessionResponse.SessionConfigOption opt = parseConfigOption(params);
             options.add(opt);

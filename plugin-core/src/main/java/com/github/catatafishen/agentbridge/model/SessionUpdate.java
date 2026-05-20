@@ -297,8 +297,9 @@ public sealed interface SessionUpdate
     /**
      * Config options have changed (e.g. because the active model changed and a different
      * set of effort/reasoning levels is available). Sent by Copilot CLI as a
-     * {@code config_option_update} session/update notification. The full list of options
-     * replaces the previous state — callers should refresh their UI dropdowns.
+     * {@code config_option_update} session/update notification. Options are merged by id:
+     * existing options with a matching id are replaced, new ids are appended, and options
+     * not mentioned in the notification are preserved. Callers should refresh their UI dropdowns.
      */
     record ConfigOptionsChanged(
         @NotNull List<NewSessionResponse.SessionConfigOption> options
