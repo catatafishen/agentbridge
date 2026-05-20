@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.transport;
 
+import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
+import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;

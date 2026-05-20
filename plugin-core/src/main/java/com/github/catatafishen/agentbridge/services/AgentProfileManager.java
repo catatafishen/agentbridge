@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.acp.client.HermesClient;
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
+import com.github.catatafishen.agentbridge.client.acp.HermesClient;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;

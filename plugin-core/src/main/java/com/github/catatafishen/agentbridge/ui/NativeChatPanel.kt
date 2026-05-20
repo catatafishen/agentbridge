@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.acp.client.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.NudgeSource

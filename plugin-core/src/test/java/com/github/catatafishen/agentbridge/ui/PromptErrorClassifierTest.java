@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui;
 
-import com.github.catatafishen.agentbridge.agent.AgentException;
+import com.github.catatafishen.agentbridge.client.AgentException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;

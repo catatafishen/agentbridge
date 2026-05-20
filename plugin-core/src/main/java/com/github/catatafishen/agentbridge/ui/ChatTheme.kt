@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.acp.client.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.openapi.editor.colors.EditorColorsManager

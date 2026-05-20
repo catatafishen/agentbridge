@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
-import com.github.catatafishen.agentbridge.acp.client.AcpClient
-import com.github.catatafishen.agentbridge.agent.junie.JunieKeyStore
+import com.github.catatafishen.agentbridge.client.acp.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.junie.JunieKeyStore
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.github.catatafishen.agentbridge.services.GenericSettings

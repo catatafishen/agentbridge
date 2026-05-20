@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.agent.AgentException;
+import com.github.catatafishen.agentbridge.client.AgentException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import org.junit.jupiter.api.BeforeEach;

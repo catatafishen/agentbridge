@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient
+import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentProfileManager

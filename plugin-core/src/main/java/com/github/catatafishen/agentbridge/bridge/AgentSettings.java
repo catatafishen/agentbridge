@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.acp.client.AcpClient;
+import com.github.catatafishen.agentbridge.client.acp.AcpClient;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;

@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.agent.AgentRegistry;
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
+import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.client.AgentRegistry;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;

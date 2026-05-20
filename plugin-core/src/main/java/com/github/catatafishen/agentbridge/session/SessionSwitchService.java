@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.session;
 
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.GenericSettings;
@@ -655,7 +655,7 @@ public final class SessionSwitchService implements Disposable {
      * ({@link PropertiesComponent}) and the file-based fallback on disk.
      *
      * <p>Call this when the user explicitly requests a fresh session (no resume),
-     * so that {@link com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient#createSession}
+     * so that {@link ClaudeCliClient#createSession}
      * does not find a stale resume ID and pass {@code --resume} to the CLI.</p>
      */
     public void clearClaudeResumeState() {
