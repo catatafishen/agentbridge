@@ -321,9 +321,10 @@ class ChatToolWindowContent(
 
     private fun setupTitleBarActions() {
         val actions = listOf(
+            SidePanelToggleAction(),
+            Separator.create(),
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
-            SidePanelToggleAction(),
             Separator.create(),
             StatisticsAction(),
             SettingsAction()
@@ -2079,38 +2080,38 @@ class ChatToolWindowContent(
         }
     }
 
-    private inner class SidePanelToggleAction : ToggleAction(
-        "Side Panel",
-        "Show or hide the side panel (Review, Project Files, Prompts)",
-        AllIcons.Actions.PreviewDetails
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+private inner class SidePanelToggleAction : AnAction(
+    "Show Side Panel",
+    "Show or hide the side panel (Review, Project Files, Prompts)",
+    AllIcons.General.ChevronRight
+) {
+    override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
-        override fun isSelected(e: AnActionEvent): Boolean =
-            rootSplitter.proportion >= 0.01f
+    override fun update(e: AnActionEvent) {
+        val isOpen = rootSplitter.proportion >= 0.01f
+        e.presentation.icon = if (isOpen) AllIcons.General.ChevronLeft else AllIcons.General.ChevronRight
+        e.presentation.text = if (isOpen) "Hide Side Panel" else "Show Side Panel"
+    }
 
-        override fun setSelected(e: AnActionEvent, state: Boolean) {
-            if (state) {
-                ensureSidePanelAvailable()
-                // When showing: record the current tool window width (= chat width when side is hidden),
-                // then expand the tool window by the side panel width so the chat area stays the same size.
-                val chatWidth = rootSplitter.width
-                rootSplitter.proportion = defaultReviewProportion
-                if (chatWidth > 0) {
-                    val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
-                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
-                }
-            } else {
-                // When hiding: record the current side panel width, collapse it,
-                // then shrink the tool window by that width to restore the original chat area size.
-                val sideWidth = rootSplitter.firstComponent?.width ?: 0
-                rootSplitter.proportion = 0.0f
-                if (sideWidth > 0) {
-                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
-                }
+    override fun actionPerformed(e: AnActionEvent) {
+        val isOpen = rootSplitter.proportion >= 0.01f
+        if (!isOpen) {
+            ensureSidePanelAvailable()
+            val chatWidth = rootSplitter.width
+            rootSplitter.proportion = defaultReviewProportion
+            if (chatWidth > 0) {
+                val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
+                (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
+            }
+        } else {
+            val sideWidth = rootSplitter.firstComponent?.width ?: 0
+            rootSplitter.proportion = 0.0f
+            if (sideWidth > 0) {
+                (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
             }
         }
     }
+}
 
     /**
      * Switches between single-content mode (side panel closed) and multi-content
