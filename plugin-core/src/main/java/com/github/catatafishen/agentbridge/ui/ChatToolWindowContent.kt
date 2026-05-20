@@ -137,13 +137,13 @@ class ChatToolWindowContent(
     private var pauseTypingBalloon: com.intellij.openapi.ui.popup.Balloon? = null
 
     private val pauseTypingBubbleListener = McpPauseService.PauseListener { state ->
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater({
             when (state) {
                 McpPauseService.PauseState.PAUSED -> if (pausedByTyping) showPauseTypingBubble()
                 McpPauseService.PauseState.RUNNING,
                 McpPauseService.PauseState.PENDING -> dismissPauseTypingBubble()
             }
-        }
+        }, com.intellij.openapi.util.Condition<Any?> { project.isDisposed })
     }
 
     /** Human-typed portion of the pending nudge bubble — for restore-to-input when a turn ends unhandled. */
@@ -1317,7 +1317,7 @@ class ChatToolWindowContent(
         val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
             // GridBagLayout with HORIZONTAL fill: gives the toolbar the full available width
-            // (so overflow calculates correctly) while WEST anchor centers it vertically.
+            // (so overflow calculates correctly) while the default CENTER anchor centers it vertically.
             val hintWrapper = JBPanel<JBPanel<*>>(GridBagLayout()).apply {
                 isOpaque = false
                 add(shortcutHintToolbar.component, GridBagConstraints().apply {
@@ -1589,7 +1589,11 @@ class ChatToolWindowContent(
         controlsToolbar.component.border = JBUI.Borders.empty(8, 4, 4, 0)
         controlsToolbar.component.isOpaque = false
 
-        McpPauseService.getInstance(project).addListener(pauseTypingBubbleListener)
+        val pauseService = McpPauseService.getInstance(project)
+        pauseService.addListener(pauseTypingBubbleListener)
+        com.intellij.openapi.util.Disposer.register(toolWindow.disposable) {
+            pauseService.removeListener(pauseTypingBubbleListener)
+        }
 
         return controlsToolbar.component
     }
