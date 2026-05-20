@@ -1,12 +1,12 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.model.Model
-import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.client.acp.KiroClient
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient
 import com.github.catatafishen.agentbridge.client.codex.CodexClient
+import com.github.catatafishen.agentbridge.model.Model
+import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.db.ConversationService
@@ -15,6 +15,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
+import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
@@ -110,7 +111,8 @@ class ChatToolWindowContent(
     private lateinit var innerInputToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
-    private lateinit var shortcutHintPanel: PromptShortcutHintPanel
+    private val shortcutHintGroup = DefaultActionGroup()
+    private lateinit var shortcutHintToolbar: ActionToolbar
     private val queuedTexts = ArrayDeque<String>()
 
     /** Tracks whether the current pause was triggered by typing in the input box. */
@@ -1130,7 +1132,13 @@ class ChatToolWindowContent(
         appendNewEntries = { persistenceManager.appendNewEntries() },
         appendNewEntriesThrottled = { persistenceManager.appendNewEntriesThrottled() },
         notifyIfUnfocused = ::notifyIfUnfocused,
-        saveTurnStatistics = { prompt, toolCalls, modelId -> persistenceManager.saveTurnStatistics(prompt, toolCalls, modelId) },
+        saveTurnStatistics = { prompt, toolCalls, modelId ->
+            persistenceManager.saveTurnStatistics(
+                prompt,
+                toolCalls,
+                modelId
+            )
+        },
         updateSessionInfo = ::updateSessionInfo,
         requestFocusAfterTurn = { promptTextArea.requestFocusInWindow() },
         onTimerIncrementToolCalls = {
@@ -1199,6 +1207,7 @@ class ChatToolWindowContent(
                     )
                     updateSessionInfo()
                 }
+
                 override fun clearAndRemoveNudge(id: String) = this@ChatToolWindowContent.clearAndRemoveNudge(id)
                 override fun refreshShortcutHints() = this@ChatToolWindowContent.refreshShortcutHints()
                 override val isSending: Boolean get() = this@ChatToolWindowContent.isSending
@@ -1215,9 +1224,11 @@ class ChatToolWindowContent(
         )
 
         // Shortcut hint bar — initialized here so input wiring below can reference it.
-        shortcutHintPanel = PromptShortcutHintPanel()
-        shortcutHintPanel.isVisible =
-            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+        shortcutHintToolbar = ActionManager.getInstance()
+            .createActionToolbar("AgentShortcutHints", shortcutHintGroup, true)
+        shortcutHintToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
+        shortcutHintToolbar.component.isOpaque = false
+        shortcutHintToolbar.component.border = JBUI.Borders.empty()
 
         promptTextArea.addSettingsProvider { editor ->
             promptEditorSetup.setupDragDrop(editor)
@@ -1289,7 +1300,7 @@ class ChatToolWindowContent(
 
         val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            add(shortcutHintPanel, BorderLayout.CENTER)
+            add(shortcutHintToolbar.component, BorderLayout.CENTER)
             add(innerInputToolbar.component, BorderLayout.EAST)
         }
         row.add(footerPanel, BorderLayout.SOUTH)
@@ -1406,8 +1417,26 @@ class ChatToolWindowContent(
     }
 
     fun setShortcutHintsVisible() {
-        if (!::shortcutHintPanel.isInitialized) return
+        if (!::shortcutHintToolbar.isInitialized) return
         refreshShortcutHints()
+    }
+
+    private class ShortcutHintAction(
+        private val stroke: KeyStroke,
+        private val label: String,
+    ) : AnAction(), CustomComponentAction {
+        init {
+            templatePresentation.text = KeyBadge.formatKeystroke(stroke) + " " + label
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = false
+        }
+
+        override fun actionPerformed(e: AnActionEvent) = Unit
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent =
+            PromptShortcutHintPanel.createHintCell(stroke, label)
     }
 
     /**
@@ -1420,7 +1449,7 @@ class ChatToolWindowContent(
      *   hint is appended so the user knows they can recall it.
      */
     private fun refreshShortcutHints() {
-        if (!::shortcutHintPanel.isInitialized) return
+        if (!::shortcutHintToolbar.isInitialized) return
         val list = mutableListOf<Pair<KeyStroke, String>>()
         if (isSending) {
             list += PromptShortcutAction.resolveKeystroke(
@@ -1457,8 +1486,10 @@ class ChatToolWindowContent(
         if (activeBubbleId != null || queuedTexts.isNotEmpty()) {
             list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
         }
-        shortcutHintPanel.setShortcuts(list)
-        shortcutHintPanel.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
+        shortcutHintGroup.removeAll()
+        list.forEach { (stroke, label) -> shortcutHintGroup.add(ShortcutHintAction(stroke, label)) }
+        shortcutHintToolbar.component.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
+        shortcutHintToolbar.updateActionsAsync()
     }
 
     private fun setSendingState(sending: Boolean) {
@@ -1573,7 +1604,7 @@ class ChatToolWindowContent(
                 val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
                     .createActionGroupPopup(
                         null, group, e.dataContext,
-                        com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+                        com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.MNEMONICS, false
                     )
                 popup.showUnderneathOf(component)
             }
@@ -1770,7 +1801,7 @@ class ChatToolWindowContent(
                     null,
                     group,
                     DataContext.EMPTY_CONTEXT,
-                    JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+                    JBPopupFactory.ActionSelectionAid.MNEMONICS,
                     false
                 )
             popup.showUnderneathOf(anchor)
@@ -1823,7 +1854,7 @@ class ChatToolWindowContent(
             })
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
-                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.MNEMONICS, false
             )
             popup.showUnderneathOf(component)
         }
@@ -1876,7 +1907,7 @@ class ChatToolWindowContent(
             if (group.childrenCount == 0) return
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
-                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.MNEMONICS, false
             )
             popup.showUnderneathOf(component)
         }

@@ -8,37 +8,23 @@ import javax.swing.JPanel
 import javax.swing.KeyStroke
 
 /**
- * A panel that displays keyboard shortcut hints (e.g. "Enter Send", "Shift+Enter New line").
- * Call [setShortcuts] to update the displayed hint cells.
+ * Factory for keyboard shortcut hint cells used in the input footer toolbar.
+ * Call [createHintCell] to build a single key-badge + label cell for use
+ * as a [com.intellij.openapi.actionSystem.CustomComponentAction] component.
  */
-class PromptShortcutHintPanel : JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)) {
+object PromptShortcutHintPanel {
 
-    init {
-        isOpaque = false
-        border = JBUI.Borders.empty()
-    }
-
-    fun setShortcuts(shortcuts: List<Pair<KeyStroke, String>>) {
-        removeAll()
-        shortcuts.forEach { (stroke, label) -> add(createHintCell(stroke, label)) }
-        revalidate()
-        repaint()
-    }
-
-    companion object {
-        fun createHintCell(stroke: KeyStroke, label: String): JPanel {
-            val cell = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(2), 0)).apply {
-                isOpaque = false
-                border = JBUI.Borders.empty()
-            }
-            KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
-            cell.add(JBLabel(label).apply {
-                font = JBUI.Fonts.smallFont()
-                foreground = UIUtil.getContextHelpForeground()
-                border = JBUI.Borders.emptyLeft(2)
-            })
-            return cell
+    fun createHintCell(stroke: KeyStroke, label: String): JPanel {
+        val cell = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty()
         }
-
+        KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
+        cell.add(JBLabel(label).apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyLeft(2)
+        })
+        return cell
     }
 }
