@@ -730,6 +730,9 @@ popup menus in two places:
 
 **What was tried (reverted in commit `fix/shortcut-hints-alignment-and-ctrl-q`):**
 
+Note: other action popups in the codebase (send-stop, attach, session) already use
+`ActionSelectionAid.MNEMONICS` and are unrelated to this issue.
+
 *Model selector (ungrouped path):*
 
 Overrode `createActionPopup` in `ModelSelectorAction` to call
