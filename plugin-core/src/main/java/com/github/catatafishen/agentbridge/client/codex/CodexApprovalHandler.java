@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.client.codex;
 
-import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient.PermissionPrompt;
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
+import com.github.catatafishen.agentbridge.client.AbstractClient.PermissionPrompt;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.services.ToolPermission;

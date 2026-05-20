@@ -12,6 +12,12 @@
       "timeout": 10,
       "failSilently": true,
       "async": false
+    },
+    {
+      "script": "scripts/commit-message-quality-reminder.sh",
+      "timeout": 5,
+      "failSilently": true,
+      "async": false
     }
   ]
 }
