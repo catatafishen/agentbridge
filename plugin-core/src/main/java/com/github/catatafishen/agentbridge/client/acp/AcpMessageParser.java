@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Location;
 import com.github.catatafishen.agentbridge.model.PlanEntry;
@@ -101,12 +102,11 @@ class AcpMessageParser {
             // Currently used by: OpenCode (fields: used, size, cost.amount, cost.currency).
             // 'used' is cumulative context tokens (not per-turn delta), so the toolbar value grows each turn.
             case "usage_update" -> parseUsageUpdate(params);
-            // config_option_update: sent by Copilot CLI when agent configuration changes (e.g. model,
-            // tool filters). Fields are undocumented; we acknowledge and ignore for now.
-            case "config_option_update" -> {
-                LOG.debug(displayName.get() + ": received config_option_update (not yet handled)");
-                yield null;
-            }
+            // config_option_update: sent by ACP agents (e.g. Copilot CLI) when available config
+            // options change — e.g. when switching to a model with a different set of
+            // reasoning effort levels. The notification contains either a "configOptions" array
+            // (full replacement) or a single option object (Copilot's wire format).
+            case "config_option_update" -> parseConfigOptionUpdate(params);
             default -> {
                 LOG.warn(displayName.get() + ": unknown session update type: '" + type + "'");
                 yield null;
@@ -305,5 +305,71 @@ class AcpMessageParser {
     static String getStringOrEmpty(JsonObject obj, String key) {
         return obj.has(key) && obj.get(key).isJsonPrimitive()
             ? obj.get(key).getAsString() : "";
+    }
+
+    @Nullable
+    private static String getStringOrNull(JsonObject obj, String key) {
+        if (!obj.has(key) || !obj.get(key).isJsonPrimitive()) return null;
+        return obj.get(key).getAsString();
+    }
+
+    /**
+     * Parses a {@code config_option_update} session/update notification.
+     * Handles two formats:
+     * <ul>
+     *   <li>Full replacement: {@code {"configOptions": [{id, label/name, values/options, selectedValueId/currentValue}, ...]}}
+     *   <li>Single option: the notification object itself is the option descriptor
+     * </ul>
+     * The format is not officially documented; both shapes are handled defensively.
+     */
+    private SessionUpdate.ConfigOptionsChanged parseConfigOptionUpdate(JsonObject params) {
+        List<NewSessionResponse.SessionConfigOption> options = new ArrayList<>();
+        if (params.has("configOptions") && params.get("configOptions").isJsonArray()) {
+            for (JsonElement e : params.getAsJsonArray("configOptions")) {
+                if (e.isJsonObject()) {
+                    options.add(parseConfigOption(e.getAsJsonObject()));
+                }
+            }
+        } else if (params.has("id")) {
+            // Single-option update: the notification IS the option descriptor.
+            NewSessionResponse.SessionConfigOption opt = parseConfigOption(params);
+            options.add(opt);
+        } else {
+            LOG.warn(displayName.get() + ": config_option_update has unrecognised structure: " + params);
+        }
+        LOG.debug(displayName.get() + ": config_option_update — " + options.size() + " option(s)");
+        return new SessionUpdate.ConfigOptionsChanged(options);
+    }
+
+    /**
+     * Parses a single config option object, handling both the ACP spec format
+     * ({@code label}, {@code values}, {@code selectedValueId}) and Copilot's wire format
+     * ({@code name}, {@code options}, {@code currentValue}, value ids as {@code value}).
+     */
+    private static NewSessionResponse.SessionConfigOption parseConfigOption(JsonObject obj) {
+        String id = getStringOrNull(obj, "id");
+        String label = getStringOrNull(obj, "label");
+        if (label == null) label = getStringOrNull(obj, "name");
+        if (label == null) label = id != null ? id : "";
+        String selectedValueId = getStringOrNull(obj, "selectedValueId");
+        if (selectedValueId == null) selectedValueId = getStringOrNull(obj, "currentValue");
+
+        List<NewSessionResponse.SessionConfigOptionValue> values = new ArrayList<>();
+        JsonElement valuesEl = obj.has("values") ? obj.get("values")
+            : obj.has("options") ? obj.get("options") : null;
+        if (valuesEl != null && valuesEl.isJsonArray()) {
+            for (JsonElement e : valuesEl.getAsJsonArray()) {
+                if (!e.isJsonObject()) continue;
+                JsonObject vo = e.getAsJsonObject();
+                String valueId = getStringOrNull(vo, "id");
+                if (valueId == null) valueId = getStringOrNull(vo, "value");
+                if (valueId == null) continue;
+                String valueLabel = getStringOrNull(vo, "label");
+                if (valueLabel == null) valueLabel = getStringOrNull(vo, "name");
+                if (valueLabel == null) valueLabel = valueId;
+                values.add(new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel));
+            }
+        }
+        return new NewSessionResponse.SessionConfigOption(id, label, null, values, selectedValueId);
     }
 }
