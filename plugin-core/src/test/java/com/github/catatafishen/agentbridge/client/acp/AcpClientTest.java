@@ -700,9 +700,9 @@ class AcpClientTest {
             List<AbstractClient.AgentMode> result = AcpClient.mapModesStatic(List.of(mode));
 
             assertEquals(1, result.size());
-            assertEquals("code", result.get(0).slug());
-            assertEquals("Code", result.get(0).name());
-            assertEquals("Write code", result.get(0).description());
+            assertEquals("code", result.getFirst().slug());
+            assertEquals("Code", result.getFirst().name());
+            assertEquals("Write code", result.getFirst().description());
         }
 
         @Test
@@ -745,13 +745,13 @@ class AcpClientTest {
             List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
 
             assertEquals(1, result.size());
-            var mapped = result.get(0);
+            var mapped = result.getFirst();
             assertEquals("opt1", mapped.id());
             assertEquals("Option 1", mapped.label());
             assertEquals("desc", mapped.description());
             assertEquals(2, mapped.values().size());
-            assertEquals("v1", mapped.values().get(0).id());
-            assertEquals("Value 1", mapped.values().get(0).label());
+            assertEquals("v1", mapped.values().getFirst().id());
+            assertEquals("Value 1", mapped.values().getFirst().label());
             assertEquals("v1", mapped.selectedValueId());
         }
 
@@ -762,8 +762,8 @@ class AcpClientTest {
             List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
 
             assertEquals(1, result.size());
-            assertEquals("", result.get(0).id());
-            assertEquals("", result.get(0).label()); // label falls back to optId which is ""
+            assertEquals("", result.getFirst().id());
+            assertEquals("", result.getFirst().label()); // label falls back to optId which is ""
         }
 
         @Test
@@ -773,7 +773,7 @@ class AcpClientTest {
             List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
 
             assertEquals(1, result.size());
-            assertTrue(result.get(0).values().isEmpty());
+            assertTrue(result.getFirst().values().isEmpty());
         }
     }
 
@@ -797,7 +797,7 @@ class AcpClientTest {
             var opt2 = makeOpt("o2", "Opt2", "c");
 
             List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
-                List.of(opt1, opt2), Collections.emptySet());
+                List.of(opt1, opt2), Collections.emptySet(), Collections.emptySet());
 
             assertEquals(2, result.size());
             assertEquals("o1", result.get(0).key());
@@ -809,7 +809,7 @@ class AcpClientTest {
             var opt = makeOpt("models", "Model", "m1", "m2");
 
             List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
-                List.of(opt), Set.of("m1", "m2"));
+                List.of(opt), Set.of("m1", "m2"), Collections.emptySet());
 
             assertTrue(result.isEmpty());
         }
@@ -819,7 +819,7 @@ class AcpClientTest {
             var opt = makeOpt("models", "Model", "m1");
 
             List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
-                List.of(opt), Set.of("m1", "m2", "m3"));
+                List.of(opt), Set.of("m1", "m2", "m3"), Collections.emptySet());
 
             assertTrue(result.isEmpty());
         }
@@ -829,23 +829,46 @@ class AcpClientTest {
             var opt = makeOpt("theme", "Theme", "dark", "light", "m1");
 
             List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
-                List.of(opt), Set.of("m1", "m2"));
+                List.of(opt), Set.of("m1", "m2"), Collections.emptySet());
 
             assertEquals(1, result.size());
-            assertEquals("theme", result.get(0).key());
-            assertEquals(List.of("dark", "light", "m1"), result.get(0).values());
-            assertEquals("Label-dark", result.get(0).labels().get("dark"));
+            assertEquals("theme", result.getFirst().key());
+            assertEquals(List.of("dark", "light", "m1"), result.getFirst().values());
+            var labels = result.getFirst().labels();
+            assertNotNull(labels);
+            assertEquals("Label-dark", labels.get("dark"));
         }
 
         @Test
-        void optionWithNoValuesIsIncluded() {
+        void optionWithNoValuesIsFilteredOut() {
             var opt = makeOpt("empty", "Empty");
 
             List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
-                List.of(opt), Set.of("m1", "m2"));
+                List.of(opt), Set.of("m1", "m2"), Collections.emptySet());
 
             // optValueIds is empty; containsAll(empty) is always true → filtered out
             assertTrue(result.isEmpty());
+        }
+
+        @Test
+        void agentSlugsCoverOptionValuesIsFilteredOut() {
+            var opt = makeOpt("agent", "Agent", "intellij-default", "intellij-explore");
+
+            List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
+                List.of(opt), Collections.emptySet(),
+                Set.of("intellij-default", "intellij-explore", "intellij-edit"));
+
+            assertTrue(result.isEmpty());
+        }
+
+        @Test
+        void emptyAgentSlugsDoesNotFilterAgentOptions() {
+            var opt = makeOpt("agent", "Agent", "intellij-default", "intellij-explore");
+
+            List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
+                List.of(opt), Collections.emptySet(), Collections.emptySet());
+
+            assertEquals(1, result.size());
         }
     }
 

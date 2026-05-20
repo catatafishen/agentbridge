@@ -974,21 +974,29 @@ public abstract class AcpClient extends AbstractClient {
      * Bridges ACP config options (from session/new) to the {@link SessionOption} type used by
      * the UI toolbar dropdowns. Called by the toolbar on every repaint — returns the live list.
      *
-     * <p>Config options whose values exactly cover the available model list are suppressed when
+     * <p>Config options whose values are a subset of the available model list are suppressed when
      * the session already provided a proper {@code models} array. Such options are a fallback
      * for clients that don't advertise models at session start; exposing them alongside the
      * primary model selector would render a duplicate model dropdown.</p>
+     *
+     * <p>Config options whose values are a subset of the available agent slugs are similarly
+     * suppressed when the client already exposes agent selection through its own
+     * {@code getAvailableAgents()} list (e.g. Copilot CLI advertising the agent definition files
+     * it was given as a config option).</p>
      */
     static List<SessionOption> filterSessionOptionsStatic(
         @NotNull List<AbstractClient.AgentConfigOption> configOptions,
-        @NotNull Set<String> sessionModelIds) {
+        @NotNull Set<String> sessionModelIds,
+        @NotNull Set<String> agentSlugs) {
         return configOptions.stream()
             .filter(opt -> {
-                if (sessionModelIds.isEmpty()) return true;
                 Set<String> optValueIds = opt.values().stream()
                     .map(AbstractClient.AgentConfigOptionValue::id)
                     .collect(Collectors.toSet());
-                return !sessionModelIds.equals(optValueIds) && !sessionModelIds.containsAll(optValueIds);
+                // Suppress if values are covered by the model list (avoids duplicate model dropdown)
+                // Suppress if values are covered by the agent list (avoids duplicate agent dropdown)
+                return (sessionModelIds.isEmpty() || !sessionModelIds.containsAll(optValueIds))
+                    && (agentSlugs.isEmpty() || !agentSlugs.containsAll(optValueIds));
             })
             .map(opt -> {
                 List<String> valueIds = opt.values().stream()
@@ -1011,7 +1019,11 @@ public abstract class AcpClient extends AbstractClient {
         Set<String> sessionModelIds = availableModels.isEmpty()
             ? Collections.emptySet()
             : availableModels.stream().map(Model::id).collect(Collectors.toSet());
-        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds);
+        List<AgentMode> agents = getAvailableAgents();
+        Set<String> agentSlugs = agents.isEmpty()
+            ? Collections.emptySet()
+            : agents.stream().map(AgentMode::slug).collect(Collectors.toSet());
+        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds, agentSlugs);
     }
 
     /**
