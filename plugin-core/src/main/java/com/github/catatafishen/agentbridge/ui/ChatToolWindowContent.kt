@@ -11,6 +11,7 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings
+import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.PREF_SIDE_PANEL_OPEN
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
@@ -1107,7 +1108,11 @@ class ChatToolWindowContent(
     /**
      * Called from the [rootSplitter] [java.beans.PropertyChangeListener] on every proportion change
      * (drag or toggle button). Updates the title-bar tab mode when the open/closed threshold is
-     * crossed and persists the pref — the single source of truth for tab visibility.
+     * crossed and persists the preference.
+     *
+     * <p>Runtime open/closed state is canonical in [contentWrappers] — [SidePanelToggleAction] sets
+     * it atomically and uses it as the source of truth. [PREF_SIDE_PANEL_OPEN] is only used to
+     * restore state on startup.
      *
      * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
      * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
@@ -2241,6 +2246,7 @@ class ChatToolWindowContent(
      * <p>Must be called on the EDT.
      */
     private fun updateSideTabContents(open: Boolean) {
+        val alreadyGuarded = isUpdatingContentTabs
         isUpdatingContentTabs = true
         try {
             val contentManager = toolWindow.contentManager
@@ -2287,11 +2293,9 @@ class ChatToolWindowContent(
                 contentManager.addContent(content)
             }
         } finally {
-            isUpdatingContentTabs = false
+            if (!alreadyGuarded) isUpdatingContentTabs = false
         }
     }
-
-    /** Handles a user clicking a native content tab: re-parents [rootSplitter] and switches the side panel. */
     private fun onContentTabSelected(tabIndex: Int) {
         isUpdatingContentTabs = true
         try {
