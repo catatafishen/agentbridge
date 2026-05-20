@@ -1,10 +1,10 @@
 package com.github.catatafishen.agentbridge.client;
 
-import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
+import com.github.catatafishen.agentbridge.bridge.SessionOption;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
