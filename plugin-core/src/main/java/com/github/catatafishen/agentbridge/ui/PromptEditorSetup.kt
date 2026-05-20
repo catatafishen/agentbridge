@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.client.acp.KiroClient
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentNudgeService
-import com.github.catatafishen.agentbridge.client.acp.KiroClient
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.application.ApplicationManager
@@ -10,8 +10,13 @@ import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.EditorTextField
-import java.awt.*
-import javax.swing.*
+import java.awt.Image
+import java.awt.KeyboardFocusManager
+import java.awt.Toolkit
+import javax.swing.JComponent
+import javax.swing.KeyStroke
+import javax.swing.ListSelectionModel
+import javax.swing.SwingUtilities
 
 /**
  * Encapsulates all prompt editor wiring: key bindings, paste interception,
@@ -122,23 +127,14 @@ internal class PromptEditorSetup(
             return
         }
 
-        val text = promptTextArea.text
-        if (!text.startsWith("/") || text.contains("\n")) {
-            autocompletePopup?.cancel()
-            return
-        }
-
         val commands = client.availableCommands
         if (commands.size() == 0) return
 
-        val matches = mutableListOf<String>()
-        for (i in 0 until commands.size()) {
-            val cmdObj = commands[i].asJsonObject
-            val cmd = cmdObj["name"]?.asString ?: continue
-            if (cmd.startsWith(text, ignoreCase = true)) {
-                matches.add(cmd)
-            }
+        val commandNames = (0 until commands.size()).mapNotNull { i ->
+            commands[i].asJsonObject["name"]?.asString
         }
+
+        val matches = PromptEditorLogic.filterSlashCommands(promptTextArea.text, commandNames)
 
         if (matches.isEmpty()) {
             autocompletePopup?.cancel()
@@ -163,11 +159,14 @@ internal class PromptEditorSetup(
     private fun registerEnterSend(contentComponent: JComponent) {
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
-                if (promptTextArea.text.isBlank() || callbacks.authPendingError != null) return
-                when {
-                    callbacks.consolePanel.hasPendingAskUserRequest() -> callbacks.onSendOrStop()
-                    callbacks.isSending -> callbacks.onNudge()
-                    else -> callbacks.onSendOrStop()
+                when (PromptEditorLogic.resolveEnterAction(
+                    promptTextArea.text,
+                    callbacks.authPendingError != null,
+                    callbacks.consolePanel.hasPendingAskUserRequest(),
+                    callbacks.isSending
+                )) {
+                    "send" -> callbacks.onSendOrStop()
+                    "nudge" -> callbacks.onNudge()
                 }
             }
         }.registerCustomShortcutSet(
@@ -353,7 +352,7 @@ internal class PromptEditorSetup(
         val clipText = contextManager.getClipboardText()
         val minLines = chatInputSettings.smartPasteMinLines
         val minChars = chatInputSettings.smartPasteMinChars
-        if (clipText == null || (clipText.lines().size <= minLines && clipText.length <= minChars)) return false
+        if (clipText == null || !PromptEditorLogic.shouldSmartPaste(clipText, minLines, minChars)) return false
 
         val projectSource = contextManager.findClipboardSourceInProject(clipText)
         event.consume()
@@ -464,7 +463,7 @@ internal class PromptEditorSetup(
         val minLines = chatInputSettings.smartPasteMinLines
         val minChars = chatInputSettings.smartPasteMinChars
 
-        if (text.lines().size <= minLines && text.length <= minChars) {
+        if (!PromptEditorLogic.shouldSmartPaste(text, minLines, minChars)) {
             com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                 val offset = editor.caretModel.offset
                 editor.document.insertString(offset, text)
