@@ -16,11 +16,13 @@ import java.util.concurrent.CopyOnWriteArrayList
  * (prompt addition, text streaming, tool call tracking, turn stats) go through
  * here. UI panels observe via [addChangeListener] and render accordingly.
  *
- * Thread safety: all mutations are expected on the EDT. The change listeners
+ * Thread safety: all access is synchronized via [lock]. Callers may invoke from
+ * any thread (EDT, streaming threads, background pool). The change listeners
  * list uses CopyOnWriteArrayList for safe iteration during notification.
  */
 class ConversationEntryStore {
 
+    private val lock = Any()
     private val _entries = mutableListOf<EntryData>()
     private var _currentText: EntryData.Text? = null
     private var _currentThinking: EntryData.Thinking? = null
@@ -33,15 +35,15 @@ class ConversationEntryStore {
     // ── Public read access ────────────────────────────────────────────────────
 
     /** Returns a defensive copy of the entries list. */
-    fun getEntries(): List<EntryData> = _entries.toList()
+    fun getEntries(): List<EntryData> = synchronized(lock) { _entries.toList() }
 
     /** Returns a snapshot (ArrayList copy) for iteration outside EDT. */
-    fun entriesSnapshot(): List<EntryData> = ArrayList(_entries)
+    fun entriesSnapshot(): List<EntryData> = synchronized(lock) { ArrayList(_entries) }
 
     /** Checks if an entry with the given ID is already tracked. */
-    fun isEntryTracked(entryId: String): Boolean = _entries.any { it.entryId == entryId }
+    fun isEntryTracked(entryId: String): Boolean = synchronized(lock) { _entries.any { it.entryId == entryId } }
 
-    val currentAgent: String get() = _currentAgent
+    val currentAgent: String get() = synchronized(lock) { _currentAgent }
 
     // ── Change listeners ──────────────────────────────────────────────────────
 
@@ -57,21 +59,23 @@ class ConversationEntryStore {
 
     // ── Mutations ─────────────────────────────────────────────────────────────
 
-    fun setCurrentAgent(agentName: String) {
+    fun setCurrentAgent(agentName: String) = synchronized(lock) {
         _currentAgent = agentName
     }
 
     fun addPromptEntry(text: String, contextFiles: List<ContextFileRef>?, entryId: String) {
-        val entry = EntryData.Prompt(text, timestamp(), contextFiles, id = entryId)
-        _entries.add(entry)
+        synchronized(lock) {
+            val entry = EntryData.Prompt(text, timestamp(), contextFiles, id = entryId)
+            _entries.add(entry)
+        }
         fireChanged()
     }
 
-    fun removePromptEntry(entryId: String) {
+    fun removePromptEntry(entryId: String) = synchronized(lock) {
         _entries.removeIf { it.entryId == entryId }
     }
 
-    fun startStreaming() {
+    fun startStreaming() = synchronized(lock) {
         _currentText = null
         _currentThinking = null
     }
@@ -80,7 +84,7 @@ class ConversationEntryStore {
      * Appends text to the current streaming response. If no Text entry exists yet,
      * creates one and adds it to the entries list.
      */
-    fun appendText(text: String) {
+    fun appendText(text: String) = synchronized(lock) {
         val current = _currentText
         if (current == null) {
             _currentText = EntryData.Text(text, timestamp(), _currentAgent).also { _entries.add(it) }
@@ -93,7 +97,7 @@ class ConversationEntryStore {
      * Appends thinking text to the current thinking block. If no Thinking entry
      * exists yet, creates one and adds it to the entries list.
      */
-    fun appendThinkingText(text: String) {
+    fun appendThinkingText(text: String) = synchronized(lock) {
         val current = _currentThinking
         if (current == null) {
             _currentThinking = EntryData.Thinking(text, timestamp(), _currentAgent).also { _entries.add(it) }
@@ -108,15 +112,17 @@ class ConversationEntryStore {
         arguments: String?,
         kind: String?
     ) {
-        val entry = EntryData.ToolCall(
-            title, arguments, kind ?: "other",
-            timestamp = timestamp(), agent = _currentAgent, entryId = id
-        )
-        _entries.add(entry)
-        _toolCallEntries[id] = entry
+        synchronized(lock) {
+            val entry = EntryData.ToolCall(
+                title, arguments, kind ?: "other",
+                timestamp = timestamp(), agent = _currentAgent, entryId = id
+            )
+            _entries.add(entry)
+            _toolCallEntries[id] = entry
+        }
     }
 
-    fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
+    fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) = synchronized(lock) {
         _toolCallEntries[id]?.let { entry ->
             entry.status = status
             update.details?.let { entry.result = it }
@@ -134,19 +140,20 @@ class ConversationEntryStore {
         prompt: String?,
         initialState: ChatPanelApi.SubAgentInitialState
     ) {
-        val entry = EntryData.SubAgent(
-            agentType, description, prompt,
-            result = initialState.result,
-            status = initialState.status,
-            autoDenied = initialState.autoDenied,
-            denialReason = initialState.denialReason,
-            timestamp = timestamp(), agent = _currentAgent, entryId = id
-        )
-        _entries.add(entry)
-        _subAgentEntries[id] = entry
+        synchronized(lock) {
+            val entry = EntryData.SubAgent(
+                agentType, description, prompt,
+                result = initialState.result,
+                status = initialState.status,
+                autoDenied = initialState.autoDenied,
+                denialReason = initialState.denialReason,
+                timestamp = timestamp(), agent = _currentAgent, entryId = id
+            )
+            _entries.add(entry)
+            _subAgentEntries[id] = entry
+        }
     }
 
-    // description param accepted for API symmetry but not persisted (SubAgent.description is val, set at creation)
     fun updateSubAgentResult(
         id: String,
         status: String,
@@ -154,7 +161,7 @@ class ConversationEntryStore {
         description: String?,
         autoDenied: Boolean,
         denialReason: String?
-    ) {
+    ) = synchronized(lock) {
         _subAgentEntries[id]?.let { entry ->
             entry.status = status
             result?.let { entry.result = it }
@@ -164,44 +171,53 @@ class ConversationEntryStore {
     }
 
     fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
-        _entries.add(EntryData.Nudge(text, id = id, sent = true, timestamp = timestamp(), source = source))
+        synchronized(lock) {
+            _entries.add(EntryData.Nudge(text, id = id, sent = true, timestamp = timestamp(), source = source))
+        }
     }
 
     fun finishResponse() {
-        _currentText = null
-        _currentThinking = null
+        synchronized(lock) {
+            _currentText = null
+            _currentThinking = null
+        }
         fireChanged()
     }
 
     fun emitTurnStats(stats: TurnStatsData): EntryData.TurnStats {
-        val entry = EntryData.TurnStats(
-            turnId = UUID.randomUUID().toString(),
-            durationMs = stats.durationMs,
-            inputTokens = stats.inputTokens.toLong(),
-            outputTokens = stats.outputTokens.toLong(),
-            costUsd = stats.costUsd,
-            toolCallCount = stats.toolCallCount,
-            linesAdded = stats.linesAdded,
-            linesRemoved = stats.linesRemoved,
-            model = stats.model,
-            multiplier = stats.multiplier,
-            timestamp = timestamp(),
-        )
-        _entries.add(entry)
+        val entry: EntryData.TurnStats
+        synchronized(lock) {
+            entry = EntryData.TurnStats(
+                turnId = UUID.randomUUID().toString(),
+                durationMs = stats.durationMs,
+                inputTokens = stats.inputTokens.toLong(),
+                outputTokens = stats.outputTokens.toLong(),
+                costUsd = stats.costUsd,
+                toolCallCount = stats.toolCallCount,
+                linesAdded = stats.linesAdded,
+                linesRemoved = stats.linesRemoved,
+                model = stats.model,
+                multiplier = stats.multiplier,
+                timestamp = timestamp(),
+            )
+            _entries.add(entry)
+        }
         fireChanged()
         return entry
     }
 
-    fun addSessionSeparator(timestamp: String, agent: String) {
+    fun addSessionSeparator(timestamp: String, agent: String) = synchronized(lock) {
         _entries.add(EntryData.SessionSeparator(timestamp, agent))
     }
 
     fun clear() {
-        _entries.clear()
-        _currentText = null
-        _currentThinking = null
-        _toolCallEntries.clear()
-        _subAgentEntries.clear()
+        synchronized(lock) {
+            _entries.clear()
+            _currentText = null
+            _currentThinking = null
+            _toolCallEntries.clear()
+            _subAgentEntries.clear()
+        }
         fireChanged()
     }
 

@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.*
 import com.github.catatafishen.agentbridge.session.ConversationEntryStore
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Consumer
@@ -10,8 +12,14 @@ import javax.swing.JComponent
 /**
  * The single chat panel for a project, delegating all [ChatPanelApi] calls to [nativePanel].
  *
- * Tracks [EntryData] entries as they arrive so that [getEntries], [entriesSnapshot],
- * [isEntryRendered], and [scrollToEntry] work for history persistence and PromptsPanel navigation.
+ * Acts as a **resilience boundary** between the backend (agent/streaming threads) and the
+ * UI (Swing/NativeChatPanel). All write operations:
+ * 1. Update [entryStore] synchronously (thread-safe, never lost)
+ * 2. Dispatch to [nativePanel] via fire-and-forget [invokeLater] (never blocks the caller)
+ *
+ * This ensures that in Gateway/thin-client scenarios with poor connectivity, the agent
+ * can continue working uninterrupted — UI rendering is best-effort while data is always
+ * persisted. When the thin client reconnects, the UI can be rebuilt from the entry store.
  *
  * Use [getInstance] to obtain the panel for a given project.
  */
@@ -22,10 +30,14 @@ class BroadcastChatPanel(
 
     companion object {
         private val instances = ConcurrentHashMap<Project, BroadcastChatPanel>()
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(BroadcastChatPanel::class.java)
 
         @JvmStatic
         fun getInstance(project: Project): BroadcastChatPanel? = instances[project]
     }
+
+    @Volatile
+    private var disposed = false
 
     init {
         instances[project] = this
@@ -33,6 +45,25 @@ class BroadcastChatPanel(
     }
 
     override val component: JComponent = nativePanel.component
+
+    /**
+     * Dispatches a UI update to the EDT. Never blocks the calling thread.
+     * Silently drops the update if the panel is disposed or if an exception occurs
+     * during rendering (e.g., thin client disconnected).
+     */
+    private fun dispatchUi(action: () -> Unit) {
+        if (disposed) return
+        ApplicationManager.getApplication().invokeLater({
+            if (disposed) return@invokeLater
+            try {
+                action()
+            } catch (e: Exception) {
+                if (!disposed) {
+                    LOG.debug("UI dispatch failed (thin client may be disconnected)", e)
+                }
+            }
+        }, ModalityState.defaultModalityState(), project.disposed)
+    }
 
     // ── Entry tracking (delegated to ConversationEntryStore) ───────────────────
 
@@ -44,7 +75,7 @@ class BroadcastChatPanel(
 
     fun isEntryRendered(entryId: String): Boolean = entryStore.isEntryTracked(entryId)
 
-    fun scrollToEntry(entryId: String) = nativePanel.scrollToEntry(entryId)
+    fun scrollToEntry(entryId: String) = dispatchUi { nativePanel.scrollToEntry(entryId) }
 
     fun addEntriesChangeListener(listener: Runnable) = entryStore.addChangeListener(listener)
 
@@ -64,7 +95,7 @@ class BroadcastChatPanel(
             nativePanel.onStatusMessage = value
         }
 
-    // ── Write methods — delegate to nativePanel ────────────────────────────────
+    // ── Write methods — store data (any thread), then dispatch UI (fire-and-forget) ──
 
     override fun addPromptEntry(
         text: String,
@@ -79,43 +110,43 @@ class BroadcastChatPanel(
 
     override fun removePromptEntry(entryId: String) {
         entryStore.removePromptEntry(entryId)
-        nativePanel.removePromptEntry(entryId)
+        dispatchUi { nativePanel.removePromptEntry(entryId) }
     }
 
     override fun startStreaming() {
         entryStore.startStreaming()
-        nativePanel.startStreaming()
+        dispatchUi { nativePanel.startStreaming() }
     }
 
     override fun appendText(text: String) {
         entryStore.appendText(text)
-        nativePanel.appendText(text)
+        dispatchUi { nativePanel.appendText(text) }
     }
 
     override fun appendThinkingText(text: String) {
         entryStore.appendThinkingText(text)
-        nativePanel.appendThinkingText(text)
+        dispatchUi { nativePanel.appendThinkingText(text) }
     }
 
-    override fun collapseThinking() = nativePanel.collapseThinking()
+    override fun collapseThinking() = dispatchUi { nativePanel.collapseThinking() }
 
     override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) =
-        nativePanel.setCodeChangeStats(linesAdded, linesRemoved)
+        dispatchUi { nativePanel.setCodeChangeStats(linesAdded, linesRemoved) }
 
-    override fun setCurrentModel(modelId: String) = nativePanel.setCurrentModel(modelId)
+    override fun setCurrentModel(modelId: String) = dispatchUi { nativePanel.setCurrentModel(modelId) }
 
-    override fun setCurrentProfile(profileId: String) = nativePanel.setCurrentProfile(profileId)
+    override fun setCurrentProfile(profileId: String) = dispatchUi { nativePanel.setCurrentProfile(profileId) }
 
     override fun setCurrentAgent(agentName: String, profileId: String, clientType: String) {
         entryStore.setCurrentAgent(agentName)
-        nativePanel.setCurrentAgent(agentName, profileId, clientType)
+        dispatchUi { nativePanel.setCurrentAgent(agentName, profileId, clientType) }
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) =
-        nativePanel.addContextFilesEntry(files)
+        dispatchUi { nativePanel.addContextFilesEntry(files) }
 
     override fun addImageThumbnails(images: List<ChatPanelApi.ImageAttachment>) =
-        nativePanel.addImageThumbnails(images)
+        dispatchUi { nativePanel.addImageThumbnails(images) }
 
     override fun addToolCallEntry(
         id: String,
@@ -125,12 +156,12 @@ class BroadcastChatPanel(
         isMcpHandled: Boolean
     ) {
         entryStore.addToolCallEntry(id, title, arguments, kind)
-        nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled)
+        dispatchUi { nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled) }
     }
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
         entryStore.updateToolCall(id, status, update)
-        nativePanel.updateToolCall(id, status, update)
+        dispatchUi { nativePanel.updateToolCall(id, status, update) }
     }
 
     override fun addSubAgentEntry(
@@ -141,7 +172,7 @@ class BroadcastChatPanel(
         initialState: ChatPanelApi.SubAgentInitialState
     ) {
         entryStore.addSubAgentEntry(id, agentType, description, prompt, initialState)
-        nativePanel.addSubAgentEntry(id, agentType, description, prompt, initialState)
+        dispatchUi { nativePanel.addSubAgentEntry(id, agentType, description, prompt, initialState) }
     }
 
     override fun updateSubAgentResult(
@@ -153,68 +184,79 @@ class BroadcastChatPanel(
         denialReason: String?
     ) {
         entryStore.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
-        nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
+        dispatchUi { nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason) }
     }
 
     override fun addSubAgentToolCall(
         subAgentId: String, toolId: String, title: String,
         arguments: String?, kind: String?
-    ) = nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind)
+    ) = dispatchUi { nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind) }
 
     override fun updateSubAgentToolCall(
         toolId: String, status: String, details: String?, description: String?,
         autoDenied: Boolean, denialReason: String?
-    ) = nativePanel.updateSubAgentToolCall(toolId, status, details, description, autoDenied, denialReason)
+    ) = dispatchUi {
+        nativePanel.updateSubAgentToolCall(
+            toolId,
+            status,
+            details,
+            description,
+            autoDenied,
+            denialReason
+        )
+    }
 
-    override fun addErrorEntry(message: String) = nativePanel.addErrorEntry(message)
+    override fun addErrorEntry(message: String) = dispatchUi { nativePanel.addErrorEntry(message) }
 
-    override fun addInfoEntry(message: String) = nativePanel.addInfoEntry(message)
+    override fun addInfoEntry(message: String) = dispatchUi { nativePanel.addInfoEntry(message) }
 
     override fun addSessionSeparator(timestamp: String, agent: String) {
         entryStore.addSessionSeparator(timestamp, agent)
-        nativePanel.addSessionSeparator(timestamp, agent)
+        dispatchUi { nativePanel.addSessionSeparator(timestamp, agent) }
     }
 
-    override fun showPlaceholder(text: String) = nativePanel.showPlaceholder(text)
+    override fun showPlaceholder(text: String) = dispatchUi { nativePanel.showPlaceholder(text) }
 
     override fun clear() {
         entryStore.clear()
-        nativePanel.clear()
+        dispatchUi { nativePanel.clear() }
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
         entryStore.finishResponse()
-        nativePanel.finishResponse(toolCallCount, modelId, multiplier)
+        dispatchUi { nativePanel.finishResponse(toolCallCount, modelId, multiplier) }
     }
 
     override fun emitTurnStats(stats: TurnStatsData) {
         entryStore.emitTurnStats(stats)
-        nativePanel.emitTurnStats(stats)
+        dispatchUi { nativePanel.emitTurnStats(stats) }
     }
 
-    override fun showQuickReplies(options: List<String>) = nativePanel.showQuickReplies(options)
+    override fun showQuickReplies(options: List<String>) = dispatchUi { nativePanel.showQuickReplies(options) }
 
-    override fun disableQuickReplies() = nativePanel.disableQuickReplies()
+    override fun disableQuickReplies() = dispatchUi { nativePanel.disableQuickReplies() }
 
-    override fun cancelAllRunning() = nativePanel.cancelAllRunning()
+    override fun cancelAllRunning() = dispatchUi { nativePanel.cancelAllRunning() }
 
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) =
-        nativePanel.showNudgeBubble(id, text, source)
+        dispatchUi { nativePanel.showNudgeBubble(id, text, source) }
 
-    override fun resolveNudgeBubble(id: String) = nativePanel.resolveNudgeBubble(id)
+    override fun resolveNudgeBubble(id: String) = dispatchUi { nativePanel.resolveNudgeBubble(id) }
 
-    override fun removeNudgeBubble(id: String) = nativePanel.removeNudgeBubble(id)
+    override fun removeNudgeBubble(id: String) = dispatchUi { nativePanel.removeNudgeBubble(id) }
 
     override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
         entryStore.addNudgeEntry(id, text, source)
-        nativePanel.addNudgeEntry(id, text, source)
+        dispatchUi { nativePanel.addNudgeEntry(id, text, source) }
     }
 
-    override fun showQueuedMessage(id: String, text: String) = nativePanel.showQueuedMessage(id, text)
+    override fun showQueuedMessage(id: String, text: String) =
+        dispatchUi { nativePanel.showQueuedMessage(id, text) }
 
-    override fun removeQueuedMessage(id: String) = nativePanel.removeQueuedMessage(id)
+    override fun removeQueuedMessage(id: String) = dispatchUi { nativePanel.removeQueuedMessage(id) }
 
-    override fun removeQueuedMessageByText(text: String) = nativePanel.removeQueuedMessageByText(text)
+    override fun removeQueuedMessageByText(text: String) =
+        dispatchUi { nativePanel.removeQueuedMessageByText(text) }
 
     override fun showPermissionRequest(
         reqId: String,
@@ -223,9 +265,11 @@ class BroadcastChatPanel(
         onRespond: (PermissionResponse) -> Unit
     ) {
         _pendingPermissionCallbacks[reqId] = onRespond
-        nativePanel.showPermissionRequest(reqId, toolDisplayName, description) { response ->
-            _pendingPermissionCallbacks.remove(reqId)
-            onRespond(response)
+        dispatchUi {
+            nativePanel.showPermissionRequest(reqId, toolDisplayName, description) { response ->
+                _pendingPermissionCallbacks.remove(reqId)
+                onRespond(response)
+            }
         }
     }
 
@@ -253,7 +297,9 @@ class BroadcastChatPanel(
         onRespond: (String) -> Unit,
         onExtend: () -> Long,
         onSuperseded: () -> Unit,
-    ) = nativePanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
+    ) = dispatchUi {
+        nativePanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
+    }
 
     // ── PermissionPromptProvider (Java interface bridge) ────────────────────────
 
@@ -273,13 +319,13 @@ class BroadcastChatPanel(
         }
 
     fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) =
-        nativePanel.appendEntries(entries, totalPromptCount)
+        dispatchUi { nativePanel.appendEntries(entries, totalPromptCount) }
 
-    fun prependEntries(entries: List<EntryData>) = nativePanel.prependEntries(entries)
+    fun prependEntries(entries: List<EntryData>) = dispatchUi { nativePanel.prependEntries(entries) }
 
-    fun showLoadMore(deferredCount: Int) = nativePanel.showLoadMore(deferredCount)
+    fun showLoadMore(deferredCount: Int) = dispatchUi { nativePanel.showLoadMore(deferredCount) }
 
-    fun hideLoadMore() = nativePanel.hideLoadMore()
+    fun hideLoadMore() = dispatchUi { nativePanel.hideLoadMore() }
 
     // ── Read-only ─────────────────────────────────────────────────────────────
 
@@ -306,6 +352,7 @@ class BroadcastChatPanel(
     // ── Dispose ────────────────────────────────────────────────────────────────
 
     override fun dispose() {
+        disposed = true
         instances.remove(project, this)
         PermissionPromptProviderHolder.unregister(project)
         nativePanel.dispose()
