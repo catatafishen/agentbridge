@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
-import com.github.catatafishen.agentbridge.acp.model.Model;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
-import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AgentException;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import org.junit.jupiter.api.Nested;

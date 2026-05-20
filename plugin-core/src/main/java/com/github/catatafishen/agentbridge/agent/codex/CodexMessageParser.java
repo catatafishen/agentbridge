@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.agent.codex;
 
-import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
-import com.github.catatafishen.agentbridge.acp.model.Model;
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;

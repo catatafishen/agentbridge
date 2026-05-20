@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.acp.model;
 
+import com.github.catatafishen.agentbridge.model.Model;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;

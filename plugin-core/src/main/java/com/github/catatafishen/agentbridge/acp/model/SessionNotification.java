@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.model;
 
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
+
 /**
  * Agent → Client: session update notification.
  *

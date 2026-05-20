@@ -1,13 +1,16 @@
 package com.github.catatafishen.agentbridge.acp.model;
 
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.AgentMessageChunk;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.AgentThoughtChunk;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.BannerLevel;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.ClearOn;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.ToolCall;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.ToolCallStatus;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.ToolKind;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate.UserMessageChunk;
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.Location;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.AgentMessageChunk;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.AgentThoughtChunk;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.BannerLevel;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.ClearOn;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.ToolCall;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.ToolCallStatus;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.ToolKind;
+import com.github.catatafishen.agentbridge.model.SessionUpdate.UserMessageChunk;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

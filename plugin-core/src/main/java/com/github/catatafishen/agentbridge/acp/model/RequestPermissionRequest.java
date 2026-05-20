@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.acp.model;
 
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;

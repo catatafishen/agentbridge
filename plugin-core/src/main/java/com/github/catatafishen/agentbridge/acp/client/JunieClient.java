@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
-import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
-import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.agent.AgentStartException;
 import com.github.catatafishen.agentbridge.agent.junie.JunieKeyStore;
