@@ -1226,7 +1226,9 @@ class ChatToolWindowContent(
         // Shortcut hint bar — initialized here so input wiring below can reference it.
         shortcutHintToolbar = ActionManager.getInstance()
             .createActionToolbar("AgentShortcutHints", shortcutHintGroup, true)
-        shortcutHintToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
+        // isReservePlaceAutoPopupIcon = true restores the native >> overflow chevron when hints
+        // don't fit. Do NOT set NOWRAP_STRATEGY — that disables the chevron entirely.
+        shortcutHintToolbar.isReservePlaceAutoPopupIcon = true
         shortcutHintToolbar.component.isOpaque = false
         shortcutHintToolbar.component.border = JBUI.Borders.empty()
 
@@ -1300,7 +1302,13 @@ class ChatToolWindowContent(
 
         val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            add(shortcutHintToolbar.component, BorderLayout.CENTER)
+            // Wrap hints in a SOUTH-pinned panel so they align to the bottom of the footer row,
+            // matching the visual baseline of the model selector and send button on the EAST side.
+            val hintWrapper = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+                isOpaque = false
+                add(shortcutHintToolbar.component, BorderLayout.SOUTH)
+            }
+            add(hintWrapper, BorderLayout.CENTER)
             add(innerInputToolbar.component, BorderLayout.EAST)
         }
         row.add(footerPanel, BorderLayout.SOUTH)
@@ -2227,7 +2235,22 @@ class ChatToolWindowContent(
             if (agentManager.client.supportsModelGrouping()) {
                 return createGroupedPopup(disposeCallback)
             }
-            return super.createActionPopup(context, component, disposeCallback)
+            // Use MNEMONICS (not SPEEDSEARCH) so IntelliJ 2026.2 does not show
+            // the "Press Ctrl+Q to toggle preview" hint on the model selector dropdown.
+            val group = createPopupActionGroup(component, context)
+            val popup = JBPopupFactory.getInstance()
+                .createActionGroupPopup(
+                    null, group, context,
+                    JBPopupFactory.ActionSelectionAid.MNEMONICS, false
+                )
+            if (disposeCallback != null) {
+                popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
+                    override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
+                        disposeCallback.run()
+                    }
+                })
+            }
+            return popup
         }
 
         private fun createGroupedPopup(disposeCallback: Runnable?): com.intellij.openapi.ui.popup.JBPopup {
