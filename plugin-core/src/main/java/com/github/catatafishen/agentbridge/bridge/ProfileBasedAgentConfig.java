@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.client.claude.BundledAgentDeployer;
 import com.github.catatafishen.agentbridge.client.claude.InstructionsManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
@@ -148,7 +148,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @NotNull String findAgentBinary() throws AgentException {
+    public @NotNull String findAgentBinary() throws ClientException {
         // 1. User-provided custom path takes priority; validate it exists
         String customPath = profile.getCustomBinaryPath();
         if (!customPath.isEmpty()) {
@@ -157,7 +157,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
                 resolvedBinaryPath = customPath;
                 return customPath;
             }
-            throw new AgentException(profile.getDisplayName() + " binary not found at: " + customPath,
+            throw new ClientException(profile.getDisplayName() + " binary not found at: " + customPath,
                 null, false);
         }
 
@@ -186,14 +186,14 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         String hint = profile.getInstallHint().isEmpty()
             ? "Ensure it is installed and available on your PATH."
             : profile.getInstallHint();
-        throw new AgentException(profile.getDisplayName() + " CLI not found. " + hint, null, false);
+        throw new ClientException(profile.getDisplayName() + " CLI not found. " + hint, null, false);
     }
 
     @Override
     @SuppressWarnings("RedundantThrows") // Required by AgentConfig interface, other implementations do throw
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
                                                    @Nullable String projectBasePath,
-                                                   int mcpPort) throws AgentException {
+                                                   int mcpPort) throws ClientException {
         resolvedBinaryPath = binaryPath;
         List<String> cmd = new ArrayList<>();
 

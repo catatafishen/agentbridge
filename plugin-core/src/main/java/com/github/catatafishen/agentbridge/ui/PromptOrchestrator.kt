@@ -3,7 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest
 import com.github.catatafishen.agentbridge.model.SessionUpdate
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient
+import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
@@ -204,7 +204,7 @@ class PromptOrchestrator(
         return true
     }
 
-    private fun ensureSessionCreated(client: AbstractAgentClient): String {
+    private fun ensureSessionCreated(client: AbstractClient): String {
         if (currentSessionId == null) {
             currentSessionId = client.createSession(project.basePath)
             callbacks.updateSessionInfo()
@@ -230,8 +230,8 @@ class PromptOrchestrator(
         return currentSessionId!!
     }
 
-    private fun wirePermissionListener(client: AbstractAgentClient) {
-        client.setPermissionRequestListener { prompt: AbstractAgentClient.PermissionPrompt ->
+    private fun wirePermissionListener(client: AbstractClient) {
+        client.setPermissionRequestListener { prompt: AbstractClient.PermissionPrompt ->
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().showPermissionRequest(
                     prompt.toolCallId(), prompt.toolName(), prompt.arguments() ?: ""
@@ -327,7 +327,7 @@ class PromptOrchestrator(
     }
 
     private fun dispatchPromptWithRetry(
-        client: AbstractAgentClient,
+        client: AbstractClient,
         initialSessionId: String,
         effectivePrompt: String,
         modelId: String,
@@ -421,7 +421,7 @@ class PromptOrchestrator(
      * starts fresh. A warning is shown in the chat so the user knows why the agent lost context.
      */
     private fun sendWithSessionRetry(
-        client: AbstractAgentClient,
+        client: AbstractClient,
         initialSessionId: String,
         sendCall: (String) -> Unit,
     ) {

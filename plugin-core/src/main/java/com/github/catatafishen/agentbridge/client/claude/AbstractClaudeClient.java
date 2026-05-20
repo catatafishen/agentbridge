@@ -3,8 +3,8 @@ package com.github.catatafishen.agentbridge.client.claude;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
@@ -22,19 +22,19 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /**
- * Shared base for Claude-based {@link AbstractAgentClient} implementations.
+ * Shared base for Claude-based {@link AbstractClient} implementations.
  *
  * <p>Holds constants, session-lifecycle maps, and utility methods common to
- * {@link ClaudeCliClient} (subprocess via {@code claude} CLI).
+ * {@link ClaudeClient} (subprocess via {@code claude} CLI).
  */
-abstract class AbstractClaudeAgentClient extends AbstractAgentClient {
+abstract class AbstractClaudeClient extends AbstractClient {
 
-    private static final Logger LOG = Logger.getInstance(AbstractClaudeAgentClient.class);
+    private static final Logger LOG = Logger.getInstance(AbstractClaudeClient.class);
 
     @Nullable
     protected final ToolRegistry registry;
 
-    protected AbstractClaudeAgentClient(@Nullable ToolRegistry registry) {
+    protected AbstractClaudeClient(@Nullable ToolRegistry registry) {
         this.registry = registry;
     }
 
@@ -55,7 +55,7 @@ abstract class AbstractClaudeAgentClient extends AbstractAgentClient {
     protected final Map<String, AtomicBoolean> sessionCancelled = new ConcurrentHashMap<>();
     protected volatile boolean started = false;
 
-    // ── AbstractAgentClient — shared concrete implementations ────────────────
+    // ── AbstractClient — shared concrete implementations ────────────────
 
     @Override
     public void setModel(@NotNull String sessionId, @NotNull String modelId) {
@@ -89,8 +89,8 @@ abstract class AbstractClaudeAgentClient extends AbstractAgentClient {
         return (stored != null && !stored.isEmpty()) ? stored : DEFAULT_MODEL;
     }
 
-    protected void ensureStarted() throws AgentException {
-        if (!started) throw new AgentException(getClass().getSimpleName() + " not started", null, false);
+    protected void ensureStarted() throws ClientException {
+        if (!started) throw new ClientException(getClass().getSimpleName() + " not started", null, false);
     }
 
     // ── Tool name normalisation ──────────────────────────────────────────────

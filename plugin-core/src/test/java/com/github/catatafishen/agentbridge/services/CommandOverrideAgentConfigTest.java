@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import org.junit.jupiter.api.BeforeEach;
@@ -112,29 +112,29 @@ class CommandOverrideAgentConfigTest {
 
     @Test
     @DisplayName("findAgentBinary returns first token from command")
-    void findAgentBinaryReturnsBinary() throws AgentException {
+    void findAgentBinaryReturnsBinary() throws ClientException {
         var config = new CommandOverrideAgentConfig(delegate, "copilot --version");
         assertEquals("copilot", config.findAgentBinary());
     }
 
     @Test
     @DisplayName("findAgentBinary with single-word command returns that word")
-    void findAgentBinarySingleToken() throws AgentException {
+    void findAgentBinarySingleToken() throws ClientException {
         var config = new CommandOverrideAgentConfig(delegate, "gh");
         assertEquals("gh", config.findAgentBinary());
     }
 
-    @ParameterizedTest(name = "command=''{0}'' throws AgentException")
+    @ParameterizedTest(name = "command=''{0}'' throws ClientException")
     @ValueSource(strings = {"", "   ", "/nonexistent/binary --flag"})
-    @DisplayName("findAgentBinary throws AgentException for invalid commands")
+    @DisplayName("findAgentBinary throws ClientException for invalid commands")
     void findAgentBinaryInvalidCommandThrows(String rawCommand) {
         var config = new CommandOverrideAgentConfig(delegate, rawCommand);
-        assertThrows(AgentException.class, config::findAgentBinary);
+        assertThrows(ClientException.class, config::findAgentBinary);
     }
 
     @Test
     @DisplayName("findAgentBinary with absolute path to existing file succeeds")
-    void findAgentBinaryAbsoluteExistingSucceeds() throws AgentException {
+    void findAgentBinaryAbsoluteExistingSucceeds() throws ClientException {
         // /usr/bin/env is guaranteed to exist on any Unix system
         var env = new File("/usr/bin/env");
         if (!env.exists()) return; // Skip on systems without it
@@ -153,7 +153,7 @@ class CommandOverrideAgentConfigTest {
 
     @Test
     @DisplayName("getAgentBinaryPath returns resolved binary after findAgentBinary")
-    void getAgentBinaryPathAfterFind() throws AgentException {
+    void getAgentBinaryPathAfterFind() throws ClientException {
         var config = new CommandOverrideAgentConfig(delegate, "copilot --api");
         config.findAgentBinary();
         assertEquals("copilot", config.getAgentBinaryPath());
@@ -189,7 +189,7 @@ class CommandOverrideAgentConfigTest {
 
     @Test
     @DisplayName("multi-word command is split on whitespace")
-    void commandSplitOnWhitespace() throws AgentException {
+    void commandSplitOnWhitespace() throws ClientException {
         var config = new CommandOverrideAgentConfig(delegate, "  copilot   api   --model gpt-4  ");
         // findAgentBinary returns the first token
         assertEquals("copilot", config.findAgentBinary());

@@ -12,49 +12,49 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for the {@link AgentException} hierarchy — constructors and field accessors.
+ * Tests for the {@link ClientException} hierarchy — constructors and field accessors.
  */
-@DisplayName("AgentException")
-class AgentExceptionTest {
+@DisplayName("ClientException")
+class ClientExceptionTest {
 
     // ── Single-arg constructor ───────────────────────────────────────────
 
     @Nested
-    @DisplayName("AgentException(message)")
+    @DisplayName("ClientException(message)")
     class SingleArg {
 
         @Test
         @DisplayName("message is set")
         void messageIsSet() {
-            AgentException ex = new AgentException("boom");
+            ClientException ex = new ClientException("boom");
             assertEquals("boom", ex.getMessage());
         }
 
         @Test
         @DisplayName("cause is null")
         void causeIsNull() {
-            AgentException ex = new AgentException("boom");
+            ClientException ex = new ClientException("boom");
             assertNull(ex.getCause());
         }
 
         @Test
         @DisplayName("defaults to recoverable")
         void defaultRecoverable() {
-            AgentException ex = new AgentException("boom");
+            ClientException ex = new ClientException("boom");
             assertTrue(ex.isRecoverable());
         }
 
         @Test
         @DisplayName("errorCode defaults to 0")
         void errorCodeZero() {
-            AgentException ex = new AgentException("boom");
+            ClientException ex = new ClientException("boom");
             assertEquals(0, ex.getErrorCode());
         }
 
         @Test
         @DisplayName("errorData defaults to null")
         void errorDataNull() {
-            AgentException ex = new AgentException("boom");
+            ClientException ex = new ClientException("boom");
             assertNull(ex.getErrorData());
         }
     }
@@ -62,7 +62,7 @@ class AgentExceptionTest {
     // ── Two-arg constructor (message, cause) ─────────────────────────────
 
     @Nested
-    @DisplayName("AgentException(message, cause)")
+    @DisplayName("ClientException(message, cause)")
     class TwoArg {
 
         private final RuntimeException cause = new RuntimeException("root");
@@ -70,7 +70,7 @@ class AgentExceptionTest {
         @Test
         @DisplayName("message and cause are set")
         void messageAndCauseSet() {
-            AgentException ex = new AgentException("wrapper", cause);
+            ClientException ex = new ClientException("wrapper", cause);
             assertEquals("wrapper", ex.getMessage());
             assertSame(cause, ex.getCause());
         }
@@ -78,14 +78,14 @@ class AgentExceptionTest {
         @Test
         @DisplayName("null cause is allowed")
         void nullCauseAllowed() {
-            AgentException ex = new AgentException("no cause", null);
+            ClientException ex = new ClientException("no cause", null);
             assertNull(ex.getCause());
         }
 
         @Test
         @DisplayName("defaults to recoverable")
         void defaultRecoverable() {
-            AgentException ex = new AgentException("wrapper", cause);
+            ClientException ex = new ClientException("wrapper", cause);
             assertTrue(ex.isRecoverable());
         }
     }
@@ -93,27 +93,27 @@ class AgentExceptionTest {
     // ── Three-arg constructor (message, cause, recoverable) ──────────────
 
     @Nested
-    @DisplayName("AgentException(message, cause, recoverable)")
+    @DisplayName("ClientException(message, cause, recoverable)")
     class ThreeArg {
 
         @Test
         @DisplayName("recoverable=true is stored")
         void recoverableTrue() {
-            AgentException ex = new AgentException("oops", null, true);
+            ClientException ex = new ClientException("oops", null, true);
             assertTrue(ex.isRecoverable());
         }
 
         @Test
         @DisplayName("recoverable=false is stored")
         void recoverableFalse() {
-            AgentException ex = new AgentException("fatal", null, false);
+            ClientException ex = new ClientException("fatal", null, false);
             assertFalse(ex.isRecoverable());
         }
 
         @Test
         @DisplayName("errorCode still defaults to 0")
         void errorCodeStillZero() {
-            AgentException ex = new AgentException("x", null, false);
+            ClientException ex = new ClientException("x", null, false);
             assertEquals(0, ex.getErrorCode());
         }
     }
@@ -121,14 +121,14 @@ class AgentExceptionTest {
     // ── Full constructor ─────────────────────────────────────────────────
 
     @Nested
-    @DisplayName("AgentException(message, cause, recoverable, errorCode, errorData)")
+    @DisplayName("ClientException(message, cause, recoverable, errorCode, errorData)")
     class FullConstructor {
 
         @Test
         @DisplayName("all fields are stored")
         void allFieldsStored() {
             Throwable cause = new IllegalStateException("inner");
-            AgentException ex = new AgentException("fail", cause, false, -32600, "{\"detail\":\"bad\"}");
+            ClientException ex = new ClientException("fail", cause, false, -32600, "{\"detail\":\"bad\"}");
 
             assertEquals("fail", ex.getMessage());
             assertSame(cause, ex.getCause());
@@ -140,21 +140,21 @@ class AgentExceptionTest {
         @Test
         @DisplayName("positive error code")
         void positiveErrorCode() {
-            AgentException ex = new AgentException("x", null, true, 42, null);
+            ClientException ex = new ClientException("x", null, true, 42, null);
             assertEquals(42, ex.getErrorCode());
         }
 
         @Test
         @DisplayName("null errorData is allowed")
         void nullErrorData() {
-            AgentException ex = new AgentException("x", null, true, 0, null);
+            ClientException ex = new ClientException("x", null, true, 0, null);
             assertNull(ex.getErrorData());
         }
 
         @Test
         @DisplayName("empty errorData is stored as-is")
         void emptyErrorData() {
-            AgentException ex = new AgentException("x", null, true, 0, "");
+            ClientException ex = new ClientException("x", null, true, 0, "");
             assertEquals("", ex.getErrorData());
         }
     }
@@ -168,19 +168,19 @@ class AgentExceptionTest {
         @Test
         @DisplayName("is a checked Exception")
         void isCheckedException() {
-            AgentException ex = new AgentException("test");
+            ClientException ex = new ClientException("test");
             assertInstanceOf(Exception.class, ex);
         }
 
         @Test
         @DisplayName("is not a RuntimeException")
         void isNotRuntime() {
-            assertFalse(RuntimeException.class.isAssignableFrom(AgentException.class));
+            assertFalse(RuntimeException.class.isAssignableFrom(ClientException.class));
         }
     }
 
     // ── AcpException (removed in 0.8) ────────────────────────────────────
-    // The deprecated AcpException subclass was removed; AgentException is the
-    // canonical type. No replacement test needed — AgentException is covered
+    // The deprecated AcpException subclass was removed; ClientException is the
+    // canonical type. No replacement test needed — ClientException is covered
     // by the tests above.
 }

@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ClaudeCliClientTest {
+class ClaudeClientTest {
 
     // ── extractErrorText (private static) ───────────────────────────────
 
@@ -117,7 +117,7 @@ class ClaudeCliClientTest {
 
     @Nested
     class BuildKnownModels {
-        private final List<Model> models = ClaudeCliClient.buildKnownModels();
+        private final List<Model> models = ClaudeClient.buildKnownModels();
 
         @Test
         void returnsSomeModels() {
@@ -178,12 +178,12 @@ class ClaudeCliClientTest {
                 new ContentBlock.Text("Hello "),
                 new ContentBlock.Text("world")
             );
-            assertEquals("Hello world", ClaudeCliClient.extractPromptText(blocks));
+            assertEquals("Hello world", ClaudeClient.extractPromptText(blocks));
         }
 
         @Test
         void emptyBlocks() {
-            assertEquals("", ClaudeCliClient.extractPromptText(List.of()));
+            assertEquals("", ClaudeClient.extractPromptText(List.of()));
         }
 
         @Test
@@ -191,7 +191,7 @@ class ClaudeCliClientTest {
             ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
                 "file:///path/to/file.txt", "file.txt", "text/plain", "line1\nline2", null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
-            String result = ClaudeCliClient.extractPromptText(blocks);
+            String result = ClaudeClient.extractPromptText(blocks);
             assertTrue(result.contains("File: file:///path/to/file.txt"));
             assertTrue(result.contains("line1\nline2"));
             assertTrue(result.contains("```"));
@@ -202,7 +202,7 @@ class ClaudeCliClientTest {
             ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
                 "file:///path/to/file.txt", "file.txt", "text/plain", "", null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
-            assertEquals("", ClaudeCliClient.extractPromptText(blocks));
+            assertEquals("", ClaudeClient.extractPromptText(blocks));
         }
 
         @Test
@@ -210,7 +210,7 @@ class ClaudeCliClientTest {
             ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
                 "file:///path/to/file.txt", "file.txt", "text/plain", null, null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
-            assertEquals("", ClaudeCliClient.extractPromptText(blocks));
+            assertEquals("", ClaudeClient.extractPromptText(blocks));
         }
 
         @Test
@@ -222,7 +222,7 @@ class ClaudeCliClientTest {
                 new ContentBlock.Resource(rl),
                 new ContentBlock.Text("After")
             );
-            String result = ClaudeCliClient.extractPromptText(blocks);
+            String result = ClaudeClient.extractPromptText(blocks);
             assertTrue(result.startsWith("Before "));
             assertTrue(result.endsWith("After"));
             assertTrue(result.contains("content"));
@@ -235,7 +235,7 @@ class ClaudeCliClientTest {
     class BuildJsonUserMessage {
         @Test
         void validStructure() {
-            String json = ClaudeCliClient.buildJsonUserMessage("Hello", List.of());
+            String json = ClaudeClient.buildJsonUserMessage("Hello", List.of());
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             assertEquals("user", parsed.get("type").getAsString());
             assertTrue(parsed.has("message"));
@@ -251,7 +251,7 @@ class ClaudeCliClientTest {
 
         @Test
         void preservesSpecialCharacters() {
-            String json = ClaudeCliClient.buildJsonUserMessage("\"quoted\" & <tags>", List.of());
+            String json = ClaudeClient.buildJsonUserMessage("\"quoted\" & <tags>", List.of());
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             String text = parsed.getAsJsonObject("message")
                 .getAsJsonArray("content").get(0).getAsJsonObject()
@@ -261,7 +261,7 @@ class ClaudeCliClientTest {
 
         @Test
         void emptyPrompt() {
-            String json = ClaudeCliClient.buildJsonUserMessage("", List.of());
+            String json = ClaudeClient.buildJsonUserMessage("", List.of());
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             String text = parsed.getAsJsonObject("message")
                 .getAsJsonArray("content").get(0).getAsJsonObject()
@@ -278,7 +278,7 @@ class ClaudeCliClientTest {
         void stringContent() {
             JsonObject event = new JsonObject();
             event.addProperty("content", "result text");
-            assertEquals("result text", ClaudeCliClient.extractToolResultContent(event));
+            assertEquals("result text", ClaudeClient.extractToolResultContent(event));
         }
 
         @Test
@@ -292,7 +292,7 @@ class ClaudeCliClientTest {
             arr.add(block2);
             JsonObject event = new JsonObject();
             event.add("content", arr);
-            assertEquals("Hello world", ClaudeCliClient.extractToolResultContent(event));
+            assertEquals("Hello world", ClaudeClient.extractToolResultContent(event));
         }
 
         @Test
@@ -302,12 +302,12 @@ class ClaudeCliClientTest {
             arr.add("bar");
             JsonObject event = new JsonObject();
             event.add("content", arr);
-            assertEquals("foobar", ClaudeCliClient.extractToolResultContent(event));
+            assertEquals("foobar", ClaudeClient.extractToolResultContent(event));
         }
 
         @Test
         void noContent() {
-            assertEquals("", ClaudeCliClient.extractToolResultContent(new JsonObject()));
+            assertEquals("", ClaudeClient.extractToolResultContent(new JsonObject()));
         }
 
         @Test
@@ -316,7 +316,7 @@ class ClaudeCliClientTest {
             inner.addProperty("key", "value");
             JsonObject event = new JsonObject();
             event.add("content", inner);
-            String result = ClaudeCliClient.extractToolResultContent(event);
+            String result = ClaudeClient.extractToolResultContent(event);
             assertTrue(result.contains("key"));
         }
     }
@@ -327,27 +327,27 @@ class ClaudeCliClientTest {
     class CreateDefaultProfile {
         @Test
         void profileIdIsSet() {
-            assertEquals("claude-cli", ClaudeCliClient.createDefaultProfile().getId());
+            assertEquals("claude-cli", ClaudeClient.createDefaultProfile().getId());
         }
 
         @Test
         void displayNameIsNonEmpty() {
-            assertFalse(ClaudeCliClient.createDefaultProfile().getDisplayName().isEmpty());
+            assertFalse(ClaudeClient.createDefaultProfile().getDisplayName().isEmpty());
         }
 
         @Test
         void binaryNameIsSet() {
-            assertEquals("claude", ClaudeCliClient.createDefaultProfile().getBinaryName());
+            assertEquals("claude", ClaudeClient.createDefaultProfile().getBinaryName());
         }
 
         @Test
         void excludesBuiltInTools() {
-            assertTrue(ClaudeCliClient.createDefaultProfile().isExcludeAgentBuiltInTools());
+            assertTrue(ClaudeClient.createDefaultProfile().isExcludeAgentBuiltInTools());
         }
 
         @Test
         void usesPluginPermissions() {
-            assertTrue(ClaudeCliClient.createDefaultProfile().isUsePluginPermissions());
+            assertTrue(ClaudeClient.createDefaultProfile().isUsePluginPermissions());
         }
     }
 
@@ -361,7 +361,7 @@ class ClaudeCliClientTest {
             event.addProperty("requestId", "req-42");
 
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            ClaudeCliClient.respondToControlRequest(event, baos);
+            ClaudeClient.respondToControlRequest(event, baos);
 
             String output = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
             JsonObject parsed = JsonParser.parseString(output.trim()).getAsJsonObject();
@@ -380,7 +380,7 @@ class ClaudeCliClientTest {
             event.addProperty("requestId", "req-99");
 
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            ClaudeCliClient.respondToControlRequest(event, baos);
+            ClaudeClient.respondToControlRequest(event, baos);
 
             String output = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
             JsonObject parsed = JsonParser.parseString(output.trim()).getAsJsonObject();
@@ -397,7 +397,7 @@ class ClaudeCliClientTest {
             event.addProperty("requestId", "req-1");
 
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            ClaudeCliClient.respondToControlRequest(event, baos);
+            ClaudeClient.respondToControlRequest(event, baos);
 
             String output = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
             JsonObject parsed = JsonParser.parseString(output.trim()).getAsJsonObject();
@@ -413,7 +413,7 @@ class ClaudeCliClientTest {
             event.addProperty("subtype", "can_use_tool");
 
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            ClaudeCliClient.respondToControlRequest(event, baos);
+            ClaudeClient.respondToControlRequest(event, baos);
 
             String output = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
             JsonObject parsed = JsonParser.parseString(output.trim()).getAsJsonObject();
@@ -430,7 +430,7 @@ class ClaudeCliClientTest {
             event.addProperty("requestId", "r");
 
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            ClaudeCliClient.respondToControlRequest(event, baos);
+            ClaudeClient.respondToControlRequest(event, baos);
 
             String output = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
             assertTrue(output.endsWith("\n"), "Output should end with newline");
@@ -451,7 +451,7 @@ class ClaudeCliClientTest {
 
             // Should not throw — IOException is caught and logged
             org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
-                ClaudeCliClient.respondToControlRequest(event, failingStream));
+                ClaudeClient.respondToControlRequest(event, failingStream));
         }
     }
 
@@ -462,92 +462,92 @@ class ClaudeCliClientTest {
 
         @Test
         void nullInput_returnsFalse() {
-            assertFalse(ClaudeCliClient.isClaudeAuthError(null));
+            assertFalse(ClaudeClient.isClaudeAuthError(null));
         }
 
         @Test
         void emptyInput_returnsFalse() {
-            assertFalse(ClaudeCliClient.isClaudeAuthError(""));
+            assertFalse(ClaudeClient.isClaudeAuthError(""));
         }
 
         @Test
         void invalidApiKey_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Invalid API key provided"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Invalid API key provided"));
         }
 
         @Test
         void invalidApiKey_caseInsensitive() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("INVALID API KEY"));
+            assertTrue(ClaudeClient.isClaudeAuthError("INVALID API KEY"));
         }
 
         @Test
         void pleaseRunSlashLogin_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Please run /login to continue"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Please run /login to continue"));
         }
 
         @Test
         void pleaseRunBacktickedSlashLogin_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Please run `/login` first"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Please run `/login` first"));
         }
 
         @Test
         void notAuthenticated_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Not authenticated with Claude"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Not authenticated with Claude"));
         }
 
         @Test
         void unauthorized_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Unauthorized: missing token"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Unauthorized: missing token"));
         }
 
         @Test
         void authenticationRequired_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Authentication required to access Claude"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Authentication required to access Claude"));
         }
 
         @Test
         void http401_returnsTrue() {
-            assertTrue(ClaudeCliClient.isClaudeAuthError("Got HTTP 401 from API"));
+            assertTrue(ClaudeClient.isClaudeAuthError("Got HTTP 401 from API"));
         }
 
         @Test
         void unrelatedError_returnsFalse() {
-            assertFalse(ClaudeCliClient.isClaudeAuthError("Tool 'read_file' failed: file not found"));
+            assertFalse(ClaudeClient.isClaudeAuthError("Tool 'read_file' failed: file not found"));
         }
 
         @Test
         void rateLimit_returnsFalse() {
-            assertFalse(ClaudeCliClient.isClaudeAuthError("Rate limit exceeded — try again later"));
+            assertFalse(ClaudeClient.isClaudeAuthError("Rate limit exceeded — try again later"));
         }
 
         @Test
         void networkError_returnsFalse() {
-            assertFalse(ClaudeCliClient.isClaudeAuthError("Connection refused: ECONNREFUSED 127.0.0.1:5000"));
+            assertFalse(ClaudeClient.isClaudeAuthError("Connection refused: ECONNREFUSED 127.0.0.1:5000"));
         }
 
         @Test
         void wordContainingAuth_butNotAuthError_returnsFalse() {
             // "auth" alone is not a substring we match; only specific phrases trigger.
-            assertFalse(ClaudeCliClient.isClaudeAuthError("Author of commit not found"));
+            assertFalse(ClaudeClient.isClaudeAuthError("Author of commit not found"));
         }
     }
 
     // ── Reflection helpers ──────────────────────────────────────────────
 
     private static String invokeExtractErrorText(com.google.gson.JsonElement el) throws Exception {
-        Method m = ClaudeCliClient.class.getDeclaredMethod("extractErrorText", com.google.gson.JsonElement.class);
+        Method m = ClaudeClient.class.getDeclaredMethod("extractErrorText", com.google.gson.JsonElement.class);
         m.setAccessible(true);
         return (String) m.invoke(null, el);
     }
 
     private static int invokeSafeGetInt(JsonObject obj, String field) throws Exception {
-        Method m = ClaudeCliClient.class.getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
+        Method m = ClaudeClient.class.getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
         m.setAccessible(true);
         return (int) m.invoke(null, obj, field);
     }
 
     private static double invokeSafeGetDouble(JsonObject obj, String field) throws Exception {
-        Method m = ClaudeCliClient.class.getDeclaredMethod("safeGetDouble", JsonObject.class, String.class);
+        Method m = ClaudeClient.class.getDeclaredMethod("safeGetDouble", JsonObject.class, String.class);
         m.setAccessible(true);
         return (double) m.invoke(null, obj, field);
     }

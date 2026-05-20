@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
-import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexClient;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
@@ -34,10 +34,10 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
 
     public static final String COPILOT_PROFILE_ID = "copilot";
     public static final String OPENCODE_PROFILE_ID = "opencode";
-    public static final String CLAUDE_CLI_PROFILE_ID = ClaudeCliClient.PROFILE_ID;
+    public static final String CLAUDE_CLI_PROFILE_ID = ClaudeClient.PROFILE_ID;
     public static final String JUNIE_PROFILE_ID = "junie";
     public static final String KIRO_PROFILE_ID = "kiro";
-    public static final String CODEX_PROFILE_ID = CodexAppServerClient.PROFILE_ID;
+    public static final String CODEX_PROFILE_ID = CodexClient.PROFILE_ID;
     public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
@@ -234,10 +234,10 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         return switch (id) {
             case COPILOT_PROFILE_ID -> buildCopilotProfile();
             case OPENCODE_PROFILE_ID -> buildOpenCodeProfile();
-            case CLAUDE_CLI_PROFILE_ID -> ClaudeCliClient.createDefaultProfile();
+            case CLAUDE_CLI_PROFILE_ID -> ClaudeClient.createDefaultProfile();
             case JUNIE_PROFILE_ID -> buildJunieProfile();
             case KIRO_PROFILE_ID -> buildKiroProfile();
-            case CODEX_PROFILE_ID -> CodexAppServerClient.createDefaultProfile();
+            case CODEX_PROFILE_ID -> CodexClient.createDefaultProfile();
             case HERMES_PROFILE_ID -> buildHermesProfile();
             default -> null;
         };

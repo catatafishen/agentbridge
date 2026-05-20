@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.client.AgentRegistry;
-import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientRegistry;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexClient;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
@@ -53,7 +53,7 @@ public final class ActiveAgentManager implements Disposable {
     private final SessionSwitchService sessionSwitchService;
     private volatile boolean acpConnected;
 
-    private volatile AbstractAgentClient acpClient;
+    private volatile AbstractClient acpClient;
     private AgentConfig cachedConfig;
     private GenericSettings cachedSettings;
     private GenericAgentUiSettings cachedUiSettings;
@@ -229,7 +229,7 @@ public final class ActiveAgentManager implements Disposable {
      * Returns the agent client, starting it if necessary.
      */
     @NotNull
-    public AbstractAgentClient getClient() {
+    public AbstractClient getClient() {
         if (!started || acpClient == null || !acpClient.isHealthy()) {
             start();
         }
@@ -243,7 +243,7 @@ public final class ActiveAgentManager implements Disposable {
      * @return the running client, or {@code null} if the agent has not been started yet
      */
     @Nullable
-    public AbstractAgentClient getClientIfRunning() {
+    public AbstractClient getClientIfRunning() {
         if (started && acpClient != null && acpClient.isHealthy()) {
             return acpClient;
         }
@@ -289,12 +289,12 @@ public final class ActiveAgentManager implements Disposable {
                 case CLAUDE_CLI -> {
                     int mcpPort = resolveMcpPort();
                     AgentConfig config = resolveStartConfig();
-                    acpClient = new ClaudeCliClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
+                    acpClient = new ClaudeClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
                 }
                 case CODEX_APP_SERVER -> {
                     int mcpPort = resolveMcpPort();
                     AgentConfig config = resolveStartConfig();
-                    acpClient = new CodexAppServerClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
+                    acpClient = new CodexClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
                 }
                 case ACP -> acpClient = createAcpClient(agentId);
             }
@@ -323,7 +323,7 @@ public final class ActiveAgentManager implements Disposable {
     public synchronized void stop() {
         if (!started) return;
         started = false;
-        AbstractAgentClient clientToStop = acpClient;
+        AbstractClient clientToStop = acpClient;
         acpClient = null;
         if (clientToStop != null) {
             try {
@@ -476,12 +476,12 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     @NotNull
-    private AbstractAgentClient createAcpClient(@NotNull String profileId) {
-        AbstractAgentClient client = AgentRegistry.create(profileId, project);
+    private AbstractClient createAcpClient(@NotNull String profileId) {
+        AbstractClient client = ClientRegistry.create(profileId, project);
         if (client != null) {
             return client;
         }
-        LOG.warn("Unknown ACP profile ID: " + profileId + " — no client registered in AgentRegistry");
+        LOG.warn("Unknown ACP profile ID: " + profileId + " — no client registered in ClientRegistry");
         throw new IllegalArgumentException("Unknown ACP agent profile: " + profileId);
     }
 

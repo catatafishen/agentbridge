@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
-import com.github.catatafishen.agentbridge.client.AgentSessionException;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
@@ -684,20 +684,20 @@ class AcpClientTest {
 
         @Test
         void nullInputReturnsEmpty() {
-            List<AbstractAgentClient.AgentMode> result = AcpClient.mapModesStatic(null);
+            List<AbstractClient.AgentMode> result = AcpClient.mapModesStatic(null);
             assertTrue(result.isEmpty());
         }
 
         @Test
         void emptyListReturnsEmpty() {
-            List<AbstractAgentClient.AgentMode> result = AcpClient.mapModesStatic(List.of());
+            List<AbstractClient.AgentMode> result = AcpClient.mapModesStatic(List.of());
             assertTrue(result.isEmpty());
         }
 
         @Test
         void singleModeIsMapped() {
             var mode = new NewSessionResponse.AvailableMode("code", "Code", "Write code");
-            List<AbstractAgentClient.AgentMode> result = AcpClient.mapModesStatic(List.of(mode));
+            List<AbstractClient.AgentMode> result = AcpClient.mapModesStatic(List.of(mode));
 
             assertEquals(1, result.size());
             assertEquals("code", result.get(0).slug());
@@ -709,7 +709,7 @@ class AcpClientTest {
         void multipleModesWithNullDescription() {
             var m1 = new NewSessionResponse.AvailableMode("ask", "Ask", null);
             var m2 = new NewSessionResponse.AvailableMode("edit", "Edit", "Edit files");
-            List<AbstractAgentClient.AgentMode> result = AcpClient.mapModesStatic(List.of(m1, m2));
+            List<AbstractClient.AgentMode> result = AcpClient.mapModesStatic(List.of(m1, m2));
 
             assertEquals(2, result.size());
             assertEquals("ask", result.get(0).slug());
@@ -726,13 +726,13 @@ class AcpClientTest {
 
         @Test
         void nullInputReturnsEmpty() {
-            List<AbstractAgentClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(null);
+            List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(null);
             assertTrue(result.isEmpty());
         }
 
         @Test
         void emptyListReturnsEmpty() {
-            List<AbstractAgentClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of());
+            List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of());
             assertTrue(result.isEmpty());
         }
 
@@ -742,7 +742,7 @@ class AcpClientTest {
             var v2 = new NewSessionResponse.SessionConfigOptionValue("v2", "Value 2");
             var opt = new NewSessionResponse.SessionConfigOption("opt1", "Option 1", "desc", List.of(v1, v2), "v1");
 
-            List<AbstractAgentClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
+            List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
 
             assertEquals(1, result.size());
             var mapped = result.get(0);
@@ -759,7 +759,7 @@ class AcpClientTest {
         void optionWithNullIdAndLabelUseFallbacks() {
             var opt = new NewSessionResponse.SessionConfigOption(null, null, "desc", List.of(), null);
 
-            List<AbstractAgentClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
+            List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
 
             assertEquals(1, result.size());
             assertEquals("", result.get(0).id());
@@ -770,7 +770,7 @@ class AcpClientTest {
         void optionWithNullValuesListReturnsEmptyValues() {
             var opt = new NewSessionResponse.SessionConfigOption("x", "X", null, null, null);
 
-            List<AbstractAgentClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
+            List<AbstractClient.AgentConfigOption> result = AcpClient.mapConfigOptionsStatic(List.of(opt));
 
             assertEquals(1, result.size());
             assertTrue(result.get(0).values().isEmpty());
@@ -782,13 +782,13 @@ class AcpClientTest {
     @Nested
     class FilterSessionOptionsStatic {
 
-        private AbstractAgentClient.AgentConfigOption makeOpt(String id, String label,
-                                                              String... valueIds) {
-            List<AbstractAgentClient.AgentConfigOptionValue> vals = new java.util.ArrayList<>();
+        private AbstractClient.AgentConfigOption makeOpt(String id, String label,
+                                                         String... valueIds) {
+            List<AbstractClient.AgentConfigOptionValue> vals = new java.util.ArrayList<>();
             for (String vid : valueIds) {
-                vals.add(new AbstractAgentClient.AgentConfigOptionValue(vid, "Label-" + vid));
+                vals.add(new AbstractClient.AgentConfigOptionValue(vid, "Label-" + vid));
             }
-            return new AbstractAgentClient.AgentConfigOption(id, label, null, vals, null);
+            return new AbstractClient.AgentConfigOption(id, label, null, vals, null);
         }
 
         @Test
@@ -959,7 +959,7 @@ class AcpClientTest {
             // which drives execution into the catch block covering persistResumeSessionId(null).
             client.setResumeId("stale-resume-id");
 
-            assertThrows(AgentSessionException.class, () -> client.createSession("/test/cwd"));
+            assertThrows(ClientSessionException.class, () -> client.createSession("/test/cwd"));
         }
     }
 

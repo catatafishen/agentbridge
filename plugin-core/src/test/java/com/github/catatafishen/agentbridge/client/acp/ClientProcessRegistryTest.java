@@ -19,8 +19,8 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
-@DisplayName("AgentProcessRegistry")
-class AgentProcessRegistryTest {
+@DisplayName("ClientProcessRegistry")
+class ClientProcessRegistryTest {
 
     /**
      * Clear the static PROCESSES set between tests to avoid cross-test pollution.
@@ -34,13 +34,13 @@ class AgentProcessRegistryTest {
 
     @SuppressWarnings("unchecked")
     private Set<Process> getProcesses() throws Exception {
-        Field f = AgentProcessRegistry.class.getDeclaredField("PROCESSES");
+        Field f = ClientProcessRegistry.class.getDeclaredField("PROCESSES");
         f.setAccessible(true);
         return (Set<Process>) f.get(null);
     }
 
     private void invokeKillAll() throws Exception {
-        Method killAll = AgentProcessRegistry.class.getDeclaredMethod("killAll");
+        Method killAll = ClientProcessRegistry.class.getDeclaredMethod("killAll");
         killAll.setAccessible(true);
         killAll.invoke(null);
     }
@@ -51,7 +51,7 @@ class AgentProcessRegistryTest {
     void registerAndKillAllKillsAliveProcess() throws Exception {
         Process p = new TestProcess(true);
 
-        AgentProcessRegistry.register(p);
+        ClientProcessRegistry.register(p);
 
         try (MockedStatic<AcpClient> acpMock = mockStatic(AcpClient.class)) {
             invokeKillAll();
@@ -63,8 +63,8 @@ class AgentProcessRegistryTest {
     void unregisterRemovesProcessFromTracking() throws Exception {
         Process p = new TestProcess(true);
 
-        AgentProcessRegistry.register(p);
-        AgentProcessRegistry.unregister(p);
+        ClientProcessRegistry.register(p);
+        ClientProcessRegistry.unregister(p);
 
         assertFalse(getProcesses().contains(p));
     }
@@ -74,8 +74,8 @@ class AgentProcessRegistryTest {
         Process alive = new TestProcess(true);
         Process dead = new TestProcess(false);
 
-        AgentProcessRegistry.register(alive);
-        AgentProcessRegistry.register(dead);
+        ClientProcessRegistry.register(alive);
+        ClientProcessRegistry.register(dead);
 
         try (MockedStatic<AcpClient> acpMock = mockStatic(AcpClient.class)) {
             invokeKillAll();
@@ -87,15 +87,15 @@ class AgentProcessRegistryTest {
     @Test
     void registerNullThrowsNullPointerException() {
         // ConcurrentHashMap.KeySetView does not allow null elements.
-        assertThrows(NullPointerException.class, () -> AgentProcessRegistry.register(null));
+        assertThrows(NullPointerException.class, () -> ClientProcessRegistry.register(null));
     }
 
     @Test
     void killAllAfterUnregisterDoesNotKillRemovedProcess() throws Exception {
         Process p = new TestProcess(true);
 
-        AgentProcessRegistry.register(p);
-        AgentProcessRegistry.unregister(p);
+        ClientProcessRegistry.register(p);
+        ClientProcessRegistry.unregister(p);
 
         try (MockedStatic<AcpClient> acpMock = mockStatic(AcpClient.class)) {
             invokeKillAll();
@@ -108,7 +108,7 @@ class AgentProcessRegistryTest {
         // First call: alive → destroyed; second call: dead → skipped.
         TestProcess p = new TestProcess(true);
 
-        AgentProcessRegistry.register(p);
+        ClientProcessRegistry.register(p);
 
         try (MockedStatic<AcpClient> acpMock = mockStatic(AcpClient.class)) {
             invokeKillAll();
@@ -121,7 +121,7 @@ class AgentProcessRegistryTest {
 
     @Test
     void unregisterNullIsHandledGracefully() {
-        assertDoesNotThrow(() -> AgentProcessRegistry.unregister(null));
+        assertDoesNotThrow(() -> ClientProcessRegistry.unregister(null));
     }
 
     // ── Test stub ───────────────────────────────────────────────────────

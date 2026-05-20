@@ -3,12 +3,12 @@ package com.github.catatafishen.agentbridge.client;
 /**
  * Thrown when session creation or management fails.
  */
-public class AgentSessionException extends Exception {
-    public AgentSessionException(String message) {
+public class ClientSessionException extends Exception {
+    public ClientSessionException(String message) {
         super(message);
     }
 
-    public AgentSessionException(String message, Throwable cause) {
+    public ClientSessionException(String message, Throwable cause) {
         super(message, cause);
     }
 }

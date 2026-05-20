@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.client.codex;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -98,7 +98,7 @@ final class JsonRpcTransport {
             }
         }
         pendingRequests.forEach((id, f) ->
-            f.completeExceptionally(new AgentException("transport disconnected", null, true)));
+            f.completeExceptionally(new ClientException("transport disconnected", null, true)));
         pendingRequests.clear();
     }
 
@@ -122,7 +122,7 @@ final class JsonRpcTransport {
 
         if (!writeMessage(msg)) {
             pendingRequests.remove(id);
-            future.completeExceptionally(new AgentException("Failed to write JSON-RPC message", null, true));
+            future.completeExceptionally(new ClientException("Failed to write JSON-RPC message", null, true));
         }
         return future;
     }
@@ -201,7 +201,7 @@ final class JsonRpcTransport {
             } finally {
                 connected = false;
                 pendingRequests.forEach((id, f) ->
-                    f.completeExceptionally(new AgentException("transport disconnected", null, true)));
+                    f.completeExceptionally(new ClientException("transport disconnected", null, true)));
                 pendingRequests.clear();
             }
         }, "jsonrpc-reader");
@@ -273,12 +273,12 @@ final class JsonRpcTransport {
             JsonObject err = msg.getAsJsonObject(F_ERROR);
             String errMsg = extractJsonRpcErrorMessage(err);
             if (isCodexAuthError(errMsg)) {
-                f.completeExceptionally(new AgentException(
+                f.completeExceptionally(new ClientException(
                     "Codex not authenticated: " + errMsg
                         + " — run 'codex login' in a terminal, then retry.",
                     null, false));
             } else {
-                f.completeExceptionally(new AgentException("JSON-RPC error: " + errMsg, null, false));
+                f.completeExceptionally(new ClientException("JSON-RPC error: " + errMsg, null, false));
             }
         } else {
             JsonElement result = msg.get(F_RESULT);

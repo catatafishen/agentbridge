@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
@@ -43,14 +43,14 @@ class AgentConfigDefaultsTest {
             }
 
             @Override
-            public @NotNull String findAgentBinary() throws AgentException {
+            public @NotNull String findAgentBinary() throws ClientException {
                 return "stub";
             }
 
             @Override
             public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
                                                            @Nullable String projectBasePath,
-                                                           int mcpPort) throws AgentException {
+                                                           int mcpPort) throws ClientException {
                 return new ProcessBuilder("stub");
             }
 

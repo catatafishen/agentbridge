@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * Pure JSON-parsing and string-building utilities extracted from
- * {@link CodexAppServerClient} so they can be tested in isolation.
+ * {@link CodexClient} so they can be tested in isolation.
  */
 final class CodexMessageParser {
 

@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 /**
  * Abstraction for displaying tool permission prompts to the user.
  * <p>
- * Backend services ({@code PsiBridgeService}, {@code CodexAppServerClient}) depend on this
+ * Backend services ({@code PsiBridgeService}, {@code CodexClient}) depend on this
  * interface instead of the UI class directly, inverting the dependency so the backend layer
  * has no compile-time coupling to Swing/UI components.
  * <p>

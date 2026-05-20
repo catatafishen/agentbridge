@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -100,11 +100,11 @@ class OpenCodeClientBehaviorTest {
         );
 
         OpenCodeClient client = new OpenCodeClient(project);
-        List<AbstractAgentClient.AgentMode> agents = client.getAvailableAgents();
+        List<AbstractClient.AgentMode> agents = client.getAvailableAgents();
 
         assertEquals(
             List.of("build", "plan", "general", "explore", "shared", "local"),
-            agents.stream().map(AbstractAgentClient.AgentMode::slug).toList()
+            agents.stream().map(AbstractClient.AgentMode::slug).toList()
         );
         assertEquals("Shared Primary", agents.get(4).name());
         assertTrue(agents.stream().noneMatch(agent -> "Shadow Build".equals(agent.name())));

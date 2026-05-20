@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.client.AbstractAgentClient.AgentMode;
+import com.github.catatafishen.agentbridge.client.AbstractClient.AgentMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

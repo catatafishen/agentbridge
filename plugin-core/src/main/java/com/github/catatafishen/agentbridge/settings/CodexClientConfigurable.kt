@@ -148,5 +148,5 @@ class CodexClientConfigurable(private val project: Project) :
 }
 
 private const val CHECKING = "Checking…"
-// Mirrors CodexAppServerClient.PROFILE_ID (kept in sync; cannot reference the Java constant from a const val).
+// Mirrors CodexClient.PROFILE_ID (kept in sync; cannot reference the Java constant from a const val).
 private const val PROFILE_ID = "codex"

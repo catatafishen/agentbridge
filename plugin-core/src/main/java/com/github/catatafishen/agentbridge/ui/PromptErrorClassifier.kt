@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.client.AgentException
+import com.github.catatafishen.agentbridge.client.ClientException
 
 /**
  * Pure error classification and quick-reply detection for prompt errors.
@@ -57,12 +57,12 @@ object PromptErrorClassifier {
         }
 
         // For ACP errors, ensure the message is descriptive
-        if (exception is AgentException && !msg.startsWith("(")) {
+        if (exception is ClientException && !msg.startsWith("(")) {
             msg = "ACP error: $msg"
         }
 
         val isRecoverable = isCancelled
-            || (exception is AgentException && exception.isRecoverable)
+            || (exception is ClientException && exception.isRecoverable)
 
         // Agent process crashed but already recovered — preserve session
         val isProcessCrashWithRecovery = !isCancelled
@@ -93,13 +93,13 @@ object PromptErrorClassifier {
     }
 
     /**
-     * Returns true if the exception cause chain contains a non-recoverable [AgentException],
+     * Returns true if the exception cause chain contains a non-recoverable [ClientException],
      * indicating the agent CLI binary was not found.
      */
     fun isCLINotFoundError(e: Exception): Boolean {
         var cause: Throwable? = e
         while (cause != null) {
-            if (cause is AgentException && !cause.isRecoverable) return true
+            if (cause is ClientException && !cause.isRecoverable) return true
             cause = cause.cause
         }
         return false

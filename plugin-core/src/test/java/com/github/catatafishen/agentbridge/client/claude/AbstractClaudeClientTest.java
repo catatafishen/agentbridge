@@ -4,7 +4,7 @@ import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -23,13 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AbstractClaudeAgentClientTest {
+class AbstractClaudeClientTest {
 
     /**
      * Minimal concrete subclass for testing.
      * normalizeToolName is a public instance method that doesn't use the registry field.
      */
-    private static class TestableClient extends AbstractClaudeAgentClient {
+    private static class TestableClient extends AbstractClaudeClient {
         TestableClient() {
             super(null);
         }
@@ -79,7 +79,7 @@ class AbstractClaudeAgentClientTest {
             return resolveModel(sessionId, model);
         }
 
-        public void testEnsureStarted() throws AgentException {
+        public void testEnsureStarted() throws ClientException {
             ensureStarted();
         }
 
@@ -203,7 +203,7 @@ class AbstractClaudeAgentClientTest {
         @Test
         void throwsWhenNotStarted() {
             client.setStarted(false);
-            AgentException ex = assertThrows(AgentException.class, client::testEnsureStarted);
+            ClientException ex = assertThrows(ClientException.class, client::testEnsureStarted);
             assertTrue(ex.getMessage().contains("not started"));
         }
 
@@ -395,7 +395,7 @@ class AbstractClaudeAgentClientTest {
     // ── Reflection helpers ──────────────────────────────────────────────
 
     private static boolean invokeIsRateLimitError(String errorText) throws Exception {
-        Method m = AbstractClaudeAgentClient.class.getDeclaredMethod("isRateLimitError", String.class);
+        Method m = AbstractClaudeClient.class.getDeclaredMethod("isRateLimitError", String.class);
         m.setAccessible(true);
         return (boolean) m.invoke(null, errorText);
     }

@@ -5,7 +5,7 @@ import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
@@ -66,9 +66,9 @@ import java.util.function.Consumer;
  * and passed via {@code --mcp-config} so the CLI can call IDE tools from the plugin's
  * MCP server.</p>
  */
-public final class ClaudeCliClient extends AbstractClaudeAgentClient {
+public final class ClaudeClient extends AbstractClaudeClient {
 
-    private static final Logger LOG = Logger.getInstance(ClaudeCliClient.class);
+    private static final Logger LOG = Logger.getInstance(ClaudeClient.class);
 
     public static final String PROFILE_ID = "claude-cli";
 
@@ -136,11 +136,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     private String resolvedBinaryPath;
 
-    public ClaudeCliClient(@NotNull AgentProfile profile,
-                           @NotNull AgentConfig config,
-                           @Nullable ToolRegistry registry,
-                           @Nullable Project project,
-                           int mcpPort) {
+    public ClaudeClient(@NotNull AgentProfile profile,
+                        @NotNull AgentConfig config,
+                        @Nullable ToolRegistry registry,
+                        @Nullable Project project,
+                        int mcpPort) {
         super(registry);
         this.profile = profile;
         this.config = config;
@@ -151,10 +151,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     // ── AgentClient lifecycle ────────────────────────────────────────────────
 
     @Override
-    public void start() throws AgentException {
+    public void start() throws ClientException {
         resolvedBinaryPath = resolveBinary();
         started = true;
-        LOG.info("ClaudeCliClient started for profile: " + profile.getDisplayName());
+        LOG.info("ClaudeClient started for profile: " + profile.getDisplayName());
     }
 
     @Override
@@ -290,7 +290,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull PromptResponse sendPrompt(@NotNull PromptRequest request,
-                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AgentException {
+                                              @NotNull Consumer<SessionUpdate> onUpdate) throws ClientException {
         ensureStarted();
         String sessionId = request.sessionId();
         AtomicBoolean cancelled = sessionCancelled.computeIfAbsent(sessionId, k -> new AtomicBoolean(false));
@@ -426,7 +426,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                                  @NotNull List<ContentBlock.Image> imageBlocks,
                                  @Nullable Consumer<String> onChunk,
                                  @Nullable Consumer<SessionUpdate> onUpdate,
-                                 @NotNull AtomicBoolean cancelled) throws AgentException {
+                                 @NotNull AtomicBoolean cancelled) throws ClientException {
         // Hoisted out of try so the auth-error catch can clean them up — otherwise a
         // ClaudeAuthRequiredException raised mid-stream would leak the running `claude`
         // subprocess and the stderr-drainer thread.
@@ -486,15 +486,15 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             activeProcesses.remove(sessionId);
             // Message includes "authenticated" so AuthCommandBuilder.isAuthenticationError
             // recognises it and PromptOrchestrator triggers the SetupBanner.
-            throw new AgentException(
+            throw new ClientException(
                 "Claude not authenticated: " + e.getMessage()
                     + " — run 'claude /login' in a terminal, then retry.",
                 e, false);
         } catch (IOException e) {
-            throw new AgentException("Failed to start claude process: " + e.getMessage(), e, true);
+            throw new ClientException("Failed to start claude process: " + e.getMessage(), e, true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AgentException("Interrupted waiting for claude process", e, false);
+            throw new ClientException("Interrupted waiting for claude process", e, false);
         }
     }
 
@@ -527,7 +527,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     /**
      * Thrown from {@link #handleStreamEvent} when Claude reports an authentication failure
      * (e.g. "Invalid API key", "Please run /login"). Caught at the {@link #runSubprocess} level and
-     * translated to {@link AgentException} so {@code PromptOrchestrator} can fire the auth banner.
+     * translated to {@link ClientException} so {@code PromptOrchestrator} can fire the auth banner.
      * <p>The plugin never inspects local credential stores; auth state is observed from this
      * runtime signal only. See {@code docs/AUTH-HANDLING.md}.
      */
@@ -578,7 +578,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                     }
                     stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
                 } catch (ClaudeAuthRequiredException e) {
-                    // Re-throw so the surrounding runClaude(...) translates it to AgentException
+                    // Re-throw so the surrounding runClaude(...) translates it to ClientException
                     // and PromptOrchestrator can fire markAuthError. Don't let the generic
                     // RuntimeException catch below swallow it.
                     throw e;
@@ -910,21 +910,21 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     private static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt,
                                                @NotNull List<ContentBlock.Image> images)
-        throws AgentException {
+        throws ClientException {
         try {
             stdin.write(buildJsonUserMessage(prompt, images).getBytes(StandardCharsets.UTF_8));
             stdin.write('\n');
             stdin.flush();
         } catch (IOException e) {
             closeQuietly(stdin);
-            throw new AgentException("Failed to write prompt to claude process: " + e.getMessage(), e, true);
+            throw new ClientException("Failed to write prompt to claude process: " + e.getMessage(), e, true);
         }
     }
 
     // ── MCP injection ────────────────────────────────────────────────────────
 
     @Nullable
-    private Path writeMcpConfigIfNeeded() throws AgentException {
+    private Path writeMcpConfigIfNeeded() throws ClientException {
         if (mcpPort <= 0) return null;
         try {
             String json = "{\"mcpServers\":{\"agentbridge\":{"
@@ -934,7 +934,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             Files.writeString(tmp, json, StandardCharsets.UTF_8);
             return tmp;
         } catch (IOException e) {
-            throw new AgentException("Could not write MCP config: " + e.getMessage(), e, true);
+            throw new ClientException("Could not write MCP config: " + e.getMessage(), e, true);
         }
     }
 
@@ -976,18 +976,18 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     // ── Binary resolution ────────────────────────────────────────────────────
 
-    private String resolveBinary() throws AgentException {
+    private String resolveBinary() throws ClientException {
         String custom = profile.getCustomBinaryPath();
         if (!custom.isEmpty()) {
             if (Files.isExecutable(Path.of(custom))) return custom;
-            throw new AgentException("Claude binary not found at: " + custom, null, false);
+            throw new ClientException("Claude binary not found at: " + custom, null, false);
         }
         // Auto-detect using the unified detector (shell environment + known paths)
         ProfileBinaryDetector detector =
             new ProfileBinaryDetector(profile);
         String found = detector.resolve("claude");
         if (found != null) return found;
-        throw new AgentException(
+        throw new ClientException(
             "Claude CLI not found. Install it from code.claude.com and run 'claude /login'.",
             null, false);
     }
