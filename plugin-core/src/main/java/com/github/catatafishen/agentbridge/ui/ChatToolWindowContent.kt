@@ -158,6 +158,7 @@ class ChatToolWindowContent(
     private val persistenceManager = ConversationPersistenceManager(project, ConversationService.getInstance(project))
 
     private lateinit var contextManager: PromptContextManager
+    private lateinit var promptEditorSetup: PromptEditorSetup
 
     init {
         instances[project] = this
@@ -1182,6 +1183,31 @@ class ChatToolWindowContent(
 
         pasteToScratchHandler = PasteToScratchHandler(project, promptTextArea, contextManager)
         pasteAttachmentHandler = PasteAttachmentHandler(project, promptTextArea, contextManager)
+        promptEditorSetup = PromptEditorSetup(
+            project, promptTextArea, contextManager,
+            pasteToScratchHandler, pasteAttachmentHandler, agentManager,
+            object : PromptEditorSetup.Callbacks {
+                override fun onSendOrStop() = onSendStopClicked()
+                override fun onNudge() = onNudgeClicked()
+                override fun onQueue() = onQueueMessageClicked()
+                override fun onForceStopAndSend() = this@ChatToolWindowContent.onForceStopAndSend()
+                override fun onNewConversation() {
+                    promptOrchestrator.currentSessionId = null
+                    consolePanel.addSessionSeparator(
+                        java.time.Instant.now().toString(),
+                        agentManager.activeProfile.displayName
+                    )
+                    updateSessionInfo()
+                }
+                override fun clearAndRemoveNudge(id: String) = this@ChatToolWindowContent.clearAndRemoveNudge(id)
+                override fun refreshShortcutHints() = this@ChatToolWindowContent.refreshShortcutHints()
+                override val isSending: Boolean get() = this@ChatToolWindowContent.isSending
+                override val activeBubbleId: String? get() = this@ChatToolWindowContent.activeBubbleId
+                override val queuedTexts: ArrayDeque<String> get() = this@ChatToolWindowContent.queuedTexts
+                override val consolePanel: ChatPanelApi get() = this@ChatToolWindowContent.consolePanel
+                override val authPendingError: Any? get() = authService.pendingAuthError
+            }
+        )
         promptOrchestrator = PromptOrchestrator(
             project, agentManager, billing, contextManager, authService,
             { consolePanel }, { copilotBanner }, { statusBanner },
@@ -1194,9 +1220,9 @@ class ChatToolWindowContent(
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
 
         promptTextArea.addSettingsProvider { editor ->
-            setupPromptDragDrop(editor)
-            setupPromptKeyBindings(editor)
-            setupPromptContextMenu(editor)
+            promptEditorSetup.setupDragDrop(editor)
+            promptEditorSetup.setupKeyBindings(editor)
+            promptEditorSetup.setupContextMenu(editor)
             editor.setPlaceholder(promptPlaceholder())
             editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps =
@@ -1235,7 +1261,7 @@ class ChatToolWindowContent(
                 }
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
-                    checkSlashCommandAutocomplete()
+                    promptEditorSetup.checkSlashCommandAutocomplete()
                     // Refresh input toolbar (Send button) and controls toolbar (Pause button) immediately
                     // on every keystroke. ActionToolbar's default polling cycle (~500ms) makes buttons
                     // feel sluggish to enable/disable when text appears/disappears.
@@ -2462,155 +2488,6 @@ class ChatToolWindowContent(
         })
     }
 
-    private fun appendResponse(text: String) {
-        consolePanel.appendText(text)
-    }
-
-    private fun setupPromptKeyBindings(editor: EditorEx) {
-        val contentComponent = editor.contentComponent
-        registerEnterSend(contentComponent)
-        registerShiftEnterNewLine(editor, contentComponent)
-        registerCtrlEnterNudge(contentComponent)
-        registerCtrlShiftEnterQueue(contentComponent)
-        registerShowShortcutsPopup(contentComponent)
-        registerUpArrowRecall(contentComponent)
-        registerPasteIntercept(editor, contentComponent)
-        registerTriggerCharDetection(editor)
-    }
-
-    private fun registerEnterSend(contentComponent: JComponent) {
-        object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) {
-                if (promptTextArea.text.isBlank() || authService.pendingAuthError != null) return
-                when {
-                    consolePanel.hasPendingAskUserRequest() -> onSendStopClicked()
-                    isSending -> onNudgeClicked()
-                    else -> onSendStopClicked()
-                }
-            }
-        }.registerCustomShortcutSet(
-            PromptShortcutAction.resolveShortcutSet(
-                PromptShortcutAction.SEND_ID,
-                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)
-            ),
-            contentComponent
-        )
-    }
-
-    private fun registerShiftEnterNewLine(editor: EditorEx, contentComponent: JComponent) {
-        object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) {
-                val offset = editor.caretModel.offset
-                com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-                    editor.document.insertString(offset, "\n")
-                }
-                editor.caretModel.moveToOffset(offset + 1)
-            }
-        }.registerCustomShortcutSet(
-            PromptShortcutAction.resolveShortcutSet(
-                PromptShortcutAction.NEW_LINE_ID,
-                KeyStroke.getKeyStroke(
-                    java.awt.event.KeyEvent.VK_ENTER,
-                    java.awt.event.InputEvent.SHIFT_DOWN_MASK
-                )
-            ),
-            contentComponent
-        )
-    }
-
-    private fun registerCtrlEnterNudge(contentComponent: JComponent) {
-        object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) = onForceStopAndSend()
-        }.registerCustomShortcutSet(
-            PromptShortcutAction.resolveShortcutSet(
-                PromptShortcutAction.STOP_AND_SEND_ID,
-                KeyStroke.getKeyStroke(
-                    java.awt.event.KeyEvent.VK_ENTER,
-                    java.awt.event.InputEvent.CTRL_DOWN_MASK
-                )
-            ),
-            contentComponent
-        )
-    }
-
-    private fun registerCtrlShiftEnterQueue(contentComponent: JComponent) {
-        object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) = onQueueMessageClicked()
-        }.registerCustomShortcutSet(
-            PromptShortcutAction.resolveShortcutSet(
-                PromptShortcutAction.QUEUE_ID,
-                KeyStroke.getKeyStroke(
-                    java.awt.event.KeyEvent.VK_ENTER,
-                    java.awt.event.InputEvent.CTRL_DOWN_MASK or java.awt.event.InputEvent.SHIFT_DOWN_MASK
-                )
-            ),
-            contentComponent
-        )
-    }
-
-    private fun registerShowShortcutsPopup(contentComponent: JComponent) {
-        object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) = ShortcutCheatSheetPopup.show(promptTextArea)
-        }.registerCustomShortcutSet(
-            PromptShortcutAction.resolveShortcutSet(
-                PromptShortcutAction.SHOW_SHORTCUTS_ID,
-                KeyStroke.getKeyStroke(
-                    java.awt.event.KeyEvent.VK_SLASH,
-                    java.awt.event.InputEvent.CTRL_DOWN_MASK
-                )
-            ),
-            contentComponent
-        )
-    }
-
-    /**
-     * Up-arrow recall: when the prompt is empty and a nudge or queued message
-     * is pending, pop the most recent one back into the input box for editing.
-     * Pending nudge takes priority over queued messages (it's the more recent
-     * pending action). The Up-arrow is only consumed when the input is empty
-     * so multi-line caret navigation still works once the user starts typing.
-     */
-    private fun registerUpArrowRecall(contentComponent: JComponent) {
-        object : AnAction() {
-            override fun getActionUpdateThread(): com.intellij.openapi.actionSystem.ActionUpdateThread =
-                com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
-
-            override fun update(e: AnActionEvent) {
-                // Only consume Up when the prompt is empty AND something is pending to recall.
-                // When disabled, the keystroke falls through to the editor's default
-                // caret-up behavior so multi-line navigation isn't blocked.
-                val empty = promptTextArea.text.isEmpty()
-                val hasPending = activeBubbleId != null || queuedTexts.isNotEmpty()
-                e.presentation.isEnabledAndVisible = empty && hasPending
-            }
-
-            override fun actionPerformed(e: AnActionEvent) {
-                if (promptTextArea.text.isNotEmpty()) return
-                val nudgeId = activeBubbleId
-                if (nudgeId != null) {
-                    val nudgeText = AgentNudgeService.getInstance(project).getPendingNudgesText()
-                    if (!nudgeText.isNullOrEmpty()) promptTextArea.text = nudgeText
-                    clearAndRemoveNudge(nudgeId)
-                    refreshShortcutHints()
-                    return
-                }
-                val lastQueued = queuedTexts.removeLastOrNull() ?: return
-                promptTextArea.text = lastQueued
-                val nudgeService = AgentNudgeService.getInstance(project)
-                nudgeService.removeQueuedMessage(lastQueued)
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.removeQueuedMessageByText(lastQueued)
-                    refreshShortcutHints()
-                }
-            }
-        }.registerCustomShortcutSet(
-            com.intellij.openapi.actionSystem.CustomShortcutSet(
-                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0)
-            ),
-            contentComponent
-        )
-    }
-
     private fun onQueueMessageClicked() {
         val rawText = promptTextArea.text.trim()
         if (rawText.isEmpty()) return
@@ -2637,291 +2514,6 @@ class ChatToolWindowContent(
         onSendStopClicked()
     }
 
-    private fun handlePastePreprocess(
-        event: java.util.EventObject,
-        editor: EditorEx,
-        contentComponent: JComponent,
-        pasteStrokes: Set<KeyStroke>
-    ): Boolean {
-        if (event !is java.awt.event.KeyEvent) return false
-        if (editor.isDisposed) return false
-        if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return false
-        if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return false
-        val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-        if (!SwingUtilities.isDescendingFrom(focused, contentComponent)) return false
-
-        // Image and file pastes take precedence over the smart-paste-to-scratch text path.
-        // They are handled regardless of the smart-paste setting because they have no
-        // sensible "insert as plain text" fallback in the prompt editor.
-        if (handleImageOrFilePaste(event)) return true
-
-        val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
-        if (!chatInputSettings.isSmartPasteEnabled) return false
-
-        val clipText = contextManager.getClipboardText()
-        val minLines = chatInputSettings.smartPasteMinLines
-        val minChars = chatInputSettings.smartPasteMinChars
-        if (clipText == null || (clipText.lines().size <= minLines && clipText.length <= minChars)) return false
-
-        val projectSource = contextManager.findClipboardSourceInProject(clipText)
-        event.consume()
-        ApplicationManager.getApplication().invokeLater {
-            if (editor.isDisposed) return@invokeLater
-            if (projectSource != null) {
-                contextManager.insertInlineChip(editor, projectSource)
-            } else {
-                pasteToScratchHandler.handlePasteToScratch(clipText)
-            }
-        }
-        return true
-    }
-
-    /**
-     * Detect a non-text clipboard payload (raster image or file list) and route it to
-     * [pasteAttachmentHandler]. Returns true (and consumes [event]) when a payload was
-     * handled — meaning callers must not fall through to text paste handling.
-     *
-     * Images take priority: many apps (e.g. browsers) put both the image bytes AND a
-     * placeholder string on the clipboard; we want the image, not the string.
-     */
-    private fun handleImageOrFilePaste(event: java.awt.event.KeyEvent): Boolean {
-        val clipboard = try {
-            Toolkit.getDefaultToolkit().systemClipboard
-        } catch (_: Exception) {
-            return false
-        }
-        val contents = try {
-            clipboard.getContents(null) ?: return false
-        } catch (_: IllegalStateException) {
-            return false
-        }
-
-        if (contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)) {
-            val image = try {
-                contents.getTransferData(java.awt.datatransfer.DataFlavor.imageFlavor) as? Image
-            } catch (_: Exception) {
-                null
-            }
-            if (image != null) {
-                event.consume()
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    pasteAttachmentHandler.handleImagePaste(image)
-                }
-                return true
-            }
-        }
-
-        if (contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
-            @Suppress("UNCHECKED_CAST")
-            val files = try {
-                contents.getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor)
-                    as? List<java.io.File>
-            } catch (_: Exception) {
-                null
-            }
-            if (!files.isNullOrEmpty()) {
-                event.consume()
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    pasteAttachmentHandler.handleFilePaste(files)
-                }
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private fun registerPasteIntercept(editor: EditorEx, contentComponent: JComponent) {
-        val pasteStrokes = setOf(
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK)
-        )
-        // Use IdeEventQueue preprocessor (runs before IdeKeyEventDispatcher) so we consume the
-        // event before any other handler sees it — avoiding the double-paste that occurred when
-        // popup.cancel() restored focus to contentComponent mid-dispatch.
-        com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
-            { event ->
-                handlePastePreprocess(event, editor, contentComponent, pasteStrokes)
-            },
-            project
-        )
-    }
-
-    private fun registerTriggerCharDetection(editor: EditorEx) {
-        editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
-            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                val trigger = ActiveAgentManager.getAttachTriggerChar()
-                if (trigger.isEmpty()) return
-                val inserted = event.newFragment.toString()
-                if (inserted != trigger) return
-
-                val offset = event.offset
-                val text = editor.document.text
-                val isAtStart = offset == 0
-                val isAfterSpace = offset > 0 && text[offset - 1] == ' '
-                if (!isAtStart && !isAfterSpace) return
-
-                ApplicationManager.getApplication().invokeLater {
-                    com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-                        val doc = editor.document
-                        val end = offset + trigger.length
-                        // Guard against stale offset: the document may have changed between
-                        // documentChanged() and this invokeLater callback (e.g. pasting a large block).
-                        if (end <= doc.textLength && doc.getText(
-                                com.intellij.openapi.util.TextRange(
-                                    offset,
-                                    end
-                                )
-                            ) == trigger
-                        ) {
-                            doc.deleteString(offset, end)
-                        }
-                    }
-                    contextManager.openFileSearchPopup()
-                }
-            }
-        }, project)
-    }
-
-    private fun setupPromptContextMenu(editor: EditorEx) {
-        val group = DefaultActionGroup().apply {
-            val editorPopup = ActionManager.getInstance().getAction("EditorPopupMenu")
-            if (editorPopup != null) {
-                add(editorPopup)
-            }
-
-            addSeparator()
-
-            add(object : AnAction("Attach Current File", null, AllIcons.Actions.AddFile) {
-                override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddCurrentFile()
-            })
-            add(object : AnAction("Attach Editor Selection", null, AllIcons.Actions.AddMulticaret) {
-                override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddSelection()
-            })
-            add(object : AnAction("Clear Attachments", null, AllIcons.Actions.GC) {
-                override fun actionPerformed(e: AnActionEvent) {
-                    contextManager.clearInlineChips(editor)
-                }
-
-                override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = contextManager.collectInlineContextItems().isNotEmpty()
-                }
-            })
-
-            addSeparator()
-
-            add(object : AnAction("New Conversation", null, AllIcons.General.Add) {
-                override fun actionPerformed(e: AnActionEvent) {
-                    promptOrchestrator.currentSessionId = null
-                    consolePanel.addSessionSeparator(
-                        java.time.Instant.now().toString(),
-                        agentManager.activeProfile.displayName
-                    )
-                    updateSessionInfo()
-                }
-            })
-        }
-
-        editor.installPopupHandler(
-            com.intellij.openapi.editor.impl.ContextMenuPopupHandler.Simple(group)
-        )
-    }
-
-    private fun setupPromptDragDrop(editor: EditorEx) {
-        editor.contentComponent.dropTarget = java.awt.dnd.DropTarget(
-            editor.contentComponent, java.awt.dnd.DnDConstants.ACTION_COPY,
-            object : java.awt.dnd.DropTargetAdapter() {
-                override fun dragEnter(dtde: java.awt.dnd.DropTargetDragEvent) {
-                    // Always advertise COPY so the source editor does not remove the dragged text.
-                    dtde.acceptDrag(java.awt.dnd.DnDConstants.ACTION_COPY)
-                }
-
-                override fun dragOver(dtde: java.awt.dnd.DropTargetDragEvent) {
-                    dtde.acceptDrag(java.awt.dnd.DnDConstants.ACTION_COPY)
-                }
-
-                override fun drop(dtde: java.awt.dnd.DropTargetDropEvent) {
-                    handleDrop(dtde, editor)
-                }
-            })
-    }
-
-    private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, editor: EditorEx) {
-        try {
-            dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
-            val transferable = dtde.transferable
-
-            // File drops: insert a whole-file chip per dropped file.
-            if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
-                @Suppress("UNCHECKED_CAST") // DataFlavor API returns Object
-                val files = transferable.getTransferData(
-                    java.awt.datatransfer.DataFlavor.javaFileListFlavor
-                ) as List<java.io.File>
-                for (file in files) {
-                    val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-                        .findFileByIoFile(file) ?: continue
-                    val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
-                        .getDocument(vf) ?: continue
-                    val existing = contextManager.collectInlineContextItems().any { it.path == vf.path }
-                    if (!existing) {
-                        val data = ContextItemData(
-                            path = vf.path, name = vf.name,
-                            startLine = 1, endLine = doc.lineCount,
-                            fileTypeName = vf.fileType.name, isSelection = false
-                        )
-                        contextManager.insertInlineChip(editor, data)
-                    }
-                }
-                dtde.dropComplete(true)
-                return
-            }
-
-            // Text drops: treat like smart paste — create a file-reference chip if the
-            // dragged text matches a selection in an open project editor, otherwise create
-            // a scratch file.
-            if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
-                val text = transferable.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
-                if (!text.isNullOrBlank()) {
-                    handleTextDrop(text, editor)
-                    dtde.dropComplete(true)
-                    return
-                }
-            }
-
-            dtde.dropComplete(false)
-        } catch (_: Exception) {
-            dtde.dropComplete(false)
-        }
-    }
-
-    private fun handleTextDrop(text: String, editor: EditorEx) {
-        val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
-        val minLines = chatInputSettings.smartPasteMinLines
-        val minChars = chatInputSettings.smartPasteMinChars
-
-        if (text.lines().size <= minLines && text.length <= minChars) {
-            // Below threshold: insert as plain text.
-            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-                val offset = editor.caretModel.offset
-                editor.document.insertString(offset, text)
-                editor.caretModel.moveToOffset(offset + text.length)
-            }
-            return
-        }
-
-        val projectSource = contextManager.findTextSourceInOpenEditors(text)
-        ApplicationManager.getApplication().invokeLater {
-            if (editor.isDisposed) return@invokeLater
-            if (projectSource != null) {
-                contextManager.insertInlineChip(editor, projectSource)
-            } else {
-                pasteToScratchHandler.handlePasteToScratch(text)
-            }
-        }
-    }
-
-    /** Send a quick-reply directly without touching the user's input field. */
     private fun sendQuickReply(text: String) {
         if (isSending) return
         consolePanel.disableQuickReplies()
@@ -2964,51 +2556,8 @@ class ChatToolWindowContent(
         }
     }
 
-    private var autocompletePopup: com.intellij.openapi.ui.popup.JBPopup? = null
-
-    private fun checkSlashCommandAutocomplete() {
-        val client = agentManager.getClient()
-        if (client !is KiroClient) {
-            autocompletePopup?.cancel()
-            return
-        }
-
-        val text = promptTextArea.text
-        if (!text.startsWith("/") || text.contains("\n")) {
-            autocompletePopup?.cancel()
-            return
-        }
-
-        val commands = client.availableCommands
-        if (commands.size() == 0) return
-
-        val matches = mutableListOf<String>()
-        for (i in 0 until commands.size()) {
-            val cmdObj = commands[i].asJsonObject
-            val cmd = cmdObj["name"]?.asString ?: continue
-            if (cmd.startsWith(text, ignoreCase = true)) {
-                matches.add(cmd)
-            }
-        }
-
-        if (matches.isEmpty()) {
-            autocompletePopup?.cancel()
-            return
-        }
-
-        showAutocompletePopup(matches)
-    }
-
-    private fun showAutocompletePopup(commands: List<String>) {
-        autocompletePopup?.cancel()
-
-        autocompletePopup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
-            .createPopupChooserBuilder(commands)
-            .setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
-            .setItemChosenCallback { selected -> promptTextArea.text = selected.toString() }
-            .createPopup()
-
-        autocompletePopup?.showInBestPositionFor(promptTextArea.editor ?: return)
+    private fun appendResponse(text: String) {
+        consolePanel.appendText(text)
     }
 
     fun getComponent(): JComponent = rootSplitter
