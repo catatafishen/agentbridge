@@ -450,10 +450,13 @@ intellijPlatform {
             if (target == null || target == "PY") create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
             if (target == null || target == "WS") create(IntelliJPlatformType.WebStorm, "2025.3")
             if (target == null || target == "GO") create(IntelliJPlatformType.GoLand, "2025.3")
-            // Track the current EAP to catch internal/removal-scheduled API issues early.
-            // This job runs in its own isolated CI process (verifyIde=IU-EAP), so there is
-            // no shared-filesystem race with the stable-IDE jobs.
-            if (target == "IU-EAP") create(IntelliJPlatformType.IntellijIdeaUltimate, "LATEST-EAP-SNAPSHOT")
+            // Track the latest GA release to catch removed/deprecated API issues early.
+            // JetBrains stopped publishing LATEST-EAP-SNAPSHOT in their Maven repos and changed
+            // the EAP artifact naming convention (idea-BUILD.tar.gz instead of ideaIU-*.tar.gz),
+            // so we pin to the latest stable release instead. This job runs in its own isolated
+            // CI process (verifyIde=IU-EAP), so there is no shared-filesystem race with the
+            // stable-IDE jobs that verify against our build target (2025.3).
+            if (target == "IU-EAP") create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1")
             // Note: Android Studio verification via Gradle plugin is broken
             // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
             // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
