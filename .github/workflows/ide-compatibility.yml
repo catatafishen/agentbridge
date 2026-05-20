@@ -5,9 +5,11 @@ name: IDE Compatibility Check
 #
 # Architecture:
 #   build-plugin  — compiles and packages the plugin ZIP once
-#   verify (×4)   — four parallel jobs, each verifying a single IDE in its own
+#   verify (×5)   — five parallel jobs, each verifying a single IDE in its own
 #                   process with its own isolated copy of JARs. No shared
 #                   CachingJarFileSystemProvider, no ClosedFileSystemException.
+#                   Verifies: IU 2025.3 (min), PY 2025.3, WS 2025.3, GO 2025.3,
+#                   and IU 2026.1 (latest stable, to catch API removals early).
 #
 # Results are checked by publish-marketplace.yml: if this workflow has not
 # run for a given release commit, or if it failed, marketplace publishing
@@ -84,7 +86,7 @@ jobs:
           - { id: PY, name: "PyCharm Professional" }
           - { id: WS, name: "WebStorm" }
           - { id: GO, name: "GoLand" }
-          - { id: IU-EAP, name: "IntelliJ IDEA Ultimate (EAP)" }
+          - { id: IU-EAP, name: "IntelliJ IDEA Ultimate 2026.1" }
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
