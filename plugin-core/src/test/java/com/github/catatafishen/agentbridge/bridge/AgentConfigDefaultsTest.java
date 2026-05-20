@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.agent.AgentException;
+import com.github.catatafishen.agentbridge.client.AgentException;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;

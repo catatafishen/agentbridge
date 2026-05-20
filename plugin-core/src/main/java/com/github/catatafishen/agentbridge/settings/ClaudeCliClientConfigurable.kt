@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
-import com.github.catatafishen.agentbridge.acp.client.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.github.catatafishen.agentbridge.ui.ThemeColor
 import com.intellij.openapi.options.BoundConfigurable

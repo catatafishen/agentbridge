@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.model.Model
-import com.github.catatafishen.agentbridge.agent.AbstractAgentClient
+import com.github.catatafishen.agentbridge.client.AbstractAgentClient
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentUiSettings
 import com.intellij.openapi.project.Project

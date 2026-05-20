@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient
-import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient
+import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient
+import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.intellij.openapi.util.IconLoader
 import javax.swing.Icon

@@ -1,0 +1,1967 @@
+package com.github.catatafishen.agentbridge.client.acp;
+
+
+import com.github.catatafishen.agentbridge.acp.model.InitializeRequest;
+import com.github.catatafishen.agentbridge.acp.model.InitializeResponse;
+import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
+import com.github.catatafishen.agentbridge.acp.model.NewSessionResponseDeserializer;
+import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
+import com.github.catatafishen.agentbridge.bridge.AuthMethod;
+import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
+import com.github.catatafishen.agentbridge.bridge.SessionOption;
+import com.github.catatafishen.agentbridge.client.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.client.AgentPromptException;
+import com.github.catatafishen.agentbridge.client.AgentSessionException;
+import com.github.catatafishen.agentbridge.client.AgentStartException;
+import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes;
+import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
+import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.ContentBlockSerializer;
+import com.github.catatafishen.agentbridge.model.Model;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.McpServerControl;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
+import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
+import com.github.catatafishen.agentbridge.settings.BinaryDetector;
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
+import com.github.catatafishen.agentbridge.settings.PathSanitizer;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.notification.NotificationType;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
+/**
+ * Abstract ACP protocol client.
+ * <p>
+ * Manages: process lifecycle, initialization, authentication, sessions, prompt streaming.
+ * Agent-specific behavior is provided by abstract/overridable methods in subclasses.
+ * Each concrete subclass IS the agent definition — no separate profile needed.
+ *
+ * @see <a href="https://agentclientprotocol.com">Agent Client Protocol</a>
+ */
+public abstract class AcpClient extends AbstractAgentClient {
+
+    private static final Logger LOG = Logger.getInstance(AcpClient.class);
+
+    private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
+    private static final long SESSION_TIMEOUT_SECONDS = 30;
+    private static final long AUTH_TIMEOUT_SECONDS = 30;
+    private static final long STOP_TIMEOUT_SECONDS = 5;
+
+    private static final int PROTOCOL_VERSION = 1;
+    private static final String CLIENT_NAME = "AgentBridge";
+    private static final String CLIENT_TITLE = "AgentBridge for IntelliJ";
+    private static final String CLIENT_VERSION = "2.0.0";
+    private static final String KEY_SESSION_ID = "sessionId";
+    private static final String KEY_UPDATE = "update";
+    private static final String KEY_CONTENT = "content";
+    private static final String KEY_ARGUMENTS = "arguments";
+    private static final String KEY_OPTIONS = "options";
+    private static final String KEY_OPTION_ID = "optionId";
+    private static final String KEY_OUTCOME = "outcome";
+    private static final String KEY_TOOL_CALL_ID = "toolCallId";
+    private static final String VALUE_SELECTED = "selected";
+    private static final String VALUE_ALLOW_ONCE = "allow_once";
+    private static final String VALUE_DENY_ONCE = "deny_once";
+    private static final String VALUE_REJECT_ONCE = "reject_once";
+    private static final String KEY_TOOL_CALL = "toolCall";
+    private static final String ERR_PROMPT_FAILED_PREFIX = "Prompt failed for ";
+    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of(
+        "web_fetch", "web_search", "task_complete",
+        // Copilot CLI meta-tools: sub-agent spawner, skill invoker, SQL runner, intent reporter —
+        // no MCP equivalents exist, so these are passed through rather than denied.
+        "task", "skill", "sql", "report_intent"
+    );
+
+    protected final Gson gson = new GsonBuilder()
+        .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
+        .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
+        .create();
+    protected final JsonRpcTransport transport = new JsonRpcTransport();
+    protected final Project project;
+    private final AcpFileSystemHandler fsHandler;
+    private final AcpTerminalHandler terminalHandler;
+
+    private @Nullable Process agentProcess;
+    private @Nullable InitializeResponse capabilities;
+    private @Nullable String currentSessionId;
+
+    protected @Nullable String getCurrentSessionId() {
+        return currentSessionId;
+    }
+
+    private @Nullable String launchCwd;
+    /**
+     * Tracks the resume session ID requested in the current launch cycle.
+     * Set at the start of {@link #createSession}, used by {@link #loadSession},
+     * {@link #enableInjectionFallback}, and subclass {@link #customizeNewSession} overrides
+     * that embed the resume ID directly in the {@code session/new} request (e.g. Junie, Kiro).
+     */
+    protected @Nullable String requestedResumeId;
+    private final List<Model> availableModels = new ArrayList<>();
+    private final List<AbstractAgentClient.AgentMode> availableModes = new ArrayList<>();
+    private @Nullable String currentModeSlug = null;
+    private @Nullable String currentModelId = null;
+    private @Nullable String currentAgentSlug = null;
+    private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
+    private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
+    /**
+     * Conversation history replayed by the agent during {@code session/load}.
+     * Non-null and non-empty when the agent successfully restored a session with
+     * history replay via {@code session/update} notifications.
+     * Null when no session was loaded or the agent didn't replay any history.
+     * The UI layer can use this to determine whether injection is needed.
+     */
+    private volatile @Nullable List<SessionUpdate> loadedSessionHistory;
+    /**
+     * True while {@link #sendLoadSessionRequest} is replaying historical permission requests.
+     * Prevents {@link #onBuiltInToolApproved} from firing reprimands for historical tool calls
+     * that are outside the agent's current context window.
+     */
+    private volatile boolean restoringHistory = false;
+    /**
+     * Tracks pending {@code session/request_permission} request IDs so we can respond with
+     * {@code {outcome: "cancelled"}} when {@link #cancelSession} is called.
+     * Per ACP spec, the Client MUST respond to all pending permission requests with the
+     * cancelled outcome when a turn is cancelled.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, JsonElement> pendingPermissionRequests =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
+     */
+    private volatile long lastActivityNanos = System.nanoTime();
+
+    private final AcpMessageParser messageParser = new AcpMessageParser(
+        new AcpMessageParser.Delegate() {
+            @Override
+            public String resolveToolId(String t) {
+                return AcpClient.this.resolveToolId(t);
+            }
+
+            @Override
+            public @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+                return AcpClient.this.resolveAcpName(rawTitle, kind);
+            }
+
+            @Override
+            public @Nullable JsonObject parseToolCallArguments(@NotNull JsonObject p) {
+                return AcpClient.this.parseToolCallArguments(p);
+            }
+
+            @Override
+            public @Nullable String extractSubAgentType(@NotNull JsonObject p, @NotNull String t, @Nullable JsonObject a) {
+                return AcpClient.this.extractSubAgentType(p, t, a);
+            }
+        },
+        this::displayName
+    );
+
+    protected AcpClient(Project project) {
+        this.project = project;
+        this.fsHandler = new AcpFileSystemHandler(project);
+        this.terminalHandler = new AcpTerminalHandler(project);
+    }
+
+    // ═══════════════════════════════════════════════════
+    // Final protocol methods — subclasses cannot override
+    // ═══════════════════════════════════════════════════
+
+    private static final int LOG_MAX_CHARS = 2000;
+
+    private static String truncateForLog(String s) {
+        if (s == null || s.length() <= LOG_MAX_CHARS) return s;
+        return s.substring(0, LOG_MAX_CHARS) + "... [truncated " + (s.length() - LOG_MAX_CHARS) + " chars]";
+    }
+
+    @Override
+    public final void start() throws AgentStartException {
+        try {
+            LOG.info(displayName() + " starting...");
+            int mcpPort = resolveMcpPort();
+            LOG.info(displayName() + " launching process (MCP port: " + mcpPort + ")");
+            agentProcess = launchProcess(mcpPort);
+            LOG.info(displayName() + " process launched, starting transport");
+            transport.start(agentProcess);
+            transport.setDebugLogger(line -> {
+                if (McpServerSettings.getInstance(project).isDebugLoggingEnabled()) {
+                    LOG.info("[ACP] " + truncateForLog(line));
+                }
+            });
+            LOG.info(displayName() + " transport started, registering handlers");
+            registerHandlers();
+            LOG.info(displayName() + " handlers registered, initializing");
+            initializeWithLogging();
+            LOG.info(displayName() + " initialized, authenticating");
+            authenticateWithLogging();
+            LOG.info(displayName() + " authenticated, fetching models");
+            eagerFetchModelsWithLogging();
+            LOG.info(displayName() + " agent started successfully");
+        } catch (Exception e) {
+            LOG.warn(displayName() + " startup failed at: " + getStartupStepFromException(e), e);
+            stop();
+            throw new AgentStartException("Failed to start " + displayName(), e);
+        }
+    }
+
+    private void initializeWithLogging() throws InterruptedException, ExecutionException, TimeoutException {
+        try {
+            capabilities = initialize();
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            LOG.warn(displayName() + " initialization failed: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private void authenticateWithLogging() throws InterruptedException, ExecutionException, TimeoutException {
+        try {
+            authenticate();
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            LOG.warn(displayName() + " authentication failed: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private void eagerFetchModelsWithLogging() {
+        try {
+            eagerFetchModels();
+        } catch (RuntimeException e) {
+            LOG.warn(displayName() + " model fetching failed: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private String getStartupStepFromException(Exception e) {
+        StackTraceElement[] stack = e.getStackTrace();
+        if (stack.length > 0) {
+            String method = stack[0].getMethodName();
+            if (method.contains("launch")) return "process launch";
+            if (method.contains("start")) return "transport start";
+            if (method.contains("initialize")) return "initialization";
+            if (method.contains("authenticate")) return "authentication";
+            if (method.contains("fetchModels")) return "model fetch";
+        }
+        return "unknown step";
+    }
+
+    @Override
+    public String checkAuthentication() {
+        if (!isHealthy()) {
+            return "Agent not started";
+        }
+        // If a session was already created for this process instance, auth was verified during
+        // authenticate() in start(). Calling createSession() again would trigger session resumption
+        // and show spurious "session resume not available" notifications from banner polling.
+        if (currentSessionId != null) {
+            return null;
+        }
+        // No session yet (eagerFetchModels() may have failed) — try creating one to surface
+        // auth errors that only manifest on the first API call.
+        try {
+            String cwd = project.getBasePath();
+            if (cwd == null) {
+                cwd = SystemProperties.getUserHome();
+            }
+            createSession(cwd);
+            return null; // Auth successful
+        } catch (AgentSessionException e) {
+            // Check if it's an auth error
+            Throwable cause = e;
+            while (cause != null) {
+                String msg = cause.getMessage();
+                if (msg != null && (msg.toLowerCase().contains("auth") || msg.toLowerCase().contains("sign in"))) {
+                    return msg;
+                }
+                cause = cause.getCause();
+            }
+            // Not an auth error, agent is healthy
+            return null;
+        }
+    }
+
+    @Override
+    public AuthMethod getAuthMethod() {
+        if (capabilities == null || capabilities.authMethods() == null || capabilities.authMethods().isEmpty()) {
+            return null;
+        }
+        // Return the first auth method from capabilities
+        var method = capabilities.authMethods().getFirst();
+        LOG.info(displayName() + ": ACP authMethod = " + method + ", id=" + method.id() + ", name=" + method.name());
+        var authMethod = new AuthMethod();
+        authMethod.setId(method.id());
+        authMethod.setName(method.name());
+        authMethod.setDescription(method.description());
+        return authMethod;
+    }
+
+    @Override
+    public final void stop() {
+        try {
+            transport.stop();
+        } catch (Exception e) {
+            LOG.warn("Transport stop encountered an error; proceeding to kill process", e);
+        } finally {
+            destroyProcess();
+            agentProcess = null;
+            capabilities = null;
+            currentSessionId = null;
+            launchCwd = null;
+            availableModels.clear();
+            availableModes.clear();
+            currentModeSlug = null;
+            currentModelId = null;
+            currentAgentSlug = null;
+            availableConfigOptions.clear();
+            pendingPermissionRequests.clear();
+            terminalHandler.releaseAll();
+            loadedSessionHistory = null;
+            updateConsumer = null;
+        }
+    }
+
+    @Override
+    public final boolean isConnected() {
+        return transport.isAlive() && agentProcess != null && agentProcess.isAlive();
+    }
+
+    @Override
+    public final String createSession(String cwd) throws AgentSessionException {
+        // Reuse the existing session if we already have one for the same working directory.
+        // eagerFetchModels() creates a session at startup — avoid a redundant second session/new.
+        if (currentSessionId != null && cwd != null && cwd.equals(launchCwd)) {
+            LOG.info(displayName() + ": reusing existing session " + currentSessionId);
+            return currentSessionId;
+        }
+        try {
+            // Snapshot the current session before it starts so the user can revert to it.
+            tryBranchSessionAtStartup();
+            beforeCreateSession(cwd);
+            requestedResumeId = loadResumeSessionId();
+
+            String resumedSessionId = tryResumeRequestedSession(cwd);
+            if (resumedSessionId != null) {
+                return resumedSessionId;
+            }
+
+            // Standard session/new path — creates a fresh session.
+            JsonObject params = buildNewSessionParams(cwd);
+
+            CompletableFuture<JsonElement> future = transport.sendRequest("session/new", params);
+            JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            LOG.debug(displayName() + ": session/new raw response: " + result);
+
+            NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
+            logModelList("session/new", response.models());
+
+            currentSessionId = response.sessionId();
+            processSessionResponse(response);
+
+            onSessionCreated(currentSessionId);
+            persistResumeSessionId(currentSessionId);
+            return currentSessionId;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AgentSessionException("Session creation interrupted for " + displayName(), e);
+        } catch (Exception e) {
+            throw new AgentSessionException("Failed to create session for " + displayName(), e);
+        }
+    }
+
+    @Nullable
+    private String tryResumeRequestedSession(String cwd) {
+        // Per ACP spec, session/load resumes an existing session.
+        // Subclasses may override loadSession() for agent-specific behavior
+        // (e.g. CopilotClient throws because Copilot doesn't support it).
+        if (requestedResumeId == null) {
+            return null;
+        }
+        try {
+            String loaded = loadSession(cwd, requestedResumeId);
+            if (loadedSessionHistory != null) {
+                // Agent replayed history — it has conversation context.
+                // Disable injection in case it was left enabled from a prior failed load.
+                ActiveAgentManager.setInjectConversationHistory(project, false);
+            } else {
+                // Agent loaded the session but didn't replay any history.
+                // It may not have conversation context — inject as a safety net.
+                LOG.info(displayName() + ": session loaded but no history replayed — enabling injection fallback");
+                enableInjectionFallback(requestedResumeId, supportsSessionResumption());
+            }
+            return loaded;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn(displayName() + ": session/load interrupted for " + requestedResumeId
+                + ", falling back to session/new");
+            clearResumeAndEnableInjectionFallback();
+        } catch (Exception e) {
+            LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
+                + ", falling back to session/new: " + e.getMessage());
+            clearResumeAndEnableInjectionFallback();
+        }
+        return null;
+    }
+
+    private void clearResumeAndEnableInjectionFallback() {
+        // Clear the stale ID so the next start doesn't retry the same dead session.
+        // If session/new below succeeds, persistResumeSessionId() replaces this with the new ID.
+        persistResumeSessionId(null);
+        enableInjectionFallback(requestedResumeId, supportsSessionResumption());
+    }
+
+    private JsonObject buildNewSessionParams(String cwd) {
+        int mcpPort = resolveMcpPort();
+        JsonObject params = new JsonObject();
+        params.addProperty("cwd", cwd);
+        customizeNewSession(cwd, mcpPort, params);
+        return params;
+    }
+
+    /**
+     * Processes the models, modes, and config options from a session response.
+     * Used by both {@code session/new} and {@code session/resume} paths.
+     * The caller is responsible for setting {@code currentSessionId} before calling this.
+     */
+    private void processSessionResponse(NewSessionResponse response) {
+        if (response.models() != null) {
+            availableModels.clear();
+            availableModels.addAll(response.models());
+        }
+
+        if (response.currentModelId() != null) {
+            currentModelId = response.currentModelId();
+        }
+
+        if (response.modes() != null) {
+            updateModes(response);
+        }
+
+        if (response.configOptions() != null) {
+            updateConfigOptions(response);
+        }
+    }
+
+    /**
+     * Logs model IDs received from a session response at INFO level.
+     * Aids diagnosis of stale model list reports (ref: issue #416).
+     */
+    private void logModelList(String source, @Nullable List<Model> models) {
+        if (models == null || models.isEmpty()) {
+            LOG.info(displayName() + ": " + source + " returned 0 model(s)");
+            return;
+        }
+        String ids = models.stream()
+            .map(Model::id)
+            .collect(java.util.stream.Collectors.joining(", "));
+        LOG.info(displayName() + ": " + source + " returned " + models.size() + " model(s): [" + ids + "]");
+    }
+
+    static List<AbstractAgentClient.AgentMode> mapModesStatic(@Nullable List<NewSessionResponse.AvailableMode> modes) {
+        if (modes == null) return List.of();
+        return modes.stream()
+            .map(m -> new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()))
+            .toList();
+    }
+
+    private void updateModes(NewSessionResponse response) {
+        availableModes.clear();
+        availableModes.addAll(mapModesStatic(response.modes()));
+        if (currentModeSlug == null) {
+            String reportedMode = response.currentModeId();
+            currentModeSlug = reportedMode != null ? reportedMode : defaultModeSlug();
+        }
+        if (currentAgentSlug == null) {
+            currentAgentSlug = defaultAgentSlug();
+        }
+    }
+
+    static List<AbstractAgentClient.AgentConfigOption> mapConfigOptionsStatic(
+        @Nullable List<NewSessionResponse.SessionConfigOption> options) {
+        if (options == null) return List.of();
+        List<AbstractAgentClient.AgentConfigOption> result = new ArrayList<>();
+        for (NewSessionResponse.SessionConfigOption opt : options) {
+            List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
+                : opt.values().stream()
+                  .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                  .toList();
+            String optId = opt.id() != null ? opt.id() : "";
+            String label = opt.label() != null ? opt.label() : optId;
+            result.add(new AbstractAgentClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
+        }
+        return result;
+    }
+
+    private void updateConfigOptions(NewSessionResponse response) {
+        availableConfigOptions.clear();
+        availableConfigOptions.addAll(mapConfigOptionsStatic(response.configOptions()));
+        LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
+    }
+
+    /**
+     * Loads an existing session by ID, per the ACP {@code session/load} spec.
+     * <p>
+     * The default implementation checks the {@code loadSession} agent capability advertised
+     * during initialization. If supported, sends a {@code session/load} JSON-RPC request.
+     * Per the ACP spec, the agent replays conversation history via {@code session/update}
+     * notifications and responds with {@code null}.
+     * <p>
+     * Subclasses may override this to:
+     * <ul>
+     *   <li>Use an agent-specific variant (e.g. OpenCode's {@code session/resume})</li>
+     *   <li>Throw immediately if the agent is known not to support session loading
+     *       (e.g. Copilot CLI)</li>
+     * </ul>
+     *
+     * @return the loaded session ID (same as {@code sessionId} param)
+     * @throws AgentSessionException if the agent does not support session loading
+     * @throws Exception             if the RPC call fails
+     * @see <a href="https://agentclientprotocol.com/protocol/session-setup">ACP Session Setup</a>
+     */
+    protected String loadSession(String cwd, String sessionId) throws AgentSessionException, InterruptedException, ExecutionException, TimeoutException {
+        if (!supportsSessionResumption()) {
+            throw new AgentSessionException(
+                displayName() + " does not advertise loadSession capability");
+        }
+        return sendLoadSessionRequest("session/load", cwd, sessionId);
+    }
+
+    /**
+     * Whether this agent supports session resumption via {@link #loadSession}.
+     * <p>
+     * Default: checks if the agent advertised the {@code loadSession} capability
+     * during initialization. Subclasses can override to return {@code false}
+     * for agents known not to support resumption even if the capability is
+     * accidentally advertised, or to return {@code true} for agents that use
+     * non-standard resumption methods.
+     */
+    protected boolean supportsSessionResumption() {
+        return capabilities != null
+            && capabilities.agentCapabilities() != null
+            && Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession());
+    }
+
+    /**
+     * Sends a session load/resume RPC request and processes the response.
+     * Handles all internal state management (currentSessionId, models, modes, etc.).
+     * <p>
+     * Per ACP spec, the agent may replay conversation history during {@code session/load}
+     * via {@code session/update} notifications. This method buffers those notifications
+     * into {@link #loadedSessionHistory} so the UI layer can determine whether the agent
+     * successfully restored context.
+     * <p>
+     * Subclasses that override {@link #loadSession} should call this method with the
+     * appropriate RPC method name (e.g. {@code "session/resume"} for OpenCode).
+     *
+     * @param method    the JSON-RPC method name (e.g. {@code "session/load"} or {@code "session/resume"})
+     * @param cwd       working directory
+     * @param sessionId session to load
+     * @return the loaded session ID
+     */
+    protected final String sendLoadSessionRequest(String method, String cwd, String sessionId) throws InterruptedException, ExecutionException, TimeoutException {
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        params.addProperty("cwd", cwd);
+        int mcpPort = resolveMcpPort();
+        customizeNewSession(cwd, mcpPort, params);
+
+        // Buffer session/update notifications that arrive during session/load.
+        // Per ACP spec, the agent replays conversation history via these notifications.
+        List<SessionUpdate> loadBuffer = new ArrayList<>();
+        updateConsumer = loadBuffer::add;
+        restoringHistory = true;
+        LOG.info(displayName() + ": attempting " + method + " for " + sessionId);
+        try {
+            CompletableFuture<JsonElement> future = transport.sendRequest(method, params);
+            JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            LOG.debug(displayName() + ": " + method + " response: " + result);
+
+            // Per ACP spec, session/load response is null (history replayed via session/update).
+            // Some agents (e.g. OpenCode's session/resume) return models/modes/configOptions.
+            if (result != null && !result.isJsonNull()) {
+                NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
+                logModelList(method, response.models());
+                processSessionResponse(response);
+            }
+        } finally {
+            updateConsumer = null;
+            restoringHistory = false;
+        }
+
+        loadedSessionHistory = loadBuffer.isEmpty() ? null : List.copyOf(loadBuffer);
+        LOG.info(displayName() + ": loaded session " + sessionId + " via " + method
+            + " (" + loadBuffer.size() + " history update(s) replayed)");
+
+        currentSessionId = sessionId;
+        onSessionCreated(sessionId);
+        persistResumeSessionId(sessionId);
+        return sessionId;
+    }
+
+    /**
+     * Marks the session history as loaded internally by the agent, even though no
+     * {@code session/update} notifications were replayed during {@code session/load}.
+     * <p>
+     * Some agents (e.g. OpenCode) restore conversation history from their own storage
+     * and do not replay it via ACP notifications. Call this from {@link #loadSession}
+     * after {@link #sendLoadSessionRequest} to prevent the injection fallback.
+     */
+    protected void markSessionHistoryLoadedInternally() {
+        loadedSessionHistory = List.of();
+    }
+
+    /**
+     * Returns {@code true} while {@link #sendLoadSessionRequest} is replaying historical
+     * {@code session/update} notifications. Subclasses can use this to skip side-effects
+     * (e.g. reprimand nudges) that should not fire for historical tool calls.
+     */
+    protected boolean isRestoringHistory() {
+        return restoringHistory;
+    }
+
+    /**
+     * Enables conversation history injection as a fallback when session loading fails.
+     * Shows a notification to the user explaining the limitation if resumption was expected.
+     *
+     * @param requestedId the session ID that was requested for resumption
+     * @param expected    whether resumption was expected to work for this agent
+     */
+    private void enableInjectionFallback(String requestedId, boolean expected) {
+        if (!ActiveAgentManager.getInjectConversationHistory(project)) {
+            ActiveAgentManager.setInjectConversationHistory(project, true);
+        }
+
+        if (!expected) {
+            LOG.info(displayName() + ": session resume not supported — silently enabled injection fallback");
+            return;
+        }
+
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+            com.github.catatafishen.agentbridge.psi.PlatformApiCompat.showNotification(
+                project,
+                displayName() + " session resume not available",
+                "Session load was requested but " + displayName() + " could not resume session "
+                    + requestedId + ". "
+                    + "Conversation history injection has been enabled as a fallback — "
+                    + "a compressed summary of the previous session will be prepended to "
+                    + "your first prompt. You can configure this in "
+                    + "Settings → AgentBridge → Chat History.",
+                NotificationType.INFORMATION));
+    }
+
+    @Override
+    public @Nullable List<SessionUpdate> getLoadedSessionHistory() {
+        return loadedSessionHistory;
+    }
+
+    @Override
+    public void dropCurrentSession() {
+        currentSessionId = null;
+    }
+
+    @Override
+    public final void cancelSession(String sessionId) {
+        // ACP spec: Client MUST respond to all pending session/request_permission
+        // requests with the "cancelled" outcome before sending session/cancel.
+        cancelPendingPermissionRequests();
+
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        transport.sendNotification("session/cancel", params);
+        // Clear the cached session ID so the next createSession() starts a new one
+        if (sessionId.equals(currentSessionId)) {
+            currentSessionId = null;
+        }
+    }
+
+    // ── Session resumption helpers ───────────────────────────────────────────
+
+    /**
+     * Reads the resume session ID from settings. Returns {@code null} on failure or when unset.
+     * Package-private so tests can stub it without a live platform.
+     */
+    @Nullable String loadResumeSessionId() {
+        try {
+            ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
+            return manager.getSettings().getResumeSessionId();
+        } catch (Exception e) {
+            LOG.warn("Failed to load resume session ID", e);
+            return null;
+        }
+    }
+
+    private void persistResumeSessionId(@Nullable String sessionId) {
+        try {
+            ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
+            manager.getSettings().setResumeSessionId(sessionId);
+        } catch (Exception e) {
+            LOG.warn("Failed to persist resume session ID", e);
+        }
+    }
+
+    private int getTurnTimeoutSeconds() {
+        return ActiveAgentManager.getInstance(project).getSharedTurnTimeoutSeconds();
+    }
+
+    private int getInactivityTimeoutSeconds() {
+        return ActiveAgentManager.getInstance(project).getSharedInactivityTimeoutSeconds();
+    }
+
+    @Override
+    public final PromptResponse sendPrompt(PromptRequest request,
+                                           Consumer<SessionUpdate> onUpdate) throws AgentPromptException {
+        try {
+            long turnStartNanos = System.nanoTime();
+            lastActivityNanos = turnStartNanos;
+            updateConsumer = onUpdate;
+            PromptRequest effectiveRequest = beforeSendPrompt(request);
+            JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
+            LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
+            CompletableFuture<JsonElement> future = transport.sendRequest("session/prompt", params);
+            JsonElement result = waitForPromptResult(future, turnStartNanos);
+            return gson.fromJson(result, PromptResponse.class);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AgentPromptException("Prompt interrupted for " + displayName(), e);
+        } catch (Exception e) {
+            // On timeout, cancel the remote session so the agent stops working
+            if (e instanceof java.util.concurrent.TimeoutException && currentSessionId != null) {
+                try {
+                    cancelSession(currentSessionId);
+                } catch (Exception cancelEx) {
+                    LOG.warn(displayName() + ": failed to cancel session after timeout", cancelEx);
+                }
+            }
+            PromptResponse recovery = tryRecoverPromptException(e);
+            if (recovery != null) return recovery;
+            String rootMsg = extractRootCauseMessage(e);
+            String msg = rootMsg != null
+                ? ERR_PROMPT_FAILED_PREFIX + displayName() + ": " + rootMsg
+                : ERR_PROMPT_FAILED_PREFIX + displayName();
+            throw new AgentPromptException(msg, e);
+        } finally {
+            afterPromptComplete();
+        }
+    }
+
+    /**
+     * Hook called before sending a {@code session/prompt}. Subclasses may override to
+     * augment the request (e.g. prepend corrective guidance). Default: returns unchanged.
+     */
+    protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        return request;
+    }
+
+    /**
+     * Called in the finally block after {@code sendPrompt} completes (success or failure).
+     * Default: clears {@code updateConsumer}. Override to retain it (e.g. Kiro sends
+     * thought chunks asynchronously after the prompt response).
+     */
+    protected void afterPromptComplete() {
+        updateConsumer = null;
+    }
+
+    /**
+     * Called when {@code sendPrompt} catches an exception.
+     * Override to return a synthetic {@link PromptResponse} if the failure is recoverable
+     * (e.g. a known agent-side deserialization bug where streaming updates already rendered
+     * the response). Returning {@code null} causes the default exception to be thrown.
+     */
+    protected @Nullable PromptResponse tryRecoverPromptException(Exception cause) {
+        return null;
+    }
+
+    /**
+     * Walks the cause chain of an exception and returns the most descriptive non-null message.
+     * Unwraps {@link java.util.concurrent.ExecutionException} wrappers and strips unhelpful
+     * outer messages like "Prompt failed for ..." so the user sees the real reason.
+     */
+    @Nullable
+    private static String extractRootCauseMessage(Throwable e) {
+        Throwable current = e;
+        String bestMsg = null;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && !msg.isBlank()
+                && !msg.startsWith(ERR_PROMPT_FAILED_PREFIX)
+                && !msg.startsWith("Prompt interrupted for ")) {
+                bestMsg = msg;
+            }
+            current = current.getCause();
+        }
+        return bestMsg;
+    }
+
+    /**
+     * Waits for the {@code session/prompt} response using an inactivity-based deadline.
+     * <p>
+     * Rather than a hard wall-clock timeout from the time the request was sent (which
+     * would prematurely kill legitimately long agentic turns), this method polls in short
+     * intervals and only times out when no {@code session/update} notification has arrived
+     * for the configured inactivity timeout seconds. As long as the agent keeps streaming
+     * chunks — even during a multi-tool, multi-minute turn — the deadline keeps resetting.
+     */
+    private JsonElement waitForPromptResult(CompletableFuture<JsonElement> future, long turnStartNanos)
+        throws InterruptedException, java.util.concurrent.ExecutionException,
+        java.util.concurrent.TimeoutException {
+        long pollMs = 5_000L;
+        long turnDeadlineNanos = turnStartNanos + TimeUnit.SECONDS.toNanos(getTurnTimeoutSeconds());
+        long inactivityLimitNanos = TimeUnit.SECONDS.toNanos(getInactivityTimeoutSeconds());
+        while (true) {
+            long now = System.nanoTime();
+            long lastActivity = lastActivityNanos;
+            long inactivityDeadlineNanos = lastActivity + inactivityLimitNanos;
+            long remainingNanos = Math.min(turnDeadlineNanos, inactivityDeadlineNanos) - now;
+            if (remainingNanos <= 0) {
+                if (turnDeadlineNanos <= inactivityDeadlineNanos) {
+                    long elapsedSec = TimeUnit.NANOSECONDS.toSeconds(now - turnStartNanos);
+                    LOG.warn(displayName() + ": turn timeout after " + elapsedSec + "s");
+                    throw new java.util.concurrent.TimeoutException(
+                        "Agent turn timed out after " + elapsedSec + "s"
+                    );
+                }
+                long silenceSec = TimeUnit.NANOSECONDS.toSeconds(now - lastActivity);
+                LOG.warn(displayName() + ": inactivity timeout after " + silenceSec + "s of silence");
+                throw new java.util.concurrent.TimeoutException(
+                    "Agent inactive for " + silenceSec + "s (no session/update received)"
+                );
+            }
+            long waitMillis = Math.clamp(TimeUnit.NANOSECONDS.toMillis(remainingNanos), 1L, pollMs);
+            try {
+                return future.get(waitMillis, TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                if (future.isDone()) {
+                    return future.get();
+                }
+            }
+        }
+    }
+
+    /**
+     * Called at the very start of {@code createSession}, before the {@code session/new} RPC.
+     * Override to perform per-session setup, e.g. restarting a poisoned process.
+     */
+    protected void beforeCreateSession(String cwd) throws AgentStartException {
+        // default: no-op
+    }
+
+    /**
+     * Snapshots the current session before a new one starts, if the setting is enabled.
+     * Failures are logged and swallowed — a missing snapshot must never abort session creation.
+     * Package-private so the branch guard can be exercised in unit tests without a live platform.
+     */
+    void tryBranchSessionAtStartup() {
+        try {
+            if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
+                branchCurrentSession();
+            }
+        } catch (Exception e) {
+            LOG.warn("Branch-at-startup check failed — continuing without snapshot", e);
+        }
+    }
+
+    private void branchCurrentSession() {
+        try {
+            ConversationService.getInstance(project).branchCurrentSession();
+        } catch (Exception e) {
+            LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
+        }
+    }
+
+    @Override
+    public final List<Model> getAvailableModels() {
+        return Collections.unmodifiableList(availableModels);
+    }
+
+    @Override
+    public final @Nullable String getCurrentModelId() {
+        return currentModelId;
+    }
+
+    @Override
+    public final List<AbstractAgentClient.AgentMode> getAvailableModes() {
+        return Collections.unmodifiableList(availableModes);
+    }
+
+    @Override
+    public final @Nullable String getCurrentModeSlug() {
+        return currentModeSlug != null ? currentModeSlug : defaultModeSlug();
+    }
+
+    @Override
+    public final void setCurrentModeSlug(@Nullable String slug) {
+        currentModeSlug = slug;
+    }
+
+    @Override
+    public final @Nullable String getCurrentAgentSlug() {
+        return currentAgentSlug != null ? currentAgentSlug : defaultAgentSlug();
+    }
+
+    @Override
+    public final void setCurrentAgentSlug(@Nullable String slug) {
+        currentAgentSlug = slug;
+    }
+
+    @Override
+    public final List<AbstractAgentClient.AgentConfigOption> getAvailableConfigOptions() {
+        return Collections.unmodifiableList(availableConfigOptions);
+    }
+
+    /**
+     * Bridges ACP config options (from session/new) to the {@link SessionOption} type used by
+     * the UI toolbar dropdowns. Called by the toolbar on every repaint — returns the live list.
+     *
+     * <p>Config options whose values exactly cover the available model list are suppressed when
+     * the session already provided a proper {@code models} array. Such options are a fallback
+     * for clients that don't advertise models at session start; exposing them alongside the
+     * primary model selector would render a duplicate model dropdown.</p>
+     */
+    static List<SessionOption> filterSessionOptionsStatic(
+        @NotNull List<AbstractAgentClient.AgentConfigOption> configOptions,
+        @NotNull Set<String> sessionModelIds) {
+        return configOptions.stream()
+            .filter(opt -> {
+                if (sessionModelIds.isEmpty()) return true;
+                Set<String> optValueIds = opt.values().stream()
+                    .map(AbstractAgentClient.AgentConfigOptionValue::id)
+                    .collect(Collectors.toSet());
+                return !sessionModelIds.equals(optValueIds) && !sessionModelIds.containsAll(optValueIds);
+            })
+            .map(opt -> {
+                List<String> valueIds = opt.values().stream()
+                    .map(AbstractAgentClient.AgentConfigOptionValue::id)
+                    .toList();
+                Map<String, String> labels = opt.values().stream()
+                    .collect(Collectors.toMap(
+                        AbstractAgentClient.AgentConfigOptionValue::id,
+                        AbstractAgentClient.AgentConfigOptionValue::label,
+                        (a, b) -> a,
+                        LinkedHashMap::new));
+                return new SessionOption(opt.id(), opt.label(), valueIds, labels, opt.selectedValueId());
+            })
+            .toList();
+    }
+
+    @Override
+    @NotNull
+    public final List<SessionOption> listSessionOptions() {
+        Set<String> sessionModelIds = availableModels.isEmpty()
+            ? Collections.emptySet()
+            : availableModels.stream().map(Model::id).collect(Collectors.toSet());
+        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds);
+    }
+
+    /**
+     * Delegates to {@link #setConfigOption} so the ACP server is notified.
+     */
+    @Override
+    public final void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
+        setConfigOption(sessionId, key, value);
+    }
+
+    @Override
+    public final void setConfigOption(@NotNull String sessionId, @NotNull String configId, @NotNull String valueId) {
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        params.addProperty("configId", configId);
+        params.addProperty("value", valueId);
+        transport.sendRequest("session/set_config_option", params);
+    }
+
+    @Override
+    public final void setModel(String sessionId, String modelId) {
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        params.addProperty("modelId", modelId);
+        transport.sendRequest("session/set_model", params);
+    }
+
+    /**
+     * Send a session/message notification to inject context (e.g. instructions).
+     */
+    protected final void sendSessionMessage(String sessionId, String text) {
+        JsonObject msg = new JsonObject();
+        msg.addProperty("role", "user");
+        msg.addProperty(KEY_CONTENT, text);
+
+        JsonArray messages = new JsonArray();
+        messages.add(msg);
+
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        params.add("messages", messages);
+
+        transport.sendNotification("session/message", params);
+    }
+
+    // ═══════════════════════════════════════════════════
+    // Abstract/overridable methods — subclass hooks
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * Build the ClientCapabilities to send in the initialize request.
+     * <p>
+     * Default: advertises {@code fs.readTextFile}, {@code fs.writeTextFile}, and {@code terminal}
+     * capabilities as these are now implemented by the ACP base class.
+     * Override to suppress capabilities for agents that reject unknown fields.
+     */
+    protected InitializeRequest.ClientCapabilities buildClientCapabilities() {
+        return InitializeRequest.ClientCapabilities.standard();
+    }
+
+    /**
+     * Called once, just before the agent process is launched.
+     * Override for pre-launch setup such as writing config or agent definition files.
+     *
+     * @throws IOException if setup fails (causes the launch to abort)
+     */
+    protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
+        // no-op by default
+    }
+
+    /**
+     * Build the command line to launch this agent process.
+     */
+    protected abstract List<String> buildCommand(String cwd, int mcpPort);
+
+    /**
+     * Whether to strip non-essential PATH entries before launching the agent process.
+     * When enabled, the process PATH is sanitized to include only essential system
+     * directories, Node.js, and the CLI binary itself. This prevents the agent CLI
+     * from detecting tools (git, gh, curl, etc.) that should be accessed through MCP
+     * instead.
+     * <p>
+     * Subclasses override this to return {@code true} for agents that advertise
+     * detected tools in their system prompt (e.g. Copilot's {@code <environment_context>}).
+     *
+     * @see PathSanitizer
+     */
+    protected boolean shouldStripNonEssentialPath() {
+        return false;
+    }
+
+    /**
+     * Extra environment variables for the agent process.
+     *
+     * @param mcpPort the MCP server port for this session
+     * @param cwd     working directory for the agent process
+     */
+    @SuppressWarnings("unused")
+    protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
+        return Map.of();
+    }
+
+    /**
+     * Customize the session/new request parameters.
+     *
+     * @param cwd     working directory for the session
+     * @param mcpPort the MCP server port
+     * @param params  the JSON params object to modify
+     */
+    @SuppressWarnings("unused")
+    protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
+        // Default: no customization
+    }
+
+    /**
+     * Called after a session is successfully created. Subclasses can override to detect
+     * resume failures or perform post-session setup.
+     *
+     * @param sessionId the created session ID
+     */
+    protected void onSessionCreated(String sessionId) {
+        // Default: no post-session setup
+    }
+
+    /**
+     * Extract canonical tool ID from the agent's protocol tool call title.
+     */
+    protected String resolveToolId(String protocolTitle) {
+        return protocolTitle;
+    }
+
+    /**
+     * Resolve a canonical tool name from the raw protocol title and kind.
+     * <p>
+     * For MCP-bridged tools (detected via {@link #isMcpToolTitle}), strips the prefix
+     * and returns the canonical MCP name (e.g., "read_file").
+     * For native/built-in tools, returns the {@code kind} value (e.g., "read", "execute").
+     * Subclasses may override to recognize additional built-in tool names.
+     */
+    protected @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+        if (isMcpToolTitle(rawTitle)) {
+            return resolveToolId(rawTitle);
+        }
+        return kind;
+    }
+
+    /**
+     * Whether context references must be inlined as text.
+     */
+    @SuppressWarnings("unused") // Overridden by subclasses (CopilotClient, OpenCodeClient)
+    public boolean requiresInlineReferences() {
+        return false;
+    }
+
+    /**
+     * Post-process a session update before delivering to UI.
+     */
+    protected SessionUpdate processUpdate(SessionUpdate update) {
+        return update;
+    }
+
+    // ═══════════════════════════════════════════════════
+    // MCP port resolution
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * Resolve the MCP server port, starting the server if needed.
+     */
+    @SuppressWarnings("java:S1871") // Similar logic in ActiveAgentManager serves different purpose
+    protected int resolveMcpPort() {
+        McpServerControl mcpServer = McpServerControl.getInstance(project);
+        if (mcpServer != null) {
+            if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                return mcpServer.getPort();
+            }
+            try {
+                mcpServer.start();
+                if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                    LOG.info("Auto-started MCP server on port " + mcpServer.getPort());
+                    return mcpServer.getPort();
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to auto-start MCP server: " + e.getMessage());
+            }
+        }
+        LOG.warn("No MCP server available — IntelliJ tools will be unavailable.");
+        return 0;
+    }
+
+    // ═══════════════════════════════════════════════════
+    // Private protocol implementation
+    // ═══════════════════════════════════════════════════
+
+    private Process launchProcess(int mcpPort) throws IOException {
+        String cwd = project.getBasePath();
+        if (cwd == null) {
+            cwd = SystemProperties.getUserHome();
+        }
+        launchCwd = cwd;
+
+        beforeLaunch(cwd, mcpPort);
+
+        List<String> command = buildCommand(cwd, mcpPort);
+
+        // Resolve the binary to an absolute path so ProcessBuilder can find it even when
+        // it's installed via nvm/sdkman/homebrew in a non-standard location. Java's exec()
+        // does not search PATH the same way a shell does.
+        List<String> resolvedCommand = resolveCommand(command);
+
+        // Validate the resolved binary exists before launching. resolveCommand() already tried
+        // the user-configured override, primary name, and all alternate names via the same
+        // AgentBinaryResolver used by the settings page. If it still couldn't resolve to an
+        // absolute path, the binary genuinely isn't installed.
+        validateResolvedBinary(resolvedCommand.getFirst(), displayName());
+
+        ProcessBuilder pb = new ProcessBuilder(resolvedCommand);
+        pb.directory(new File(cwd));
+        pb.redirectErrorStream(false);
+
+        // Merge shell environment (for PATH, etc.)
+        pb.environment().putAll(ShellEnvironment.getEnvironment());
+
+        // Strip non-essential PATH entries to prevent the agent CLI from detecting
+        // and advertising tools (git, gh, curl) that should be accessed through MCP.
+        // Must happen after ShellEnvironment merge (needs full PATH to strip from)
+        // and after resolveCommand (needs full PATH to find the binary).
+        if (shouldStripNonEssentialPath()) {
+            String originalPath = pb.environment().getOrDefault("PATH", "");
+            String resolvedBinaryDir = Path.of(resolvedCommand.getFirst()).getParent().toString();
+            pb.environment().put("PATH", PathSanitizer.sanitize(originalPath, resolvedBinaryDir));
+        }
+
+        // Override with custom environment (these take precedence)
+        Map<String, String> env = buildEnvironment(mcpPort, cwd);
+        if (!env.isEmpty()) {
+            LOG.info("Setting custom environment for " + displayName() + ": " + env);
+            pb.environment().putAll(env);
+        }
+
+        LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
+        LOG.info("Environment size: " + pb.environment().size() + " variables");
+        Process process = pb.start();
+        AgentProcessRegistry.register(process);
+        return process;
+    }
+
+    // ─── Per-agent bubble color settings (application-level) ────────────────
+
+    private static final String PROP_AGENT_BUBBLE_COLOR = "agentbridge.client.%s.bubbleColor";
+
+    /**
+     * Returns the user-configured bubble color key (a {@link com.github.catatafishen.agentbridge.ui.ThemeColor}
+     * name) for the given CSS client type (e.g. {@code "copilot"}, {@code "claude"}),
+     * or {@code null} if the default color should be used.
+     */
+    public static @Nullable String loadAgentBubbleColorKey(String clientType) {
+        String stored = PropertiesComponent.getInstance()
+            .getValue(PROP_AGENT_BUBBLE_COLOR.formatted(clientType), "").trim();
+        return stored.isEmpty() ? null : stored;
+    }
+
+    /**
+     * Persists the bubble color key for the given CSS client type.
+     * Pass {@code null} or blank to restore the default color.
+     */
+    public static void saveAgentBubbleColorKey(String clientType, @Nullable String colorKey) {
+        PropertiesComponent.getInstance()
+            .setValue(PROP_AGENT_BUBBLE_COLOR.formatted(clientType), colorKey != null ? colorKey : "", "");
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+
+    private List<String> resolveCommand(List<String> command) {
+        if (command.isEmpty()) return command;
+        String binaryName = command.getFirst();
+
+        // Already an absolute or relative path — no resolution needed
+        if (binaryName.startsWith("/") || binaryName.startsWith("./")
+            || (binaryName.length() > 1 && binaryName.charAt(1) == ':')) return command;
+
+        // Use AgentBinaryResolver — the same resolution logic used by the settings page.
+        // This ensures binary detection is consistent between settings and connect.
+        var profile = AgentProfileManager.getInstance().getProfile(agentId());
+        String[] alternates = profile != null ? profile.getAlternateNames().toArray(new String[0]) : new String[0];
+
+        String resolvedPath = new AcpClientBinaryResolver(agentId(), binaryName, alternates).resolve();
+        if (resolvedPath != null && !resolvedPath.isEmpty()) {
+            resolvedPath = tryResolveBareName(resolvedPath);
+            List<String> resolved = new ArrayList<>(command);
+            resolved.set(0, resolvedPath);
+            return resolved;
+        }
+
+        LOG.warn("Could not resolve absolute path for '" + binaryName + "'; attempting launch with unresolved name");
+        return command;
+    }
+
+    /**
+     * If the resolved path is a bare name (no path separators), attempt to resolve it
+     * to an absolute path via {@link BinaryDetector#findBinaryPath}. This handles the
+     * edge case where a user sets a custom binary path to just a name (e.g. {@code "copilot"})
+     * rather than a full path — the resolver returns it as-is, but ProcessBuilder needs
+     * an absolute path or a name findable via {@code execvp}.
+     */
+    static String tryResolveBareName(String resolvedPath) {
+        if (!resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
+            String absolutePath = BinaryDetector.findBinaryPath(resolvedPath);
+            if (absolutePath != null) {
+                return absolutePath;
+            }
+        }
+        return resolvedPath;
+    }
+
+    /**
+     * Validates that a resolved binary path points to an existing file. If the path is
+     * a bare name (no path separators), it means resolution failed — the binary is not
+     * installed. Throws {@link IOException} with an actionable message on failure.
+     */
+    static void validateResolvedBinary(String binaryPath, String displayName) throws IOException {
+        if (binaryPath.contains("/") || binaryPath.contains("\\")) {
+            if (!new File(binaryPath).exists()) {
+                throw new IOException(displayName + " binary not found at: " + binaryPath + ". "
+                    + "Please install it or configure the correct path in Settings → Tools → AgentBridge → " + displayName);
+            }
+        } else {
+            throw new IOException(displayName + " binary '" + binaryPath + "' not found in PATH. "
+                + "Please install it or configure the path in Settings → Tools → AgentBridge → " + displayName);
+        }
+    }
+
+    private InitializeResponse initialize() throws InterruptedException, ExecutionException, TimeoutException {
+        InitializeRequest request = new InitializeRequest(
+            PROTOCOL_VERSION,
+            new InitializeRequest.ClientInfo(CLIENT_NAME, CLIENT_TITLE, CLIENT_VERSION),
+            buildClientCapabilities()
+        );
+
+        JsonObject params = gson.toJsonTree(request).getAsJsonObject();
+        CompletableFuture<JsonElement> future = transport.sendRequest("initialize", params);
+
+        JsonElement result = future.get(INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        InitializeResponse response = gson.fromJson(result, InitializeResponse.class);
+
+        // ACP spec: version negotiation — if agent responds with a different version,
+        // client SHOULD close the connection. We log a warning and continue for pragmatism
+        // since most agents in practice use version 1.
+        if (response.protocolVersion() != null && response.protocolVersion() != PROTOCOL_VERSION) {
+            LOG.warn(displayName() + ": protocol version mismatch — requested "
+                + PROTOCOL_VERSION + ", agent supports " + response.protocolVersion()
+                + ". Continuing with best-effort compatibility.");
+        }
+
+        if (response.agentInfo() != null) {
+            String displayTitle = response.agentInfo().title() != null
+                ? response.agentInfo().title() : response.agentInfo().name();
+            LOG.info(displayName() + " initialized: " + displayTitle
+                + " v" + response.agentInfo().version());
+        } else {
+            LOG.info(displayName() + " initialized (no agentInfo in response)");
+        }
+        return response;
+    }
+
+    private void authenticate() throws InterruptedException, ExecutionException, TimeoutException {
+        if (!supportsAuthenticate()) {
+            LOG.info(displayName() + " does not support authenticate — skipping");
+            return;
+        }
+        if (capabilities == null || capabilities.authMethods() == null
+            || capabilities.authMethods().isEmpty()) {
+            return;
+        }
+
+        String methodId = capabilities.authMethods().getFirst().id();
+        JsonObject params = new JsonObject();
+        params.addProperty("methodId", methodId);
+
+        try {
+            CompletableFuture<JsonElement> future = transport.sendRequest("authenticate", params);
+            future.get(AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            LOG.info(displayName() + " authenticated with method: " + methodId);
+        } catch (java.util.concurrent.ExecutionException e) {
+            if (e.getCause() instanceof JsonRpcException jre
+                && jre.getCode() == JsonRpcErrorCodes.METHOD_NOT_FOUND) {
+                // Agent does not implement the authenticate method — treat as already authenticated.
+                LOG.info(displayName() + " does not support authenticate (method not found) — skipping");
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * Whether this agent supports the {@code authenticate} ACP method.
+     * Override to return {@code false} for agents that handle auth internally
+     * and respond with an error when authenticate is called.
+     */
+    protected boolean supportsAuthenticate() {
+        return true;
+    }
+
+    @Nullable
+    protected final JsonObject buildMcpStdioServer(String serverName, int mcpPort) {
+        String javaPath = resolveJavaBinaryPath();
+        if (javaPath == null) {
+            LOG.warn("Java binary not resolvable from java.home/JAVA_HOME — cannot build stdio MCP server config");
+            return null;
+        }
+        String jarPath = McpServerJarLocator.findMcpServerJar();
+        if (jarPath == null) {
+            LOG.warn("mcp-server.jar not found in plugin lib — cannot build stdio MCP server config");
+            return null;
+        }
+
+        JsonArray args = new JsonArray();
+        args.add("-jar");
+        args.add(jarPath);
+        args.add("--port");
+        args.add(String.valueOf(mcpPort));
+
+        JsonObject server = new JsonObject();
+        server.addProperty("name", serverName);
+        server.addProperty("command", javaPath);
+        server.add("args", args);
+        server.add("env", new JsonArray());
+        return server;
+    }
+
+    /**
+     * Builds a human-readable diagnostic message describing why {@link #buildMcpStdioServer}
+     * returned {@code null}. Intended for inclusion in exception messages so users see which
+     * dependency is missing instead of the generic "Java binary or mcp-server.jar not found".
+     */
+    protected final @NotNull String describeMcpStdioServerFailure() {
+        StringBuilder sb = new StringBuilder();
+        String javaPath = resolveJavaBinaryPath();
+        if (javaPath == null) {
+            sb.append("Java binary not found (checked java.home=")
+                .append(System.getProperty("java.home"))
+                .append(" and JAVA_HOME=")
+                .append(System.getenv("JAVA_HOME"))
+                .append(")");
+        } else {
+            sb.append("Java binary ok at ").append(javaPath);
+        }
+        sb.append("; ");
+        String jarPath = McpServerJarLocator.findMcpServerJar();
+        if (jarPath == null) {
+            sb.append("mcp-server.jar not found in plugin lib directory (plugin may not be fully installed; try rebuilding or reinstalling)");
+        } else {
+            sb.append("mcp-server.jar ok at ").append(jarPath);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Resolves the path to a usable {@code java} binary. Tries {@code java.home/bin/java} first
+     * (the JVM running this IDE), then falls back to {@code JAVA_HOME/bin/java}.
+     *
+     * @return absolute path to an existing java executable, or {@code null} if none found
+     */
+    private static @Nullable String resolveJavaBinaryPath() {
+        boolean isWindows = SystemInfo.isWindows;
+        String javaExe = isWindows ? "java.exe" : "java";
+
+        String javaHome = System.getProperty("java.home");
+        if (javaHome != null && !javaHome.isEmpty()) {
+            File candidate = new File(javaHome + File.separator + "bin" + File.separator + javaExe);
+            if (candidate.exists()) return candidate.getAbsolutePath();
+        }
+
+        String envJavaHome = System.getenv("JAVA_HOME");
+        if (envJavaHome != null && !envJavaHome.isEmpty()) {
+            File candidate = new File(envJavaHome + File.separator + "bin" + File.separator + javaExe);
+            if (candidate.exists()) return candidate.getAbsolutePath();
+        }
+
+        return null;
+    }
+
+    /**
+     * Creates the initial session immediately after startup to populate models, modes, and
+     * config options. The session is kept alive and reused for the first user prompt — this
+     * avoids a redundant second {@code session/new} when the user sends their first message.
+     * If the call fails, the failure is logged and swallowed; the first real {@code createSession}
+     * call will retry.
+     */
+    private void eagerFetchModels() {
+        String cwd = launchCwd != null ? launchCwd : project.getBasePath();
+        if (cwd == null) return;
+        try {
+            createSession(cwd);
+            // Keep currentSessionId set — createSession() will reuse it when the user sends a prompt
+            LOG.info(displayName() + ": eagerly loaded " + availableModels.size() + " model(s), session=" + currentSessionId);
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : "");
+
+            // Check if this is an auth error - if so, re-throw it so startup fails immediately
+            Throwable current = e;
+            while (current != null) {
+                String msg = current.getMessage();
+                if (msg != null && (msg.toLowerCase().contains("auth") || msg.toLowerCase().contains("sign in"))) {
+                    LOG.warn(displayName() + ": authentication required during session creation");
+                    // Extract clean message from JsonRpcException format: "JsonRpcException{code=-32000, message='Authentication required'}"
+                    String cleanMsg = msg;
+                    if (msg.contains("message='") && msg.contains("'}")) {
+                        int start = msg.indexOf("message='") + 9;
+                        int end = msg.indexOf("'}", start);
+                        if (end > start) {
+                            cleanMsg = msg.substring(start, end);
+                        }
+                    }
+                    throw new IllegalStateException(cleanMsg, e);
+                }
+                current = current.getCause();
+            }
+
+            // Not an auth error - log and continue (models will be empty but agent can still work)
+            LOG.warn(displayName() + ": eager session creation failed (models will be empty): " + errorMsg);
+        }
+    }
+
+    protected void registerHandlers() {
+        transport.onNotification(notification -> {
+            if ("session/update".equals(notification.method())) {
+                handleSessionUpdate(notification.params());
+            }
+        });
+
+        transport.onRequest(this::handleAgentRequest);
+
+        transport.onStderr(line ->
+            LOG.warn("[" + agentId() + " stderr] " + line));
+    }
+
+    protected void handleSessionUpdate(@Nullable JsonObject params) {
+        if (params == null) return;
+
+        // Reset inactivity clock on every update so long turns with active streaming never time out.
+        lastActivityNanos = System.nanoTime();
+
+        JsonObject updateObj = normalizeSessionUpdateParams(params);
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer == null) {
+            LOG.debug("Session update received but no consumer registered");
+            return;
+        }
+
+        SessionUpdate update = messageParser.parse(updateObj);
+        if (update != null) {
+            update = processUpdate(update);
+            if (update != null) {
+                consumer.accept(update);
+            }
+        }
+    }
+
+    /**
+     * Normalize the raw {@code session/update} notification params before parsing.
+     * Both Copilot and Junie wrap the actual payload in a nested {@code update} sub-object:
+     * {@code {sessionId, update: {sessionUpdate, content, ...}}}
+     * The base implementation unwraps that envelope. Override only if an agent uses a
+     * genuinely different structure.
+     */
+    protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
+        if (params.has(KEY_UPDATE) && params.get(KEY_UPDATE).isJsonObject()) {
+            return params.getAsJsonObject(KEY_UPDATE);
+        }
+        return params;
+    }
+
+    /**
+     * Extract tool call arguments from a {@code tool_call} params object.
+     * The standard ACP field is {@code arguments} (a JSON object).
+     * Override in subclasses for agent-specific field names.
+     */
+    @Nullable
+    protected JsonObject parseToolCallArguments(@NotNull JsonObject params) {
+        if (params.has(KEY_ARGUMENTS) && params.get(KEY_ARGUMENTS).isJsonObject()) {
+            return params.getAsJsonObject(KEY_ARGUMENTS);
+        }
+        return null;
+    }
+
+    /**
+     * Detect sub-agent invocations in a {@code tool_call} notification and return the agent type.
+     * Returns {@code null} if this is not a sub-agent call.
+     * <p>
+     * The base implementation checks for explicit {@code agentType}/{@code subagent_type}/{@code agent_type}
+     * fields in both the top-level params and the arguments object.
+     * Subclasses can override to add client-specific detection (e.g., title-based matching).
+     */
+    @Nullable
+    protected String extractSubAgentType(@NotNull JsonObject params, @NotNull String resolvedTitle,
+                                         @Nullable JsonObject argumentsObj) {
+        // Check top-level params first (some ACP extensions put agentType here)
+        for (String key : new String[]{"agentType", "agent_type", "subagent_type"}) {
+            if (params.has(key) && params.get(key).isJsonPrimitive()) {
+                return params.get(key).getAsString();
+            }
+        }
+        // Check inside the arguments object
+        if (argumentsObj != null) {
+            for (String key : new String[]{"agentType", "agent_type", "subagent_type"}) {
+                if (argumentsObj.has(key) && argumentsObj.get(key).isJsonPrimitive()) {
+                    return argumentsObj.get(key).getAsString();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String getStringOrEmpty(JsonObject obj, String key) {
+        return obj.has(key) && obj.get(key).isJsonPrimitive()
+            ? obj.get(key).getAsString() : "";
+    }
+
+    protected void handleAgentRequest(JsonElement id, JsonRpcTransport.IncomingRequest request) {
+        switch (request.method()) {
+            case "session/request_permission" -> handlePermissionRequest(id, request.params());
+            case "fs/read_text_file" -> handleFsRequest(id, () -> fsHandler.readTextFile(request.params()));
+            case "fs/write_text_file" -> handleFsRequest(id, () -> {
+                fsHandler.writeTextFile(request.params());
+                return null;
+            });
+            case "terminal/create" -> handleTerminalRequest(id, () -> terminalHandler.create(request.params()));
+            case "terminal/output" -> handleTerminalRequest(id, () -> terminalHandler.output(request.params()));
+            case "terminal/wait_for_exit" ->
+                handleTerminalRequest(id, () -> terminalHandler.waitForExit(request.params()));
+            case "terminal/kill" -> handleTerminalRequest(id, () -> terminalHandler.kill(request.params()));
+            case "terminal/release" -> handleTerminalRequest(id, () -> terminalHandler.release(request.params()));
+            default -> {
+                LOG.warn("Unknown agent request: " + request.method());
+                transport.sendError(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: " + request.method());
+            }
+        }
+    }
+
+    /**
+     * Dispatches an ACP file system request, catching exceptions and sending
+     * the appropriate JSON-RPC response (success or error).
+     */
+    private void handleFsRequest(JsonElement id, java.util.concurrent.Callable<JsonObject> handler) {
+        try {
+            JsonObject result = handler.call();
+            // ACP spec: fs/write_text_file returns null on success
+            transport.sendResponse(id, result != null ? gson.toJsonTree(result) : null);
+        } catch (IllegalArgumentException e) {
+            transport.sendError(id, JsonRpcErrorCodes.INVALID_PARAMS, e.getMessage());
+        } catch (Exception e) {
+            LOG.warn("FS request failed: " + e.getMessage(), e);
+            transport.sendError(id, JsonRpcErrorCodes.INTERNAL_ERROR, e.getMessage());
+        }
+    }
+
+    /**
+     * Dispatches an ACP terminal request, catching exceptions and sending
+     * the appropriate JSON-RPC response (success or error).
+     */
+    private void handleTerminalRequest(JsonElement id, java.util.concurrent.Callable<JsonObject> handler) {
+        try {
+            JsonObject result = handler.call();
+            transport.sendResponse(id, gson.toJsonTree(result));
+        } catch (IllegalArgumentException e) {
+            transport.sendError(id, JsonRpcErrorCodes.INVALID_PARAMS, e.getMessage());
+        } catch (Exception e) {
+            LOG.warn("Terminal request failed: " + e.getMessage(), e);
+            transport.sendError(id, JsonRpcErrorCodes.INTERNAL_ERROR, e.getMessage());
+        }
+    }
+
+    /**
+     * Responds to all pending {@code session/request_permission} requests with the
+     * {@code cancelled} outcome. Per ACP spec, the Client MUST do this when a turn is cancelled.
+     */
+    private void cancelPendingPermissionRequests() {
+        for (var entry : pendingPermissionRequests.entrySet()) {
+            JsonElement requestId = entry.getValue();
+            JsonObject cancelledOutcome = new JsonObject();
+            cancelledOutcome.addProperty(KEY_OUTCOME, "cancelled");
+            JsonObject result = new JsonObject();
+            result.add(KEY_OUTCOME, cancelledOutcome);
+            transport.sendResponse(requestId, result);
+            LOG.info(displayName() + ": responded cancelled to pending permission request " + entry.getKey());
+        }
+        pendingPermissionRequests.clear();
+    }
+
+    private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
+        String requestKey = id != null ? id.toString() : "";
+        if (!requestKey.isEmpty()) {
+            pendingPermissionRequests.put(requestKey, id);
+        }
+
+        String toolCallId = "";
+        String toolId = "";
+        if (params != null && params.has(KEY_TOOL_CALL)) {
+            JsonObject toolCallObj = params.getAsJsonObject(KEY_TOOL_CALL);
+            String protocolTitle = getStringOrEmpty(toolCallObj, "title");
+            toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
+            toolId = resolveToolId(protocolTitle);
+            if (!toolCallId.isEmpty()) {
+                onPermissionRequest(toolCallId, toolCallObj);
+            }
+        }
+
+        String protocolTitle = params != null && params.has(KEY_TOOL_CALL)
+            ? getStringOrEmpty(params.getAsJsonObject(KEY_TOOL_CALL), "title")
+            : "";
+
+        JsonObject chosenOption;
+
+        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
+            chosenOption = handleBlockedTool(toolId, toolCallId, params);
+        } else if (isBuiltInTool(protocolTitle)) {
+            if (isAutoDenyEnabled() && shouldAutoDenyBuiltInTool(toolId)) {
+                chosenOption = handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
+            } else {
+                LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
+                    + "' — should use MCP tools instead");
+                // Skip reprimand during history replay — historical tool calls are outside the
+                // agent's current context, so notifying it would only cause confusion.
+                if (!restoringHistory) {
+                    onBuiltInToolApproved(toolId, false);
+                }
+                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+                if (chosenOption == null) {
+                    chosenOption = findFirstOption(params);
+                }
+                // Copilot CLI does not send tool_call_update completion events for approved built-in
+                // tools. Synthesize one so the tool chip clears its spinner immediately.
+                // Not needed for denied tools — handleAutoDeniedBuiltInTool already sends FAILED.
+                Consumer<SessionUpdate> builtInConsumer = updateConsumer;
+                if (builtInConsumer != null && !toolCallId.isEmpty()) {
+                    builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
+                        toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
+                }
+            }
+        } else {
+            LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
+            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            if (chosenOption == null) {
+                chosenOption = findFirstOption(params);
+            }
+        }
+
+        sendPermissionResponse(id, requestKey, chosenOption);
+    }
+
+    private @Nullable JsonObject handleBlockedTool(String toolId, String toolCallId, @Nullable JsonObject params) {
+        String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
+        LOG.warn(displayName() + ": " + reason);
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer != null && !toolCallId.isEmpty()) {
+            consumer.accept(new SessionUpdate.ToolCallUpdate(
+                toolCallId,
+                SessionUpdate.ToolCallStatus.FAILED,
+                null,
+                "Auto-denied: " + reason,
+                null,
+                true,
+                reason
+            ));
+        }
+        return findDenyOption(params);
+    }
+
+    private @Nullable JsonObject handleAutoDeniedBuiltInTool(String toolId, String toolCallId, @Nullable JsonObject params) {
+        String reason = "Native tool '" + toolId + "' is blocked — use " + mcpAlternative(toolId)
+            + " instead. All agentbridge-* MCP tools are available.";
+        LOG.warn(displayName() + ": auto-denying native tool '" + toolId + "'");
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer != null && !toolCallId.isEmpty()) {
+            consumer.accept(new SessionUpdate.ToolCallUpdate(
+                toolCallId,
+                SessionUpdate.ToolCallStatus.FAILED,
+                null,
+                "Auto-denied: " + reason,
+                null,
+                true,
+                reason
+            ));
+        }
+        return findDenyOption(params);
+    }
+
+    /**
+     * Called when a built-in tool request is processed (approved or auto-denied).
+     * Subclasses may override to react — e.g. injecting a reprimand notice.
+     *
+     * @param toolId       the built-in tool name
+     * @param userApproved {@code true} if the user explicitly approved, {@code false} if
+     *                     the tool was auto-approved without user interaction
+     */
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
+        // no-op by default
+    }
+
+    protected String mcpAlternative(String builtInTool) {
+        return switch (builtInTool) {
+            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
+            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
+            case "create" -> "agentbridge-create_file";
+            case "view" -> "agentbridge-read_file";
+            case "glob" -> "agentbridge-list_project_files";
+            case "grep" -> "agentbridge-search_text";
+            case "task" -> "agentbridge-run_command (for shell tasks)";
+            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
+            default -> "the corresponding agentbridge-* tool";
+        };
+    }
+
+    private void sendPermissionResponse(JsonElement id, String requestKey, @Nullable JsonObject chosenOption) {
+        String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
+            ? chosenOption.get(KEY_OPTION_ID).getAsString()
+            : VALUE_DENY_ONCE;
+        JsonObject result = new JsonObject();
+        result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
+        transport.sendResponse(id, result);
+        pendingPermissionRequests.remove(requestKey);
+    }
+
+    /**
+     * Whether to also block the small set of allowed built-in tools ({@code web_fetch},
+     * {@code web_search}, {@code task_complete}). By default, non-allowed built-in tools
+     * (e.g. {@code bash}, {@code edit}, {@code grep}) are always auto-denied via
+     * {@link #shouldAutoDenyBuiltInTool}. Override to return {@code true} to additionally
+     * block the allowed web tools in agents that require exclusive agentbridge usage.
+     */
+    protected boolean excludeBuiltInTools() {
+        return false;
+    }
+
+    /**
+     * Whether to automatically deny built-in tool requests (e.g. {@code bash}, {@code edit})
+     * instead of auto-approving them.
+     * <p>
+     * Defaults to {@code true}. Subclasses may override to disable auto-deny when the ACP
+     * client has a known bug where tool denial ends the current agent turn, making the agent
+     * unable to recover and retry with the correct MCP tool.
+     */
+    protected boolean isAutoDenyEnabled() {
+        return true;
+    }
+
+    private boolean isToolBlocked(String protocolTitle, String toolId) {
+        if (!isBuiltInTool(protocolTitle)) {
+            return false;
+        }
+        if (excludeBuiltInTools()) {
+            return !ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
+        }
+        return false;
+    }
+
+    static boolean isAllowedBuiltInTool(@NotNull String toolId) {
+        return ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
+    }
+
+    static boolean shouldAutoDenyBuiltInTool(@NotNull String toolId) {
+        if (isMcpResourceTool(toolId)) {
+            return false;
+        }
+        if (toolId.startsWith("agentbridge-")
+            || toolId.startsWith("agentbridge_")
+            || toolId.startsWith("Tool: agentbridge/")
+            || toolId.startsWith("Running: @agentbridge/")
+            || toolId.startsWith("@agentbridge/")) {
+            return false;
+        }
+        return !toolId.contains("/") && !toolId.contains("@") && !isAllowedBuiltInTool(toolId);
+    }
+
+    private static boolean isMcpResourceTool(@NotNull String toolId) {
+        String lower = toolId.toLowerCase();
+        return "read_mcp_resource".equals(lower)
+            || "list_mcp_resources".equals(lower);
+    }
+
+    protected final boolean isBuiltInTool(@NotNull String protocolTitle) {
+        return !isMcpToolTitle(protocolTitle);
+    }
+
+    protected abstract boolean isMcpToolTitle(@NotNull String protocolTitle);
+
+    /**
+     * Build the outcome object sent back in the {@code session/request_permission} response.
+     * <p>
+     * Per ACP spec the outcome is {@code {outcome: "selected", optionId: "<chosen-id>"}}.
+     * Override to add agent-specific fields.
+     *
+     * @param optionId     the chosen option ID (echoed from the request's {@code options} array)
+     * @param chosenOption the matching option object from the request params, or {@code null} if not found
+     */
+    protected JsonObject buildPermissionOutcome(String optionId, @Nullable JsonObject chosenOption) {
+        JsonObject outcome = new JsonObject();
+        outcome.addProperty(KEY_OUTCOME, VALUE_SELECTED);
+        outcome.addProperty(KEY_OPTION_ID, optionId);
+        return outcome;
+    }
+
+    /**
+     * Called when a {@code session/request_permission} arrives, before the response is sent.
+     * Override in subclasses to capture tool call arguments for chip correlation (e.g. Junie
+     * sends args only in the permission request content, not in the {@code tool_call} update).
+     *
+     * @param toolCallId     the tool call ID from {@code toolCall.toolCallId}
+     * @param toolCallParams the {@code toolCall} sub-object from the permission request params
+     */
+    protected void onPermissionRequest(@NotNull String toolCallId, @NotNull JsonObject toolCallParams) {
+    }
+
+    @Nullable
+    private static JsonObject findOptionByKind(@Nullable JsonObject params, String kind) {
+        if (params == null || !params.has(KEY_OPTIONS)) return null;
+        JsonElement options = params.get(KEY_OPTIONS);
+        if (!options.isJsonArray()) return null;
+        for (JsonElement el : options.getAsJsonArray()) {
+            if (el.isJsonObject()) {
+                JsonObject opt = el.getAsJsonObject();
+                if (opt.has("kind") && kind.equals(opt.get("kind").getAsString())) {
+                    return opt;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static JsonObject findFirstOption(@Nullable JsonObject params) {
+        if (params == null || !params.has(KEY_OPTIONS)) return null;
+        JsonElement options = params.get(KEY_OPTIONS);
+        if (!options.isJsonArray()) return null;
+        JsonArray arr = options.getAsJsonArray();
+        return (!arr.isEmpty() && arr.get(0).isJsonObject()) ? arr.get(0).getAsJsonObject() : null;
+    }
+
+    /**
+     * Searches the permission request's options array for a deny/reject option.
+     * Different agents use different kind values: Copilot CLI sends {@code "reject_once"},
+     * while the ACP spec uses {@code "deny_once"}.
+     */
+    @Nullable
+    private static JsonObject findDenyOption(@Nullable JsonObject params) {
+        JsonObject option = findOptionByKind(params, VALUE_DENY_ONCE);
+        if (option != null) return option;
+        return findOptionByKind(params, VALUE_REJECT_ONCE);
+    }
+
+    protected void destroyProcess() {
+        AgentProcessRegistry.unregister(agentProcess);
+        destroyProcessTree(agentProcess);
+    }
+
+    static void destroyProcessTree(@Nullable Process process) {
+        if (process == null || !process.isAlive()) {
+            return;
+        }
+
+        ProcessHandle handle = process.toHandle();
+        List<ProcessHandle> descendants = handle.descendants().toList();
+        for (int i = descendants.size() - 1; i >= 0; i--) {
+            descendants.get(i).destroyForcibly();
+        }
+
+        handle.destroy();
+        try {
+            if (!process.waitFor(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                for (int i = descendants.size() - 1; i >= 0; i--) {
+                    descendants.get(i).destroyForcibly();
+                }
+                handle.destroyForcibly();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            for (int i = descendants.size() - 1; i >= 0; i--) {
+                descendants.get(i).destroyForcibly();
+            }
+            handle.destroyForcibly();
+        }
+    }
+}

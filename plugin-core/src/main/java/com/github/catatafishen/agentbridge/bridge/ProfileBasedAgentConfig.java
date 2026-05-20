@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.agent.AgentException;
-import com.github.catatafishen.agentbridge.agent.claude.BundledAgentDeployer;
-import com.github.catatafishen.agentbridge.agent.claude.InstructionsManager;
+import com.github.catatafishen.agentbridge.client.AgentException;
+import com.github.catatafishen.agentbridge.client.claude.BundledAgentDeployer;
+import com.github.catatafishen.agentbridge.client.claude.InstructionsManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;

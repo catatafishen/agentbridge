@@ -4,6 +4,9 @@ import com.github.catatafishen.agentbridge.model.Model
 import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
+import com.github.catatafishen.agentbridge.client.acp.KiroClient
+import com.github.catatafishen.agentbridge.client.claude.ClaudeCliClient
+import com.github.catatafishen.agentbridge.client.codex.CodexAppServerClient
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.db.ConversationService
@@ -1957,8 +1960,8 @@ class ChatToolWindowContent(
                 // See docs/AUTH-HANDLING.md.
                 val agentId = agentManager.getActiveProfile().id
                 val isClaudeOrCodex =
-                    agentId == com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient.PROFILE_ID
-                        || agentId == com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient.PROFILE_ID
+                    agentId == ClaudeCliClient.PROFILE_ID
+                        || agentId == CodexAppServerClient.PROFILE_ID
                 e.presentation.isEnabledAndVisible = !isClaudeOrCodex
             }
 
@@ -2932,7 +2935,7 @@ class ChatToolWindowContent(
 
         // Intercept Kiro slash commands
         val client = agentManager.getClient()
-        if (client is com.github.catatafishen.agentbridge.acp.client.KiroClient && trimmed.startsWith("/")) {
+        if (client is KiroClient && trimmed.startsWith("/")) {
             statusBanner?.dismissCurrent()
             setSendingState(true)
             consolePanel.addPromptEntry(trimmed, null)
@@ -2965,7 +2968,7 @@ class ChatToolWindowContent(
 
     private fun checkSlashCommandAutocomplete() {
         val client = agentManager.getClient()
-        if (client !is com.github.catatafishen.agentbridge.acp.client.KiroClient) {
+        if (client !is KiroClient) {
             autocompletePopup?.cancel()
             return
         }

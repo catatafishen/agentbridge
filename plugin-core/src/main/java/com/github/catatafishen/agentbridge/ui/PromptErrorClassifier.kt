@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.agent.AgentException
+import com.github.catatafishen.agentbridge.client.AgentException
 
 /**
  * Pure error classification and quick-reply detection for prompt errors.
