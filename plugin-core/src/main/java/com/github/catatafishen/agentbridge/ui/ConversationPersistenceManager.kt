@@ -50,10 +50,7 @@ class ConversationPersistenceManager(
     // ------------------------------------------------------------------
 
     interface Callbacks {
-        /** Get all currently visible entries (deferred + panel entries) */
-        fun getAllEntries(): List<EntryData>
-
-        /** Get just the panel entries (for mining and archive) */
+        /** Get just the panel entries (for mining, archive, and incremental save) */
         fun getPanelEntries(): List<EntryData>
 
         /** Append restored entries to the chat panel */
@@ -116,14 +113,19 @@ class ConversationPersistenceManager(
 
     /**
      * Persists any new entries that have not yet been written to disk.
+     *
+     * Tracks only live entries from the current session (`getPanelEntries()`).
+     * Deferred entries loaded from disk on restore are already persisted — they must not
+     * be included here because "Load More" shrinks the deferred list during a session, which
+     * would shift the offset and cause new entries to be silently skipped.
      */
     fun appendNewEntries() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        val allEntries = conversationReplayer.deferredEntries() + (callbacks?.getPanelEntries() ?: emptyList())
-        val newEntries = allEntries.drop(persistedEntryCount)
+        val panelEntries = callbacks?.getPanelEntries() ?: emptyList()
+        val newEntries = panelEntries.drop(persistedEntryCount)
         if (newEntries.isEmpty()) return
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
-        persistedEntryCount = allEntries.size
+        persistedEntryCount = panelEntries.size
     }
 
     /**
@@ -192,7 +194,7 @@ class ConversationPersistenceManager(
         )
         showDeferredRestoreCount()
         restoreTurnStats(entries.filterIsInstance<EntryData.TurnStats>())
-        persistedEntryCount = conversationReplayer.totalLoadedCount()
+        persistedEntryCount = 0
     }
 
     private fun showDeferredRestoreCount() {
@@ -321,23 +323,11 @@ class ConversationPersistenceManager(
     // ------------------------------------------------------------------
 
     /**
-     * Resets the persisted entry count to 0; called when session is reset.
-     */
-    fun resetPersistedState() {
-        persistedEntryCount = 0
-    }
-
-    /**
      * Delegates to [ConversationService.resetCurrentSessionId].
      */
     fun resetCurrentSessionId() {
         conversationStore.resetCurrentSessionId(project.basePath)
     }
-
-    /**
-     * Exposes [ConversationReplayer.deferredEntries] for use by the host callbacks.
-     */
-    fun deferredEntries(): List<EntryData> = conversationReplayer.deferredEntries()
 
     /**
      * Delegates to [ConversationService.setCurrentAgent].
