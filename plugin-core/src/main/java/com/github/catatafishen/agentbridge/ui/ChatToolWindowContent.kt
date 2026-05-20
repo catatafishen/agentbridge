@@ -1113,8 +1113,13 @@ class ChatToolWindowContent(
      * Called from the [rootSplitter] [java.beans.PropertyChangeListener] on every proportion change
      * (drag or toggle button). Updates the title-bar tab mode when the open/closed threshold is
      * crossed and persists the pref — the single source of truth for tab visibility.
+     *
+     * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
+     * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
+     * the guard this would re-enter [syncTabsIfNeeded] mid-update and produce the 4-click oscillation.
      */
     private fun syncTabsIfNeeded() {
+        if (isUpdatingContentTabs) return
         val isOpen = rootSplitter.proportion >= 0.01f
         val wasOpen = contentWrappers.isNotEmpty()
         if (isOpen == wasOpen) return
@@ -2177,31 +2182,50 @@ class ChatToolWindowContent(
     }
 
     private inner class SidePanelToggleAction : AnAction(
-        "Show Side Panel",
+        "Side Panel",
         "Show or hide the side panel (Review, Project Files, Prompts)",
         AllIcons.General.ChevronRight
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
-            val isOpen = rootSplitter.proportion >= 0.01f
+            // contentWrappers is the canonical open/closed state — it is set atomically
+            // in actionPerformed and is not affected by mid-layout proportion oscillations.
+            val isOpen = contentWrappers.isNotEmpty()
             e.presentation.icon = if (isOpen) AllIcons.General.ChevronLeft else AllIcons.General.ChevronRight
             e.presentation.text = if (isOpen) "Hide Side Panel" else "Show Side Panel"
         }
 
         override fun actionPerformed(e: AnActionEvent) {
-            val isOpen = rootSplitter.proportion >= 0.01f
+            val isOpen = contentWrappers.isNotEmpty()
+            val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
             if (!isOpen) {
                 ensureSidePanelAvailable()
                 val chatWidth = rootSplitter.width
-                rootSplitter.proportion = defaultReviewProportion
+                // Update tabs first inside the guard so the subsequent proportion change does NOT
+                // re-trigger syncTabsIfNeeded and produce the 4-click oscillation.
+                isUpdatingContentTabs = true
+                try {
+                    updateSideTabContents(true)
+                    rootSplitter.proportion = defaultReviewProportion
+                } finally {
+                    isUpdatingContentTabs = false
+                }
+                props.setValue(PREF_SIDE_PANEL_OPEN, true)
                 if (chatWidth > 0) {
                     val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
                 }
             } else {
                 val sideWidth = rootSplitter.firstComponent?.width ?: 0
-                rootSplitter.proportion = 0.0f
+                isUpdatingContentTabs = true
+                try {
+                    rootSplitter.proportion = 0.0f
+                    updateSideTabContents(false)
+                } finally {
+                    isUpdatingContentTabs = false
+                }
+                props.setValue(PREF_SIDE_PANEL_OPEN, false)
                 if (sideWidth > 0) {
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
                 }
@@ -2262,7 +2286,7 @@ class ChatToolWindowContent(
                 contentTabListener = listener
                 contentManager.addContentManagerListener(listener)
             } else {
-                toolWindow.title = "AgentBridge"
+                toolWindow.title = ""
                 val content = contentFactory.createContent(rootSplitter, "", false)
                 content.isCloseable = false
                 contentManager.addContent(content)
