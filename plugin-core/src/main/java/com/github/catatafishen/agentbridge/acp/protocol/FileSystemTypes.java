@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.acp.model;
+package com.github.catatafishen.agentbridge.acp.protocol;
 
 /**
  * File-system related requests from agent to client.

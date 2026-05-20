@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.client.codex;
 
-import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
+import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;

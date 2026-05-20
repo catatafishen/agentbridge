@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.acp.model;
+package com.github.catatafishen.agentbridge.acp.protocol;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;

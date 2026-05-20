@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.acp.model;
+package com.github.catatafishen.agentbridge.acp.protocol;
 
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
@@ -14,7 +14,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("ACP Model Records")
-class AcpModelRecordTest {
+class AcpProtocolRecordTest {
 
     // ── ContentBlock ─────────────────────────────────────────────────────────
 

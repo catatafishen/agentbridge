@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.model.ContentBlock
-import com.github.catatafishen.agentbridge.acp.model.PromptRequest
+import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
 import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter

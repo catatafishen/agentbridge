@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.acp.model;
+package com.github.catatafishen.agentbridge.acp.protocol;
 
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import org.jetbrains.annotations.Nullable;

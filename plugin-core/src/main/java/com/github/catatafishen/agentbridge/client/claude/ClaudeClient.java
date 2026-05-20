@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.client.claude;
 
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
-import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
+import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.client.ClientException;

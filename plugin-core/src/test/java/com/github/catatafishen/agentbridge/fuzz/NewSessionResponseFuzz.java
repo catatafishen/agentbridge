@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.fuzz;
 
 import com.code_intelligence.jazzer.api.FuzzedDataProvider;
-import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
-import com.github.catatafishen.agentbridge.acp.model.NewSessionResponseDeserializer;
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponseDeserializer;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;

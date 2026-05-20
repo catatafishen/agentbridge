@@ -1,11 +1,11 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 
-import com.github.catatafishen.agentbridge.acp.model.InitializeRequest;
-import com.github.catatafishen.agentbridge.acp.model.InitializeResponse;
-import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
-import com.github.catatafishen.agentbridge.acp.model.NewSessionResponseDeserializer;
-import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
+import com.github.catatafishen.agentbridge.acp.protocol.InitializeRequest;
+import com.github.catatafishen.agentbridge.acp.protocol.InitializeResponse;
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponseDeserializer;
+import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;

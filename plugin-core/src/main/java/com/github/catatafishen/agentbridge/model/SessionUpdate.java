@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.model;
 
-import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
 import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;

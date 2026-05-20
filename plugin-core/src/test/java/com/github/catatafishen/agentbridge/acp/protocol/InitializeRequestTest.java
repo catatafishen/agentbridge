@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.acp.model;
+package com.github.catatafishen.agentbridge.acp.protocol;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

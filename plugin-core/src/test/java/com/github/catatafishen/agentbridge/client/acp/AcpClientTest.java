@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
