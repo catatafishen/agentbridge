@@ -716,3 +716,56 @@ To build locally: `./gradlew :plugin-experimental:buildPlugin`
 **JetBrains YouTrack:** If you'd like this API made public, file a feature request at
 https://youtrack.jetbrains.com/issues/IJPL requesting public API access for macro
 discovery and playback (`ActionMacroManager`, `ActionMacro`).
+
+### Ctrl+Q "Press Ctrl+Q to toggle preview" Hint (IntelliJ 2026.2 EAP)
+
+**Status:** Not fixed — 2026.2 is still in preview. Revisit when it reaches GA.
+
+**Symptom:** IntelliJ 2026.2 EAP adds a "Press Ctrl+Q to toggle preview" footer hint to action
+popup menus in two places:
+
+1. **Model selector dropdown** — shown when opening the model picker from the toolbar.
+2. **Shortcut hints overflow popup** — shown when the `>>` chevron is clicked on the shortcut
+   hints toolbar.
+
+**What was tried (reverted in commit `fix/shortcut-hints-alignment-and-ctrl-q`):**
+
+*Model selector (ungrouped path):*
+
+Overrode `createActionPopup` in `ModelSelectorAction` to call
+`JBPopupFactory.createActionGroupPopup` with `ActionSelectionAid.MNEMONICS` instead of delegating
+to `super.createActionPopup`, which uses `SPEEDSEARCH`. The Ctrl+Q hint appears to be linked to
+`SPEEDSEARCH` mode in 2026.2. The override worked for the non-grouped model list path; the grouped
+path was unaffected (uses `createGroupedPopup` already).
+
+```kotlin
+// What was tried — reverted because 2026.2 is preview
+override fun createActionPopup(context, component, disposeCallback): JBPopup {
+    if (supportsModelGrouping()) return createGroupedPopup(disposeCallback)
+    val group = createPopupActionGroup(component, context)
+    val popup = JBPopupFactory.getInstance()
+        .createActionGroupPopup(null, group, context, ActionSelectionAid.MNEMONICS, false)
+    disposeCallback?.let { popup.addListener(object : JBPopupListener {
+        override fun onClosed(e: LightweightWindowEvent) = it.run()
+    }) }
+    return popup
+}
+```
+
+*Shortcut hints overflow popup:*
+
+Set `templatePresentation.description = ""` in `ShortcutHintAction.init`. The hint renders only
+when an action has a non-empty description. Setting it to empty suppressed the footer in 2026.2 EAP.
+
+```kotlin
+// What was tried — reverted because 2026.2 is preview
+init {
+    templatePresentation.text = KeyBadge.formatKeystroke(stroke) + " " + label
+    templatePresentation.description = ""  // suppresses Ctrl+Q hint in overflow popup
+}
+```
+
+**Why reverted:** 2026.2 is still EAP and the behavior may change before GA. Both fixes were
+targeted exclusively at 2026.2 — they do not affect 2025.x or 2026.1 in any visible way, but
+keeping dead workarounds for unreleased versions adds noise. Re-apply when 2026.2 reaches GA
+and confirm the behavior is stable.

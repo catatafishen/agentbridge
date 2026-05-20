@@ -1226,7 +1226,9 @@ class ChatToolWindowContent(
         // Shortcut hint bar — initialized here so input wiring below can reference it.
         shortcutHintToolbar = ActionManager.getInstance()
             .createActionToolbar("AgentShortcutHints", shortcutHintGroup, true)
-        shortcutHintToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
+        // isReservePlaceAutoPopupIcon = true restores the native >> overflow chevron when hints
+        // don't fit. Do NOT set NOWRAP_STRATEGY — that disables the chevron entirely.
+        shortcutHintToolbar.isReservePlaceAutoPopupIcon = true
         shortcutHintToolbar.component.isOpaque = false
         shortcutHintToolbar.component.border = JBUI.Borders.empty()
 
@@ -1300,7 +1302,16 @@ class ChatToolWindowContent(
 
         val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            add(shortcutHintToolbar.component, BorderLayout.CENTER)
+            // GridBagLayout with HORIZONTAL fill: gives the toolbar the full available width
+            // (so overflow calculates correctly) while WEST anchor centers it vertically.
+            val hintWrapper = JBPanel<JBPanel<*>>(GridBagLayout()).apply {
+                isOpaque = false
+                add(shortcutHintToolbar.component, GridBagConstraints().apply {
+                    fill = GridBagConstraints.HORIZONTAL
+                    weightx = 1.0
+                })
+            }
+            add(hintWrapper, BorderLayout.CENTER)
             add(innerInputToolbar.component, BorderLayout.EAST)
         }
         row.add(footerPanel, BorderLayout.SOUTH)
