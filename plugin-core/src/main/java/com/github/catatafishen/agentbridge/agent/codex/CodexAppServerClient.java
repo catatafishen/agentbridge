@@ -291,6 +291,7 @@ public final class CodexAppServerClient extends AbstractAgentClient implements J
     public void cancelSession(@NotNull String sessionId) {
         AtomicBoolean flag = sessionCancelled.get(sessionId);
         if (flag != null) flag.set(true);
+        approvalHandler.clearSessionApprovals(sessionId);
         // Interrupt the active turn if it belongs to this session
         String turnId = activeTurnId;
         if (turnId != null && sessionId.equals(activeTurnSessionId)) {

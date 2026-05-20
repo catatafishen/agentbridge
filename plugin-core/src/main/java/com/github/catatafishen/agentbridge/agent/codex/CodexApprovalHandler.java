@@ -108,6 +108,14 @@ public final class CodexApprovalHandler {
         sessionApprovalAllows.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(permissionKey);
     }
 
+    public void clearSessionApprovals(@NotNull String sessionId) {
+        sessionApprovalAllows.remove(sessionId);
+    }
+
+    public void clearAllApprovals() {
+        sessionApprovalAllows.clear();
+    }
+
     // ── User input request handling ───────────────────────────────────────────
 
     /**
@@ -118,7 +126,12 @@ public final class CodexApprovalHandler {
      * are forwarded to the user via PromptUserTool.</p>
      */
     public void handleUserInputRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
-        JsonArray questions = params.has("questions") ? params.getAsJsonArray("questions") : new JsonArray();
+        JsonArray questions;
+        if (params.has("questions") && params.get("questions").isJsonArray()) {
+            questions = params.getAsJsonArray("questions");
+        } else {
+            questions = new JsonArray();
+        }
 
         JsonObject answers = new JsonObject();
         for (JsonElement elem : questions) {
