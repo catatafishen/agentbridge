@@ -83,6 +83,10 @@ class ConversationEntryStore {
     /**
      * Appends text to the current streaming response. If no Text entry exists yet,
      * creates one and adds it to the entries list.
+     *
+     * **Does not fire change listeners** — streaming calls arrive at high frequency
+     * (hundreds per second). Observers are notified when [finalizeStreaming] is called
+     * at the end of the turn, or when [addEntry] adds a discrete entry.
      */
     fun appendText(text: String) = synchronized(lock) {
         val current = _currentText
@@ -96,6 +100,8 @@ class ConversationEntryStore {
     /**
      * Appends thinking text to the current thinking block. If no Thinking entry
      * exists yet, creates one and adds it to the entries list.
+     *
+     * **Does not fire change listeners** — same rationale as [appendText].
      */
     fun appendThinkingText(text: String) = synchronized(lock) {
         val current = _currentThinking
