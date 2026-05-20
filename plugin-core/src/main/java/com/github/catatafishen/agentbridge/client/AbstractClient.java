@@ -240,6 +240,17 @@ public abstract class AbstractClient {
     }
 
     /**
+     * Returns the ID of the currently active session if one exists (e.g. from eager creation at
+     * startup), without creating a new one. Returns {@code null} if no session has been created yet.
+     * <p>
+     * Use this to apply changes (e.g. model selection) to an already-created session before the
+     * first prompt is sent. Default: {@code null}.
+     */
+    public @Nullable String getActiveSessionId() {
+        return null;
+    }
+
+    /**
      * Set the model for a session. No-op if agent doesn't support model selection.
      */
     public abstract void setModel(String sessionId, String modelId);

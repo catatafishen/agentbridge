@@ -120,6 +120,10 @@ public abstract class AcpClient extends AbstractClient {
         return currentSessionId;
     }
 
+    @Override
+    public @Nullable String getActiveSessionId() {
+        return currentSessionId;
+    }
     private @Nullable String launchCwd;
     /**
      * Tracks the resume session ID requested in the current launch cycle.

@@ -282,7 +282,12 @@ class ChatToolWindowContent(
                 consolePanel.setCurrentModel(modelId)
                 ApplicationManager.getApplication().executeOnPooledThread {
                     try {
+                        // Prefer the orchestrator's session (already established via a prompt).
+                        // Fall back to the client's eagerly-created session so that model-specific
+                        // config options (e.g. "extra high" reasoning effort) are refreshed
+                        // immediately after selection, without waiting for the first prompt.
                         val sessionId = promptOrchestrator.currentSessionId
+                            ?: agentManager.client.activeSessionId
                         if (sessionId != null) agentManager.client.setModel(sessionId, modelId)
                     } catch (e: Exception) {
                         LOG.warn("Failed to set model $modelId via web", e)
