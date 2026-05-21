@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.memory.MemorySettings
 import com.github.catatafishen.agentbridge.memory.mining.MiningTracker
 import com.github.catatafishen.agentbridge.memory.mining.TurnMiner
+import com.github.catatafishen.agentbridge.session.ConversationEntryStore
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
@@ -30,6 +31,18 @@ class ConversationPersistenceManager(
 
     private val conversationReplayer = ConversationReplayer()
 
+    /**
+     * The entry store is the canonical data source for persistence. Set via [setEntryStore]
+     * during panel setup. Reads never go through the UI panel — this keeps persistence
+     * reliable even when the UI is frozen (e.g., Gateway thin-client connection outage).
+     */
+    @Volatile
+    private var entryStore: ConversationEntryStore? = null
+
+    fun setEntryStore(store: ConversationEntryStore) {
+        entryStore = store
+    }
+
     /** Number of entries already persisted to disk for the current session (deferred + panel). */
     @Volatile
     private var persistedEntryCount = 0
@@ -45,9 +58,6 @@ class ConversationPersistenceManager(
     // ------------------------------------------------------------------
 
     interface Callbacks {
-        /** Get just the panel entries (for mining, archive, and incremental save) */
-        fun getPanelEntries(): List<EntryData>
-
         /** Append restored entries to the chat panel */
         fun appendEntries(entries: List<EntryData>, totalPromptCount: Int)
 
@@ -109,17 +119,19 @@ class ConversationPersistenceManager(
     /**
      * Persists any new entries that have not yet been written to disk.
      *
-     * Tracks only live entries from the current session (`getPanelEntries()`).
+     * Reads directly from [entryStore] — the thread-safe data layer — with no dependency
+     * on the UI panel. This ensures persistence works even when the UI is frozen.
+     *
      * Deferred entries loaded from disk on restore are already persisted — they must not
      * be included here because "Load More" shrinks the deferred list during a session, which
      * would shift the offset and cause new entries to be silently skipped.
      */
     fun appendNewEntries() {
-        val panelEntries = callbacks?.getPanelEntries() ?: emptyList()
-        val newEntries = panelEntries.drop(persistedEntryCount)
+        val entries = entryStore?.getEntries() ?: emptyList()
+        val newEntries = entries.drop(persistedEntryCount)
         if (newEntries.isEmpty()) return
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
-        persistedEntryCount = panelEntries.size
+        persistedEntryCount = entries.size
     }
 
     // ------------------------------------------------------------------
@@ -134,7 +146,7 @@ class ConversationPersistenceManager(
         val settings = MemorySettings.getInstance(project)
         if (!settings.isEnabled || !settings.isAutoMineOnTurnComplete) return
 
-        val entries = callbacks?.getPanelEntries() ?: return
+        val entries = entryStore?.getEntries() ?: return
         if (entries.isEmpty()) return
 
         val tracker = MiningTracker.getInstance(project)
@@ -248,15 +260,14 @@ class ConversationPersistenceManager(
      * Mines remaining entries and archives the current conversation.
      */
     fun archiveConversation() {
-        val cb = callbacks
         val settings = MemorySettings.getInstance(project)
         if (settings.isEnabled && settings.isAutoMineOnSessionArchive) {
-            val entries = cb?.getPanelEntries() ?: emptyList()
+            val entries = entryStore?.getEntries() ?: emptyList()
             if (entries.isNotEmpty()) {
                 val tracker = MiningTracker.getInstance(project)
                 tracker.startTurnMining()
                 val sessionId = conversationStore.getCurrentSessionId(project.basePath)
-                val agentName = cb?.getAgentDisplayName() ?: "unknown"
+                val agentName = callbacks?.getAgentDisplayName() ?: "unknown"
                 val miner = TurnMiner(project)
                 miner.mineTurn(entries, sessionId, agentName)
                     .whenComplete { _, _ -> tracker.stop() }
