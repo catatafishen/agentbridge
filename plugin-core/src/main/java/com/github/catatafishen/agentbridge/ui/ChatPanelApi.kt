@@ -63,6 +63,15 @@ interface ChatPanelApi : Disposable {
     fun appendThinkingText(text: String)
     fun collapseThinking()
 
+    /**
+     * Closes the current streaming text entry so the next [appendText] call creates a fresh
+     * entry with a new ID.
+     *
+     * Must be called before appending content that must be stored as a distinct DB record
+     * (e.g. a task_complete summary that follows tool calls whose text was already persisted).
+     */
+    fun closeCurrentTextEntry()
+
     // ── Tool calls ─────────────────────────────────────────────────
 
     fun addToolCallEntry(
