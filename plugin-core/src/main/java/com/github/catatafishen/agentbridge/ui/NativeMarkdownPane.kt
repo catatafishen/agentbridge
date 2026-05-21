@@ -68,6 +68,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * natural (char-count) line break. Used by [appendMarkdown] to cheaply detect
      * when a line wraps and grow [cachedHeight] by one line-height immediately,
      * without waiting for the [heightRevalidateTimer].
+     *
+     * Snapped to the actual rendered position after each [renderNow] via
+     * [syncStreamingPosition] — corrects drift caused by markdown syntax chars
+     * (`**`, `#`, backticks) that are counted here but don't render as visible characters.
      */
     private var streamingLineChars = 0
 
@@ -193,6 +197,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // (guarded by `if (length > 0)`) and goes straight to insertString().
         document = (editorKit as HTMLEditorKit).createDefaultDocument()
         text = "<html><body>$html</body></html>"
+        SwingUtilities.invokeLater { syncStreamingPosition() }
     }
 
     /**
@@ -358,6 +363,29 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             }
         }
         return lines
+    }
+
+    /**
+     * Snaps [streamingLineChars] to the actual rendered position of the last content
+     * character. Called via [SwingUtilities.invokeLater] after each [renderNow] so that
+     * subsequent calls to [countAndAccumulateLinesAdded] start from the real visual
+     * baseline rather than a raw markdown char count that drifts as syntax characters
+     * (`**`, `#`, backticks) are processed but never rendered as visible glyphs.
+     *
+     * Uses [modelToView2D] to read the X coordinate of the last character in the
+     * freshly-laid-out document, then converts it to a char-width-normalised offset.
+     * Falls back silently if the view is not yet allocated (the next render will retry).
+     */
+    private fun syncStreamingPosition() {
+        val cpl = charsPerLineEstimate().takeIf { it > 0 } ?: run { streamingLineChars = 0; return }
+        val len = document.length.takeIf { it > 0 } ?: run { streamingLineChars = 0; return }
+        try {
+            val rect = modelToView2D(len - 1) ?: return
+            val avgCharWidth = (PlatformApiCompat.getEditorFontSize() * 0.55).coerceAtLeast(1.0)
+            streamingLineChars = (rect.x / avgCharWidth).toInt().coerceIn(0, cpl - 1)
+        } catch (_: Throwable) {
+            // View not yet allocated; the next renderNow will schedule another attempt.
+        }
     }
 
     private fun charsPerLineEstimate(): Int {
