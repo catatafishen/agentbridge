@@ -344,11 +344,10 @@ class ChatToolWindowContent(
             FollowAgentFilesToggleAction(),
             Separator.create(),
             StatisticsAction(),
-            SettingsAction(),
-            Separator.create(),
-            SidePanelToggleAction()
+            SettingsAction()
         )
         toolWindow.setTitleActions(actions)
+        (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.setTabActions(SidePanelToggleAction())
     }
 
     private fun buildAndShowChatPanel() {

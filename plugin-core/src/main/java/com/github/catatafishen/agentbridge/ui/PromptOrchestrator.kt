@@ -576,16 +576,18 @@ class PromptOrchestrator(
                     callbacks.appendNewEntries()
                 }
                 lastStreamBlockType = StreamBlockType.TEXT
-                ApplicationManager.getApplication().invokeLater {
-                    if (!stopped) consolePanel().appendText(text)
-                }
+                // BroadcastChatPanel.appendText() is thread-safe: it updates entryStore
+                // synchronously under a lock, then dispatches the UI update via invokeLater
+                // internally. Calling directly (not via invokeLater here) ensures the entry is
+                // in the store before appendNewEntries() reads it at turn end.
+                if (!stopped) consolePanel().appendText(text)
             }
 
             is SessionUpdate.AgentThoughtChunk -> {
                 turnHadContent = true
                 if (lastStreamBlockType == StreamBlockType.TEXT) {
-                    // Text block ended — use invokeLater so all queued appendText calls finish first.
-                    ApplicationManager.getApplication().invokeLater { callbacks.appendNewEntries() }
+                    // Text block ended — appendText is now synchronous, so save directly.
+                    callbacks.appendNewEntries()
                 }
                 lastStreamBlockType = StreamBlockType.THOUGHT
                 if (!stopped) consolePanel().appendThinkingText(update.text())
@@ -595,8 +597,8 @@ class PromptOrchestrator(
                 turnHadContent = true
                 when (lastStreamBlockType) {
                     StreamBlockType.TEXT ->
-                        // Text block ended — use invokeLater so all queued appendText calls finish first.
-                        ApplicationManager.getApplication().invokeLater { callbacks.appendNewEntries() }
+                        // Text block ended — appendText is now synchronous, so save directly.
+                        callbacks.appendNewEntries()
 
                     StreamBlockType.THOUGHT ->
                         // Thought block ended (appendThinkingText is synchronous).
