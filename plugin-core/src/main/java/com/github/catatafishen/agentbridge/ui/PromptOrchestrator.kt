@@ -754,11 +754,14 @@ class PromptOrchestrator(
         // task_complete: render the summary as agent text instead of updating a chip.
         if (record != null && record.routingType == ToolCallRecord.RoutingType.TASK_COMPLETE) {
             val summary = result ?: description ?: ""
-            if (summary.isNotBlank()) {
-                ApplicationManager.getApplication().invokeLater {
-                    if (!stopped) consolePanel().appendText(summary)
-                }
+            if (summary.isNotBlank() && !stopped) {
+                // BroadcastChatPanel.appendText() is thread-safe: it updates entryStore
+                // synchronously under a lock, then dispatches the UI update via invokeLater
+                // internally. Calling directly (not via invokeLater here) ensures the entry is
+                // in the store before appendNewEntries() persists it.
+                consolePanel().appendText(summary)
             }
+            callbacks.appendNewEntries()
             return
         }
 
