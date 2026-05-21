@@ -571,9 +571,23 @@ class PromptOrchestrator(
             is SessionUpdate.AgentMessageChunk -> {
                 turnHadContent = true
                 val text = update.text()
-                if (lastStreamBlockType == StreamBlockType.THOUGHT) {
-                    // Thought block ended — save it now (appendThinkingText is synchronous).
-                    callbacks.appendNewEntries()
+                when (lastStreamBlockType) {
+                    StreamBlockType.THOUGHT -> {
+                        // Thought block ended — save it now (appendThinkingText is synchronous).
+                        callbacks.appendNewEntries()
+                        // Close the pre-thought text entry (if any) so the continuation creates
+                        // a fresh entry at a new index past persistedEntryCount. Without this,
+                        // appending to an already-persisted entry would be silently dropped.
+                        consolePanel().closeCurrentTextEntry()
+                    }
+
+                    StreamBlockType.NONE -> {
+                        // Resuming text after tool calls (or initial text): close the pre-tool
+                        // text entry so the continuation lands in a new, unpersisted entry.
+                        consolePanel().closeCurrentTextEntry()
+                    }
+
+                    else -> {}
                 }
                 lastStreamBlockType = StreamBlockType.TEXT
                 // BroadcastChatPanel.appendText() is thread-safe: it updates entryStore
