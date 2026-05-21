@@ -184,16 +184,36 @@ public class MoveFileToolTest extends BasePlatformTestCase {
             destDir.findChild("source-dir"));
     }
 
-    public void testMoveWithMissingDestination() throws Exception {
+    /**
+     * Moving a file to a non-existent destination directory should auto-create the directory
+     * (and any missing parents) and complete the move successfully.
+     */
+    public void testMoveToNonExistentDestinationCreatesDirectory() throws Exception {
         VirtualFile srcVf = createTestFile("missing-dest-source.txt", "content");
         String missingDestination = tempDir.resolve("missing-dest").toString();
 
-        String result = tool.execute(args("path", srcVf.getPath(), "destination", missingDestination));
+        String result = executeSync(args("path", srcVf.getPath(), "destination", missingDestination));
 
-        assertTrue("Expected error, got: " + result,
-            ToolError.isError(result));
-        assertTrue("Expected destination error, got: " + result,
-            result.contains("Destination directory not found"));
+        assertTrue("Expected 'Moved' message, got: " + result, result.startsWith("Moved "));
+        assertTrue("Result should contain the filename, got: " + result,
+            result.contains("missing-dest-source.txt"));
+        assertTrue("Destination directory should have been created",
+            Files.isDirectory(Path.of(missingDestination)));
+    }
+
+    /**
+     * Moving a file to a deeply nested non-existent destination should create all intermediate
+     * directories (i.e., {@code Files.createDirectories} semantics, not a single {@code mkdir}).
+     */
+    public void testMoveToNestedNonExistentDestinationCreatesAllDirectories() throws Exception {
+        VirtualFile srcVf = createTestFile("nested-dest-source.txt", "content");
+        String nestedDestination = tempDir.resolve("a/b/c").toString();
+
+        String result = executeSync(args("path", srcVf.getPath(), "destination", nestedDestination));
+
+        assertTrue("Expected 'Moved' message, got: " + result, result.startsWith("Moved "));
+        assertTrue("Nested destination directory should have been created",
+            Files.isDirectory(Path.of(nestedDestination)));
     }
 
     /**
