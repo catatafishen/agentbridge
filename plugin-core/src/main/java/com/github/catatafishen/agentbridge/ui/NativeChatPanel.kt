@@ -285,6 +285,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var markdownPane: NativeMarkdownPane? = null,
     )
 
+    /**
+     * Tracks the live Swing components for an active sub-agent section.
+     * Created by [addSubAgentEntry]; looked up by [addSubAgentToolCall] and [updateSubAgentResult].
+     */
+    private class SubAgentSection(
+        val colorIndex: Int,
+        val chipStrip: ChipStripPanel,
+        val contentBox: JPanel,
+    )
+
+    private val subAgentSections = mutableMapOf<String, SubAgentSection>()
+    private var nextSubAgentColor = 0
+
     private fun ensureTurn(): TurnContext {
         currentTurn?.let { return it }
 
@@ -670,23 +683,131 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         id: String, agentType: String, description: String,
         prompt: String?, initialState: ChatPanelApi.SubAgentInitialState
     ) {
+        if (currentTurn?.markdownPane != null) finalizeTurn()
         val label = SUB_AGENT_INFO[agentType]?.displayName ?: agentType
-        addToolCallEntry(id, "[$label] $description", null, "think", false)
+        val colorIndex = nextSubAgentColor++ % ChatTheme.SA_COLOR_COUNT
+        val accent = ChatTheme.SA_COLORS[colorIndex]
+
+        // Sub-agent chip in the parent turn's chip strip.
+        val chipTitle = "[$label] $description"
+        toolCallData[id] = ToolCallData(chipTitle, "think", null)
+        val chip = ToolChipComponent(
+            chipTitle, "think", "running", false,
+            McpServerSettings.getInstance(project)
+        ) { showToolPopup(id) }
+        allChips[id] = chip
+        ensureTurn().chipStrip.addToolChip(chip)
+        if (!spinTimer.isRunning) spinTimer.start()
+
+        // Prompt bubble: shows what was sent to the sub-agent.
+        if (!prompt.isNullOrBlank()) {
+            finalizeTurn()
+            val promptText = "**@$label** $prompt"
+            val pane = createMarkdownPane(promptText)
+            val bubbleRow = createBubble(
+                NativeChatColors.agentBubbleBg(accent),
+                explicitBorder = NativeChatColors.agentBubbleBorder(accent)
+            )
+            bubbleRow.bubble.add(pane, BorderLayout.CENTER)
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+            addRow(bubbleRow.row)
+        }
+
+        // Indented sub-agent section: holds the sub-agent's tool chips and result.
+        val subChipStrip = ChipStripPanel().apply { isVisible = false }
+        val contentBox = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        contentBox.add(subChipStrip)
+
+        val indentBorder = BorderFactory.createMatteBorder(0, JBUI.scale(3), 0, 0, accent)
+        val paddedBorder = BorderFactory.createCompoundBorder(indentBorder, JBUI.Borders.empty(4, 8, 4, 0))
+        val indentWrapper = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = paddedBorder
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(contentBox, BorderLayout.CENTER)
+        }
+        addRow(indentWrapper)
+        subAgentSections[id] = SubAgentSection(colorIndex, subChipStrip, contentBox)
+
+        if (initialState.status != null) {
+            updateSubAgentResult(
+                id, initialState.status, initialState.result,
+                initialState.description, initialState.autoDenied, initialState.denialReason
+            )
+        }
     }
 
     override fun updateSubAgentResult(
         id: String, status: String, result: String?,
         description: String?, autoDenied: Boolean, denialReason: String?
-    ) = updateToolCall(id, status, ChatPanelApi.ToolCallUpdate())
+    ) {
+        // Update the parent chip status.
+        updateToolCall(id, status, ChatPanelApi.ToolCallUpdate())
+
+        val section = subAgentSections[id] ?: return
+        val accent = ChatTheme.SA_COLORS[section.colorIndex]
+
+        // Show the result text in the sub-agent's indented section.
+        val resultText = when {
+            !result.isNullOrBlank() -> result
+            status == "completed" || status == "complete" -> "\u2713 Completed"
+            else -> "\u2716 Failed"
+        }
+        val pane = NativeMarkdownPane(fileNavigator).also {
+            it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
+            allMarkdownPanes += it
+        }
+        pane.setCompleteMarkdown(resultText)
+        val bubbleRow = createBubble(
+            NativeChatColors.agentBubbleBg(accent),
+            explicitBorder = NativeChatColors.agentBubbleBorder(accent)
+        )
+        bubbleRow.bubble.add(pane, BorderLayout.CENTER)
+        bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        section.contentBox.add(bubbleRow.row)
+        section.contentBox.revalidate()
+        if (autoScrollEnabled) scrollToBottom()
+    }
 
     override fun addSubAgentToolCall(
         subAgentId: String, toolId: String, title: String, arguments: String?, kind: String?
-    ) = addToolCallEntry(toolId, title, arguments, kind, false)
+    ) {
+        val section = subAgentSections[subAgentId]
+        if (section == null) {
+            // Fallback: add to the current turn if the section is missing.
+            addToolCallEntry(toolId, title, arguments, kind, false)
+            return
+        }
+        val resolvedKind = kind ?: "other"
+        val displayTitle = resolveToolDisplayName(title)
+        toolCallData[toolId] = ToolCallData(displayTitle, resolvedKind, arguments)
+        val chip = ToolChipComponent(
+            displayTitle, kind, "running", false,
+            McpServerSettings.getInstance(project)
+        ) { showToolPopup(toolId) }
+        allChips[toolId] = chip
+        section.chipStrip.addToolChip(chip)
+        if (!spinTimer.isRunning) spinTimer.start()
+        if (autoScrollEnabled) scrollToBottom()
+    }
 
     override fun updateSubAgentToolCall(
         toolId: String, status: String, details: String?,
         description: String?, autoDenied: Boolean, denialReason: String?
-    ) = updateToolCall(toolId, status, ChatPanelApi.ToolCallUpdate())
+    ) = updateToolCall(
+        toolId,
+        status,
+        ChatPanelApi.ToolCallUpdate(
+            details = details,
+            description = description,
+            autoDenied = autoDenied,
+            denialReason = denialReason
+        )
+    )
 
     override fun addErrorEntry(message: String) {
         finalizeTurn()
@@ -737,6 +858,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         loadMoreContainer = null
         allChips.clear()
         toolCallData.clear()
+        subAgentSections.clear()
+        nextSubAgentColor = 0
         _promptEntryComponents.clear()
         nudgeBubbles.clear()
         queuedMessages.clear()
