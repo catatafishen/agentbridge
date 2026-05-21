@@ -574,6 +574,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
+    override fun closeCurrentTextEntry() {
+        // No-op: the entry store's current-text pointer lives in BroadcastChatPanel, not here.
+    }
+
     override fun addToolCallEntry(
         id: String, title: String, arguments: String?, kind: String?, isMcpHandled: Boolean
     ) {
@@ -924,7 +928,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun showQueuedMessage(id: String, text: String) {
         removeQueuedMessage(id)
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(pane, NativeChatColors.QUEUED_BUBBLE_BG, rightAligned = true, noBorder = true) { bubbleRow ->
+        val (row, _) = createMessageRow(
+            pane,
+            NativeChatColors.QUEUED_BUBBLE_BG,
+            rightAligned = true,
+            noBorder = true
+        ) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.MoveDown, "Restore to input") {
                 onRestoreQueuedMessage?.invoke(id, pane.getRawText())
             }

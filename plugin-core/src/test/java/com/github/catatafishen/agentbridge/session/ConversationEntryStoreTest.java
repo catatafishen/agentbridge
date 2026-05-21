@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -167,6 +168,28 @@ class ConversationEntryStoreTest {
         // Next appendText should create a new entry
         store.appendText("next turn");
         assertEquals(2, store.getEntries().size());
+    }
+
+    @Test
+    void closeCurrentTextEntry_newAppendCreatesNewEntry() {
+        // Reproduces the task_complete persistence bug: summary must not be appended to
+        // the already-persisted pre-tool-call text entry — it must land in a new entry.
+        store.startStreaming();
+        store.appendText("pre-tool text");
+        assertEquals(1, store.getEntries().size());
+        String firstEntryId = store.getEntries().get(0).getEntryId();
+
+        store.closeCurrentTextEntry();
+        store.appendText("task_complete summary");
+
+        var entries = store.getEntries();
+        assertEquals(2, entries.size(), "summary must be a separate entry, not appended in-place");
+        assertNotEquals(entries.get(0).getEntryId(), entries.get(1).getEntryId(),
+            "new entry must have a distinct ID");
+        assertEquals("pre-tool text", ((EntryData.Text) entries.get(0)).getRaw());
+        assertEquals("task_complete summary", ((EntryData.Text) entries.get(1)).getRaw());
+        assertEquals(firstEntryId, entries.get(0).getEntryId(),
+            "first entry ID must be unchanged");
     }
 
     // ── Tool calls ────────────────────────────────────────────────────────────

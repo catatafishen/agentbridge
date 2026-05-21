@@ -755,10 +755,13 @@ class PromptOrchestrator(
         if (record != null && record.routingType == ToolCallRecord.RoutingType.TASK_COMPLETE) {
             val summary = result ?: description ?: ""
             if (summary.isNotBlank() && !stopped) {
-                // BroadcastChatPanel.appendText() is thread-safe: it updates entryStore
-                // synchronously under a lock, then dispatches the UI update via invokeLater
-                // internally. Calling directly (not via invokeLater here) ensures the entry is
-                // in the store before appendNewEntries() persists it.
+                // Close the current text entry first. If the agent streamed text before tool calls,
+                // _currentText still points to that entry (already persisted). Appending to it
+                // in-place would update the object without updating persistedEntryCount, so
+                // appendNewEntries() would miss it and INSERT OR IGNORE would skip the DB update.
+                // Closing ensures appendText creates a fresh entry with a new ID that lands after
+                // persistedEntryCount and is written to the DB correctly.
+                consolePanel().closeCurrentTextEntry()
                 consolePanel().appendText(summary)
             }
             callbacks.appendNewEntries()

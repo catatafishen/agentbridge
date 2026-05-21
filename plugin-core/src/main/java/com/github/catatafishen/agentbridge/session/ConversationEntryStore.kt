@@ -182,6 +182,17 @@ class ConversationEntryStore {
         }
     }
 
+    /**
+     * Closes the current streaming text entry so the next [appendText] call starts a fresh
+     * [EntryData.Text] with a new entry ID.
+     *
+     * Use before appending content that must be persisted as a separate entry (e.g. a
+     * task_complete summary) rather than silently merged into the last streamed text block.
+     */
+    fun closeCurrentTextEntry() = synchronized(lock) {
+        _currentText = null
+    }
+
     fun finishResponse() {
         synchronized(lock) {
             _currentText = null

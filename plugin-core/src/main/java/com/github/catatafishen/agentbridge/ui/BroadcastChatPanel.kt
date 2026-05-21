@@ -130,6 +130,12 @@ class BroadcastChatPanel(
 
     override fun collapseThinking() = dispatchUi { nativePanel.collapseThinking() }
 
+    /**
+     * Resets the current text entry in [entryStore] so the next [appendText] creates a new entry.
+     * No UI dispatch is needed — [NativeChatPanel] manages streaming segments independently.
+     */
+    override fun closeCurrentTextEntry() = entryStore.closeCurrentTextEntry()
+
     override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) =
         dispatchUi { nativePanel.setCodeChangeStats(linesAdded, linesRemoved) }
 
