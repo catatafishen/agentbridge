@@ -27,6 +27,11 @@ import javax.swing.text.html.StyleSheet
  * at the end of the current interval window, so bursts of rapid tokens never suppress
  * visible updates the way a debounce would.
  *
+ * Height is computed accurately after each render via the same HTML layout engine that
+ * handles window-resize reflows for all bubbles. [onHeightGrew] fires through [setBounds]
+ * whenever the layout manager assigns a taller height — accurate, zero-latency, no
+ * char-counting heuristics.
+ *
  * The embedded [HTMLEditorKit] stylesheet is generated from the current IDE theme
  * colors so that code blocks, tables, headings, and links look correct in both
  * light and dark themes.
@@ -34,8 +39,7 @@ import javax.swing.text.html.StyleSheet
 class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane() {
 
     /**
-     * Called whenever this pane's height grows — either via the incremental line estimate
-     * in [appendMarkdown] or when [heightRevalidateTimer] fires an accurate snap.
+     * Called whenever the layout manager assigns a taller height to this pane.
      * [NativeChatPanel] wires this to scroll-to-bottom so auto-scroll follows the
      * expanding bubble without relying on [java.awt.event.ComponentListener].
      */
@@ -62,35 +66,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedForWidth = -1
     private var cachedForVersion = -1
     private var cachedHeight = -1
-
-    /**
-     * Chars accumulated in the current visual line since the last explicit (`\n`) or
-     * natural (char-count) line break. Used by [appendMarkdown] to cheaply detect
-     * when a line wraps and grow [cachedHeight] by one line-height immediately,
-     * without waiting for the [heightRevalidateTimer].
-     *
-     * Snapped to the actual rendered position after each [renderNow] via
-     * [syncStreamingPosition] — corrects drift caused by markdown syntax chars
-     * (`**`, `#`, backticks) that are counted here but don't render as visible characters.
-     */
-    private var streamingLineChars = 0
-
-    /**
-     * Set to true when [heightRevalidateTimer] fires, forcing one accurate layout
-     * computation after streaming pauses.
-     */
-    private var forceRecompute = false
-
-    /**
-     * Fired 500 ms after the last [renderNow] call. Forces one accurate [getPreferredSize]
-     * computation once streaming has paused, so the bubble snaps to its correct final height
-     * without blocking the EDT on every token during the stream.
-     */
-    private val heightRevalidateTimer = Timer(500) {
-        forceRecompute = true
-        revalidate()
-        onHeightGrew?.invoke()
-    }.apply { isRepeats = false }
 
     init {
         contentType = "text/html"
@@ -131,12 +106,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * This mirrors the JCEF `appendStreamingText` strategy (rAF-batched re-render)
      * and avoids the old debounce pitfall where rapid chunks would keep restarting
      * the timer, suppressing all visible updates until the stream paused.
-     *
-     * **Incremental height**: before the render throttle fires, each incoming chunk is
-     * scanned for visual line breaks (explicit `\n` and natural char-count wraps).
-     * For each line added, [cachedHeight] is bumped by one [lineHeightEstimate] and
-     * [revalidate] is called immediately — keeping the bubble growing in near-real-time
-     * without a full HTML layout.
      */
     fun appendMarkdown(text: String) {
         val wasEmpty = rawText.isEmpty()
@@ -145,16 +114,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             // First token: always render immediately so the bubble appears at once.
             renderNow()
             return
-        }
-        // Grow the cached height by one line per visual line added (explicit \n or char-count
-        // wrap). This avoids the 500 ms gap where new lines overflow the bubble without it growing.
-        if (cachedHeight > 0) {
-            val linesAdded = countAndAccumulateLinesAdded(text)
-            if (linesAdded > 0) {
-                cachedHeight += linesAdded * lineHeightEstimate()
-                revalidate()
-                onHeightGrew?.invoke()
-            }
         }
         val elapsed = System.currentTimeMillis() - lastRenderTime
         if (elapsed >= RENDER_INTERVAL_MS) {
@@ -173,12 +132,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     fun setCompleteMarkdown(text: String) {
         rawText.setLength(0)
         rawText.append(text)
-        streamingLineChars = 0
         renderNow()
-        // History replay: no streaming throttle — snap to accurate height immediately.
-        heightRevalidateTimer.stop()
-        forceRecompute = true
-        revalidate()
     }
 
     /** Forces an immediate HTML render, resetting the throttle state. */
@@ -187,7 +141,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         renderScheduled = false
         lastRenderTime = System.currentTimeMillis()
         contentVersion++
-        heightRevalidateTimer.restart()
         val displayText = QUICK_REPLY_TAG_REGEX.replace(rawText.toString(), "").trimEnd()
         val html = fileNavigator.markdownToHtml(displayText)
         // Replace the stale document with a fresh empty one before setText(). When the existing
@@ -197,14 +150,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // (guarded by `if (length > 0)`) and goes straight to insertString().
         document = (editorKit as HTMLEditorKit).createDefaultDocument()
         text = "<html><body>$html</body></html>"
-        SwingUtilities.invokeLater { syncStreamingPosition() }
     }
 
     /**
-     * Signals that this pane's streaming has ended. Renders any pending content, then
-     * cancels the [heightRevalidateTimer] and immediately triggers one accurate height
-     * layout — bypassing the 500 ms delay that exists to avoid expensive layouts during
-     * in-flight streaming.
+     * Signals that this pane's streaming has ended. Renders any pending content and
+     * triggers a revalidation so the bubble snaps to its final accurate height.
      *
      * Called from [com.github.catatafishen.agentbridge.ui.NativeChatPanel.finalizeTurn]
      * (markdown pane) and from [com.github.catatafishen.agentbridge.ui.NativeChatPanel.collapseThinking]
@@ -212,8 +162,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      */
     fun notifyStreamDone() {
         renderNow()
-        heightRevalidateTimer.stop()
-        forceRecompute = true
         revalidate()
         onHeightGrew?.invoke()
     }
@@ -226,8 +174,18 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     /** Stops the render timer and disconnects the color scheme subscription. */
     fun dispose() {
         renderTimer.stop()
-        heightRevalidateTimer.stop()
         Disposer.dispose(schemeDisposable)
+    }
+
+    /**
+     * Fires [onHeightGrew] whenever the layout manager assigns a taller height than before.
+     * This is the scroll-to-bottom trigger during streaming — accurate and zero-latency
+     * because it reacts to the actual layout result rather than a heuristic estimate.
+     */
+    override fun setBounds(x: Int, y: Int, width: Int, height: Int) {
+        val prev = this.height
+        super.setBounds(x, y, width, height)
+        if (height > prev) onHeightGrew?.invoke()
     }
 
     /**
@@ -265,16 +223,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * Computes the preferred height for the HTML content at the parent's available width.
      *
      * **Caching**: result is cached by `(parentWidth, contentVersion)`. Same width and
-     * unchanged content → return immediately.
-     *
-     * **Streaming deferral**: during active streaming, [contentVersion] changes on every
-     * [renderNow] call (~30 ms). The cache check above already prevents recomputing within
-     * a single layout pass, but the first call per token would still trigger an expensive
-     * layout. To avoid this, the method returns the stale cached height immediately while
-     * streaming, and [heightRevalidateTimer] forces one accurate recompute 500 ms after
-     * the last token. Confirmed necessary by freeze dumps:
-     * threadDumps-freeze-20260517-084456, 084931, 20260518-090325, 134417, 171222, 171611.
-     *
+     * same content → return immediately. Any other combination — new content, or a width
+     * change (e.g. window resize) — triggers a full HTML re-layout via `rootView.setSize`
+     * + `getPreferredSpan`. This is the same path window-resize uses for all bubbles
+     * simultaneously, so the per-render cost at ~30 fps is well within EDT budget.
      */
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
@@ -293,14 +245,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         if (pw == cachedForWidth && contentVersion == cachedForVersion) {
             return Dimension(pw, cachedHeight)
         }
-
-        // Stale cache (same width, content just changed): return immediately during streaming.
-        // heightRevalidateTimer fires 500 ms after the last renderNow() and sets forceRecompute,
-        // triggering one accurate layout after the stream ends.
-        if (cachedHeight > 0 && pw == cachedForWidth && !forceRecompute) {
-            return Dimension(pw, cachedHeight)
-        }
-        forceRecompute = false
 
         // Accurate layout.
         // setSize() alone does not synchronously force the HTML view hierarchy to re-layout
@@ -341,62 +285,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             Dimension(pw, 1)  // safe minimum; revalidated on next cycle
         }
     }
-
-    /**
-     * Counts the number of visual lines added by [text] and updates [streamingLineChars].
-     * Each explicit `\n` counts as one line. Each time [streamingLineChars] reaches
-     * [charsPerLineEstimate], a natural word-wrap line is counted.
-     */
-    private fun countAndAccumulateLinesAdded(text: String): Int {
-        val cpl = charsPerLineEstimate()
-        var lines = 0
-        for (ch in text) {
-            if (ch == '\n') {
-                streamingLineChars = 0
-                lines++
-            } else if (cpl > 0) {
-                streamingLineChars++
-                if (streamingLineChars >= cpl) {
-                    streamingLineChars = 0
-                    lines++
-                }
-            }
-        }
-        return lines
-    }
-
-    /**
-     * Snaps [streamingLineChars] to the actual rendered position of the last content
-     * character. Called via [SwingUtilities.invokeLater] after each [renderNow] so that
-     * subsequent calls to [countAndAccumulateLinesAdded] start from the real visual
-     * baseline rather than a raw markdown char count that drifts as syntax characters
-     * (`**`, `#`, backticks) are processed but never rendered as visible glyphs.
-     *
-     * Uses [modelToView2D] to read the X coordinate of the last character in the
-     * freshly-laid-out document, then converts it to a char-width-normalised offset.
-     * Falls back silently if the view is not yet allocated (the next render will retry).
-     */
-    private fun syncStreamingPosition() {
-        val cpl = charsPerLineEstimate().takeIf { it > 0 } ?: run { streamingLineChars = 0; return }
-        val len = document.length.takeIf { it > 0 } ?: run { streamingLineChars = 0; return }
-        try {
-            val rect = modelToView2D(len - 1) ?: return
-            val avgCharWidth = (PlatformApiCompat.getEditorFontSize() * 0.55).coerceAtLeast(1.0)
-            streamingLineChars = (rect.x / avgCharWidth).toInt().coerceIn(0, cpl - 1)
-        } catch (_: Throwable) {
-            // View not yet allocated; the next renderNow will schedule another attempt.
-        }
-    }
-
-    private fun charsPerLineEstimate(): Int {
-        val pw = cachedForWidth.takeIf { it > 0 } ?: parent?.width?.takeIf { it > 0 } ?: return 0
-        val fontSize = PlatformApiCompat.getEditorFontSize()
-        val avgCharWidth = (fontSize * 0.55).toInt().coerceAtLeast(1)
-        return maxOf(1, pw / avgCharWidth)
-    }
-
-    // Must match the CSS body rule: line-height: 150%
-    private fun lineHeightEstimate(): Int = (PlatformApiCompat.getEditorFontSize() * 1.5).toInt()
 
     private fun createStyleSheet(): StyleSheet {
         val ss = StyleSheet()
