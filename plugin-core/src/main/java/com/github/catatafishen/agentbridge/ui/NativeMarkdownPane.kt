@@ -224,7 +224,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      *
      * **Caching**: result is cached by `(parentWidth, contentVersion)`. Same width and
      * same content → return immediately. Any other combination — new content, or a width
-q     * change (e.g. window resize) — triggers a full HTML re-layout via `rootView.setSize`
+     * change (e.g. window resize) — triggers a full HTML re-layout via `rootView.setSize`
      * + `getPreferredSpan`. This is the same path window-resize uses for all bubbles
      * simultaneously, so the per-render cost at ~30 fps is well within EDT budget.
      */

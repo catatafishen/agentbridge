@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.*
 import com.github.catatafishen.agentbridge.session.ConversationEntryStore
+import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.Companion.getInstance
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project

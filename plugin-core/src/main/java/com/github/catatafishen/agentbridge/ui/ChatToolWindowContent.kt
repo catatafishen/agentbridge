@@ -1121,10 +1121,6 @@ class ChatToolWindowContent(
      * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
      * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
      * the guard this would re-enter [syncTabsIfNeeded] mid-update and produce the 4-click oscillation.
-     *
-     * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
-     * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
-     * the guard this would re-enter [syncTabsIfNeeded] mid-update and produce the 4-click oscillation.
      */
     private fun syncTabsIfNeeded() {
         if (isUpdatingContentTabs) return
@@ -2460,7 +2456,8 @@ class ChatToolWindowContent(
         consolePanel = bp
         bp.onLoadMoreRequested = { persistenceManager.onLoadMoreHistory() }
         persistenceManager.setEntryStore(bp.entryStore)
-        persistenceManager.setCallbacks(object : ConversationPersistenceManager.Callbacks {            override fun appendEntries(entries: List<EntryData>, totalPromptCount: Int) =
+        persistenceManager.setCallbacks(object : ConversationPersistenceManager.Callbacks {
+            override fun appendEntries(entries: List<EntryData>, totalPromptCount: Int) =
                 broadcastPanel.appendEntries(entries, totalPromptCount)
 
             override fun prependEntries(entries: List<EntryData>) =

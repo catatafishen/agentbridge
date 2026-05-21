@@ -85,10 +85,12 @@ public final class MoveFileTool extends FileTool {
         // creating an async refresh session from a pooled thread (which can deadlock in tests).
         String absoluteDestPath = null;
         if (destDir == null) {
-            absoluteDestPath = createDirectoryOnDisk(destStr);
-            if (absoluteDestPath == null)
-                return ToolError.of(McpErrorCode.FILE_NOT_FOUND,
-                    "Destination directory not found and could not be created: " + destStr);
+            try {
+                absoluteDestPath = createDirectoryOnDisk(destStr);
+            } catch (IOException e) {
+                return ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                    "Destination directory could not be created: " + destStr + " — " + e.getMessage());
+            }
         } else if (!destDir.isDirectory()) {
             return ToolError.of(McpErrorCode.FILE_NOT_FOUND,
                 "Destination path is not a directory: " + destStr);
@@ -137,22 +139,19 @@ public final class MoveFileTool extends FileTool {
      * deferred to the EDT inside {@link #performMoveOnEdt}, where
      * {@code LocalFileSystem.refreshAndFindFileByPath} runs synchronously.
      *
-     * @return the absolute path of the created directory, or {@code null} on failure
+     * @return the absolute path of the created directory
+     * @throws IOException if the directory could not be created (permissions, I/O failure, etc.)
      */
-    @Nullable
-    private String createDirectoryOnDisk(String destStr) {
+    @NotNull
+    private String createDirectoryOnDisk(String destStr) throws IOException {
         Path dirPath = Path.of(destStr.replace('\\', '/'));
         if (!dirPath.isAbsolute()) {
             String basePath = project.getBasePath();
-            if (basePath == null) return null;
+            if (basePath == null) throw new IOException("Cannot resolve relative path: project base path is unknown");
             dirPath = Path.of(basePath, destStr);
         }
-        try {
-            Files.createDirectories(dirPath);
-            return dirPath.toString();
-        } catch (IOException e) {
-            return null;
-        }
+        Files.createDirectories(dirPath);
+        return dirPath.toString();
     }
 
     private PsiMoveTarget resolvePsiMoveTarget(VirtualFile vf, VirtualFile destDir) {
