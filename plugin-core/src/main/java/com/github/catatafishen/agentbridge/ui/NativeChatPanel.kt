@@ -67,6 +67,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private var currentAgentAccent: Color = ChatTheme.AGENT_COLOR
 
+    /**
+     * Index into [ChatTheme.SA_COLORS] for the current main agent, or -1 when using the
+     * default [ChatTheme.AGENT_COLOR] (not in the SA palette). Used to ensure sub-agent
+     * color assignments start from a different slot so they never look identical to the
+     * main agent's bubbles.
+     */
+    private var currentAgentColorIndex: Int = -1
+
     private fun agentBg(): Color = NativeChatColors.agentBubbleBg(currentAgentAccent)
     private fun agentBorder(): Color = NativeChatColors.agentBubbleBorder(currentAgentAccent)
 
@@ -685,7 +693,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ) {
         if (currentTurn?.markdownPane != null) finalizeTurn()
         val label = SUB_AGENT_INFO[agentType]?.displayName ?: agentType
-        val colorIndex = nextSubAgentColor++ % ChatTheme.SA_COLOR_COUNT
+        // Start allocation one slot past the main agent's color so sub-agents never share
+        // the same accent as the parent (e.g. both "copilot" and the first sub-agent would
+        // otherwise both land on SA_COLORS[0]).
+        val startOffset = if (currentAgentColorIndex >= 0) currentAgentColorIndex + 1 else 0
+        val colorIndex = (startOffset + nextSubAgentColor++) % ChatTheme.SA_COLOR_COUNT
         val accent = ChatTheme.SA_COLORS[colorIndex]
 
         // Sub-agent chip in the parent turn's chip strip.
@@ -722,11 +734,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         contentBox.add(subChipStrip)
 
-        val indentBorder = BorderFactory.createMatteBorder(0, JBUI.scale(3), 0, 0, accent)
-        val paddedBorder = BorderFactory.createCompoundBorder(indentBorder, JBUI.Borders.empty(4, 8, 4, 0))
         val indentWrapper = JPanel(BorderLayout()).apply {
             isOpaque = false
-            border = paddedBorder
+            border = JBUI.Borders.empty(JBUI.scale(4), 0)
             alignmentX = Component.LEFT_ALIGNMENT
             add(contentBox, BorderLayout.CENTER)
         }
@@ -1109,6 +1119,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         currentAgentAccent = customAccent
             ?: if (profileId.isNotEmpty()) ChatTheme.SA_COLORS[ChatTheme.agentColorIndex(profileId)]
             else ChatTheme.AGENT_COLOR
+        // Track the SA_COLORS index so sub-agent color allocation can skip this slot.
+        currentAgentColorIndex = if (customAccent == null && profileId.isNotEmpty())
+            ChatTheme.agentColorIndex(profileId)
+        else -1
 
         val display = buildString {
             append(agentName)
