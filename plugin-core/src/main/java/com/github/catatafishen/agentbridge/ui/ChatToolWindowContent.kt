@@ -340,13 +340,13 @@ class ChatToolWindowContent(
 
     private fun setupTitleBarActions() {
         val actions = listOf(
-            SidePanelToggleAction(),
-            Separator.create(),
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
             Separator.create(),
             StatisticsAction(),
-            SettingsAction()
+            SettingsAction(),
+            Separator.create(),
+            SidePanelToggleAction()
         )
         toolWindow.setTitleActions(actions)
     }
@@ -2193,7 +2193,7 @@ class ChatToolWindowContent(
     private inner class SidePanelToggleAction : AnAction(
         "Side Panel",
         "Show or hide the side panel (Review, Project Files, Prompts)",
-        AllIcons.General.ChevronRight
+        AllIcons.General.ChevronLeft
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
@@ -2201,7 +2201,7 @@ class ChatToolWindowContent(
             // contentWrappers is the canonical open/closed state — it is set atomically
             // in actionPerformed and is not affected by mid-layout proportion oscillations.
             val isOpen = contentWrappers.isNotEmpty()
-            e.presentation.icon = if (isOpen) AllIcons.General.ChevronLeft else AllIcons.General.ChevronRight
+            e.presentation.icon = if (isOpen) AllIcons.General.ChevronRight else AllIcons.General.ChevronLeft
             e.presentation.text = if (isOpen) "Hide Side Panel" else "Show Side Panel"
         }
 
