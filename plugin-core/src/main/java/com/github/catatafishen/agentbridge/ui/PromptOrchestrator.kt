@@ -1,11 +1,11 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
-import com.github.catatafishen.agentbridge.model.SessionUpdate
-import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.github.catatafishen.agentbridge.client.AbstractClient
+import com.github.catatafishen.agentbridge.model.ContentBlock
+import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
@@ -20,7 +20,6 @@ import com.intellij.openapi.project.Project
 data class PromptOrchestratorCallbacks(
     val onSendingStateChanged: (Boolean) -> Unit,
     val appendNewEntries: () -> Unit,
-    val appendNewEntriesThrottled: () -> Unit,
     val notifyIfUnfocused: (toolCallCount: Int) -> Unit,
     val saveTurnStatistics: (prompt: String, toolCallCount: Int, modelId: String) -> Unit,
     val updateSessionInfo: () -> Unit,
@@ -92,6 +91,11 @@ class PromptOrchestrator(
     private var turnModelId = ""
     private var turnStartHeadHash: String? = null
     private var turnStartGitBranch: String? = null
+
+    private enum class StreamBlockType { NONE, TEXT, THOUGHT }
+
+    /** Tracks the type of the last streamed content block to detect block transitions. */
+    private var lastStreamBlockType = StreamBlockType.NONE
 
     /**
      * Stack of currently active sub-agent call IDs, ordered by start time (oldest first).
@@ -266,6 +270,7 @@ class PromptOrchestrator(
         turnOutputTokens = 0
         turnCostUsd = null
         turnHadContent = false
+        lastStreamBlockType = StreamBlockType.NONE
         activeSubAgentStack.clear()
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
@@ -566,13 +571,40 @@ class PromptOrchestrator(
             is SessionUpdate.AgentMessageChunk -> {
                 turnHadContent = true
                 val text = update.text()
+                if (lastStreamBlockType == StreamBlockType.THOUGHT) {
+                    // Thought block ended — save it now (appendThinkingText is synchronous).
+                    callbacks.appendNewEntries()
+                }
+                lastStreamBlockType = StreamBlockType.TEXT
                 ApplicationManager.getApplication().invokeLater {
                     if (!stopped) consolePanel().appendText(text)
                 }
             }
 
+            is SessionUpdate.AgentThoughtChunk -> {
+                turnHadContent = true
+                if (lastStreamBlockType == StreamBlockType.TEXT) {
+                    // Text block ended — use invokeLater so all queued appendText calls finish first.
+                    ApplicationManager.getApplication().invokeLater { callbacks.appendNewEntries() }
+                }
+                lastStreamBlockType = StreamBlockType.THOUGHT
+                if (!stopped) consolePanel().appendThinkingText(update.text())
+            }
+
             is SessionUpdate.ToolCall -> {
                 turnHadContent = true
+                when (lastStreamBlockType) {
+                    StreamBlockType.TEXT ->
+                        // Text block ended — use invokeLater so all queued appendText calls finish first.
+                        ApplicationManager.getApplication().invokeLater { callbacks.appendNewEntries() }
+
+                    StreamBlockType.THOUGHT ->
+                        // Thought block ended (appendThinkingText is synchronous).
+                        callbacks.appendNewEntries()
+
+                    else -> {}
+                }
+                lastStreamBlockType = StreamBlockType.NONE
                 handleStreamingToolCall(update)
                 handleClientUpdate(update)
             }
@@ -581,11 +613,6 @@ class PromptOrchestrator(
                 turnHadContent = true
                 handleStreamingToolCallUpdate(update)
                 handleClientUpdate(update)
-            }
-
-            is SessionUpdate.AgentThoughtChunk -> {
-                turnHadContent = true
-                if (!stopped) consolePanel().appendThinkingText(update.text())
             }
 
             is SessionUpdate.TurnUsage -> {
@@ -757,7 +784,7 @@ class PromptOrchestrator(
             ToolCallTracker.getInstance(project).acpComplete(
                 toolCallId, status == SessionUpdate.ToolCallStatus.COMPLETED
             )
-            callbacks.appendNewEntriesThrottled()
+            callbacks.appendNewEntries()
         }
     }
 

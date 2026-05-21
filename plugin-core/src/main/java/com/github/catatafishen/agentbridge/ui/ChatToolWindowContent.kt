@@ -1163,7 +1163,6 @@ class ChatToolWindowContent(
     private fun createOrchestratorCallbacks() = PromptOrchestratorCallbacks(
         onSendingStateChanged = ::setSendingState,
         appendNewEntries = { persistenceManager.appendNewEntries() },
-        appendNewEntriesThrottled = { persistenceManager.appendNewEntriesThrottled() },
         notifyIfUnfocused = ::notifyIfUnfocused,
         saveTurnStatistics = { prompt, toolCalls, modelId ->
             persistenceManager.saveTurnStatistics(

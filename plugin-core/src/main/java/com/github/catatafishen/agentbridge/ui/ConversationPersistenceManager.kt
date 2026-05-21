@@ -30,11 +30,6 @@ class ConversationPersistenceManager(
 
     private val conversationReplayer = ConversationReplayer()
 
-    private val saveIntervalMs = 30_000L
-
-    @Volatile
-    private var lastIncrementalSaveMs = 0L
-
     /** Number of entries already persisted to disk for the current session (deferred + panel). */
     @Volatile
     private var persistedEntryCount = 0
@@ -120,24 +115,11 @@ class ConversationPersistenceManager(
      * would shift the offset and cause new entries to be silently skipped.
      */
     fun appendNewEntries() {
-        lastIncrementalSaveMs = System.currentTimeMillis()
         val panelEntries = callbacks?.getPanelEntries() ?: emptyList()
         val newEntries = panelEntries.drop(persistedEntryCount)
         if (newEntries.isEmpty()) return
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
         persistedEntryCount = panelEntries.size
-    }
-
-    /**
-     * Appends new entries if at least [saveIntervalMs] elapsed since the last append.
-     * Called after each tool-call completion during streaming so that long-running turns
-     * are periodically persisted and survive IDE crashes.
-     */
-    fun appendNewEntriesThrottled() {
-        val now = System.currentTimeMillis()
-        if (now - lastIncrementalSaveMs >= saveIntervalMs) {
-            appendNewEntries()
-        }
     }
 
     // ------------------------------------------------------------------
