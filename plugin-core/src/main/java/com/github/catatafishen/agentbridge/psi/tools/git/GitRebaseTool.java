@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.project.Project;
@@ -226,7 +227,7 @@ public final class GitRebaseTool extends GitTool {
             // Race the rebase against a conflict watcher: if conflicts appear on disk,
             // return immediately instead of waiting for the 60s timeout while IntelliJ's
             // conflict resolution dialog blocks the pooled thread.
-            java.nio.file.Path conflictMarker = java.nio.file.Path.of(root, ".git", "rebase-merge", "stopped-sha");
+            java.nio.file.Path conflictMarker = resolveGitDir(root).resolve("rebase-merge").resolve("stopped-sha");
             String conflictResult = awaitWithConflictWatch(rebaseFuture, conflictMarker, root);
             if (conflictResult != null) return conflictResult;
 
@@ -248,6 +249,23 @@ public final class GitRebaseTool extends GitTool {
         } catch (Exception e) {
             return "Error: " + (e.getMessage() != null ? e.getMessage() : e.toString());
         }
+    }
+
+    /**
+     * Resolves the actual {@code .git} directory for the given repository root.
+     * Uses {@code git rev-parse --git-dir} to correctly handle git worktrees and submodules
+     * where {@code .git} is a file pointing at the real git directory rather than a directory.
+     *
+     * @param root the repository root path
+     * @return the resolved git directory path
+     */
+    private @NotNull java.nio.file.Path resolveGitDir(@NotNull String root) {
+        String gitDirOutput = runGitInQuiet(root, "rev-parse", "--git-dir");
+        if (gitDirOutput == null || gitDirOutput.isEmpty()) {
+            return java.nio.file.Path.of(root, ".git");
+        }
+        java.nio.file.Path gitDirPath = java.nio.file.Path.of(gitDirOutput);
+        return gitDirPath.isAbsolute() ? gitDirPath : java.nio.file.Path.of(root).resolve(gitDirPath);
     }
 
     private void executeRebaseOnPooledThread(
@@ -388,7 +406,7 @@ public final class GitRebaseTool extends GitTool {
                     }
                 }
             }
-        });
+        }, ModalityState.any());
     }
 
     /**

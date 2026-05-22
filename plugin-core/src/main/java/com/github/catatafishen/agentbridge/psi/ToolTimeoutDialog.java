@@ -126,12 +126,14 @@ public final class ToolTimeoutDialog {
     }
 
     /**
-     * Registers a {@code whenComplete} callback on {@code toolFuture} that disposes the dialog
-     * (via {@code ModalityState.any()}) as soon as the tool finishes.
+     * Registers a {@code whenComplete} callback on {@code toolFuture} that immediately sets
+     * {@code completedByFuture} and disposes the dialog (via {@code ModalityState.any()}) as
+     * soon as the tool finishes.
      *
-     * <p>If the dialog hasn't been created within 30 seconds (e.g., EDT was blocked by another modal),
-     * the watcher sets {@code completedByFuture} so that {@code scheduleDialogOnEdt} can skip showing
-     * the dialog entirely when it finally runs.
+     * <p>If the dialog hasn't been created yet when the tool completes, this method waits up to
+     * 30 seconds for the EDT to create it. If it still hasn't appeared (e.g., EDT was blocked by
+     * another modal for that long), the watcher returns early — {@code scheduleDialogOnEdt} will
+     * check {@code completedByFuture} and skip showing the dialog entirely when it finally runs.
      */
     private static void registerFutureWatcher(CompletableFuture<?> toolFuture, DialogCoordination coord) {
         toolFuture.whenComplete((result, ex) -> {
