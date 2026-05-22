@@ -26,8 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -167,7 +165,7 @@ public final class GitRebaseTool extends GitTool {
         if (reviewError != null) return reviewError;
 
         String result = runGitIn(root, buildPlainRebaseArgs(args).toArray(String[]::new));
-        if (result.startsWith("Error")) return fetchNote + result;
+        if (result.startsWith("Error")) return fetchNote + enrichRebaseError(result, root);
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase");
         return fetchNote + result + getBranchContextIn(root);
@@ -208,7 +206,7 @@ public final class GitRebaseTool extends GitTool {
         String opError = validateOperations(operations, messages);
         if (opError != null) return opError;
 
-        Future<?> future = null;
+        Future<?> rebaseFuture;
         try {
             git4idea.repo.GitRepository repo = PlatformApiCompat.getRepositoryForRoot(project, root);
             if (repo == null) {
@@ -222,12 +220,21 @@ public final class GitRebaseTool extends GitTool {
             if (reviewError != null) return reviewError;
 
             AtomicReference<String> errorRef = new AtomicReference<>();
-            future = ApplicationManager.getApplication().executeOnPooledThread(() ->
+            rebaseFuture = ApplicationManager.getApplication().executeOnPooledThread(() ->
                 executeRebaseOnPooledThread(repo, upstream, operations, messages, errorRef));
 
-            future.get(60, TimeUnit.SECONDS);
+            // Race the rebase against a conflict watcher: if conflicts appear on disk,
+            // return immediately instead of waiting for the 60s timeout while IntelliJ's
+            // conflict resolution dialog blocks the pooled thread.
+            java.nio.file.Path conflictMarker = java.nio.file.Path.of(root, ".git", "rebase-merge", "stopped-sha");
+            String conflictResult = awaitWithConflictWatch(rebaseFuture, conflictMarker, root);
+            if (conflictResult != null) return conflictResult;
 
-            if (errorRef.get() != null) return "Error: " + errorRef.get();
+            if (errorRef.get() != null) {
+                String conflictInfo = detectRebaseConflicts(root);
+                if (conflictInfo != null) return conflictInfo;
+                return "Error: " + errorRef.get();
+            }
 
             AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase -i");
             refreshVcsState();
@@ -235,11 +242,6 @@ public final class GitRebaseTool extends GitTool {
 
         } catch (NoClassDefFoundError e) {
             return "Error: git4idea plugin required for interactive rebase (not available in this IDE)";
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            return "Error: interactive rebase timed out after 60 seconds. "
-                + "A modal dialog may be blocking — call interact_with_modal to inspect or dismiss it, "
-                + "or the rebase may still be running in background.";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: interactive rebase was interrupted";
@@ -347,12 +349,138 @@ public final class GitRebaseTool extends GitTool {
             return runGitIn(root, CMD_REBASE, "--abort");
         }
         if (args.has(PARAM_CONTINUE_REBASE) && args.get(PARAM_CONTINUE_REBASE).getAsBoolean()) {
-            return runGitIn(root, CMD_REBASE, "--continue");
+            String result = runGitIn(root, CMD_REBASE, "--continue");
+            if (result.startsWith("Error")) return enrichRebaseError(result, root);
+            return result;
         }
         if (args.has("skip") && args.get("skip").getAsBoolean()) {
-            return runGitIn(root, CMD_REBASE, "--skip");
+            String result = runGitIn(root, CMD_REBASE, "--skip");
+            if (result.startsWith("Error")) return enrichRebaseError(result, root);
+            return result;
         }
         return null;
+    }
+
+    // ── Conflict detection ────────────────────────────────────
+
+    private static final String CONFLICT_GUIDANCE = """
+
+        Rebase paused due to merge conflicts. To resolve:
+        1. Use git_conflicts to list conflicted files
+        2. Use git_conflict_show to inspect the 3-way diff for each file
+        3. Use git_conflict_resolve to fix each conflict (accept_ours, accept_theirs, or custom)
+        4. Call git_rebase(continue_rebase: true) to resume the rebase""";
+
+    /**
+     * Dismisses any modal dialogs that IntelliJ may have opened during the rebase
+     * (e.g., conflict resolution dialogs). These block the pooled thread and prevent
+     * the tool from returning. Disposing them on EDT unblocks the thread.
+     */
+    private void dismissBlockingDialogs() {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            for (java.awt.Window window : java.awt.Window.getWindows()) {
+                if (window instanceof java.awt.Dialog dialog && dialog.isModal() && dialog.isShowing()) {
+                    String title = dialog.getTitle();
+                    if (title != null && (title.contains("Conflict") || title.contains("Rebase")
+                        || title.contains("Git") || title.contains("Merge"))) {
+                        LOG.info("Dismissing blocking dialog: " + title);
+                        dialog.dispose();
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Waits for the rebase future to complete, but actively watches for conflicts appearing
+     * on disk. Git writes {@code .git/rebase-merge/stopped-sha} immediately when it pauses
+     * at a conflict — well before any dialog appears. This lets us return within ~1 second
+     * of a conflict instead of waiting for the 60s timeout.
+     *
+     * @param rebaseFuture   the future running the interactive rebase
+     * @param conflictMarker path to {@code .git/rebase-merge/stopped-sha}
+     * @param root           the repository root for conflict detection
+     * @return conflict info string if conflicts were detected, or {@code null} if the rebase completed normally
+     */
+    private @Nullable String awaitWithConflictWatch(
+        @NotNull Future<?> rebaseFuture,
+        @NotNull java.nio.file.Path conflictMarker,
+        @NotNull String root) throws InterruptedException {
+
+        // Poll every 500ms: either the rebase finishes or conflicts appear on disk.
+        // Max 120 iterations = 60s total (same overall timeout as before, but responsive).
+        for (int i = 0; i < 120; i++) {
+            if (rebaseFuture.isDone()) return null;
+
+            if (java.nio.file.Files.exists(conflictMarker)) {
+                // Conflicts detected — give git a moment to finish writing state files
+                Thread.sleep(300);
+                rebaseFuture.cancel(true);
+                dismissBlockingDialogs();
+                String conflictInfo = detectRebaseConflicts(root);
+                if (conflictInfo != null) return conflictInfo;
+                return "Error: Rebase paused (conflict marker detected)." + CONFLICT_GUIDANCE;
+            }
+
+            Thread.sleep(500);
+        }
+
+        // Timed out after 60s without conflicts appearing — treat as generic timeout
+        rebaseFuture.cancel(true);
+        dismissBlockingDialogs();
+        String conflictInfo = detectRebaseConflicts(root);
+        if (conflictInfo != null) return conflictInfo;
+        return "Error: interactive rebase timed out after 60 seconds. "
+            + "A modal dialog may be blocking — call interact_with_modal to inspect or dismiss it, "
+            + "or the rebase may still be running in background.";
+    }
+
+    /**
+     * Checks if the repository is currently in a rebase-in-progress state with unresolved conflicts.
+     * Detects both {@code .git/rebase-merge/} (interactive) and {@code .git/rebase-apply/} (plain)
+     * rebase markers, combined with the presence of unmerged files.
+     *
+     * @return a formatted conflict message if conflicts are detected, or {@code null} if not in conflict state
+     */
+    private @Nullable String detectRebaseConflicts(@NotNull String root) {
+        java.nio.file.Path gitDir = java.nio.file.Path.of(root, ".git");
+        boolean rebaseInProgress = java.nio.file.Files.isDirectory(gitDir.resolve("rebase-merge"))
+            || java.nio.file.Files.isDirectory(gitDir.resolve("rebase-apply"));
+        if (!rebaseInProgress) return null;
+
+        String unmerged = runGitInQuiet(root, "ls-files", "--unmerged");
+        if (unmerged == null || unmerged.isBlank()) return null;
+
+        // Count unique conflicted file paths (column 4 of ls-files --unmerged output)
+        long conflictCount = unmerged.lines()
+            .map(line -> line.split("\t", 2))
+            .filter(parts -> parts.length == 2)
+            .map(parts -> parts[1])
+            .distinct()
+            .count();
+
+        return "Error: Rebase has " + conflictCount + " conflicted file"
+            + (conflictCount == 1 ? "" : "s") + "." + CONFLICT_GUIDANCE;
+    }
+
+    /**
+     * Checks if the error output from a plain rebase indicates conflicts,
+     * either by detecting "CONFLICT" in the output or by checking repo state.
+     */
+    private @NotNull String enrichRebaseError(@NotNull String errorResult, @NotNull String root) {
+        boolean hasConflictMarker = errorResult.contains("CONFLICT")
+            || errorResult.contains("could not apply");
+        if (!hasConflictMarker) {
+            // Also check repo state in case the error message format changed
+            String conflictInfo = detectRebaseConflicts(root);
+            if (conflictInfo != null) return conflictInfo;
+            return errorResult;
+        }
+        // There are conflicts — return a clean message with guidance
+        String conflictInfo = detectRebaseConflicts(root);
+        if (conflictInfo != null) return conflictInfo;
+        // Fallback: append guidance to raw output
+        return errorResult + CONFLICT_GUIDANCE;
     }
 
     // ── Programmatic rebase editor ────────────────────────────

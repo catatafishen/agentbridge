@@ -128,16 +128,21 @@ public final class ToolTimeoutDialog {
     /**
      * Registers a {@code whenComplete} callback on {@code toolFuture} that disposes the dialog
      * (via {@code ModalityState.any()}) as soon as the tool finishes.
+     *
+     * <p>If the dialog hasn't been created within 30 seconds (e.g., EDT was blocked by another modal),
+     * the watcher sets {@code completedByFuture} so that {@code scheduleDialogOnEdt} can skip showing
+     * the dialog entirely when it finally runs.
      */
     private static void registerFutureWatcher(CompletableFuture<?> toolFuture, DialogCoordination coord) {
         toolFuture.whenComplete((result, ex) -> {
+            coord.completedByFuture().set(true);
             try {
-                // Wait for the dialog to be set before trying to close it.
-                if (!coord.dialogReady().await(5, TimeUnit.SECONDS)) {
-                    // EDT may still be pending (e.g., future completed just before invokeLater ran).
-                    if (!toolFuture.isDone()) return;
-                    coord.completedByFuture().set(true);
-                    if (!coord.dialogReady().await(25, TimeUnit.SECONDS)) return;
+                // Wait for the dialog to be created. If EDT is blocked (e.g., by IntelliJ's own
+                // conflict resolution dialog), this may take a while. Wait up to 30s total.
+                if (!coord.dialogReady().await(30, TimeUnit.SECONDS)) {
+                    // Dialog was never created — scheduleDialogOnEdt will check completedByFuture
+                    // and skip showing the dialog when it eventually runs.
+                    return;
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -145,7 +150,6 @@ public final class ToolTimeoutDialog {
             }
             JDialog dialog = coord.dialogRef().get();
             if (dialog != null && dialog.isDisplayable()) {
-                coord.completedByFuture().set(true);
                 ApplicationManager.getApplication().invokeLater(dialog::dispose, ModalityState.any());
             }
         });
@@ -156,6 +160,13 @@ public final class ToolTimeoutDialog {
                                             DialogCoordination coord) {
         ApplicationManager.getApplication().invokeLater(() -> {
             try {
+                // If the tool completed while EDT was blocked (e.g., by another modal dialog),
+                // skip showing this dialog entirely — it would be stale.
+                if (coord.completedByFuture().get()) {
+                    coord.dialogReady().countDown();
+                    return;
+                }
+
                 String message = operationDescription + " is still running after " + elapsedSeconds
                     + " seconds.\nWhat would you like to do?";
                 JCheckBox suppressSession = new JCheckBox("Don't ask for this session");
