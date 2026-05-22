@@ -463,7 +463,7 @@ public final class GitRebaseTool extends GitTool {
      * @return a formatted conflict message if conflicts are detected, or {@code null} if not in conflict state
      */
     private @Nullable String detectRebaseConflicts(@NotNull String root) {
-        java.nio.file.Path gitDir = java.nio.file.Path.of(root, ".git");
+        java.nio.file.Path gitDir = resolveGitDir(root);
         boolean rebaseInProgress = java.nio.file.Files.isDirectory(gitDir.resolve("rebase-merge"))
             || java.nio.file.Files.isDirectory(gitDir.resolve("rebase-apply"));
         if (!rebaseInProgress) return null;

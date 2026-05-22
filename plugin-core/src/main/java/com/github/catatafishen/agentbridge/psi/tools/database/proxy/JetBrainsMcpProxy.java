@@ -242,13 +242,21 @@ final class JetBrainsMcpProxy {
             .findFirst()
             .orElseThrow(() -> new IllegalStateException("DONT_ASK enum constant not found"));
 
-        // Use the 3-param $default constructor (AskCommandExecutionMode, McpToolFilter, String, int, Marker).
-        // mask=6 (bits 1+2 set) → use Kotlin defaults for toolFilter (null) and localAgentId (null),
-        // so we only supply commandExecutionMode. The 2-param $default constructor is deprecated since
-        // McpSessionOptions gained a localAgentId: String? field; using the 3-param form is canonical.
-        Constructor<?> ctor = sessionOptionsClass.getDeclaredConstructor(
-            askModeClass, mcpToolFilterClass, String.class, int.class, markerClass);
-        return ctor.newInstance(dontAsk, null, null, 6, null);
+        // Try the newer $default constructor first (AskCommandExecutionMode, McpToolFilter, String, int, Marker)
+        // — added when localAgentId: String? was introduced. mask=6 (bits 1+2 set) → use Kotlin defaults
+        // for toolFilter (null) and localAgentId (null), so we only supply commandExecutionMode.
+        // Fall back to the older 4-param form (AskCommandExecutionMode, McpToolFilter, int, Marker)
+        // on older plugin versions that predate the localAgentId field.
+        try {
+            Constructor<?> ctor = sessionOptionsClass.getDeclaredConstructor(
+                askModeClass, mcpToolFilterClass, String.class, int.class, markerClass);
+            return ctor.newInstance(dontAsk, null, null, 6, null);
+        } catch (NoSuchMethodException e) {
+            // Older plugin version without localAgentId — mask=2 (bit 1 set) → default toolFilter
+            Constructor<?> ctor = sessionOptionsClass.getDeclaredConstructor(
+                askModeClass, mcpToolFilterClass, int.class, markerClass);
+            return ctor.newInstance(dontAsk, null, 2, null);
+        }
     }
 
     /**
