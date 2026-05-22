@@ -3,13 +3,11 @@ package com.github.catatafishen.agentbridge.settings
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.CleanupSettings
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBCheckBox
-import com.intellij.ui.components.labels.LinkLabel
 import com.intellij.ui.dsl.builder.*
 
 class ChatInputConfigurable(private val project: Project) :
@@ -36,18 +34,13 @@ class ChatInputConfigurable(private val project: Project) :
                 .bindSelected({ s.isShowShortcutHints }, { s.isShowShortcutHints = it })
         }
         row {
-            val link = LinkLabel<Unit>(
-                "Customize keyboard shortcuts…", null
-            ) { _, _ ->
-                ApplicationManager.getApplication().invokeLater {
-                    ShowSettingsUtil.getInstance().showSettingsDialog(
-                        project,
-                        { c -> c is SearchableConfigurable && "preferences.keymap" == c.id },
-                        { c -> if (c is SearchableConfigurable) c.enableSearch("AgentBridge")?.run() }
-                    )
-                }
+            link("Customize keyboard shortcuts…") {
+                ShowSettingsUtil.getInstance().showSettingsDialog(
+                    project,
+                    { c -> c is SearchableConfigurable && "preferences.keymap" == c.id },
+                    { c -> if (c is SearchableConfigurable) c.enableSearch("AgentBridge")?.run() }
+                )
             }
-            cell(link)
         }
         separator()
         row {
@@ -79,6 +72,9 @@ class ChatInputConfigurable(private val project: Project) :
             comboBox(listOf("#", "@", ""))
                 .comment("Character that opens the file search popup in the chat input.")
                 .applyToComponent {
+                    // UNCHECKED_CAST: ComboBoxWithWidePopup's E! platform type requires an explicit
+                    // cast; the renderer is correct at runtime.
+                    @Suppress("UNCHECKED_CAST")
                     renderer = object : com.intellij.ui.SimpleListCellRenderer<String>() {
                         override fun customize(
                             list: javax.swing.JList<out String>,
@@ -93,7 +89,7 @@ class ChatInputConfigurable(private val project: Project) :
                                 else -> "Disabled"
                             }
                         }
-                    }
+                    } as javax.swing.ListCellRenderer<in String>
                 }
                 .bindItem({ s.fileSearchTrigger }, { s.fileSearchTrigger = it ?: "#" })
         }
@@ -152,6 +148,9 @@ class ChatInputConfigurable(private val project: Project) :
                     "\"Restore into chat input\" prepends the unsent nudge to the input area instead of firing it."
                 )
                 .applyToComponent {
+                    // UNCHECKED_CAST: ComboBoxWithWidePopup's E! platform type requires an explicit
+                    // cast; the renderer is correct at runtime.
+                    @Suppress("UNCHECKED_CAST")
                     renderer =
                         object : com.intellij.ui.SimpleListCellRenderer<ChatInputSettings.UnhandledNudgeMode>() {
                             override fun customize(
@@ -167,7 +166,7 @@ class ChatInputConfigurable(private val project: Project) :
                                     null -> ""
                                 }
                             }
-                        }
+                        } as javax.swing.ListCellRenderer<in ChatInputSettings.UnhandledNudgeMode>
                 }
                 .bindItem(
                     { s.unhandledNudgeMode },
@@ -183,6 +182,9 @@ class ChatInputConfigurable(private val project: Project) :
                         "\"Send silently\" injects the correction without showing a bubble in the chat."
                 )
                 .applyToComponent {
+                    // UNCHECKED_CAST: ComboBoxWithWidePopup's E! platform type requires an explicit
+                    // cast; the renderer is correct at runtime.
+                    @Suppress("UNCHECKED_CAST")
                     renderer =
                         object : com.intellij.ui.SimpleListCellRenderer<ChatInputSettings.ReprimandNudgeMode>() {
                             override fun customize(
@@ -199,7 +201,7 @@ class ChatInputConfigurable(private val project: Project) :
                                     null -> "Enabled"
                                 }
                             }
-                        }
+                        } as javax.swing.ListCellRenderer<in ChatInputSettings.ReprimandNudgeMode>
                 }
                 .bindItem(
                     { s.reprimandNudgeMode },
