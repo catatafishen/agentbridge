@@ -374,6 +374,7 @@ class CodexApprovalHandlerTest {
             handler.setPermissionRequestListener(prompt -> { /* verify it accepts a listener */ });
             handler.setPermissionRequestListener(null);
             // No exception thrown — null clears it
+            assertNotNull(handler);
         }
     }
 

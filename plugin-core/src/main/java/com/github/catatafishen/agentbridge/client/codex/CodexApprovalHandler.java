@@ -253,6 +253,10 @@ public final class CodexApprovalHandler {
                         sendNativeApprovalDecision(id, "acceptForSession");
                     }
                     case ALLOW_ONCE -> sendNativeApprovalDecision(id, DECISION_ACCEPT);
+                    case ALLOW_ALWAYS -> {
+                        if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
+                        sendNativeApprovalDecision(id, DECISION_ACCEPT);
+                    }
                     case DENY -> {
                         sendNativeApprovalDecision(id, "decline");
                         emitToolDeclinedBanner(method, params, turnCallback);

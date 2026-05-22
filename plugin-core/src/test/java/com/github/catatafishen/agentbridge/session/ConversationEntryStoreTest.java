@@ -219,6 +219,7 @@ class ConversationEntryStoreTest {
         var update = new ChatPanelApi.ToolCallUpdate("details", null, null, false, null, null, null);
         // Should not throw
         store.updateToolCall("unknown", "done", update);
+        assertTrue(store.getEntries().isEmpty());
     }
 
     @Test
@@ -244,6 +245,7 @@ class ConversationEntryStoreTest {
     void markToolCallMcp_ignoresUnknownId() {
         // Should not throw
         store.markToolCallMcp("unknown", "some_tool");
+        assertTrue(store.getEntries().isEmpty());
     }
 
     // ── Sub-agents ────────────────────────────────────────────────────────────

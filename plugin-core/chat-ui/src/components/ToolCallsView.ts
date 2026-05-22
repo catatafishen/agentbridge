@@ -95,12 +95,12 @@ export class ToolCallsView extends PollableView {
         const target = e.target as HTMLElement;
 
         // View diff button click
-        if ((target as HTMLElement).classList.contains('tcv-diff-btn')) {
+        if (target.classList.contains('tcv-diff-btn')) {
             const row = target.closest<HTMLElement>('.tcv-item');
             if (row?.dataset.id) {
-                const item = ToolCallsController.get(row.dataset.id!);
+                const item = ToolCallsController.get(row.dataset.id);
                 if (item?.originalArguments) {
-                    const fn = (window as any).openInputDiff;
+                    const fn = (globalThis as any).openInputDiff;
                     if (typeof fn === 'function') fn(item.originalArguments, item.arguments, item.toolName);
                 }
             }
@@ -191,7 +191,7 @@ export class ToolCallsView extends PollableView {
         if (!this._pushMode || this._loadingMore || ToolCallsController.isHistoryExhausted()) return;
         this._loadingMore = true;
         const oldestId = ToolCallsController.oldestHistoricId();
-        const fn = (window as any).loadMoreToolCalls;
+        const fn = (globalThis as any).loadMoreToolCalls;
         if (typeof fn === 'function') {
             fn(oldestId ?? '');
         }
@@ -254,10 +254,11 @@ export class ToolCallsView extends PollableView {
         // Default I/O view (shown when no pipeline stage is selected)
         const diffBtn = item.originalArguments && this._pushMode
             ? `<button class="tcv-diff-btn">View diff</button>` : '';
+        const inputLabel = diffBtn ? `Input ${diffBtn}` : 'Input';
         const ioView = this._selectedStage ? '' : `
             <div class="tcv-io">
                 <div class="tcv-io-section">
-                    <div class="tcv-label">Input${diffBtn ? ' ' + diffBtn : ''}</div>
+                    <div class="tcv-label">${inputLabel}</div>
                     ${this._renderContent(item.arguments || '')}
                 </div>
                 <div class="tcv-io-section">
