@@ -551,4 +551,99 @@ class ConversationWriterTest {
             assertEquals("original content", rs.getString(1));
         }
     }
+
+    @Test
+    void updateSessionTitleUpdatesDisplayName() throws Exception {
+        writer.recordEntries("sess-title", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hello", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+
+        writer.updateSessionTitle("sess-title", "My Custom Title");
+
+        try (var ps = conn.prepareStatement("SELECT display_name FROM sessions WHERE id = ?")) {
+            ps.setString(1, "sess-title");
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals("My Custom Title", rs.getString(1));
+            }
+        }
+    }
+
+    @Test
+    void updateSessionTitleSkipsBlankTitle() throws Exception {
+        writer.recordEntries("sess-blank", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hello", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        // First set a real title
+        writer.updateSessionTitle("sess-blank", "Real Title");
+        // Then try to blank it — should be a no-op
+        writer.updateSessionTitle("sess-blank", "   ");
+
+        try (var ps = conn.prepareStatement("SELECT display_name FROM sessions WHERE id = ?")) {
+            ps.setString(1, "sess-blank");
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals("Real Title", rs.getString(1));
+            }
+        }
+    }
+
+    @Test
+    void markToolCallNonMcpSetsIsMcpToZero() throws Exception {
+        writer.recordEntries("sess-mcp", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            new EntryData.ToolCall(
+                "custom_tool", "{}", "custom", null, "completed",
+                null, null, false, null, null,
+                "2026-01-01T10:00:01Z", "Copilot", "gpt-5", "ev-non-mcp")
+        ));
+
+        // Initially is_mcp should be NULL (pending correlation)
+        try (var ps = conn.prepareStatement(
+            "SELECT is_mcp FROM tool_call_events WHERE event_id = ?")) {
+            ps.setString(1, "ev-non-mcp");
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                rs.getInt(1);
+                assertTrue(rs.wasNull(), "is_mcp should be NULL initially");
+            }
+        }
+
+        writer.markToolCallNonMcp("ev-non-mcp");
+
+        try (var ps = conn.prepareStatement(
+            "SELECT is_mcp FROM tool_call_events WHERE event_id = ?")) {
+            ps.setString(1, "ev-non-mcp");
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(0, rs.getInt(1));
+            }
+        }
+    }
+
+    @Test
+    void markToolCallNonMcpDoesNotOverwriteExistingMcp() throws Exception {
+        writer.recordEntries("sess-mcp2", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "t2", "t2"),
+            new EntryData.ToolCall(
+                "read_file", "{}", "read", null, "completed",
+                null, null, false, null, null,
+                "2026-01-01T10:00:01Z", "Copilot", "gpt-5", "ev-already-mcp")
+        ));
+
+        // Mark it as MCP first
+        writer.markToolCallMcp("ev-already-mcp");
+
+        // Now try to mark it as non-MCP — the SQL WHERE clause prevents overwriting (is_mcp IS NULL)
+        writer.markToolCallNonMcp("ev-already-mcp");
+
+        try (var ps = conn.prepareStatement(
+            "SELECT is_mcp FROM tool_call_events WHERE event_id = ?")) {
+            ps.setString(1, "ev-already-mcp");
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt(1), "markToolCallNonMcp should not overwrite existing MCP=1");
+            }
+        }
+    }
 }
