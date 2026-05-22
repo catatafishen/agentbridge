@@ -1,14 +1,14 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
-import com.github.catatafishen.agentbridge.model.ContentBlock;
-import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
-import com.github.catatafishen.agentbridge.model.PromptResponse;
-import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
+import com.github.catatafishen.agentbridge.client.ClientException;
+import com.github.catatafishen.agentbridge.model.ContentBlock;
+import com.github.catatafishen.agentbridge.model.Model;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
@@ -622,67 +622,82 @@ public final class ClaudeClient extends AbstractClaudeClient {
                 yield currentStopReason;
             }
             case "tool_result" -> {
-                // Fallback: some CLI versions may emit tool_result as a top-level event.
                 emitToolCallEnd(event, onUpdate);
                 yield currentStopReason;
             }
             case "user" -> {
-                // In stream-json format, tool results arrive as a "user" message event with
-                // tool_result content blocks. Process each block to emit tool_call_update events,
-                // which sets toolJustCompleted in the UI and creates a new message segment before
-                // the next assistant response.
-                if (event.has(FIELD_MESSAGE)) {
-                    JsonObject msg = event.getAsJsonObject(FIELD_MESSAGE);
-                    if (msg.has(FIELD_CONTENT) && msg.get(FIELD_CONTENT).isJsonArray()) {
-                        for (JsonElement el : msg.getAsJsonArray(FIELD_CONTENT)) {
-                            if (el.isJsonObject()) {
-                                JsonObject block = el.getAsJsonObject();
-                                String blockType = block.has(FIELD_TYPE) ? block.get(FIELD_TYPE).getAsString() : "";
-                                if ("tool_result".equals(blockType)) {
-                                    emitToolCallEnd(block, onUpdate);
-                                }
-                            }
-                        }
-                    }
-                }
+                handleUserEvent(event, onUpdate);
                 yield currentStopReason;
             }
             case "control_request" -> {
                 respondToControlRequest(event, stdin);
                 yield currentStopReason;
             }
-            case "result" -> {
-                if (event.has(FIELD_SESSION_ID)) {
-                    cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
-                }
-                boolean isError = event.has(FIELD_SUBTYPE)
-                    && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());
-                if (isError && event.has(SUBTYPE_ERROR)) {
-                    String errorText = extractErrorText(event.get(SUBTYPE_ERROR));
-                    LOG.warn("Claude CLI error (session=" + sessionId + "): " + errorText);
-                    String cliSessionId = cliSessionIds.get(sessionId);
-                    if (cliSessionId != null) {
-                        LOG.warn("Session was resumed with --resume " + cliSessionId
-                            + " — the error may indicate the session file is invalid or corrupted");
-                    }
-                    if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
-                    if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
-                    if (isClaudeAuthError(errorText)) {
-                        // Surface auth errors as exceptions so PromptOrchestrator's existing
-                        // auth-error pipeline (markAuthError → SetupBanner) fires.
-                        // See docs/AUTH-HANDLING.md.
-                        throw new ClaudeAuthRequiredException(errorText);
-                    }
-                }
-                // Emit token/cost usage so the UI can display it in the toolbar
-                if (!isError) emitUsageStats(event, onUpdate);
-                // Close stdin so profile-based sessions (which keep stdout open waiting
-                // for the next message) receive the EOF signal and exit cleanly.
-                closeQuietly(stdin);
-                yield isError ? SUBTYPE_ERROR : STOP_REASON_END_TURN;
-            }
+            case "result" -> handleResultEvent(sessionId, event, stdin, onChunk, onUpdate);
             default -> currentStopReason;
         };
+    }
+
+    private void handleUserEvent(@NotNull JsonObject event,
+                                 @Nullable Consumer<SessionUpdate> onUpdate) {
+        // In stream-json format, tool results arrive as a "user" message event with
+        // tool_result content blocks. Process each block to emit tool_call_update events,
+        // which sets toolJustCompleted in the UI and creates a new message segment before
+        // the next assistant response.
+        if (!event.has(FIELD_MESSAGE)) return;
+        JsonObject msg = event.getAsJsonObject(FIELD_MESSAGE);
+        if (!msg.has(FIELD_CONTENT) || !msg.get(FIELD_CONTENT).isJsonArray()) return;
+        for (JsonElement el : msg.getAsJsonArray(FIELD_CONTENT)) {
+            if (!el.isJsonObject()) continue;
+            JsonObject block = el.getAsJsonObject();
+            String blockType = block.has(FIELD_TYPE) ? block.get(FIELD_TYPE).getAsString() : "";
+            if ("tool_result".equals(blockType)) {
+                emitToolCallEnd(block, onUpdate);
+            }
+        }
+    }
+
+    @NotNull
+    private String handleResultEvent(@NotNull String sessionId,
+                                     @NotNull JsonObject event,
+                                     @NotNull OutputStream stdin,
+                                     @Nullable Consumer<String> onChunk,
+                                     @Nullable Consumer<SessionUpdate> onUpdate) {
+        if (event.has(FIELD_SESSION_ID)) {
+            cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
+        }
+        boolean isError = event.has(FIELD_SUBTYPE)
+            && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());
+        if (isError && event.has(SUBTYPE_ERROR)) {
+            handleResultError(sessionId, event, onChunk, onUpdate);
+        }
+        // Emit token/cost usage so the UI can display it in the toolbar
+        if (!isError) emitUsageStats(event, onUpdate);
+        // Close stdin so profile-based sessions (which keep stdout open waiting
+        // for the next message) receive the EOF signal and exit cleanly.
+        closeQuietly(stdin);
+        return isError ? SUBTYPE_ERROR : STOP_REASON_END_TURN;
+    }
+
+    private void handleResultError(@NotNull String sessionId,
+                                   @NotNull JsonObject event,
+                                   @Nullable Consumer<String> onChunk,
+                                   @Nullable Consumer<SessionUpdate> onUpdate) {
+        String errorText = extractErrorText(event.get(SUBTYPE_ERROR));
+        LOG.warn("Claude CLI error (session=" + sessionId + "): " + errorText);
+        String cliSessionId = cliSessionIds.get(sessionId);
+        if (cliSessionId != null) {
+            LOG.warn("Session was resumed with --resume " + cliSessionId
+                + " — the error may indicate the session file is invalid or corrupted");
+        }
+        if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
+        if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
+        if (isClaudeAuthError(errorText)) {
+            // Surface auth errors as exceptions so PromptOrchestrator's existing
+            // auth-error pipeline (markAuthError → SetupBanner) fires.
+            // See docs/AUTH-HANDLING.md.
+            throw new ClaudeAuthRequiredException(errorText);
+        }
     }
 
     private void streamAssistantMessage(@NotNull JsonObject event,

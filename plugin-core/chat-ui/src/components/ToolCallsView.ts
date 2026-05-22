@@ -94,21 +94,12 @@ export class ToolCallsView extends PollableView {
     private _handleClick(e: MouseEvent): void {
         const target = e.target as HTMLElement;
 
-        // View diff button click
         if (target.classList.contains('tcv-diff-btn')) {
-            const row = target.closest<HTMLElement>('.tcv-item');
-            if (row?.dataset.id) {
-                const item = ToolCallsController.get(row.dataset.id);
-                if (item?.originalArguments) {
-                    const fn = (globalThis as any).openInputDiff;
-                    if (typeof fn === 'function') fn(item.originalArguments, item.arguments, item.toolName);
-                }
-            }
+            this._handleDiffClick(target);
             e.stopPropagation();
             return;
         }
 
-        // Pipeline stage click
         const stageNode = target.closest<HTMLElement>('.tcv-pipe-node');
         if (stageNode?.dataset.stage) {
             this._selectedStage = this._selectedStage === stageNode.dataset.stage
@@ -117,21 +108,31 @@ export class ToolCallsView extends PollableView {
             return;
         }
 
-        // Row expand/collapse
         const row = target.closest<HTMLElement>('.tcv-item');
         if (!row?.dataset.id) return;
-        const id = row.dataset.id;
+        this._toggleRowExpansion(row.dataset.id);
+        this._render();
+    }
+
+    private _handleDiffClick(target: HTMLElement): void {
+        const row = target.closest<HTMLElement>('.tcv-item');
+        if (!row?.dataset.id) return;
+        const item = ToolCallsController.get(row.dataset.id);
+        if (!item?.originalArguments) return;
+        const fn = (globalThis as any).openInputDiff;
+        if (typeof fn === 'function') fn(item.originalArguments, item.arguments, item.toolName);
+    }
+
+    private _toggleRowExpansion(id: string): void {
         if (String(this._expandedId) === id) {
             this._expandedId = null;
             this._selectedStage = null;
         } else {
             this._expandedId = id;
-            // Auto-select the last (output) pipeline stage so the result is immediately visible.
             const item = ToolCallsController.get(id);
             const activeHooks = this._activeHooks(item?.hookStages ?? []);
             this._selectedStage = activeHooks.length > 0 ? 'output' : null;
         }
-        this._render();
     }
 
     private _render(): void {
@@ -353,13 +354,8 @@ export class ToolCallsView extends PollableView {
     }
 
     private _renderStageDetail(item: ToolCallData, activeHooks: HookStage[], stage: string): string {
-        // Render stage content directly in tcv-detail without an extra wrapper box —
-        // the pre/code block already has its own visual container, so double-boxing is redundant.
         if (stage === 'input') {
-            const diffBtn = item.originalArguments && this._pushMode
-                ? `<button class="tcv-diff-btn">View diff</button>` : '';
-            return `<div class="tcv-label">Input Arguments${diffBtn ? ' ' + diffBtn : ''}</div>
-                ${this._renderContent(item.arguments || '')}`;
+            return this._renderInputStage(item);
         }
         if (stage === 'output') {
             const resultText = item.result || (item.status === 'running' ? '(still running)' : '');
@@ -367,16 +363,29 @@ export class ToolCallsView extends PollableView {
                 ${this._renderContent(resultText)}`;
         }
         if (stage === 'execution') {
-            const meta = item.durationMs > 0
-                ? `<div class="tcv-stage-meta"><span>Duration: ${this._formatDuration(item.durationMs)}</span></div>`
-                : '';
-            return `<div class="tcv-label">Tool: ${this.esc(item.toolName)}</div>
-                ${meta}
-                <div class="tcv-label">Output</div>
-                ${this._renderContent(item.result || '(still running)')}`;
+            return this._renderExecutionStage(item);
         }
+        return this._renderHookStage(activeHooks, stage);
+    }
 
-        // Hook stages — keep the tcv-stage-detail wrapper to visually separate them.
+    private _renderInputStage(item: ToolCallData): string {
+        const diffBtn = item.originalArguments && this._pushMode
+            ? `<button class="tcv-diff-btn">View diff</button>` : '';
+        return `<div class="tcv-label">Input Arguments${diffBtn ? ' ' + diffBtn : ''}</div>
+            ${this._renderContent(item.arguments || '')}`;
+    }
+
+    private _renderExecutionStage(item: ToolCallData): string {
+        const meta = item.durationMs > 0
+            ? `<div class="tcv-stage-meta"><span>Duration: ${this._formatDuration(item.durationMs)}</span></div>`
+            : '';
+        return `<div class="tcv-label">Tool: ${this.esc(item.toolName)}</div>
+            ${meta}
+            <div class="tcv-label">Output</div>
+            ${this._renderContent(item.result || '(still running)')}`;
+    }
+
+    private _renderHookStage(activeHooks: HookStage[], stage: string): string {
         const triggerMap: Record<string, string> = {
             permission: 'permission',
             pre: 'pre',

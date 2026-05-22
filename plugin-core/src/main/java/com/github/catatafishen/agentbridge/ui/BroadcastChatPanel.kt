@@ -11,7 +11,6 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Consumer
-import javax.swing.JComponent
 
 /**
  * The single chat panel for a project, delegating all [ChatPanelApi] calls to [nativePanel].
@@ -30,7 +29,7 @@ import javax.swing.JComponent
 class BroadcastChatPanel(
     val project: Project,
     val nativePanel: NativeChatPanel,
-) : ChatPanelApi, PermissionPromptProvider {
+) : ChatPanelApi by nativePanel, PermissionPromptProvider {
 
     companion object {
         private val instances = ConcurrentHashMap<Project, BroadcastChatPanel>()
@@ -59,8 +58,6 @@ class BroadcastChatPanel(
         PermissionPromptProviderHolder.register(project, this)
         ToolCallTracker.getInstance(project).addListener(trackerListener)
     }
-
-    override val component: JComponent = nativePanel.component
 
     /**
      * Dispatches a UI update to the EDT. Never blocks the calling thread.
@@ -96,20 +93,6 @@ class BroadcastChatPanel(
     fun addEntriesChangeListener(listener: Runnable) = entryStore.addChangeListener(listener)
 
     fun removeEntriesChangeListener(listener: Runnable) = entryStore.removeChangeListener(listener)
-
-    // ── Callback vars ─────────────────────────────────────────────────────────
-
-    override var onQuickReply: ((String) -> Unit)?
-        get() = nativePanel.onQuickReply
-        set(value) {
-            nativePanel.onQuickReply = value
-        }
-
-    override var onStatusMessage: ((type: String, message: String) -> Unit)?
-        get() = nativePanel.onStatusMessage
-        set(value) {
-            nativePanel.onStatusMessage = value
-        }
 
     // ── Write methods — store data (any thread), then dispatch UI (fire-and-forget) ──
 
@@ -364,27 +347,10 @@ class BroadcastChatPanel(
 
     fun hideLoadMore() = dispatchUi { nativePanel.hideLoadMore() }
 
-    // ── Read-only ─────────────────────────────────────────────────────────────
-
-    override fun hasContent(): Boolean = nativePanel.hasContent()
-
-    override fun getConversationText(): String = nativePanel.getConversationText()
-
-    override fun getCompressedSummary(maxChars: Int): String = nativePanel.getCompressedSummary(maxChars)
-
-    override fun getConversationHtml(): String = nativePanel.getConversationHtml()
-
-    override fun getLastResponseText(): String = nativePanel.getLastResponseText()
+    // ── Read-only (delegated via "by nativePanel" in class header) ─────────────
 
     /** Returns null — JCEF DOM export is no longer available. Use [getConversationText] instead. */
     override fun getPageHtml(): String? = null
-
-    override fun hasPendingAskUserRequest(): Boolean = nativePanel.hasPendingAskUserRequest()
-
-    override fun consumePendingAskUserResponse(response: String): Boolean =
-        nativePanel.consumePendingAskUserResponse(response)
-
-    override fun clearPendingAskUserRequest(reqId: String?) = nativePanel.clearPendingAskUserRequest(reqId)
 
     // ── Dispose ────────────────────────────────────────────────────────────────
 

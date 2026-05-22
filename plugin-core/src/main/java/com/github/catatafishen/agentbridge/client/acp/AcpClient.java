@@ -1551,13 +1551,6 @@ public abstract class AcpClient extends AbstractClient {
         return null;
     }
 
-    /**
-     * Creates the initial session immediately after startup to populate models, modes, and
-     * config options. The session is kept alive and reused for the first user prompt — this
-     * avoids a redundant second {@code session/new} when the user sends their first message.
-     * If the call fails, the failure is logged and swallowed; the first real {@code createSession}
-     * call will retry.
-     */
     private void eagerFetchModels() {
         String cwd = launchCwd != null ? launchCwd : project.getBasePath();
         if (cwd == null) return;
@@ -1570,28 +1563,46 @@ public abstract class AcpClient extends AbstractClient {
             String errorMsg = e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : "");
 
             // Check if this is an auth error - if so, re-throw it so startup fails immediately
-            Throwable current = e;
-            while (current != null) {
-                String msg = current.getMessage();
-                if (msg != null && (msg.toLowerCase().contains("auth") || msg.toLowerCase().contains("sign in"))) {
-                    LOG.warn(displayName() + ": authentication required during session creation");
-                    // Extract clean message from JsonRpcException format: "JsonRpcException{code=-32000, message='Authentication required'}"
-                    String cleanMsg = msg;
-                    if (msg.contains("message='") && msg.contains("'}")) {
-                        int start = msg.indexOf("message='") + 9;
-                        int end = msg.indexOf("'}", start);
-                        if (end > start) {
-                            cleanMsg = msg.substring(start, end);
-                        }
-                    }
-                    throw new IllegalStateException(cleanMsg, e);
-                }
-                current = current.getCause();
+            String authMessage = extractAuthErrorMessage(e);
+            if (authMessage != null) {
+                LOG.warn(displayName() + ": authentication required during session creation");
+                throw new IllegalStateException(authMessage, e);
             }
 
             // Not an auth error - log and continue (models will be empty but agent can still work)
             LOG.warn(displayName() + ": eager session creation failed (models will be empty): " + errorMsg);
         }
+    }
+
+    /**
+     * Walks the exception cause chain looking for an authentication-related error.
+     * Returns a clean user-facing message if found, or {@code null} if no auth error is detected.
+     */
+    private static @Nullable String extractAuthErrorMessage(Exception e) {
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && (msg.toLowerCase().contains("auth") || msg.toLowerCase().contains("sign in"))) {
+                return cleanAuthMessage(msg);
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    /**
+     * Extracts a clean message from JsonRpcException format:
+     * "JsonRpcException{code=-32000, message='Authentication required'}" → "Authentication required"
+     */
+    private static String cleanAuthMessage(String msg) {
+        if (msg.contains("message='") && msg.contains("'}")) {
+            int start = msg.indexOf("message='") + 9;
+            int end = msg.indexOf("'}", start);
+            if (end > start) {
+                return msg.substring(start, end);
+            }
+        }
+        return msg;
     }
 
     protected void registerHandlers() {
@@ -1801,43 +1812,70 @@ public abstract class AcpClient extends AbstractClient {
             ? getStringOrEmpty(params.getAsJsonObject(KEY_TOOL_CALL), "title")
             : "";
 
-        JsonObject chosenOption;
-
-        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
-            chosenOption = handleBlockedTool(toolId, toolCallId, params);
-        } else if (isBuiltInTool(protocolTitle)) {
-            if (isAutoDenyEnabled() && shouldAutoDenyBuiltInTool(toolId)) {
-                chosenOption = handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
-            } else {
-                LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
-                    + "' — should use MCP tools instead");
-                // Skip reprimand during history replay — historical tool calls are outside the
-                // agent's current context, so notifying it would only cause confusion.
-                if (!restoringHistory) {
-                    onBuiltInToolApproved(toolId, false);
-                }
-                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-                if (chosenOption == null) {
-                    chosenOption = findFirstOption(params);
-                }
-                // Copilot CLI does not send tool_call_update completion events for approved built-in
-                // tools. Synthesize one so the tool chip clears its spinner immediately.
-                // Not needed for denied tools — handleAutoDeniedBuiltInTool already sends FAILED.
-                Consumer<SessionUpdate> builtInConsumer = updateConsumer.get();
-                if (builtInConsumer != null && !toolCallId.isEmpty()) {
-                    builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
-                        toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
-                }
-            }
-        } else {
-            LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
-            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-            if (chosenOption == null) {
-                chosenOption = findFirstOption(params);
-            }
-        }
+        JsonObject chosenOption = resolvePermissionOption(params, protocolTitle, toolId, toolCallId);
 
         sendPermissionResponse(id, requestKey, chosenOption);
+    }
+
+    /**
+     * Determines the permission option to respond with based on the tool type and blocking rules.
+     */
+    private @Nullable JsonObject resolvePermissionOption(
+        @Nullable JsonObject params, String protocolTitle, String toolId, String toolCallId
+    ) {
+        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
+            return handleBlockedTool(toolId, toolCallId, params);
+        }
+        if (isBuiltInTool(protocolTitle)) {
+            return resolveBuiltInToolOption(params, toolId, toolCallId);
+        }
+        LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
+        return findAllowOnceOrFirstOption(params);
+    }
+
+    /**
+     * Handles the permission decision for a built-in tool: either auto-deny or auto-approve.
+     */
+    private @Nullable JsonObject resolveBuiltInToolOption(
+        @Nullable JsonObject params, String toolId, String toolCallId
+    ) {
+        if (isAutoDenyEnabled() && shouldAutoDenyBuiltInTool(toolId)) {
+            return handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
+        }
+        LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
+            + "' — should use MCP tools instead");
+        // Skip reprimand during history replay — historical tool calls are outside the
+        // agent's current context, so notifying it would only cause confusion.
+        if (!restoringHistory) {
+            onBuiltInToolApproved(toolId, false);
+        }
+        JsonObject chosenOption = findAllowOnceOrFirstOption(params);
+        // Copilot CLI does not send tool_call_update completion events for approved built-in
+        // tools. Synthesize one so the tool chip clears its spinner immediately.
+        notifyBuiltInToolCompleted(toolCallId);
+        return chosenOption;
+    }
+
+    /**
+     * Finds the "allow once" option, falling back to the first available option.
+     */
+    private @Nullable JsonObject findAllowOnceOrFirstOption(@Nullable JsonObject params) {
+        JsonObject option = findOptionByKind(params, VALUE_ALLOW_ONCE);
+        if (option == null) {
+            option = findFirstOption(params);
+        }
+        return option;
+    }
+
+    /**
+     * Sends a synthetic COMPLETED tool-call update for built-in tools that don't emit their own.
+     */
+    private void notifyBuiltInToolCompleted(String toolCallId) {
+        Consumer<SessionUpdate> consumer = updateConsumer.get();
+        if (consumer != null && !toolCallId.isEmpty()) {
+            consumer.accept(new SessionUpdate.ToolCallUpdate(
+                toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
+        }
     }
 
     private @Nullable JsonObject handleBlockedTool(String toolId, String toolCallId, @Nullable JsonObject params) {

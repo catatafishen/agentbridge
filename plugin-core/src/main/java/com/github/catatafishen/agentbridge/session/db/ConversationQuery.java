@@ -237,11 +237,35 @@ public final class ConversationQuery {
     private List<TurnSummary> queryInternal(
         @NotNull Connection conn, @NotNull QueryParams p) throws SQLException {
 
-        // Build WHERE clauses and parameter list dynamically.
-        // Using a List<Object> for params and setting them positionally.
         List<String> whereClauses = new ArrayList<>();
         List<Object> sqlParams = new ArrayList<>();
+        buildFilterClauses(p, whereClauses, sqlParams);
 
+        String whereClause = whereClauses.isEmpty()
+            ? ""
+            : "WHERE " + String.join(" AND ", whereClauses);
+
+        String limitClause = buildLimitClause(p, sqlParams);
+
+        String sql = """
+            SELECT t.id, t.session_id, t.prompt_text, t.started_at, t.model,
+                   t.git_branch_at_start, t.tool_call_count,
+                   s.agent_name, COALESCE(s.display_name, ''),
+                   (SELECT id FROM turns
+                     WHERE started_at < t.started_at
+                        OR (started_at = t.started_at AND id < t.id)
+                     ORDER BY started_at DESC, id DESC LIMIT 1) AS prev_turn_id
+            FROM turns t
+            JOIN sessions s ON t.session_id = s.id
+            %s
+            ORDER BY t.started_at DESC
+            %s
+            """.formatted(whereClause, limitClause);
+
+        return executeQuery(conn, sql, sqlParams, p);
+    }
+
+    private void buildFilterClauses(QueryParams p, List<String> whereClauses, List<Object> sqlParams) {
         if (p.turnId() != null) {
             whereClauses.add("t.id = ?");
             sqlParams.add(p.turnId());
@@ -267,171 +291,179 @@ public final class ConversationQuery {
             sqlParams.add(p.until().toString());
         }
         if (p.userMessage() != null) {
-            String likePattern = "%" + p.userMessage().toLowerCase(Locale.ROOT) + "%";
-            whereClauses.add("""
-                (lower(t.prompt_text) LIKE ?
-                 OR EXISTS (
-                   SELECT 1 FROM events e2
-                   JOIN nudge_events ne ON e2.id = ne.event_id
-                   WHERE e2.turn_id = t.id AND ne.source = 'human' AND lower(ne.text) LIKE ?
-                 ))
-                """);
-            sqlParams.add(likePattern);
-            sqlParams.add(likePattern);
+            addUserMessageFilter(p, whereClauses, sqlParams);
         }
         if (p.assistantText() != null) {
-            String likePattern = "%" + p.assistantText().toLowerCase(Locale.ROOT) + "%";
-            whereClauses.add("""
-                EXISTS (
-                  SELECT 1 FROM events e3
-                  JOIN text_events te ON e3.id = te.event_id
-                  WHERE e3.turn_id = t.id AND lower(te.content) LIKE ?
-                )
-                """);
-            sqlParams.add(likePattern);
+            addAssistantTextFilter(p, whereClauses, sqlParams);
         }
         if (p.toolName() != null) {
-            String likePattern = "%" + p.toolName().toLowerCase(Locale.ROOT) + "%";
-            whereClauses.add("""
-                EXISTS (
-                  SELECT 1 FROM events e4
-                  JOIN tool_call_events tc ON e4.id = tc.event_id
-                  WHERE e4.turn_id = t.id AND lower(tc.tool_name) LIKE ?
-                )
-                """);
-            sqlParams.add(likePattern);
+            addToolNameFilter(p, whereClauses, sqlParams);
         }
         if (p.filePath() != null) {
-            String likePattern = "%" + p.filePath().toLowerCase(Locale.ROOT) + "%";
-            whereClauses.add("""
+            addFilePathFilter(p, whereClauses, sqlParams);
+        }
+        if (p.combinedText() != null && !p.combinedText().isBlank()) {
+            addCombinedTextFilter(p, whereClauses, sqlParams);
+        }
+    }
+
+    private void addUserMessageFilter(QueryParams p, List<String> whereClauses, List<Object> sqlParams) {
+        String likePattern = "%" + p.userMessage().toLowerCase(Locale.ROOT) + "%";
+        whereClauses.add("""
+            (lower(t.prompt_text) LIKE ?
+             OR EXISTS (
+               SELECT 1 FROM events e2
+               JOIN nudge_events ne ON e2.id = ne.event_id
+               WHERE e2.turn_id = t.id AND ne.source = 'human' AND lower(ne.text) LIKE ?
+             ))
+            """);
+        sqlParams.add(likePattern);
+        sqlParams.add(likePattern);
+    }
+
+    private void addAssistantTextFilter(QueryParams p, List<String> whereClauses, List<Object> sqlParams) {
+        String likePattern = "%" + p.assistantText().toLowerCase(Locale.ROOT) + "%";
+        whereClauses.add("""
+            EXISTS (
+              SELECT 1 FROM events e3
+              JOIN text_events te ON e3.id = te.event_id
+              WHERE e3.turn_id = t.id AND lower(te.content) LIKE ?
+            )
+            """);
+        sqlParams.add(likePattern);
+    }
+
+    private void addToolNameFilter(QueryParams p, List<String> whereClauses, List<Object> sqlParams) {
+        String likePattern = "%" + p.toolName().toLowerCase(Locale.ROOT) + "%";
+        whereClauses.add("""
+            EXISTS (
+              SELECT 1 FROM events e4
+              JOIN tool_call_events tc ON e4.id = tc.event_id
+              WHERE e4.turn_id = t.id AND lower(tc.tool_name) LIKE ?
+            )
+            """);
+        sqlParams.add(likePattern);
+    }
+
+    private void addFilePathFilter(QueryParams p, List<String> whereClauses, List<Object> sqlParams) {
+        String likePattern = "%" + p.filePath().toLowerCase(Locale.ROOT) + "%";
+        whereClauses.add("""
+            EXISTS (
+              SELECT 1 FROM events e5
+              JOIN tool_call_events tc ON e5.id = tc.event_id
+              WHERE e5.turn_id = t.id AND lower(tc.file_path) LIKE ?
+            )
+            """);
+        sqlParams.add(likePattern);
+    }
+
+    private void addCombinedTextFilter(QueryParams p, List<String> whereClauses, List<Object> sqlParams) {
+        String likePattern = "%" + p.combinedText().toLowerCase(Locale.ROOT) + "%";
+        Set<SearchScope> scopes = p.combinedScopes() != null ? p.combinedScopes() : SearchScope.defaultScope();
+        List<String> orClauses = new ArrayList<>();
+        if (scopes.contains(SearchScope.USER_PROMPT)) {
+            orClauses.add("lower(t.prompt_text) LIKE ?");
+            sqlParams.add(likePattern);
+        }
+        if (scopes.contains(SearchScope.TEXT_EVENTS)) {
+            orClauses.add("""
                 EXISTS (
-                  SELECT 1 FROM events e5
-                  JOIN tool_call_events tc ON e5.id = tc.event_id
-                  WHERE e5.turn_id = t.id AND lower(tc.file_path) LIKE ?
+                  SELECT 1 FROM events e_ct
+                  JOIN text_events te_ct ON e_ct.id = te_ct.event_id
+                  WHERE e_ct.turn_id = t.id AND lower(te_ct.content) LIKE ?
                 )
                 """);
             sqlParams.add(likePattern);
         }
-        if (p.combinedText() != null && !p.combinedText().isBlank()) {
-            String likePattern = "%" + p.combinedText().toLowerCase(Locale.ROOT) + "%";
-            Set<SearchScope> scopes = p.combinedScopes() != null ? p.combinedScopes() : SearchScope.defaultScope();
-            List<String> orClauses = new ArrayList<>();
-            if (scopes.contains(SearchScope.USER_PROMPT)) {
-                orClauses.add("lower(t.prompt_text) LIKE ?");
-                sqlParams.add(likePattern);
-            }
-            if (scopes.contains(SearchScope.TEXT_EVENTS)) {
-                orClauses.add("""
-                    EXISTS (
-                      SELECT 1 FROM events e_ct
-                      JOIN text_events te_ct ON e_ct.id = te_ct.event_id
-                      WHERE e_ct.turn_id = t.id AND lower(te_ct.content) LIKE ?
-                    )
-                    """);
-                sqlParams.add(likePattern);
-            }
-            if (scopes.contains(SearchScope.THINKING)) {
-                orClauses.add("""
-                    EXISTS (
-                      SELECT 1 FROM events e_th
-                      JOIN thinking_events th ON e_th.id = th.event_id
-                      WHERE e_th.turn_id = t.id AND lower(th.content) LIKE ?
-                    )
-                    """);
-                sqlParams.add(likePattern);
-            }
-            if (scopes.contains(SearchScope.TOOL_CALLS)) {
-                orClauses.add("""
-                    EXISTS (
-                      SELECT 1 FROM events e_tc
-                      JOIN tool_call_events tc_c ON e_tc.id = tc_c.event_id
-                      WHERE e_tc.turn_id = t.id
-                        AND (lower(tc_c.arguments) LIKE ? OR lower(tc_c.result) LIKE ?)
-                    )
-                    """);
-                sqlParams.add(likePattern);
-                sqlParams.add(likePattern);
-            }
-            if (!orClauses.isEmpty()) {
-                whereClauses.add("(" + String.join(" OR ", orClauses) + ")");
-            } else {
-                // Text entered but all scopes unchecked — match nothing rather than returning
-                // the last 500 unrelated turns.
-                whereClauses.add("1=0");
-            }
+        if (scopes.contains(SearchScope.THINKING)) {
+            orClauses.add("""
+                EXISTS (
+                  SELECT 1 FROM events e_th
+                  JOIN thinking_events th ON e_th.id = th.event_id
+                  WHERE e_th.turn_id = t.id AND lower(th.content) LIKE ?
+                )
+                """);
+            sqlParams.add(likePattern);
         }
+        if (scopes.contains(SearchScope.TOOL_CALLS)) {
+            orClauses.add("""
+                EXISTS (
+                  SELECT 1 FROM events e_tc
+                  JOIN tool_call_events tc_c ON e_tc.id = tc_c.event_id
+                  WHERE e_tc.turn_id = t.id
+                    AND (lower(tc_c.arguments) LIKE ? OR lower(tc_c.result) LIKE ?)
+                )
+                """);
+            sqlParams.add(likePattern);
+            sqlParams.add(likePattern);
+        }
+        if (!orClauses.isEmpty()) {
+            whereClauses.add("(" + String.join(" OR ", orClauses) + ")");
+        } else {
+            whereClauses.add("1=0");
+        }
+    }
 
-        String whereClause = whereClauses.isEmpty()
-            ? ""
-            : "WHERE " + String.join(" AND ", whereClauses);
-
-        String limitClause;
+    private String buildLimitClause(QueryParams p, List<Object> sqlParams) {
         if (p.lastN() != null) {
-            limitClause = "LIMIT ? OFFSET ?";
             sqlParams.add(p.lastN());
             sqlParams.add(p.offset() != null ? p.offset() : 0);
+            return "LIMIT ? OFFSET ?";
         } else if (p.turnId() != null) {
-            limitClause = ""; // WHERE t.id = ? already constrains to one row
+            return "";
         } else {
-            // No explicit limit: apply a hard cap to prevent full-table scans
-            limitClause = "LIMIT 500";
+            return "LIMIT 500";
         }
+    }
 
-        String sql = """
-            SELECT t.id, t.session_id, t.prompt_text, t.started_at, t.model,
-                   t.git_branch_at_start, t.tool_call_count,
-                   s.agent_name, COALESCE(s.display_name, ''),
-                   (SELECT id FROM turns
-                     WHERE started_at < t.started_at
-                        OR (started_at = t.started_at AND id < t.id)
-                     ORDER BY started_at DESC, id DESC LIMIT 1) AS prev_turn_id
-            FROM turns t
-            JOIN sessions s ON t.session_id = s.id
-            %s
-            ORDER BY t.started_at DESC
-            %s
-            """.formatted(whereClause, limitClause);
-
+    private List<TurnSummary> executeQuery(
+        Connection conn, String sql, List<Object> sqlParams, QueryParams p) throws SQLException {
         List<TurnSummary> results = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < sqlParams.size(); i++) {
                 Object val = sqlParams.get(i);
-                if (val instanceof String s) ps.setString(i + 1, s);
-                else if (val instanceof Integer iv) ps.setInt(i + 1, iv);
-                else ps.setObject(i + 1, val);
+                switch (val) {
+                    case String s -> ps.setString(i + 1, s);
+                    case Integer iv -> ps.setInt(i + 1, iv);
+                    default -> ps.setObject(i + 1, val);
+                }
             }
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    String turnId = rs.getString(1);
-                    String sessionId = rs.getString(2);
-                    String promptText = rs.getString(3);
-                    String startedAt = rs.getString(4);
-                    String model = nullToEmpty(rs.getString(5));
-                    String branch = nullToEmpty(rs.getString(6));
-                    int toolCallCount = rs.getInt(7);
-                    String agentName = nullToEmpty(rs.getString(8));
-                    String agentDisplayName = nullToEmpty(rs.getString(9));
-                    String prevTurnId = rs.getString(10);
-                    Instant timestamp = parseInstant(startedAt);
-
-                    List<String> humanNudges = loadHumanNudges(conn, turnId);
-                    String assistantText = loadAssistantText(conn, turnId);
-                    List<String> thinkingBlocks = p.includeThinking()
-                        ? loadThinkingBlocks(conn, turnId) : List.of();
-                    List<ToolCallSummary> toolCalls = p.includeToolCalls()
-                        ? loadToolCalls(conn, turnId) : List.of();
-
-                    results.add(new TurnSummary(
-                        turnId, sessionId, prevTurnId,
-                        agentName, agentDisplayName,
-                        promptText, humanNudges, assistantText,
-                        model, branch, timestamp, toolCallCount,
-                        toolCalls, thinkingBlocks
-                    ));
+                    results.add(mapRow(conn, rs, p));
                 }
             }
         }
         return results;
+    }
+
+    private TurnSummary mapRow(Connection conn, ResultSet rs, QueryParams p) throws SQLException {
+        String turnId = rs.getString(1);
+        String sessionId = rs.getString(2);
+        String promptText = rs.getString(3);
+        String startedAt = rs.getString(4);
+        String model = nullToEmpty(rs.getString(5));
+        String branch = nullToEmpty(rs.getString(6));
+        int toolCallCount = rs.getInt(7);
+        String agentName = nullToEmpty(rs.getString(8));
+        String agentDisplayName = nullToEmpty(rs.getString(9));
+        String prevTurnId = rs.getString(10);
+        Instant timestamp = parseInstant(startedAt);
+
+        List<String> humanNudges = loadHumanNudges(conn, turnId);
+        String assistantText = loadAssistantText(conn, turnId);
+        List<String> thinkingBlocks = p.includeThinking()
+            ? loadThinkingBlocks(conn, turnId) : List.of();
+        List<ToolCallSummary> toolCalls = p.includeToolCalls()
+            ? loadToolCalls(conn, turnId) : List.of();
+
+        return new TurnSummary(
+            turnId, sessionId, prevTurnId,
+            agentName, agentDisplayName,
+            promptText, humanNudges, assistantText,
+            model, branch, timestamp, toolCallCount,
+            toolCalls, thinkingBlocks
+        );
     }
 
     // ── Event loaders ─────────────────────────────────────────────────────────

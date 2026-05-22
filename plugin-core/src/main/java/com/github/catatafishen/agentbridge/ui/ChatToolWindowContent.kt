@@ -952,18 +952,25 @@ class ChatToolWindowContent(
         sideButtonsPanel: JComponent,
         props: com.intellij.ide.util.PropertiesComponent
     ) {
-        // N resize zone: covers the full 8px top inset of inputSection (comfortable grab area).
         val nDragZone = JBUI.scale(8)
-        // W resize zone: 8px from the left edge, applied to both the outer gap and sideButtonsPanel.
         val wDragZone = JBUI.scale(8)
-        // NW corner: x ≤ nwCornerSize within the top inset triggers NW (wider than W-only zone).
         val nwCornerSize = JBUI.scale(20)
-        // How far into sideButtonsPanel (y coords) the NW corner extends below the top inset.
         val nwExtendedY = JBUI.scale(12)
 
-        // --- Shared drag state ---
-        var heightDragStart: Pair<Int, Int>? = null  // (startScreenY, startHeight)
-        var widthDragStart: Pair<Int, Int>? = null   // (startScreenX, startSideWidth)
+        val state = ResizeDragState(bottomSection, splitPanel, props)
+
+        installNResizeAdapter(inputSection, state, nDragZone, nwCornerSize)
+        installWSideResizeAdapter(sideButtonsPanel, bottomSection, state, wDragZone, nwExtendedY)
+        installWBottomResizeAdapter(bottomSection, state, wDragZone, nDragZone)
+    }
+
+    private inner class ResizeDragState(
+        val bottomSection: JComponent,
+        val splitPanel: JComponent,
+        val props: com.intellij.ide.util.PropertiesComponent
+    ) {
+        var heightDragStart: Pair<Int, Int>? = null
+        var widthDragStart: Pair<Int, Int>? = null
 
         fun startWidthDrag(screenX: Int) {
             val sideWidth = rootSplitter.firstComponent?.width ?: 0
@@ -990,10 +997,20 @@ class ChatToolWindowContent(
             }
         }
 
-        // N (and NW corner) handler — attached to inputSection.
-        // The 8px top inset has no children so events in y=0..7 go directly here.
-        // The NW corner (x ≤ nwCornerSize, y ≤ nDragZone) triggers both height and width drag.
-        val nResizeHandler = object : java.awt.event.MouseAdapter() {
+        fun saveHeightAndReset() {
+            if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+            heightDragStart = null
+            widthDragStart = null
+        }
+    }
+
+    private fun installNResizeAdapter(
+        inputSection: JComponent,
+        state: ResizeDragState,
+        nDragZone: Int,
+        nwCornerSize: Int
+    ) {
+        val handler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 inputSection.cursor = when {
                     e.y <= nDragZone && e.x <= nwCornerSize ->
@@ -1008,32 +1025,33 @@ class ChatToolWindowContent(
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
                 if (e.y > nDragZone) return
+                state.heightDragStart = Pair(e.locationOnScreen.y, state.bottomSection.height)
                 if (e.x <= nwCornerSize) {
-                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
-                    startWidthDrag(e.locationOnScreen.x)
-                } else {
-                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                    state.startWidthDrag(e.locationOnScreen.x)
                 }
             }
 
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
-                applyHeightDrag(e.locationOnScreen.y)
-                applyWidthDrag(e.locationOnScreen.x)
+                state.applyHeightDrag(e.locationOnScreen.y)
+                state.applyWidthDrag(e.locationOnScreen.x)
             }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
-                if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                heightDragStart = null
-                widthDragStart = null
+                state.saveHeightAndReset()
             }
         }
-        inputSection.addMouseMotionListener(nResizeHandler)
-        inputSection.addMouseListener(nResizeHandler)
+        inputSection.addMouseMotionListener(handler)
+        inputSection.addMouseListener(handler)
+    }
 
-        // W handler on sideButtonsPanel — covers the visible left border of inputSection.
-        // The top nwExtendedY pixels of sideButtonsPanel (directly below the top inset) extend
-        // the NW corner downward so the visible corner of the input box triggers NW drag.
-        val wSideHandler = object : java.awt.event.MouseAdapter() {
+    private fun installWSideResizeAdapter(
+        sideButtonsPanel: JComponent,
+        bottomSection: JComponent,
+        state: ResizeDragState,
+        wDragZone: Int,
+        nwExtendedY: Int
+    ) {
+        val handler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 sideButtonsPanel.cursor = when {
                     e.x > wDragZone -> Cursor.getDefaultCursor()
@@ -1044,35 +1062,39 @@ class ChatToolWindowContent(
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) return
-                startWidthDrag(e.locationOnScreen.x)
+                state.startWidthDrag(e.locationOnScreen.x)
                 if (e.y <= nwExtendedY) {
-                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                    state.heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
                 }
             }
 
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
-                applyWidthDrag(e.locationOnScreen.x)
-                applyHeightDrag(e.locationOnScreen.y)
+                state.applyWidthDrag(e.locationOnScreen.x)
+                state.applyHeightDrag(e.locationOnScreen.y)
             }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
-                if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                widthDragStart = null
-                heightDragStart = null
+                state.saveHeightAndReset()
             }
 
             override fun mouseExited(e: java.awt.event.MouseEvent) {
-                if (widthDragStart == null) sideButtonsPanel.cursor = Cursor.getDefaultCursor()
+                if (state.widthDragStart == null) sideButtonsPanel.cursor = Cursor.getDefaultCursor()
             }
         }
-        sideButtonsPanel.addMouseMotionListener(wSideHandler)
-        sideButtonsPanel.addMouseListener(wSideHandler)
+        sideButtonsPanel.addMouseMotionListener(handler)
+        sideButtonsPanel.addMouseListener(handler)
+    }
 
-        // W/NW handler on bottomSection — covers the 8px outer gap to the left of inputSection.
-        val wResizeHandler = object : java.awt.event.MouseAdapter() {
+    private fun installWBottomResizeAdapter(
+        bottomSection: JComponent,
+        state: ResizeDragState,
+        wDragZone: Int,
+        nDragZone: Int
+    ) {
+        val handler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) {
-                    if (widthDragStart == null) bottomSection.cursor = Cursor.getDefaultCursor()
+                    if (state.widthDragStart == null) bottomSection.cursor = Cursor.getDefaultCursor()
                     return
                 }
                 bottomSection.cursor = if (e.y <= nDragZone) {
@@ -1084,29 +1106,27 @@ class ChatToolWindowContent(
 
             override fun mousePressed(e: java.awt.event.MouseEvent) {
                 if (e.x > wDragZone) return
-                startWidthDrag(e.locationOnScreen.x)
+                state.startWidthDrag(e.locationOnScreen.x)
                 if (e.y <= nDragZone) {
-                    heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
+                    state.heightDragStart = Pair(e.locationOnScreen.y, bottomSection.height)
                 }
             }
 
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
-                applyWidthDrag(e.locationOnScreen.x)
-                applyHeightDrag(e.locationOnScreen.y)
+                state.applyWidthDrag(e.locationOnScreen.x)
+                state.applyHeightDrag(e.locationOnScreen.y)
             }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
-                if (heightDragStart != null) props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                widthDragStart = null
-                heightDragStart = null
+                state.saveHeightAndReset()
             }
 
             override fun mouseExited(e: java.awt.event.MouseEvent) {
-                if (widthDragStart == null) bottomSection.cursor = Cursor.getDefaultCursor()
+                if (state.widthDragStart == null) bottomSection.cursor = Cursor.getDefaultCursor()
             }
         }
-        bottomSection.addMouseMotionListener(wResizeHandler)
-        bottomSection.addMouseListener(wResizeHandler)
+        bottomSection.addMouseMotionListener(handler)
+        bottomSection.addMouseListener(handler)
     }
 
     /**
@@ -1274,49 +1294,66 @@ class ChatToolWindowContent(
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                val isEmpty = event.document.textLength == 0
-                com.github.catatafishen.agentbridge.psi.PsiBridgeService.notifyChatInputChanged(
-                    project, isEmpty
-                )
-                if (isEmpty) {
-                    // Input cleared — if the pause was triggered by typing, auto-resume now.
-                    // No need to wait for focus loss; an empty input means there's nothing to
-                    // send, so keeping the agent blocked serves no purpose.
-                    if (pausedByTyping) {
-                        pausedByTyping = false
-                        userResumedWhileTyping = false
-                        McpPauseService.getInstance(project).setPaused(false)
-                    } else {
-                        userResumedWhileTyping = false
-                    }
-                } else if (!pausedByTyping && !userResumedWhileTyping
-                    && ChatInputSettings.getInstance().isPauseOnInputFocus
-                ) {
-                    // First keystroke with text in the input — auto-pause if not already paused.
-                    val pauseService = McpPauseService.getInstance(project)
-                    if (!pauseService.isPaused) {
-                        pausedByTyping = true
-                        pauseService.setPaused(true)
-                    }
-                }
-                ApplicationManager.getApplication().invokeLater {
-                    promptTextArea.revalidate()
-                    promptEditorSetup.checkSlashCommandAutocomplete()
-                    // Refresh input toolbar (Send button) and controls toolbar (Pause button) immediately
-                    // on every keystroke. ActionToolbar's default polling cycle (~500ms) makes buttons
-                    // feel sluggish to enable/disable when text appears/disappears.
-                    if (::innerInputToolbar.isInitialized) {
-                        innerInputToolbar.updateActionsAsync()
-                    }
-                    if (::controlsToolbar.isInitialized) {
-                        controlsToolbar.updateActionsAsync()
-                    }
-                }
+                handlePromptDocumentChanged(event.document.textLength == 0)
             }
         })
 
         row.add(promptTextArea, BorderLayout.CENTER)
+        row.add(createInputFooterPanel(), BorderLayout.SOUTH)
 
+        refreshShortcutHints()
+
+        return row
+    }
+
+    private fun handlePromptDocumentChanged(isEmpty: Boolean) {
+        com.github.catatafishen.agentbridge.psi.PsiBridgeService.notifyChatInputChanged(project, isEmpty)
+        if (isEmpty) {
+            handleInputCleared()
+        } else {
+            handleInputNotEmpty()
+        }
+        ApplicationManager.getApplication().invokeLater {
+            promptTextArea.revalidate()
+            promptEditorSetup.checkSlashCommandAutocomplete()
+            refreshToolbarsAfterKeystroke()
+        }
+    }
+
+    private fun handleInputCleared() {
+        // Input cleared — if the pause was triggered by typing, auto-resume now.
+        if (pausedByTyping) {
+            pausedByTyping = false
+            userResumedWhileTyping = false
+            McpPauseService.getInstance(project).setPaused(false)
+        } else {
+            userResumedWhileTyping = false
+        }
+    }
+
+    private fun handleInputNotEmpty() {
+        // First keystroke with text in the input — auto-pause if not already paused.
+        if (!pausedByTyping && !userResumedWhileTyping
+            && ChatInputSettings.getInstance().isPauseOnInputFocus
+        ) {
+            val pauseService = McpPauseService.getInstance(project)
+            if (!pauseService.isPaused) {
+                pausedByTyping = true
+                pauseService.setPaused(true)
+            }
+        }
+    }
+
+    private fun refreshToolbarsAfterKeystroke() {
+        if (::innerInputToolbar.isInitialized) {
+            innerInputToolbar.updateActionsAsync()
+        }
+        if (::controlsToolbar.isInitialized) {
+            controlsToolbar.updateActionsAsync()
+        }
+    }
+
+    private fun createInputFooterPanel(): JComponent {
         val footerGroup = DefaultActionGroup()
         footerGroup.add(ModelSelectorAction())
         footerGroup.add(SendAction())
@@ -1327,10 +1364,8 @@ class ChatToolWindowContent(
         innerInputToolbar.component.isOpaque = false
         innerInputToolbar.component.border = JBUI.Borders.empty()
 
-        val footerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+        return JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            // GridBagLayout with HORIZONTAL fill: gives the toolbar the full available width
-            // (so overflow calculates correctly) while the default CENTER anchor centers it vertically.
             val hintWrapper = JBPanel<JBPanel<*>>(GridBagLayout()).apply {
                 isOpaque = false
                 add(shortcutHintToolbar.component, GridBagConstraints().apply {
@@ -1341,11 +1376,6 @@ class ChatToolWindowContent(
             add(hintWrapper, BorderLayout.CENTER)
             add(innerInputToolbar.component, BorderLayout.EAST)
         }
-        row.add(footerPanel, BorderLayout.SOUTH)
-
-        refreshShortcutHints()
-
-        return row
     }
 
     private fun onSendStopClicked() {
@@ -2069,32 +2099,40 @@ class ChatToolWindowContent(
             val stored = agentManager.settings.getSessionOptionValue(option.key)
             val current = stored.ifEmpty { option.initialValue ?: "" }
             for (value in option.values) {
-                group.add(object : AnAction(option.labelFor(value)) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                    override fun update(e: AnActionEvent) {
-                        e.presentation.icon = if (value == current) AllIcons.Actions.Checked else null
-                    }
-
-                    override fun actionPerformed(e: AnActionEvent) {
-                        agentManager.settings.setSessionOptionValue(option.key, value)
-                        // When the ACP "agent" config option changes, also persist to
-                        // selectedAgent so buildCommand() uses the right --agent flag on restart.
-                        if (option.key == "agent") {
-                            agentManager.settings.setSelectedAgent(value)
-                        }
-                        val sessionId = promptOrchestrator.currentSessionId ?: return
-                        ApplicationManager.getApplication().executeOnPooledThread {
-                            try {
-                                agentManager.client.setSessionOption(sessionId, option.key, value)
-                            } catch (ex: Exception) {
-                                LOG.warn("Failed to set session option ${option.key}=$value", ex)
-                            }
-                        }
-                    }
-                })
+                group.add(createSessionOptionValueAction(option, value, current))
             }
         }
         return true
+    }
+
+    private fun createSessionOptionValueAction(
+        option: com.github.catatafishen.agentbridge.bridge.SessionOption,
+        value: String,
+        current: String
+    ): AnAction = object : AnAction(option.labelFor(value)) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun update(e: AnActionEvent) {
+            e.presentation.icon = if (value == current) AllIcons.Actions.Checked else null
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            agentManager.settings.setSessionOptionValue(option.key, value)
+            if (option.key == "agent") {
+                agentManager.settings.setSelectedAgent(value)
+            }
+            applySessionOptionRemotely(option.key, value)
+        }
+    }
+
+    private fun applySessionOptionRemotely(key: String, value: String) {
+        val sessionId = promptOrchestrator.currentSessionId ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                agentManager.client.setSessionOption(sessionId, key, value)
+            } catch (ex: Exception) {
+                LOG.warn("Failed to set session option $key=$value", ex)
+            }
+        }
     }
 
     private fun addSessionManagementSection(group: DefaultActionGroup) {
@@ -2267,7 +2305,7 @@ class ChatToolWindowContent(
 
             if (open) {
                 toolWindow.title = ""
-                val tabNames = com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES
+                val tabNames = com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES.toList()
                 tabNames.forEachIndexed { i, name ->
                     val wrapper = JPanel(BorderLayout())
                     contentWrappers.add(wrapper)
@@ -2461,7 +2499,49 @@ class ChatToolWindowContent(
         consolePanel = bp
         bp.onLoadMoreRequested = { persistenceManager.onLoadMoreHistory() }
         persistenceManager.setEntryStore(bp.entryStore)
-        persistenceManager.setCallbacks(object : ConversationPersistenceManager.Callbacks {
+        persistenceManager.setCallbacks(createPersistenceCallbacks())
+        nativeChatPanel.onCancelNudge = { id ->
+            val text = AgentNudgeService.getInstance(project).getPendingNudgesText()
+            if (!text.isNullOrEmpty()) promptTextArea.text = text
+            clearAndRemoveNudge(id)
+            refreshShortcutHints()
+        }
+        broadcastPanel.nativePanel.onAutoScrollDisabled = {
+            autoScrollEnabled = false
+            ActivityTracker.getInstance().inc()
+        }
+        broadcastPanel.nativePanel.onAutoScrollEnabled = {
+            autoScrollEnabled = true
+            ActivityTracker.getInstance().inc()
+        }
+        consolePanel.onQuickReply = { text ->
+            ApplicationManager.getApplication().invokeLater {
+                if (!consolePanel.consumePendingAskUserResponse(text)) {
+                    sendQuickReply(text)
+                }
+            }
+        }
+        nativeChatPanel.onRestoreQueuedMessage = { _, text ->
+            ApplicationManager.getApplication().invokeLater {
+                promptTextArea.text = text
+                val idx = queuedTexts.lastIndexOf(text)
+                if (idx >= 0) queuedTexts.removeAt(idx)
+                refreshShortcutHints()
+            }
+        }
+        com.intellij.openapi.util.Disposer.register(project, consolePanel)
+
+        setupNudgeLifecycleListener()
+
+        ChatWebServer.getInstance(project)?.also { ws ->
+            setupWebServerCallbacks(ws)
+        }
+
+        return consolePanel.component
+    }
+
+    private fun createPersistenceCallbacks(): ConversationPersistenceManager.Callbacks =
+        object : ConversationPersistenceManager.Callbacks {
             override fun appendEntries(entries: List<EntryData>, totalPromptCount: Int) =
                 broadcastPanel.appendEntries(entries, totalPromptCount)
 
@@ -2515,66 +2595,23 @@ class ChatToolWindowContent(
             }
 
             override fun supportsMultiplier(): Boolean = agentManager.client.supportsMultiplier()
-        })
-        nativeChatPanel.onCancelNudge = { id ->
-            val text = AgentNudgeService.getInstance(project).getPendingNudgesText()
-            if (!text.isNullOrEmpty()) promptTextArea.text = text
-            clearAndRemoveNudge(id)
-            refreshShortcutHints()
         }
-        broadcastPanel.nativePanel.onAutoScrollDisabled = {
-            autoScrollEnabled = false
-            ActivityTracker.getInstance().inc()
-        }
-        broadcastPanel.nativePanel.onAutoScrollEnabled = {
-            autoScrollEnabled = true
-            ActivityTracker.getInstance().inc()
-        }
-        consolePanel.onQuickReply = { text ->
-            ApplicationManager.getApplication().invokeLater {
-                if (!consolePanel.consumePendingAskUserResponse(text)) {
-                    sendQuickReply(text)
-                }
-            }
-        }
-        nativeChatPanel.onRestoreQueuedMessage = { _, text ->
-            ApplicationManager.getApplication().invokeLater {
-                promptTextArea.text = text
-                val idx = queuedTexts.lastIndexOf(text)
-                if (idx >= 0) queuedTexts.removeAt(idx)
-                refreshShortcutHints()
-            }
-        }
-        com.intellij.openapi.util.Disposer.register(project, consolePanel)
 
-        // Subscribe to nudge lifecycle events. The listener manages all nudge UI:
-        // showing/updating the bubble, resolving it when consumed, and removing it when cancelled.
+    private fun setupNudgeLifecycleListener() {
         val nudgeService = AgentNudgeService.getInstance(project)
         nudgeService.addListener(object : AgentNudgeService.Listener {
             override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
-                // Track pending human text synchronously so it isn't lost if the nudge is never shown.
                 if (entry.source() == NudgeSource.HUMAN) {
                     pendingHumanText = AgentNudgeService.mergeNudges(pendingHumanText, entry.text())
                 }
                 if (!entry.showBubble()) return
 
-                // IMPORTANT: activeBubbleId must be read INSIDE invokeLater (on the EDT), not here.
-                // onNudgeAdded fires from a background thread. If multiple reprimands arrive before the
-                // EDT processes any of the queued runnables, reading activeBubbleId here would return null
-                // for every call — each would skip the "remove existing bubble" branch and post its own
-                // showNudgeBubble, resulting in multiple visible bubbles. By reading activeBubbleId inside
-                // invokeLater, each queued runnable sees the value written by the previous one, so at most
-                // one bubble is visible at any time.
                 ApplicationManager.getApplication().invokeLater {
                     val existingId = activeBubbleId
                     if (existingId != null) {
                         consolePanel.removeNudgeBubble(existingId)
                     }
                     activeBubbleId = entry.id()
-                    // Use the service's current pending text. By the time the EDT runs, reprimand
-                    // coalescing may have advanced past this entry, so getPendingNudgesText() reflects
-                    // the most recent state. Falls back to entry.text() only when nudges were already
-                    // consumed (the bubble will be immediately resolved by onNudgesInjected).
                     val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
                     consolePanel.showNudgeBubble(entry.id(), mergedText, entry.source())
                     refreshShortcutHints()
@@ -2606,12 +2643,6 @@ class ChatToolWindowContent(
                 }
             }
         })
-
-        ChatWebServer.getInstance(project)?.also { ws ->
-            setupWebServerCallbacks(ws)
-        }
-
-        return consolePanel.component
     }
 
     private fun setupWebServerCallbacks(ws: ChatWebServer) {
