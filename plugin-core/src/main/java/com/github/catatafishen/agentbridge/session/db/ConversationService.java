@@ -175,6 +175,56 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Updates a tool call's completion state (result, status) asynchronously.
+     *
+     * <p>Chained through {@link #pendingSave} to guarantee it runs after any pending INSERT.
+     * This fixes the race where a tool call is persisted early (while running) and its
+     * result is lost because {@code INSERT OR IGNORE} skips the re-insert attempt.
+     */
+    public void updateToolCallCompletionAsync(
+        @NotNull String eventId,
+        @Nullable String result,
+        @NotNull String status,
+        boolean autoDenied,
+        @Nullable String denialReason
+    ) {
+        synchronized (saveLock) {
+            pendingSave = pendingSave.thenRunAsync(
+                () -> {
+                    ConversationWriter writer = getOrCreateWriter();
+                    if (writer != null) {
+                        writer.updateToolCallCompletion(eventId, result, status, autoDenied, denialReason);
+                    }
+                },
+                AppExecutorUtil.getAppExecutorService());
+        }
+    }
+
+    /**
+     * Updates a sub-agent's completion state (result, status) asynchronously.
+     *
+     * <p>Same ordering guarantee as {@link #updateToolCallCompletionAsync}.
+     */
+    public void updateSubAgentCompletionAsync(
+        @NotNull String eventId,
+        @Nullable String result,
+        @NotNull String status,
+        boolean autoDenied,
+        @Nullable String denialReason
+    ) {
+        synchronized (saveLock) {
+            pendingSave = pendingSave.thenRunAsync(
+                () -> {
+                    ConversationWriter writer = getOrCreateWriter();
+                    if (writer != null) {
+                        writer.updateSubAgentCompletion(eventId, result, status, autoDenied, denialReason);
+                    }
+                },
+                AppExecutorUtil.getAppExecutorService());
+        }
+    }
+
+    /**
      * Blocks until the most recent async append completes, or until timeout elapses.
      */
     public void awaitPendingSave(long timeoutMs) {

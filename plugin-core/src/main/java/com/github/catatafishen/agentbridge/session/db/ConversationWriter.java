@@ -660,6 +660,84 @@ public final class ConversationWriter {
         }
     }
 
+    /**
+     * Updates a tool call's result and status in the database after completion.
+     *
+     * <p>This handles the case where the tool call was persisted early (before its result
+     * arrived) via {@code INSERT OR IGNORE}. Without this UPDATE, the result would be lost
+     * because the entry's position in the store is past {@code persistedEntryCount} and
+     * re-insertion is silently ignored.
+     *
+     * <p>Safe to call even if the row doesn't exist yet (0 rows affected).
+     */
+    public void updateToolCallCompletion(
+        @NotNull String eventId,
+        @Nullable String result,
+        @NotNull String status,
+        boolean autoDenied,
+        @Nullable String denialReason
+    ) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                UPDATE tool_call_events SET
+                    result        = COALESCE(?, result),
+                    status        = ?,
+                    auto_denied   = ?,
+                    denial_reason = COALESCE(?, denial_reason)
+                WHERE event_id = ?
+                """)) {
+                ps.setString(1, result);
+                ps.setString(2, status);
+                ps.setInt(3, autoDenied ? 1 : 0);
+                ps.setString(4, denialReason);
+                ps.setString(5, eventId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to update tool call completion for " + eventId, e);
+            }
+        }
+    }
+
+    /**
+     * Updates a sub-agent's result and status in the database after completion.
+     *
+     * <p>Same rationale as {@link #updateToolCallCompletion} — sub-agent entries are often
+     * persisted early (while still running) because their internal tool calls trigger
+     * {@code appendNewEntries()}. When the sub-agent finally completes, the in-memory
+     * mutation is not reflected in the DB without this explicit UPDATE.
+     */
+    public void updateSubAgentCompletion(
+        @NotNull String eventId,
+        @Nullable String result,
+        @NotNull String status,
+        boolean autoDenied,
+        @Nullable String denialReason
+    ) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                UPDATE sub_agent_events SET
+                    result_text   = COALESCE(?, result_text),
+                    status        = ?,
+                    auto_denied   = ?,
+                    denial_reason = COALESCE(?, denial_reason)
+                WHERE event_id = ?
+                """)) {
+                ps.setString(1, result);
+                ps.setString(2, status);
+                ps.setInt(3, autoDenied ? 1 : 0);
+                ps.setString(4, denialReason);
+                ps.setString(5, eventId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to update sub-agent completion for " + eventId, e);
+            }
+        }
+    }
+
     public void recordHookStages(
         @NotNull String toolEventId,
         @NotNull List<HookStageResult> stages
