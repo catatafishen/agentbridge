@@ -146,7 +146,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     private fun loadHistoryPage(beforeEventId: String?) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = ConversationService.getInstance(project)
-            val entries = service.loadToolCallHistory(HISTORY_PAGE_SIZE, beforeEventId)
+            val entries = service.loadToolCallHistory(HISTORY_PAGE_SIZE, beforeEventId).toList()
             val registry = ToolRegistry.getInstance(project)
             if (entries.isEmpty()) {
                 ApplicationManager.getApplication().invokeLater {
@@ -228,6 +228,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     companion object {
         private val LOG = Logger.getInstance(ToolCallsWebPanel::class.java)
         private const val HISTORY_PAGE_SIZE = 50
+        private const val JSON_DURATION_MS = ",\"durationMs\":"
 
         fun entryToJson(entry: LiveToolCallEntry, registry: ToolRegistry? = null): String {
             val sb = StringBuilder(256)
@@ -248,7 +249,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             sb.append(",\"timestamp\":").append(escapeJson(entry.timestamp().toString()))
             sb.append(",\"arguments\":").append(escapeJson(entry.input()))
             sb.append(",\"result\":").append(escapeJson(entry.output()))
-            sb.append(",\"durationMs\":").append(entry.durationMs())
+            sb.append(JSON_DURATION_MS).append(entry.durationMs())
             sb.append(",\"hasHooks\":").append(entry.hasHooks())
 
             entry.originalInput()?.let { orig ->
@@ -262,7 +263,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                     sb.append("{\"trigger\":").append(escapeJson(s.trigger()))
                     sb.append(",\"scriptName\":").append(escapeJson(s.scriptName()))
                     sb.append(",\"outcome\":").append(escapeJson(s.outcome()))
-                    sb.append(",\"durationMs\":").append(s.durationMs())
+                    sb.append(JSON_DURATION_MS).append(s.durationMs())
                     s.detail()?.let { sb.append(",\"detail\":").append(escapeJson(it)) }
                     sb.append('}')
                 }
@@ -287,11 +288,11 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             sb.append(",\"timestamp\":").append(escapeJson(entry.timestamp().toString()))
             sb.append(",\"arguments\":").append(escapeJson(entry.arguments()))
             sb.append(",\"result\":").append(escapeJson(entry.result()))
-            sb.append(",\"durationMs\":").append(entry.durationMs())
+            sb.append(JSON_DURATION_MS).append(entry.durationMs())
             sb.append(",\"hasHooks\":").append(entry.hasHooks())
             sb.append(",\"historic\":true")
 
-            val stages = entry.hookStages()
+            val stages = entry.hookStages().toList()
             if (stages.isNotEmpty()) {
                 sb.append(",\"hookStages\":[")
                 stages.forEachIndexed { i, s ->
@@ -299,7 +300,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                     sb.append("{\"trigger\":").append(escapeJson(s.trigger()))
                     sb.append(",\"scriptName\":").append(escapeJson(s.scriptName()))
                     sb.append(",\"outcome\":").append(escapeJson(s.outcome()))
-                    sb.append(",\"durationMs\":").append(s.durationMs())
+                    sb.append(JSON_DURATION_MS).append(s.durationMs())
                     s.detail()?.let { sb.append(",\"detail\":").append(escapeJson(it)) }
                     sb.append('}')
                 }

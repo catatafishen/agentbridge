@@ -48,6 +48,7 @@ public final class CodexApprovalHandler {
     private static final String F_TYPE = "type";
     private static final String F_TEXT = "text";
     private static final String F_MESSAGE = "message";
+    private static final String F_QUESTIONS = "questions";
     private static final String MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX = "mcp_tool_call_approval_";
     private static final String DECISION_ACCEPT = "accept";
 
@@ -127,8 +128,8 @@ public final class CodexApprovalHandler {
      */
     public void handleUserInputRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
         JsonArray questions;
-        if (params.has("questions") && params.get("questions").isJsonArray()) {
-            questions = params.getAsJsonArray("questions");
+        if (params.has(F_QUESTIONS) && params.get(F_QUESTIONS).isJsonArray()) {
+            questions = params.getAsJsonArray(F_QUESTIONS);
         } else {
             questions = new JsonArray();
         }

@@ -17,6 +17,7 @@ import java.util.List;
 public final class GitUntrackTool extends GitTool {
 
     private static final String PARAM_PATHS = "paths";
+    private static final String PARAM_RECURSIVE = "recursive";
 
     public GitUntrackTool(Project project) {
         super(project);
@@ -77,7 +78,7 @@ public final class GitUntrackTool extends GitTool {
         JsonObject s = schema(
             Param.optional("path", TYPE_STRING, "Single file path to untrack"),
             Param.optional(PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to untrack"),
-            Param.optional("recursive", TYPE_BOOLEAN,
+            Param.optional(PARAM_RECURSIVE, TYPE_BOOLEAN,
                 "If true, also untrack files inside a directory (adds -r flag). Default: false"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
@@ -100,7 +101,7 @@ public final class GitUntrackTool extends GitTool {
             return "Error: provide 'path' or 'paths' parameter";
         }
 
-        boolean recursive = args.has("recursive") && args.get("recursive").getAsBoolean();
+        boolean recursive = args.has(PARAM_RECURSIVE) && args.get(PARAM_RECURSIVE).getAsBoolean();
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("rm");
@@ -134,6 +135,6 @@ public final class GitUntrackTool extends GitTool {
         if (args.has("path") && !args.get("path").getAsString().isEmpty()) {
             return List.of(args.get("path").getAsString());
         }
-        return null;
+        return null; // NOSONAR S1168 - null signals "no paths provided" vs empty = "paths param empty"
     }
 }

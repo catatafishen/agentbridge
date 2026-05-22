@@ -35,7 +35,7 @@ interface ChatPanelApi : Disposable {
 
     fun removePromptEntry(entryId: String)
 
-    fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {}
+    fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) { /* no-op default */ }
     fun setCurrentModel(modelId: String)
     fun setCurrentProfile(profileId: String)
     fun setCurrentAgent(agentName: String, profileId: String, clientType: String = "")
@@ -44,14 +44,14 @@ interface ChatPanelApi : Disposable {
      * Records context file references. Default is a no-op; implementations may
      * override to track files for export or history persistence.
      */
-    fun addContextFilesEntry(files: List<Pair<String, String>>) {}
+    fun addContextFilesEntry(files: List<Pair<String, String>>) { /* no-op default */ }
 
     /**
      * Displays image thumbnails below the most recently added user message bubble.
      * Called after [addPromptEntry] when the prompt includes image attachments.
      * Default is a no-op; implementations that can render images should override.
      */
-    fun addImageThumbnails(images: List<ImageAttachment>) {}
+    fun addImageThumbnails(images: List<ImageAttachment>) { /* no-op default */ }
 
     /** Resolved image attachment ready for thumbnail display. */
     data class ImageAttachment(val name: String, val base64Data: String, val mimeType: String)

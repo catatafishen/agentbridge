@@ -36,6 +36,7 @@ class AcpMessageParser {
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String KEY_THINKING = "thinking";
     private static final String KEY_TITLE = "title";
+    private static final String KEY_CONFIG_OPTIONS = "configOptions";
 
     /**
      * Callbacks into the owning client for the three points where agent-specific logic is needed.
@@ -344,8 +345,8 @@ class AcpMessageParser {
      */
     private SessionUpdate.ConfigOptionsChanged parseConfigOptionUpdate(JsonObject params) {
         List<NewSessionResponse.SessionConfigOption> options = new ArrayList<>();
-        if (params.has("configOptions") && params.get("configOptions").isJsonArray()) {
-            for (JsonElement e : params.getAsJsonArray("configOptions")) {
+        if (params.has(KEY_CONFIG_OPTIONS) && params.get(KEY_CONFIG_OPTIONS).isJsonArray()) {
+            for (JsonElement e : params.getAsJsonArray(KEY_CONFIG_OPTIONS)) {
                 if (e.isJsonObject()) {
                     options.add(parseConfigOption(e.getAsJsonObject()));
                 }

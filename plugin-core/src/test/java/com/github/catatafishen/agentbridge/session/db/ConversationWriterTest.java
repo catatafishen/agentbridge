@@ -521,7 +521,7 @@ class ConversationWriterTest {
     }
 
     @Test
-    void updateToolCallCompletionIsNoOpWhenRowMissing() throws Exception {
+    void updateToolCallCompletionIsNoOpWhenRowMissing() {
         // UPDATE on non-existent row should silently succeed (0 rows affected)
         writer.updateToolCallCompletion("nonexistent-id", "result", "completed", false, null);
         // If we get here without exception, the test passes

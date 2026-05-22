@@ -154,7 +154,7 @@ final class JsonRpcTransport {
     void sendErrorResponse(@NotNull JsonElement id, @NotNull JsonObject error) {
         JsonObject msg = new JsonObject();
         msg.add(F_ID, id);
-        msg.add("error", error);
+        msg.add(F_ERROR, error);
         writeMessage(msg);
     }
 

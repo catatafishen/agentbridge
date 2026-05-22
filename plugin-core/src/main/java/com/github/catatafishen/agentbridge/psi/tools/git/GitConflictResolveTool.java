@@ -18,6 +18,7 @@ import java.nio.file.Path;
 public final class GitConflictResolveTool extends GitTool {
 
     private static final String PARAM_PATH = "path";
+    private static final String RESOLVED_PREFIX = "Resolved '";
     private static final String PARAM_ACTION = "action";
     private static final String PARAM_CONTENT = "content";
 
@@ -118,7 +119,7 @@ public final class GitConflictResolveTool extends GitTool {
         if (isChosenSideDeleted(root, path, isOurs)) {
             String rmResult = runGitIn(root, "rm", "--", path);
             if (rmResult != null && rmResult.startsWith(ERR_PREFIX)) return rmResult;
-            return "Resolved '" + path + "' by accepting " + sideName + " (deletion).\n"
+            return RESOLVED_PREFIX + path + "' by accepting " + sideName + " (deletion).\n"
                 + "File has been removed and staged." + getBranchSummaryIn(root);
         }
 
@@ -128,7 +129,7 @@ public final class GitConflictResolveTool extends GitTool {
         String addResult = runGitIn(root, "add", "--", path);
         if (addResult != null && addResult.startsWith(ERR_PREFIX)) return addResult;
 
-        return "Resolved '" + path + "' by accepting " + sideName + ".\n"
+        return RESOLVED_PREFIX + path + "' by accepting " + sideName + ".\n"
             + "File has been staged." + getBranchSummaryIn(root);
     }
 
@@ -177,7 +178,7 @@ public final class GitConflictResolveTool extends GitTool {
 
         refreshVcsState();
 
-        return "Resolved '" + path + "' with custom content (" + content.length() + " chars).\n"
+        return RESOLVED_PREFIX + path + "' with custom content (" + content.length() + " chars).\n"
             + "File has been staged." + getBranchSummaryIn(root);
     }
 

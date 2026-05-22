@@ -100,7 +100,7 @@ class RunConfigurationServiceSchemaTest {
         void emptyRootProducesEmptyProperties() {
             var root = new Element("configuration");
             JsonObject schema = RunConfigurationService.xmlElementToJsonSchema(root);
-            assertTrue(schema.getAsJsonObject("properties").size() == 0);
+            assertEquals(0, schema.getAsJsonObject("properties").size());
         }
     }
 

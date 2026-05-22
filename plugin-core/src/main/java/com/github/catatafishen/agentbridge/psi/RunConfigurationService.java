@@ -795,11 +795,10 @@ public final class RunConfigurationService {
      * The unchecked cast is unavoidable: type {@code T} is erased at runtime, but the contract
      * is safe because {@code getState()} and {@code loadState(T)} are always the same type {@code T}.
      */
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings("unchecked")
     private static void tryApplyStateFromElement(RunConfiguration config, org.jdom.Element element) {
         if (!(config instanceof PersistentStateComponent<?> psc)) return;
-        // Raw cast required: T is erased at runtime, but getState()/loadState(T) are always consistent.
-        var state = ((PersistentStateComponent) psc).getState();
+        var state = psc.getState();
         if (state == null) return;
         try {
             com.intellij.util.xmlb.XmlSerializer.deserializeInto(state, element);

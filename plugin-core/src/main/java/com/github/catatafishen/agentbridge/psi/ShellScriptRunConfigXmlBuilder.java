@@ -12,6 +12,7 @@ package com.github.catatafishen.agentbridge.psi;
  */
 public final class ShellScriptRunConfigXmlBuilder {
 
+    private static final String PROJECT_DIR_MACRO = "$PROJECT_DIR$";
     static final String TYPE_ID = "ShConfigurationType";
     static final String DEFAULT_INTERPRETER = "/bin/bash";
 
@@ -67,14 +68,14 @@ public final class ShellScriptRunConfigXmlBuilder {
      */
     public static String build(String name, ShellScriptConfig config, String projectBase) {
         boolean useFile = config.scriptPath() != null && !config.scriptPath().isBlank();
-        String scriptText = useFile ? "" : (config.scriptText() != null ? config.scriptText() : "");
+        String scriptText = useFile ? "" : defaultIfNull(config.scriptText());
         String scriptPath = useFile ? applyProjectDirMacro(config.scriptPath(), projectBase) : "";
-        String scriptOptions = config.scriptOptions() != null ? config.scriptOptions() : "";
+        String scriptOptions = defaultIfNull(config.scriptOptions());
         String interpreter = (config.interpreterPath() != null && !config.interpreterPath().isBlank())
             ? config.interpreterPath() : DEFAULT_INTERPRETER;
-        String interpreterOptions = config.interpreterOptions() != null ? config.interpreterOptions() : "";
+        String interpreterOptions = defaultIfNull(config.interpreterOptions());
         String workDir = (config.workingDirectory() != null && !config.workingDirectory().isBlank())
-            ? applyProjectDirMacro(config.workingDirectory(), projectBase) : "$PROJECT_DIR$";
+            ? applyProjectDirMacro(config.workingDirectory(), projectBase) : PROJECT_DIR_MACRO;
 
         return "<component name=\"ProjectRunConfigurationManager\">\n"
             + "  <configuration default=\"false\" name=\"" + escapeXml(name) + "\" type=\"" + TYPE_ID + "\">\n"
@@ -105,9 +106,9 @@ public final class ShellScriptRunConfigXmlBuilder {
         String normalizedPath = path.replace('\\', '/');
         String normalizedBase = projectBase.replace('\\', '/');
         if (normalizedPath.startsWith(normalizedBase + "/")) {
-            return "$PROJECT_DIR$" + normalizedPath.substring(normalizedBase.length());
+            return PROJECT_DIR_MACRO + normalizedPath.substring(normalizedBase.length());
         }
-        if (normalizedPath.equals(normalizedBase)) return "$PROJECT_DIR$";
+        if (normalizedPath.equals(normalizedBase)) return PROJECT_DIR_MACRO;
         return normalizedPath;
     }
 
@@ -123,5 +124,9 @@ public final class ShellScriptRunConfigXmlBuilder {
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("'", "&apos;");
+    }
+
+    private static String defaultIfNull(String value) {
+        return value != null ? value : "";
     }
 }
