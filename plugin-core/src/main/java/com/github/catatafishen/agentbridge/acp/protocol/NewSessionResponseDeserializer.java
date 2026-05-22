@@ -142,30 +142,40 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         if (!element.isJsonObject()) return null;
         JsonObject container = element.getAsJsonObject();
 
-        // Standard ACP format: object with availableModes array and optional currentModeId string
         if (container.has(AVAILABLE_MODES_KEY) && container.get(AVAILABLE_MODES_KEY).isJsonArray()) {
             List<NewSessionResponse.AvailableMode> modes = parseModeArray(container.getAsJsonArray(AVAILABLE_MODES_KEY));
             String currentId = getString(container, "currentModeId");
             return new ModesResult(currentId, modes.isEmpty() ? null : modes);
         }
 
-        // Legacy map format: object mapping slug keys to display name strings or mode descriptor objects
+        return parseLegacyMapModes(container);
+    }
+
+    private static ModesResult parseLegacyMapModes(JsonObject container) {
         List<NewSessionResponse.AvailableMode> modes = new ArrayList<>();
         for (Map.Entry<String, JsonElement> entry : container.entrySet()) {
             String key = entry.getKey();
             JsonElement value = entry.getValue();
-            if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
-                modes.add(new NewSessionResponse.AvailableMode(key, value.getAsString(), null));
-            } else if (value.isJsonObject()) {
-                JsonObject modeObj = value.getAsJsonObject();
-                String name = getString(modeObj, "name");
-                String desc = getString(modeObj, DESCRIPTION_KEY);
-                String slug = getString(modeObj, "id");
-                if (slug == null) slug = key;
-                modes.add(new NewSessionResponse.AvailableMode(slug, name != null ? name : key, desc));
-            }
+            NewSessionResponse.AvailableMode mode = parseLegacyModeEntry(key, value);
+            if (mode != null) modes.add(mode);
         }
         return new ModesResult(null, modes.isEmpty() ? null : modes);
+    }
+
+    @Nullable
+    private static NewSessionResponse.AvailableMode parseLegacyModeEntry(String key, JsonElement value) {
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+            return new NewSessionResponse.AvailableMode(key, value.getAsString(), null);
+        }
+        if (value.isJsonObject()) {
+            JsonObject modeObj = value.getAsJsonObject();
+            String name = getString(modeObj, "name");
+            String desc = getString(modeObj, DESCRIPTION_KEY);
+            String slug = getString(modeObj, "id");
+            if (slug == null) slug = key;
+            return new NewSessionResponse.AvailableMode(slug, name != null ? name : key, desc);
+        }
+        return null;
     }
 
     private static List<NewSessionResponse.AvailableMode> parseModeArray(com.google.gson.JsonArray array) {
@@ -189,24 +199,25 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         return el.isJsonPrimitive() ? el.getAsString() : null;
     }
 
-    /**
-     * Parses a configOption entry, handling Copilot's wire format which differs from the ACP spec:
-     * <ul>
-     *   <li>{@code name} → label (Copilot uses "name", spec says "label")</li>
-     *   <li>{@code options} → values (Copilot uses "options", spec says "values")</li>
-     *   <li>Each option: {@code value} → id, {@code name} → label</li>
-     *   <li>{@code currentValue} → selectedValueId</li>
-     * </ul>
-     */
     private static NewSessionResponse.SessionConfigOption parseConfigOption(JsonObject obj) {
         String id = getString(obj, "id");
-        String label = getString(obj, "label");
-        if (label == null) label = getString(obj, "name");
-        if (label == null) label = id != null ? id : "";
+        String label = resolveConfigLabel(obj, id);
         String description = getString(obj, DESCRIPTION_KEY);
         String selectedValueId = getString(obj, "selectedValueId");
         if (selectedValueId == null) selectedValueId = getString(obj, "currentValue");
 
+        List<NewSessionResponse.SessionConfigOptionValue> values = parseConfigOptionValues(obj);
+        return new NewSessionResponse.SessionConfigOption(id, label, description, values, selectedValueId);
+    }
+
+    private static String resolveConfigLabel(JsonObject obj, String id) {
+        String label = getString(obj, "label");
+        if (label == null) label = getString(obj, "name");
+        if (label == null) label = id != null ? id : "";
+        return label;
+    }
+
+    private static List<NewSessionResponse.SessionConfigOptionValue> parseConfigOptionValues(JsonObject obj) {
         List<NewSessionResponse.SessionConfigOptionValue> values = new ArrayList<>();
         JsonElement valuesEl = null;
         if (obj.has("values")) {
@@ -216,18 +227,22 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         }
         if (valuesEl != null && valuesEl.isJsonArray()) {
             for (JsonElement e : valuesEl.getAsJsonArray()) {
-                if (e.isJsonObject()) {
-                    JsonObject vo = e.getAsJsonObject();
-                    String valueId = getString(vo, "id");
-                    if (valueId == null) valueId = getString(vo, "value");
-                    if (valueId == null) continue;
-                    String valueLabel = getString(vo, "label");
-                    if (valueLabel == null) valueLabel = getString(vo, "name");
-                    if (valueLabel == null) valueLabel = valueId;
-                    values.add(new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel));
-                }
+                if (!e.isJsonObject()) continue;
+                NewSessionResponse.SessionConfigOptionValue parsed = parseSingleOptionValue(e.getAsJsonObject());
+                if (parsed != null) values.add(parsed);
             }
         }
-        return new NewSessionResponse.SessionConfigOption(id, label, description, values, selectedValueId);
+        return values;
+    }
+
+    @Nullable
+    private static NewSessionResponse.SessionConfigOptionValue parseSingleOptionValue(JsonObject vo) {
+        String valueId = getString(vo, "id");
+        if (valueId == null) valueId = getString(vo, "value");
+        if (valueId == null) return null;
+        String valueLabel = getString(vo, "label");
+        if (valueLabel == null) valueLabel = getString(vo, "name");
+        if (valueLabel == null) valueLabel = valueId;
+        return new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel);
     }
 }

@@ -57,18 +57,7 @@ public final class GitInitTool extends GitTool {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: project has no base path";
 
-        String targetDir;
-        if (args.has(PARAM_PATH) && hasText(args.get(PARAM_PATH).getAsString())) {
-            String pathArg = args.get(PARAM_PATH).getAsString().trim();
-            java.io.File pathFile = new java.io.File(pathArg);
-            if (pathFile.isAbsolute()) {
-                targetDir = pathFile.getPath();
-            } else {
-                targetDir = new java.io.File(basePath, pathArg).getPath();
-            }
-        } else {
-            targetDir = basePath;
-        }
+        String targetDir = resolveTargetDir(args, basePath);
 
         java.io.File targetFile = new java.io.File(targetDir);
         if (targetFile.exists() && !targetFile.isDirectory()) {
@@ -80,26 +69,42 @@ public final class GitInitTool extends GitTool {
 
         String result = runGitIn(targetDir, "init");
 
-        // Refresh VCS mappings so IntelliJ recognizes the new .git directory.
-        // Refresh the actual targetDir (not project base) so absolute/external paths are covered.
-        String resolvedTargetDir = targetDir;
+        refreshVcsMappings(targetDir, basePath);
+
+        return buildResultMessage(result, targetDir);
+    }
+
+    private String resolveTargetDir(@NotNull JsonObject args, @NotNull String basePath) {
+        if (args.has(PARAM_PATH) && hasText(args.get(PARAM_PATH).getAsString())) {
+            String pathArg = args.get(PARAM_PATH).getAsString().trim();
+            java.io.File pathFile = new java.io.File(pathArg);
+            if (pathFile.isAbsolute()) {
+                return pathFile.getPath();
+            }
+            return new java.io.File(basePath, pathArg).getPath();
+        }
+        return basePath;
+    }
+
+    private void refreshVcsMappings(@NotNull String targetDir, @NotNull String basePath) {
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
             var root = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-                .findFileByPath(resolvedTargetDir);
+                .findFileByPath(targetDir);
             if (root != null) {
                 com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, root);
             }
             com.intellij.openapi.vcs.changes.VcsDirtyScopeManager.getInstance(project).markEverythingDirty();
-            String mappingPath = resolvedTargetDir.equals(basePath) ? "" : resolvedTargetDir;
+            String mappingPath = targetDir.equals(basePath) ? "" : targetDir;
             ProjectLevelVcsManager.getInstance(project).setDirectoryMapping(mappingPath, "Git");
         });
+    }
 
+    private @NotNull String buildResultMessage(@NotNull String result, @NotNull String targetDir) {
         StringBuilder sb = new StringBuilder();
         sb.append(result.trim());
         sb.append("\n\n--- Context ---\n");
         sb.append("Repository initialized in: ").append(targetDir).append('\n');
 
-        // Try to get the initial branch name
         String branch = runGitInQuiet(targetDir, "rev-parse", "--abbrev-ref", "HEAD");
         if (branch != null && !branch.isBlank()) {
             sb.append("Initial branch: ").append(branch.trim()).append('\n');

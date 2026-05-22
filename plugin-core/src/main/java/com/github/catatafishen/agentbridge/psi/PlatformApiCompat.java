@@ -1324,8 +1324,6 @@ public final class PlatformApiCompat {
         try {
             config.checkConfiguration();
             return null;
-        } catch (com.intellij.execution.configurations.RuntimeConfigurationError e) {
-            return e.getTitle();
         } catch (com.intellij.execution.configurations.RuntimeConfigurationWarning ignored) {
             return null;
         } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {

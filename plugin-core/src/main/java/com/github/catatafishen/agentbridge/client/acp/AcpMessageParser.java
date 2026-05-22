@@ -364,35 +364,45 @@ class AcpMessageParser {
         return new SessionUpdate.ConfigOptionsChanged(options);
     }
 
-    /**
-     * Parses a single config option object, handling both the ACP spec format
-     * ({@code label}, {@code values}, {@code selectedValueId}) and Copilot's wire format
-     * ({@code name}, {@code options}, {@code currentValue}, value ids as {@code value}).
-     */
     private static NewSessionResponse.SessionConfigOption parseConfigOption(JsonObject obj) {
         String id = getStringOrNull(obj, "id");
-        String label = getStringOrNull(obj, "label");
-        if (label == null) label = getStringOrNull(obj, "name");
-        if (label == null) label = id != null ? id : "";
+        String label = resolveLabel(obj, id);
         String selectedValueId = getStringOrNull(obj, "selectedValueId");
         if (selectedValueId == null) selectedValueId = getStringOrNull(obj, "currentValue");
 
+        List<NewSessionResponse.SessionConfigOptionValue> values = parseConfigOptionValues(obj);
+        return new NewSessionResponse.SessionConfigOption(id, label, null, values, selectedValueId);
+    }
+
+    private static String resolveLabel(JsonObject obj, String id) {
+        String label = getStringOrNull(obj, "label");
+        if (label == null) label = getStringOrNull(obj, "name");
+        if (label == null) label = id != null ? id : "";
+        return label;
+    }
+
+    private static List<NewSessionResponse.SessionConfigOptionValue> parseConfigOptionValues(JsonObject obj) {
         List<NewSessionResponse.SessionConfigOptionValue> values = new ArrayList<>();
         JsonElement valuesEl = obj.has("values") ? obj.get("values")
             : obj.has("options") ? obj.get("options") : null;
         if (valuesEl != null && valuesEl.isJsonArray()) {
             for (JsonElement e : valuesEl.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
-                JsonObject vo = e.getAsJsonObject();
-                String valueId = getStringOrNull(vo, "id");
-                if (valueId == null) valueId = getStringOrNull(vo, "value");
-                if (valueId == null) continue;
-                String valueLabel = getStringOrNull(vo, "label");
-                if (valueLabel == null) valueLabel = getStringOrNull(vo, "name");
-                if (valueLabel == null) valueLabel = valueId;
-                values.add(new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel));
+                NewSessionResponse.SessionConfigOptionValue parsed = parseSingleOptionValue(e.getAsJsonObject());
+                if (parsed != null) values.add(parsed);
             }
         }
-        return new NewSessionResponse.SessionConfigOption(id, label, null, values, selectedValueId);
+        return values;
+    }
+
+    @Nullable
+    private static NewSessionResponse.SessionConfigOptionValue parseSingleOptionValue(JsonObject vo) {
+        String valueId = getStringOrNull(vo, "id");
+        if (valueId == null) valueId = getStringOrNull(vo, "value");
+        if (valueId == null) return null;
+        String valueLabel = getStringOrNull(vo, "label");
+        if (valueLabel == null) valueLabel = getStringOrNull(vo, "name");
+        if (valueLabel == null) valueLabel = valueId;
+        return new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel);
     }
 }

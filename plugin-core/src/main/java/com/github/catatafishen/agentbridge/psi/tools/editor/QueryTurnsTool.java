@@ -214,64 +214,12 @@ public final class QueryTurnsTool extends EditorTool {
 
         for (ConversationQuery.TurnSummary turn : turns) {
             if (sb.length() >= maxChars) break;
-
-            // Header line
-            sb.append("=== [turn_id:").append(turn.turnId()).append("] ");
-            sb.append(formatInstant(turn.timestamp()));
-            if (!turn.branch().isEmpty()) sb.append("  branch:").append(turn.branch());
-            if (!turn.model().isEmpty()) sb.append("  model:").append(shortModelName(turn.model()));
-            if (!turn.agentName().isEmpty()) sb.append("  agent:").append(turn.agentName());
-            sb.append("  tools:").append(turn.toolCallCount());
-            sb.append(" ===\n");
-
-            // Session + navigation
-            sb.append("[session:").append(turn.sessionId()).append("]");
-            if (turn.prevTurnId() != null) {
-                sb.append("  [prev_turn:").append(turn.prevTurnId()).append("]");
-            }
-            sb.append("\n");
-
-            // User message
-            sb.append(">>> ").append(turn.userMessage()).append("\n");
-
-            // Human nudges appended under the prompt
-            for (String nudge : turn.humanNudges()) {
-                sb.append(">>> [nudge] ").append(nudge).append("\n");
-            }
-
-            sb.append("\n");
-
-            // Assistant text
-            if (!turn.assistantText().isEmpty()) {
-                sb.append(turn.assistantText()).append("\n");
-            }
-
-            // Thinking blocks
-            if (!turn.thinkingBlocks().isEmpty()) {
-                for (String block : turn.thinkingBlocks()) {
-                    sb.append("[thinking] ").append(block).append("\n");
-                }
-            }
-
-            // Tool calls
-            if (!turn.toolCalls().isEmpty()) {
-                for (ConversationQuery.ToolCallSummary tc : turn.toolCalls()) {
-                    sb.append("  → ").append(tc.toolName());
-                    if (tc.arguments() != null && !tc.arguments().isEmpty()) {
-                        String args = tc.arguments().replace("\n", " ");
-                        if (args.length() > 120) args = args.substring(0, 117) + "...";
-                        sb.append(" ").append(args);
-                    }
-                    if (tc.outputSizeBytes() != null) {
-                        sb.append(" → ").append(tc.outputSizeBytes()).append(" bytes");
-                    }
-                    if (tc.status() != null && !tc.status().isEmpty()) {
-                        sb.append(" [").append(tc.status()).append("]");
-                    }
-                    sb.append("\n");
-                }
-            }
-
+            appendTurnHeader(sb, turn);
+            appendTurnSession(sb, turn);
+            appendTurnUserMessage(sb, turn);
+            appendTurnAssistantText(sb, turn);
+            appendThinkingBlocks(sb, turn);
+            appendToolCalls(sb, turn);
             sb.append("---\n");
         }
 
@@ -280,6 +228,66 @@ public final class QueryTurnsTool extends EditorTool {
             result = result.substring(0, maxChars - 3) + "...";
         }
         return result;
+    }
+
+    private static void appendTurnHeader(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {
+        sb.append("=== [turn_id:").append(turn.turnId()).append("] ");
+        sb.append(formatInstant(turn.timestamp()));
+        if (!turn.branch().isEmpty()) sb.append("  branch:").append(turn.branch());
+        if (!turn.model().isEmpty()) sb.append("  model:").append(shortModelName(turn.model()));
+        if (!turn.agentName().isEmpty()) sb.append("  agent:").append(turn.agentName());
+        sb.append("  tools:").append(turn.toolCallCount());
+        sb.append(" ===\n");
+    }
+
+    private static void appendTurnSession(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {
+        sb.append("[session:").append(turn.sessionId()).append("]");
+        if (turn.prevTurnId() != null) {
+            sb.append("  [prev_turn:").append(turn.prevTurnId()).append("]");
+        }
+        sb.append("\n");
+    }
+
+    private static void appendTurnUserMessage(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {
+        sb.append(">>> ").append(turn.userMessage()).append("\n");
+        for (String nudge : turn.humanNudges()) {
+            sb.append(">>> [nudge] ").append(nudge).append("\n");
+        }
+        sb.append("\n");
+    }
+
+    private static void appendTurnAssistantText(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {
+        if (!turn.assistantText().isEmpty()) {
+            sb.append(turn.assistantText()).append("\n");
+        }
+    }
+
+    private static void appendThinkingBlocks(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {
+        for (String block : turn.thinkingBlocks()) {
+            sb.append("[thinking] ").append(block).append("\n");
+        }
+    }
+
+    private static void appendToolCalls(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {
+        for (ConversationQuery.ToolCallSummary tc : turn.toolCalls()) {
+            appendSingleToolCall(sb, tc);
+        }
+    }
+
+    private static void appendSingleToolCall(@NotNull StringBuilder sb, @NotNull ConversationQuery.ToolCallSummary tc) {
+        sb.append("  → ").append(tc.toolName());
+        if (tc.arguments() != null && !tc.arguments().isEmpty()) {
+            String args = tc.arguments().replace("\n", " ");
+            if (args.length() > 120) args = args.substring(0, 117) + "...";
+            sb.append(" ").append(args);
+        }
+        if (tc.outputSizeBytes() != null) {
+            sb.append(" → ").append(tc.outputSizeBytes()).append(" bytes");
+        }
+        if (tc.status() != null && !tc.status().isEmpty()) {
+            sb.append(" [").append(tc.status()).append("]");
+        }
+        sb.append("\n");
     }
 
     @NotNull

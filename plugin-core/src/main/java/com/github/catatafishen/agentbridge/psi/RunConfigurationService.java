@@ -160,24 +160,7 @@ public final class RunConfigurationService {
                 public void processStarted(@org.jetbrains.annotations.NotNull String executorId,
                                            @org.jetbrains.annotations.NotNull com.intellij.execution.runners.ExecutionEnvironment env,
                                            @org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessHandler handler) {
-                    var s = settingsRef.get();
-                    var envSettings = env.getRunnerAndConfigurationSettings();
-                    if (s != null && envSettings != null && s.getName().equals(envSettings.getName())) {
-                        handler.addProcessListener(new com.intellij.execution.process.ProcessListener() {
-                            @Override
-                            public void processTerminated(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent event) {
-                                exitFuture.complete(event.getExitCode());
-                            }
-                        });
-                        // Race guard: the process may have already terminated before the
-                        // listener was added (extremely fast processes).
-                        if (handler.isProcessTerminated()) {
-                            exitFuture.complete(handler.getExitCode() != null ? handler.getExitCode() : 0);
-                        }
-                        // Fallback: detect OS-level process exit even if processTerminated
-                        // never fires (stuck reader threads, non-compliant handlers).
-                        RunPanelExecutor.scheduleHandlerExitFallback(handler, exitFuture);
-                    }
+                    attachExitListener(settingsRef.get(), env, handler, exitFuture);
                 }
             });
 
@@ -212,6 +195,31 @@ public final class RunConfigurationService {
         } finally {
             disconnect.run();
         }
+    }
+
+    private static void attachExitListener(
+        com.intellij.execution.RunnerAndConfigurationSettings settings,
+        @org.jetbrains.annotations.NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+        @org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessHandler handler,
+        CompletableFuture<Integer> exitFuture) {
+        var envSettings = env.getRunnerAndConfigurationSettings();
+        if (settings == null || envSettings == null || !settings.getName().equals(envSettings.getName())) {
+            return;
+        }
+        handler.addProcessListener(new com.intellij.execution.process.ProcessListener() {
+            @Override
+            public void processTerminated(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent event) {
+                exitFuture.complete(event.getExitCode());
+            }
+        });
+        // Race guard: the process may have already terminated before the
+        // listener was added (extremely fast processes).
+        if (handler.isProcessTerminated()) {
+            exitFuture.complete(handler.getExitCode() != null ? handler.getExitCode() : 0);
+        }
+        // Fallback: detect OS-level process exit even if processTerminated
+        // never fires (stuck reader threads, non-compliant handlers).
+        RunPanelExecutor.scheduleHandlerExitFallback(handler, exitFuture);
     }
 
     public String createRunConfiguration(JsonObject args) throws Exception {

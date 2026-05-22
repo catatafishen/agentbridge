@@ -40,6 +40,18 @@ final class AcpFileSystemHandler {
         Integer lineLimit = getOptionalInt(params, "limit");
 
         String absolutePath = resolveAbsolutePath(path);
+        String content = readFileContent(absolutePath);
+
+        if (startLine != null || lineLimit != null) {
+            content = sliceLines(content, startLine, lineLimit);
+        }
+
+        JsonObject result = new JsonObject();
+        result.addProperty("content", content);
+        return result;
+    }
+
+    private String readFileContent(@NotNull String absolutePath) {
         String[] holder = new String[1];
         com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction(() -> {
             VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(absolutePath);
@@ -58,26 +70,21 @@ final class AcpFileSystemHandler {
                 }
             }
         });
+        return holder[0];
+    }
 
-        String content = holder[0];
+    private static String sliceLines(@NotNull String content, Integer startLine, Integer lineLimit) {
+        String[] lines = content.split("\n", -1);
+        int start = (startLine != null ? startLine : 1) - 1;
+        int end = lineLimit != null ? Math.min(start + lineLimit, lines.length) : lines.length;
+        start = Math.max(0, start);
 
-        if (startLine != null || lineLimit != null) {
-            String[] lines = content.split("\n", -1);
-            int start = (startLine != null ? startLine : 1) - 1;
-            int end = lineLimit != null ? Math.min(start + lineLimit, lines.length) : lines.length;
-            start = Math.max(0, start);
-
-            StringBuilder sb = new StringBuilder();
-            for (int i = start; i < end; i++) {
-                if (i > start) sb.append('\n');
-                sb.append(lines[i]);
-            }
-            content = sb.toString();
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < end; i++) {
+            if (i > start) sb.append('\n');
+            sb.append(lines[i]);
         }
-
-        JsonObject result = new JsonObject();
-        result.addProperty("content", content);
-        return result;
+        return sb.toString();
     }
 
     void writeTextFile(@NotNull JsonObject params) {
