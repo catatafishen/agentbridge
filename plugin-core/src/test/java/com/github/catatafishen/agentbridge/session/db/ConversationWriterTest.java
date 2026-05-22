@@ -447,4 +447,108 @@ class ConversationWriterTest {
             assertEquals("added GH_TOKEN", rs.getString(5));
         }
     }
+
+    @Test
+    void updateToolCallCompletionPersistsResultAfterEarlyInsert() throws Exception {
+        // Simulate the race: tool call inserted early with null result
+        EntryData.ToolCall tc = new EntryData.ToolCall(
+            "read_file", "{\"path\":\"a.txt\"}", "read", null, "running",
+            null, null, false, null, null,
+            "2026-01-01T10:00:01Z", "Copilot", "gpt-5", "ev-tc-update");
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            tc
+        ));
+
+        // Verify it was inserted with null result and running status
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT result, status FROM tool_call_events WHERE event_id = 'ev-tc-update'")) {
+            assertTrue(rs.next());
+            assertNull(rs.getString(1));
+            assertEquals("running", rs.getString(2));
+        }
+
+        // Now the tool call completes — call the UPDATE method
+        writer.updateToolCallCompletion("ev-tc-update", "File content here", "completed", false, null);
+
+        // Verify result and status are now persisted
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT result, status, auto_denied FROM tool_call_events WHERE event_id = 'ev-tc-update'")) {
+            assertTrue(rs.next());
+            assertEquals("File content here", rs.getString(1));
+            assertEquals("completed", rs.getString(2));
+            assertEquals(0, rs.getInt(3));
+        }
+    }
+
+    @Test
+    void updateSubAgentCompletionPersistsResultAfterEarlyInsert() throws Exception {
+        // Simulate the race: sub-agent inserted early with null result
+        EntryData.SubAgent sa = new EntryData.SubAgent(
+            "explore", "Find implementations", "Search for X in the codebase",
+            null, "running", 0, null, false, null,
+            "2026-01-01T10:00:01Z", "Copilot", "gpt-5", "ev-sa-update");
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            sa
+        ));
+
+        // Verify it was inserted with null result
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT result_text, status FROM sub_agent_events WHERE event_id = 'ev-sa-update'")) {
+            assertTrue(rs.next());
+            assertNull(rs.getString(1));
+            assertEquals("running", rs.getString(2));
+        }
+
+        // Sub-agent completes with actual result text
+        writer.updateSubAgentCompletion(
+            "ev-sa-update", "Found 3 implementations in src/", "completed", false, null);
+
+        // Verify result and status are persisted
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT result_text, status FROM sub_agent_events WHERE event_id = 'ev-sa-update'")) {
+            assertTrue(rs.next());
+            assertEquals("Found 3 implementations in src/", rs.getString(1));
+            assertEquals("completed", rs.getString(2));
+        }
+    }
+
+    @Test
+    void updateToolCallCompletionIsNoOpWhenRowMissing() throws Exception {
+        // UPDATE on non-existent row should silently succeed (0 rows affected)
+        writer.updateToolCallCompletion("nonexistent-id", "result", "completed", false, null);
+        // If we get here without exception, the test passes
+        assertNotNull(database.getConnection(), "Connection should survive no-op update");
+    }
+
+    @Test
+    void updateToolCallCompletionPreservesExistingResult() throws Exception {
+        // Insert with a result already set
+        EntryData.ToolCall tc = new EntryData.ToolCall(
+            "read_file", "{}", "read", "original content", "completed",
+            null, null, false, null, null,
+            "2026-01-01T10:00:01Z", "Copilot", "gpt-5", "ev-tc-existing");
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            tc
+        ));
+
+        // Calling update with null result should preserve existing via COALESCE
+        writer.updateToolCallCompletion("ev-tc-existing", null, "completed", false, null);
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT result FROM tool_call_events WHERE event_id = 'ev-tc-existing'")) {
+            assertTrue(rs.next());
+            assertEquals("original content", rs.getString(1));
+        }
+    }
 }

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.*
 import com.github.catatafishen.agentbridge.session.ConversationEntryStore
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.Companion.getInstance
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -168,6 +169,12 @@ class BroadcastChatPanel(
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
         entryStore.updateToolCall(id, status, update)
+        // Persist completion to DB — fixes the race where the entry was already INSERT'd with null result
+        if (status != "running") {
+            ConversationService.getInstance(project).updateToolCallCompletionAsync(
+                id, update.details, status, update.autoDenied, update.denialReason
+            )
+        }
         dispatchUi { nativePanel.updateToolCall(id, status, update) }
     }
 
@@ -191,6 +198,12 @@ class BroadcastChatPanel(
         denialReason: String?
     ) {
         entryStore.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
+        // Persist completion to DB — fixes the race where the entry was already INSERT'd with null result
+        if (status != "running") {
+            ConversationService.getInstance(project).updateSubAgentCompletionAsync(
+                id, result, status, autoDenied, denialReason
+            )
+        }
         dispatchUi { nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason) }
     }
 
