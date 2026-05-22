@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.settings
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.CleanupSettings
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
