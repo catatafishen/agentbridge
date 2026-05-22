@@ -2077,6 +2077,11 @@ class ChatToolWindowContent(
 
                     override fun actionPerformed(e: AnActionEvent) {
                         agentManager.settings.setSessionOptionValue(option.key, value)
+                        // When the ACP "agent" config option changes, also persist to
+                        // selectedAgent so buildCommand() uses the right --agent flag on restart.
+                        if (option.key == "agent") {
+                            agentManager.settings.setSelectedAgent(value)
+                        }
                         val sessionId = promptOrchestrator.currentSessionId ?: return
                         ApplicationManager.getApplication().executeOnPooledThread {
                             try {
