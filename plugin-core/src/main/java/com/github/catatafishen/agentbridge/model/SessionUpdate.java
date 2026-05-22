@@ -22,7 +22,8 @@ public sealed interface SessionUpdate
     SessionUpdate.Plan,
     SessionUpdate.AvailableCommandsChanged,
     SessionUpdate.AvailableModesChanged,
-    SessionUpdate.ConfigOptionsChanged {
+    SessionUpdate.ConfigOptionsChanged,
+    SessionUpdate.SessionInfoChanged {
 
     // ── Enums ────────────────────────────────────────────────────────────────
 
@@ -321,5 +322,12 @@ public sealed interface SessionUpdate
         @NotNull BannerLevel level,
         @NotNull ClearOn clearOn
     ) implements SessionUpdate {
+    }
+
+    /**
+     * Agent has updated the session title. Sent by Copilot as a {@code session_info_update}
+     * notification. Consumers should update the session display name in the conversation DB.
+     */
+    record SessionInfoChanged(@Nullable String title) implements SessionUpdate {
     }
 }

@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.session.db;
 
-import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
 import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.bridge.FileRef;
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -314,6 +314,28 @@ public final class ConversationWriter {
             ps.setString(1, truncated);
             ps.setString(2, sessionId);
             ps.executeUpdate();
+        }
+    }
+
+    /**
+     * Overwrites the session display_name with the given title. Unlike
+     * {@link #updateSessionDisplayName} (which only sets if currently null), this always writes —
+     * intended for agent-pushed {@code session_info_update} titles which are more meaningful than
+     * the first-prompt truncation.
+     */
+    public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
+        if (title.isBlank()) return;
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE sessions SET display_name = ? WHERE id = ?")) {
+                ps.setString(1, title);
+                ps.setString(2, sessionId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to update session title for " + sessionId, e);
+            }
         }
     }
 

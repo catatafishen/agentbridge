@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.session.db;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
-import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -172,6 +172,19 @@ public final class ConversationService implements Disposable {
                 () -> appendEntries(basePath, snapshot),
                 AppExecutorUtil.getAppExecutorService());
         }
+    }
+
+    /**
+     * Overwrites the display_name of the given session with the agent-pushed title.
+     * Runs on the calling thread — invoke from a background thread if latency matters.
+     */
+    public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) {
+            LOG.warn("Failed to update session title: ConversationWriter not available");
+            return;
+        }
+        writer.updateSessionTitle(sessionId, title);
     }
 
     /**
