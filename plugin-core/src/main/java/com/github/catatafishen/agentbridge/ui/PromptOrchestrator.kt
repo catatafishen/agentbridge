@@ -641,7 +641,8 @@ class PromptOrchestrator(
             is SessionUpdate.Plan -> handleClientUpdate(update)
             is SessionUpdate.AvailableCommandsChanged,
             is SessionUpdate.AvailableModesChanged,
-            is SessionUpdate.ConfigOptionsChanged -> { /* handled by AcpClient internally */
+            is SessionUpdate.ConfigOptionsChanged,
+            is SessionUpdate.SessionInfoChanged -> { /* handled by AcpClient internally */
             }
 
             is SessionUpdate.UserMessageChunk -> { /* replayed user messages during session/load — no-op during streaming */

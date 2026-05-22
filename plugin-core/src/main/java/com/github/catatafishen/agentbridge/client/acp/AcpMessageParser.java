@@ -35,6 +35,7 @@ class AcpMessageParser {
     private static final String KEY_DESCRIPTION = "description";
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String KEY_THINKING = "thinking";
+    private static final String KEY_TITLE = "title";
 
     /**
      * Callbacks into the owning client for the three points where agent-specific logic is needed.
@@ -107,6 +108,13 @@ class AcpMessageParser {
             // reasoning effort levels. The notification contains either a "configOptions" array
             // (full replacement) or a single option object (Copilot's wire format).
             case "config_option_update" -> parseConfigOptionUpdate(params);
+            // session_info_update: sent by Copilot CLI when the agent has auto-generated or
+            // updated the session title.
+            case "session_info_update" -> parseSessionInfoUpdate(params);
+            // current_mode_update: sent by Copilot CLI when the active mode changes mid-session
+            // (e.g. plan → code). Treated as an AvailableModesChanged with null modes list
+            // (modes themselves haven't changed, only the active selection).
+            case "current_mode_update" -> parseCurrentModeUpdate(params);
             default -> {
                 LOG.warn(displayName.get() + ": unknown session update type: '" + type + "'");
                 yield null;
@@ -128,7 +136,7 @@ class AcpMessageParser {
 
     private SessionUpdate.ToolCall parseToolCall(JsonObject params) {
         String toolCallId = getStringOrEmpty(params, KEY_TOOL_CALL_ID);
-        String title = getStringOrEmpty(params, "title");
+        String title = getStringOrEmpty(params, KEY_TITLE);
         String resolvedTitle = delegate.resolveToolId(title);
 
         SessionUpdate.ToolKind kind = null;
@@ -239,6 +247,18 @@ class AcpMessageParser {
             SessionUpdate.BannerLevel.fromString(levelStr),
             SessionUpdate.ClearOn.fromString(clearOnStr)
         );
+    }
+
+    private SessionUpdate.SessionInfoChanged parseSessionInfoUpdate(JsonObject params) {
+        String title = params.has(KEY_TITLE) && params.get(KEY_TITLE).isJsonPrimitive()
+            ? params.get(KEY_TITLE).getAsString() : null;
+        return new SessionUpdate.SessionInfoChanged(title);
+    }
+
+    private SessionUpdate.AvailableModesChanged parseCurrentModeUpdate(JsonObject params) {
+        String modeSlug = params.has("slug") ? params.get("slug").getAsString() : null;
+        // modes list is null — only the active selection has changed
+        return new SessionUpdate.AvailableModesChanged(null, modeSlug);
     }
 
     private SessionUpdate.TurnUsage parseUsageUpdate(JsonObject params) {

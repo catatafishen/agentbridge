@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
+import com.github.catatafishen.agentbridge.acp.protocol.InitializeResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
@@ -224,15 +225,31 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected boolean supportsSessionResumption() {
-        return false;
+        // Use session/resume if Copilot advertises it; fall back to false (old --resume is broken).
+        InitializeResponse caps = getCapabilities();
+        return caps != null
+            && caps.agentCapabilities() != null
+            && caps.agentCapabilities().sessionCapabilities() != null
+            && caps.agentCapabilities().sessionCapabilities().supportsResume();
     }
 
     @Override
     protected String loadSession(String cwd, String sessionId) throws ClientSessionException {
-        // The --resume CLI flag is the only mechanism, and it is broken in ACP mode as of v1.0.12.
-        throw new ClientSessionException(
-            "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
-                + "The --resume CLI flag is passed at launch but is currently ignored.");
+        if (!supportsSessionResumption()) {
+            // Defensive guard — callers should check supportsSessionResumption() before calling,
+            // but we throw here to surface the error clearly if they don't.
+            throw new ClientSessionException(
+                "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
+                    + "The --resume CLI flag is passed at launch but is currently ignored.");
+        }
+        try {
+            return sendLoadSessionRequest("session/resume", cwd, sessionId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ClientSessionException("session/resume interrupted", e);
+        } catch (Exception e) {
+            throw new ClientSessionException("session/resume failed: " + e.getMessage(), e);
+        }
     }
 
     @Override

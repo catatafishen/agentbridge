@@ -512,11 +512,27 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         long turnLines = (long) snap.getTurnLinesAdded() + snap.getTurnLinesRemoved();
         turnLinesRow.setVisible(turnLines > 0);
 
+        refreshTurnTokenCostRows(snap);
+    }
+
+    private void refreshTurnTokenCostRows(SessionStatsSnapshot snap) {
         if (snap.getMultiplierMode()) {
             turnTokensRowLabel.setText(LABEL_PREMIUM_REQ);
             turnTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getTurnPremiumRequests()));
             turnTokensRow.setVisible(true);
-            turnCostRow.setVisible(false);
+            // Reuse the cost row to show raw token counts when available (billing model is being retired).
+            long turnTok = (long) snap.getTurnInputTokens() + snap.getTurnOutputTokens();
+            if (turnTok > 0) {
+                turnCostRowLabel.setText(LABEL_TOKENS);
+                turnCostValue.setText(
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
+                        TOKENS_IN_OUT_SEP +
+                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
+                        TOKENS_OUT_SUFFIX);
+                turnCostRow.setVisible(true);
+            } else {
+                turnCostRow.setVisible(false);
+            }
         } else {
             long turnTok = (long) snap.getTurnInputTokens() + snap.getTurnOutputTokens();
             Double turnCost = snap.getTurnCostUsd();
@@ -554,7 +570,19 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             tokensRowLabel.setText(LABEL_PREMIUM_REQ);
             tokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getLocalSessionPremiumRequests()));
             tokensRow.setVisible(true);
-            costRow.setVisible(false);
+            // Reuse the cost row to show raw token counts when available (billing model is being retired).
+            long totalTokens = snap.getSessionInputTokens() + snap.getSessionOutputTokens();
+            if (totalTokens > 0) {
+                costRowLabel.setText(LABEL_TOKENS);
+                costValue.setText(
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
+                        TOKENS_IN_OUT_SEP +
+                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
+                        TOKENS_OUT_SUFFIX);
+                costRow.setVisible(true);
+            } else {
+                costRow.setVisible(false);
+            }
         } else {
             long totalTokens = snap.getSessionInputTokens() + snap.getSessionOutputTokens();
             if (totalTokens > 0 || snap.getSessionCostUsd() > 0.0) {
@@ -722,9 +750,22 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         todayLinesRow.setVisible(lines > 0);
 
         if (multiplierMode) {
-            todayTokensRowLabel.setText(LABEL_PREMIUM_REQ);
-            todayTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(t.premiumRequests()));
-            todayTokensRow.setVisible(true);
+            long totalTokens = t.inputTokens() + t.outputTokens();
+            if (totalTokens > 0) {
+                // Show token counts when available — prefer them over premium requests since the
+                // multiplier billing model is being retired.
+                todayTokensRowLabel.setText(LABEL_TOKENS);
+                todayTokensValue.setText(
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(t.inputTokens()) +
+                        TOKENS_IN_OUT_SEP +
+                        TimerDisplayFormatter.INSTANCE.formatTokenCount(t.outputTokens()) +
+                        TOKENS_OUT_SUFFIX);
+                todayTokensRow.setVisible(true);
+            } else {
+                todayTokensRowLabel.setText(LABEL_PREMIUM_REQ);
+                todayTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(t.premiumRequests()));
+                todayTokensRow.setVisible(true);
+            }
         } else {
             long totalTokens = t.inputTokens() + t.outputTokens();
             if (totalTokens > 0) {

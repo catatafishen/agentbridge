@@ -40,6 +40,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.util.SystemProperties;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -124,6 +125,7 @@ public abstract class AcpClient extends AbstractClient {
     public @Nullable String getActiveSessionId() {
         return currentSessionId;
     }
+
     private @Nullable String launchCwd;
     /**
      * Tracks the resume session ID requested in the current launch cycle.
@@ -330,6 +332,7 @@ public abstract class AcpClient extends AbstractClient {
 
     @Override
     public final void stop() {
+        sendSessionCloseIfSupported();
         try {
             transport.stop();
         } catch (Exception e) {
@@ -351,6 +354,35 @@ public abstract class AcpClient extends AbstractClient {
             loadedSessionHistory = null;
             updateConsumer = null;
         }
+    }
+
+    /**
+     * Sends {@code session/close} to the agent before stopping, if the agent advertised the
+     * {@code sessionCapabilities.close} capability. Fire-and-forget — does not block the calling
+     * thread (which may be the EDT via disconnectFromAgent).
+     */
+    private void sendSessionCloseIfSupported() {
+        String sessionId = currentSessionId;
+        if (sessionId == null) return;
+        InitializeResponse caps = capabilities;
+        if (caps == null
+            || caps.agentCapabilities() == null
+            || caps.agentCapabilities().sessionCapabilities() == null
+            || !caps.agentCapabilities().sessionCapabilities().supportsClose()) {
+            return;
+        }
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        String name = displayName();
+        transport.sendRequest("session/close", params)
+            .orTimeout(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .whenComplete((result, ex) -> {
+                if (ex == null) {
+                    LOG.info(name + ": session/close sent for " + sessionId);
+                } else {
+                    LOG.debug(name + ": session/close did not complete cleanly (process will be killed): " + ex.getMessage());
+                }
+            });
     }
 
     @Override
@@ -606,6 +638,14 @@ public abstract class AcpClient extends AbstractClient {
         return capabilities != null
             && capabilities.agentCapabilities() != null
             && Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession());
+    }
+
+    /**
+     * Returns the capabilities advertised by the agent during initialization, or {@code null} if not yet initialized.
+     */
+    @Nullable
+    protected final InitializeResponse getCapabilities() {
+        return capabilities;
     }
 
     /**
@@ -1581,6 +1621,16 @@ public abstract class AcpClient extends AbstractClient {
             List<NewSessionResponse.SessionConfigOption> options
         )) {
             updateConfigOptionsFromNotification(options);
+        }
+
+        // Session info updates (agent-pushed title) are persisted to the DB regardless of consumer.
+        if (update instanceof SessionUpdate.SessionInfoChanged(String title)
+            && title != null
+            && !title.isBlank()
+            && currentSessionId != null) {
+            String sessionId = currentSessionId;
+            AppExecutorUtil.getAppExecutorService().execute(() ->
+                ConversationService.getInstance(project).updateSessionTitle(sessionId, title));
         }
 
         Consumer<SessionUpdate> consumer = updateConsumer;
