@@ -317,6 +317,28 @@ public final class ConversationWriter {
         }
     }
 
+    /**
+     * Overwrites the session display_name with the given title. Unlike
+     * {@link #updateSessionDisplayName} (which only sets if currently null), this always writes —
+     * intended for agent-pushed {@code session_info_update} titles which are more meaningful than
+     * the first-prompt truncation.
+     */
+    public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
+        if (title.isBlank()) return;
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE sessions SET display_name = ? WHERE id = ?")) {
+                ps.setString(1, title);
+                ps.setString(2, sessionId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to update session title for " + sessionId, e);
+            }
+        }
+    }
+
     private void finaliseTurn(
         @NotNull Connection conn,
         @NotNull String sessionId,

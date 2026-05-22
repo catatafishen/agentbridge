@@ -225,6 +225,24 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Overwrites the display_name of the given session with the agent-pushed title.
+     * Chained through {@link #pendingSave} to guarantee it runs after any pending INSERT
+     * (prevents UPDATE-before-INSERT race with appendEntriesAsync).
+     */
+    public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
+        synchronized (saveLock) {
+            pendingSave = pendingSave.thenRunAsync(
+                () -> {
+                    ConversationWriter writer = getOrCreateWriter();
+                    if (writer != null) {
+                        writer.updateSessionTitle(sessionId, title);
+                    }
+                },
+                AppExecutorUtil.getAppExecutorService());
+        }
+    }
+
+    /**
      * Blocks until the most recent async append completes, or until timeout elapses.
      */
     public void awaitPendingSave(long timeoutMs) {
