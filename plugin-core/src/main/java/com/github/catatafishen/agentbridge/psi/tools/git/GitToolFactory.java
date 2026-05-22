@@ -41,7 +41,10 @@ public final class GitToolFactory {
             new GitPullTool(project),
             new GitMergeTool(project),
             new GitCherryPickTool(project),
-            new GitInitTool(project)
+            new GitInitTool(project),
+            new GitConflictsTool(project),
+            new GitConflictShowTool(project),
+            new GitConflictResolveTool(project)
         );
     }
 }

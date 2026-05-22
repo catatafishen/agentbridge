@@ -108,6 +108,9 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.git.GitPullTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitMergeTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitCherryPickTool",
+        "com.github.catatafishen.agentbridge.psi.tools.git.GitConflictsTool",
+        "com.github.catatafishen.agentbridge.psi.tools.git.GitConflictShowTool",
+        "com.github.catatafishen.agentbridge.psi.tools.git.GitConflictResolveTool",
         // infrastructure
         "com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool",
         "com.github.catatafishen.agentbridge.psi.tools.infrastructure.HttpRequestTool",
