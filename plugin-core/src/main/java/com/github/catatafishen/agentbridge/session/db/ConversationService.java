@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.session.db;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
-import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
