@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.client.AbstractClient.PermissionPromp
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -255,6 +256,8 @@ public final class CodexApprovalHandler {
                     case ALLOW_ONCE -> sendNativeApprovalDecision(id, DECISION_ACCEPT);
                     case ALLOW_ALWAYS -> {
                         if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
+                        ActiveAgentManager.getInstance(project).getSettings()
+                            .setToolPermission(permissionKey, ToolPermission.ALLOW);
                         sendNativeApprovalDecision(id, DECISION_ACCEPT);
                     }
                     case DENY -> {

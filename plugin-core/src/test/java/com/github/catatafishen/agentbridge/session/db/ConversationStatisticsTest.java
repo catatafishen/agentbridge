@@ -59,7 +59,7 @@ class ConversationStatisticsTest {
                                    String timestamp, long durationMs, int inputSize,
                                    int outputSize, boolean success, String clientId) throws Exception {
         // Insert a prompt first to establish the turn
-        writer.recordEntries(sessionId, "Copilot", "copilot", List.of(
+        writer.recordEntries(sessionId, "Copilot", clientId, List.of(
             new EntryData.Prompt("call", timestamp, null, turnId, turnId)));
 
         // Insert tool call event directly

@@ -390,18 +390,20 @@ public final class GitRebaseTool extends GitTool {
         4. Call git_rebase(continue_rebase: true) to resume the rebase""";
 
     /**
-     * Dismisses any modal dialogs that IntelliJ may have opened during the rebase
-     * (e.g., conflict resolution dialogs). These block the pooled thread and prevent
-     * the tool from returning. Disposing them on EDT unblocks the thread.
+     * Dismisses git4idea's modal rebase/conflict dialogs that block the pooled thread.
+     *
+     * <p>Only called after the conflict marker ({@code rebase-merge/stopped-sha}) is detected or
+     * after the 60s timeout, so the repository is definitively in a rebase-paused state.
+     * The title filter is intentionally narrow to avoid closing unrelated user dialogs:
+     * only git4idea's "Rebase" and "Conflicts" dialogs are targeted.</p>
      */
     private void dismissBlockingDialogs() {
         ApplicationManager.getApplication().invokeLater(() -> {
             for (java.awt.Window window : java.awt.Window.getWindows()) {
                 if (window instanceof java.awt.Dialog dialog && dialog.isModal() && dialog.isShowing()) {
                     String title = dialog.getTitle();
-                    if (title != null && (title.contains("Conflict") || title.contains("Rebase")
-                        || title.contains("Git") || title.contains("Merge"))) {
-                        LOG.info("Dismissing blocking dialog: " + title);
+                    if (title != null && (title.contains("Rebase") || title.equals("Conflicts"))) {
+                        LOG.info("Dismissing blocking rebase dialog: " + title);
                         dialog.dispose();
                     }
                 }
