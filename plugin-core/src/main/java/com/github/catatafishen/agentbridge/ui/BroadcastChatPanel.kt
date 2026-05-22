@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.*
+import com.github.catatafishen.agentbridge.services.ToolCallRecord
+import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.session.ConversationEntryStore
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.Companion.getInstance
@@ -41,9 +43,21 @@ class BroadcastChatPanel(
     @Volatile
     private var disposed = false
 
+    /**
+     * Updates the entry store when MCP correlation arrives after chip creation.
+     * This ensures [EntryData.ToolCall.pluginTool] is set for persistence,
+     * so restored sessions show filled circles (not rings) for MCP-handled tools.
+     */
+    private val trackerListener = object : ToolCallTracker.Listener {
+        override fun onCorrelated(record: ToolCallRecord) {
+            entryStore.markToolCallMcp(record.recordId, record.effectiveToolName)
+        }
+    }
+
     init {
         instances[project] = this
         PermissionPromptProviderHolder.register(project, this)
+        ToolCallTracker.getInstance(project).addListener(trackerListener)
     }
 
     override val component: JComponent = nativePanel.component
@@ -163,7 +177,10 @@ class BroadcastChatPanel(
         kind: String?,
         isMcpHandled: Boolean
     ) {
-        entryStore.addToolCallEntry(id, title, arguments, kind)
+        val pluginTool = if (isMcpHandled) {
+            ToolCallTracker.getInstance(project).findByRecordId(id)?.effectiveToolName ?: title
+        } else null
+        entryStore.addToolCallEntry(id, title, arguments, kind, pluginTool = pluginTool)
         dispatchUi { nativePanel.addToolCallEntry(id, title, arguments, kind, isMcpHandled) }
     }
 
@@ -373,6 +390,7 @@ class BroadcastChatPanel(
 
     override fun dispose() {
         disposed = true
+        ToolCallTracker.getInstance(project).removeListener(trackerListener)
         instances.remove(project, this)
         PermissionPromptProviderHolder.unregister(project)
         nativePanel.dispose()

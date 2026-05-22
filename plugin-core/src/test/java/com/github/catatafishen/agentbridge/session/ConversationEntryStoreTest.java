@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversationEntryStoreTest {
@@ -218,6 +219,31 @@ class ConversationEntryStoreTest {
         var update = new ChatPanelApi.ToolCallUpdate("details", null, null, false, null, null, null);
         // Should not throw
         store.updateToolCall("unknown", "done", update);
+    }
+
+    @Test
+    void addToolCallEntry_withPluginTool_setsField() {
+        store.addToolCallEntry("t2", "Search Text", "{}", "file", "search_text");
+        var entry = (EntryData.ToolCall) store.getEntries().getFirst();
+        assertEquals("search_text", entry.getPluginTool());
+        assertEquals("Search Text", entry.getTitle());
+    }
+
+    @Test
+    void markToolCallMcp_setsPluginToolOnExistingEntry() {
+        store.addToolCallEntry("t3", "Read File", "{}", "file");
+        var entry = (EntryData.ToolCall) store.getEntries().getFirst();
+        assertNull(entry.getPluginTool());
+
+        store.markToolCallMcp("t3", "read_file");
+        assertEquals("read_file", entry.getPluginTool());
+        assertEquals("Read File", entry.getTitle());
+    }
+
+    @Test
+    void markToolCallMcp_ignoresUnknownId() {
+        // Should not throw
+        store.markToolCallMcp("unknown", "some_tool");
     }
 
     // ── Sub-agents ────────────────────────────────────────────────────────────
