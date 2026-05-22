@@ -293,14 +293,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var markdownPane: NativeMarkdownPane? = null,
     )
 
-    /**
-     * Tracks the live Swing components for an active sub-agent section.
-     * Created by [addSubAgentEntry]; looked up by [addSubAgentToolCall] and [updateSubAgentResult].
-     */
     private class SubAgentSection(
         val colorIndex: Int,
         val chipStrip: ChipStripPanel,
         val contentBox: JPanel,
+        var resultRow: JPanel? = null,
     )
 
     private val subAgentSections = mutableMapOf<String, SubAgentSection>()
@@ -734,13 +731,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         contentBox.add(subChipStrip)
 
-        val indentWrapper = JPanel(BorderLayout()).apply {
+        val sectionWrapper = JPanel(BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(JBUI.scale(4), 0)
+            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(12), JBUI.scale(4), 0)
             alignmentX = Component.LEFT_ALIGNMENT
             add(contentBox, BorderLayout.CENTER)
         }
-        addRow(indentWrapper)
+        addRow(sectionWrapper)
         subAgentSections[id] = SubAgentSection(colorIndex, subChipStrip, contentBox)
 
         if (initialState.status != null) {
@@ -767,6 +764,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             status == "completed" || status == "complete" -> "\u2713 Completed"
             else -> "\u2716 Failed"
         }
+
+        // If we already have a result row, replace its content instead of appending a duplicate.
+        if (section.resultRow != null) {
+            val existingBubble = section.resultRow!!
+            val pane = findMarkdownPane(existingBubble)
+            pane?.setCompleteMarkdown(resultText)
+            section.contentBox.revalidate()
+            if (autoScrollEnabled) scrollToBottom()
+            return
+        }
+
         val pane = NativeMarkdownPane(fileNavigator).also {
             it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
             allMarkdownPanes += it
@@ -779,8 +787,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         section.contentBox.add(bubbleRow.row)
+        section.resultRow = bubbleRow.row
         section.contentBox.revalidate()
         if (autoScrollEnabled) scrollToBottom()
+    }
+
+    /** Finds the first NativeMarkdownPane inside a component tree (for updating existing bubbles). */
+    private fun findMarkdownPane(container: Container): NativeMarkdownPane? {
+        for (comp in container.components) {
+            if (comp is NativeMarkdownPane) return comp
+            if (comp is Container) {
+                val found = findMarkdownPane(comp)
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     override fun addSubAgentToolCall(
