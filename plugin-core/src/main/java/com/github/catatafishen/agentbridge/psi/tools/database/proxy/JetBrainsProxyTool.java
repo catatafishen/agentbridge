@@ -191,12 +191,14 @@ public final class JetBrainsProxyTool extends DatabaseTool {
                 "in CSV format. For INSERT/UPDATE/DELETE, returns row-count info. " +
                 "Use list_database_connections to get the connectionId. " +
                 "Use list_database_schemas to find the databaseName (empty string if the DBMS has no databases). " +
+                "Use list_schema_objects to find the schemaName. " +
                 "Warning: write operations are not guarded — use a read-only database user for safety.",
             ToolDefinition.Kind.EDIT, false,
             schema(
                 Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
                 Param.required(PARAM_DATABASE_NAME, TYPE_STRING,
                     "Name of the database the schema belongs to. Empty string if not applicable."),
+                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, "Name of the schema"),
                 Param.required("queryText", TYPE_STRING, "SQL query to execute")));
     }
 
