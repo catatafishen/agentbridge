@@ -684,13 +684,13 @@ public final class ConversationWriter {
                 UPDATE tool_call_events SET
                     result        = COALESCE(?, result),
                     status        = ?,
-                    auto_denied   = ?,
+                    auto_denied   = CASE WHEN ? THEN 1 ELSE auto_denied END,
                     denial_reason = COALESCE(?, denial_reason)
                 WHERE event_id = ?
                 """)) {
                 ps.setString(1, result);
                 ps.setString(2, status);
-                ps.setInt(3, autoDenied ? 1 : 0);
+                ps.setBoolean(3, autoDenied);
                 ps.setString(4, denialReason);
                 ps.setString(5, eventId);
                 ps.executeUpdate();
@@ -722,13 +722,13 @@ public final class ConversationWriter {
                 UPDATE sub_agent_events SET
                     result_text   = COALESCE(?, result_text),
                     status        = ?,
-                    auto_denied   = ?,
+                    auto_denied   = CASE WHEN ? THEN 1 ELSE auto_denied END,
                     denial_reason = COALESCE(?, denial_reason)
                 WHERE event_id = ?
                 """)) {
                 ps.setString(1, result);
                 ps.setString(2, status);
-                ps.setInt(3, autoDenied ? 1 : 0);
+                ps.setBoolean(3, autoDenied);
                 ps.setString(4, denialReason);
                 ps.setString(5, eventId);
                 ps.executeUpdate();

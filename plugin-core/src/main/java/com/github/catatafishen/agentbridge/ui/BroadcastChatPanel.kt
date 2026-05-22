@@ -170,7 +170,7 @@ class BroadcastChatPanel(
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
         entryStore.updateToolCall(id, status, update)
         // Persist completion to DB — fixes the race where the entry was already INSERT'd with null result
-        if (status != "running") {
+        if (status != MessageFormatter.ChipStatus.RUNNING) {
             ConversationService.getInstance(project).updateToolCallCompletionAsync(
                 id, update.details, status, update.autoDenied, update.denialReason
             )
@@ -199,7 +199,7 @@ class BroadcastChatPanel(
     ) {
         entryStore.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
         // Persist completion to DB — fixes the race where the entry was already INSERT'd with null result
-        if (status != "running") {
+        if (status != MessageFormatter.ChipStatus.RUNNING) {
             ConversationService.getInstance(project).updateSubAgentCompletionAsync(
                 id, result, status, autoDenied, denialReason
             )
