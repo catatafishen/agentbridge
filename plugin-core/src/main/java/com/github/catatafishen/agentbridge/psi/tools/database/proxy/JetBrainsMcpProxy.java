@@ -25,11 +25,11 @@ import java.util.stream.Stream;
  * <b>How it works:</b>
  * <ol>
  *   <li>Discovers the mcpserver plugin's class loader.</li>
- *   <li>Calls {@code McpServerService.getMcpTools$intellij_mcpserver$default} (Kotlin
- *       module-internal — the {@code $} in the mangled name prevents direct calling, so
- *       reflection is required). The {@code $default} variant is used to supply Kotlin defaults
- *       for the {@code Implementation} and {@code McpSessionOptions} parameters added in
- *       2026.1.</li>
+ *   <li>Calls {@code McpServerService.getMcpTools$intellij_mcpserver(McpToolFilter, boolean,
+ *       Implementation, McpSessionOptions)} (Kotlin module-internal — the {@code $} in the
+ *       mangled name prevents direct calling, so reflection is required). {@code Implementation}
+ *       and {@code McpSessionOptions} are constructed explicitly to avoid relying on
+ *       {@code getTheOnlySession()}, which fails at startup before any MCP client connects.</li>
  *   <li>Builds a {@code McpCallInfo} with the current project (all fields constructed via
  *       reflection to stay off the compile classpath).</li>
  *   <li>Wraps it in {@code McpCallAdditionalDataElement} (a {@code CoroutineContext.Element}).</li>
@@ -58,8 +58,9 @@ final class JetBrainsMcpProxy {
         try {
             return List.copyOf(loadToolCache().keySet());
         } catch (ReflectiveOperationException | RuntimeException e) {
+            Throwable rootCause = e.getCause() != null ? e.getCause() : e;
             LOG.warn("JetBrains MCP tools unavailable — database tools will not be registered. " +
-                "Check that the JetBrains AI Assistant plugin is installed. Cause: " + e);
+                "Check that the JetBrains AI Assistant plugin is installed.", rootCause);
             return Collections.emptyList();
         }
     }
@@ -115,26 +116,32 @@ final class JetBrainsMcpProxy {
         Object companion = serviceClass.getDeclaredField("Companion").get(null);
         Object service = companion.getClass().getDeclaredMethod("getInstance").invoke(companion);
 
-        // In 2026.1 getMcpTools$intellij_mcpserver grew two extra parameters: Implementation and
-        // McpSessionOptions. Use the Kotlin-synthetic $default static method so that we can rely on
-        // compiled-in defaults for those new parameters (mask bit 2 = default for Implementation,
-        // bit 3 = default for McpSessionOptions → mask = 12). This keeps the call forward-compatible
-        // if further optional parameters are added in future builds.
         Class<?> mcpToolFilterClass = Class.forName("com.intellij.mcpserver.McpToolFilter", true, cl);
         Class<?> implementationClass = Class.forName(
             "io.modelcontextprotocol.kotlin.sdk.types.Implementation", true, cl);
         Class<?> sessionOptionsClass = Class.forName(
             "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions", true, cl);
-        Class<?> markerClass = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker", true, cl);
 
+        // Construct Implementation explicitly.
+        // The $default constructor (mask=28 = bits 2+3+4) lets Kotlin fill in defaults for
+        // title, websiteUrl, and icons, so we only need to supply name and version.
+        Class<?> markerClass = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker", true, cl);
+        Constructor<?> implCtor = implementationClass.getDeclaredConstructor(
+            String.class, String.class, String.class, String.class, List.class, int.class, markerClass);
+        Object implementation = implCtor.newInstance("agentbridge", "1.0", null, null, null, 28, null);
+
+        // Build McpSessionOptions manually. The $default variant of getMcpTools uses
+        // getTheOnlySession() as its default value for McpSessionOptions, which throws at
+        // startup before any MCP client has connected. Constructing the options explicitly
+        // avoids that dependency.
+        Object sessionOptions = buildSessionOptions(cl);
+
+        // Call getMcpTools$intellij_mcpserver directly (NOT $default) with all four params.
         Method getToolsMethod = serviceClass.getDeclaredMethod(
-            "getMcpTools$intellij_mcpserver$default",
-            serviceClass, mcpToolFilterClass, boolean.class,
-            implementationClass, sessionOptionsClass,
-            int.class, Object.class);
+            "getMcpTools$intellij_mcpserver",
+            mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass);
         // null filter = no filter, false = include all tools (not just hidden ones)
-        // mask 12 = bits 2+3 → use Kotlin defaults for Implementation and McpSessionOptions
-        List<?> tools = (List<?>) getToolsMethod.invoke(null, service, null, false, null, null, 12, null);
+        List<?> tools = (List<?>) getToolsMethod.invoke(service, null, false, implementation, sessionOptions);
 
         Map<String, Object> map = new ConcurrentHashMap<>();
         for (Object tool : tools) {

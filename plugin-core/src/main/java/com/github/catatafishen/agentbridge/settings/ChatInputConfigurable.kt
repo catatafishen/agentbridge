@@ -34,12 +34,11 @@ class ChatInputConfigurable(private val project: Project) :
                 .bindSelected({ s.isShowShortcutHints }, { s.isShowShortcutHints = it })
         }
         row {
+            // showSettingsDialog(project, displayName) navigates within the already-open settings
+            // dialog. The Predicate/Consumer overload always tries to open a new modal dialog,
+            // which silently fails when one is already open.
             link("Customize keyboard shortcuts…") {
-                ShowSettingsUtil.getInstance().showSettingsDialog(
-                    project,
-                    { c -> c is SearchableConfigurable && "preferences.keymap" == c.id },
-                    { c -> if (c is SearchableConfigurable) c.enableSearch("AgentBridge")?.run() }
-                )
+                ShowSettingsUtil.getInstance().showSettingsDialog(project, "Keymap")
             }
         }
         separator()
