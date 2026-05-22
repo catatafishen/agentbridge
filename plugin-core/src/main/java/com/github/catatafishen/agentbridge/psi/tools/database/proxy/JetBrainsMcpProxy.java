@@ -139,15 +139,12 @@ final class JetBrainsMcpProxy {
         // avoids that dependency.
         Object sessionOptions = buildSessionOptions(cl);
 
-        // Create an accept-all McpToolFilter. McpToolFilter.filter is @NotNull in Kotlin —
-        // passing null causes an immediate NPE at the Kotlin null check. Use a dynamic proxy
-        // that returns true for shouldInclude() so all tools are included.
-        Object acceptAllFilter = java.lang.reflect.Proxy.newProxyInstance(
-            cl, new Class<?>[]{mcpToolFilterClass},
-            (proxy, method, args) -> {
-                if ("shouldInclude".equals(method.getName())) return true;
-                throw new UnsupportedOperationException("Unexpected McpToolFilter call: " + method.getName());
-            });
+        // Use McpToolFilter.AllowAll — a built-in Kotlin object (singleton) that returns true
+        // from shouldInclude() for every tool name. McpToolFilter is a sealed interface, so
+        // Proxy.newProxyInstance() cannot implement it (sealed interfaces reject JDK proxies).
+        // AllowAll.INSTANCE is the correct way to obtain the accept-all filter.
+        Class<?> allowAllClass = Class.forName("com.intellij.mcpserver.McpToolFilter$AllowAll", true, cl);
+        Object acceptAllFilter = allowAllClass.getField("INSTANCE").get(null);
 
         // Call getMcpTools$intellij_mcpserver directly (NOT $default) with all four params.
         Method getToolsMethod = serviceClass.getDeclaredMethod(
