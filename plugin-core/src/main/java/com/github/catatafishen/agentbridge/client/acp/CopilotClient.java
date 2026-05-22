@@ -1,11 +1,12 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
-import com.github.catatafishen.agentbridge.model.PromptResponse;
-import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
+import com.github.catatafishen.agentbridge.model.Model;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
@@ -13,7 +14,6 @@ import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
-import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -179,24 +179,15 @@ public final class CopilotClient extends AcpClient {
         return DEFAULT_AGENT_SLUG;
     }
 
+    /**
+     * Returns an empty list — Copilot CLI already exposes its agent definitions as ACP
+     * config options (populated from {@code ~/.copilot/agents/*.md}), which the plugin
+     * shows via {@link #listSessionOptions()}. Returning agents here would create a
+     * duplicate "Agent" section in the dropdown.
+     */
     @Override
     public List<AbstractClient.AgentMode> getAvailableAgents() {
-        List<AbstractClient.AgentMode> agents = new ArrayList<>(List.of(
-            new AbstractClient.AgentMode(DEFAULT_AGENT_SLUG, "Intellij-Default",
-                "Full IntelliJ toolset with abuse-detection instructions"),
-            new AbstractClient.AgentMode(AGENT_SLUG_EXPLORE, "Intellij-Explore",
-                "Read-only code navigation, no file edits or shell execution"),
-            new AbstractClient.AgentMode(AGENT_SLUG_EDIT, "Intellij-Edit",
-                "Focused editing and refactoring tools, no system shell")
-        ));
-
-        String basePath = project.getBasePath();
-        if (basePath != null) {
-            Set<String> builtInSlugs = Set.of(DEFAULT_AGENT_SLUG, AGENT_SLUG_EXPLORE, AGENT_SLUG_EDIT);
-            agents.addAll(ProjectAgentScanner.scanProjectAgents(Path.of(basePath), builtInSlugs));
-        }
-
-        return agents;
+        return List.of();
     }
 
     // ─── Process ─────────────────────────────────────
@@ -403,27 +394,21 @@ public final class CopilotClient extends AcpClient {
         return null;
     }
 
-    /**
-     * In Copilot's ACP implementation, sub-agent invocations appear as {@code tool_call}
-     * notifications where the {@code title} is the agent's name (e.g., "Intellij-Explore").
-     * The ACP spec has no standard {@code agentType} field, so we detect sub-agent calls
-     * by matching the resolved title against the names of our registered Copilot agents.
-     */
     @Override
-    @org.jetbrains.annotations.Nullable
     protected String extractSubAgentType(
         @org.jetbrains.annotations.NotNull com.google.gson.JsonObject params,
         @org.jetbrains.annotations.NotNull String resolvedTitle,
         @org.jetbrains.annotations.Nullable com.google.gson.JsonObject argumentsObj) {
-        // First, try the standard field-based detection from the base class
         String standard = super.extractSubAgentType(params, resolvedTitle, argumentsObj);
         if (standard != null) return standard;
 
-        // Copilot-specific: match by title against known agent names
-        // getAvailableAgents() returns the slugs and names we registered
-        for (AgentMode agent : getAvailableAgents()) {
-            if (resolvedTitle.equalsIgnoreCase(agent.slug()) || resolvedTitle.equalsIgnoreCase(agent.name())) {
-                return agent.slug();
+        // Match only against the "agent" config option values (sub-agent names reported by Copilot CLI)
+        for (AgentConfigOption opt : getAvailableConfigOptions()) {
+            if (!"agent".equals(opt.id())) continue;
+            for (AgentConfigOptionValue val : opt.values()) {
+                if (resolvedTitle.equalsIgnoreCase(val.id()) || resolvedTitle.equalsIgnoreCase(val.label())) {
+                    return val.id();
+                }
             }
         }
         return null;
