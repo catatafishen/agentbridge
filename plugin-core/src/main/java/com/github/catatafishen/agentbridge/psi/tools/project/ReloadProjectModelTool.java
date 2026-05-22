@@ -44,17 +44,20 @@ public final class ReloadProjectModelTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Re-sync the project model for every registered external build system "
-            + "(Gradle, Maven, SBT, BSP/Bazel, and any other system the IDE supports). "
-            + "Equivalent to clicking \"Reload All Gradle Projects\" or \"Reimport Maven "
-            + "Projects\" in the IDE toolbar, but framework-agnostic — triggers a full "
-            + "project import for all registered systems in one call.\n\n"
-            + "Use after:\n"
-            + "- Rebasing or merging branches that modify build files\n"
-            + "- Editing build files (build.gradle.kts, pom.xml, etc.) externally\n"
-            + "- Seeing \"Unresolved reference\" errors that a build-system sync would fix\n\n"
-            + "Runs in the background; indexing starts after import completes. "
-            + "Returns the list of build systems that were reloaded.";
+        return """
+            Re-sync the project model for every registered external build system \
+            (Gradle, Maven, SBT, BSP/Bazel, and any other system the IDE supports). \
+            Equivalent to clicking "Reload All Gradle Projects" or "Reimport Maven \
+            Projects" in the IDE toolbar, but framework-agnostic — triggers a full \
+            project import for all registered systems in one call.
+
+            Use after:
+            - Rebasing or merging branches that modify build files
+            - Editing build files (build.gradle.kts, pom.xml, etc.) externally
+            - Seeing "Unresolved reference" errors that a build-system sync would fix
+
+            Runs in the background; indexing starts after import completes. \
+            Returns the list of build systems that were reloaded.""";
     }
 
     @Override
@@ -147,17 +150,8 @@ public final class ReloadProjectModelTool extends ProjectTool {
             Class<?> systemIdClass = Class.forName(
                 "com.intellij.openapi.externalSystem.model.ProjectSystemId");
 
-            // Prefer ImportSpecBuilder — auto-discovers project paths, works for multi-root setups.
-            try {
-                Class<?> importSpecBuilderClass = Class.forName(
-                    "com.intellij.openapi.externalSystem.util.ImportSpecBuilder");
-                Constructor<?> ctor = importSpecBuilderClass.getConstructor(Project.class, systemIdClass);
-                Object importSpec = ctor.newInstance(project, systemId);
-                externalSystemUtilClass.getMethod("refreshProjects", importSpecBuilderClass)
-                    .invoke(null, importSpec);
+            if (tryImportSpecRefresh(externalSystemUtilClass, systemIdClass, systemId)) {
                 return true;
-            } catch (NoSuchMethodException ignored) {
-                // ImportSpecBuilder not available in this IDE version — fall through to legacy API.
             }
 
             // Legacy: refreshProject(Project, ProjectSystemId, String basePath, boolean preview, boolean reportErrors)
@@ -168,6 +162,27 @@ public final class ReloadProjectModelTool extends ProjectTool {
 
         } catch (Exception e) {
             LOG.warn("Failed to refresh external system: " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Attempts refresh via ImportSpecBuilder — auto-discovers project paths, works for multi-root setups.
+     * Returns {@code false} if ImportSpecBuilder is not available in this IDE version.
+     */
+    private boolean tryImportSpecRefresh(Class<?> externalSystemUtilClass, Class<?> systemIdClass, Object systemId) {
+        try {
+            Class<?> importSpecBuilderClass = Class.forName(
+                "com.intellij.openapi.externalSystem.util.ImportSpecBuilder");
+            Constructor<?> ctor = importSpecBuilderClass.getConstructor(Project.class, systemIdClass);
+            Object importSpec = ctor.newInstance(project, systemId);
+            externalSystemUtilClass.getMethod("refreshProjects", importSpecBuilderClass)
+                .invoke(null, importSpec);
+            return true;
+        } catch (NoSuchMethodException ignored) {
+            return false;
+        } catch (Exception e) {
+            LOG.warn("ImportSpecBuilder refresh failed, will try legacy API", e);
             return false;
         }
     }

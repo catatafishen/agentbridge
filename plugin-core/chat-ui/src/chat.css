@@ -353,13 +353,13 @@ working-indicator .working-extend[hidden] {
 }
 
 working-indicator.working-countdown--warn {
-    color: #d49a00;
-    background: rgba(212, 154, 0, 0.12);
+    color: #6b4f00;
+    background: rgba(107, 79, 0, 0.10);
 }
 
 working-indicator.working-countdown--danger {
-    color: #d04545;
-    background: rgba(208, 69, 69, 0.16);
+    color: #8b1a1a;
+    background: rgba(139, 26, 26, 0.12);
 }
 
 /* ── Thinking section ─────────────────────────────────── */
