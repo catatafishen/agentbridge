@@ -34,7 +34,7 @@ final class McpToolCallable implements kotlin.jvm.functions.Function2 {
     public Object invoke(Object scope, Object continuation) {
         try {
             return callMethod.invoke(tool, argsJsonObject, continuation);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             throw new IllegalStateException("McpTool.call() failed via reflection", e);
         }
     }

@@ -207,10 +207,13 @@ final class JetBrainsMcpProxy {
             .findFirst()
             .orElseThrow(() -> new IllegalStateException("DONT_ASK enum constant not found"));
 
-        // Kotlin synthetic default-parameter constructor: mask=2 → use default for param[1] (toolFilter → null)
+        // Use the 3-param $default constructor (AskCommandExecutionMode, McpToolFilter, String, int, Marker).
+        // mask=6 (bits 1+2 set) → use Kotlin defaults for toolFilter (null) and localAgentId (null),
+        // so we only supply commandExecutionMode. The 2-param $default constructor is deprecated since
+        // McpSessionOptions gained a localAgentId: String? field; using the 3-param form is canonical.
         Constructor<?> ctor = sessionOptionsClass.getDeclaredConstructor(
-            askModeClass, mcpToolFilterClass, int.class, markerClass);
-        return ctor.newInstance(dontAsk, null, 2, null);
+            askModeClass, mcpToolFilterClass, String.class, int.class, markerClass);
+        return ctor.newInstance(dontAsk, null, null, 6, null);
     }
 
     /**

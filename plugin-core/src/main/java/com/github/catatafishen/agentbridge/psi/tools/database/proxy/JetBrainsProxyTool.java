@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.database.proxy;
 import com.github.catatafishen.agentbridge.psi.tools.database.DatabaseTool;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -19,6 +20,8 @@ import java.util.Map;
  * Instances are created by the static factory methods; one instance per JetBrains tool.
  */
 public final class JetBrainsProxyTool extends DatabaseTool {
+
+    private static final Logger LOG = Logger.getInstance(JetBrainsProxyTool.class);
 
     private static final String DESC_CONNECTION_ID =
         "Unique connection ID from list_database_connections";
@@ -89,10 +92,27 @@ public final class JetBrainsProxyTool extends DatabaseTool {
         } catch (IllegalArgumentException e) {
             return "Error: JetBrains MCP tool '" + toolId + "' is not available: " + e.getMessage();
         } catch (ReflectiveOperationException e) {
-            return "Error: JetBrains MCP proxy failed for '" + toolId + "': " + e.getMessage();
+            LOG.error("JetBrains MCP proxy failed for '" + toolId + "'", e);
+            return "Error: JetBrains MCP proxy failed for '" + toolId + "': " + rootCauseMessage(e);
         } catch (RuntimeException e) {
-            return "Error: Unexpected failure invoking JetBrains MCP tool '" + toolId + "': " + e.getMessage();
+            LOG.error("Unexpected failure invoking JetBrains MCP tool '" + toolId + "'", e);
+            return "Error: Unexpected failure invoking JetBrains MCP tool '" + toolId + "': " + rootCauseMessage(e);
         }
+    }
+
+    /**
+     * Walks the full exception cause chain and returns a non-null message.
+     * {@link java.lang.reflect.InvocationTargetException#getMessage()} always returns {@code null}
+     * (it passes {@code null} to {@code super()}) — the real message is on the innermost cause.
+     */
+    private static String rootCauseMessage(Throwable e) {
+        Throwable cause = e;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        return message != null ? cause.getClass().getSimpleName() + ": " + message
+            : cause.getClass().getName();
     }
 
     // ── Factory methods ─────────────────────────────────────────────────────
