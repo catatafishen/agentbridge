@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Handles ACP terminal methods: {@code terminal/create}, {@code terminal/output},
@@ -264,7 +265,7 @@ final class AcpTerminalHandler {
 
         private final StringBuilder outputBuffer = new StringBuilder();
         private volatile boolean truncated;
-        private volatile Thread captureThread;
+        private final AtomicReference<Thread> captureThread = new AtomicReference<>();
 
         ManagedTerminal(String id, Process process, int outputByteLimit) {
             this.id = id;
@@ -273,7 +274,7 @@ final class AcpTerminalHandler {
         }
 
         void startOutputCapture() {
-            captureThread = Thread.ofPlatform().name("acp-terminal-" + id).start(() -> {
+            captureThread.set(Thread.ofPlatform().name("acp-terminal-" + id).start(() -> {
                 try (InputStream is = process.getInputStream()) {
                     byte[] buf = new byte[4096];
                     int n;
@@ -286,19 +287,18 @@ final class AcpTerminalHandler {
                         LOG.warn("Output capture error for terminal " + id + ": " + e.getMessage());
                     }
                 }
-            });
+            }));
         }
 
         void stopOutputCapture() {
-            Thread t = captureThread;
+            Thread t = captureThread.getAndSet(null);
             if (t != null) {
                 t.interrupt();
-                captureThread = null;
             }
         }
 
         void awaitOutputCapture() throws InterruptedException {
-            Thread t = captureThread;
+            Thread t = captureThread.get();
             if (t != null) {
                 t.join();
             }

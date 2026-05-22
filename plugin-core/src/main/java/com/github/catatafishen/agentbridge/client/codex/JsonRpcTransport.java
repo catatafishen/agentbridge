@@ -61,7 +61,7 @@ final class JsonRpcTransport {
     private volatile boolean connected;
     private final AtomicInteger nextId = new AtomicInteger(1);
     private final Map<Integer, CompletableFuture<JsonObject>> pendingRequests = new ConcurrentHashMap<>();
-    private volatile MessageHandler messageHandler;
+    private final AtomicReference<MessageHandler> messageHandler = new AtomicReference<>();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ final class JsonRpcTransport {
     // ── Public API ───────────────────────────────────────────────────────────
 
     void setMessageHandler(@Nullable MessageHandler handler) {
-        this.messageHandler = handler;
+        this.messageHandler.set(handler);
     }
 
     /**
@@ -238,11 +238,11 @@ final class JsonRpcTransport {
         switch (classifyMessageType(msg)) {
             case RESPONSE -> handleResponse(msg);
             case SERVER_REQUEST -> {
-                MessageHandler handler = messageHandler;
+                MessageHandler handler = messageHandler.get();
                 if (handler != null) handler.onServerRequest(msg);
             }
             case NOTIFICATION -> {
-                MessageHandler handler = messageHandler;
+                MessageHandler handler = messageHandler.get();
                 if (handler != null) handler.onNotification(msg);
             }
             default -> {
