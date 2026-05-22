@@ -3,10 +3,12 @@ package com.github.catatafishen.agentbridge.settings
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.CleanupSettings
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.dsl.builder.*
 
@@ -19,6 +21,9 @@ class ChatInputConfigurable(private val project: Project) :
     private val s get() = ChatInputSettings.getInstance()
     private val mcp get() = McpServerSettings.getInstance(project)
     private val cleanup get() = CleanupSettings.getInstance(project)
+
+    // Captured on panel creation; used to get DataContext for settings navigation.
+    private var keymapLink: ActionLink? = null
 
     @Suppress("LongMethod", "kotlin:S3776")
     override fun createPanel() = panel {
@@ -34,12 +39,14 @@ class ChatInputConfigurable(private val project: Project) :
                 .bindSelected({ s.isShowShortcutHints }, { s.isShowShortcutHints = it })
         }
         row {
-            // showSettingsDialog(project, displayName) navigates within the already-open settings
-            // dialog. The Predicate/Consumer overload always tries to open a new modal dialog,
-            // which silently fails when one is already open.
-            link("Customize keyboard shortcuts…") {
-                ShowSettingsUtil.getInstance().showSettingsDialog(project, "Keymap")
-            }
+            keymapLink = link("Customize keyboard shortcuts…") {
+                val comp = keymapLink
+                val navigated =
+                    comp != null && PlatformApiCompat.navigateInOpenSettingsDialog(comp, "preferences.keymap")
+                if (!navigated) {
+                    ShowSettingsUtil.getInstance().showSettingsDialog(project, "Keymap")
+                }
+            }.component
         }
         separator()
         row {

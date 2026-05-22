@@ -1265,6 +1265,61 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Navigate to a configurable inside the already-open Settings dialog, if one is open.
+     * Returns {@code true} if navigation succeeded; {@code false} if the dialog was not open
+     * (caller should fall back to opening a new dialog).
+     *
+     * <p><b>Why extracted:</b> {@code DataManager} was moved from
+     * {@code com.intellij.openapi.actionSystem} to {@code com.intellij.ide} in IntelliJ 2026.x,
+     * and {@code Settings} is in {@code intellij.platform.ide.impl.jar} (an impl module not on
+     * the plugin compile classpath). Both are accessed via reflection to avoid compile-time
+     * dependencies on relocated or impl-only classes.
+     */
+    public static boolean navigateInOpenSettingsDialog(@NotNull java.awt.Component component, @NotNull String configurableId) {
+        try {
+            // DataManager moved to com.intellij.ide in 2026.x (was com.intellij.openapi.actionSystem)
+            Class<?> dmClass = Class.forName("com.intellij.ide.DataManager");
+            Object dm = dmClass.getMethod("getInstance").invoke(null);
+            Object dataContext = null;
+            for (java.lang.reflect.Method m : dmClass.getMethods()) {
+                if (m.getName().equals("getDataContext") && m.getParameterCount() == 1
+                    && java.awt.Component.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                    dataContext = m.invoke(dm, component);
+                    break;
+                }
+            }
+            if (dataContext == null) return false;
+
+            // Settings.KEY is a DataKey<Settings>; getData(DataContext) returns the Settings instance
+            // bound to the open dialog, or null if no settings dialog is open.
+            Class<?> settingsClass = Class.forName("com.intellij.openapi.options.ex.Settings");
+            Object key = settingsClass.getField("KEY").get(null);
+            Object settings = null;
+            for (java.lang.reflect.Method m : key.getClass().getMethods()) {
+                if (m.getName().equals("getData") && m.getParameterCount() == 1) {
+                    try {
+                        settings = m.invoke(key, dataContext);
+                        if (settings != null) break;
+                    } catch (Exception ignored) {
+                        // Try next overload (DataContext/DataProvider ambiguity in 2026.x)
+                    }
+                }
+            }
+            if (settings == null) return false;
+
+            Class<?> configurableClass = Class.forName("com.intellij.openapi.options.Configurable");
+            Object conf = settingsClass.getMethod("find", String.class).invoke(settings, configurableId);
+            if (conf == null) return false;
+
+            settingsClass.getMethod("select", configurableClass).invoke(settings, conf);
+            return true;
+        } catch (Exception e) {
+            LOG.warn("navigateInOpenSettingsDialog failed for id=" + configurableId, e);
+            return false;
+        }
+    }
+
+    /**
      * Returns structured descriptors for all registered run configuration types.
      *
      * <p><b>Why extracted:</b> Same {@code CONFIGURATION_TYPE_EP.getExtensionList()} resolution

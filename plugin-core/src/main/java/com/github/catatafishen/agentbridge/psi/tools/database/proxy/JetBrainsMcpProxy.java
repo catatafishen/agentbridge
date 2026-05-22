@@ -95,11 +95,14 @@ final class JetBrainsMcpProxy {
             if (cached != null) return cached;
             ClassLoader cl = findMcpClassLoader();
             if (cl == null) {
-                // mcpserver plugin not installed — cache an empty map so callers degrade gracefully
+                LOG.warn("JetBrains MCP proxy: mcpserver plugin (" + MCPSERVER_PLUGIN_ID + ") not found " +
+                    "— database tools will not be registered.");
                 toolCacheRef.set(Collections.emptyMap());
                 return Collections.emptyMap();
             }
+            LOG.info("JetBrains MCP proxy: found mcpserver classloader, discovering tools...");
             Map<String, Object> loaded = discoverTools(cl);
+            LOG.info("JetBrains MCP proxy: discovered " + loaded.size() + " tools: " + loaded.keySet());
             mcpClassLoaderRef.set(cl);
             toolCacheRef.set(loaded);
             return loaded;

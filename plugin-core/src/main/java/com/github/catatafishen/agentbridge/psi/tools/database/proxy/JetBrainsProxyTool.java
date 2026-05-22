@@ -223,6 +223,26 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             schema(Param.required("sessionId", TYPE_STRING, "Query session ID from list_recent_sql_queries")));
     }
 
+    private static JetBrainsProxyTool getDatabaseObjectDescription(Project project) {
+        return new JetBrainsProxyTool(project,
+            "get_database_object_description",
+            "Get Database Object Description",
+            "Retrieves the structure of a database object (columns, types, keys, indexes) within " +
+                "a particular schema as a hierarchical text representation. " +
+                "In case of ambiguity returns definition of all applicable objects. " +
+                "Use list_schema_object_kinds to discover valid kind values.",
+            ToolDefinition.Kind.READ, true,
+            schema(
+                Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
+                Param.required(PARAM_DATABASE_NAME, TYPE_STRING,
+                    "Name of the database the schema belongs to. Empty string if not applicable."),
+                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, "Name of the schema"),
+                Param.required("kind", TYPE_STRING,
+                    "Object kind (e.g., table, view, routine). May not be empty."),
+                Param.required("objectName", TYPE_STRING,
+                    "Object name of the specified kind (e.g., table or view name). May not be empty.")));
+    }
+
     private static JetBrainsProxyTool listRecentQueries(Project project) {
         return new JetBrainsProxyTool(project,
             "list_recent_sql_queries",
@@ -235,11 +255,6 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             schema(Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID)));
     }
 
-    /**
-     * Creates proxy tools for all JetBrains MCP tools that are actually registered in the
-     * running IDE. Tools not present in the live MCP server (e.g. because the AI Assistant
-     * plugin is not installed) are silently omitted.
-     */
     public static List<JetBrainsProxyTool> createAll(Project project) {
         List<String> registeredNames = JetBrainsMcpProxy.getRegisteredToolNames();
         Map<String, JetBrainsProxyTool> candidates = Map.ofEntries(
@@ -251,11 +266,22 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             Map.entry("execute_sql_query", executeQuery(project)),
             Map.entry("preview_table_data", previewTableData(project)),
             Map.entry("cancel_sql_query", cancelQuery(project)),
-            Map.entry("list_recent_sql_queries", listRecentQueries(project))
+            Map.entry("list_recent_sql_queries", listRecentQueries(project)),
+            Map.entry("get_database_object_description", getDatabaseObjectDescription(project))
         );
-        return registeredNames.stream()
+        List<JetBrainsProxyTool> matched = registeredNames.stream()
             .filter(candidates::containsKey)
             .map(candidates::get)
             .toList();
+        List<String> unmatched = registeredNames.stream()
+            .filter(n -> !candidates.containsKey(n))
+            .toList();
+        if (!unmatched.isEmpty()) {
+            LOG.info("JetBrains MCP proxy: unmatched tool names (not proxied): " + unmatched);
+        }
+        LOG.info("JetBrains MCP proxy: registered " + matched.size() + " proxy tools out of " +
+            registeredNames.size() + " JetBrains tools. Matched: " +
+            matched.stream().map(JetBrainsProxyTool::id).toList());
+        return matched;
     }
 }
