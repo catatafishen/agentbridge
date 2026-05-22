@@ -112,15 +112,18 @@ class ConversationEntryStore {
         }
     }
 
+    @JvmOverloads
     fun addToolCallEntry(
         id: String,
         title: String,
         arguments: String?,
-        kind: String?
+        kind: String?,
+        pluginTool: String? = null
     ) {
         synchronized(lock) {
             val entry = EntryData.ToolCall(
                 title, arguments, kind ?: "other",
+                pluginTool = pluginTool,
                 timestamp = timestamp(), agent = _currentAgent, entryId = id
             )
             _entries.add(entry)
@@ -137,6 +140,15 @@ class ConversationEntryStore {
             entry.autoDenied = update.autoDenied
             update.denialReason?.let { entry.denialReason = it }
         }
+    }
+
+    /**
+     * Marks a tool call as MCP-handled by setting its [EntryData.ToolCall.pluginTool] field.
+     * Called when [ToolCallTracker][com.github.catatafishen.agentbridge.services.ToolCallTracker]
+     * fires [onCorrelated] after the entry was already created with `pluginTool = null`.
+     */
+    fun markToolCallMcp(id: String, toolName: String) = synchronized(lock) {
+        _toolCallEntries[id]?.pluginTool = toolName
     }
 
     fun addSubAgentEntry(
