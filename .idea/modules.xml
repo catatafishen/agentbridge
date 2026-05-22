@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/agentbridge.iml" filepath="$PROJECT_DIR$/.idea/modules/agentbridge.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.agent-work/agentbridge-ext-mcpserver-plugin.iml" filepath="$PROJECT_DIR$/.agent-work/agentbridge-ext-mcpserver-plugin.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/ide-agent-for-copilot.iml" filepath="$PROJECT_DIR$/.idea/modules/ide-agent-for-copilot.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/plugin-core/ide-agent-for-copilot.plugin-core.iml" filepath="$PROJECT_DIR$/.idea/modules/plugin-core/ide-agent-for-copilot.plugin-core.iml" />
     </modules>
