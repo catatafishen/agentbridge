@@ -244,12 +244,18 @@ Use sparingly — prefer interactive rebase for branches with multiple logical s
 
 ## Step 7 — Verify Final State
 
+**Always re-check before concluding a PR is done.** Automated scanners, review bots, and CI
+pipelines keep updating PRs during a session — new comments, new conflicts, and new check failures
+can appear at any time. Another PR may have been merged to master causing new merge conflicts on
+your branch. Never rely on a check you did earlier; always verify the current state.
+
 ```bash
 gh pr view <PR> --repo catatafishen/agentbridge \
   --json mergeStateStatus,state,reviewDecision
 ```
 
 Run `pr-threads.sh <PR>` one more time to confirm zero unresolved threads.
+Run `pr-ci.sh <PR>` to confirm CI is still green (a rebase or force-push triggers a new run).
 
 ---
 
