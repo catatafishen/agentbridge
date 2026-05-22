@@ -46,9 +46,11 @@ as primary keys in the database and must never change after creation.
 
 ## Session ID
 
-- Stored in `.agent-work/.current-session-id` (one per project)
+- Stored in `<sessions-dir>/.current-session-id` where `<sessions-dir>` is resolved by
+  `ExportUtils.sessionsDir(project)` — typically `{project}/.agentbridge/sessions/` with
+  fallback to legacy `{project}/.agent-work/sessions/`
 - Generated as `UUID.randomUUID()` on first prompt if file is missing
-- Reset by `archiveConversation()` (starts a new session)
+- Reset by `resetCurrentSessionId()` (triggered by "New Conversation" button)
 - The session ID file is the source of truth — same session ID = same conversation
 
 ---
