@@ -25,16 +25,14 @@ final class McpToolCallable implements kotlin.jvm.functions.Function2 {
         this.argsJsonObject = argsJsonObject;
     }
 
-    /**
-     * Called by the coroutine runtime inside {@code runBlocking}.
-     * {@code scope} is the {@code CoroutineScope}; {@code continuation} is the current
-     * coroutine continuation — both passed through to {@code McpTool.call()}.
-     */
     @Override
     public Object invoke(Object scope, Object continuation) {
         try {
             return callMethod.invoke(tool, argsJsonObject, continuation);
         } catch (Throwable e) {
+            // Rethrow fatal JVM errors — wrapping them hides the root cause and may
+            // interfere with expected JVM error-handling (e.g. OOM recovery, thread death).
+            if (e instanceof VirtualMachineError || e instanceof ThreadDeath) throw (Error) e;
             throw new IllegalStateException("McpTool.call() failed via reflection", e);
         }
     }
