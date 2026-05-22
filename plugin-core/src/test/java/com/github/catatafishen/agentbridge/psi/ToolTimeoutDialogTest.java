@@ -24,8 +24,8 @@ class ToolTimeoutDialogTest {
     @Test
     void completedConstantHasDistinctValueFromOtherConstants() {
         // COMPLETED must not collide with CANCEL (0) or any positive wait-time value.
-        assertEquals(ToolTimeoutDialog.COMPLETED, -1);
-        assertEquals(ToolTimeoutDialog.CANCEL, 0);
-        assertEquals(ToolTimeoutDialog.INDEFINITE, Integer.MAX_VALUE);
+        assertEquals(-1, ToolTimeoutDialog.COMPLETED);
+        assertEquals(0, ToolTimeoutDialog.CANCEL);
+        assertEquals(Integer.MAX_VALUE, ToolTimeoutDialog.INDEFINITE);
     }
 }
