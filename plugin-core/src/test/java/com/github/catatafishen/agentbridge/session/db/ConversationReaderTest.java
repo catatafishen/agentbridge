@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,7 +82,7 @@ class ConversationReaderTest {
 
         List<ConversationReader.SessionRecord> sessions = reader.listSessions();
         assertEquals(1, sessions.size());
-        assertEquals(2, sessions.get(0).turnCount());
+        assertEquals(2, sessions.getFirst().turnCount());
     }
 
     // ── Session existence check ───────────────────────────────────────────────
@@ -114,8 +115,8 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(1, entries.size());
-        assertTrue(entries.get(0) instanceof EntryData.Prompt);
-        EntryData.Prompt loaded = (EntryData.Prompt) entries.get(0);
+        assertInstanceOf(EntryData.Prompt.class, entries.getFirst());
+        EntryData.Prompt loaded = (EntryData.Prompt) entries.getFirst();
         assertEquals("Fix the bug", loaded.getText());
         assertEquals("2026-01-01T10:00:00Z", loaded.getTimestamp());
         assertEquals("turn-1", loaded.getEntryId());
@@ -133,12 +134,12 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(1, entries.size());
-        EntryData.Prompt loaded = (EntryData.Prompt) entries.get(0);
+        EntryData.Prompt loaded = (EntryData.Prompt) entries.getFirst();
         assertNotNull(loaded.getContextFiles());
         assertEquals(2, loaded.getContextFiles().size());
-        assertEquals("Main.java", loaded.getContextFiles().get(0).getName());
-        assertEquals("/src/Main.java", loaded.getContextFiles().get(0).getPath());
-        assertEquals(42, loaded.getContextFiles().get(0).getLine());
+        assertEquals("Main.java", loaded.getContextFiles().getFirst().getName());
+        assertEquals("/src/Main.java", loaded.getContextFiles().getFirst().getPath());
+        assertEquals(42, loaded.getContextFiles().getFirst().getLine());
     }
 
     @Test
@@ -150,7 +151,7 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(2, entries.size());
-        assertTrue(entries.get(1) instanceof EntryData.Text);
+        assertInstanceOf(EntryData.Text.class, entries.get(1));
         EntryData.Text text = (EntryData.Text) entries.get(1);
         assertEquals("Here's the fix", text.getRaw());
         assertEquals("assistant", text.getAgent());
@@ -166,7 +167,7 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(2, entries.size());
-        assertTrue(entries.get(1) instanceof EntryData.Thinking);
+        assertInstanceOf(EntryData.Thinking.class, entries.get(1));
         EntryData.Thinking thinking = (EntryData.Thinking) entries.get(1);
         assertEquals("Let me think...", thinking.getRaw());
         assertEquals("claude", thinking.getModel());
@@ -187,7 +188,7 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(2, entries.size());
-        assertTrue(entries.get(1) instanceof EntryData.ToolCall);
+        assertInstanceOf(EntryData.ToolCall.class, entries.get(1));
         EntryData.ToolCall loaded = (EntryData.ToolCall) entries.get(1);
         // pluginTool is set and NOT NULL → canonicalToolName uses it as tool_name.
         // Title after roundtrip = canonical name (prefix stripped).
@@ -214,7 +215,7 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(2, entries.size());
-        assertTrue(entries.get(1) instanceof EntryData.SubAgent);
+        assertInstanceOf(EntryData.SubAgent.class, entries.get(1));
         EntryData.SubAgent loaded = (EntryData.SubAgent) entries.get(1);
         assertEquals("explore", loaded.getAgentType());
         assertEquals("Find the auth module", loaded.getDescription());
@@ -235,7 +236,7 @@ class ConversationReaderTest {
 
         List<EntryData> entries = reader.loadEntries("sess-1");
         assertEquals(2, entries.size());
-        assertTrue(entries.get(1) instanceof EntryData.Nudge);
+        assertInstanceOf(EntryData.Nudge.class, entries.get(1));
         EntryData.Nudge loaded = (EntryData.Nudge) entries.get(1);
         assertEquals("Use the read_file tool", loaded.getText());
         assertTrue(loaded.getSent());
@@ -313,8 +314,8 @@ class ConversationReaderTest {
         List<EntryData> sess2 = reader.loadEntries("sess-2");
         assertEquals(2, sess1.size());
         assertEquals(2, sess2.size());
-        assertEquals("Session 1 prompt", ((EntryData.Prompt) sess1.get(0)).getText());
-        assertEquals("Session 2 prompt", ((EntryData.Prompt) sess2.get(0)).getText());
+        assertEquals("Session 1 prompt", ((EntryData.Prompt) sess1.getFirst()).getText());
+        assertEquals("Session 2 prompt", ((EntryData.Prompt) sess2.getFirst()).getText());
     }
 
     // ── Recent entries ────────────────────────────────────────────────────────
@@ -333,8 +334,8 @@ class ConversationReaderTest {
         List<EntryData> recent = reader.loadRecentEntries("sess-1", 2);
         // Should get last 2 turns: "Second" + response, "Third" + response
         assertEquals(4, recent.size());
-        assertTrue(recent.get(0) instanceof EntryData.Prompt);
-        assertEquals("Second", ((EntryData.Prompt) recent.get(0)).getText());
+        assertInstanceOf(EntryData.Prompt.class, recent.getFirst());
+        assertEquals("Second", ((EntryData.Prompt) recent.getFirst()).getText());
         assertEquals("Third", ((EntryData.Prompt) recent.get(2)).getText());
     }
 
@@ -351,8 +352,8 @@ class ConversationReaderTest {
 
         List<ConversationReader.PromptWithStats> prompts = reader.loadAllPrompts();
         assertEquals(2, prompts.size());
-        assertEquals("Alpha", prompts.get(0).prompt().getText());
-        assertEquals("sess-1", prompts.get(0).sessionId());
+        assertEquals("Alpha", prompts.getFirst().prompt().getText());
+        assertEquals("sess-1", prompts.getFirst().sessionId());
         assertEquals("Beta", prompts.get(1).prompt().getText());
         assertEquals("sess-2", prompts.get(1).sessionId());
     }
@@ -371,9 +372,9 @@ class ConversationReaderTest {
 
         List<ConversationReader.PromptWithStats> prompts = reader.loadAllPrompts();
         assertEquals(1, prompts.size());
-        assertNotNull(prompts.get(0).stats());
-        assertEquals(3000, prompts.get(0).stats().getDurationMs());
-        assertEquals(500, prompts.get(0).stats().getInputTokens());
+        assertNotNull(prompts.getFirst().stats());
+        assertEquals(3000, prompts.getFirst().stats().getDurationMs());
+        assertEquals(500, prompts.getFirst().stats().getInputTokens());
     }
 
     // ── Status and SessionSeparator are not persisted ─────────────────────────
@@ -389,7 +390,7 @@ class ConversationReaderTest {
         List<EntryData> entries = reader.loadEntries("sess-1");
         // Only the prompt should be loaded — status/separator are not persisted
         assertEquals(1, entries.size());
-        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertInstanceOf(EntryData.Prompt.class, entries.getFirst());
     }
 
     // ── Unsent nudges are not persisted ───────────────────────────────────────
@@ -412,5 +413,209 @@ class ConversationReaderTest {
     void emptyEntriesListIsNoOp() {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of());
         assertFalse(reader.sessionExists("sess-1"));
+    }
+
+    // ── countTurns ────────────────────────────────────────────────────────────
+
+    @Test
+    void countTurnsReturnsZeroForMissingSession() {
+        assertEquals(0, reader.countTurns("nonexistent"));
+    }
+
+    @Test
+    void countTurnsReturnsTurnCount() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("First", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Second", "2026-01-01T10:01:00Z", null, "t2", "t2")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Third", "2026-01-01T10:02:00Z", null, "t3", "t3")
+        ));
+        assertEquals(3, reader.countTurns("sess-1"));
+    }
+
+    @Test
+    void countTurnsIsolatedBetweenSessions() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("A", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        writer.recordEntries("sess-2", "Claude", "claude", List.of(
+            new EntryData.Prompt("B", "2026-01-01T10:00:00Z", null, "t2", "t2"),
+            new EntryData.Prompt("C", "2026-01-01T10:01:00Z", null, "t3", "t3")
+        ));
+        assertEquals(1, reader.countTurns("sess-1"));
+        assertEquals(2, reader.countTurns("sess-2"));
+    }
+
+    // ── loadTurnEntries ───────────────────────────────────────────────────────
+
+    @Test
+    void loadTurnEntriesReturnsEmptyForMissingTurn() {
+        List<EntryData> entries = reader.loadTurnEntries("nonexistent");
+        assertTrue(entries.isEmpty());
+    }
+
+    @Test
+    void loadTurnEntriesReturnsPromptAndEvents() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Help me", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            new EntryData.Text("Here you go", "2026-01-01T10:00:01Z", "assistant", "gpt-4", "e1"),
+            new EntryData.ToolCall(
+                "read_file", "{}", "file", "content", "success",
+                null, "/src/Main.java", false, null, null,
+                "2026-01-01T10:00:02Z", "assistant", "gpt-4", "e2"
+            )
+        ));
+
+        List<EntryData> entries = reader.loadTurnEntries("t1");
+        assertFalse(entries.isEmpty());
+        // Should contain prompt + text + tool_call
+        assertInstanceOf(EntryData.Prompt.class, entries.getFirst());
+        assertEquals("Help me", ((EntryData.Prompt) entries.getFirst()).getText());
+    }
+
+    @Test
+    void loadTurnEntriesIncludesContextFiles() {
+        List<ContextFileRef> files = List.of(
+            new ContextFileRef("Main.java", "/src/Main.java", 0)
+        );
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", files, "t1", "t1")
+        ));
+
+        List<EntryData> entries = reader.loadTurnEntries("t1");
+        assertInstanceOf(EntryData.Prompt.class, entries.getFirst());
+        EntryData.Prompt prompt = (EntryData.Prompt) entries.getFirst();
+        assertNotNull(prompt.getContextFiles());
+        assertEquals(1, prompt.getContextFiles().size());
+        assertEquals("Main.java", prompt.getContextFiles().getFirst().getName());
+    }
+
+    @Test
+    void loadTurnEntriesIsolatesFromOtherTurns() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("First", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            new EntryData.Text("Response 1", "2026-01-01T10:00:01Z", "assistant", "gpt-4", "e1")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Second", "2026-01-01T10:01:00Z", null, "t2", "t2"),
+            new EntryData.Text("Response 2", "2026-01-01T10:01:01Z", "assistant", "gpt-4", "e2")
+        ));
+
+        List<EntryData> turn1 = reader.loadTurnEntries("t1");
+        List<EntryData> turn2 = reader.loadTurnEntries("t2");
+
+        // Each turn should only have its own entries
+        assertInstanceOf(EntryData.Prompt.class, turn1.getFirst());
+        assertEquals("First", ((EntryData.Prompt) turn1.getFirst()).getText());
+        assertInstanceOf(EntryData.Prompt.class, turn2.getFirst());
+        assertEquals("Second", ((EntryData.Prompt) turn2.getFirst()).getText());
+    }
+
+    // ── loadAdjacentTurnIds ───────────────────────────────────────────────────
+
+    @Test
+    void loadAdjacentTurnIdsReturnsEmptyForMissingReference() {
+        List<String> ids = reader.loadAdjacentTurnIds("sess-1", "nonexistent", 3);
+        assertTrue(ids.isEmpty());
+    }
+
+    @Test
+    void loadAdjacentTurnIdsReturnsLaterTurns() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("A", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("B", "2026-01-01T10:01:00Z", null, "t2", "t2")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("C", "2026-01-01T10:02:00Z", null, "t3", "t3")
+        ));
+
+        // Get turns after t1 (positive count = later)
+        List<String> later = reader.loadAdjacentTurnIds("sess-1", "t1", 5);
+        assertEquals(2, later.size());
+        assertEquals("t2", later.get(0));
+        assertEquals("t3", later.get(1));
+    }
+
+    @Test
+    void loadAdjacentTurnIdsReturnsEarlierTurns() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("A", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("B", "2026-01-01T10:01:00Z", null, "t2", "t2")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("C", "2026-01-01T10:02:00Z", null, "t3", "t3")
+        ));
+
+        // Get turns before t3 (negative count = earlier)
+        List<String> earlier = reader.loadAdjacentTurnIds("sess-1", "t3", -5);
+        assertEquals(2, earlier.size());
+        assertEquals("t1", earlier.get(0));
+        assertEquals("t2", earlier.get(1));
+    }
+
+    @Test
+    void loadAdjacentTurnIdsRespectsLimit() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("A", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("B", "2026-01-01T10:01:00Z", null, "t2", "t2")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("C", "2026-01-01T10:02:00Z", null, "t3", "t3")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("D", "2026-01-01T10:03:00Z", null, "t4", "t4")
+        ));
+
+        // Get only 1 turn after t1
+        List<String> later = reader.loadAdjacentTurnIds("sess-1", "t1", 1);
+        assertEquals(1, later.size());
+        assertEquals("t2", later.getFirst());
+
+        // Get only 1 turn before t4
+        List<String> earlier = reader.loadAdjacentTurnIds("sess-1", "t4", -1);
+        assertEquals(1, earlier.size());
+        assertEquals("t3", earlier.getFirst());
+    }
+
+    @Test
+    void loadAdjacentTurnIdsIsolatesBetweenSessions() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("A", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("B", "2026-01-01T10:01:00Z", null, "t2", "t2")
+        ));
+        writer.recordEntries("sess-2", "Claude", "claude", List.of(
+            new EntryData.Prompt("X", "2026-01-01T10:00:30Z", null, "t3", "t3")
+        ));
+
+        // Adjacent turns for sess-1 from t1 — should only find t2, not t3 from sess-2
+        List<String> later = reader.loadAdjacentTurnIds("sess-1", "t1", 5);
+        assertEquals(1, later.size());
+        assertEquals("t2", later.getFirst());
+    }
+
+    @Test
+    void loadAdjacentTurnIdsReturnsEmptyWhenNoneAdjacent() {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Only", "2026-01-01T10:00:00Z", null, "t1", "t1")
+        ));
+
+        // No turns after t1
+        List<String> later = reader.loadAdjacentTurnIds("sess-1", "t1", 5);
+        assertTrue(later.isEmpty());
+
+        // No turns before t1
+        List<String> earlier = reader.loadAdjacentTurnIds("sess-1", "t1", -5);
+        assertTrue(earlier.isEmpty());
     }
 }
