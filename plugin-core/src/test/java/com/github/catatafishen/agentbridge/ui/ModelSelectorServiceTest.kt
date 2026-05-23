@@ -194,7 +194,20 @@ class ModelSelectorServiceTest {
         }
 
         @Test
-        fun `neither found and models non-empty selects index 0`() {
+        fun `stale saved model replaced by currentModelId updates setting`() {
+            `when`(settings.selectedModel).thenReturn("stale-model")
+            `when`(client.currentModelId).thenReturn("c")
+            val models = listOf(model("a", "A"), model("b", "B"), model("c", "C"))
+            setModels(models)
+
+            service.restoreModelSelection(models)
+
+            assertEquals(2, service.selectedModelIndex)
+            verify(settings).setSelectedModel("c")
+        }
+
+        @Test
+        fun `neither found and models non-empty selects index 0 and updates setting`() {
             `when`(settings.selectedModel).thenReturn("nonexistent")
             `when`(client.currentModelId).thenReturn("also-nonexistent")
             val models = listOf(model("a", "A"), model("b", "B"))
@@ -203,6 +216,20 @@ class ModelSelectorServiceTest {
             service.restoreModelSelection(models)
 
             assertEquals(0, service.selectedModelIndex)
+            verify(settings).setSelectedModel("a")
+        }
+
+        @Test
+        fun `null saved model falling through to currentModelId does not update setting`() {
+            `when`(settings.selectedModel).thenReturn(null)
+            `when`(client.currentModelId).thenReturn("b")
+            val models = listOf(model("a", "A"), model("b", "B"))
+            setModels(models)
+
+            service.restoreModelSelection(models)
+
+            assertEquals(1, service.selectedModelIndex)
+            verify(settings, never()).setSelectedModel(anyString())
         }
 
         @Test

@@ -140,16 +140,27 @@ class ModelSelectorService(
             if (idx >= 0) {
                 selectedModelIndex = idx; log.debug("Restored model index=$idx"); return
             }
-            log.debug("Saved model '$savedModel' not found in available models")
+            log.debug("Saved model '$savedModel' not found in available models — will update stale setting")
         }
         val currentModelId = agentManager.client.currentModelId
         if (currentModelId != null) {
             val idx = models.indexOfFirst { it.id() == currentModelId }
             if (idx >= 0) {
-                selectedModelIndex = idx; log.debug("Selected agent-reported model index=$idx"); return
+                selectedModelIndex = idx
+                if (savedModel != null) {
+                    // Saved preference was stale — sync the setting to what is actually selected
+                    agentManager.settings.setSelectedModel(currentModelId)
+                }
+                log.debug("Selected agent-reported model index=$idx"); return
             }
         }
-        if (models.isNotEmpty()) selectedModelIndex = 0
+        if (models.isNotEmpty()) {
+            selectedModelIndex = 0
+            if (savedModel != null) {
+                // Saved preference was stale — sync the setting to what is actually selected
+                agentManager.settings.setSelectedModel(models[0].id())
+            }
+        }
     }
 
     private fun fetchModelsWithRetry(startGeneration: Int): List<Model> {
