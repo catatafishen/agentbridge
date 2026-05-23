@@ -116,6 +116,7 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
+          GH_MODELS_TOKEN: ${{ secrets.GH_MODELS_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           mkdir -p build
@@ -142,7 +143,7 @@ jobs:
             if ! diff -q build/this-release.md build/since-marketplace.md >/dev/null 2>&1; then
               echo "---"
               echo ""
-              echo "<details><summary>📦 All changes since last Marketplace publish</summary>"
+              echo "<details><summary>All changes since last Marketplace publish</summary>"
               echo ""
               cat build/since-marketplace.md
               echo ""
@@ -150,11 +151,11 @@ jobs:
             fi
           } > build/release-notes.md
 
-          echo "### 📋 Plugin Changelog (HTML for marketplace)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Plugin Changelog (HTML for marketplace)" >> "$GITHUB_STEP_SUMMARY"
           echo '```html' >> "$GITHUB_STEP_SUMMARY"
           cat build/changelog.html >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "### 📝 Release Notes (Markdown)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Release Notes (Markdown)" >> "$GITHUB_STEP_SUMMARY"
           cat build/release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build release ZIPs
