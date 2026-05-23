@@ -123,10 +123,28 @@ public final class ClaudeClient extends AbstractClaudeClient {
         return p;
     }
 
+    /**
+     * Factory for creating subprocesses. Default uses {@link ProcessBuilder};
+     * tests can inject a mock to supply pre-canned SSE streams.
+     */
+    @FunctionalInterface
+    interface ProcessFactory {
+        Process start(List<String> command, Map<String, String> environment, @Nullable File workDir) throws IOException;
+    }
+
+    private static final ProcessFactory DEFAULT_PROCESS_FACTORY = (cmd, env, workDir) -> {
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.environment().putAll(env);
+        if (workDir != null) pb.directory(workDir);
+        pb.redirectErrorStream(false);
+        return pb.start();
+    };
+
     private final AgentProfile profile;
     private final Project project;
     private final int mcpPort;
     private final AgentConfig config;
+    private final ProcessFactory processFactory;
 
     /**
      * Maps plugin session ID → CLI session ID (for --resume).
@@ -141,11 +159,24 @@ public final class ClaudeClient extends AbstractClaudeClient {
                         @Nullable ToolRegistry registry,
                         @Nullable Project project,
                         int mcpPort) {
+        this(profile, config, registry, project, mcpPort, DEFAULT_PROCESS_FACTORY);
+    }
+
+    /**
+     * Test constructor allowing injection of a custom process factory.
+     */
+    ClaudeClient(@NotNull AgentProfile profile,
+                 @NotNull AgentConfig config,
+                 @Nullable ToolRegistry registry,
+                 @Nullable Project project,
+                 int mcpPort,
+                 @NotNull ProcessFactory processFactory) {
         super(registry);
         this.profile = profile;
         this.config = config;
         this.project = project;
         this.mcpPort = mcpPort;
+        this.processFactory = processFactory;
     }
 
     // ── AgentClient lifecycle ────────────────────────────────────────────────
@@ -434,18 +465,12 @@ public final class ClaudeClient extends AbstractClaudeClient {
         Thread stderrThread = null;
         try {
             LOG.info("Executing Claude CLI command: " + String.join(" ", cmd));
-            ProcessBuilder pb = new ProcessBuilder(cmd);
 
-            // Inject captured shell environment (includes nvm, sdkman, etc.)
-            pb.environment().putAll(ShellEnvironment.getEnvironment());
+            Map<String, String> env = ShellEnvironment.getEnvironment();
+            File workDir = (project != null && project.getBasePath() != null)
+                ? new File(project.getBasePath()) : null;
 
-            // Set working directory to project base path so the CLI detects correct git repo and cwd
-            if (project != null && project.getBasePath() != null) {
-                pb.directory(new File(project.getBasePath()));
-            }
-
-            pb.redirectErrorStream(false);
-            proc = pb.start();
+            proc = processFactory.start(cmd, env, workDir);
             activeProcesses.put(sessionId, proc);
 
             // Drain stderr on a background thread to prevent buffer deadlock
