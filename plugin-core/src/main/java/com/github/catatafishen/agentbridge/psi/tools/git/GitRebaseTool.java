@@ -55,7 +55,7 @@ public final class GitRebaseTool extends GitTool {
     private static final Set<String> VALID_REBASE_ACTIONS = Set.of("pick", ACTION_REWORD, "edit", "squash", "fixup", "drop");
     private static final Logger LOG = Logger.getInstance(GitRebaseTool.class);
 
-    private record ParsedOps(Map<String, String> operations, Map<String, String> messages) {
+    record ParsedOps(Map<String, String> operations, Map<String, String> messages) {
     }
 
     public GitRebaseTool(Project project) {
@@ -172,7 +172,7 @@ public final class GitRebaseTool extends GitTool {
         return fetchNote + result + getBranchContextIn(root);
     }
 
-    private @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
+    @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add(CMD_REBASE);
         if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
@@ -297,7 +297,7 @@ public final class GitRebaseTool extends GitTool {
         }
     }
 
-    private @Nullable String validateInteractiveArgs(@NotNull JsonObject args) {
+    static @Nullable String validateInteractiveArgs(@NotNull JsonObject args) {
         if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
             return "Error: 'autosquash' is not supported in programmatic interactive rebase. "
                 + "Operations are applied explicitly — mark fixup!/squash! commits manually in the operations list.";
@@ -316,7 +316,7 @@ public final class GitRebaseTool extends GitTool {
         return null;
     }
 
-    private @Nullable String validateOperations(@NotNull Map<String, String> operations, @NotNull Map<String, String> messages) {
+    static @Nullable String validateOperations(@NotNull Map<String, String> operations, @NotNull Map<String, String> messages) {
         for (Map.Entry<String, String> entry : operations.entrySet()) {
             String action = entry.getValue();
             if (!VALID_REBASE_ACTIONS.contains(action)) {
@@ -331,7 +331,7 @@ public final class GitRebaseTool extends GitTool {
         return null;
     }
 
-    private @NotNull ParsedOps parseOperations(@NotNull JsonObject args) {
+    static @NotNull GitRebaseTool.ParsedOps parseOperations(@NotNull JsonObject args) {
         Map<String, String> operations = new LinkedHashMap<>();
         Map<String, String> messages = new LinkedHashMap<>();
         if (!args.has(PARAM_OPERATIONS) || !args.get(PARAM_OPERATIONS).isJsonArray()) {
@@ -352,7 +352,7 @@ public final class GitRebaseTool extends GitTool {
     }
 
     @Nullable
-    private static String extractCommitKey(@NotNull JsonElement el) {
+    static String extractCommitKey(@NotNull JsonElement el) {
         if (!el.isJsonObject()) return null;
         JsonObject op = el.getAsJsonObject();
         if (!op.has(OP_COMMIT)) return null;

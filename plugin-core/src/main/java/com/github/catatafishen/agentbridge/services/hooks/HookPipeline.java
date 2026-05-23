@@ -265,8 +265,8 @@ public final class HookPipeline {
     /**
      * Applies an entry's static text modifiers (prependString/appendString) to the current output.
      */
-    private static @Nullable String applyEntryTextModifiers(@NotNull HookEntryConfig entry,
-                                                            @Nullable String current) {
+    static @Nullable String applyEntryTextModifiers(@NotNull HookEntryConfig entry,
+                                                    @Nullable String current) {
         if (entry.prependString() != null && !entry.prependString().isEmpty()) {
             current = entry.prependString() + "\n\n" + (current != null ? current : "");
         }
@@ -276,15 +276,15 @@ public final class HookPipeline {
         return current;
     }
 
-    private static void accumulateText(@NotNull StringBuilder sb, @Nullable String text) {
+    static void accumulateText(@NotNull StringBuilder sb, @Nullable String text) {
         if (text != null && !text.isEmpty()) {
             if (!sb.isEmpty()) sb.append("\n\n");
             sb.append(text);
         }
     }
 
-    private static @Nullable String applyOutputText(@NotNull HookResult.OutputModification mod,
-                                                    @Nullable String original) {
+    static @Nullable String applyOutputText(@NotNull HookResult.OutputModification mod,
+                                               @Nullable String original) {
         if (mod.isReplacement()) {
             return mod.replacedOutput();
         }
@@ -295,9 +295,9 @@ public final class HookPipeline {
         return original;
     }
 
-    private static @Nullable String getBuiltInSuccessAnnotation(@NotNull String toolName,
-                                                                @NotNull JsonObject arguments,
-                                                                @Nullable String output) {
+    static @Nullable String getBuiltInSuccessAnnotation(@NotNull String toolName,
+                                                        @NotNull JsonObject arguments,
+                                                        @Nullable String output) {
         return switch (toolName) {
             case "run_in_terminal" -> BuiltInSuccessHooks.terminalReprimand(
                 getStringArg(arguments, ARG_COMMAND), false);
@@ -307,7 +307,7 @@ public final class HookPipeline {
         };
     }
 
-    private static @Nullable String getStringArg(@NotNull JsonObject arguments, @NotNull String key) {
+    static @Nullable String getStringArg(@NotNull JsonObject arguments, @NotNull String key) {
         if (!arguments.has(key)) return null;
         var el = arguments.get(key);
         return el.isJsonPrimitive() ? el.getAsString() : null;
