@@ -577,11 +577,15 @@ public abstract class AcpClient extends AbstractClient {
 
     /**
      * Replaces the current slash command list with the given names.
+     * Names are normalized to include a leading '/' so they can be directly matched
+     * against user input in the prompt editor.
      * Called by subclasses (e.g., KiroClient) that parse commands from proprietary notifications.
      */
     protected void updateCommandNames(List<String> names) {
         availableCommandNames.clear();
-        availableCommandNames.addAll(names);
+        for (String name : names) {
+            availableCommandNames.add(name.startsWith("/") ? name : "/" + name);
+        }
         LOG.info(displayName() + ": " + availableCommandNames.size() + " slash command(s) available");
     }
 

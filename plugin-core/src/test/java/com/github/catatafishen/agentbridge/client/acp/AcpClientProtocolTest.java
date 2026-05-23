@@ -158,8 +158,8 @@ class AcpClientProtocolTest {
 
             List<String> commands = client.getAvailableCommands();
             assertEquals(2, commands.size());
-            assertTrue(commands.contains("help"));
-            assertTrue(commands.contains("clear"));
+            assertTrue(commands.contains("/help"));
+            assertTrue(commands.contains("/clear"));
         }
 
         @Test
@@ -351,8 +351,8 @@ class AcpClientProtocolTest {
             client.createSession("/tmp/test");
 
             assertEquals(2, client.getAvailableCommands().size());
-            assertTrue(client.getAvailableCommands().contains("help"));
-            assertTrue(client.getAvailableCommands().contains("clear"));
+            assertTrue(client.getAvailableCommands().contains("/help"));
+            assertTrue(client.getAvailableCommands().contains("/clear"));
         }
 
         @Test
@@ -492,7 +492,13 @@ class AcpClientProtocolTest {
         void updatesAvailableCommands() {
             client.updateCommandNames(List.of("help", "clear", "review"));
             assertEquals(3, client.getAvailableCommands().size());
-            assertTrue(client.getAvailableCommands().contains("review"));
+            assertTrue(client.getAvailableCommands().contains("/review"));
+        }
+
+        @Test
+        void normalizesNamesWithSlashPrefix() {
+            client.updateCommandNames(List.of("help", "/already-prefixed"));
+            assertEquals(List.of("/help", "/already-prefixed"), client.getAvailableCommands());
         }
 
         @Test
@@ -500,8 +506,8 @@ class AcpClientProtocolTest {
             client.updateCommandNames(List.of("old-cmd"));
             client.updateCommandNames(List.of("new-cmd"));
             assertEquals(1, client.getAvailableCommands().size());
-            assertTrue(client.getAvailableCommands().contains("new-cmd"));
-            assertFalse(client.getAvailableCommands().contains("old-cmd"));
+            assertTrue(client.getAvailableCommands().contains("/new-cmd"));
+            assertFalse(client.getAvailableCommands().contains("/old-cmd"));
         }
 
         @Test
