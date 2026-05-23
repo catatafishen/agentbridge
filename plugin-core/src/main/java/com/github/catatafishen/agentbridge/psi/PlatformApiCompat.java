@@ -1280,31 +1280,14 @@ public final class PlatformApiCompat {
             // DataManager moved to com.intellij.ide in 2026.x (was com.intellij.openapi.actionSystem)
             Class<?> dmClass = Class.forName("com.intellij.ide.DataManager");
             Object dm = dmClass.getMethod("getInstance").invoke(null);
-            Object dataContext = null;
-            for (java.lang.reflect.Method m : dmClass.getMethods()) {
-                if (m.getName().equals("getDataContext") && m.getParameterCount() == 1
-                    && java.awt.Component.class.isAssignableFrom(m.getParameterTypes()[0])) {
-                    dataContext = m.invoke(dm, component);
-                    break;
-                }
-            }
+            Object dataContext = findDataContext(dmClass, dm, component);
             if (dataContext == null) return false;
 
             // Settings.KEY is a DataKey<Settings>; getData(DataContext) returns the Settings instance
             // bound to the open dialog, or null if no settings dialog is open.
             Class<?> settingsClass = Class.forName("com.intellij.openapi.options.ex.Settings");
             Object key = settingsClass.getField("KEY").get(null);
-            Object settings = null;
-            for (java.lang.reflect.Method m : key.getClass().getMethods()) {
-                if (m.getName().equals("getData") && m.getParameterCount() == 1) {
-                    try {
-                        settings = m.invoke(key, dataContext);
-                        if (settings != null) break;
-                    } catch (Exception ignored) {
-                        // Try next overload (DataContext/DataProvider ambiguity in 2026.x)
-                    }
-                }
-            }
+            Object settings = invokeGetData(key, dataContext);
             if (settings == null) return false;
 
             Class<?> configurableClass = Class.forName("com.intellij.openapi.options.Configurable");
@@ -1317,6 +1300,30 @@ public final class PlatformApiCompat {
             LOG.warn("navigateInOpenSettingsDialog failed for id=" + configurableId, e);
             return false;
         }
+    }
+
+    private static @Nullable Object findDataContext(Class<?> dmClass, Object dm, java.awt.Component component)
+        throws java.lang.reflect.InvocationTargetException, IllegalAccessException {
+        for (java.lang.reflect.Method m : dmClass.getMethods()) {
+            if (m.getName().equals("getDataContext") && m.getParameterCount() == 1
+                && java.awt.Component.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                return m.invoke(dm, component);
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable Object invokeGetData(Object key, Object dataContext) {
+        for (java.lang.reflect.Method m : key.getClass().getMethods()) {
+            if (!m.getName().equals("getData") || m.getParameterCount() != 1) continue;
+            try {
+                Object result = m.invoke(key, dataContext);
+                if (result != null) return result;
+            } catch (Exception ignored) {
+                // Try next overload (DataContext/DataProvider ambiguity in 2026.x)
+            }
+        }
+        return null;
     }
 
     /**

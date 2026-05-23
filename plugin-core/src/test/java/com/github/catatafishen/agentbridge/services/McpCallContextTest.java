@@ -1,8 +1,14 @@
 package com.github.catatafishen.agentbridge.services;
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpCallContextTest {
 
@@ -52,7 +58,7 @@ class McpCallContextTest {
 
         @Test
         void clearWhenNothingSetDoesNotThrow() {
-            assertDoesNotThrow(() -> McpCallContext.clear());
+            assertDoesNotThrow(McpCallContext::clear);
         }
     }
 

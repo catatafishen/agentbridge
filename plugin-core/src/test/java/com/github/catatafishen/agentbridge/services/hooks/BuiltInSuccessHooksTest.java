@@ -46,16 +46,8 @@ class BuiltInSuccessHooksTest {
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"find . -name '*.java'", "find."})
-        void findCommandsGetNudge(String command) {
-            String result = BuiltInSuccessHooks.terminalReprimand(command, false);
-            assertNotNull(result, "Expected nudge for: " + command);
-            assertTrue(result.contains("list_project_files"));
-        }
-
-        @ParameterizedTest
-        @ValueSource(strings = {"ls", "ls -la", "dir", "tree", "tree -L 2"})
-        void lsLikeCommandsGetNudge(String command) {
+        @ValueSource(strings = {"find . -name '*.java'", "find.", "ls", "ls -la", "dir", "tree", "tree -L 2"})
+        void findOrLsLikeCommandsGetNudge(String command) {
             String result = BuiltInSuccessHooks.terminalReprimand(command, false);
             assertNotNull(result, "Expected nudge for: " + command);
             assertTrue(result.contains("list_project_files"));

@@ -140,7 +140,7 @@ public final class GitRebaseTool extends GitTool {
         String ambiError = requireUnambiguousRepo(repoParam, "git_rebase");
         if (ambiError != null) return ambiError;
         String root = resolveRepoRootOrError(repoParam);
-        if (root.startsWith("Error")) return root;
+        if (root.startsWith(ERR_PREFIX)) return root;
 
         String controlResult = handleControlArgs(args, root);
         if (controlResult != null) return controlResult;
@@ -166,7 +166,7 @@ public final class GitRebaseTool extends GitTool {
         if (reviewError != null) return reviewError;
 
         String result = runGitIn(root, buildPlainRebaseArgs(args).toArray(String[]::new));
-        if (result.startsWith("Error")) return fetchNote + enrichRebaseError(result, root);
+        if (result.startsWith(ERR_PREFIX)) return fetchNote + enrichRebaseError(result, root);
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase");
         return fetchNote + result + getBranchContextIn(root);
@@ -368,12 +368,12 @@ public final class GitRebaseTool extends GitTool {
         }
         if (args.has(PARAM_CONTINUE_REBASE) && args.get(PARAM_CONTINUE_REBASE).getAsBoolean()) {
             String result = runGitIn(root, CMD_REBASE, "--continue");
-            if (result.startsWith("Error")) return enrichRebaseError(result, root);
+            if (result.startsWith(ERR_PREFIX)) return enrichRebaseError(result, root);
             return result;
         }
         if (args.has("skip") && args.get("skip").getAsBoolean()) {
             String result = runGitIn(root, CMD_REBASE, "--skip");
-            if (result.startsWith("Error")) return enrichRebaseError(result, root);
+            if (result.startsWith(ERR_PREFIX)) return enrichRebaseError(result, root);
             return result;
         }
         return null;
