@@ -227,6 +227,26 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
         transport.setMessageHandler(this);
     }
 
+    /**
+     * Test constructor allowing transport and approval handler injection.
+     */
+    CodexClient(@NotNull AgentProfile profile,
+                @NotNull AgentConfig config,
+                @Nullable ToolRegistry registry,
+                @Nullable Project project,
+                int mcpPort,
+                @NotNull JsonRpcTransport transport,
+                @NotNull CodexApprovalHandler approvalHandler) {
+        this.profile = profile;
+        this.config = config;
+        this.registry = registry;
+        this.project = project;
+        this.mcpPort = mcpPort;
+        this.transport = transport;
+        this.approvalHandler = approvalHandler;
+        transport.setMessageHandler(this);
+    }
+
     // ── Identity ─────────────────────────────────────────────────────────────
 
     @Override

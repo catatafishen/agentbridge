@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -69,6 +70,13 @@ final class JsonRpcTransport {
         this.project = project;
     }
 
+    /**
+     * Test constructor that bypasses Project dependency.
+     */
+    JsonRpcTransport() {
+        this.project = null;
+    }
+
     // ── Public API ───────────────────────────────────────────────────────────
 
     void setMessageHandler(@Nullable MessageHandler handler) {
@@ -79,9 +87,16 @@ final class JsonRpcTransport {
      * Attach to a running process. Starts the reader thread.
      */
     void attach(@NotNull Process process) {
-        stdin.set(process.getOutputStream());
+        attach(process.getInputStream(), process.getOutputStream());
+    }
+
+    /**
+     * Attach to raw streams. Enables testing without a real process.
+     */
+    void attach(@NotNull InputStream input, @NotNull OutputStream output) {
+        stdin.set(output);
         connected = true;
-        startReaderThread(process);
+        startReaderThread(input);
     }
 
     /**
@@ -186,10 +201,10 @@ final class JsonRpcTransport {
 
     // ── Reader thread ────────────────────────────────────────────────────────
 
-    private void startReaderThread(@NotNull Process proc) {
+    private void startReaderThread(@NotNull InputStream inputStream) {
         Thread reader = new Thread(() -> {
             try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+                new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = br.readLine()) != null) {
                     line = line.trim();

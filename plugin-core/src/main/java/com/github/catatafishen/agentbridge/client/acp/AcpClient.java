@@ -200,13 +200,23 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     /**
-     * Test constructor allowing transport injection.
+     * Test constructor allowing transport and handler injection.
      */
     AcpClient(Project project, JsonRpcTransport transport) {
+        this(project, transport,
+            project != null ? new AcpFileSystemHandler(project) : null,
+            project != null ? new AcpTerminalHandler(project) : null);
+    }
+
+    /**
+     * Full DI constructor for testing with all dependencies injectable.
+     */
+    AcpClient(Project project, JsonRpcTransport transport,
+              AcpFileSystemHandler fsHandler, AcpTerminalHandler terminalHandler) {
         this.project = project;
         this.transport = transport;
-        this.fsHandler = new AcpFileSystemHandler(project);
-        this.terminalHandler = new AcpTerminalHandler(project);
+        this.fsHandler = fsHandler;
+        this.terminalHandler = terminalHandler;
     }
 
     // ═══════════════════════════════════════════════════
