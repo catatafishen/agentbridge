@@ -291,13 +291,13 @@ public final class QueryTurnsTool extends EditorTool {
     }
 
     @NotNull
-    private static String formatInstant(@NotNull Instant instant) {
+    static String formatInstant(@NotNull Instant instant) {
         if (instant.equals(Instant.EPOCH)) return "(unknown time)";
         return ZonedDateTime.ofInstant(instant, ZoneId.systemDefault()).format(DISPLAY_FMT);
     }
 
     @NotNull
-    private static String shortModelName(@NotNull String model) {
+    static String shortModelName(@NotNull String model) {
         // Trim long model identifiers (e.g. "claude-sonnet-4-6-20250514" → "claude-sonnet")
         // Returns broad family buckets: "claude-sonnet", "claude-haiku", "gpt-4", etc.
         String lower = model.toLowerCase(Locale.ROOT);
@@ -312,20 +312,20 @@ public final class QueryTurnsTool extends EditorTool {
     // ── Parameter helpers ─────────────────────────────────────────────────────
 
     @Nullable
-    private static String stringOrNull(@NotNull JsonObject args, @NotNull String key) {
+    static String stringOrNull(@NotNull JsonObject args, @NotNull String key) {
         return args.has(key) ? args.get(key).getAsString() : null;
     }
 
     @Nullable
-    private static Integer intOrNull(@NotNull JsonObject args, @NotNull String key) {
+    static Integer intOrNull(@NotNull JsonObject args, @NotNull String key) {
         return args.has(key) ? args.get(key).getAsInt() : null;
     }
 
-    private static int intOrDefault(@NotNull JsonObject args, @NotNull String key, int def) {
+    static int intOrDefault(@NotNull JsonObject args, @NotNull String key, int def) {
         return args.has(key) ? args.get(key).getAsInt() : def;
     }
 
-    private static boolean boolOrDefault(
+    static boolean boolOrDefault(
         @NotNull JsonObject args, @NotNull String key, boolean def) {
         return args.has(key) ? args.get(key).getAsBoolean() : def;
     }
