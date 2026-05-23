@@ -380,6 +380,149 @@ class OpenCodeClientExporterTest {
         assertTrue(text.endsWith("]"), "Should end with ] when no result: " + text);
     }
 
+    // ── stripTrailingPendingPrompt ────────────────────────────────────────────
+
+    @Test
+    void stripTrailingPendingPrompt_noTrailingPrompt_unchanged() {
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("q"),
+            new EntryData.Text("a")
+        );
+        List<EntryData> result = OpenCodeClientExporter.stripTrailingPendingPrompt(entries);
+        assertEquals(2, result.size());
+        assertInstanceOf(EntryData.Prompt.class, result.get(0));
+        assertInstanceOf(EntryData.Text.class, result.get(1));
+    }
+
+    @Test
+    void stripTrailingPendingPrompt_trailingPrompt_isStripped() {
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("q1"),
+            new EntryData.Text("a1"),
+            new EntryData.Prompt("pending")
+        );
+        List<EntryData> result = OpenCodeClientExporter.stripTrailingPendingPrompt(entries);
+        assertEquals(2, result.size());
+        assertInstanceOf(EntryData.Text.class, result.get(1));
+    }
+
+    @Test
+    void stripTrailingPendingPrompt_onlySinglePrompt_stripsToEmpty() {
+        List<EntryData> entries = new ArrayList<>();
+        entries.add(new EntryData.Prompt("only prompt"));
+        List<EntryData> result = OpenCodeClientExporter.stripTrailingPendingPrompt(entries);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void stripTrailingPendingPrompt_orphanedInMiddle_preserved() {
+        // Orphaned prompt in the middle (followed by more content) must not be stripped
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("failed attempt 1"),  // orphaned — no response
+            new EntryData.Prompt("copilot question"),  // answered by another agent
+            new EntryData.Text("copilot answer"),
+            new EntryData.Prompt("pending")            // trailing — must be stripped
+        );
+        List<EntryData> result = OpenCodeClientExporter.stripTrailingPendingPrompt(entries);
+        assertEquals(3, result.size(), "Only the trailing prompt should be removed");
+        assertInstanceOf(EntryData.Prompt.class, result.get(0), "Orphaned prompt in middle must be kept");
+    }
+
+    @Test
+    void stripTrailingPendingPrompt_emptyList_returnsEmpty() {
+        List<EntryData> result = OpenCodeClientExporter.stripTrailingPendingPrompt(List.of());
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void stripTrailingPendingPrompt_nonContentSuffixBeforePrompt_stillStrips() {
+        // Non-content entries (e.g. SessionSeparator) after a Prompt should not protect it
+        List<EntryData> entries = new ArrayList<>();
+        entries.add(new EntryData.Prompt("q1"));
+        entries.add(new EntryData.Text("a1"));
+        entries.add(new EntryData.Prompt("pending"));
+        entries.add(new EntryData.SessionSeparator("2024-01-01T00:00:00Z"));
+        List<EntryData> result = OpenCodeClientExporter.stripTrailingPendingPrompt(entries);
+        // SessionSeparator is non-content — scanning should skip it and find the Prompt
+        assertEquals(3, result.size());
+        // The SessionSeparator stays; the Prompt before it is stripped
+        assertInstanceOf(EntryData.SessionSeparator.class, result.get(2));
+    }
+
+    // ── applyForeignAgentPrefix ───────────────────────────────────────────────
+
+    @Test
+    void applyForeignAgentPrefix_foreignAgent_prefixesFirstTextPart() {
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "text");
+        part.addProperty("text", "The answer is 42.");
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(part);
+
+        OpenCodeClientExporter.applyForeignAgentPrefix(parts, "copilot");
+
+        String text = parts.get(0).get("text").getAsString();
+        assertTrue(text.startsWith("[Note: this response was provided by agent 'copilot'"),
+            "Should have foreign-agent prefix: " + text);
+        assertTrue(text.contains("The answer is 42."), "Original text should be preserved");
+    }
+
+    @Test
+    void applyForeignAgentPrefix_selfAgent_noChange() {
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "text");
+        part.addProperty("text", "My own response.");
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(part);
+
+        OpenCodeClientExporter.applyForeignAgentPrefix(parts, "opencode");
+
+        assertEquals("My own response.", parts.get(0).get("text").getAsString());
+    }
+
+    @Test
+    void applyForeignAgentPrefix_nullAgent_noChange() {
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "text");
+        part.addProperty("text", "text");
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(part);
+
+        OpenCodeClientExporter.applyForeignAgentPrefix(parts, null);
+
+        assertEquals("text", parts.get(0).get("text").getAsString());
+    }
+
+    @Test
+    void applyForeignAgentPrefix_emptyAgent_noChange() {
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "text");
+        part.addProperty("text", "text");
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(part);
+
+        OpenCodeClientExporter.applyForeignAgentPrefix(parts, "");
+
+        assertEquals("text", parts.get(0).get("text").getAsString());
+    }
+
+    @Test
+    void applyForeignAgentPrefix_noTextPart_prependsNotePart() {
+        // Parts with only tool invocations — a note part should be prepended
+        JsonObject toolPart = new JsonObject();
+        toolPart.addProperty("type", "tool");
+        toolPart.addProperty("tool", "read_file");
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(toolPart);
+
+        OpenCodeClientExporter.applyForeignAgentPrefix(parts, "copilot");
+
+        assertEquals(2, parts.size(), "A note part should have been prepended");
+        assertEquals("text", parts.get(0).get("type").getAsString());
+        assertTrue(parts.get(0).get("text").getAsString().contains("copilot"));
+        assertEquals("tool", parts.get(1).get("type").getAsString());
+    }
+
     // ── Reflection helpers ───────────────────────────────────────────────────
 
     private static String invokeSha1Hex(String input) throws Exception {
