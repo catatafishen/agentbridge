@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.session.exporters;
 
 import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -43,6 +44,7 @@ public final class OpenCodeClientExporter {
     private static final Logger LOG = Logger.getInstance(OpenCodeClientExporter.class);
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final String OPENCODE_VERSION = "1.2.0";
+    private static final String SELF_AGENT = AgentProfileManager.OPENCODE_PROFILE_ID;
     private static final String IMPORTED_TITLE = "AgentBridge Session";
     private static final String FIELD_INPUT = "input";
 
@@ -104,6 +106,7 @@ public final class OpenCodeClientExporter {
         int maxTotalChars) {
 
         entries = trimEntriesToBudget(entries, maxTotalChars);
+        entries = stripTrailingPendingPrompt(entries);
 
         if (entries.isEmpty()) return null;
 
@@ -173,6 +176,7 @@ public final class OpenCodeClientExporter {
                     // Flush any pending assistant message before a new user message
                     if (pendingParts != null && !pendingParts.isEmpty()) {
                         prevTime++;
+                        applyForeignAgentPrefix(pendingParts, pendingAgent);
                         flushMessage(conn, sessionId,
                             new MessageInsert("assistant", pendingAgent, pendingModel,
                                 pendingParts, prevTime, projectDir, lastUserMessageId));
@@ -246,6 +250,7 @@ public final class OpenCodeClientExporter {
         // Flush trailing assistant message
         if (pendingParts != null && !pendingParts.isEmpty()) {
             prevTime++;
+            applyForeignAgentPrefix(pendingParts, pendingAgent);
             flushMessage(conn, sessionId,
                 new MessageInsert("assistant", pendingAgent, pendingModel,
                     pendingParts, prevTime, projectDir, lastUserMessageId));
@@ -275,6 +280,62 @@ public final class OpenCodeClientExporter {
 
     private static @NotNull List<EntryData> trimEntriesToBudget(@NotNull List<EntryData> entries, int maxTotalChars) {
         return EntryBudgetTrimmer.trimEntriesToBudget(entries, maxTotalChars);
+    }
+
+    /**
+     * Removes the trailing pending {@link EntryData.Prompt} from the entry list, if present.
+     *
+     * <p>When exporting conversation history to OpenCode, the most recent user prompt is always
+     * the <em>current pending message</em> — it will be sent again via {@code session/prompt}.
+     * Including it in the exported history causes OpenCode to see it twice (once in history,
+     * once as the new {@code session/prompt} message), leading to confused responses where the
+     * model tries to answer "both" the historical and the current copy.
+     *
+     * <p>Orphaned prompts that appear <em>earlier</em> in the list (unanswered turns from failed
+     * sessions) are intentionally preserved — they provide useful recovery context.
+     */
+    @NotNull
+    static List<EntryData> stripTrailingPendingPrompt(@NotNull List<EntryData> entries) {
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            EntryData e = entries.get(i);
+            if (e instanceof EntryData.Prompt) {
+                List<EntryData> trimmed = new ArrayList<>(entries);
+                trimmed.remove(i);
+                return trimmed;
+            }
+            if (e instanceof EntryData.Text || e instanceof EntryData.Thinking
+                || e instanceof EntryData.ToolCall || e instanceof EntryData.SubAgent) {
+                // Last meaningful entry has an assistant response — nothing trailing to strip
+                return entries;
+            }
+            // Non-content entries (Status, TurnStats, SessionSeparator, ContextFiles): keep scanning
+        }
+        return entries;
+    }
+
+    /**
+     * Prefixes the first text part of an assistant message with a foreign-agent attribution note.
+     *
+     * <p>When a turn was answered by a different agent (e.g. "copilot"), OpenCode would otherwise
+     * interpret that response as its own prior work. Adding a clear attribution prevents the model
+     * from treating another agent's analysis as something it did itself.
+     *
+     * <p>No-ops if {@code agent} is null, empty, or equal to {@value #SELF_AGENT}.
+     */
+    static void applyForeignAgentPrefix(@NotNull List<JsonObject> parts, @Nullable String agent) {
+        if (agent == null || agent.isEmpty() || SELF_AGENT.equals(agent)) return;
+        String note = "[Note: this response was provided by agent '" + agent + "', not by you.]\n\n";
+        for (JsonObject part : parts) {
+            if ("text".equals(part.has("type") ? part.get("type").getAsString() : "")) {
+                part.addProperty("text", note + part.get("text").getAsString());
+                return;
+            }
+        }
+        // No text part found — prepend a dedicated text note
+        JsonObject notePart = new JsonObject();
+        notePart.addProperty("type", "text");
+        notePart.addProperty("text", note.strip());
+        parts.add(0, notePart);
     }
 
     /**
