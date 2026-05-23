@@ -829,7 +829,7 @@ public final class RunConfigurationService {
         runManager.setSelectedConfiguration(settings);
     }
 
-    private static org.jdom.Element buildConfigElement(String name, String typeId, String factoryName) {
+    static org.jdom.Element buildConfigElement(String name, String typeId, String factoryName) {
         var element = new org.jdom.Element("configuration");
         element.setAttribute(JSON_KEY_DEFAULT, "false");
         element.setAttribute("name", name);
@@ -951,7 +951,7 @@ public final class RunConfigurationService {
         mergeJsonConfigIntoXml(target, obj);
     }
 
-    private static JsonObject inferOptionSchema(org.jdom.Element option) {
+    static JsonObject inferOptionSchema(org.jdom.Element option) {
         var children = option.getChildren();
         String value = option.getAttributeValue(XML_ATTR_VALUE);
         if (children.isEmpty()) return schemaPrimitive(value != null ? value : "");
@@ -961,7 +961,7 @@ public final class RunConfigurationService {
         return xmlElementToJsonSchema(option);
     }
 
-    private static JsonObject inferElementSchema(org.jdom.Element element) {
+    static JsonObject inferElementSchema(org.jdom.Element element) {
         if ("envs".equals(element.getName())) {
             return schemaDict();
         }
@@ -1031,8 +1031,8 @@ public final class RunConfigurationService {
               + errors.stream().map(e -> "  - " + e).collect(Collectors.joining("\n"));
     }
 
-    private static void collectTypeErrors(String key, JsonElement value, JsonObject propSchema,
-                                          List<String> errors) {
+    static void collectTypeErrors(String key, JsonElement value, JsonObject propSchema,
+                                  List<String> errors) {
         String expectedType = propSchema.has(JSON_KEY_TYPE)
             ? propSchema.get(JSON_KEY_TYPE).getAsString() : JSON_TYPE_STRING;
         if (JSON_TYPE_ARRAY.equals(expectedType)) {

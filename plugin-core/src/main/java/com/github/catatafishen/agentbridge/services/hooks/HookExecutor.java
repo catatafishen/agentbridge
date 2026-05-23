@@ -371,7 +371,7 @@ public final class HookExecutor {
      * etc.) may be installed on Windows (e.g., via Cygwin) and should be resolved via PATH,
      * not redirected to the Git for Windows shell.
      */
-    private static boolean isShellInterpreter(@NotNull String interpreter) {
+    static boolean isShellInterpreter(@NotNull String interpreter) {
         String basename = interpreter.contains("/")
             ? interpreter.substring(interpreter.lastIndexOf('/') + 1)
             : interpreter;
@@ -397,7 +397,7 @@ public final class HookExecutor {
         }
     }
 
-    private static String stripTrailingLineBreaks(String text) {
+    static String stripTrailingLineBreaks(String text) {
         int end = text.length();
         while (end > 0 && (text.charAt(end - 1) == '\r' || text.charAt(end - 1) == '\n')) {
             end--;
@@ -405,13 +405,13 @@ public final class HookExecutor {
         return text.substring(0, end);
     }
 
-    private static String formatOutput(String stdout, String stderr) {
+    static String formatOutput(String stdout, String stderr) {
         String combined = (stdout + stderr).trim();
         if (combined.isEmpty()) return "";
         return ": " + truncate(combined);
     }
 
-    private static String truncate(String text) {
+    static String truncate(String text) {
         return text.length() > MAX_HOOK_OUTPUT_CHARS
             ? text.substring(0, MAX_HOOK_OUTPUT_CHARS) + "..."
             : text;

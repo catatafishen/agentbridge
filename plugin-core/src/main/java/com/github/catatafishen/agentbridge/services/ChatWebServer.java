@@ -279,15 +279,24 @@ public final class ChatWebServer implements Disposable {
     /**
      * Parses a Web Push subscription JSON into a {@link WebPushSender.PushSubscription}.
      */
-    private static @Nullable WebPushSender.PushSubscription parseSubscription(@NotNull String json) {
-        String endpoint = jsonString(json, "endpoint");
-        int keysIdx = json.indexOf("\"keys\"");
-        if (endpoint == null || keysIdx < 0) return null;
-        String keysBlock = json.substring(keysIdx);
-        String p256dh = jsonString(keysBlock, "p256dh");
-        String auth = jsonString(keysBlock, "auth");
-        if (p256dh == null || auth == null) return null;
-        return new WebPushSender.PushSubscription(endpoint, p256dh, auth);
+    static @Nullable WebPushSender.PushSubscription parseSubscription(@NotNull String json) {
+        try {
+            var map = new com.google.gson.Gson().fromJson(json, java.util.Map.class);
+            Object endpointVal = map.get("endpoint");
+            if (endpointVal == null) return null;
+            String endpoint = endpointVal.toString();
+
+            Object keysObj = map.get("keys");
+            if (!(keysObj instanceof java.util.Map<?, ?> keys)) return null;
+
+            Object p256dhVal = keys.get("p256dh");
+            Object authVal = keys.get("auth");
+            if (p256dhVal == null || authVal == null) return null;
+
+            return new WebPushSender.PushSubscription(endpoint, p256dhVal.toString(), authVal.toString());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -902,7 +911,7 @@ public final class ChatWebServer implements Disposable {
         }
     }
 
-    private static String buildSubjectAlternativeNames(List<String> localIps) {
+    static String buildSubjectAlternativeNames(List<String> localIps) {
         StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1,ip:127.0.1.1");
         for (String ip : localIps) {
             san.append(",ip:").append(ip);
@@ -1910,7 +1919,7 @@ public final class ChatWebServer implements Disposable {
         }
     }
 
-    private static com.google.gson.JsonObject liveEntryToJson(LiveToolCallEntry entry) {
+    static com.google.gson.JsonObject liveEntryToJson(LiveToolCallEntry entry) {
         com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
         obj.addProperty("id", entry.callId());
         obj.addProperty(KEY_TITLE, entry.displayName());
