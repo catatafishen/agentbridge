@@ -70,6 +70,11 @@ jobs:
       - name: Run tests with coverage
         run: |
           npm run test:coverage --prefix plugin-core/js-tests
+          # Normalize LCOV source paths: vitest outputs paths relative to its working
+          # directory (plugin-core/js-tests/), e.g. "../chat-ui/src/Foo.ts". SonarCloud
+          # resolves LCOV paths relative to the module base directory (plugin-core/).
+          # Strip the leading "../" so paths become "chat-ui/src/Foo.ts".
+          sed -i 's|^SF:\.\./|SF:|' plugin-core/js-tests/coverage/lcov.info
           npm run build --prefix plugin-core/chat-ui
           gradle :mcp-server:test :mcp-server:jacocoTestReport \
             :plugin-experimental:test :plugin-experimental:jacocoTestReport \
