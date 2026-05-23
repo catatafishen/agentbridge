@@ -744,7 +744,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
      * Extracts a human-readable string from a Claude CLI error element (string or object).
      */
     @NotNull
-    private static String extractErrorText(@NotNull JsonElement el) {
+    static String extractErrorText(@NotNull JsonElement el) {
         if (el.isJsonPrimitive()) return el.getAsString();
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
@@ -789,13 +789,13 @@ public final class ClaudeClient extends AbstractClaudeClient {
         onUpdate.accept(new SessionUpdate.TurnUsage(inputTokens, outputTokens, costUsd));
     }
 
-    private static int safeGetInt(@NotNull JsonObject obj, @NotNull String field) {
+    static int safeGetInt(@NotNull JsonObject obj, @NotNull String field) {
         if (!obj.has(field)) return 0;
         JsonElement el = obj.get(field);
         return el.isJsonNull() ? 0 : el.getAsInt();
     }
 
-    private static double safeGetDouble(@NotNull JsonObject obj, @NotNull String field) {
+    static double safeGetDouble(@NotNull JsonObject obj, @NotNull String field) {
         if (!obj.has(field)) return 0.0;
         JsonElement el = obj.get(field);
         return el.isJsonNull() ? 0.0 : el.getAsDouble();

@@ -425,8 +425,8 @@ public final class McpProtocolHandler {
         }
     }
 
-    private static int parseCursorOffset(@Nullable JsonElement cursorElement,
-                                         @NotNull String expectedPrefix) throws InvalidCursorException {
+    static int parseCursorOffset(@Nullable JsonElement cursorElement,
+                                 @NotNull String expectedPrefix) throws InvalidCursorException {
         if (cursorElement == null || cursorElement.isJsonNull()) {
             return 0;
         }
@@ -442,12 +442,12 @@ public final class McpProtocolHandler {
     }
 
     @NotNull
-    private static String encodeCursor(@NotNull String prefix, int offset) {
+    static String encodeCursor(@NotNull String prefix, int offset) {
         return prefix + offset;
     }
 
     @NotNull
-    private static String guessMimeType(@NotNull Path path) {
+    static String guessMimeType(@NotNull Path path) {
         try {
             String mimeType = Files.probeContentType(path);
             if (mimeType != null && !mimeType.isBlank()) {
@@ -468,7 +468,7 @@ public final class McpProtocolHandler {
         return "application/octet-stream";
     }
 
-    private static boolean isTextResource(@NotNull Path path) {
+    static boolean isTextResource(@NotNull Path path) {
         String mimeType = guessMimeType(path);
         return mimeType.startsWith("text/")
             || "application/json".equals(mimeType)
@@ -504,7 +504,7 @@ public final class McpProtocolHandler {
         return null;
     }
 
-    private static JsonObject buildToolResult(JsonObject msg, @Nullable String text, boolean isError) {
+    static JsonObject buildToolResult(JsonObject msg, @Nullable String text, boolean isError) {
         JsonObject content = new JsonObject();
         content.addProperty("type", "text");
         content.addProperty("text", text != null ? text : "");
@@ -951,8 +951,8 @@ public final class McpProtocolHandler {
      * Applies the pending prepend/append text modifiers produced by PRE hooks to the tool output.
      * These modifiers are accumulated during the PRE phase and applied only on success.
      */
-    private static @NotNull String applyPreHookTextModifiers(@NotNull PreHookApplication preHook,
-                                                             @Nullable String resultText) {
+    static @NotNull String applyPreHookTextModifiers(@NotNull PreHookApplication preHook,
+                                                     @Nullable String resultText) {
         String base = resultText != null ? resultText : "";
         if (preHook.pendingPrepend() != null && !preHook.pendingPrepend().isEmpty()) {
             base = preHook.pendingPrepend() + "\n\n" + base;
@@ -974,10 +974,10 @@ public final class McpProtocolHandler {
         }
     }
 
-    private record PreHookApplication(@NotNull JsonObject arguments,
-                                      @Nullable String blockedMessage,
-                                      @Nullable String pendingPrepend,
-                                      @Nullable String pendingAppend) {
+    record PreHookApplication(@NotNull JsonObject arguments,
+                              @Nullable String blockedMessage,
+                              @Nullable String pendingPrepend,
+                              @Nullable String pendingAppend) {
     }
 
     private record PopupGateResult(String prefix, @Nullable JsonObject blocked) {
@@ -1002,7 +1002,7 @@ public final class McpProtocolHandler {
         return new PopupGateResult("", null);
     }
 
-    private static String truncateIfNeeded(String text) {
+    static String truncateIfNeeded(String text) {
         if (text == null || text.length() <= MAX_RESULT_CHARS) return text;
         int removed = text.length() - MAX_RESULT_CHARS;
         return text.substring(0, MAX_RESULT_CHARS)
@@ -1011,7 +1011,7 @@ public final class McpProtocolHandler {
             + " to read specific sections.]";
     }
 
-    private static JsonObject respondResult(JsonObject request, JsonObject result) {
+    static JsonObject respondResult(JsonObject request, JsonObject result) {
         JsonObject response = new JsonObject();
         response.addProperty(KEY_JSONRPC, "2.0");
         if (request != null && request.has("id")) {
@@ -1021,7 +1021,7 @@ public final class McpProtocolHandler {
         return response;
     }
 
-    private static JsonObject respondError(JsonObject request, int code, String message) {
+    static JsonObject respondError(JsonObject request, int code, String message) {
         return makeErrorResponse(
             request != null && request.has("id") ? request.get("id") : null,
             code,
@@ -1049,7 +1049,7 @@ public final class McpProtocolHandler {
         return response;
     }
 
-    private static JsonObject makeErrorResponse(JsonElement id, int code, String message) {
+    static JsonObject makeErrorResponse(JsonElement id, int code, String message) {
         JsonObject error = new JsonObject();
         error.addProperty("code", code);
         error.addProperty("message", message);
@@ -1079,8 +1079,8 @@ public final class McpProtocolHandler {
         }
     }
 
-    private static final class InvalidCursorException extends Exception {
-        private InvalidCursorException(@NotNull String message) {
+    static final class InvalidCursorException extends Exception {
+        InvalidCursorException(@NotNull String message) {
             super(message);
         }
     }

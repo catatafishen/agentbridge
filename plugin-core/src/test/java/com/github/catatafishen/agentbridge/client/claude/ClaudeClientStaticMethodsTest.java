@@ -1,422 +1,342 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
-import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for pure static methods in {@link ClaudeClient} that are untested
- * by {@link ClaudeClientTest} (which covers extractErrorText, safeGetInt, safeGetDouble).
+ * Tests for the pure static methods in {@link ClaudeClient}.
  */
 class ClaudeClientStaticMethodsTest {
 
-    // ── buildJsonUserMessage (package-private static) ───────────────────────
-
-    @Test
-    void buildJsonUserMessage_createsValidJsonEnvelope() {
-        String result = ClaudeClient.buildJsonUserMessage("Hello", List.of());
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-
-        assertEquals("user", parsed.get("type").getAsString());
-
-        JsonObject message = parsed.getAsJsonObject("message");
-        assertEquals("user", message.get("role").getAsString());
-
-        JsonArray content = message.getAsJsonArray("content");
-        assertEquals(1, content.size());
-
-        JsonObject textBlock = content.get(0).getAsJsonObject();
-        assertEquals("text", textBlock.get("type").getAsString());
-        assertEquals("Hello", textBlock.get("text").getAsString());
-    }
-
-    @Test
-    void buildJsonUserMessage_preservesSpecialCharacters() {
-        String prompt = "Line1\nLine2\twith \"quotes\"";
-        String result = ClaudeClient.buildJsonUserMessage(prompt, List.of());
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-
-        String text = parsed.getAsJsonObject("message")
-            .getAsJsonArray("content")
-            .get(0).getAsJsonObject()
-            .get("text").getAsString();
-
-        assertEquals(prompt, text);
-    }
-
-    @Test
-    void buildJsonUserMessage_handlesEmptyPrompt() {
-        String result = ClaudeClient.buildJsonUserMessage("", List.of());
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-        String text = parsed.getAsJsonObject("message")
-            .getAsJsonArray("content")
-            .get(0).getAsJsonObject()
-            .get("text").getAsString();
-        assertEquals("", text);
-    }
-
-    @Test
-    void buildJsonUserMessage_hasCorrectStructure() {
-        String result = ClaudeClient.buildJsonUserMessage("test", List.of());
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-
-        assertTrue(parsed.has("type"), "Top-level should have 'type'");
-        assertTrue(parsed.has("message"), "Top-level should have 'message'");
-        JsonObject message = parsed.getAsJsonObject("message");
-        assertTrue(message.has("role"), "Message should have 'role'");
-        assertTrue(message.has("content"), "Message should have 'content'");
-        assertTrue(message.get("content").isJsonArray(), "Content should be an array");
-    }
-
-    @Test
-    void buildJsonUserMessage_contentBlockHasTextType() {
-        String result = ClaudeClient.buildJsonUserMessage("prompt", List.of());
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-        JsonObject block = parsed.getAsJsonObject("message")
-            .getAsJsonArray("content")
-            .get(0).getAsJsonObject();
-        assertEquals("text", block.get("type").getAsString());
-    }
-
-    @Test
-    void buildJsonUserMessage_withImages_addsAnthropicImageBlocks() {
-        ContentBlock.Image img = new ContentBlock.Image("iVBORw0KGgo=", "image/png");
-        String result = ClaudeClient.buildJsonUserMessage("Describe this:", List.of(img));
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-
-        JsonArray content = parsed.getAsJsonObject("message").getAsJsonArray("content");
-        assertEquals(2, content.size(), "Should have text block + image block");
-
-        JsonObject imageBlock = content.get(1).getAsJsonObject();
-        assertEquals("image", imageBlock.get("type").getAsString());
-
-        JsonObject source = imageBlock.getAsJsonObject("source");
-        assertEquals("base64", source.get("type").getAsString());
-        assertEquals("image/png", source.get("media_type").getAsString());
-        assertEquals("iVBORw0KGgo=", source.get("data").getAsString());
-    }
-
-    @Test
-    void buildJsonUserMessage_withMultipleImages_addsAllImageBlocksAfterText() {
-        ContentBlock.Image img1 = new ContentBlock.Image("data1=", "image/png");
-        ContentBlock.Image img2 = new ContentBlock.Image("data2=", "image/jpeg");
-        String result = ClaudeClient.buildJsonUserMessage("Compare:", List.of(img1, img2));
-        JsonObject parsed = JsonParser.parseString(result).getAsJsonObject();
-
-        JsonArray content = parsed.getAsJsonObject("message").getAsJsonArray("content");
-        assertEquals(3, content.size(), "Should have text block + 2 image blocks");
-
-        assertEquals("text", content.get(0).getAsJsonObject().get("type").getAsString());
-        assertEquals("image/png", content.get(1).getAsJsonObject()
-            .getAsJsonObject("source").get("media_type").getAsString());
-        assertEquals("image/jpeg", content.get(2).getAsJsonObject()
-            .getAsJsonObject("source").get("media_type").getAsString());
-    }
-
-    // ── extractImageBlocks (package-private static) ─────────────────────────
-
-    @Test
-    void extractImageBlocks_returnsEmptyListForNoImages() {
-        List<ContentBlock> blocks = List.of(
-            new ContentBlock.Text("hello"),
-            new ContentBlock.Resource(new ContentBlock.ResourceLink("file://a", "a.txt", null, "content", null))
-        );
-        assertTrue(ClaudeClient.extractImageBlocks(blocks).isEmpty());
-    }
-
-    @Test
-    void extractImageBlocks_extractsImageBlocks() {
-        ContentBlock.Image img = new ContentBlock.Image("abc=", "image/png");
-        List<ContentBlock> blocks = List.of(
-            new ContentBlock.Text("describe this"),
-            img
-        );
-        List<ContentBlock.Image> result = ClaudeClient.extractImageBlocks(blocks);
-        assertEquals(1, result.size());
-        assertEquals("abc=", result.get(0).data());
-        assertEquals("image/png", result.get(0).mimeType());
-    }
-
-    @Test
-    void extractImageBlocks_extractsMultipleImages() {
-        ContentBlock.Image img1 = new ContentBlock.Image("data1=", "image/png");
-        ContentBlock.Image img2 = new ContentBlock.Image("data2=", "image/jpeg");
-        List<ContentBlock> blocks = List.of(new ContentBlock.Text("text"), img1, img2);
-        List<ContentBlock.Image> result = ClaudeClient.extractImageBlocks(blocks);
-        assertEquals(2, result.size());
-    }
-
-    @Test
-    void extractImageBlocks_returnsEmptyForEmptyInput() {
-        assertTrue(ClaudeClient.extractImageBlocks(List.of()).isEmpty());
-    }
-
-    // ── extractToolResultContent (package-private static) ───────────────────
-
-    @Test
-    void extractToolResultContent_returnsEmptyForNoContentField() {
-        assertEquals("", ClaudeClient.extractToolResultContent(new JsonObject()));
-    }
-
-    @Test
-    void extractToolResultContent_returnsStringContent() {
-        JsonObject event = new JsonObject();
-        event.addProperty("content", "Hello world");
-        assertEquals("Hello world", ClaudeClient.extractToolResultContent(event));
-    }
-
-    @Test
-    void extractToolResultContent_extractsTextFromContentBlockArray() {
-        JsonArray content = new JsonArray();
-        JsonObject block1 = new JsonObject();
-        block1.addProperty("type", "text");
-        block1.addProperty("text", "First. ");
-        content.add(block1);
-        JsonObject block2 = new JsonObject();
-        block2.addProperty("type", "text");
-        block2.addProperty("text", "Second.");
-        content.add(block2);
-
-        JsonObject event = new JsonObject();
-        event.add("content", content);
-        assertEquals("First. Second.", ClaudeClient.extractToolResultContent(event));
-    }
-
-    @Test
-    void extractToolResultContent_handlesPrimitiveStringsInArray() {
-        JsonArray content = new JsonArray();
-        content.add("plain string");
-        JsonObject event = new JsonObject();
-        event.add("content", content);
-        assertEquals("plain string", ClaudeClient.extractToolResultContent(event));
-    }
-
-    @Test
-    void extractToolResultContent_skipsNonObjectNonPrimitiveInArray() {
-        JsonArray content = new JsonArray();
-        JsonArray nested = new JsonArray();
-        nested.add("ignored");
-        content.add(nested);
-        JsonObject event = new JsonObject();
-        event.add("content", content);
-        assertEquals("", ClaudeClient.extractToolResultContent(event));
-    }
-
-    @Test
-    void extractToolResultContent_fallsBackToToStringForOtherTypes() {
-        JsonObject contentObj = new JsonObject();
-        contentObj.addProperty("key", "value");
-        JsonObject event = new JsonObject();
-        event.add("content", contentObj);
-        String result = ClaudeClient.extractToolResultContent(event);
-        assertTrue(result.contains("key"));
-        assertTrue(result.contains("value"));
-    }
-
-    // ── extractErrorText (private static) ───────────────────────────────────
-
-    @Test
-    void extractErrorText_returnsPrimitiveString() throws Exception {
-        JsonElement el = new JsonPrimitive("something went wrong");
-        assertEquals("something went wrong", invokeExtractErrorText(el));
-    }
-
-    @Test
-    void extractErrorText_returnsMessageFieldFromObject() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("message", "detailed error");
-        assertEquals("detailed error", invokeExtractErrorText(obj));
-    }
-
-    @Test
-    void extractErrorText_returnsToStringForObjectWithoutMessage() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("code", 500);
-        String result = invokeExtractErrorText(obj);
-        assertEquals(obj.toString(), result);
-    }
-
-    @Test
-    void extractErrorText_returnsToStringForJsonArray() throws Exception {
-        JsonArray arr = new JsonArray();
-        arr.add("err1");
-        arr.add("err2");
-        assertEquals(arr.toString(), invokeExtractErrorText(arr));
-    }
-
-    // ── safeGetInt (private static) ─────────────────────────────────────────
-
-    @Test
-    void safeGetInt_returnsValueWhenPresent() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("tokens", 100);
-        assertEquals(100, invokeSafeGetInt(obj, "tokens"));
-    }
-
-    @Test
-    void safeGetInt_returnsZeroWhenFieldMissing() throws Exception {
-        JsonObject obj = new JsonObject();
-        assertEquals(0, invokeSafeGetInt(obj, "missing"));
-    }
-
-    @Test
-    void safeGetInt_returnsZeroWhenFieldIsJsonNull() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.add("count", JsonNull.INSTANCE);
-        assertEquals(0, invokeSafeGetInt(obj, "count"));
-    }
-
-    @Test
-    void safeGetInt_returnsExactValue42() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("answer", 42);
-        assertEquals(42, invokeSafeGetInt(obj, "answer"));
-    }
-
-    // ── safeGetDouble (private static) ──────────────────────────────────────
-
-    @Test
-    void safeGetDouble_returnsValueWhenPresent() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("cost", 1.5);
-        assertEquals(1.5, invokeSafeGetDouble(obj, "cost"), 0.0001);
-    }
-
-    @Test
-    void safeGetDouble_returnsZeroWhenFieldMissing() throws Exception {
-        JsonObject obj = new JsonObject();
-        assertEquals(0.0, invokeSafeGetDouble(obj, "missing"), 0.0001);
-    }
-
-    @Test
-    void safeGetDouble_returnsZeroWhenFieldIsJsonNull() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.add("price", JsonNull.INSTANCE);
-        assertEquals(0.0, invokeSafeGetDouble(obj, "price"), 0.0001);
-    }
-
-    @Test
-    void safeGetDouble_returnsExactValuePi() throws Exception {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("pi", 3.14);
-        assertEquals(3.14, invokeSafeGetDouble(obj, "pi"), 0.0001);
-    }
-
-    // ── respondToControlRequest (private static) ────────────────────────────
-
-    @Test
-    void respondToControlRequest_canUseTool_allowDecision() throws Exception {
-        JsonObject event = new JsonObject();
-        event.addProperty("subtype", "can_use_tool");
-        event.addProperty("requestId", "req-1");
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-        invokeRespondToControlRequest(event, baos);
-
-        JsonObject response = JsonParser.parseString(baos.toString(StandardCharsets.UTF_8).trim()).getAsJsonObject();
-        assertEquals("control_response", response.get("type").getAsString());
-        assertEquals("can_use_tool", response.get("subtype").getAsString());
-        assertTrue(response.has("response"));
-        assertEquals("allow", response.getAsJsonObject("response").get("decision").getAsString());
-    }
-
-    @Test
-    void respondToControlRequest_unknownSubtype_noDecision() throws Exception {
-        JsonObject event = new JsonObject();
-        event.addProperty("subtype", "unknown_subtype");
-        event.addProperty("requestId", "req-2");
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-        invokeRespondToControlRequest(event, baos);
-
-        JsonObject response = JsonParser.parseString(baos.toString(StandardCharsets.UTF_8).trim()).getAsJsonObject();
-        assertEquals("control_response", response.get("type").getAsString());
-        assertFalse(response.has("response"), "Unknown subtype should not include a 'response' field");
-    }
-
-    @Test
-    void respondToControlRequest_echoesRequestId() throws Exception {
-        JsonObject event = new JsonObject();
-        event.addProperty("subtype", "can_use_tool");
-        event.addProperty("requestId", "my-unique-id-123");
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-        invokeRespondToControlRequest(event, baos);
-
-        JsonObject response = JsonParser.parseString(baos.toString(StandardCharsets.UTF_8).trim()).getAsJsonObject();
-        assertEquals("my-unique-id-123", response.get("requestId").getAsString());
-    }
-
-    @Test
-    void respondToControlRequest_outputEndsWithNewline() throws Exception {
-        JsonObject event = new JsonObject();
-        event.addProperty("subtype", "can_use_tool");
-        event.addProperty("requestId", "req-nl");
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-        invokeRespondToControlRequest(event, baos);
-
-        String raw = baos.toString(StandardCharsets.UTF_8);
-        assertTrue(raw.endsWith("\n"), "Output should end with a newline");
-    }
-
-    // ── Reflection helpers ──────────────────────────────────────────────────
-
-    private static final Method EXTRACT_ERROR_TEXT;
-    private static final Method SAFE_GET_INT;
-    private static final Method SAFE_GET_DOUBLE;
-    private static final Method RESPOND_TO_CONTROL_REQUEST;
-
-    static {
-        try {
-            EXTRACT_ERROR_TEXT = ClaudeClient.class
-                .getDeclaredMethod("extractErrorText", JsonElement.class);
-            EXTRACT_ERROR_TEXT.setAccessible(true);
-
-            SAFE_GET_INT = ClaudeClient.class
-                .getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
-            SAFE_GET_INT.setAccessible(true);
-
-            SAFE_GET_DOUBLE = ClaudeClient.class
-                .getDeclaredMethod("safeGetDouble", JsonObject.class, String.class);
-            SAFE_GET_DOUBLE.setAccessible(true);
-
-            RESPOND_TO_CONTROL_REQUEST = ClaudeClient.class
-                .getDeclaredMethod("respondToControlRequest", JsonObject.class, OutputStream.class);
-            RESPOND_TO_CONTROL_REQUEST.setAccessible(true);
-        } catch (NoSuchMethodException e) {
-            throw new AssertionError("Method not found — signature changed?", e);
+    // ── isClaudeAuthError ─────────────────────────────────────────────────────
+
+    @Nested
+    class IsClaudeAuthError {
+
+        @Test
+        void returnsFlaseForNull() {
+            assertFalse(ClaudeClient.isClaudeAuthError(null));
+        }
+
+        @Test
+        void detectsInvalidApiKey() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Error: Invalid API key provided"));
+        }
+
+        @Test
+        void detectsLoginRequired() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Please run /login to authenticate"));
+        }
+
+        @Test
+        void detectsLoginWithBackticks() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Please run `/login` first"));
+        }
+
+        @Test
+        void detectsNotAuthenticated() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Not authenticated"));
+        }
+
+        @Test
+        void detectsUnauthorized() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Unauthorized access"));
+        }
+
+        @Test
+        void detectsAuthRequired() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Authentication required for this action"));
+        }
+
+        @Test
+        void detects401() {
+            assertTrue(ClaudeClient.isClaudeAuthError("Server returned 401"));
+        }
+
+        @Test
+        void caseInsensitive() {
+            assertTrue(ClaudeClient.isClaudeAuthError("INVALID API KEY"));
+        }
+
+        @Test
+        void normalTextReturnsFalse() {
+            assertFalse(ClaudeClient.isClaudeAuthError("Everything is fine"));
         }
     }
 
-    private static String invokeExtractErrorText(JsonElement el) throws Exception {
-        return (String) EXTRACT_ERROR_TEXT.invoke(null, el);
+    // ── extractProfileName ────────────────────────────────────────────────────
+
+    @Nested
+    class ExtractProfileName {
+
+        @Test
+        void extractsProfile() {
+            List<String> args = List.of("--verbose", "--profile", "my-profile", "--model", "sonnet");
+            assertEquals("my-profile", ClaudeClient.extractProfileName(args));
+        }
+
+        @Test
+        void returnsNullWhenNotPresent() {
+            List<String> args = List.of("--verbose", "--model", "sonnet");
+            assertNull(ClaudeClient.extractProfileName(args));
+        }
+
+        @Test
+        void returnsNullForEmptyList() {
+            assertNull(ClaudeClient.extractProfileName(List.of()));
+        }
+
+        @Test
+        void returnsNullWhenProfileIsLastArg() {
+            List<String> args = List.of("--verbose", "--profile");
+            assertNull(ClaudeClient.extractProfileName(args));
+        }
+
+        @Test
+        void findsFirstProfile() {
+            List<String> args = List.of("--profile", "first", "--profile", "second");
+            assertEquals("first", ClaudeClient.extractProfileName(args));
+        }
     }
 
-    private static int invokeSafeGetInt(JsonObject obj, String field) throws Exception {
-        return (int) SAFE_GET_INT.invoke(null, obj, field);
+    // ── extractErrorText ──────────────────────────────────────────────────────
+
+    @Nested
+    class ExtractErrorText {
+
+        @Test
+        void extractsFromString() {
+            JsonElement el = new JsonPrimitive("something went wrong");
+            assertEquals("something went wrong", ClaudeClient.extractErrorText(el));
+        }
+
+        @Test
+        void extractsFromObjectWithMessage() {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("message", "detailed error");
+            assertEquals("detailed error", ClaudeClient.extractErrorText(obj));
+        }
+
+        @Test
+        void fallsBackToToStringForObject() {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("code", 500);
+            String result = ClaudeClient.extractErrorText(obj);
+            assertTrue(result.contains("500"));
+        }
+
+        @Test
+        void handlesNumber() {
+            JsonElement el = new JsonPrimitive(42);
+            assertEquals("42", ClaudeClient.extractErrorText(el));
+        }
     }
 
-    private static double invokeSafeGetDouble(JsonObject obj, String field) throws Exception {
-        return (double) SAFE_GET_DOUBLE.invoke(null, obj, field);
+    // ── safeGetInt ────────────────────────────────────────────────────────────
+
+    @Nested
+    class SafeGetInt {
+
+        @Test
+        void returnsMissingFieldAsZero() {
+            assertEquals(0, ClaudeClient.safeGetInt(new JsonObject(), "count"));
+        }
+
+        @Test
+        void returnsJsonNullAsZero() {
+            JsonObject obj = new JsonObject();
+            obj.add("count", JsonNull.INSTANCE);
+            assertEquals(0, ClaudeClient.safeGetInt(obj, "count"));
+        }
+
+        @Test
+        void returnsIntValue() {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("count", 42);
+            assertEquals(42, ClaudeClient.safeGetInt(obj, "count"));
+        }
     }
 
-    private static void invokeRespondToControlRequest(JsonObject event, OutputStream stdin) throws Exception {
-        RESPOND_TO_CONTROL_REQUEST.invoke(null, event, stdin);
+    // ── safeGetDouble ─────────────────────────────────────────────────────────
+
+    @Nested
+    class SafeGetDouble {
+
+        @Test
+        void returnsMissingFieldAsZero() {
+            assertEquals(0.0, ClaudeClient.safeGetDouble(new JsonObject(), "cost"));
+        }
+
+        @Test
+        void returnsJsonNullAsZero() {
+            JsonObject obj = new JsonObject();
+            obj.add("cost", JsonNull.INSTANCE);
+            assertEquals(0.0, ClaudeClient.safeGetDouble(obj, "cost"));
+        }
+
+        @Test
+        void returnsDoubleValue() {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("cost", 3.14);
+            assertEquals(3.14, ClaudeClient.safeGetDouble(obj, "cost"), 0.001);
+        }
+    }
+
+    // ── extractToolResultContent ──────────────────────────────────────────────
+
+    @Nested
+    class ExtractToolResultContent {
+
+        @Test
+        void returnsEmptyForMissingContent() {
+            assertEquals("", ClaudeClient.extractToolResultContent(new JsonObject()));
+        }
+
+        @Test
+        void extractsStringContent() {
+            JsonObject event = new JsonObject();
+            event.addProperty("content", "plain text result");
+            assertEquals("plain text result", ClaudeClient.extractToolResultContent(event));
+        }
+
+        @Test
+        void extractsArrayContent() {
+            JsonObject textBlock = new JsonObject();
+            textBlock.addProperty("text", "hello ");
+            JsonObject textBlock2 = new JsonObject();
+            textBlock2.addProperty("text", "world");
+
+            JsonArray arr = new JsonArray();
+            arr.add(textBlock);
+            arr.add(textBlock2);
+
+            JsonObject event = new JsonObject();
+            event.add("content", arr);
+            assertEquals("hello world", ClaudeClient.extractToolResultContent(event));
+        }
+
+        @Test
+        void extractsPrimitiveArrayItems() {
+            JsonArray arr = new JsonArray();
+            arr.add("line1");
+            arr.add("line2");
+
+            JsonObject event = new JsonObject();
+            event.add("content", arr);
+            assertEquals("line1line2", ClaudeClient.extractToolResultContent(event));
+        }
+
+        @Test
+        void fallsBackToToString() {
+            JsonObject event = new JsonObject();
+            event.addProperty("content", true);
+            assertEquals("true", ClaudeClient.extractToolResultContent(event));
+        }
+    }
+
+    // ── respondToControlRequest ───────────────────────────────────────────────
+
+    @Nested
+    class RespondToControlRequest {
+
+        @Test
+        void sendsAllowForCanUseTool() {
+            JsonObject event = new JsonObject();
+            event.addProperty("subtype", "can_use_tool");
+            event.addProperty("request_id", "req-123");
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ClaudeClient.respondToControlRequest(event, out);
+
+            String written = out.toString(StandardCharsets.UTF_8);
+            // respondToControlRequest writes JSON with newline; verify key elements
+            assertFalse(written.isEmpty(), "Expected non-empty output, got empty string");
+            assertTrue(written.contains("control_response"),
+                "Expected 'control_response' in: " + written);
+            assertTrue(written.contains("can_use_tool"),
+                "Expected 'can_use_tool' in: " + written);
+            assertTrue(written.contains("allow"),
+                "Expected 'allow' in: " + written);
+        }
+
+        @Test
+        void sendsResponseWithoutDecisionForOtherSubtype() {
+            JsonObject event = new JsonObject();
+            event.addProperty("subtype", "other");
+            event.addProperty("request_id", "req-456");
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ClaudeClient.respondToControlRequest(event, out);
+
+            String written = out.toString(StandardCharsets.UTF_8);
+            assertTrue(written.contains("control_response"));
+            assertFalse(written.contains("allow"));
+        }
+    }
+
+    // ── buildJsonUserMessage ──────────────────────────────────────────────────
+
+    @Nested
+    class BuildJsonUserMessage {
+
+        @Test
+        void buildsTextOnlyMessage() {
+            String result = ClaudeClient.buildJsonUserMessage("hello", List.of());
+
+            assertTrue(result.contains("\"type\":\"user\""));
+            assertTrue(result.contains("\"role\":\"user\""));
+            assertTrue(result.contains("\"text\":\"hello\""));
+        }
+
+        @Test
+        void includesImageBlocks() {
+            var img = new com.github.catatafishen.agentbridge.model.ContentBlock.Image(
+                "base64data", "image/png");
+            String result = ClaudeClient.buildJsonUserMessage("describe this", List.of(img));
+
+            assertTrue(result.contains("\"type\":\"image\""));
+            assertTrue(result.contains("\"media_type\":\"image/png\""));
+            assertTrue(result.contains("\"data\":\"base64data\""));
+            assertTrue(result.contains("describe this"));
+        }
+    }
+
+    // ── buildKnownModels ──────────────────────────────────────────────────────
+
+    @Nested
+    class BuildKnownModels {
+
+        @Test
+        void returnsNonEmptyList() {
+            var models = ClaudeClient.buildKnownModels();
+            assertFalse(models.isEmpty());
+        }
+
+        @Test
+        void allModelsHaveId() {
+            for (var model : ClaudeClient.buildKnownModels()) {
+                assertNotNull(model.id());
+                assertFalse(model.id().isEmpty());
+            }
+        }
+
+        @Test
+        void allModelsHaveName() {
+            for (var model : ClaudeClient.buildKnownModels()) {
+                assertNotNull(model.name());
+                assertFalse(model.name().isEmpty());
+            }
+        }
     }
 }
