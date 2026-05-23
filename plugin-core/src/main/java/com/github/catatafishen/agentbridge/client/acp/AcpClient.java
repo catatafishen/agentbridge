@@ -885,7 +885,7 @@ public abstract class AcpClient extends AbstractClient {
      * outer messages like "Prompt failed for ..." so the user sees the real reason.
      */
     @Nullable
-    private static String extractRootCauseMessage(Throwable e) {
+    static String extractRootCauseMessage(Throwable e) {
         Throwable current = e;
         String bestMsg = null;
         while (current != null) {
@@ -1578,7 +1578,7 @@ public abstract class AcpClient extends AbstractClient {
      * Walks the exception cause chain looking for an authentication-related error.
      * Returns a clean user-facing message if found, or {@code null} if no auth error is detected.
      */
-    private static @Nullable String extractAuthErrorMessage(Exception e) {
+    static @Nullable String extractAuthErrorMessage(Exception e) {
         Throwable current = e;
         while (current != null) {
             String msg = current.getMessage();
@@ -1594,7 +1594,7 @@ public abstract class AcpClient extends AbstractClient {
      * Extracts a clean message from JsonRpcException format:
      * "JsonRpcException{code=-32000, message='Authentication required'}" → "Authentication required"
      */
-    private static String cleanAuthMessage(String msg) {
+    static String cleanAuthMessage(String msg) {
         if (msg.contains("message='") && msg.contains("'}")) {
             int start = msg.indexOf("message='") + 9;
             int end = msg.indexOf("'}", start);
@@ -2004,7 +2004,7 @@ public abstract class AcpClient extends AbstractClient {
         return !toolId.contains("/") && !toolId.contains("@") && !isAllowedBuiltInTool(toolId);
     }
 
-    private static boolean isMcpResourceTool(@NotNull String toolId) {
+    static boolean isMcpResourceTool(@NotNull String toolId) {
         String lower = toolId.toLowerCase();
         return "read_mcp_resource".equals(lower)
             || "list_mcp_resources".equals(lower);

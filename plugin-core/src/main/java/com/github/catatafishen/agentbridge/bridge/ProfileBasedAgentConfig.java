@@ -659,7 +659,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         return method;
     }
 
-    private static void parseTerminalAuthFromMeta(JsonObject first, AuthMethod method) {
+    static void parseTerminalAuthFromMeta(JsonObject first, AuthMethod method) {
         if (!first.has("_meta")) return;
         JsonObject meta = first.getAsJsonObject("_meta");
         if (!meta.has("terminal-auth")) return;
