@@ -813,6 +813,9 @@ public abstract class AcpClient extends AbstractClient {
     @Override
     public void dropCurrentSession() {
         currentSessionId = null;
+        // Also clear the persisted resume ID so the next createSession() starts a fresh
+        // session/new instead of re-resuming the now-corrupted session.
+        persistResumeSessionId(null);
     }
 
     @Override
