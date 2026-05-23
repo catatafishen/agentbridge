@@ -161,7 +161,7 @@ public final class SonarQubeIntegration {
                     List<String> existing = collectViaEdt(basePath);
                     return existing.isEmpty()
                         ? List.of("SonarQube analysis could not be triggered. " +
-                        "Open the SonarLint Report tab and click 'Analyze All Files' manually, then call this tool again.")
+                                  "Open the SonarLint Report tab and click 'Analyze All Files' manually, then call this tool again.")
                         : existing;
                 }
             }
@@ -284,7 +284,7 @@ public final class SonarQubeIntegration {
         "mcp-server/build/", "standalone-mcp/build/", "plugin-experimental/build/"
     );
 
-    private static boolean isExcludedFinding(String finding) {
+    static boolean isExcludedFinding(String finding) {
         for (String prefix : EXCLUDED_PATH_PREFIXES) {
             if (finding.startsWith(prefix)) return true;
         }
@@ -534,7 +534,7 @@ public final class SonarQubeIntegration {
         return null;
     }
 
-    private static String relativizePath(String path, String basePath) {
+    static String relativizePath(String path, String basePath) {
         if (basePath != null && path.startsWith(basePath)) {
             return path.substring(basePath.length() + 1);
         }
@@ -577,7 +577,7 @@ public final class SonarQubeIntegration {
         return "WARNING";
     }
 
-    private static Method findMethod(Object obj, String name) {
+    static Method findMethod(Object obj, String name) {
         Class<?> clazz = obj.getClass();
         while (clazz != null) {
             try {
@@ -596,7 +596,7 @@ public final class SonarQubeIntegration {
         return null;
     }
 
-    private String formatOutput(List<String> findings, int limit, int offset) {
+    String formatOutput(List<String> findings, int limit, int offset) {
         if (findings.isEmpty()) {
             return "SonarQube analysis complete. No issues found — the code is clean! " +
                 "0 bugs, 0 code smells, 0 vulnerabilities, 0 security hotspots detected.";

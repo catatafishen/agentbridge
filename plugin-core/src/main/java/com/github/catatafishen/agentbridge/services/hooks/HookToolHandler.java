@@ -103,7 +103,7 @@ public final class HookToolHandler extends AbstractHookHandler {
         }
     }
 
-    private static String successResponse(String result) {
+    static String successResponse(String result) {
         JsonObject response = new JsonObject();
         if (result != null && result.length() > MAX_RESULT_CHARS) {
             response.addProperty("result", result.substring(0, MAX_RESULT_CHARS));
@@ -116,7 +116,7 @@ public final class HookToolHandler extends AbstractHookHandler {
         return response.toString();
     }
 
-    private static String errorResponse(String message) {
+    static String errorResponse(String message) {
         JsonObject response = new JsonObject();
         response.addProperty("error", true);
         response.addProperty("message", message);

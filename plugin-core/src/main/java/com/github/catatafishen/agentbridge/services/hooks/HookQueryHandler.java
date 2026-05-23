@@ -91,7 +91,7 @@ public final class HookQueryHandler extends AbstractHookHandler {
         return result.toString();
     }
 
-    private static String errorJson(String message) {
+    static String errorJson(String message) {
         JsonObject obj = new JsonObject();
         obj.addProperty("error", message);
         return obj.toString();

@@ -91,9 +91,9 @@ public final class HookEnvironmentProvider {
         putIfNonEmpty(env, "AGENTBRIDGE_EXCLUDED_DIRS", classified.get("excluded"));
     }
 
-    private static void putIfNonEmpty(@NotNull Map<String, String> env,
-                                      @NotNull String key,
-                                      @org.jetbrains.annotations.Nullable java.util.List<String> paths) {
+    static void putIfNonEmpty(@NotNull Map<String, String> env,
+                              @NotNull String key,
+                              @org.jetbrains.annotations.Nullable java.util.List<String> paths) {
         if (paths != null && !paths.isEmpty()) {
             env.put(key, String.join("\n", paths));
         }
