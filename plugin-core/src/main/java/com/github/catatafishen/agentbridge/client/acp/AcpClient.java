@@ -109,7 +109,7 @@ public abstract class AcpClient extends AbstractClient {
         .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
         .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
         .create();
-    protected final JsonRpcTransport transport = new JsonRpcTransport();
+    protected final JsonRpcTransport transport;
     protected final Project project;
     private final AcpFileSystemHandler fsHandler;
     private final AcpTerminalHandler terminalHandler;
@@ -196,7 +196,15 @@ public abstract class AcpClient extends AbstractClient {
     );
 
     protected AcpClient(Project project) {
+        this(project, new JsonRpcTransport());
+    }
+
+    /**
+     * Test constructor allowing transport injection.
+     */
+    AcpClient(Project project, JsonRpcTransport transport) {
         this.project = project;
+        this.transport = transport;
         this.fsHandler = new AcpFileSystemHandler(project);
         this.terminalHandler = new AcpTerminalHandler(project);
     }
