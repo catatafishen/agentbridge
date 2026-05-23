@@ -18,12 +18,11 @@ class ActiveAgentManagerExtendedTest {
     class ParseIntOrDefaultEdgeCases {
 
         @Test
-        @DisplayName("leading/trailing whitespace is trimmed")
+        @DisplayName("leading/trailing whitespace returns default (parseInt does not trim)")
         void whitespaceAroundNumber() {
-            // Depending on implementation, "  42  " may parse or return default
+            // Integer.parseInt does not trim, so "  42  " throws NumberFormatException → default
             int result = ActiveAgentManager.parseIntOrDefault("  42  ", 0);
-            // If trim is applied, should return 42; if not, returns default 0
-            assertTrue(result == 42 || result == 0);
+            assertEquals(0, result);
         }
 
         @Test

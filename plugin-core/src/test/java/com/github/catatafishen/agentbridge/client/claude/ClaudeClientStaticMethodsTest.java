@@ -29,7 +29,7 @@ class ClaudeClientStaticMethodsTest {
     class IsClaudeAuthError {
 
         @Test
-        void returnsFlaseForNull() {
+        void returnsFalseForNull() {
             assertFalse(ClaudeClient.isClaudeAuthError(null));
         }
 
@@ -258,7 +258,7 @@ class ClaudeClientStaticMethodsTest {
         void sendsAllowForCanUseTool() {
             JsonObject event = new JsonObject();
             event.addProperty("subtype", "can_use_tool");
-            event.addProperty("request_id", "req-123");
+            event.addProperty("requestId", "req-123");
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ClaudeClient.respondToControlRequest(event, out);
@@ -272,13 +272,15 @@ class ClaudeClientStaticMethodsTest {
                 "Expected 'can_use_tool' in: " + written);
             assertTrue(written.contains("allow"),
                 "Expected 'allow' in: " + written);
+            assertTrue(written.contains("req-123"),
+                "Expected requestId propagation in: " + written);
         }
 
         @Test
         void sendsResponseWithoutDecisionForOtherSubtype() {
             JsonObject event = new JsonObject();
             event.addProperty("subtype", "other");
-            event.addProperty("request_id", "req-456");
+            event.addProperty("requestId", "req-456");
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ClaudeClient.respondToControlRequest(event, out);
@@ -286,6 +288,8 @@ class ClaudeClientStaticMethodsTest {
             String written = out.toString(StandardCharsets.UTF_8);
             assertTrue(written.contains("control_response"));
             assertFalse(written.contains("allow"));
+            assertTrue(written.contains("req-456"),
+                "Expected requestId propagation in: " + written);
         }
     }
 

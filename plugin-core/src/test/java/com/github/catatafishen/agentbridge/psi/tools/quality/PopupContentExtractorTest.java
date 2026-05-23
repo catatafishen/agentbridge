@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -161,7 +162,7 @@ class PopupContentExtractorTest {
             var snapshot2 = new PopupSnapshot("title", List.of(choice2), PopupSnapshot.KIND_LIST_STEP);
             assertNotNull(snapshot1.contentDigest());
             assertNotNull(snapshot2.contentDigest());
-            // Different content should produce different digests (not guaranteed but very likely)
+            assertNotEquals(snapshot1.contentDigest(), snapshot2.contentDigest());
         }
     }
 

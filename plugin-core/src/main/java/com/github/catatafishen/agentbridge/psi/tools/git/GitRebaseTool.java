@@ -172,7 +172,7 @@ public final class GitRebaseTool extends GitTool {
         return fetchNote + result + getBranchContextIn(root);
     }
 
-    @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
+    static @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add(CMD_REBASE);
         if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {

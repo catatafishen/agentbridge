@@ -7,9 +7,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -273,6 +275,101 @@ class GitRebaseToolTest {
             var obj = new JsonObject();
             obj.addProperty("commit", "  abc1234  ");
             assertEquals("abc1234", GitRebaseTool.extractCommitKey(obj));
+        }
+    }
+
+    @Nested
+    class BuildPlainRebaseArgs {
+
+        @Test
+        void branchOnlyProducesRebaseAndBranch() {
+            var args = new JsonObject();
+            args.addProperty("branch", "origin/main");
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            assertEquals(List.of("rebase", "origin/main"), result);
+        }
+
+        @Test
+        void autosquashAddsFlag() {
+            var args = new JsonObject();
+            args.addProperty("branch", "main");
+            args.addProperty("autosquash", true);
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            assertTrue(result.contains("--autosquash"));
+            assertTrue(result.contains("main"));
+        }
+
+        @Test
+        void autosquashFalseOmitsFlag() {
+            var args = new JsonObject();
+            args.addProperty("branch", "main");
+            args.addProperty("autosquash", false);
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            assertFalse(result.contains("--autosquash"));
+        }
+
+        @Test
+        void ontoAddsOntoAndValue() {
+            var args = new JsonObject();
+            args.addProperty("branch", "main");
+            args.addProperty("onto", "abc123");
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            int idx = result.indexOf("--onto");
+            assertTrue(idx >= 0);
+            assertEquals("abc123", result.get(idx + 1));
+        }
+
+        @Test
+        void emptyOntoIsIgnored() {
+            var args = new JsonObject();
+            args.addProperty("branch", "main");
+            args.addProperty("onto", "");
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            assertFalse(result.contains("--onto"));
+        }
+
+        @Test
+        void execAddsExecAndCommand() {
+            var args = new JsonObject();
+            args.addProperty("branch", "main");
+            args.addProperty("exec", "make test");
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            int idx = result.indexOf("--exec");
+            assertTrue(idx >= 0);
+            assertEquals("make test", result.get(idx + 1));
+        }
+
+        @Test
+        void emptyBranchIsOmitted() {
+            var args = new JsonObject();
+            args.addProperty("branch", "");
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            assertEquals(List.of("rebase"), result);
+        }
+
+        @Test
+        void noArgsProducesOnlyRebaseCommand() {
+            var args = new JsonObject();
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            assertEquals(List.of("rebase"), result);
+        }
+
+        @Test
+        void allOptionsProducesCorrectOrder() {
+            var args = new JsonObject();
+            args.addProperty("autosquash", true);
+            args.addProperty("onto", "target");
+            args.addProperty("exec", "npm test");
+            args.addProperty("branch", "feature");
+            var result = GitRebaseTool.buildPlainRebaseArgs(args);
+            // Order: rebase --autosquash --onto target --exec "npm test" feature
+            assertEquals("rebase", result.get(0));
+            assertEquals("--autosquash", result.get(1));
+            assertEquals("--onto", result.get(2));
+            assertEquals("target", result.get(3));
+            assertEquals("--exec", result.get(4));
+            assertEquals("npm test", result.get(5));
+            assertEquals("feature", result.get(6));
         }
     }
 }

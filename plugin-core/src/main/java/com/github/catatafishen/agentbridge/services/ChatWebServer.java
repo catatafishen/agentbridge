@@ -281,7 +281,7 @@ public final class ChatWebServer implements Disposable {
      */
     static @Nullable WebPushSender.PushSubscription parseSubscription(@NotNull String json) {
         try {
-            var map = new com.google.gson.Gson().fromJson(json, java.util.Map.class);
+            var map = GSON.fromJson(json, java.util.Map.class);
             Object endpointVal = map.get("endpoint");
             if (endpointVal == null) return null;
             String endpoint = endpointVal.toString();

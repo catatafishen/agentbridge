@@ -74,21 +74,21 @@ class McpPauseServiceTest {
             service.setPaused(true);
 
             var latch = new CountDownLatch(1);
-            var blocked = new CountDownLatch(1);
+            var pausedLatch = new CountDownLatch(1);
+
+            // Use listener to detect PAUSED state deterministically (no sleep needed)
+            service.addListener(state -> {
+                if (state == PauseState.PAUSED) pausedLatch.countDown();
+            });
 
             var thread = new Thread(() -> {
-                blocked.countDown();
                 service.awaitResumeIfPaused();
                 latch.countDown();
             });
             thread.start();
 
-            // Wait for the thread to start blocking
-            assertTrue(blocked.await(2, TimeUnit.SECONDS));
-            // Give a moment for the thread to enter the wait
-            Thread.sleep(100);
-
-            // The state should be PAUSED now (thread is blocked)
+            // Wait for the thread to enter the wait (listener fires on blockedCallCount increment)
+            assertTrue(pausedLatch.await(2, TimeUnit.SECONDS), "Should transition to PAUSED");
             assertEquals(PauseState.PAUSED, service.getPauseState());
 
             // Resume
