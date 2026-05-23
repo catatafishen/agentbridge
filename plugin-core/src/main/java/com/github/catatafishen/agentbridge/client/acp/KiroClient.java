@@ -104,12 +104,20 @@ public final class KiroClient extends AcpClient {
         }
     }
 
-    private JsonArray availableCommands = new JsonArray();
-
     private void handleCommandsAvailable(JsonObject params) {
         if (params != null && params.has("commands")) {
-            availableCommands = params.getAsJsonArray("commands");
-            LOG.info("Kiro slash commands available: " + availableCommands.size());
+            JsonArray commands = params.getAsJsonArray("commands");
+            LOG.info("Kiro slash commands available: " + commands.size());
+            List<String> names = new java.util.ArrayList<>();
+            for (var el : commands) {
+                if (el.isJsonObject()) {
+                    JsonObject cmd = el.getAsJsonObject();
+                    if (cmd.has("name")) {
+                        names.add(cmd.get("name").getAsString());
+                    }
+                }
+            }
+            updateCommandNames(names);
         }
     }
 
@@ -122,10 +130,6 @@ public final class KiroClient extends AcpClient {
                 && response.getAsJsonObject().get("success").getAsBoolean();
             callback.accept(success);
         });
-    }
-
-    public JsonArray getAvailableCommands() {
-        return availableCommands;
     }
 
     private void handleMcpOAuthRequest(JsonObject params) {

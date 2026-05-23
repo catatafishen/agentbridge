@@ -137,6 +137,7 @@ public abstract class AcpClient extends AbstractClient {
     protected @Nullable String requestedResumeId;
     private final List<Model> availableModels = new ArrayList<>();
     private final List<AbstractClient.AgentMode> availableModes = new ArrayList<>();
+    private final List<String> availableCommandNames = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
@@ -346,6 +347,7 @@ public abstract class AcpClient extends AbstractClient {
             launchCwd = null;
             availableModels.clear();
             availableModes.clear();
+            availableCommandNames.clear();
             currentModeSlug = null;
             currentModelId = null;
             currentAgentSlug = null;
@@ -505,6 +507,10 @@ public abstract class AcpClient extends AbstractClient {
         if (response.configOptions() != null) {
             updateConfigOptions(response);
         }
+
+        if (response.commands() != null) {
+            updateCommands(response.commands());
+        }
     }
 
     /**
@@ -539,6 +545,26 @@ public abstract class AcpClient extends AbstractClient {
         if (currentAgentSlug == null) {
             currentAgentSlug = defaultAgentSlug();
         }
+    }
+
+    private void updateCommands(List<NewSessionResponse.AvailableCommand> commands) {
+        List<String> names = new ArrayList<>();
+        for (NewSessionResponse.AvailableCommand cmd : commands) {
+            if (cmd.name() != null && !cmd.name().isBlank()) {
+                names.add(cmd.name());
+            }
+        }
+        updateCommandNames(names);
+    }
+
+    /**
+     * Replaces the current slash command list with the given names.
+     * Called by subclasses (e.g., KiroClient) that parse commands from proprietary notifications.
+     */
+    protected void updateCommandNames(List<String> names) {
+        availableCommandNames.clear();
+        availableCommandNames.addAll(names);
+        LOG.info(displayName() + ": " + availableCommandNames.size() + " slash command(s) available");
     }
 
     static List<AbstractClient.AgentConfigOption> mapConfigOptionsStatic(
@@ -989,6 +1015,11 @@ public abstract class AcpClient extends AbstractClient {
     @Override
     public final List<AbstractClient.AgentMode> getAvailableModes() {
         return Collections.unmodifiableList(availableModes);
+    }
+
+    @Override
+    public final List<String> getAvailableCommands() {
+        return Collections.unmodifiableList(availableCommandNames);
     }
 
     @Override
@@ -1633,6 +1664,13 @@ public abstract class AcpClient extends AbstractClient {
             List<NewSessionResponse.SessionConfigOption> options
         )) {
             updateConfigOptionsFromNotification(options);
+        }
+
+        // Command updates refresh internal state regardless of whether a consumer is registered.
+        if (update instanceof SessionUpdate.AvailableCommandsChanged(
+            List<NewSessionResponse.AvailableCommand> commands
+        )) {
+            updateCommands(commands);
         }
 
         // Session info updates (agent-pushed title) are persisted to the DB regardless of consumer.
