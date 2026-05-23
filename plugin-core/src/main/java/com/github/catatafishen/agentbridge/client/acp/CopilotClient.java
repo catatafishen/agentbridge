@@ -456,12 +456,7 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     public ModelDisplayMode modelDisplayMode() {
-        return ModelDisplayMode.MULTIPLIER;
-    }
-
-    @Override
-    public boolean supportsMultiplier() {
-        return true;
+        return ModelDisplayMode.TOKEN_COUNT;
     }
 
     @Override

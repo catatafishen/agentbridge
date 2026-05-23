@@ -169,6 +169,16 @@ public abstract class AbstractClient {
         // no-op
     }
 
+    // ─── Commands (slash commands from ACP agents) ──────────────────────────────
+
+    /**
+     * Available slash commands (populated from session/new and available_commands_update).
+     * Returns command names (without the leading '/').
+     */
+    public List<String> getAvailableCommands() {
+        return List.of();
+    }
+
     // ─── Agents (custom agent definitions, e.g. intellij-default/intellij-explore) ──
 
     /**

@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.client.acp.KiroClient
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentNudgeService
 import com.intellij.icons.AllIcons
@@ -122,17 +121,8 @@ internal class PromptEditorSetup(
 
     fun checkSlashCommandAutocomplete() {
         val client = agentManager.getClient()
-        if (client !is KiroClient) {
-            autocompletePopup?.cancel()
-            return
-        }
-
-        val commands = client.availableCommands
-        if (commands.size() == 0) return
-
-        val commandNames = (0 until commands.size()).mapNotNull { i ->
-            commands[i].asJsonObject["name"]?.asString
-        }
+        val commandNames = client.availableCommands
+        if (commandNames.isEmpty()) return
 
         val matches = PromptEditorLogic.filterSlashCommands(promptTextArea.text, commandNames)
 

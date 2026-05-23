@@ -37,6 +37,9 @@ class AcpMessageParser {
     private static final String KEY_THINKING = "thinking";
     private static final String KEY_TITLE = "title";
     private static final String KEY_CONFIG_OPTIONS = "configOptions";
+    private static final String KEY_AVAILABLE_COMMANDS = "availableCommands";
+    private static final String KEY_COMMANDS = "commands";
+    private static final String KEY_INPUT = "input";
 
     /**
      * Callbacks into the owning client for the three points where agent-specific logic is needed.
@@ -116,6 +119,9 @@ class AcpMessageParser {
             // (e.g. plan → code). Treated as an AvailableModesChanged with null modes list
             // (modes themselves haven't changed, only the active selection).
             case "current_mode_update" -> parseCurrentModeUpdate(params);
+            // available_commands_update: sent by ACP agents when slash commands change.
+            // Contains an "availableCommands" array of {name, description, input?} objects.
+            case "available_commands_update" -> parseAvailableCommandsUpdate(params);
             default -> {
                 LOG.warn(displayName.get() + ": unknown session update type: '" + type + "'");
                 yield null;
@@ -332,6 +338,49 @@ class AcpMessageParser {
     private static String getStringOrNull(JsonObject obj, String key) {
         if (!obj.has(key) || !obj.get(key).isJsonPrimitive()) return null;
         return obj.get(key).getAsString();
+    }
+
+    /**
+     * Parses an {@code available_commands_update} session/update notification.
+     * The ACP spec defines the payload as: {@code {"availableCommands": [{name, description, input?}, ...]}}.
+     * Also handles a flat "commands" array (used by some agents like Kiro).
+     */
+    private SessionUpdate.AvailableCommandsChanged parseAvailableCommandsUpdate(JsonObject params) {
+        JsonArray arr = null;
+        if (params.has(KEY_AVAILABLE_COMMANDS) && params.get(KEY_AVAILABLE_COMMANDS).isJsonArray()) {
+            arr = params.getAsJsonArray(KEY_AVAILABLE_COMMANDS);
+        } else if (params.has(KEY_COMMANDS) && params.get(KEY_COMMANDS).isJsonArray()) {
+            arr = params.getAsJsonArray(KEY_COMMANDS);
+        }
+        List<NewSessionResponse.AvailableCommand> commands = parseCommandArray(arr);
+        return new SessionUpdate.AvailableCommandsChanged(commands);
+    }
+
+    private List<NewSessionResponse.AvailableCommand> parseCommandArray(@Nullable JsonArray arr) {
+        if (arr == null) return List.of();
+        List<NewSessionResponse.AvailableCommand> commands = new ArrayList<>();
+        for (JsonElement e : arr) {
+            if (!e.isJsonObject()) continue;
+            NewSessionResponse.AvailableCommand cmd = parseSingleCommand(e.getAsJsonObject());
+            if (cmd != null) commands.add(cmd);
+        }
+        return commands;
+    }
+
+    @Nullable
+    private NewSessionResponse.AvailableCommand parseSingleCommand(JsonObject cmd) {
+        String name = getStringOrNull(cmd, "name");
+        if (name == null || name.isBlank()) return null;
+        String desc = getStringOrNull(cmd, KEY_DESCRIPTION);
+        NewSessionResponse.AvailableCommandInput input = null;
+        if (cmd.has(KEY_INPUT) && cmd.get(KEY_INPUT).isJsonObject()) {
+            JsonObject inputObj = cmd.getAsJsonObject(KEY_INPUT);
+            input = new NewSessionResponse.AvailableCommandInput(
+                getStringOrNull(inputObj, "type"),
+                getStringOrNull(inputObj, "placeholder")
+            );
+        }
+        return new NewSessionResponse.AvailableCommand(name, desc != null ? desc : "", input);
     }
 
     /**
