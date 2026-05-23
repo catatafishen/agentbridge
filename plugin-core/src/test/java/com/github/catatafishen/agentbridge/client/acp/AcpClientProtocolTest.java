@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientPromptException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
@@ -399,7 +398,8 @@ class AcpClientProtocolTest {
                 "s1", List.of(new com.github.catatafishen.agentbridge.model.ContentBlock.Text("Hello!")), null, null);
 
             assertThrows(ClientPromptException.class,
-                () -> client.sendPrompt(request, update -> {}));
+                () -> client.sendPrompt(request, update -> {
+                }));
         }
     }
 

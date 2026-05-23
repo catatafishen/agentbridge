@@ -214,10 +214,15 @@ class PromptOrchestrator(
             callbacks.updateSessionInfo()
             val savedModel = agentManager.settings.selectedModel
             if (!savedModel.isNullOrEmpty()) {
-                try {
-                    client.setModel(currentSessionId!!, savedModel)
-                } catch (ex: Exception) {
-                    log.warn("Failed to set model $savedModel on new session", ex)
+                val availableModels = client.availableModels
+                if (availableModels.isEmpty() || availableModels.any { it.id() == savedModel }) {
+                    try {
+                        client.setModel(currentSessionId!!, savedModel)
+                    } catch (ex: Exception) {
+                        log.warn("Failed to set model $savedModel on new session", ex)
+                    }
+                } else {
+                    log.warn("Saved model '$savedModel' is not in the available models list — skipping setModel to avoid empty turn")
                 }
             }
             for (option in client.listSessionOptions()) {
