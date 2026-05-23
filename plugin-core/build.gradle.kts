@@ -575,18 +575,19 @@ tasks {
         )
         val allExcludes = uiExcludes + otherExcludes
 
-        val instrumentedClasses = fileTree("${layout.buildDirectory.get()}/instrumented/instrumentCode") {
-            exclude(allExcludes)
-        }
-        // Fallback to raw classes if instrumentCode hasn't run (e.g., standalone report)
-        val rawClasses = fileTree("${layout.buildDirectory.get()}/classes/java/main") {
-            exclude(allExcludes)
-        }
+        // Use a Provider so the directory-existence check happens at EXECUTION time,
+        // not configuration time. On fresh CI the instrumented/ dir doesn't exist yet
+        // during configuration, but it WILL exist by the time this report task runs
+        // (jacocoTestReport → test → instrumentCode). Using the instrumented classes is
+        // critical: JaCoCo records probe IDs against the instrumented bytecode, so the
+        // report must read those same class files to match execution data.
         classDirectories.setFrom(
-            if (file("${layout.buildDirectory.get()}/instrumented/instrumentCode").exists())
-                instrumentedClasses
-            else
-                rawClasses
+            layout.buildDirectory.map { buildDir ->
+                val instrumentedDir = buildDir.dir("instrumented/instrumentCode").asFile
+                val baseDir = if (instrumentedDir.exists()) instrumentedDir
+                else buildDir.dir("classes/java/main").asFile
+                fileTree(baseDir) { exclude(allExcludes) }
+            }
         )
         sourceDirectories.setFrom(files("src/main/java"))
     }

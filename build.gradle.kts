@@ -56,7 +56,6 @@ sonar {
                 "plugin-experimental/build/reports/jacoco/test/jacocoTestReport.xml",
             ).joinToString(",")
         )
-        property("sonar.javascript.lcov.reportPaths", "plugin-core/js-tests/coverage/lcov.info")
         // MCP tool implementations are intentionally formulaic: each Tool subclass declares
         // id(), displayName(), description(), kind(), category(), and isReadOnly() in nearly
         // identical shapes. CPD treats this required boilerplate as duplication, producing
@@ -155,6 +154,7 @@ project(":plugin-core") {
             property("sonar.sources", "src/main/java,chat-ui/src")
             property("sonar.tests", "src/test/java,js-tests")
             property("sonar.test.inclusions", "src/test/java/**,js-tests/**/*.test.*")
+            property("sonar.javascript.lcov.reportPaths", "js-tests/coverage/lcov.info")
         }
     }
 }

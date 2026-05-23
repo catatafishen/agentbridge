@@ -184,6 +184,12 @@ tasks {
 
     test {
         useJUnitPlatform()
+        // IntelliJ Platform loads classes via a custom classloader that doesn't
+        // provide class file locations. Without this flag, JaCoCo reports 0% coverage.
+        extensions.configure<JacocoTaskExtension> {
+            isIncludeNoLocationClasses = true
+            excludes = listOf("jdk.internal.*")
+        }
         finalizedBy("jacocoTestReport")
     }
 
@@ -199,6 +205,18 @@ tasks.named<JacocoReport>("jacocoTestReport") {
         xml.required.set(true)
         html.required.set(true)
     }
+    // Use instrumented classes (not raw) — same rationale as plugin-core.
+    // JaCoCo records probe IDs against the instrumented bytecode, so the report
+    // must read those same class files to match execution data.
+    classDirectories.setFrom(
+        layout.buildDirectory.map { buildDir ->
+            val instrumentedDir = buildDir.dir("instrumented/instrumentCode").asFile
+            val baseDir = if (instrumentedDir.exists()) instrumentedDir
+            else buildDir.dir("classes/java/main").asFile
+            fileTree(baseDir)
+        }
+    )
+    sourceDirectories.setFrom(files("src/main/java"))
 }
 
 // Publish the experimental plugin ZIP to GitHub Packages alongside plugin-core.
