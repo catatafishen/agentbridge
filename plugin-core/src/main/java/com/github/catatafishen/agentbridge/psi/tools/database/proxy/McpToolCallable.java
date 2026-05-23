@@ -29,10 +29,7 @@ final class McpToolCallable implements kotlin.jvm.functions.Function2 {
     public Object invoke(Object scope, Object continuation) {
         try {
             return callMethod.invoke(tool, argsJsonObject, continuation);
-        } catch (Throwable e) {
-            // Rethrow fatal JVM errors — wrapping them hides the root cause and may
-            // interfere with expected JVM error-handling (e.g. OOM recovery, thread death).
-            if (e instanceof VirtualMachineError || e instanceof ThreadDeath) throw (Error) e;
+        } catch (Exception e) {
             throw new IllegalStateException("McpTool.call() failed via reflection", e);
         }
     }

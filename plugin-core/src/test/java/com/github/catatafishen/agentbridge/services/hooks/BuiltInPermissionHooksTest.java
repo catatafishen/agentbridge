@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.services.hooks;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,75 +31,46 @@ class BuiltInPermissionHooksTest {
             assertTrue(result.contains("git commands are not allowed"));
         }
 
-        @Test
-        void bareGitDenied() {
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("git"));
+        @ParameterizedTest
+        @ValueSource(strings = {
+            "git",
+            "echo hi && git push", "ls; git log", "grep x | git diff",
+            "head -n 10 file.txt", "tail -f log.txt", "less file.txt", "more file.txt",
+            "grep x | cat file.txt", "echo hi && cat file.txt", "ls; cat file.txt",
+            "gradle compileKotlin", "./gradlew :plugin-core:classes",
+            "find\t. -name x"
+        })
+        void deniedCommandReturnsNonNull(String command) {
+            assertNotNull(BuiltInPermissionHooks.checkRunCommand(command),
+                "Expected denial for: " + command);
         }
 
         @Test
-        void chainedGitDenied() {
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("echo hi && git push"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("ls; git log"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("grep x | git diff"));
-        }
-
-        @Test
-        void catDenied() {
+        void catDeniedMessageSuggestsReadFile() {
             String result = BuiltInPermissionHooks.checkRunCommand("cat file.txt");
             assertNotNull(result);
             assertTrue(result.contains("read_file"));
         }
 
         @Test
-        void headTailLessMoreDenied() {
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("head -n 10 file.txt"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("tail -f log.txt"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("less file.txt"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("more file.txt"));
-        }
-
-        @Test
-        void pipedCatDenied() {
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("grep x | cat file.txt"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("echo hi && cat file.txt"));
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("ls; cat file.txt"));
-        }
-
-        @Test
-        void sedDenied() {
+        void sedDeniedMessageSuggestsEditText() {
             String result = BuiltInPermissionHooks.checkRunCommand("sed -i 's/foo/bar/' file.txt");
             assertNotNull(result);
             assertTrue(result.contains("edit_text"));
         }
 
         @Test
-        void findDenied() {
+        void findDeniedMessageSuggestsListProjectFiles() {
             String result = BuiltInPermissionHooks.checkRunCommand("find . -name '*.java'");
             assertNotNull(result);
             assertTrue(result.contains("list_project_files"));
         }
 
         @Test
-        void findWithTabDenied() {
-            // find followed by tab
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("find\t. -name x"));
-        }
-
-        @Test
-        void gradleCompileOnlyDenied() {
+        void gradleCompileDeniedMessageSuggestsBuildProject() {
             String result = BuiltInPermissionHooks.checkRunCommand("./gradlew compileJava");
             assertNotNull(result);
             assertTrue(result.contains("build_project"));
-        }
-
-        @Test
-        void gradleCompileKotlinDenied() {
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("gradle compileKotlin"));
-        }
-
-        @Test
-        void gradleClassesDenied() {
-            assertNotNull(BuiltInPermissionHooks.checkRunCommand("./gradlew :plugin-core:classes"));
         }
 
         @Test

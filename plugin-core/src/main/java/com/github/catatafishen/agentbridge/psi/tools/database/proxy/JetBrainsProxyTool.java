@@ -25,6 +25,9 @@ public final class JetBrainsProxyTool extends DatabaseTool {
 
     private static final String DESC_CONNECTION_ID =
         "Unique connection ID from list_database_connections";
+    private static final String DESC_SCHEMA_NAME = "Name of the schema";
+    private static final String DESC_DATABASE_NAME =
+        "Name of the database the schema belongs to. Empty string if not applicable.";
     private static final String PARAM_CONNECTION_ID = "connectionId";
     private static final String PARAM_DATABASE_NAME = "databaseName";
     private static final String PARAM_SCHEMA_NAME = "schemaName";
@@ -175,7 +178,7 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             ToolDefinition.Kind.READ, true,
             schema(
                 Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
-                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, "Name of the schema"),
+                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, DESC_SCHEMA_NAME),
                 Param.required(PARAM_DATABASE_NAME, TYPE_STRING,
                     "Name of the database the schema belongs to. Empty string if the DBMS has no databases."),
                 Param.optional("kind", TYPE_STRING,
@@ -196,9 +199,8 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             ToolDefinition.Kind.EDIT, false,
             schema(
                 Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
-                Param.required(PARAM_DATABASE_NAME, TYPE_STRING,
-                    "Name of the database the schema belongs to. Empty string if not applicable."),
-                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, "Name of the schema"),
+                Param.required(PARAM_DATABASE_NAME, TYPE_STRING, DESC_DATABASE_NAME),
+                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, DESC_SCHEMA_NAME),
                 Param.required("queryText", TYPE_STRING, "SQL query to execute")));
     }
 
@@ -211,9 +213,8 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             ToolDefinition.Kind.READ, true,
             schema(
                 Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
-                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, "Name of the schema"),
-                Param.required(PARAM_DATABASE_NAME, TYPE_STRING,
-                    "Name of the database the schema belongs to. Empty string if not applicable."),
+                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, DESC_SCHEMA_NAME),
+                Param.required(PARAM_DATABASE_NAME, TYPE_STRING, DESC_DATABASE_NAME),
                 Param.required("tableName", TYPE_STRING, "Name of the table or view"),
                 Param.optional("maxRowCount", TYPE_INTEGER, "Maximum rows to return (default: 100)")));
     }
@@ -239,9 +240,8 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             ToolDefinition.Kind.READ, true,
             schema(
                 Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
-                Param.required(PARAM_DATABASE_NAME, TYPE_STRING,
-                    "Name of the database the schema belongs to. Empty string if not applicable."),
-                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, "Name of the schema"),
+                Param.required(PARAM_DATABASE_NAME, TYPE_STRING, DESC_DATABASE_NAME),
+                Param.required(PARAM_SCHEMA_NAME, TYPE_STRING, DESC_SCHEMA_NAME),
                 Param.required("kind", TYPE_STRING,
                     "Object kind (e.g., table, view, routine). May not be empty."),
                 Param.required("objectName", TYPE_STRING,

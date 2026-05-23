@@ -64,7 +64,7 @@ public abstract class GitTool extends Tool {
     private static final String REV_PARSE = "rev-parse";
     private static final String ERR_NO_BASE_PATH = ToolError.of(McpErrorCode.PROJECT_NOT_READY,
         "No project base path available");
-    private static final String ERR_PREFIX = "Error";
+    static final String ERR_PREFIX = "Error";
     private static final String ABBREV_REF = "--abbrev-ref";
     private static final String REV_LIST = "rev-list";
     private static final String COUNT_FLAG = "--count";

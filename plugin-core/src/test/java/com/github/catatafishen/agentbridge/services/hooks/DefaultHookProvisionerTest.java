@@ -5,6 +5,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Map;
 
@@ -17,22 +19,11 @@ class DefaultHookProvisionerTest {
 
     @Nested
     class BuildJsonConfigs {
-        @Test
-        void containsRunCommandConfig() {
+        @ParameterizedTest
+        @ValueSource(strings = {"run_command.json", "run_in_terminal.json", "write_file.json"})
+        void containsExpectedConfig(String key) {
             Map<String, String> configs = DefaultHookProvisioner.buildJsonConfigs();
-            assertTrue(configs.containsKey("run_command.json"));
-        }
-
-        @Test
-        void containsRunInTerminalConfig() {
-            Map<String, String> configs = DefaultHookProvisioner.buildJsonConfigs();
-            assertTrue(configs.containsKey("run_in_terminal.json"));
-        }
-
-        @Test
-        void containsWriteFileConfig() {
-            Map<String, String> configs = DefaultHookProvisioner.buildJsonConfigs();
-            assertTrue(configs.containsKey("write_file.json"));
+            assertTrue(configs.containsKey(key), "Missing config: " + key);
         }
 
         @Test

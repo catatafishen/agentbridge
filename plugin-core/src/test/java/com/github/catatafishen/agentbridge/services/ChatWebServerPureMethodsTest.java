@@ -4,10 +4,13 @@ import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,35 +65,26 @@ class ChatWebServerPureMethodsTest {
             assertEquals("key2", sub.auth());
         }
 
-        @Test
-        void returnsNullWithoutEndpoint() {
-            String json = """
-                {"keys":{"p256dh":"key1","auth":"key2"}}
-                """;
-            assertNull(ChatWebServer.parseSubscription(json));
+        static Stream<String> incompleteSubscriptionJson() {
+            return Stream.of(
+                """
+                    {"keys":{"p256dh":"key1","auth":"key2"}}
+                    """,
+                """
+                    {"endpoint":"https://push.example.com/abc"}
+                    """,
+                """
+                    {"endpoint":"https://push.example.com/abc","keys":{"p256dh":"key1"}}
+                    """,
+                """
+                    {"endpoint":"https://push.example.com/abc","keys":{"auth":"key2"}}
+                    """
+            );
         }
 
-        @Test
-        void returnsNullWithoutKeys() {
-            String json = """
-                {"endpoint":"https://push.example.com/abc"}
-                """;
-            assertNull(ChatWebServer.parseSubscription(json));
-        }
-
-        @Test
-        void returnsNullWithoutAuth() {
-            String json = """
-                {"endpoint":"https://push.example.com/abc","keys":{"p256dh":"key1"}}
-                """;
-            assertNull(ChatWebServer.parseSubscription(json));
-        }
-
-        @Test
-        void returnsNullWithoutP256dh() {
-            String json = """
-                {"endpoint":"https://push.example.com/abc","keys":{"auth":"key2"}}
-                """;
+        @ParameterizedTest
+        @MethodSource("incompleteSubscriptionJson")
+        void returnsNullForIncompleteSubscription(String json) {
             assertNull(ChatWebServer.parseSubscription(json));
         }
     }

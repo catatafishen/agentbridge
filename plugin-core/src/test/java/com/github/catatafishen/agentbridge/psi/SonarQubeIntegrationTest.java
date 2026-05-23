@@ -5,10 +5,12 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for static/package-private utility methods in {@link SonarQubeIntegration}.

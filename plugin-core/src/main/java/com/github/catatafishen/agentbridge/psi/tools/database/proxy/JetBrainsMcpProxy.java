@@ -43,6 +43,8 @@ final class JetBrainsMcpProxy {
 
     private static final Logger LOG = Logger.getInstance(JetBrainsMcpProxy.class);
     private static final String MCPSERVER_PLUGIN_ID = "com.intellij.mcpServer";
+    private static final String MCP_SESSION_OPTIONS_CLASS =
+        "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions";
 
     private static final AtomicReference<Map<String, Object>> toolCacheRef = new AtomicReference<>();
     private static final AtomicReference<ClassLoader> mcpClassLoaderRef = new AtomicReference<>();
@@ -122,8 +124,7 @@ final class JetBrainsMcpProxy {
         Class<?> mcpToolFilterClass = Class.forName("com.intellij.mcpserver.McpToolFilter", true, cl);
         Class<?> implementationClass = Class.forName(
             "io.modelcontextprotocol.kotlin.sdk.types.Implementation", true, cl);
-        Class<?> sessionOptionsClass = Class.forName(
-            "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions", true, cl);
+        Class<?> sessionOptionsClass = Class.forName(MCP_SESSION_OPTIONS_CLASS, true, cl);
 
         // Construct Implementation explicitly.
         // The $default constructor (mask=28 = bits 2+3+4) lets Kotlin fill in defaults for
@@ -218,8 +219,7 @@ final class JetBrainsMcpProxy {
         Class<?> jsonObjectClass = Class.forName("kotlinx.serialization.json.JsonObject", true, cl);
         Object emptyJsonObject = parseJsonObject(cl, "{}");
         Object sessionOptions = buildSessionOptions(cl);
-        Class<?> sessionOptionsClass = Class.forName(
-            "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions", true, cl);
+        Class<?> sessionOptionsClass = Class.forName(MCP_SESSION_OPTIONS_CLASS, true, cl);
 
         Class<?> mcpCallInfoClass = Class.forName("com.intellij.mcpserver.McpCallInfo", true, cl);
         Constructor<?> ctor = mcpCallInfoClass.getDeclaredConstructor(
@@ -230,8 +230,7 @@ final class JetBrainsMcpProxy {
     }
 
     private static Object buildSessionOptions(ClassLoader cl) throws ReflectiveOperationException {
-        Class<?> sessionOptionsClass = Class.forName(
-            "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions", true, cl);
+        Class<?> sessionOptionsClass = Class.forName(MCP_SESSION_OPTIONS_CLASS, true, cl);
         Class<?> askModeClass = Class.forName(
             "com.intellij.mcpserver.impl.McpServerService$AskCommandExecutionMode", true, cl);
         Class<?> mcpToolFilterClass = Class.forName("com.intellij.mcpserver.McpToolFilter", true, cl);
