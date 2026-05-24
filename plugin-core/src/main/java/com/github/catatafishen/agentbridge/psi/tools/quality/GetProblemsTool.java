@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
@@ -45,7 +46,8 @@ public final class GetProblemsTool extends QualityTool {
     public @NotNull String description() {
         return "Get cached editor problems (errors/warnings) for open files. Returns severity, message, and available quick-fixes per problem. " +
             "For files NOT open in an editor, falls back to public batch code-smell analysis " +
-            "(weak warnings and intentions are only available when the file is open). " +
+            "(weak warnings are only available when the file is open). " +
+            "Severity levels and inspection suppression are controlled by the MCP Diagnostic Filter settings. " +
             "Use get_compilation_errors for a faster check focused on compile errors only. " +
             "Use get_highlights for richer diagnostics including inspections, typos, and intentions.";
     }
@@ -144,19 +146,22 @@ public final class GetProblemsTool extends QualityTool {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
 
+        DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
+        // Use WEAK_WARNING as the floor so that user-configured severity enablement can include them.
+        // Higher-severity highlights are always a superset of lower ones here, so post-filtering is safe.
         com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx.processHighlights(
             doc, project,
-            com.intellij.lang.annotation.HighlightSeverity.WARNING,
+            com.intellij.lang.annotation.HighlightSeverity.WEAK_WARNING,
             0, doc.getTextLength(),
             highlights::add
         );
         for (var h : highlights) {
             if (h.getDescription() == null) continue;
+            if (!filter.shouldInclude(h)) continue;
             int line = doc.getLineNumber(h.getStartOffset()) + 1;
-            String severity = h.getSeverity().getName();
             problems.add(String.format(FORMAT_LOCATION,
-                relPath, line, severity, h.getDescription()));
+                relPath, line, h.getSeverity().getName(), h.getDescription()));
         }
     }
 

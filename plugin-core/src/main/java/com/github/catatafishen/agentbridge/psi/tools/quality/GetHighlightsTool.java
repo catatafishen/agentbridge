@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.quality;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
+import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -261,6 +262,7 @@ public final class GetHighlightsTool extends QualityTool {
     private int collectFileHighlights(Document doc, String relPath, int remaining, List<String> problems) {
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
         int added = 0;
+        DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         try {
             com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx.processHighlights(
                 doc, project, null, 0, doc.getTextLength(), highlights::add);
@@ -268,20 +270,18 @@ public final class GetHighlightsTool extends QualityTool {
             for (var h : highlights) {
                 if (added >= remaining) break;
                 var severity = h.getSeverity();
-                if (h.getDescription() != null
-                    && severity != com.intellij.lang.annotation.HighlightSeverity.INFORMATION
-                    && severity.myVal >= com.intellij.lang.annotation.HighlightSeverity.WEAK_WARNING.myVal) {
-                    int line = doc.getLineNumber(h.getStartOffset()) + 1;
-                    StringBuilder entry = new StringBuilder(
-                        String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription()));
-                    List<String> fixes = collectQuickFixNames(h);
-                    // One fix per line with plain "Fix:" prefix so action names are unambiguous
-                    for (String fix : fixes) {
-                        entry.append("\n    Fix: ").append(fix);
-                    }
-                    problems.add(entry.toString());
-                    added++;
+                if (h.getDescription() == null) continue;
+                if (!filter.shouldInclude(h)) continue;
+                int line = doc.getLineNumber(h.getStartOffset()) + 1;
+                StringBuilder entry = new StringBuilder(
+                    String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription()));
+                List<String> fixes = collectQuickFixNames(h);
+                // One fix per line with plain "Fix:" prefix so action names are unambiguous
+                for (String fix : fixes) {
+                    entry.append("\n    Fix: ").append(fix);
                 }
+                problems.add(entry.toString());
+                added++;
             }
         } catch (Exception e) {
             LOG.warn("Failed to analyze file: " + relPath, e);
