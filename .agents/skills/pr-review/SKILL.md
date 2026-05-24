@@ -134,9 +134,9 @@ Output includes both IDs needed for the next step:
 ### Reply to a thread
 
 ```bash
-# Use `Comment DB ID` from pr-threads.sh output
-gh api repos/catatafishen/agentbridge/pulls/comments/<COMMENT_DB_ID>/replies \
-  -f body="Fixed in <commit/file>: <one sentence describing what changed and why>"
+# Use `Comment DB ID` from pr-threads.sh output (note: PR number required in path)
+gh api repos/catatafishen/agentbridge/pulls/<PR>/comments/<COMMENT_DB_ID>/replies \
+  --method POST -f body="Fixed in <commit/file>: <one sentence describing what changed and why>"
 ```
 
 ### Resolve a thread
