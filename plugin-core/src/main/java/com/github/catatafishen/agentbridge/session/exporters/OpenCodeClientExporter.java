@@ -320,10 +320,13 @@ public final class OpenCodeClientExporter {
      * interpret that response as its own prior work. Adding a clear attribution prevents the model
      * from treating another agent's analysis as something it did itself.
      *
-     * <p>No-ops if {@code agent} is null, empty, or equal to {@value #SELF_AGENT}.
+     * <p>No-ops if {@code agent} is null, empty, or matches {@value #SELF_AGENT} (case-insensitive).
+     * The case-insensitive comparison is intentional: {@link com.github.catatafishen.agentbridge.bridge.EntryData.Text#getAgent()}
+     * stores the profile's display name (e.g. {@code "OpenCode"}), while {@code SELF_AGENT} is the
+     * profile ID ({@code "opencode"}).
      */
     static void applyForeignAgentPrefix(@NotNull List<JsonObject> parts, @Nullable String agent) {
-        if (agent == null || agent.isEmpty() || SELF_AGENT.equals(agent)) return;
+        if (agent == null || agent.isEmpty() || SELF_AGENT.equalsIgnoreCase(agent)) return;
         String note = "[Note: this response was provided by agent '" + agent + "', not by you.]\n\n";
         for (JsonObject part : parts) {
             if ("text".equals(part.has("type") ? part.get("type").getAsString() : "")) {

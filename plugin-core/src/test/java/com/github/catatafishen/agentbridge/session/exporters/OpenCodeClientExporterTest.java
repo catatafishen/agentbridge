@@ -5,9 +5,9 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -469,6 +469,22 @@ class OpenCodeClientExporterTest {
 
     @Test
     void applyForeignAgentPrefix_selfAgent_noChange() {
+        // EntryData.Text.getAgent() stores the display name ("OpenCode"), not the profile ID ("opencode").
+        // The comparison is case-insensitive so both forms are recognised as self.
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "text");
+        part.addProperty("text", "My own response.");
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(part);
+
+        OpenCodeClientExporter.applyForeignAgentPrefix(parts, "OpenCode");
+
+        assertEquals("My own response.", parts.get(0).get("text").getAsString());
+    }
+
+    @Test
+    void applyForeignAgentPrefix_selfAgentProfileId_noChange() {
+        // Profile ID ("opencode") is also accepted as self-agent via case-insensitive match
         JsonObject part = new JsonObject();
         part.addProperty("type", "text");
         part.addProperty("text", "My own response.");

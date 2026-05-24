@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.session;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.agentbridge.session.importers.OpenCodeClientImporter;
-import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -243,8 +243,9 @@ class OpenCodeClientRoundTripTest {
     @Test
     void exportToNonExistentDbCreatesIt() {
         Path freshDb = tempDir.resolve("fresh/opencode.db");
+        // Need at least one non-prompt entry so stripping the trailing prompt leaves content
         String sessionId = OpenCodeClientExporter.exportSession(
-            List.of(promptEntry("hi")), freshDb, PROJECT_DIR);
+            List.of(promptEntry("hi"), textEntry("Hello!")), freshDb, PROJECT_DIR);
         assertNotNull(sessionId, "Exporter should create the DB and succeed");
         assertTrue(Files.exists(freshDb), "Database file should have been created");
     }
@@ -287,8 +288,9 @@ class OpenCodeClientRoundTripTest {
     void exportedTextPartHasNoTime() throws SQLException {
         // Real OpenCode text parts do NOT carry a top-level time field (only reasoning parts do).
         // Writing time on text parts may cause Zod strict-mode validation failures in OpenCode.
+        // The trailing prompt is stripped by exportSession, so we need an assistant text entry too.
         String sessionId = OpenCodeClientExporter.exportSession(
-            List.of(promptEntry("Hello")), dbPath, PROJECT_DIR);
+            List.of(promptEntry("Hello"), textEntry("World")), dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
