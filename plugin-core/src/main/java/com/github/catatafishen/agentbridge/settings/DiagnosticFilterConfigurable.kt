@@ -14,7 +14,7 @@ import javax.swing.table.AbstractTableModel
  *
  * These settings act as the default filter applied by all diagnostic-emitting tools.
  * Checkboxes control each severity level; a table manages inspection IDs whose
- * diagnostics are always suppressed regardless of severity (e.g. spell checking).
+ * diagnostics are always suppressed regardless of severity (e.g., spell checking).
  */
 class DiagnosticFilterConfigurable(private val project: Project) :
     BoundConfigurable("Diagnostic Filters"),
@@ -35,49 +35,50 @@ class DiagnosticFilterConfigurable(private val project: Project) :
     override fun createPanel() = panel {
         loadFromSettings()
 
-        group("Severities shown to agent") {
+        group("Severities Shown to Agent") {
             row {
                 checkBox("Errors")
-                    .bindSelected({ showErrors }, { showErrors = it })
+                    .bindSelected({ showErrors }) { showErrors = it }
             }
             row {
                 checkBox("Warnings")
-                    .bindSelected({ showWarnings }, { showWarnings = it })
+                    .bindSelected({ showWarnings }) { showWarnings = it }
             }
             row {
                 checkBox("Weak warnings")
-                    .bindSelected({ showWeakWarnings }, { showWeakWarnings = it })
+                    .bindSelected({ showWeakWarnings }) { showWeakWarnings = it }
             }
             row {
                 checkBox("Information")
-                    .bindSelected({ showInformation }, { showInformation = it })
+                    .bindSelected({ showInformation }) { showInformation = it }
             }
             row {
                 comment(
                     "These settings apply by default to all diagnostics returned by agent tools. " +
-                        "Individual tool parameters (e.g. explicit severity arguments) may override them."
+                        "Individual tool parameters (e.g., explicit severity arguments) may override them.",
                 )
             }
         }
 
-        group("Suppressed inspections") {
+        group("Suppressed Inspections") {
             row {
                 comment(
                     "Inspection IDs listed here are hidden from the agent regardless of severity. " +
                         "<b>SpellCheckingInspection</b> is suppressed by default — spell corrections " +
                         "are one example of what often creates noise in agent diagnostics. " +
-                        "The right set depends on your use case; the human in the loop should " +
-                        "decide what to include. To find the ID of an inspection, check " +
-                        "Settings → Editor → Inspections and hover the inspection name."
+                        "Click <b>+</b> to browse and select inspections from the full list.",
                 )
             }
             row {
                 val decorated = ToolbarDecorator.createDecorator(table)
                     .setAddAction {
-                        tableModel.addRow("")
-                        val r = tableModel.rowCount - 1
-                        table.editCellAt(r, 0)
-                        table.selectionModel.setSelectionInterval(r, r)
+                        val dialog = InspectionPickerDialog(project)
+                        if (dialog.showAndGet()) {
+                            val existing = tableModel.toList().toSet()
+                            dialog.getSelectedIds()
+                                .filter { it !in existing }
+                                .forEach { tableModel.addRow(it) }
+                        }
                     }
                     .setRemoveAction {
                         val r = table.selectedRow
@@ -90,19 +91,19 @@ class DiagnosticFilterConfigurable(private val project: Project) :
 
         onIsModified {
             val s = DiagnosticFilterSettings.getInstance(project)
-            showErrors != s.isShowErrors
-                || showWarnings != s.isShowWarnings
-                || showWeakWarnings != s.isShowWeakWarnings
-                || showInformation != s.isShowInformation
-                || tableModel.toList() != s.suppressedInspectionIds
+            (((showErrors != s.isShowErrors)
+                || (showWarnings != s.isShowWarnings)
+                || (showWeakWarnings != s.isShowWeakWarnings)
+                || (showInformation != s.isShowInformation)
+                || (tableModel.toList() != s.suppressedInspectionIds)))
         }
         onApply {
             val s = DiagnosticFilterSettings.getInstance(project)
-            s.setShowErrors(showErrors)
-            s.setShowWarnings(showWarnings)
-            s.setShowWeakWarnings(showWeakWarnings)
-            s.setShowInformation(showInformation)
-            s.setSuppressedInspectionIds(tableModel.toList())
+            s.isShowErrors = showErrors
+            s.isShowWarnings = showWarnings
+            s.isShowWeakWarnings = showWeakWarnings
+            s.isShowInformation = showInformation
+            s.suppressedInspectionIds = tableModel.toList()
         }
         onReset { loadFromSettings() }
     }
