@@ -320,6 +320,13 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       id="com.github.catatafishen.agentbridge.webAccess"
       displayName="Web Access"/>
 
+    <!-- ── Security / Sandbox ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.SecurityConfigurable"
+      id="com.github.catatafishen.agentbridge.security"
+      displayName="Security"/>
+
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity
       implementation="com.github.catatafishen.agentbridge.psi.PsiBridgeStartup"/>

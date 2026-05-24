@@ -26,6 +26,8 @@ import com.github.catatafishen.agentbridge.services.McpServerControl;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
+import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.PathSanitizer;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
@@ -1218,6 +1220,36 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     /**
+     * Returns the agent-specific config directories that must be bind-mounted read-only into
+     * the bwrap sandbox so the agent can authenticate and read its saved configuration.
+     * <p>
+     * The default implementation maps the {@link #agentId()} to the conventional config dir(s)
+     * for that agent. Subclasses may override to supply a different set of paths.
+     */
+    @NotNull
+    protected List<Path> getSandboxConfigBinds() {
+        Path homeDir = Path.of(SystemProperties.getUserHome());
+        return switch (agentId()) {
+            case "copilot" -> existingSandboxPaths(homeDir.resolve(".copilot"),
+                homeDir.resolve(".config/github-copilot"));
+            case "claude-cli" -> existingSandboxPaths(homeDir.resolve(".claude"));
+            case "codex" -> existingSandboxPaths(homeDir.resolve(".codex"));
+            case "kiro" -> existingSandboxPaths(homeDir.resolve(".kiro"));
+            case "hermes" -> existingSandboxPaths(homeDir.resolve(".hermes"));
+            case "opencode" -> existingSandboxPaths(homeDir.resolve(".config/opencode"));
+            default -> List.of();
+        };
+    }
+
+    private static List<Path> existingSandboxPaths(Path... candidates) {
+        List<Path> result = new ArrayList<>();
+        for (Path p : candidates) {
+            if (p.toFile().exists()) result.add(p);
+        }
+        return result;
+    }
+
+    /**
      * Extra environment variables for the agent process.
      *
      * @param mcpPort the MCP server port for this session
@@ -1367,6 +1399,13 @@ public abstract class AcpClient extends AbstractClient {
 
         LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
         LOG.info("Environment size: " + pb.environment().size() + " variables");
+
+        // Wrap in bwrap sandbox if enabled. Must happen after environment setup (bwrap inherits
+        // the parent's env vars) and after resolveCommand (we need the resolved binary path).
+        if (SandboxSettings.shouldSandbox()) {
+            BwrapSandbox.wrap(pb, resolvedCommand.getFirst(), getSandboxConfigBinds());
+        }
+
         Process process = pb.start();
         ClientProcessRegistry.register(process);
         return process;

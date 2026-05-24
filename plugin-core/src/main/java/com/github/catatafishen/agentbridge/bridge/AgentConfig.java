@@ -6,6 +6,9 @@ import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.file.Path;
+import java.util.List;
+
 /**
  * Strategy interface for agent-specific configuration and lifecycle.
  * Each ACP-compatible agent (Copilot CLI, Claude Code, Codex CLI, etc.)
@@ -223,5 +226,19 @@ public interface AgentConfig {
      */
     default boolean requiresMcpInSessionNew() {
         return false;
+    }
+
+    /**
+     * Returns paths to bind read-only into the bwrap sandbox when sandbox mode is enabled.
+     * These paths give the sandboxed agent access to its auth tokens and cached credentials
+     * without exposing the rest of the user's home directory.
+     *
+     * <p>Paths that do not exist are silently skipped by bwrap.</p>
+     *
+     * @return list of absolute paths; empty list means only the agent binary and runtime are accessible
+     */
+    @NotNull
+    default List<Path> getSandboxConfigBinds() {
+        return List.of();
     }
 }

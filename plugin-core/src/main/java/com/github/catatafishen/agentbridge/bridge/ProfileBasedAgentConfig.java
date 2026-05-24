@@ -683,4 +683,52 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         return profile.getMcpServerName();
     }
 
+    /**
+     * Returns paths that must be bind-mounted read-only into the bwrap sandbox so the agent
+     * can access its own auth tokens. The user's home directory is otherwise blocked.
+     *
+     * <p>Known config directories per agent:
+     * <ul>
+     *   <li>Copilot CLI — {@code ~/.copilot}, {@code ~/.config/github-copilot}</li>
+     *   <li>Claude Code — {@code ~/.claude}</li>
+     *   <li>Codex CLI — {@code ~/.codex}</li>
+     *   <li>Kiro CLI — {@code ~/.kiro}</li>
+     *   <li>Hermes — {@code ~/.hermes}</li>
+     * </ul>
+     * OpenCode and Junie manage auth via environment variables / the IDE, so they need no
+     * additional bind-mounts. Custom/unknown profiles return an empty list; the agent may
+     * need to re-authenticate when running sandboxed.
+     * </p>
+     */
+    @Override
+    @NotNull
+    public List<Path> getSandboxConfigBinds() {
+        String home = SystemProperties.getUserHome();
+        Path homeDir = Path.of(home);
+        String profileId = profile.getId();
+
+        return switch (profileId) {
+            case "copilot" -> existingPaths(homeDir.resolve(".copilot"),
+                homeDir.resolve(".config/github-copilot"));
+            case "claude-cli" -> existingPaths(homeDir.resolve(".claude"));
+            case "codex" -> existingPaths(homeDir.resolve(".codex"));
+            case "kiro" -> existingPaths(homeDir.resolve(".kiro"));
+            case "hermes" -> existingPaths(homeDir.resolve(".hermes"));
+            // opencode uses env-var-controlled paths injected by OpenCodeAgentConfig
+            // junie uses IDE-level credentials — no extra paths needed
+            default -> List.of();
+        };
+    }
+
+    /**
+     * Returns a new list containing only the paths that exist on disk.
+     */
+    private static List<Path> existingPaths(Path... candidates) {
+        List<Path> result = new ArrayList<>();
+        for (Path p : candidates) {
+            if (p.toFile().exists()) result.add(p);
+        }
+        return result;
+    }
+
 }
