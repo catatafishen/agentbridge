@@ -114,6 +114,8 @@ Use **conventional commits**:
 
 **Group related changes as logical units** — may span multiple files. Unrelated changes get separate commits.
 **Build must pass** before committing.
+**Before ending a turn** after code changes, run `build_project` and confirm it succeeds.
+**Before pushing to a branch with an open PR**, run `run_tests` and confirm all unit tests pass.
 
 ---
 

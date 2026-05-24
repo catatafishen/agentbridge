@@ -97,6 +97,14 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
 
+## Build and Test Verification
+
+**After making code changes**, always run `build_project` and verify it succeeds before ending
+the turn. Do not consider the work done if the build is red — fix all errors first.
+
+**Before pushing to a branch that has an open PR** (or before creating a PR), run `run_tests`
+and verify all unit tests pass. A failing test suite blocks review; fix failures before pushing.
+
 ## Async CI Pattern
 
 CI takes 3-5 minutes after each push or rebase. Do not wait for it synchronously — check
@@ -506,7 +514,8 @@ These files demonstrate good separation and should be used as reference:
 ## Refactoring Rule: Tests Follow Interfaces
 
 When refactoring code into new classes with public interfaces (callbacks, companion methods, utility objects), **always
-add corresponding unit tests** for the extracted logic. The whole point of extraction is testability — an extracted class
+add corresponding unit tests** for the extracted logic. The whole point of extraction is testability — an extracted
+class
 without tests is only half the job.
 
 - **Extract pure decision logic** into `companion object` or standalone `object` classes (e.g., `XxxLogic`)
@@ -515,6 +524,7 @@ without tests is only half the job.
 - **Name tests by behavior** — `"pending ask-user takes precedence over is sending"` not `"test case 3"`
 
 This rule applies any time you:
+
 1. Extract a class from a UI component
 2. Create a new `Callbacks` or `Host` interface
 3. Move decision logic into a companion/utility object
