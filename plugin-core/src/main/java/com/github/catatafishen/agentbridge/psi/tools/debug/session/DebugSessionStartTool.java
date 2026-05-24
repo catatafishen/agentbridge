@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.debug.session;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.tools.debug.DebugTool;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
@@ -8,7 +9,6 @@ import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.executors.DefaultDebugExecutor;
 import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -83,7 +83,7 @@ public final class DebugSessionStartTool extends DebugTool {
                 + "] does not support debug mode.";
         }
         ExecutionEnvironment env = envBuilder.build();
-        ApplicationManager.getApplication().invokeLater(
+        EdtUtil.invokeLater(
             () -> ExecutionManager.getInstance(project).restartRunProfile(env));
         return "Started debug session: " + name
             + " [" + settings.getType().getDisplayName() + "]\n"

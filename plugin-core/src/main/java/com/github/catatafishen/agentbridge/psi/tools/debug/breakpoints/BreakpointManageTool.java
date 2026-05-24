@@ -175,9 +175,15 @@ public final class BreakpointManageTool extends DebugTool {
         int index = findBreakpointIndex(mgr, bp);
         String relPath = relativize(project.getBasePath(), file.getPath());
         String location = relPath != null ? relPath : file.getName();
+        return formatAddResult(index, location, lineZeroBased + 1, condition, logExpr, enabled, suspend);
+    }
+
+    static String formatAddResult(int index, String location, int lineOneBased,
+                                  String condition, String logExpr,
+                                  boolean enabled, boolean suspend) {
         var sb = new StringBuilder("Added breakpoint");
         if (index > 0) sb.append(" index ").append(index);
-        sb.append(" at ").append(location).append(':').append(lineZeroBased + 1);
+        sb.append(" at ").append(location).append(':').append(lineOneBased);
         if (condition != null && !condition.isBlank()) sb.append(" [condition: ").append(condition).append(']');
         if (logExpr != null && !logExpr.isBlank()) sb.append(" [log: ").append(logExpr).append(']');
         if (!enabled) sb.append(" [disabled]");
@@ -240,6 +246,10 @@ public final class BreakpointManageTool extends DebugTool {
 
     // ── add_exception ─────────────────────────────────────────────────────────
 
+    // XBreakpointManager.addBreakpoint() requires a raw XBreakpointType parameter because
+    // the platform API uses a wildcard type (XBreakpointType<?, ?>) and Java's type system
+    // cannot express the correlation between the type token and the properties object at the
+    // call site. The cast is unavoidable — there is no generic-safe API for this platform call.
     @SuppressWarnings({"unchecked", "rawtypes"})
     @NotNull
     private String executeAddException(@NotNull JsonObject args) throws Exception {
@@ -346,7 +356,7 @@ public final class BreakpointManageTool extends DebugTool {
     }
 
     @NotNull
-    private String buildResolveError(@NotNull JsonObject args, int total, @NotNull String action) {
+    private static String buildResolveError(@NotNull JsonObject args, int total, @NotNull String action) {
         if (args.has(PARAM_INDEX)) {
             return "Error: Breakpoint index " + args.get(PARAM_INDEX).getAsInt()
                 + " out of range (1-" + total + "). Run breakpoint_list to see current breakpoints.";

@@ -1,11 +1,8 @@
 package com.github.catatafishen.agentbridge.psi.tools.debug;
 
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddExceptionTool;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointListTool;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointRemoveTool;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointUpdateTool;
+import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointManageTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugEvaluateTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugInspectFrameTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugReadConsoleTool;
@@ -14,6 +11,7 @@ import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugVaria
 import com.github.catatafishen.agentbridge.psi.tools.debug.navigation.DebugRunToLineTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.navigation.DebugStepTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionListTool;
+import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionStartTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionStopTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
@@ -26,7 +24,7 @@ import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import java.util.List;
 
 /**
- * Platform tests for all 14 debug tools created by {@link DebugToolFactory}.
+ * Platform tests for all 12 debug tools created by {@link DebugToolFactory}.
  *
  * <p>JUnit 3 style (extends {@link BasePlatformTestCase}): test methods must be
  * {@code public void testXxx()}. Run via Gradle only:
@@ -55,13 +53,11 @@ public class DebugToolsTest extends BasePlatformTestCase {
 
     // Breakpoint tools
     private BreakpointListTool breakpointListTool;
-    private BreakpointAddTool breakpointAddTool;
-    private BreakpointAddExceptionTool breakpointAddExceptionTool;
-    private BreakpointRemoveTool breakpointRemoveTool;
-    private BreakpointUpdateTool breakpointUpdateTool;
+    private BreakpointManageTool breakpointManageTool;
 
     // Session tools
     private DebugSessionListTool debugSessionListTool;
+    private DebugSessionStartTool debugSessionStartTool;
     private DebugSessionStopTool debugSessionStopTool;
 
     // Inspection tools
@@ -93,12 +89,10 @@ public class DebugToolsTest extends BasePlatformTestCase {
             .setValue(ToolLayerSettings.FOLLOW_AGENT_FILES_KEY, "false");
 
         breakpointListTool = new BreakpointListTool(getProject());
-        breakpointAddTool = new BreakpointAddTool(getProject());
-        breakpointAddExceptionTool = new BreakpointAddExceptionTool(getProject());
-        breakpointRemoveTool = new BreakpointRemoveTool(getProject());
-        breakpointUpdateTool = new BreakpointUpdateTool(getProject());
+        breakpointManageTool = new BreakpointManageTool(getProject());
 
         debugSessionListTool = new DebugSessionListTool(getProject());
+        debugSessionStartTool = new DebugSessionStartTool(getProject());
         debugSessionStopTool = new DebugSessionStopTool(getProject());
 
         debugSnapshotTool = new DebugSnapshotTool(getProject());
@@ -141,8 +135,8 @@ public class DebugToolsTest extends BasePlatformTestCase {
 
     /**
      * Verifies that {@code execute()} returns the canonical "No breakpoints set."
-     * message when no user breakpoints exist. Uses {@link BreakpointRemoveTool}
-     * with {@code remove_all: true} to clear any default breakpoints (e.g. the
+     * message when no user breakpoints exist. Uses {@link BreakpointManageTool}
+     * with {@code action: "remove", remove_all: true} to clear any default breakpoints (e.g. the
      * Java plugin's "Java Exception Breakpoints") that may be registered
      * asynchronously after {@link #setUp()}.
      *
@@ -152,8 +146,9 @@ public class DebugToolsTest extends BasePlatformTestCase {
      */
     public void testListBreakpointsEmptyReturnsNoBreakpointsMessage() throws Exception {
         JsonObject removeAll = new JsonObject();
+        removeAll.addProperty("action", "remove");
         removeAll.addProperty("remove_all", true);
-        breakpointRemoveTool.execute(removeAll);
+        breakpointManageTool.execute(removeAll);
 
         String result = breakpointListTool.execute(new JsonObject());
         assertTrue("Expected empty or default-only breakpoint list, got: " + result,
@@ -189,21 +184,22 @@ public class DebugToolsTest extends BasePlatformTestCase {
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
-    // ── BreakpointAddTool ─────────────────────────────────────────────────────────
+    // ── BreakpointManageTool (add / remove / update / add_exception) ──────────────
     // ═════════════════════════════════════════════════════════════════════════════
 
     /**
      * Verifies that attempting to add a breakpoint to an absolute path that does
-     * not exist in the VFS returns a "File not found:" error instead of throwing.
+     * not exist in the VFS returns a "Error: File not found:" error instead of throwing.
      */
     public void testAddBreakpointAbsoluteFileNotFoundReturnsError() throws Exception {
-        String result = breakpointAddTool.execute(args(
+        String result = breakpointManageTool.execute(args(
+            "action", "add",
             "file", "/nonexistent/path/to/NonexistentSource.java",
             "line", "10"
         ));
         assertNotNull("execute() must not return null", result);
-        assertTrue("Expected 'File not found:' message, got: " + result,
-            result.startsWith("File not found:"));
+        assertTrue("Expected 'Error: File not found:' message, got: " + result,
+            result.startsWith("Error: File not found:"));
         assertTrue("Error message must include the requested path, got: " + result,
             result.contains("NonexistentSource.java"));
     }
@@ -213,18 +209,18 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * also returns a "File not found:" error gracefully.
      */
     public void testAddBreakpointProjectRelativeFileNotFoundReturnsError() throws Exception {
-        String result = breakpointAddTool.execute(args(
+        String result = breakpointManageTool.execute(args(
+            "action", "add",
             "file", "src/main/java/com/example/NoSuchClass.java",
             "line", "1"
         ));
         assertNotNull("execute() must not return null", result);
-        // "File not found:" is the canonical prefix from BreakpointAddTool
         assertTrue("Expected file-not-found message, got: " + result,
             result.contains("File not found:") || result.contains("not found"));
     }
 
     /**
-     * Verifies that {@link BreakpointAddTool} does not modify the breakpoint
+     * Verifies that {@link BreakpointManageTool} does not modify the breakpoint
      * manager when the target file cannot be resolved — i.e. no phantom breakpoint
      * is created. Compares the count before and after to avoid assuming a specific
      * absolute count (default breakpoints such as "Java Exception Breakpoints" may
@@ -234,7 +230,8 @@ public class DebugToolsTest extends BasePlatformTestCase {
         var bpManager = XDebuggerManager.getInstance(getProject()).getBreakpointManager();
         int countBefore = bpManager.getAllBreakpoints().length;
 
-        breakpointAddTool.execute(args(
+        breakpointManageTool.execute(args(
+            "action", "add",
             "file", "/does/not/exist/Phantom.java",
             "line", "5"
         ));
@@ -244,17 +241,13 @@ public class DebugToolsTest extends BasePlatformTestCase {
             countBefore, countAfter);
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════
-    // ── BreakpointRemoveTool ──────────────────────────────────────────────────────
-    // ═════════════════════════════════════════════════════════════════════════════
-
     /**
-     * Verifies that calling {@code execute()} with no selector arguments returns
+     * Verifies that calling {@code execute(action=remove)} with no selector arguments returns
      * a descriptive error explaining which selectors are accepted, rather than
      * throwing or returning a null/blank response.
      */
     public void testRemoveBreakpointNoSelectorReturnsError() throws Exception {
-        String result = breakpointRemoveTool.execute(new JsonObject());
+        String result = breakpointManageTool.execute(args("action", "remove"));
         assertNotNull("execute() must not return null", result);
         assertTrue("Expected 'Error:' prefix for missing selector, got: " + result,
             result.startsWith("Error:"));
@@ -271,8 +264,9 @@ public class DebugToolsTest extends BasePlatformTestCase {
     public void testRemoveBreakpointIndexOutOfRangeReturnsError() throws Exception {
         int total = XDebuggerManager.getInstance(getProject()).getBreakpointManager().getAllBreakpoints().length;
         JsonObject a = new JsonObject();
+        a.addProperty("action", "remove");
         a.addProperty("index", total + 1);
-        String result = breakpointRemoveTool.execute(a);
+        String result = breakpointManageTool.execute(a);
         assertNotNull("execute() must not return null", result);
         assertTrue("Expected 'Error:' prefix for out-of-range index, got: " + result,
             result.startsWith("Error:"));
@@ -290,9 +284,10 @@ public class DebugToolsTest extends BasePlatformTestCase {
      */
     public void testRemoveAllBreakpointsWhenNoneExistReturnsConfirmation() throws Exception {
         JsonObject a = new JsonObject();
+        a.addProperty("action", "remove");
         a.addProperty("remove_all", true);
-        breakpointRemoveTool.execute(a); // clear any defaults (e.g. Java Exception Breakpoints)
-        String result = breakpointRemoveTool.execute(a); // second call — count may be 0 or 1
+        breakpointManageTool.execute(a); // clear any defaults (e.g. Java Exception Breakpoints)
+        String result = breakpointManageTool.execute(a); // second call — count may be 0 or 1
         assertNotNull("execute() must not return null", result);
         assertTrue("Expected 'Removed all' confirmation, got: " + result,
             result.contains("Removed all") && result.contains("breakpoint(s)"));
@@ -304,7 +299,8 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * requested file path.
      */
     public void testRemoveBreakpointByFileLineNoneExistReturnsError() throws Exception {
-        String result = breakpointRemoveTool.execute(args(
+        String result = breakpointManageTool.execute(args(
+            "action", "remove",
             "file", "/nonexistent/src/Missing.java",
             "line", "5"
         ));
@@ -320,28 +316,23 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * produces a meaningful error rather than throwing a NullPointerException.
      */
     public void testRemoveBreakpointFileOnlyNoLineReturnsError() throws Exception {
-        String result = breakpointRemoveTool.execute(args("file", "/some/path/File.java"));
+        String result = breakpointManageTool.execute(args("action", "remove", "file", "/some/path/File.java"));
         assertNotNull("execute() must not return null", result);
         assertFalse("Result must not be blank", result.isBlank());
         assertTrue("Expected error or 'no breakpoint found' message, got: " + result,
             result.startsWith("Error:") || result.contains("index") || result.contains("no breakpoint found"));
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════
-    // ── BreakpointUpdateTool ──────────────────────────────────────────────────────
-    // ═════════════════════════════════════════════════════════════════════════════
-
     /**
-     * Verifies that calling {@code execute()} with an empty argument object returns
+     * Verifies that calling {@code execute(action=update)} with an empty argument object returns
      * a guidance message asking the caller to supply an {@code index} or
      * {@code file}+{@code line} selector.
      */
     public void testUpdateBreakpointNoSelectorReturnsGuidance() throws Exception {
-        String result = breakpointUpdateTool.execute(new JsonObject());
+        String result = breakpointManageTool.execute(args("action", "update"));
         assertNotNull("execute() must not return null", result);
-        // "Provide 'index' or 'file'+'line' to identify the breakpoint."
         assertTrue("Expected guidance about providing a selector, got: " + result,
-            result.contains("index") || result.contains("file") || result.contains("Provide"));
+            result.contains("index") || result.contains("file") || result.contains("Specify"));
     }
 
     /**
@@ -350,9 +341,10 @@ public class DebugToolsTest extends BasePlatformTestCase {
      */
     public void testUpdateBreakpointIndexOutOfRangeReturnsError() throws Exception {
         JsonObject a = new JsonObject();
+        a.addProperty("action", "update");
         a.addProperty("index", 99);
         a.addProperty("enabled", true);
-        String result = breakpointUpdateTool.execute(a);
+        String result = breakpointManageTool.execute(a);
         assertNotNull("execute() must not return null", result);
         assertTrue("Expected 'out of range' in error, got: " + result,
             result.contains("out of range"));
@@ -365,19 +357,15 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * breakpoint returns a human-readable "not found" error rather than throwing.
      */
     public void testUpdateBreakpointByFileLineNoneExistReturnsError() throws Exception {
-        String result = breakpointUpdateTool.execute(args(
+        String result = breakpointManageTool.execute(args(
+            "action", "update",
             "file", "/nonexistent/path/Absent.java",
             "line", "20"
         ));
         assertNotNull("execute() must not return null", result);
-        // "No breakpoint found at /nonexistent/path/Absent.java:20."
         assertTrue("Expected 'No breakpoint found' or similar error, got: " + result,
-            result.contains("No breakpoint found") || result.contains("not found") || result.contains("Provide"));
+            result.contains("No breakpoint found") || result.contains("not found") || result.contains("Specify"));
     }
-
-    // ═════════════════════════════════════════════════════════════════════════════
-    // ── BreakpointAddExceptionTool ────────────────────────────────────────────────
-    // ═════════════════════════════════════════════════════════════════════════════
 
     /**
      * Verifies that adding an exception breakpoint for a concrete Java exception
@@ -389,7 +377,8 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * raw stack trace.
      */
     public void testAddExceptionBreakpointRuntimeExceptionReturnsValidResponse() throws Exception {
-        String result = breakpointAddExceptionTool.execute(args(
+        String result = breakpointManageTool.execute(args(
+            "action", "add_exception",
             "exception_class", "java.lang.RuntimeException"
         ));
         assertNotNull("execute() must not return null", result);
@@ -408,7 +397,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * no exception breakpoint type is available.
      */
     public void testAddExceptionBreakpointWildcardReturnsValidResponse() throws Exception {
-        String result = breakpointAddExceptionTool.execute(args("exception_class", "*"));
+        String result = breakpointManageTool.execute(args("action", "add_exception", "exception_class", "*"));
         assertNotNull("execute() must not return null", result);
         assertFalse("Result must not be blank", result.isBlank());
         boolean isValidResponse =
@@ -777,16 +766,16 @@ public class DebugToolsTest extends BasePlatformTestCase {
 
     /**
      * Verifies that {@link DebugToolFactory#create(com.intellij.openapi.project.Project)}
-     * produces exactly 14 tool instances, matching the count documented in the factory.
+     * produces exactly 12 tool instances, matching the count documented in the factory.
      */
-    public void testDebugToolFactoryCreates14Tools() {
+    public void testDebugToolFactoryCreates12Tools() {
         List<?> tools = DebugToolFactory.create(getProject());
         assertNotNull("Tool list must not be null", tools);
-        assertEquals("DebugToolFactory must create exactly 14 tools", 14, tools.size());
+        assertEquals("DebugToolFactory must create exactly 12 tools", 12, tools.size());
     }
 
     /**
-     * Verifies that none of the 14 tools produced by the factory are {@code null}.
+     * Verifies that none of the 12 tools produced by the factory are {@code null}.
      */
     public void testDebugToolFactoryToolsAreAllNonNull() {
         List<?> tools = DebugToolFactory.create(getProject());
@@ -804,11 +793,9 @@ public class DebugToolsTest extends BasePlatformTestCase {
      */
     public void testAllDebugToolsHaveNonBlankId() {
         assertNonBlankId(breakpointListTool.id(), "BreakpointListTool");
-        assertNonBlankId(breakpointAddTool.id(), "BreakpointAddTool");
-        assertNonBlankId(breakpointAddExceptionTool.id(), "BreakpointAddExceptionTool");
-        assertNonBlankId(breakpointRemoveTool.id(), "BreakpointRemoveTool");
-        assertNonBlankId(breakpointUpdateTool.id(), "BreakpointUpdateTool");
+        assertNonBlankId(breakpointManageTool.id(), "BreakpointManageTool");
         assertNonBlankId(debugSessionListTool.id(), "DebugSessionListTool");
+        assertNonBlankId(debugSessionStartTool.id(), "DebugSessionStartTool");
         assertNonBlankId(debugSessionStopTool.id(), "DebugSessionStopTool");
         assertNonBlankId(debugSnapshotTool.id(), "DebugSnapshotTool");
         assertNonBlankId(debugVariableDetailTool.id(), "DebugVariableDetailTool");
@@ -821,7 +808,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
 
     /**
      * Verifies that every debug tool's {@code id()} is unique within the set of
-     * all 14 debug tools (no duplicate IDs that would cause MCP routing collisions).
+     * all 12 debug tools (no duplicate IDs that would cause MCP routing collisions).
      */
     public void testAllDebugToolIdsAreUnique() {
         List<?> tools = DebugToolFactory.create(getProject());
@@ -855,11 +842,9 @@ public class DebugToolsTest extends BasePlatformTestCase {
      */
     public void testCanonicalToolIds() {
         assertEquals("breakpoint_list", breakpointListTool.id());
-        assertEquals("breakpoint_add", breakpointAddTool.id());
-        assertEquals("breakpoint_add_exception", breakpointAddExceptionTool.id());
-        assertEquals("breakpoint_remove", breakpointRemoveTool.id());
-        assertEquals("breakpoint_update", breakpointUpdateTool.id());
+        assertEquals("breakpoint_manage", breakpointManageTool.id());
         assertEquals("debug_session_list", debugSessionListTool.id());
+        assertEquals("debug_session_start", debugSessionStartTool.id());
         assertEquals("debug_session_stop", debugSessionStopTool.id());
         assertEquals("debug_snapshot", debugSnapshotTool.id());
         assertEquals("debug_variable_detail", debugVariableDetailTool.id());
@@ -882,11 +867,9 @@ public class DebugToolsTest extends BasePlatformTestCase {
      */
     public void testReadOnlyFlagsMatchDocumentedContract() {
         assertTrue("breakpoint_list must be read-only", breakpointListTool.isReadOnly());
-        assertFalse("breakpoint_add must NOT be read-only", breakpointAddTool.isReadOnly());
-        assertFalse("breakpoint_add_exception must NOT be read-only", breakpointAddExceptionTool.isReadOnly());
-        assertFalse("breakpoint_remove must NOT be read-only", breakpointRemoveTool.isReadOnly());
-        assertFalse("breakpoint_update must NOT be read-only", breakpointUpdateTool.isReadOnly());
+        assertFalse("breakpoint_manage must NOT be read-only", breakpointManageTool.isReadOnly());
         assertTrue("debug_session_list must be read-only", debugSessionListTool.isReadOnly());
+        assertFalse("debug_session_start must NOT be read-only", debugSessionStartTool.isReadOnly());
         assertFalse("debug_session_stop must NOT be read-only", debugSessionStopTool.isReadOnly());
         assertTrue("debug_snapshot must be read-only", debugSnapshotTool.isReadOnly());
         assertTrue("debug_variable_detail must be read-only", debugVariableDetailTool.isReadOnly());
@@ -903,8 +886,8 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * Removes breakpoints added during a test to prevent state leaking into subsequent
      * test methods. Note: the Java plugin's default "Java Exception Breakpoints" entry
      * is registered asynchronously and may reappear between calls; tests that need a
-     * truly zero-breakpoint state must call {@link BreakpointRemoveTool} with
-     * {@code remove_all: true} directly (as the tool's write action runs synchronously).
+     * truly zero-breakpoint state must call {@link BreakpointManageTool} with
+     * {@code action: "remove", remove_all: true} directly (as the tool's write action runs synchronously).
      */
     private void clearAllBreakpoints() {
         ApplicationManager.getApplication().runWriteAction(() -> {

@@ -45,11 +45,9 @@ class McpSchemaValidationTest {
     private static final String[] ALL_TOOL_CLASSES = {
         // debug
         "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointListTool",
-        "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddTool",
-        "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddExceptionTool",
-        "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointUpdateTool",
-        "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointRemoveTool",
+        "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointManageTool",
         "com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionListTool",
+        "com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionStartTool",
         "com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionStopTool",
         "com.github.catatafishen.agentbridge.psi.tools.debug.navigation.DebugStepTool",
         "com.github.catatafishen.agentbridge.psi.tools.debug.navigation.DebugRunToLineTool",

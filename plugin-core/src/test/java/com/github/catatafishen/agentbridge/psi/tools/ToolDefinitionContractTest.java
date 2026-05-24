@@ -1,10 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools;
 
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddExceptionTool;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointListTool;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointRemoveTool;
-import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointUpdateTool;
+import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointManageTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugEvaluateTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugInspectFrameTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugReadConsoleTool;
@@ -13,6 +10,7 @@ import com.github.catatafishen.agentbridge.psi.tools.debug.inspection.DebugVaria
 import com.github.catatafishen.agentbridge.psi.tools.debug.navigation.DebugRunToLineTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.navigation.DebugStepTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionListTool;
+import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionStartTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionStopTool;
 import com.github.catatafishen.agentbridge.psi.tools.editing.InsertAfterSymbolTool;
 import com.github.catatafishen.agentbridge.psi.tools.editing.InsertBeforeSymbolTool;
@@ -209,11 +207,9 @@ class ToolDefinitionContractTest {
     static Stream<Tool> debugTools() {
         return Stream.of(
             new BreakpointListTool(null),
-            new BreakpointAddTool(null),
-            new BreakpointAddExceptionTool(null),
-            new BreakpointUpdateTool(null),
-            new BreakpointRemoveTool(null),
+            new BreakpointManageTool(null),
             new DebugSessionListTool(null),
+            new DebugSessionStartTool(null),
             new DebugSessionStopTool(null),
             new DebugStepTool(null),
             new DebugRunToLineTool(null),
