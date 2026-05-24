@@ -17,6 +17,8 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
+import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -470,7 +472,11 @@ public final class ClaudeClient extends AbstractClaudeClient {
             File workDir = (project != null && project.getBasePath() != null)
                 ? new File(project.getBasePath()) : null;
 
-            proc = processFactory.start(cmd, env, workDir);
+            List<String> effectiveCmd = SandboxSettings.shouldSandbox() && resolvedBinaryPath != null
+                ? BwrapSandbox.wrapCommand(cmd, resolvedBinaryPath, config.getSandboxConfigBinds())
+                : cmd;
+
+            proc = processFactory.start(effectiveCmd, env, workDir);
             activeProcesses.put(sessionId, proc);
 
             // Drain stderr on a background thread to prevent buffer deadlock

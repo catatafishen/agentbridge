@@ -21,6 +21,8 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
+import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -463,6 +465,11 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
                 pb.directory(new File(project.getBasePath()));
             }
             pb.redirectErrorStream(false);
+
+            if (SandboxSettings.shouldSandbox()) {
+                BwrapSandbox.wrap(pb, resolvedBinaryPath, config.getSandboxConfigBinds());
+            }
+
             appServerProcess.set(pb.start());
 
             // Drain stderr on a daemon thread
