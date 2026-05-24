@@ -41,7 +41,12 @@ class DiagnosticFilterSettingsTest {
     }
 
     @Test
-    @DisplayName("default: SpellCheckingInspection is suppressed")
+    @DisplayName("default: information shown")
+    void defaultShowInformation() {
+        assertTrue(settings.isShowInformation());
+    }
+
+    @Test
     void defaultSpellCheckingSuppressed() {
         assertTrue(settings.isInspectionSuppressed("SpellCheckingInspection"));
     }
@@ -73,16 +78,33 @@ class DiagnosticFilterSettingsTest {
     }
 
     @Test
-    @DisplayName("INFORMATION severity always excluded")
-    void informationAlwaysExcluded() {
+    @DisplayName("INFORMATION severity enabled by default")
+    void informationEnabledByDefault() {
+        assertTrue(settings.isSeverityEnabled(HighlightSeverity.INFORMATION));
+    }
+
+    @Test
+    @DisplayName("disabling information hides INFORMATION-level highlights")
+    void disablingInformationHidesInformation() {
+        settings.setShowInformation(false);
         assertFalse(settings.isSeverityEnabled(HighlightSeverity.INFORMATION));
+    }
+
+    @Test
+    @DisplayName("disabling information does not hide weak warnings or higher")
+    void disablingInformationDoesNotHideHigherSeverities() {
+        settings.setShowInformation(false);
+        assertTrue(settings.isSeverityEnabled(HighlightSeverity.WEAK_WARNING));
+        assertTrue(settings.isSeverityEnabled(HighlightSeverity.WARNING));
+        assertTrue(settings.isSeverityEnabled(HighlightSeverity.ERROR));
     }
 
     @Test
     @DisplayName("severity below INFORMATION always excluded")
     void belowInformationAlwaysExcluded() {
-        var belowInfo = new HighlightSeverity("CUSTOM", 1);
-        assertFalse(settings.isSeverityEnabled(belowInfo));
+        // TEXT_ATTRIBUTES has myVal = -1, below INFORMATION (0) — always excluded
+        var textAttrs = new HighlightSeverity("TEXT_ATTRIBUTES", HighlightSeverity.INFORMATION.myVal - 1);
+        assertFalse(settings.isSeverityEnabled(textAttrs));
     }
 
     @Test
@@ -173,6 +195,7 @@ class DiagnosticFilterSettingsTest {
         state.setShowErrors(false);
         state.setShowWarnings(false);
         state.setShowWeakWarnings(false);
+        state.setShowInformation(false);
         state.setSuppressedInspectionIds(List.of("FooInspection"));
 
         settings.loadState(state);
@@ -180,6 +203,7 @@ class DiagnosticFilterSettingsTest {
         assertFalse(settings.isShowErrors());
         assertFalse(settings.isShowWarnings());
         assertFalse(settings.isShowWeakWarnings());
+        assertFalse(settings.isShowInformation());
         assertTrue(settings.isInspectionSuppressed("FooInspection"));
         assertFalse(settings.isInspectionSuppressed("SpellCheckingInspection"));
     }

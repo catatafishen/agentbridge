@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.openapi.application.ApplicationManager;
@@ -130,12 +131,13 @@ public final class GetAvailableActionsTool extends QualityTool {
         }
 
         List<HighlightInfo> lineHighlights = highlightsOnLine(doc, targetLine);
+        DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         List<String> entries = new ArrayList<>();
         Set<String> allFixNames = new LinkedHashSet<>();
 
         for (var h : lineHighlights) {
             String desc = h.getDescription();
-            if (desc == null) continue;
+            if (desc == null || !filter.shouldInclude(h)) continue;
 
             int actualLine = doc.getLineNumber(h.getStartOffset()) + 1;
             String severity = h.getSeverity().getName();
@@ -188,7 +190,9 @@ public final class GetAvailableActionsTool extends QualityTool {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return "Error: Cannot parse file: " + pathStr;
 
+        DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         List<String> quickFixes = highlightsOnLine(doc, targetLine).stream()
+            .filter(filter::shouldInclude)
             .flatMap(h -> collectQuickFixNames(h).stream())
             .distinct()
             .toList();

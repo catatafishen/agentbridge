@@ -16,11 +16,12 @@ import java.util.List;
 
 /**
  * Project-level settings that control which diagnostics are surfaced to agents
- * via {@code get_highlights} and {@code get_problems}.
+ * by all diagnostic-emitting tools.
  *
  * <p>Agents benefit from focused, high-signal diagnostics. This filter keeps
  * spell-check noise and other low-priority inspections out of the agent's context
- * by default, while letting users tune exactly which severity levels are visible.</p>
+ * by default, while letting users tune exactly which severity levels and inspections
+ * are visible. All tools that emit diagnostic data consult this filter.</p>
  */
 @Service(Service.Level.PROJECT)
 @State(name = "DiagnosticFilterSettings", storages = @Storage("agentbridge-diagnostic-filter.xml"))
@@ -46,15 +47,16 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
 
     /**
      * Returns {@code true} if diagnostics at the given severity level should be
-     * included in MCP tool output.
+     * included in MCP tool output according to the current settings.
      *
-     * <p>INFORMATION-level highlights (and anything below WEAK_WARNING) are always
-     * excluded regardless of settings — they are never actionable for agents.</p>
+     * <p>Only highlights below INFORMATION level (e.g. {@code TEXT_ATTRIBUTES} formatting-only
+     * entries) are unconditionally excluded — they carry no diagnostic message.</p>
      */
     public boolean isSeverityEnabled(@NotNull HighlightSeverity severity) {
         if (severity.myVal >= HighlightSeverity.ERROR.myVal) return myState.showErrors;
         if (severity.myVal >= HighlightSeverity.WARNING.myVal) return myState.showWarnings;
         if (severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal) return myState.showWeakWarnings;
+        if (severity.myVal >= HighlightSeverity.INFORMATION.myVal) return myState.showInformation;
         return false;
     }
 
@@ -90,6 +92,14 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
         myState.showWeakWarnings = v;
     }
 
+    public boolean isShowInformation() {
+        return myState.showInformation;
+    }
+
+    public void setShowInformation(boolean v) {
+        myState.showInformation = v;
+    }
+
     public @NotNull List<String> getSuppressedInspectionIds() {
         return Collections.unmodifiableList(myState.suppressedInspectionIds);
     }
@@ -117,6 +127,12 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
          * Users with noisy codebases can uncheck this to reduce agent context.
          */
         private boolean showWeakWarnings = true;
+        /**
+         * Information-level highlights included by default. These can be useful context
+         * (e.g. unused parameter hints, return value annotations). Users with very noisy
+         * codebases can uncheck this.
+         */
+        private boolean showInformation = true;
         /**
          * SpellCheckingInspection suppressed by default — spell corrections are human-quality
          * work that creates noise for agents and crowds out real issues. Users who want agents
@@ -146,6 +162,14 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
 
         public void setShowWeakWarnings(boolean v) {
             this.showWeakWarnings = v;
+        }
+
+        public boolean isShowInformation() {
+            return showInformation;
+        }
+
+        public void setShowInformation(boolean v) {
+            this.showInformation = v;
         }
 
         public List<String> getSuppressedInspectionIds() {

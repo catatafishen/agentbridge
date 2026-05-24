@@ -10,9 +10,9 @@ import com.intellij.util.ui.JBUI
 import javax.swing.table.AbstractTableModel
 
 /**
- * Settings page (under MCP) for controlling which diagnostics are surfaced to agents
- * by get_highlights and get_problems.
+ * Settings page (under MCP) for controlling which diagnostics are surfaced to agents.
  *
+ * These settings act as the default filter applied by all diagnostic-emitting tools.
  * Checkboxes control each severity level; a table manages inspection IDs whose
  * diagnostics are always suppressed regardless of severity (e.g. spell checking).
  */
@@ -25,6 +25,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
     private var showErrors = true
     private var showWarnings = true
     private var showWeakWarnings = true
+    private var showInformation = true
 
     private val tableModel = InspectionIdsTableModel()
     private val table = JBTable(tableModel).apply {
@@ -48,9 +49,13 @@ class DiagnosticFilterConfigurable(private val project: Project) :
                     .bindSelected({ showWeakWarnings }, { showWeakWarnings = it })
             }
             row {
+                checkBox("Information")
+                    .bindSelected({ showInformation }, { showInformation = it })
+            }
+            row {
                 comment(
-                    "Information-level highlights are always excluded. " +
-                        "Changes apply to both <code>get_highlights</code> and <code>get_problems</code>."
+                    "These settings apply by default to all diagnostics returned by agent tools. " +
+                        "Individual tool parameters (e.g. explicit severity arguments) may override them."
                 )
             }
         }
@@ -60,8 +65,10 @@ class DiagnosticFilterConfigurable(private val project: Project) :
                 comment(
                     "Inspection IDs listed here are hidden from the agent regardless of severity. " +
                         "<b>SpellCheckingInspection</b> is suppressed by default — spell corrections " +
-                        "are human work that creates noise in agent diagnostics. To find the ID of " +
-                        "an inspection, check Settings → Editor → Inspections and hover the inspection name."
+                        "are one example of what often creates noise in agent diagnostics. " +
+                        "The right set depends on your use case; the human in the loop should " +
+                        "decide what to include. To find the ID of an inspection, check " +
+                        "Settings → Editor → Inspections and hover the inspection name."
                 )
             }
             row {
@@ -86,6 +93,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
             showErrors != s.isShowErrors
                 || showWarnings != s.isShowWarnings
                 || showWeakWarnings != s.isShowWeakWarnings
+                || showInformation != s.isShowInformation
                 || tableModel.toList() != s.suppressedInspectionIds
         }
         onApply {
@@ -93,6 +101,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
             s.setShowErrors(showErrors)
             s.setShowWarnings(showWarnings)
             s.setShowWeakWarnings(showWeakWarnings)
+            s.setShowInformation(showInformation)
             s.setSuppressedInspectionIds(tableModel.toList())
         }
         onReset { loadFromSettings() }
@@ -103,6 +112,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
         showErrors = s.isShowErrors
         showWarnings = s.isShowWarnings
         showWeakWarnings = s.isShowWeakWarnings
+        showInformation = s.isShowInformation
         tableModel.clear()
         s.suppressedInspectionIds.forEach { tableModel.addRow(it) }
     }

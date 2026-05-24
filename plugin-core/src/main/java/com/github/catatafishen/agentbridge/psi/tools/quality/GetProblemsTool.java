@@ -148,11 +148,11 @@ public final class GetProblemsTool extends QualityTool {
 
         DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
-        // Use WEAK_WARNING as the floor so that user-configured severity enablement can include them.
-        // Higher-severity highlights are always a superset of lower ones here, so post-filtering is safe.
+        // Pass null as the severity floor so that Information-level highlights can flow through.
+        // The filter below decides which severities are actually shown based on user settings.
         com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx.processHighlights(
             doc, project,
-            com.intellij.lang.annotation.HighlightSeverity.WEAK_WARNING,
+            null,
             0, doc.getTextLength(),
             highlights::add
         );
@@ -184,14 +184,17 @@ public final class GetProblemsTool extends QualityTool {
     private void collectProblemsViaCodeSmellDetector(VirtualFile vf,
                                                      String relPath, List<String> problems) {
         try {
+            DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
             var detector = com.intellij.openapi.vcs.CodeSmellDetector.getInstance(project);
             var smells = detector.findCodeSmells(java.util.Collections.singletonList(vf));
             for (var s : smells) {
                 String msg = s.getDescription();
                 if (msg == null || msg.isBlank()) continue;
+                com.intellij.lang.annotation.HighlightSeverity severity = s.getSeverity();
+                if (severity != null && !filter.isSeverityEnabled(severity)) continue;
                 int line = s.getStartLine() >= 0 ? s.getStartLine() + 1 : 1;
-                String severity = s.getSeverity() != null ? s.getSeverity().getName() : "WARNING";
-                problems.add(String.format(FORMAT_LOCATION, relPath, line, severity, msg));
+                String severityName = severity != null ? severity.getName() : "WARNING";
+                problems.add(String.format(FORMAT_LOCATION, relPath, line, severityName, msg));
             }
         } catch (com.intellij.openapi.progress.ProcessCanceledException pce) {
             throw pce;
