@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class BwrapSandboxTest {
 
@@ -205,7 +206,8 @@ class BwrapSandboxTest {
                 && "/home".equals(bwrapArgs.get(i + 1))) {
                 homeTmpfsIdx = i;
             }
-            if (("--ro-bind".equals(bwrapArgs.get(i)) || "--ro-bind-try".equals(bwrapArgs.get(i)))
+            if (("--ro-bind".equals(bwrapArgs.get(i)) || "--ro-bind-try".equals(bwrapArgs.get(i))
+                || "--bind-try".equals(bwrapArgs.get(i)))
                 && i + 1 < bwrapArgs.size()
                 && configBind.toString().equals(bwrapArgs.get(i + 1))) {
                 configBindIdx = i;
@@ -217,6 +219,36 @@ class BwrapSandboxTest {
         assertTrue(homeTmpfsIdx < configBindIdx,
             "--tmpfs /home (idx=" + homeTmpfsIdx + ") must come before config bind (idx="
                 + configBindIdx + ") so the bind overlays the tmpfs and is visible");
+    }
+
+    @Test
+    void configBindsUseWritableMount() throws IOException {
+        // Config dirs must be mounted writable (--bind-try, not --ro-bind-try) so the CLI can
+        // persist auth tokens. With --ro-bind the write fails silently and the token is written
+        // to the ephemeral tmpfs instead, causing a re-auth prompt on every launch.
+        Path agentScript = tempDir.resolve("copilot");
+        Files.writeString(agentScript, "#!/usr/bin/env node\n// cli\n");
+
+        // Use a real temp dir as configBind so createDirectories succeeds
+        Path configBind = tempDir.resolve("fake-config");
+        Files.createDirectories(configBind);
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            agentScript.toString(), List.of(configBind), List.of(agentScript.toString()), null);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        // Find the bind entry for our config dir
+        for (int i = 0; i < bwrapArgs.size(); i++) {
+            if (i + 1 < bwrapArgs.size() && configBind.toString().equals(bwrapArgs.get(i + 1))) {
+                String bindFlag = bwrapArgs.get(i);
+                assertEquals("--bind-try", bindFlag,
+                    "Config dirs must use --bind-try (writable) so auth tokens can be persisted, got: " + bindFlag);
+                return;
+            }
+        }
+        fail("Config bind dir not found in bwrap args: " + configBind);
     }
 
     @Test
