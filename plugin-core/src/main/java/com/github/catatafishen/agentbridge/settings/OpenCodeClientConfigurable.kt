@@ -25,10 +25,14 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
     private val statusLabel = JBLabel()
     private val refreshResultLabel = JBLabel()
     private val genericSettings = GenericSettings(AGENT_ID)
+    private var binaryPathField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "OpenCode",
-        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryPathProvider = {
+            binaryPathField?.text?.takeIf { it.isNotBlank() }
+                ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
+        },
         binaryNameProvider = { "opencode" },
     )
 
@@ -58,6 +62,7 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
                 .resizableColumn()
                 .applyToComponent {
                     emptyText.text = "Auto-detect (leave empty)"
+                    binaryPathField = this
                     sandboxSection.wireBinaryPathField(this)
                 }
                 .comment("Leave empty to auto-detect on PATH.")

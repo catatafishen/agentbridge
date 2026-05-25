@@ -554,6 +554,11 @@ public final class BwrapSandbox {
         } catch (IOException e) {
             LOG.warn("Could not resolve symlink for " + binaryPath + ": " + e.getMessage());
             return binaryPath;
+        } catch (java.nio.file.InvalidPathException e) {
+            // Settings UI previews may pass non-filesystem placeholders like
+            // "<copilot on PATH>" before the user fills in a real binary. Returning
+            // the input unchanged keeps the preview working in the "auto-detect" case.
+            return binaryPath;
         }
     }
 

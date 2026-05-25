@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.SystemProperties
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
@@ -66,7 +67,6 @@ internal class SandboxSettingsSection(
         background = UIUtil.getPanelBackground()
         border = JBUI.Borders.empty(4)
     }
-    private var initialEnabled: Boolean = SandboxSettings.isSandboxEnabled(agentId)
 
     /** Adds the sandbox group to the given Kotlin DSL panel. */
     fun render(panel: Panel) = with(panel) {
@@ -145,7 +145,6 @@ internal class SandboxSettingsSection(
 
     /** Called by the configurable's {@code reset()} to refresh status + preview. */
     fun reset() {
-        initialEnabled = SandboxSettings.isSandboxEnabled(agentId)
         refreshBwrapStatusAsync()
         refreshCommandPreview()
     }
@@ -153,7 +152,7 @@ internal class SandboxSettingsSection(
     private fun buildPreviewText(): String {
         val configBinds = AgentConfig.sandboxConfigBindsForAgentId(
             agentId,
-            Path.of(System.getProperty("user.home"))
+            Path.of(SystemProperties.getUserHome())
         )
         val binaryPath = binaryPathProvider().orEmpty().trim()
             .ifEmpty { "<${binaryNameProvider()} on PATH>" }
