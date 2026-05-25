@@ -172,10 +172,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             allChips[record.recordId]?.setMcpHandled()
         }
 
-        override fun onAgentCrashed(record: ToolCallRecord, reason: String) {
+        override fun onAgentStopped(record: ToolCallRecord, reason: String) {
             updateToolCall(
                 record.recordId,
-                "failed",
+                MessageFormatter.ChipStatus.FAILED,
                 ChatPanelApi.ToolCallUpdate(details = reason),
             )
         }

@@ -52,10 +52,10 @@ class BroadcastChatPanel(
             entryStore.markToolCallMcp(record.recordId, record.effectiveToolName)
         }
 
-        override fun onAgentCrashed(record: ToolCallRecord, reason: String) {
+        override fun onAgentStopped(record: ToolCallRecord, reason: String) {
             entryStore.updateToolCall(
                 record.recordId,
-                "failed",
+                MessageFormatter.ChipStatus.FAILED,
                 ChatPanelApi.ToolCallUpdate(details = reason),
             )
         }
