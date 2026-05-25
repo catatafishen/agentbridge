@@ -207,17 +207,28 @@ public final class CopilotClient extends AcpClient {
             cmd.add(agentSlug);
         }
 
-        // The Copilot CLI ignores both resumeSessionId (ACP param) and --resume (CLI flag) in
-        // ACP mode as of v1.0.12. The flag is sent anyway in case a future version honours it.
-        // Resume failure is handled by AcpClient.loadSession() → enableInjectionFallback().
+        // The Copilot CLI ignores resumeSessionId (ACP param) in ACP mode as of v1.0.12; the
+        // --resume CLI flag is the only resume mechanism that older Copilot versions honour.
+        // When the agent advertises ACP-native resume (session/resume), AcpClient uses that
+        // path instead (gated by supportsSessionResumption()).
+        //
+        // We MUST only pass --resume when the on-disk session directory still exists. Passing
+        // it with a stale ID (after a crash, manual cleanup, or CLI cache eviction) makes
+        // Copilot crash on startup, which the plugin then restarts, locking into an infinite
+        // crash loop with no recovery path (issue #750).
         String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
         if (resumeId != null) {
-            cmd.add("--resume=" + resumeId);
             Path sessionDir = copilotHome().resolve(SESSION_STATE_DIR).resolve(resumeId);
-            LOG.info("Copilot --resume=" + resumeId
-                + " sessionDir=" + sessionDir + " (exists=" + Files.isDirectory(sessionDir) + ")");
+            boolean sessionDirExists = Files.isDirectory(sessionDir);
+            if (sessionDirExists) {
+                cmd.add("--resume=" + resumeId);
+                LOG.info("Copilot --resume=" + resumeId + " sessionDir=" + sessionDir);
+            } else {
+                LOG.info("Copilot: skipping --resume=" + resumeId
+                    + " — session directory " + sessionDir + " does not exist; starting fresh ACP session");
+            }
         } else {
-            LOG.info("Copilot: no resumeSessionId set, starting fresh session");
+            LOG.info("Copilot: no resumeSessionId set, starting fresh ACP session");
         }
 
         return cmd;
