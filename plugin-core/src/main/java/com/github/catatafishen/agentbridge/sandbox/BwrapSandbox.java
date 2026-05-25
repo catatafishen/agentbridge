@@ -45,7 +45,9 @@ public final class BwrapSandbox {
     @VisibleForTesting
     static final String BWRAP_BINARY = "bwrap";
 
-    /** Cached availability check; null = not yet checked. */
+    /**
+     * Cached availability check; null = not yet checked.
+     */
     private static volatile Boolean available;
 
     private BwrapSandbox() {
@@ -172,31 +174,39 @@ public final class BwrapSandbox {
         roBindTry(args, "/etc/ca-certificates");
         roBindTry(args, "/etc/pki/tls/certs");
 
-        // ── Agent binary (mounted read-only at its exact path) ────────────────
-        roBind(args, agentBinaryPath);
-
-        // ── Runtime interpreter (e.g., Node.js for CLI agents) ────────────────
-        // Most agent CLIs are Node.js wrapper scripts. We detect the interpreter by
-        // reading the shebang line and bind-mount the runtime binary into the sandbox.
-        String interpreter = detectInterpreter(agentBinaryPath);
-        if (interpreter != null) {
-            roBind(args, interpreter);
-        }
-
-        // ── Agent config directories (auth tokens, cached credentials) ────────
-        for (Path bind : configBinds) {
-            roBindTry(args, bind.toString());
-        }
-
         // ── Writable temporary space ──────────────────────────────────────────
         args.addAll(List.of("--tmpfs", "/tmp"));
 
         // ── Block user home directories with empty tmpfs ──────────────────────
         // This prevents the agent from reading SSH keys, cloud credentials, or any
         // other personal data. The agent's own config dirs are selectively re-added
-        // via configBinds above, so auth tokens remain accessible.
+        // via --ro-bind mounts BELOW, so auth tokens remain accessible.
+        //
+        // ORDERING IS CRITICAL: these tmpfs mounts MUST come before any --ro-bind
+        // paths that live under /home or /root (e.g. ~/.nvm/node, ~/.copilot).
+        // bwrap processes arguments sequentially — a --tmpfs on a parent path hides
+        // all earlier binds beneath it. Binds placed after the tmpfs layer on top
+        // instead, and bwrap creates any missing intermediate directories as needed.
         args.addAll(List.of("--tmpfs", "/home"));
         args.addAll(List.of("--tmpfs", "/root"));
+
+        // ── Agent binary (mounted read-only at its exact path) ────────────────
+        // Must come AFTER --tmpfs /home and --tmpfs /root so the bind is visible
+        // even when the binary lives under a user home directory (e.g. ~/.nvm/...).
+        roBind(args, agentBinaryPath);
+
+        // ── Runtime interpreter (e.g., Node.js for CLI agents) ────────────────
+        // Must also come after the tmpfs mounts for the same reason.
+        String interpreter = detectInterpreter(agentBinaryPath);
+        if (interpreter != null) {
+            roBind(args, interpreter);
+        }
+
+        // ── Agent config directories (auth tokens, cached credentials) ────────
+        // Also after the tmpfs mounts — these dirs live under /home/... too.
+        for (Path bind : configBinds) {
+            roBindTry(args, bind.toString());
+        }
 
         // ── Process and session isolation ──────────────────────────────────────
         args.add("--unshare-pid");      // new PID namespace: agent cannot see other processes
@@ -206,14 +216,18 @@ public final class BwrapSandbox {
         return args;
     }
 
-    /** Adds {@code --ro-bind SRC DEST} where SRC == DEST. Fails at bwrap runtime if SRC is absent. */
+    /**
+     * Adds {@code --ro-bind SRC DEST} where SRC == DEST. Fails at bwrap runtime if SRC is absent.
+     */
     private static void roBind(List<String> args, String path) {
         args.add("--ro-bind");
         args.add(path);
         args.add(path);
     }
 
-    /** Adds {@code --ro-bind-try SRC DEST} where SRC == DEST. Silently skipped by bwrap if SRC is absent. */
+    /**
+     * Adds {@code --ro-bind-try SRC DEST} where SRC == DEST. Silently skipped by bwrap if SRC is absent.
+     */
     private static void roBindTry(List<String> args, String path) {
         args.add("--ro-bind-try");
         args.add(path);
