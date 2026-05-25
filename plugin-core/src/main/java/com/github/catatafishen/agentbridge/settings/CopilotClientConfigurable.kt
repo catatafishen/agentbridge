@@ -30,7 +30,10 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "GitHub Copilot",
-        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryPathProvider = {
+            liveBinaryFieldText().takeIf { it.isNotBlank() }
+                ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
+        },
         binaryNameProvider = { "copilot" },
     )
 

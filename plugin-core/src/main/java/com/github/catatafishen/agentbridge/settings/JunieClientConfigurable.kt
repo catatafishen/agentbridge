@@ -31,10 +31,14 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             "Generate a token at https://junie.jetbrains.com/cli. Leave empty to use CLI credentials."
     }
     private val genericSettings = GenericSettings(AGENT_ID)
+    private var binaryPathField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "Junie",
-        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryPathProvider = {
+            binaryPathField?.text?.takeIf { it.isNotBlank() }
+                ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
+        },
         binaryNameProvider = { "junie" },
     )
 
@@ -95,6 +99,7 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 .resizableColumn()
                 .applyToComponent {
                     emptyText.text = "Auto-detect (leave empty)"
+                    binaryPathField = this
                     sandboxSection.wireBinaryPathField(this)
                 }
                 .comment("Leave empty to auto-detect on PATH.")

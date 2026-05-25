@@ -23,10 +23,14 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     SearchableConfigurable {
 
     private val statusLabel = JBLabel()
+    private var binaryPathField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "Hermes",
-        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryPathProvider = {
+            binaryPathField?.text?.takeIf { it.isNotBlank() }
+                ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
+        },
         binaryNameProvider = { "hermes" },
     )
 
@@ -54,6 +58,7 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 .resizableColumn()
                 .applyToComponent {
                     emptyText.text = "Auto-detect (leave empty)"
+                    binaryPathField = this
                     sandboxSection.wireBinaryPathField(this)
                 }
                 .comment("Leave empty to auto-detect on PATH. Override if hermes is not on PATH.")

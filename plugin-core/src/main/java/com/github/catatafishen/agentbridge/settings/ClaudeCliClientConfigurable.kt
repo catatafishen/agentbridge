@@ -24,10 +24,14 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
         font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.Fonts.label().size)
     }
 
+    private var binaryPathField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
         displayName = "Claude CLI",
-        binaryPathProvider = { profile()?.customBinaryPath },
+        binaryPathProvider = {
+            binaryPathField?.text?.takeIf { it.isNotBlank() }
+                ?: profile()?.customBinaryPath
+        },
         binaryNameProvider = { "claude" },
     )
 
@@ -49,6 +53,7 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
                 .resizableColumn()
                 .applyToComponent {
                     emptyText.text = "Auto-detect (leave empty)"
+                    binaryPathField = this
                     sandboxSection.wireBinaryPathField(this)
                 }
                 .comment("Leave empty to auto-detect on PATH.")

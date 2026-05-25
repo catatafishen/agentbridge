@@ -456,4 +456,77 @@ class BwrapSandboxTest {
             "unix:path=/run/user/1000/bus", "/run/user/9999");
         assertEquals("/run/user/1000/bus", result);
     }
+
+    // ─── previewCommand ──────────────────────────────────────────────────────
+
+    @Test
+    void previewCommandReturnsBwrapPrefixForRealBinary() throws IOException {
+        Path binary = tempDir.resolve("agent");
+        Files.writeString(binary, "#!/bin/sh\necho ok\n");
+        assertTrue(binary.toFile().setExecutable(true));
+
+        List<String> cmd = BwrapSandbox.previewCommand(
+            binary.toString(), List.of(), tempDir.toString(),
+            List.of(binary.toString(), "--prompt", "hi"));
+
+        assertEquals("bwrap", cmd.getFirst());
+        assertTrue(cmd.contains("--ro-bind"), "preview should include --ro-bind for the binary");
+        assertTrue(cmd.contains(binary.toString()),
+            "preview should reference the agent binary path");
+    }
+
+    @Test
+    void previewCommandToleratesNonFilesystemPlaceholderBinary() {
+        List<String> cmd = BwrapSandbox.previewCommand(
+            "<copilot on PATH>", List.of(), null,
+            List.of("<copilot on PATH>"));
+
+        assertEquals("bwrap", cmd.getFirst());
+        assertTrue(cmd.contains("<copilot on PATH>"),
+            "preview should preserve the placeholder unchanged");
+    }
+
+    @Test
+    void previewCommandToleratesNonExistentBinaryPath() {
+        List<String> cmd = BwrapSandbox.previewCommand(
+            "/nonexistent/path/to/agent", List.of(), null,
+            List.of("/nonexistent/path/to/agent", "--flag"));
+
+        assertEquals("bwrap", cmd.getFirst());
+        assertTrue(cmd.contains("/nonexistent/path/to/agent"),
+            "preview should still reference the requested binary path");
+    }
+
+    @Test
+    void previewCommandIncludesProjectDirReadOnlyBind() throws IOException {
+        Path binary = tempDir.resolve("agent");
+        Files.writeString(binary, "#!/bin/sh\n");
+        assertTrue(binary.toFile().setExecutable(true));
+        String projectDir = "/home/user/my-project";
+
+        List<String> cmd = BwrapSandbox.previewCommand(
+            binary.toString(), List.of(), projectDir,
+            List.of(binary.toString()));
+
+        boolean found = false;
+        for (int i = 0; i + 1 < cmd.size(); i++) {
+            if ("--ro-bind-try".equals(cmd.get(i)) && projectDir.equals(cmd.get(i + 1))) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "preview should include --ro-bind-try " + projectDir);
+    }
+
+    @Test
+    void previewCommandHandlesNullProjectDir() throws IOException {
+        Path binary = tempDir.resolve("agent");
+        Files.writeString(binary, "#!/bin/sh\n");
+        assertTrue(binary.toFile().setExecutable(true));
+
+        List<String> cmd = BwrapSandbox.previewCommand(
+            binary.toString(), List.of(), null, List.of(binary.toString()));
+
+        assertEquals("bwrap", cmd.getFirst());
+    }
 }
