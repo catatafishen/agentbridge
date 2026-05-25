@@ -229,11 +229,17 @@ public interface AgentConfig {
     }
 
     /**
-     * Returns paths to bind read-only into the bwrap sandbox when sandbox mode is enabled.
+     * Returns paths to bind <b>writably</b> into the bwrap sandbox when sandbox mode is enabled.
      * These paths give the sandboxed agent access to its auth tokens and cached credentials
      * without exposing the rest of the user's home directory.
      *
-     * <p>Paths that do not exist are silently skipped by bwrap.</p>
+     * <p>Writable (not read-only) is required so that the agent can persist freshly acquired
+     * auth tokens back to the host filesystem; otherwise the user would have to re-authenticate
+     * every session. Implementations must therefore not assume RO semantics.</p>
+     *
+     * <p>Paths that do not exist are silently skipped by bwrap. Callers that need the binds
+     * to be honored on first authentication should pre-create the directories on the host
+     * (see {@link com.github.catatafishen.agentbridge.sandbox.BwrapSandbox#wrap}).</p>
      *
      * @return list of absolute paths; empty list means only the agent binary and runtime are accessible
      */

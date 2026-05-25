@@ -459,6 +459,65 @@ class JsonRpcTransportTest {
         }
 
         @Test
+        @DisplayName("error response with JSON object data extracts 'details' field")
+        void errorWithObjectDataExtractsDetails() throws Exception {
+            transport.start(mockProcess);
+
+            CompletableFuture<JsonElement> future = transport.sendRequest("session/new", null);
+            long id = readSentJson().get("id").getAsLong();
+
+            JsonObject details = new JsonObject();
+            details.addProperty("details", "Directory does not exist or cannot be accessed: /home/user/project");
+            JsonObject error = new JsonObject();
+            error.addProperty("code", -32603);
+            error.addProperty("message", "Internal error");
+            error.add("data", details);
+            JsonObject response = new JsonObject();
+            response.addProperty("jsonrpc", "2.0");
+            response.addProperty("id", id);
+            response.add("error", error);
+            feedLine(response.toString());
+
+            ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> future.get(5, TimeUnit.SECONDS));
+            JsonRpcException rpcEx = (JsonRpcException) ex.getCause();
+            assertEquals(-32603, rpcEx.getCode());
+            assertEquals(
+                "Internal error: Directory does not exist or cannot be accessed: /home/user/project",
+                rpcEx.getMessage(),
+                "details field from JSON object data should be appended to the error message");
+        }
+
+        @Test
+        @DisplayName("error response with JSON object data without 'details' falls back to JSON string")
+        void errorWithObjectDataNoDetailsFallsBackToJson() throws Exception {
+            transport.start(mockProcess);
+
+            CompletableFuture<JsonElement> future = transport.sendRequest("test/method", null);
+            long id = readSentJson().get("id").getAsLong();
+
+            JsonObject extraInfo = new JsonObject();
+            extraInfo.addProperty("code", "ENOENT");
+            extraInfo.addProperty("path", "/some/path");
+            JsonObject error = new JsonObject();
+            error.addProperty("code", -32603);
+            error.addProperty("message", "Internal error");
+            error.add("data", extraInfo);
+            JsonObject response = new JsonObject();
+            response.addProperty("jsonrpc", "2.0");
+            response.addProperty("id", id);
+            response.add("error", error);
+            feedLine(response.toString());
+
+            ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> future.get(5, TimeUnit.SECONDS));
+            JsonRpcException rpcEx = (JsonRpcException) ex.getCause();
+            assertEquals(-32603, rpcEx.getCode());
+            assertTrue(rpcEx.getMessage().startsWith("Internal error: "),
+                "JSON object without 'details' should be appended as JSON string");
+        }
+
+        @Test
         @DisplayName("correct response is correlated to the right future among multiple in-flight")
         void multipleInFlightCorrelation() throws Exception {
             transport.start(mockProcess);

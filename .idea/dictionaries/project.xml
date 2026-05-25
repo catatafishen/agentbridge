@@ -86,6 +86,7 @@
       <w>stdin</w>
       <w>stdout</w>
       <w>temurin</w>
+      <w>tmpfs</w>
       <w>toolwindow</w>
       <w>ulimit</w>
       <w>unicode</w>
