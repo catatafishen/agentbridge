@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.bridge;
 
-import com.github.catatafishen.agentbridge.client.ClientException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.DisplayName;
@@ -9,7 +8,10 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("ProfileBasedAgentConfig — static parsing helpers")
 class ProfileBasedAgentConfigTest {
@@ -287,56 +289,4 @@ class ProfileBasedAgentConfigTest {
         }
     }
 
-    @Nested
-    @DisplayName("checkNvmVersion")
-    class CheckNvmVersionTest {
-
-        @Test
-        @DisplayName("version below minimum throws ClientException")
-        void oldVersion_throwsClientException() {
-            assertThrows(ClientException.class, () ->
-                ProfileBasedAgentConfig.checkNvmVersion(
-                    "/home/user/.nvm/versions/node/v18/bin/copilot", 20));
-        }
-
-        @Test
-        @DisplayName("version exactly at minimum passes")
-        void minimumVersion_passes() {
-            assertDoesNotThrow(() ->
-                ProfileBasedAgentConfig.checkNvmVersion(
-                    "/home/user/.nvm/versions/node/v20/bin/copilot", 20));
-        }
-
-        @Test
-        @DisplayName("version above minimum passes")
-        void newerVersion_passes() {
-            assertDoesNotThrow(() ->
-                ProfileBasedAgentConfig.checkNvmVersion(
-                    "/home/user/.nvm/versions/node/v22/bin/copilot", 20));
-        }
-
-        @Test
-        @DisplayName("path without version segment is silently skipped")
-        void pathWithoutVersion_skips() {
-            assertDoesNotThrow(() ->
-                ProfileBasedAgentConfig.checkNvmVersion(
-                    "/usr/local/bin/copilot", 20));
-        }
-
-        @Test
-        @DisplayName("full semver path (v20.10.0) extracts major version correctly")
-        void fullSemverPath_extractsMajorVersion() {
-            assertDoesNotThrow(() ->
-                ProfileBasedAgentConfig.checkNvmVersion(
-                    "/home/user/.nvm/versions/node/v20.10.0/bin/copilot", 20));
-        }
-
-        @Test
-        @DisplayName("full semver path with old major throws ClientException")
-        void fullSemverPath_oldMajor_throws() {
-            assertThrows(ClientException.class, () ->
-                ProfileBasedAgentConfig.checkNvmVersion(
-                    "/home/catatafish/.nvm/versions/node/v20.10.0/bin/copilot", 24));
-        }
-    }
 }

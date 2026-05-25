@@ -23,14 +23,6 @@ object PromptErrorClassifier {
         val displayMessage: String,
     )
 
-    /**
-     * Classifies a prompt error into a set of boolean decisions and a display message.
-     *
-     * @param exception the thrown exception
-     * @param turnHadContent whether the agent produced any content before the error
-     * @param isAuthenticationError predicate to check if a message indicates an auth failure
-     * @param isClientHealthy whether the agent client is still responsive
-     */
     fun classify(
         exception: Exception,
         turnHadContent: Boolean,
@@ -59,6 +51,20 @@ object PromptErrorClassifier {
         // For ACP errors, ensure the message is descriptive
         if (exception is ClientException && !msg.startsWith("(")) {
             msg = "ACP error: $msg"
+        }
+
+        // Detect Node.js ES module error anywhere in the cause chain.
+        // The raw node warning ("To load an ES module, set 'type': 'module'...") is cryptic;
+        // replace it with an actionable message the user can act on.
+        if (!isAuthError && !isCancelled) {
+            val esModuleError = generateSequence(exception as Throwable?) { it.cause }.any {
+                it.message?.contains("To load an ES module", ignoreCase = true) == true
+            }
+            if (esModuleError) {
+                msg = "The agent CLI requires a newer Node.js version — " +
+                    "your current Node.js does not support ES modules. " +
+                    "Please upgrade Node.js and reinstall the CLI."
+            }
         }
 
         val isRecoverable = isCancelled

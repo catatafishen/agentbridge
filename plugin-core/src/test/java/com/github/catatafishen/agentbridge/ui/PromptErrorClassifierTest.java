@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.function.Function;
 
@@ -292,6 +293,36 @@ class PromptErrorClassifierTest {
         var ex = new ClientException("rate limited", null, true, 429, "{\"retry_after\":30}");
         var result = classify(ex, false, NO_AUTH, true);
         assertEquals("ACP error: rate limited", result.getDisplayMessage());
+    }
+
+    // ── classify: ES module Node.js error ───────────────────────────────
+
+    @Test
+    void classify_esModuleErrorInMessage_returnsActionableMessage() {
+        var ex = new IOException(
+            "Agent process exited unexpectedly: (node:2) Warning: To load an ES module, " +
+                "set \"type\": \"module\" in the package.json or use the .mjs extension.");
+        var result = classify(ex, false, NO_AUTH, true);
+        assertTrue(result.getDisplayMessage().contains("upgrade Node.js"),
+            "Expected actionable upgrade message, got: " + result.getDisplayMessage());
+    }
+
+    @Test
+    void classify_esModuleErrorInCauseChain_returnsActionableMessage() {
+        var nodeEx = new IOException(
+            "To load an ES module, set \"type\": \"module\" in the package.json");
+        var wrapper = new RuntimeException("Agent process exited unexpectedly: ...", nodeEx);
+        var result = classify(wrapper, false, NO_AUTH, true);
+        assertTrue(result.getDisplayMessage().contains("upgrade Node.js"),
+            "Expected actionable upgrade message, got: " + result.getDisplayMessage());
+    }
+
+    @Test
+    void classify_unrelatedProcessCrash_doesNotTriggerEsModuleMessage() {
+        var ex = new IOException("Agent process exited unexpectedly: signal 9");
+        var result = classify(ex, false, NO_AUTH, true);
+        assertFalse(result.getDisplayMessage().contains("upgrade Node.js"),
+            "ES module message should not appear for unrelated crash");
     }
 
     // ── detectQuickReplies ──────────────────────────────────────────────

@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
 import com.github.catatafishen.agentbridge.client.codex.CodexClient;
-import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
@@ -260,7 +260,6 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setAlternateNames(List.of("copilot-cli"));
         p.setInstallHint("Install with: npm install -g @github/copilot-cli");
         p.setInstallUrl("https://github.com/github/copilot-cli#installation");
-        p.setMinNodeVersion(24);
         p.setSupportsOAuthSignIn(true);
         p.setPrependInstructionsTo(".github/copilot-instructions.md");
         p.setStripNonEssentialPath(true);

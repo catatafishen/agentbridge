@@ -59,13 +59,6 @@ public final class AgentProfile {
     private List<String> alternateNames;
     private String installHint;
     private String customBinaryPath;
-    /**
-     * Minimum required Node.js major version (e.g. {@code 24} for Node.js v24+).
-     * When non-zero and the binary is NVM-managed, the launcher validates the Node.js version
-     * before starting and fails fast with a clear upgrade hint if it is too old.
-     * Zero means no constraint.
-     */
-    private int minNodeVersion;
 
     // ── Command Building ─────────────────────────────────────────────────────
 
@@ -166,7 +159,6 @@ public final class AgentProfile {
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
         copy.customBinaryPath = customBinaryPath;
-        copy.minNodeVersion = minNodeVersion;
         copy.acpArgs = new ArrayList<>(acpArgs);
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
@@ -202,7 +194,6 @@ public final class AgentProfile {
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
         copy.customBinaryPath = customBinaryPath;
-        copy.minNodeVersion = minNodeVersion;
         copy.acpArgs = new ArrayList<>(acpArgs);
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
@@ -238,7 +229,6 @@ public final class AgentProfile {
         this.alternateNames = new ArrayList<>(other.alternateNames);
         this.installHint = other.installHint;
         this.customBinaryPath = other.customBinaryPath;
-        this.minNodeVersion = other.minNodeVersion;
         this.acpArgs = new ArrayList<>(other.acpArgs);
         this.mcpMethod = other.mcpMethod;
         this.mcpConfigTemplate = other.mcpConfigTemplate;
@@ -372,14 +362,6 @@ public final class AgentProfile {
 
     public void setCustomBinaryPath(@NotNull String customBinaryPath) {
         this.customBinaryPath = customBinaryPath;
-    }
-
-    public int getMinNodeVersion() {
-        return minNodeVersion;
-    }
-
-    public void setMinNodeVersion(int minNodeVersion) {
-        this.minNodeVersion = minNodeVersion;
     }
 
     @NotNull
