@@ -904,6 +904,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         queuedMessages.clear()
         currentModelLabel = null
         if (spinTimer.isRunning) spinTimer.stop()
+        // Stop any still-pending ask-user countdown timers so they don't keep firing
+        // on disposed components after the chat was cleared (e.g. session reset).
+        askUserTimers.forEach { it.stop() }
+        askUserTimers.clear()
         placeholderLabel = null
     }
 
@@ -1012,6 +1016,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         extendButton.putClientProperty("deadline", deadlineEpochMs)
 
         val countdownTimer = Timer(1000, null).apply { isRepeats = true }
+        askUserTimers.add(countdownTimer)
 
         // Single point of completion: stop timer, disable buttons, mark row as resolved
         // so a late click can't fire a second response. Removing the row would change the
@@ -1020,6 +1025,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val completeOnce: (String?) -> Unit = { answer ->
             if (resolved.compareAndSet(false, true)) {
                 countdownTimer.stop()
+                askUserTimers.remove(countdownTimer)
                 buttonComponents.forEach { it.isEnabled = false }
                 extendButton.isEnabled = false
                 if (answer != null) {
@@ -1028,6 +1034,24 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 } else {
                     onSuperseded()
                 }
+                panel.revalidate()
+                panel.repaint()
+            }
+        }
+
+        // Called when the UI countdown reaches zero. We deliberately do NOT invoke
+        // onSuperseded() here — that would complete the backend future with a
+        // "cancelled (superseded)" sentinel that's indistinguishable from an actual
+        // supersede. Instead we stop the UI, disable the buttons, and let the backend's
+        // own deadline-polling loop (PromptUserTool.awaitWithExtensibleDeadline) time
+        // out naturally so the tool returns "user response timed out".
+        val markTimedOut = {
+            if (resolved.compareAndSet(false, true)) {
+                countdownTimer.stop()
+                askUserTimers.remove(countdownTimer)
+                buttonComponents.forEach { it.isEnabled = false }
+                extendButton.isEnabled = false
+                countdownLabel.text = "⏱ Time expired"
                 panel.revalidate()
                 panel.repaint()
             }
@@ -1050,8 +1074,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val dl = (extendButton.getClientProperty("deadline") as? Long) ?: deadlineEpochMs
             val remaining = (dl - System.currentTimeMillis()) / 1000
             if (remaining <= 0) {
-                countdownLabel.text = "⏱ Time expired"
-                completeOnce(null)
+                markTimedOut()
             } else {
                 countdownLabel.text = "⏱ ${remaining}s remaining"
             }
@@ -1151,6 +1174,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private var currentModelLabel: JBLabel? = null
+
+    /** Active ask-user countdown timers that must be stopped on [clear] to avoid EDT leaks. */
+    private val askUserTimers = mutableListOf<Timer>()
 
     override fun setCurrentModel(modelId: String) {
         updateMetaLabel(modelId.substringAfterLast('/').substringAfterLast(':'))
