@@ -105,7 +105,8 @@ public final class GetHighlightsTool extends QualityTool {
             startLine = 1;
         }
         if (startLine < 0 || endLine < 0) {
-            return "Error: start_line and end_line must be positive (1-based) line numbers.";
+            return "Error: start_line and end_line are 1-based line numbers when provided; "
+                + "omit the parameter (or pass 0) to leave that bound unset.";
         }
         if (endLine > 0 && startLine > endLine) {
             return "Error: Invalid range — start_line (" + startLine + ") > end_line (" + endLine + "). Lines are 1-based.";
@@ -263,7 +264,7 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, int limit,
-                                             int startLine, int endLine, List<String> problems) {
+                                            int startLine, int endLine, List<String> problems) {
         String basePath = project.getBasePath();
         int totalCount = 0;
         int filesWithProblems = 0;
@@ -281,7 +282,7 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     private int collectFileHighlights(Document doc, String relPath, int remaining,
-                                       int startLine, int endLine, List<String> problems) {
+                                      int startLine, int endLine, List<String> problems) {
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
         int added = 0;
         DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);

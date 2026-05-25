@@ -1387,7 +1387,7 @@ public abstract class AcpClient extends AbstractClient {
         // Wrap in bwrap sandbox if enabled. Must happen after environment setup (bwrap inherits
         // the parent's env vars) and after resolveCommand (we need the resolved binary path).
         if (SandboxSettings.shouldSandbox()) {
-            BwrapSandbox.wrap(pb, resolvedCommand.getFirst(), getSandboxConfigBinds());
+            BwrapSandbox.wrap(pb, resolvedCommand.getFirst(), getSandboxConfigBinds(), cwd);
         }
 
         Process process = pb.start();

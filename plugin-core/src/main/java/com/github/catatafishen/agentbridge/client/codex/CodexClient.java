@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.client.codex;
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
-
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
@@ -11,7 +10,8 @@ import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-
+import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
@@ -21,8 +21,6 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
-import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
-import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -467,7 +465,8 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
             pb.redirectErrorStream(false);
 
             if (SandboxSettings.shouldSandbox()) {
-                BwrapSandbox.wrap(pb, resolvedBinaryPath, config.getSandboxConfigBinds());
+                String projectPath = project.getBasePath();
+                BwrapSandbox.wrap(pb, resolvedBinaryPath, config.getSandboxConfigBinds(), projectPath);
             }
 
             appServerProcess.set(pb.start());

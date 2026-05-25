@@ -85,7 +85,9 @@ public final class BwrapSandbox {
      *
      * @param pb              the ProcessBuilder whose command will be wrapped
      * @param agentBinaryPath absolute path to the agent binary
-     * @param configBinds     paths to bind read-only into the sandbox (e.g., agent auth config dirs)
+     * @param configBinds     paths to bind <b>writably</b> into the sandbox (e.g., agent auth
+     *                        config dirs). Writable is required so the agent can persist
+     *                        freshly acquired auth tokens back to the host.
      * @throws IllegalStateException if bwrap is not available on this system
      */
     public static void wrap(
@@ -93,16 +95,34 @@ public final class BwrapSandbox {
         @NotNull String agentBinaryPath,
         @NotNull List<Path> configBinds
     ) {
+        wrap(pb, agentBinaryPath, configBinds, null);
+    }
+
+    /**
+     * Wraps a ProcessBuilder command with bwrap and additionally makes {@code projectDir}
+     * available inside the sandbox so the agent can read/write the open project.
+     *
+     * @param pb              the ProcessBuilder whose command will be wrapped
+     * @param agentBinaryPath absolute path to the agent binary
+     * @param configBinds     paths to bind <b>writably</b> into the sandbox (e.g., agent auth
+     *                        config dirs). Writable is required so the agent can persist
+     *                        freshly acquired auth tokens back to the host.
+     * @param projectDir      absolute path of the project directory to mount writably into
+     *                        the sandbox, or {@code null} to skip the project-dir mount
+     * @throws IllegalStateException if bwrap is not available on this system
+     */
+    public static void wrap(
+        @NotNull ProcessBuilder pb,
+        @NotNull String agentBinaryPath,
+        @NotNull List<Path> configBinds,
+        @Nullable String projectDir
+    ) {
         if (!isAvailable()) {
             throw new IllegalStateException(
                 "bwrap sandbox requested but bwrap is not available on this system. " +
                     "Install bubblewrap: https://github.com/containers/bubblewrap");
         }
 
-        // Resolve symlinks so the command and mounts use the real path. Script runtimes
-        // (e.g. Node.js) determine module type (ESM vs CJS) by walking up from the script
-        // file's directory to find package.json. If we pass the symlink path, Node looks
-        // in the symlink's parent instead of the real package directory and cannot find it.
         String realBinaryPath = resolveSymlink(agentBinaryPath);
         List<String> pbCommand = pb.command();
         List<String> commandForSandbox;
@@ -114,12 +134,13 @@ public final class BwrapSandbox {
         }
 
         InterpreterResolution resolution = detectInterpreterResolution(realBinaryPath);
-        pb.command(buildWrappedCommandWithResolution(realBinaryPath, configBinds, commandForSandbox, resolution));
+        pb.command(buildWrappedCommandWithResolution(realBinaryPath, configBinds, commandForSandbox, resolution, projectDir));
         LOG.info("Agent sandboxed with bwrap: " + agentBinaryPath
             + (realBinaryPath.equals(agentBinaryPath) ? "" : " → " + realBinaryPath)
             + " | configBinds=" + configBinds.size()
             + " | interpreter=" + (resolution != null ? resolution.interpreterPath() : null)
-            + " | explicitCall=" + (resolution != null && resolution.requiresExplicitCall()));
+            + " | explicitCall=" + (resolution != null && resolution.requiresExplicitCall())
+            + " | projectDir=" + projectDir);
     }
 
     /**
@@ -167,6 +188,17 @@ public final class BwrapSandbox {
         @NotNull List<String> originalCommand,
         @Nullable InterpreterResolution resolution
     ) {
+        return buildWrappedCommandWithResolution(agentBinaryPath, configBinds, originalCommand, resolution, null);
+    }
+
+    @VisibleForTesting
+    static List<String> buildWrappedCommandWithResolution(
+        @NotNull String agentBinaryPath,
+        @NotNull List<Path> configBinds,
+        @NotNull List<String> originalCommand,
+        @Nullable InterpreterResolution resolution,
+        @Nullable String projectDir
+    ) {
         // When the script shebang uses #!/usr/bin/env, /usr/bin/env is absent from the sandbox.
         // Linux reports this as ENOENT on the script itself (not on env), producing a misleading
         // "No such file or directory" error on the agent binary. Fix: explicitly prepend the
@@ -180,7 +212,7 @@ public final class BwrapSandbox {
 
         List<String> cmd = new ArrayList<>();
         cmd.add(BWRAP_BINARY);
-        cmd.addAll(buildBwrapArgs(agentBinaryPath, configBinds, resolution));
+        cmd.addAll(buildBwrapArgs(agentBinaryPath, configBinds, resolution, projectDir));
         cmd.add("--");
         cmd.addAll(effectiveCommand);
         return cmd;
@@ -190,6 +222,16 @@ public final class BwrapSandbox {
         @NotNull String agentBinaryPath,
         @NotNull List<Path> configBinds,
         @Nullable InterpreterResolution resolution
+    ) {
+        return buildBwrapArgs(agentBinaryPath, configBinds, resolution, null);
+    }
+
+    @VisibleForTesting
+    static List<String> buildBwrapArgs(
+        @NotNull String agentBinaryPath,
+        @NotNull List<Path> configBinds,
+        @Nullable InterpreterResolution resolution,
+        @Nullable String projectDir
     ) {
         List<String> args = new ArrayList<>();
 
@@ -302,6 +344,17 @@ public final class BwrapSandbox {
             args.addAll(List.of("--setenv", "DBUS_SESSION_BUS_ADDRESS", "unix:path=" + dbusSocket));
         } else {
             LOG.warn("Could not resolve D-Bus session socket; agent may prompt for re-authentication");
+        }
+
+        // ── Project directory (for session cwd validation) ────────────────────
+        // Copilot CLI's session/new validates that the cwd parameter refers to an
+        // accessible directory inside the sandbox namespace. Because /home is hidden
+        // by --tmpfs above, project directories under /home would otherwise be
+        // invisible to the CLI and cause a "-32603 Directory does not exist" error.
+        // Mount the project directory read-only so the cwd check passes without
+        // exposing other home-directory content to the agent.
+        if (projectDir != null && !projectDir.isBlank()) {
+            roBindTry(args, projectDir);
         }
 
         // ── Working directory ─────────────────────────────────────────────────

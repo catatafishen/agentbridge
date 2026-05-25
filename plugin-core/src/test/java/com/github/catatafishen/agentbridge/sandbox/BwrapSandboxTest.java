@@ -271,6 +271,64 @@ class BwrapSandboxTest {
             "--chdir must be set to /tmp so the process starts in a valid sandbox directory");
     }
 
+    // ─── project directory binding ─────────────────────────────────────────────
+
+    @Test
+    void projectDirMountedAfterHomeTmpfsWhenProvided() throws IOException {
+        // When a projectDir is given, it must appear as --ro-bind-try AFTER the --tmpfs /home
+        // mount so that a project under /home is visible inside the sandbox namespace.
+        // The Copilot CLI validates the cwd parameter on session start; without this mount,
+        // the cwd directory is not visible in the sandbox and the session fails.
+        Path elfBinary = tempDir.resolve("agent");
+        Files.write(elfBinary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
+
+        String projectDir = "/home/user/my-project";
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            elfBinary.toString(), List.of(), List.of(elfBinary.toString()), null, projectDir);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        int homeTmpfsIdx = -1;
+        int projectBindIdx = -1;
+        for (int i = 0; i < bwrapArgs.size(); i++) {
+            if ("--tmpfs".equals(bwrapArgs.get(i)) && i + 1 < bwrapArgs.size()
+                && "/home".equals(bwrapArgs.get(i + 1))) {
+                homeTmpfsIdx = i;
+            }
+            if ("--ro-bind-try".equals(bwrapArgs.get(i)) && i + 1 < bwrapArgs.size()
+                && projectDir.equals(bwrapArgs.get(i + 1))) {
+                projectBindIdx = i;
+            }
+        }
+
+        assertNotEquals(-1, homeTmpfsIdx, "--tmpfs /home must be present in bwrap args");
+        assertNotEquals(-1, projectBindIdx, "--ro-bind-try for projectDir must be present in bwrap args");
+        assertTrue(homeTmpfsIdx < projectBindIdx,
+            "--tmpfs /home (idx=" + homeTmpfsIdx + ") must come before project dir bind (idx="
+                + projectBindIdx + ") so the bind overlays the tmpfs and is visible");
+    }
+
+    @Test
+    void projectDirNotMountedWhenNull() throws IOException {
+        // When no projectDir is provided, no bind should be added for it.
+        // Use a path that cannot coincidentally appear as a system bind.
+        Path elfBinary = tempDir.resolve("agent");
+        Files.write(elfBinary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            elfBinary.toString(), List.of(), List.of(elfBinary.toString()), null, null);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        // A sentinel path that would only appear if projectDir was erroneously bound
+        String sentinelPath = "/home/user/nonexistent-sentinel-project";
+        assertFalse(bwrapArgs.contains(sentinelPath),
+            "Without a projectDir, no bind for it should be in the args");
+    }
+
     // ─── package.json directory binding ─────────────────────────────────────────
 
     @Test
