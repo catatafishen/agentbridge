@@ -18,6 +18,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -204,12 +205,24 @@ public final class PromptUserTool extends InfrastructureTool {
                 if ("__cancelled__".equals(result)) {
                     return "Error: ask-user request cancelled (superseded by another request)";
                 }
-                if (InFlightMcpToolRegistry.CANCELLATION_SENTINEL.equals(result)) {
-                    return "Error: agent process exited while waiting for user response";
-                }
                 return result;
             } catch (TimeoutException ignored) {
                 // Deadline may have been extended in flight — re-check the loop condition.
+            } catch (CancellationException ce) {
+                // future.completeExceptionally(new CancellationException(reason)) surfaces
+                // here (not wrapped in ExecutionException). CompletableFuture wraps the original
+                // in a new "get"-message CancellationException; the real reason is in getCause().
+                // InFlightMcpToolRegistry uses this to release prompt_user waiters when the
+                // agent process stops.
+                Throwable cause = ce.getCause();
+                String reason = cause != null ? cause.getMessage() : ce.getMessage();
+                return "Error: " + (reason == null || reason.isBlank() ? "ask-user request cancelled" : reason);
+            } catch (ExecutionException ee) {
+                if (ee.getCause() instanceof CancellationException ce) {
+                    String reason = ce.getMessage();
+                    return "Error: " + (reason == null || reason.isBlank() ? "ask-user request cancelled" : reason);
+                }
+                throw ee;
             }
         }
     }

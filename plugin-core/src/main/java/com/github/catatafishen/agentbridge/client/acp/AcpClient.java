@@ -381,11 +381,15 @@ public abstract class AcpClient extends AbstractClient {
             updateConsumer.set(null);
             // Release any in-flight MCP tools (e.g. prompt_user waiters) and mark their chips
             // as failed so users see a clear failure state instead of a spinner that never
-            // resolves. See issue #749.
+            // resolves. See issue #749. The reason is intentionally neutral ("agent stopped")
+            // because stop() is called for both user-initiated disconnects and unexpected exits;
+            // we do not yet distinguish between the two here. If a future change adds an
+            // unexpected-exit detection path, it can call cancelAll/stopAllInFlight directly
+            // with a more specific reason before invoking stop().
             if (project != null && !project.isDisposed()) {
                 try {
-                    InFlightMcpToolRegistry.getInstance(project).cancelAll("agent process exited");
-                    ToolCallTracker.getInstance(project).failAllInFlight("agent process exited");
+                    InFlightMcpToolRegistry.getInstance(project).cancelAll("agent stopped");
+                    ToolCallTracker.getInstance(project).stopAllInFlight("agent stopped");
                 } catch (Exception e) {
                     LOG.warn("Failed to release in-flight tools on stop", e);
                 }

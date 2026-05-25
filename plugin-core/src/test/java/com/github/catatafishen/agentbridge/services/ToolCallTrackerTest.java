@@ -421,17 +421,17 @@ class ToolCallTrackerTest {
         assertNull(tracker.findByAcpId("acp-c"));
     }
 
-    // ── 11b. failAllInFlight() ───────────────────────────────────────────────
+    // ── 11b. stopAllInFlight() ───────────────────────────────────────────────
 
     @Test
-    void failAllInFlight_marksRecordsFailed_andClears() {
+    void stopAllInFlight_marksRecordsFailed_andClears() {
         ToolCallRecord a = tracker.acpRegister("acp-a", null, "tool_a", argsReadFile("/a"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
         ToolCallRecord b = tracker.mcpRegister("tool_b", argsReadFile("/b"), null, null);
 
         assertEquals(2, tracker.liveCount());
 
-        tracker.failAllInFlight("agent process exited");
+        tracker.stopAllInFlight("agent stopped");
 
         assertEquals(0, tracker.liveCount());
         assertEquals(ToolCallRecord.State.FAILED, a.getState());
@@ -441,8 +441,8 @@ class ToolCallTrackerTest {
     }
 
     @Test
-    void failAllInFlight_emptyTracker_doesNotThrow() {
-        assertDoesNotThrow(() -> tracker.failAllInFlight("test"));
+    void stopAllInFlight_emptyTracker_doesNotThrow() {
+        assertDoesNotThrow(() -> tracker.stopAllInFlight("test"));
         assertEquals(0, tracker.liveCount());
     }
 
