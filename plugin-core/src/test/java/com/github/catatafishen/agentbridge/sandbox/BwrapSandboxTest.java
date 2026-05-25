@@ -176,4 +176,66 @@ class BwrapSandboxTest {
         assertTrue(bwrapArgs.contains(fakeNode.toString()),
             "Interpreter must be bound into the sandbox (appear in bwrap args before '--')");
     }
+
+    // ─── buildBwrapArgs (mount ordering + chdir) ──────────────────────────────
+
+    @Test
+    void configBindsMountedAfterHomeTmpfs() throws IOException {
+        // A config bind under /home (e.g., ~/.copilot) must appear AFTER the --tmpfs /home
+        // mount in the arg list. bwrap processes args sequentially: a later bind overlays on
+        // top of an earlier tmpfs, so it is visible; a bind placed before tmpfs is hidden.
+        Path fakeNode = tempDir.resolve("node");
+        Files.write(fakeNode, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        Path agentScript = tempDir.resolve("copilot");
+        Files.writeString(agentScript, "#!" + fakeNode + "\n// cli\n");
+
+        Path configBind = Path.of("/home/user/.copilot");
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            agentScript.toString(), List.of(configBind), List.of(agentScript.toString()), null);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        int homeTmpfsIdx = -1;
+        int configBindIdx = -1;
+        for (int i = 0; i < bwrapArgs.size(); i++) {
+            if ("--tmpfs".equals(bwrapArgs.get(i)) && i + 1 < bwrapArgs.size()
+                && "/home".equals(bwrapArgs.get(i + 1))) {
+                homeTmpfsIdx = i;
+            }
+            if (("--ro-bind".equals(bwrapArgs.get(i)) || "--ro-bind-try".equals(bwrapArgs.get(i)))
+                && i + 1 < bwrapArgs.size()
+                && configBind.toString().equals(bwrapArgs.get(i + 1))) {
+                configBindIdx = i;
+            }
+        }
+
+        assertNotEquals(-1, homeTmpfsIdx, "--tmpfs /home must be present in bwrap args");
+        assertNotEquals(-1, configBindIdx, "config bind must be present in bwrap args");
+        assertTrue(homeTmpfsIdx < configBindIdx,
+            "--tmpfs /home (idx=" + homeTmpfsIdx + ") must come before config bind (idx="
+                + configBindIdx + ") so the bind overlays the tmpfs and is visible");
+    }
+
+    @Test
+    void chDirSetToTmp() throws IOException {
+        // bwrap must use --chdir /tmp. Without it, bwrap inherits the parent's CWD
+        // (typically the project path), which is not mounted in the sandbox,
+        // causing ENOENT on startup.
+        Path elfBinary = tempDir.resolve("agent");
+        Files.write(elfBinary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            elfBinary.toString(), List.of(), List.of(elfBinary.toString()), null);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        int chDirIdx = bwrapArgs.indexOf("--chdir");
+        assertNotEquals(-1, chDirIdx, "--chdir must be present in bwrap args");
+        assertEquals("/tmp", bwrapArgs.get(chDirIdx + 1),
+            "--chdir must be set to /tmp so the process starts in a valid sandbox directory");
+    }
 }

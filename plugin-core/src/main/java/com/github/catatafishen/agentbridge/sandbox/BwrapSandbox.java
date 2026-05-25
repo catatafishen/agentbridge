@@ -24,6 +24,8 @@ public final class BwrapSandbox {
     @VisibleForTesting
     static final String BWRAP_BINARY = "bwrap";
 
+    private static final String TMPFS = "--tmpfs";
+
     /**
      * Interpreter resolution result: the absolute interpreter path and whether bwrap must
      * invoke it explicitly (true for {@code #!/usr/bin/env} shebangs, where {@code /usr/bin/env}
@@ -142,7 +144,7 @@ public final class BwrapSandbox {
         List<String> effectiveCommand = originalCommand;
         if (resolution != null && resolution.requiresExplicitCall()) {
             effectiveCommand = new ArrayList<>(originalCommand);
-            effectiveCommand.add(0, resolution.interpreterPath());
+            effectiveCommand.addFirst(resolution.interpreterPath());
         }
 
         List<String> cmd = new ArrayList<>();
@@ -189,7 +191,7 @@ public final class BwrapSandbox {
         roBindTry(args, "/etc/pki/tls/certs");
 
         // ── Writable temporary space ──────────────────────────────────────────
-        args.addAll(List.of("--tmpfs", "/tmp"));
+        args.addAll(List.of(TMPFS, "/tmp"));
 
         // ── Block user home directories with empty tmpfs ──────────────────────
         // This prevents the agent from reading SSH keys, cloud credentials, or any
@@ -201,8 +203,8 @@ public final class BwrapSandbox {
         // bwrap processes arguments sequentially — a --tmpfs on a parent path hides
         // all earlier binds beneath it. Binds placed after the tmpfs layer on top
         // instead, and bwrap creates any missing intermediate directories as needed.
-        args.addAll(List.of("--tmpfs", "/home"));
-        args.addAll(List.of("--tmpfs", "/root"));
+        args.addAll(List.of(TMPFS, "/home"));
+        args.addAll(List.of(TMPFS, "/root"));
 
         // ── Agent binary (mounted read-only at its exact path) ────────────────
         // Must come AFTER --tmpfs /home and --tmpfs /root so the bind is visible
@@ -224,6 +226,13 @@ public final class BwrapSandbox {
         for (Path bind : configBinds) {
             roBindTry(args, bind.toString());
         }
+
+        // ── Working directory ─────────────────────────────────────────────────
+        // The parent process CWD is typically the project base path, which is not mounted
+        // in the sandbox. If we don't set an explicit --chdir, bwrap tries to inherit the
+        // CWD — and if that path doesn't exist in the new mount namespace, bwrap fails with
+        // ENOENT. Set CWD to /tmp, which is always present (mounted as tmpfs above).
+        args.addAll(List.of("--chdir", "/tmp"));
 
         // ── Process and session isolation ──────────────────────────────────────
         args.add("--unshare-pid");      // new PID namespace: agent cannot see other processes
@@ -305,23 +314,6 @@ public final class BwrapSandbox {
     }
 
     /**
-     * Reads the shebang line of the binary and returns the absolute path of the interpreter.
-     * Returns {@code null} if the binary is a native ELF, the shebang is absent, or the
-     * interpreter cannot be resolved.
-     *
-     * @deprecated Use {@link #detectInterpreterResolution(String)} to also determine whether
-     * the interpreter must be invoked explicitly (needed for {@code #!/usr/bin/env} shebangs
-     * in a sandbox where {@code /usr/bin/env} is absent).
-     */
-    @Deprecated
-    @Nullable
-    @VisibleForTesting
-    static String detectInterpreter(@NotNull String binaryPath) {
-        InterpreterResolution r = detectInterpreterResolution(binaryPath);
-        return r != null ? r.interpreterPath() : null;
-    }
-
-    /**
      * Resolves a bare binary name (e.g., "node") to an absolute path using the shell environment PATH.
      */
     @Nullable
@@ -347,10 +339,10 @@ public final class BwrapSandbox {
                 proc.getInputStream().transferTo(sink);
             }
             return proc.waitFor() == 0;
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (IOException e) {
             return false;
         }
     }
