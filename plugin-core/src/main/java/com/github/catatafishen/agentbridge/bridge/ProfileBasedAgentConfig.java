@@ -714,7 +714,8 @@ public class ProfileBasedAgentConfig implements AgentConfig {
             case "codex" -> existingPaths(homeDir.resolve(".codex"));
             case "kiro" -> existingPaths(homeDir.resolve(".kiro"));
             case "hermes" -> existingPaths(homeDir.resolve(".hermes"));
-            // opencode uses env-var-controlled paths injected by OpenCodeAgentConfig
+            // opencode: ~/.config/opencode is the standard config dir (consistent with AcpClient.getSandboxConfigBinds)
+            case "opencode" -> existingPaths(homeDir.resolve(".config/opencode"));
             // junie uses IDE-level credentials — no extra paths needed
             default -> List.of();
         };

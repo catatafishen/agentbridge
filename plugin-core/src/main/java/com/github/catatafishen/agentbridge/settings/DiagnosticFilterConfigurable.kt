@@ -54,8 +54,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
             }
             row {
                 comment(
-                    "These settings apply by default to all diagnostics returned by agent tools. " +
-                        "Individual tool parameters (e.g., explicit severity arguments) may override them.",
+                    "These settings apply by default to all diagnostics returned by agent tools.",
                 )
             }
         }

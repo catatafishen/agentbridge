@@ -17,9 +17,14 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.UIUtil
 import javax.swing.JComponent
 
+// Registered as a plugin extension point in plugin.xml; IntelliJ instantiates it via
+// reflection with no direct code reference, so the class appears unused to static analysis.
 @Suppress("unused")
-class SecurityConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
-    Configurable, SearchableConfigurable {
+class SecurityConfigurable(
+    // IntelliJ Configurable registration contract passes the project to the constructor;
+    // this particular configurable is application-scoped and does not need it.
+    @Suppress("UNUSED_PARAMETER") project: Project,
+) : Configurable, SearchableConfigurable {
 
     private val bwrapStatusLabel = JBLabel()
     private var configPanel: com.intellij.openapi.ui.DialogPanel? = null
@@ -134,7 +139,7 @@ class SecurityConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
         bwrapStatusLabel.text = "Checking..."
         bwrapStatusLabel.foreground = UIUtil.getLabelForeground()
         ApplicationManager.getApplication().executeOnPooledThread {
-            BwrapSandbox.resetDetectionCache()
+            BwrapSandbox.forceRecheck()
             val status = SandboxSettings.getBwrapStatus()
             val available = BwrapSandbox.isAvailable()
             ApplicationManager.getApplication().invokeLater {
