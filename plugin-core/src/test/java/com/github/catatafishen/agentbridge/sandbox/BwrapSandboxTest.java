@@ -349,4 +349,53 @@ class BwrapSandboxTest {
         assertEquals(nonexistent, resolved,
             "When resolution fails, the original input path must be returned");
     }
+
+    // ─── resolveDbusSessionSocket ─────────────────────────────────────────────
+
+    @Test
+    void dbusAddressWithUnixPathReturnsSocketPath() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(
+            "unix:path=/run/user/1000/bus", null);
+        assertEquals("/run/user/1000/bus", result);
+    }
+
+    @Test
+    void dbusAddressWithGuidSuffixStripsOptions() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(
+            "unix:path=/run/user/1000/bus,guid=abc123def456", null);
+        assertEquals("/run/user/1000/bus", result);
+    }
+
+    @Test
+    void dbusAddressWithMultipleOptionsSuffixStripsAll() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(
+            "unix:path=/tmp/.dbus-xyz/bus,guid=abc,timeout=30", null);
+        assertEquals("/tmp/.dbus-xyz/bus", result);
+    }
+
+    @Test
+    void xdgRuntimeDirFallbackWhenNoDbusAddress() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(
+            null, "/run/user/1000");
+        assertEquals("/run/user/1000/bus", result);
+    }
+
+    @Test
+    void returnsNullWhenBothEnvVarsAbsent() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(null, null);
+        assertNull(result);
+    }
+
+    @Test
+    void returnsNullForBlankXdgRuntimeDir() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(null, "   ");
+        assertNull(result);
+    }
+
+    @Test
+    void dbusAddressTakesPrecedenceOverXdgRuntimeDir() {
+        String result = BwrapSandbox.resolveDbusSessionSocket(
+            "unix:path=/run/user/1000/bus", "/run/user/9999");
+        assertEquals("/run/user/1000/bus", result);
+    }
 }

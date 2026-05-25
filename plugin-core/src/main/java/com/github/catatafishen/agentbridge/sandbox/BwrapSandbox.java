@@ -283,6 +283,27 @@ public final class BwrapSandbox {
             rwBindTry(args, bind.toString());
         }
 
+        // ── D-Bus session socket (for system keychain / secret service access) ──
+        // The Copilot CLI uses keytar (libsecret) to read its stored OAuth token
+        // from the system keychain (GNOME Keyring, KWallet, etc.). libsecret
+        // communicates with the keyring daemon via the D-Bus session bus.
+        //
+        // Without this socket the CLI cannot read its stored token and falls back
+        // to prompting for re-authentication on every launch.
+        //
+        // Security trade-off: mounting the D-Bus session socket allows the sandboxed
+        // process to call any session-bus D-Bus service, including the Secret Service
+        // API (org.freedesktop.secrets). This is narrower than exposing ~/.ssh or
+        // ~/.aws directly but does grant access to all secrets stored in the keychain.
+        // The trade-off is intentional — the agent needs its own stored credentials.
+        String dbusSocket = resolveDbusSessionSocket();
+        if (dbusSocket != null) {
+            roBindTry(args, dbusSocket);
+            args.addAll(List.of("--setenv", "DBUS_SESSION_BUS_ADDRESS", "unix:path=" + dbusSocket));
+        } else {
+            LOG.warn("Could not resolve D-Bus session socket; agent may prompt for re-authentication");
+        }
+
         // ── Working directory ─────────────────────────────────────────────────
         // The parent process CWD is typically the project base path, which is not mounted
         // in the sandbox. If we don't set an explicit --chdir, bwrap tries to inherit the
@@ -296,6 +317,33 @@ public final class BwrapSandbox {
         args.add("--die-with-parent");  // container cleaned up when the plugin exits
 
         return args;
+    }
+
+    @Nullable
+    @VisibleForTesting
+    static String resolveDbusSessionSocket() {
+        return resolveDbusSessionSocket(
+            System.getenv("DBUS_SESSION_BUS_ADDRESS"),
+            System.getenv("XDG_RUNTIME_DIR")
+        );
+    }
+
+    @Nullable
+    @VisibleForTesting
+    static String resolveDbusSessionSocket(@Nullable String dbusAddr, @Nullable String xdgRuntimeDir) {
+        if (dbusAddr != null) {
+            String prefix = "unix:path=";
+            if (dbusAddr.startsWith(prefix)) {
+                String rawPath = dbusAddr.substring(prefix.length());
+                int comma = rawPath.indexOf(',');
+                String socketPath = comma >= 0 ? rawPath.substring(0, comma) : rawPath;
+                if (!socketPath.isBlank()) return socketPath;
+            }
+        }
+        if (xdgRuntimeDir != null && !xdgRuntimeDir.isBlank()) {
+            return xdgRuntimeDir + "/bus";
+        }
+        return null;
     }
 
     /**
