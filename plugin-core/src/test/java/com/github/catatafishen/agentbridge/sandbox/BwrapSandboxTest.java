@@ -284,4 +284,37 @@ class BwrapSandboxTest {
         assertFalse(bwrapArgs.contains(tempDir.toString()),
             "Parent directory must NOT be bound when no package.json is present");
     }
+
+    // ─── resolveSymlink ───────────────────────────────────────────────────────
+
+    @Test
+    void resolveSymlinkReturnsCanonicalPath() throws IOException {
+        Path realFile = tempDir.resolve("real-binary");
+        Files.write(realFile, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        Path symlink = tempDir.resolve("symlink-binary");
+        Files.createSymbolicLink(symlink, realFile);
+
+        String resolved = BwrapSandbox.resolveSymlink(symlink.toString());
+        assertEquals(realFile.toString(), resolved,
+            "resolveSymlink must return the canonical real path, not the symlink path");
+    }
+
+    @Test
+    void resolveSymlinkReturnsSamePathForNonSymlink() throws IOException {
+        Path realFile = tempDir.resolve("real-binary");
+        Files.write(realFile, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        String resolved = BwrapSandbox.resolveSymlink(realFile.toString());
+        assertEquals(realFile.toString(), resolved,
+            "Non-symlink path must be returned unchanged");
+    }
+
+    @Test
+    void resolveSymlinkReturnsSamePathOnFailure() {
+        String nonexistent = "/nonexistent/path/to/binary";
+        String resolved = BwrapSandbox.resolveSymlink(nonexistent);
+        assertEquals(nonexistent, resolved,
+            "When resolution fails, the original input path must be returned");
+    }
 }

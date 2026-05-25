@@ -388,7 +388,8 @@ public final class BwrapSandbox {
      * Resolves symlinks in the given binary path to its canonical real path.
      * Returns the input unchanged if resolution fails.
      */
-    private static String resolveSymlink(@NotNull String binaryPath) {
+    @VisibleForTesting
+    static String resolveSymlink(@NotNull String binaryPath) {
         try {
             return Path.of(binaryPath).toRealPath().toString();
         } catch (IOException e) {

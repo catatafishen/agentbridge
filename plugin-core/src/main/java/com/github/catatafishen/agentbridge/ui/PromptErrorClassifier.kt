@@ -55,15 +55,18 @@ object PromptErrorClassifier {
 
         // Detect Node.js ES module error anywhere in the cause chain.
         // The raw node warning ("To load an ES module, set 'type': 'module'...") is cryptic;
-        // replace it with an actionable message the user can act on.
+        // it usually means package.json is missing from the CLI install directory
+        // (e.g., after a sandboxed run or broken install) — not necessarily an old Node.js.
         if (!isAuthError && !isCancelled) {
             val esModuleError = generateSequence(exception as Throwable?) { it.cause }.any {
                 it.message?.contains("To load an ES module", ignoreCase = true) == true
             }
             if (esModuleError) {
-                msg = "The agent CLI requires a newer Node.js version — " +
-                    "your current Node.js does not support ES modules. " +
-                    "Please upgrade Node.js and reinstall the CLI."
+                msg = "The agent CLI failed to start as an ES module — this usually means " +
+                    "package.json is missing from the CLI install directory " +
+                    "(e.g., after a sandboxed run or broken install). " +
+                    "Try reinstalling the CLI. " +
+                    "If you are using an older Node.js version, upgrading Node.js may also help."
             }
         }
 
