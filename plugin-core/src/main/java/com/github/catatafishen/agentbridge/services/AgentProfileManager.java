@@ -260,6 +260,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setAlternateNames(List.of("copilot-cli"));
         p.setInstallHint("Install with: npm install -g @github/copilot-cli");
         p.setInstallUrl("https://github.com/github/copilot-cli#installation");
+        p.setMinNodeVersion(24);
         p.setSupportsOAuthSignIn(true);
         p.setPrependInstructionsTo(".github/copilot-instructions.md");
         p.setStripNonEssentialPath(true);

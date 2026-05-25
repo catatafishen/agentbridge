@@ -32,6 +32,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Generic {@link AgentConfig} implementation driven entirely by an {@link AgentProfile}.
@@ -40,6 +42,7 @@ import java.util.Map;
 public class ProfileBasedAgentConfig implements AgentConfig {
 
     private static final Logger LOG = Logger.getInstance(ProfileBasedAgentConfig.class);
+    private static final Pattern NVM_NODE_VERSION_PATTERN = Pattern.compile("/node/v(\\d+)\\.");
     private static final String MCP_SERVERS_KEY = "mcpServers";
 
     private final AgentProfile profile;
@@ -372,9 +375,25 @@ public class ProfileBasedAgentConfig implements AgentConfig {
     /**
      * If the binary is NVM-managed, prepend the corresponding node binary to the command.
      */
-    private void addNodeAndCommand(@NotNull List<String> cmd, @NotNull String binaryPath) {
+    private void addNodeAndCommand(@NotNull List<String> cmd, @NotNull String binaryPath) throws ClientException {
         if (binaryPath.contains("/.nvm/versions/node/") && binaryPath.contains("/bin/")) {
             String nodeDir = binaryPath.substring(0, binaryPath.lastIndexOf("/bin/"));
+            int minVersion = profile.getMinNodeVersion();
+            if (minVersion > 0) {
+                Matcher m = NVM_NODE_VERSION_PATTERN.matcher(binaryPath);
+                if (m.find()) {
+                    int major = Integer.parseInt(m.group(1));
+                    if (major < minVersion) {
+                        throw new ClientException(
+                            "GitHub Copilot requires Node.js v" + minVersion + " or higher. "
+                                + "Currently using Node.js v" + major + " (from NVM). "
+                                + "Update with: nvm install " + minVersion
+                                + " && nvm use " + minVersion
+                                + " && npm install -g @github/copilot-cli",
+                            null, false);
+                    }
+                }
+            }
             String nodePath = nodeDir + "/bin/node";
             if (new File(nodePath).exists()) {
                 cmd.add(nodePath);
