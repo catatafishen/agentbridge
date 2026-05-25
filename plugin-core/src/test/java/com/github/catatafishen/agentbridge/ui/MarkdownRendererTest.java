@@ -506,6 +506,27 @@ class MarkdownRendererTest {
             assertTrue(ulClose >= 0 && bqOpen >= 0, html);
             assertTrue(ulClose < bqOpen, "List should close before blockquote: " + html);
         }
+
+        @Test
+        void blockquoteClosedByBlankLine() {
+            String html = render("> quote\n\nNormal paragraph");
+            assertTrue(html.contains("</blockquote>"), html);
+            assertTrue(html.contains("<p>Normal paragraph</p>"), html);
+            int bqClose = html.indexOf("</blockquote>");
+            int pOpen = html.indexOf("<p>Normal paragraph</p>");
+            assertTrue(bqClose < pOpen, "Blockquote should be closed before normal paragraph: " + html);
+        }
+
+        @Test
+        void listAfterBlankLineIsOutsideBlockquote() {
+            String html = render("> quote\n\n- list item");
+            assertTrue(html.contains("</blockquote>"), html);
+            assertTrue(html.contains("<ul>"), html);
+            assertTrue(html.contains("<li>list item</li>"), html);
+            int bqClose = html.indexOf("</blockquote>");
+            int ulOpen = html.indexOf("<ul>");
+            assertTrue(bqClose < ulOpen, "List should be outside (after) blockquote: " + html);
+        }
     }
 
     // ── Unordered Lists ─────────────────────────────────────────────────
@@ -1162,11 +1183,9 @@ class MarkdownRendererTest {
     class EdgeCases {
         @Test
         void singleAsteriskNotBold() {
-            // * is a list item prefix with space, but without space it's just text
+            // * with a space is a list item; without space, single-asterisk italics are rendered as <em>
             String html = render("Use *italics* maybe");
-            // The renderer doesn't handle single asterisk italics
-            // so it should be plain text in a paragraph
-            assertTrue(html.contains("<p>"), html);
+            assertTrue(html.contains("<em>italics</em>"), html);
         }
 
         @Test
@@ -1320,6 +1339,102 @@ class MarkdownRendererTest {
         void emptyThinkTagUsesFallbackText() {
             String html = render("<think>\r\n\r\n</think>");
             assertTrue(html.contains("No reasoning returned"), html);
+        }
+    }
+
+    // ── Italic ──────────────────────────────────────────────────────────
+
+    @Nested
+    class Italic {
+        @Test
+        void singleAsterisksCreateItalic() {
+            String html = render("Use *italics* here");
+            assertTrue(html.contains("<em>italics</em>"), html);
+        }
+
+        @Test
+        void italicAtStartOfLine() {
+            String html = render("*Emphasized* at the start");
+            assertTrue(html.contains("<em>Emphasized</em>"), html);
+        }
+
+        @Test
+        void italicAtEndOfLine() {
+            String html = render("End in *emphasis*");
+            assertTrue(html.contains("<em>emphasis</em>"), html);
+        }
+
+        @Test
+        void multipleItalicsInSameLine() {
+            String html = render("Both *first* and *second* are italic");
+            assertTrue(html.contains("<em>first</em>"), html);
+            assertTrue(html.contains("<em>second</em>"), html);
+        }
+
+        @Test
+        void doubleAsterisksAreStillBold() {
+            String html = render("This is **bold** not italic");
+            assertTrue(html.contains("<b>bold</b>"), html);
+            assertFalse(html.contains("<em>"), html);
+        }
+
+        @Test
+        void boldAndItalicInSameLine() {
+            String html = render("**bold** and *italic* together");
+            assertTrue(html.contains("<b>bold</b>"), html);
+            assertTrue(html.contains("<em>italic</em>"), html);
+        }
+
+        @Test
+        void singleAsteriskWithNoClosingIsLiteral() {
+            String html = render("Just * a star");
+            assertFalse(html.contains("<em>"), html);
+        }
+    }
+
+    // ── HTML Entities ────────────────────────────────────────────────────
+
+    @Nested
+    class HtmlEntities {
+        @Test
+        void nbspEntityPassedThrough() {
+            String html = render("A&nbsp;B");
+            assertTrue(html.contains("&nbsp;"), html);
+            assertFalse(html.contains("&amp;nbsp;"), html);
+        }
+
+        @Test
+        void mdashEntityPassedThrough() {
+            String html = render("A&mdash;B");
+            assertTrue(html.contains("&mdash;"), html);
+            assertFalse(html.contains("&amp;mdash;"), html);
+        }
+
+        @Test
+        void htmlTagsStillEscaped() {
+            String html = render("a < b and c > d");
+            assertTrue(html.contains("&lt;"), html);
+            assertTrue(html.contains("&gt;"), html);
+        }
+
+        @Test
+        void ampersandNotPartOfEntityIsEscaped() {
+            String html = render("A & B");
+            assertTrue(html.contains("&amp;"), html);
+        }
+
+        @Test
+        void numericEntityPassedThrough() {
+            String html = render("A&#160;B");
+            assertTrue(html.contains("&#160;"), html);
+            assertFalse(html.contains("&amp;#160;"), html);
+        }
+
+        @Test
+        void entitiesInsideCodeFenceAreEscaped() {
+            // Inside fenced code blocks, entities should NOT pass through — they must be escaped
+            String html = render("```\n&nbsp;\n```");
+            assertTrue(html.contains("&amp;nbsp;"), html);
         }
     }
 

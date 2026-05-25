@@ -26,6 +26,9 @@ object MarkdownRenderer {
         """(?im)^\s*</?(?:task_result|commentary|example|code)>\s*$\r?\n?"""
     )
 
+    /** Matches standard HTML named/numeric/hex entities such as `&nbsp;`, `&#160;`, `&#x00A0;`. */
+    private val HTML_ENTITY_REGEX = Regex("""&(?:[a-zA-Z]{2,8}|#\d{1,6}|#x[0-9a-fA-F]{1,6});""")
+
     data class MarkdownState(
         var inCode: Boolean = false,
         var inTable: Boolean = false,
@@ -62,7 +65,12 @@ object MarkdownRenderer {
 
                 state.inCode -> sb.append(escapeHtml(line)).append("\n")
 
-                t.isEmpty() -> closeImplicitCode(sb, state)
+                t.isEmpty() -> {
+                    closeImplicitCode(sb, state)
+                    if (state.inBlockquote) {
+                        sb.append(HTML_BLOCKQUOTE_CLOSE); state.inBlockquote = false
+                    }
+                }
 
                 state.inImplicitCode -> {
                     // Continue the implicit code block unless a major block element starts
@@ -379,10 +387,11 @@ object MarkdownRenderer {
 
     private fun inlineFormattingPattern(): Regex {
         val boldPattern = """\*\*(.+?)\*\*"""
+        val italicPattern = """\*([^*\n]+)\*"""
         val inlineCodePattern = "`([^`]+)`"
         val mdLinkPattern = """\[([^\]]+)]\(([^)]+)\)"""
         val urlLinkPattern = """(https?://[^\s<>\[\]()]+)"""
-        return Regex("$boldPattern|$inlineCodePattern|$mdLinkPattern|$urlLinkPattern")
+        return Regex("$boldPattern|$italicPattern|$inlineCodePattern|$mdLinkPattern|$urlLinkPattern")
     }
 
     private fun formatInlineMatch(
@@ -398,15 +407,22 @@ object MarkdownRenderer {
             isGitCommit
         )
 
-        match.groupValues[2].isNotEmpty() -> formatInlineCode(match.groupValues[2], resolveFileReference, isGitCommit)
-        match.groupValues[3].isNotEmpty() -> formatMarkdownLink(
+        match.groupValues[2].isNotEmpty() -> formatItalic(
+            match.groupValues[2],
+            resolveFileReference,
+            resolveFilePath,
+            isGitCommit
+        )
+
+        match.groupValues[3].isNotEmpty() -> formatInlineCode(match.groupValues[3], resolveFileReference, isGitCommit)
+        match.groupValues[4].isNotEmpty() -> formatMarkdownLink(
             match,
             resolveFileReference,
             resolveFilePath,
             isGitCommit
         )
 
-        match.groupValues[5].isNotEmpty() -> formatBareUrl(match.groupValues[5])
+        match.groupValues[6].isNotEmpty() -> formatBareUrl(match.groupValues[6])
         else -> ""
     }
 
@@ -416,6 +432,13 @@ object MarkdownRenderer {
         resolveFilePath: (String) -> String?,
         isGitCommit: (String) -> Boolean
     ): String = "<b>${formatInline(content, resolveFileReference, resolveFilePath, isGitCommit)}</b>"
+
+    private fun formatItalic(
+        content: String,
+        resolveFileReference: (String) -> Pair<String, Int?>?,
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
+    ): String = "<em>${formatInline(content, resolveFileReference, resolveFilePath, isGitCommit)}</em>"
 
     private fun formatInlineCode(
         content: String,
@@ -449,8 +472,8 @@ object MarkdownRenderer {
         resolveFilePath: (String) -> String?,
         isGitCommit: (String) -> Boolean
     ): String {
-        val linkText = escapeHtml(match.groupValues[3])
-        val rawTarget = match.groupValues[4].trim()
+        val linkText = escapeHtml(match.groupValues[4])
+        val rawTarget = match.groupValues[5].trim()
         val resolved = resolveFileReference(rawTarget)
             ?: resolveFilePath(rawTarget.removePrefix("file://"))?.let { it to null }
         return formatMarkdownLinkTarget(linkText, rawTarget, resolved, isGitCommit)
@@ -490,7 +513,7 @@ object MarkdownRenderer {
         resolveFilePath: (String) -> String?,
         isGitCommit: (String) -> Boolean
     ): String {
-        var html = escapeHtml(text)
+        var html = escapeHtmlPreservingEntities(text)
         html = FILE_PATH_REGEX.replace(html) { m ->
             val parts = m.value.split(":")
             val pathPart = parts[0]
@@ -510,4 +533,21 @@ object MarkdownRenderer {
     private fun escapeHtml(text: String): String = text
         .replace("&", "&amp;").replace("<", "&lt;")
         .replace(">", "&gt;").replace("\"", "&quot;")
+
+    /**
+     * Like [escapeHtml] but passes recognised HTML entities through unchanged.
+     * Intended for Markdown source text where authors may write `&nbsp;`, `&mdash;`, etc.
+     * Code content (inline code, fenced blocks) should still use plain [escapeHtml].
+     */
+    private fun escapeHtmlPreservingEntities(text: String): String {
+        val result = StringBuilder()
+        var lastEnd = 0
+        for (match in HTML_ENTITY_REGEX.findAll(text)) {
+            result.append(escapeHtml(text.substring(lastEnd, match.range.first)))
+            result.append(match.value)
+            lastEnd = match.range.last + 1
+        }
+        result.append(escapeHtml(text.substring(lastEnd)))
+        return result.toString()
+    }
 }
