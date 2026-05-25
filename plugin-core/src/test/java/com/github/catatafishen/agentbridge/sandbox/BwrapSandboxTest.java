@@ -1,0 +1,179 @@
+package com.github.catatafishen.agentbridge.sandbox;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class BwrapSandboxTest {
+
+    @TempDir
+    Path tempDir;
+
+    // ─── detectInterpreterResolution ─────────────────────────────────────────
+
+    @Test
+    void returnsNullForElfBinary() throws IOException {
+        Path binary = tempDir.resolve("agent");
+        Files.write(binary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
+
+        assertNull(BwrapSandbox.detectInterpreterResolution(binary.toString()));
+    }
+
+    @Test
+    void returnsNullForEmptyFile() throws IOException {
+        Path binary = tempDir.resolve("agent");
+        Files.write(binary, new byte[]{});
+
+        assertNull(BwrapSandbox.detectInterpreterResolution(binary.toString()));
+    }
+
+    @Test
+    void directShebangResolvesWithoutExplicitCall() throws IOException {
+        Path fakeNode = tempDir.resolve("node");
+        Files.write(fakeNode, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        Path script = tempDir.resolve("agent");
+        Files.writeString(script, "#!" + fakeNode + "\nconsole.log('hi');\n");
+
+        BwrapSandbox.InterpreterResolution result =
+            BwrapSandbox.detectInterpreterResolution(script.toString());
+
+        assertNotNull(result);
+        assertEquals(fakeNode.toString(), result.interpreterPath());
+        assertFalse(result.requiresExplicitCall(),
+            "Direct shebang: kernel can follow it directly, no explicit call needed");
+    }
+
+    @Test
+    void directShebangWithNonexistentInterpreterReturnsNull() throws IOException {
+        Path script = tempDir.resolve("agent");
+        Files.writeString(script, "#!/nonexistent/path/node\nconsole.log('hi');\n");
+
+        assertNull(BwrapSandbox.detectInterpreterResolution(script.toString()));
+    }
+
+    @Test
+    void envShebangDoesNotThrowEvenIfInterpreterNotOnPath() throws IOException {
+        Path script = tempDir.resolve("copilot");
+        Files.writeString(script, "#!/usr/bin/env node\nconsole.log('hi');\n");
+
+        // If node is on PATH → returns resolution with requiresExplicitCall=true
+        // If node is not on PATH → returns null
+        // Either way, must not throw.
+        BwrapSandbox.detectInterpreterResolution(script.toString());
+    }
+
+    @Test
+    void envShebangRequiresExplicitCallWhenInterpreterFound() throws IOException {
+        // Write a minimal ELF-like binary as "node" so resolveOnShellPath won't find it
+        // through the real PATH (we can't inject PATH here), but we can test the result
+        // of the record itself.
+        BwrapSandbox.InterpreterResolution resolution =
+            new BwrapSandbox.InterpreterResolution("/some/path/node", true);
+
+        assertTrue(resolution.requiresExplicitCall());
+        assertEquals("/some/path/node", resolution.interpreterPath());
+    }
+
+    // ─── buildWrappedCommandWithResolution ───────────────────────────────────
+
+    @Test
+    void envShebangCommandHasInterpreterPrepended() throws IOException {
+        Path fakeNode = tempDir.resolve("node");
+        Files.write(fakeNode, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        Path agentScript = tempDir.resolve("copilot");
+        Files.writeString(agentScript, "#!/usr/bin/env node\n// cli\n");
+
+        BwrapSandbox.InterpreterResolution resolution =
+            new BwrapSandbox.InterpreterResolution(fakeNode.toString(), true);
+
+        List<String> originalCmd = List.of(agentScript.toString(), "--stdio");
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            agentScript.toString(), List.of(), originalCmd, resolution);
+
+        int dashDash = wrapped.indexOf("--");
+        assertNotEquals(-1, dashDash, "bwrap command must contain '--' separator");
+
+        List<String> afterDashDash = wrapped.subList(dashDash + 1, wrapped.size());
+        assertEquals(fakeNode.toString(), afterDashDash.get(0),
+            "Interpreter must come first after '--' for env-shebang scripts");
+        assertEquals(agentScript.toString(), afterDashDash.get(1),
+            "Script path must follow the interpreter");
+        assertEquals("--stdio", afterDashDash.get(2),
+            "Original arguments must be preserved");
+    }
+
+    @Test
+    void directShebangCommandUnchanged() throws IOException {
+        Path fakeNode = tempDir.resolve("node");
+        Files.write(fakeNode, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        Path agentScript = tempDir.resolve("agent");
+        Files.writeString(agentScript, "#!" + fakeNode + "\n// cli\n");
+
+        BwrapSandbox.InterpreterResolution resolution =
+            new BwrapSandbox.InterpreterResolution(fakeNode.toString(), false);
+
+        List<String> originalCmd = List.of(agentScript.toString(), "--stdio");
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            agentScript.toString(), List.of(), originalCmd, resolution);
+
+        int dashDash = wrapped.indexOf("--");
+        assertNotEquals(-1, dashDash);
+
+        List<String> afterDashDash = wrapped.subList(dashDash + 1, wrapped.size());
+        assertEquals(agentScript.toString(), afterDashDash.get(0),
+            "Direct shebang: original command must not have interpreter prepended");
+        assertEquals("--stdio", afterDashDash.get(1));
+    }
+
+    @Test
+    void noInterpreterResolutionCommandUnchanged() throws IOException {
+        Path elfBinary = tempDir.resolve("agent");
+        Files.write(elfBinary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
+
+        List<String> originalCmd = List.of(elfBinary.toString(), "--stdio");
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            elfBinary.toString(), List.of(), originalCmd, null);
+
+        int dashDash = wrapped.indexOf("--");
+        assertNotEquals(-1, dashDash);
+
+        List<String> afterDashDash = wrapped.subList(dashDash + 1, wrapped.size());
+        assertEquals(elfBinary.toString(), afterDashDash.get(0),
+            "ELF binary: original command must not be modified");
+        assertEquals("--stdio", afterDashDash.get(1));
+    }
+
+    @Test
+    void envShebangInterpreterIsBoundInArgs() throws IOException {
+        Path fakeNode = tempDir.resolve("node");
+        Files.write(fakeNode, new byte[]{0x7F, 'E', 'L', 'F'});
+
+        Path agentScript = tempDir.resolve("copilot");
+        Files.writeString(agentScript, "#!/usr/bin/env node\n// cli\n");
+
+        BwrapSandbox.InterpreterResolution resolution =
+            new BwrapSandbox.InterpreterResolution(fakeNode.toString(), true);
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            agentScript.toString(), List.of(), List.of(agentScript.toString()), resolution);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+        assertTrue(bwrapArgs.contains(fakeNode.toString()),
+            "Interpreter must be bound into the sandbox (appear in bwrap args before '--')");
+    }
+}

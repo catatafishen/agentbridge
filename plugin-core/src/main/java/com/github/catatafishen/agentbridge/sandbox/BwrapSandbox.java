@@ -17,33 +17,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Wraps agent process launches in a bubblewrap (bwrap) sandbox on Linux.
- *
- * <p>The sandbox enforces two isolation properties:
- * <ol>
- *   <li><b>Filesystem isolation</b> — the agent cannot read the user's home directory,
- *       project files, or any path not explicitly provided via bind-mounts. It runs inside
- *       an empty namespace populated only with shared libraries, a writable /tmp, and the
- *       agent binary and its runtime.</li>
- *   <li><b>Binary isolation</b> — system executables (bash, curl, git, etc.) are absent
- *       because /usr/bin and /bin are not mounted. The agent can only execute the binary
- *       it was launched with, plus any interpreter bound alongside it (e.g., node).</li>
- * </ol>
- *
- * <p>Network access is NOT restricted in this initial implementation — the agent still needs
- * to reach the ACP backend (e.g., api.githubcopilot.com). Network isolation can be layered
- * on top using slirp4netns in a future pass.</p>
- *
- * <p>Only available on Linux. Requires {@code bwrap} &ge; 0.3.0 (kernel 3.8+, user namespaces
- * enabled). Use {@link #isAvailable()} to check before calling {@link #wrap}.</p>
- */
 public final class BwrapSandbox {
 
     private static final Logger LOG = Logger.getInstance(BwrapSandbox.class);
 
     @VisibleForTesting
     static final String BWRAP_BINARY = "bwrap";
+
+    /**
+     * Interpreter resolution result: the absolute interpreter path and whether bwrap must
+     * invoke it explicitly (true for {@code #!/usr/bin/env} shebangs, where {@code /usr/bin/env}
+     * itself is absent from the sandbox and cannot be relied on).
+     */
+    @VisibleForTesting
+    record InterpreterResolution(String interpreterPath, boolean requiresExplicitCall) {
+    }
 
     /**
      * Cached availability check; null = not yet checked.
@@ -100,11 +88,13 @@ public final class BwrapSandbox {
                     "Install bubblewrap: https://github.com/containers/bubblewrap");
         }
 
+        InterpreterResolution resolution = detectInterpreterResolution(agentBinaryPath);
         List<String> original = pb.command();
-        pb.command(buildWrappedCommand(agentBinaryPath, configBinds, original));
+        pb.command(buildWrappedCommandWithResolution(agentBinaryPath, configBinds, original, resolution));
         LOG.info("Agent sandboxed with bwrap: " + agentBinaryPath
             + " | configBinds=" + configBinds.size()
-            + " | interpreter=" + detectInterpreter(agentBinaryPath));
+            + " | interpreter=" + (resolution != null ? resolution.interpreterPath() : null)
+            + " | explicitCall=" + (resolution != null && resolution.requiresExplicitCall()));
     }
 
     /**
@@ -132,17 +122,41 @@ public final class BwrapSandbox {
         @NotNull List<Path> configBinds,
         @NotNull List<String> originalCommand
     ) {
+        return buildWrappedCommandWithResolution(
+            agentBinaryPath, configBinds, originalCommand,
+            detectInterpreterResolution(agentBinaryPath));
+    }
+
+    @VisibleForTesting
+    static List<String> buildWrappedCommandWithResolution(
+        @NotNull String agentBinaryPath,
+        @NotNull List<Path> configBinds,
+        @NotNull List<String> originalCommand,
+        @Nullable InterpreterResolution resolution
+    ) {
+        // When the script shebang uses #!/usr/bin/env, /usr/bin/env is absent from the sandbox.
+        // Linux reports this as ENOENT on the script itself (not on env), producing a misleading
+        // "No such file or directory" error on the agent binary. Fix: explicitly prepend the
+        // resolved interpreter so the sandbox runs `node /path/to/script [args]` directly,
+        // bypassing the /usr/bin/env mechanism entirely.
+        List<String> effectiveCommand = originalCommand;
+        if (resolution != null && resolution.requiresExplicitCall()) {
+            effectiveCommand = new ArrayList<>(originalCommand);
+            effectiveCommand.add(0, resolution.interpreterPath());
+        }
+
         List<String> cmd = new ArrayList<>();
         cmd.add(BWRAP_BINARY);
-        cmd.addAll(buildBwrapArgs(agentBinaryPath, configBinds));
+        cmd.addAll(buildBwrapArgs(agentBinaryPath, configBinds, resolution));
         cmd.add("--");
-        cmd.addAll(originalCommand);
+        cmd.addAll(effectiveCommand);
         return cmd;
     }
 
     private static List<String> buildBwrapArgs(
         @NotNull String agentBinaryPath,
-        @NotNull List<Path> configBinds
+        @NotNull List<Path> configBinds,
+        @Nullable InterpreterResolution resolution
     ) {
         List<String> args = new ArrayList<>();
 
@@ -197,9 +211,12 @@ public final class BwrapSandbox {
 
         // ── Runtime interpreter (e.g., Node.js for CLI agents) ────────────────
         // Must also come after the tmpfs mounts for the same reason.
-        String interpreter = detectInterpreter(agentBinaryPath);
-        if (interpreter != null) {
-            roBind(args, interpreter);
+        // Note: /usr/bin/env is intentionally NOT bound. When the shebang uses
+        // #!/usr/bin/env, we instead modify the command to explicitly invoke the
+        // interpreter directly (see buildWrappedCommand), so /usr/bin/env is never
+        // needed in the sandbox.
+        if (resolution != null) {
+            roBind(args, resolution.interpreterPath());
         }
 
         // ── Agent config directories (auth tokens, cached credentials) ────────
@@ -235,20 +252,24 @@ public final class BwrapSandbox {
     }
 
     /**
-     * Reads the shebang line of the binary and returns the absolute path of the interpreter.
-     * Returns {@code null} if the binary is a native ELF, the shebang is absent, or the
-     * interpreter cannot be resolved.
+     * Reads the shebang line of the binary and returns an {@link InterpreterResolution}
+     * describing the interpreter and how it must be invoked in the sandbox.
+     *
+     * <p>Returns {@code null} if the binary is a native ELF, the shebang is absent,
+     * or the interpreter cannot be resolved.
      *
      * <p>Examples:
      * <ul>
-     *   <li>{@code #!/usr/bin/env node} &rarr; resolves "node" via shell PATH, e.g., "/usr/local/bin/node"</li>
-     *   <li>{@code #!/usr/local/bin/node} &rarr; returns "/usr/local/bin/node" directly</li>
+     *   <li>{@code #!/usr/bin/env node} &rarr; resolves "node" via shell PATH; {@code requiresExplicitCall=true}
+     *       because {@code /usr/bin/env} is absent from the sandbox</li>
+     *   <li>{@code #!/usr/local/bin/node} &rarr; returns "/usr/local/bin/node"; {@code requiresExplicitCall=false}
+     *       because the kernel can follow the shebang directly once the interpreter is bound</li>
      *   <li>ELF binary (no shebang) &rarr; returns null</li>
      * </ul>
      */
     @Nullable
     @VisibleForTesting
-    static String detectInterpreter(@NotNull String binaryPath) {
+    static InterpreterResolution detectInterpreterResolution(@NotNull String binaryPath) {
         try {
             byte[] header = new byte[256];
             int read;
@@ -266,17 +287,38 @@ public final class BwrapSandbox {
             String interpreterExe = parts[0];
 
             if (interpreterExe.endsWith("/env") && parts.length > 1) {
-                // /usr/bin/env PROGRAM [args...] — resolve PROGRAM via shell PATH
+                // #!/usr/bin/env PROGRAM — /usr/bin/env is absent from the sandbox, so we must
+                // invoke the interpreter explicitly rather than relying on env resolution.
                 String programName = parts[1].split("\\s+")[0];
-                return resolveOnShellPath(programName);
+                String resolved = resolveOnShellPath(programName);
+                return resolved != null ? new InterpreterResolution(resolved, true) : null;
             }
 
-            return Files.exists(Path.of(interpreterExe)) ? interpreterExe : null;
+            return Files.exists(Path.of(interpreterExe))
+                ? new InterpreterResolution(interpreterExe, false)
+                : null;
 
         } catch (IOException e) {
             LOG.debug("Could not read shebang from " + binaryPath + ": " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Reads the shebang line of the binary and returns the absolute path of the interpreter.
+     * Returns {@code null} if the binary is a native ELF, the shebang is absent, or the
+     * interpreter cannot be resolved.
+     *
+     * @deprecated Use {@link #detectInterpreterResolution(String)} to also determine whether
+     * the interpreter must be invoked explicitly (needed for {@code #!/usr/bin/env} shebangs
+     * in a sandbox where {@code /usr/bin/env} is absent).
+     */
+    @Deprecated
+    @Nullable
+    @VisibleForTesting
+    static String detectInterpreter(@NotNull String binaryPath) {
+        InterpreterResolution r = detectInterpreterResolution(binaryPath);
+        return r != null ? r.interpreterPath() : null;
     }
 
     /**
