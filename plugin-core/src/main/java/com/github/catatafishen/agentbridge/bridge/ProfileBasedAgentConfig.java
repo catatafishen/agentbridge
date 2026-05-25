@@ -24,7 +24,6 @@ import com.intellij.openapi.util.SystemInfo;
 import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.VisibleForTesting;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,8 +32,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Generic {@link AgentConfig} implementation driven entirely by an {@link AgentProfile}.
@@ -43,7 +40,6 @@ import java.util.regex.Pattern;
 public class ProfileBasedAgentConfig implements AgentConfig {
 
     private static final Logger LOG = Logger.getInstance(ProfileBasedAgentConfig.class);
-    private static final Pattern NVM_NODE_VERSION_PATTERN = Pattern.compile("/node/v(\\d+)");
     private static final String MCP_SERVERS_KEY = "mcpServers";
 
     private final AgentProfile profile;
@@ -376,12 +372,8 @@ public class ProfileBasedAgentConfig implements AgentConfig {
     /**
      * If the binary is NVM-managed, prepend the corresponding node binary to the command.
      */
-    private void addNodeAndCommand(@NotNull List<String> cmd, @NotNull String binaryPath) throws ClientException {
+    private void addNodeAndCommand(@NotNull List<String> cmd, @NotNull String binaryPath) {
         if (binaryPath.contains("/.nvm/versions/node/") && binaryPath.contains("/bin/")) {
-            int minVersion = profile.getMinNodeVersion();
-            if (minVersion > 0) {
-                checkNvmVersion(binaryPath, minVersion);
-            }
             String nodeDir = binaryPath.substring(0, binaryPath.lastIndexOf("/bin/"));
             String nodePath = nodeDir + "/bin/node";
             if (new File(nodePath).exists()) {
@@ -389,29 +381,6 @@ public class ProfileBasedAgentConfig implements AgentConfig {
             }
         }
         cmd.add(binaryPath);
-    }
-
-    /**
-     * Validates that the Node.js major version in an NVM-managed binary path meets the minimum
-     * required version. Throws {@link ClientException} with an actionable message if not.
-     *
-     * <p>The version is extracted from the NVM path segment {@code /node/vN/} or {@code /node/vN.M.P/}.
-     * If the path does not contain a recognisable version number, the check is skipped silently.
-     */
-    @VisibleForTesting
-    static void checkNvmVersion(@NotNull String binaryPath, int minVersion) throws ClientException {
-        Matcher m = NVM_NODE_VERSION_PATTERN.matcher(binaryPath);
-        if (!m.find()) return;
-        int major = Integer.parseInt(m.group(1));
-        if (major < minVersion) {
-            throw new ClientException(
-                "GitHub Copilot requires Node.js v" + minVersion + " or higher. "
-                    + "Currently using Node.js v" + major + " (from NVM). "
-                    + "Update with: nvm install " + minVersion
-                    + " && nvm use " + minVersion
-                    + " && npm install -g @github/copilot-cli",
-                null, false);
-        }
     }
 
     private void addMcpConfigFlag(@NotNull List<String> cmd, int mcpPort) {
