@@ -43,6 +43,8 @@ public final class GetHighlightsTool extends QualityTool {
     };
 
     private static final String PARAM_INCLUDE_UNINDEXED = "include_unindexed";
+    private static final String PARAM_START_LINE = "start_line";
+    private static final String PARAM_END_LINE = "end_line";
 
     public GetHighlightsTool(Project project) {
         super(project);
@@ -84,7 +86,9 @@ public final class GetHighlightsTool extends QualityTool {
         return schema(
             Param.optional("path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""),
             Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"),
-            Param.optional(PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)")
+            Param.optional(PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)"),
+            Param.optional(PARAM_START_LINE, TYPE_INTEGER, "Only return highlights on or after this line (1-based, inclusive). If end_line is omitted, includes all lines from start_line onwards."),
+            Param.optional(PARAM_END_LINE, TYPE_INTEGER, "Only return highlights on or before this line (1-based, inclusive). Used with start_line. Defaults to no upper bound when start_line is set.")
         );
     }
 
@@ -93,6 +97,8 @@ public final class GetHighlightsTool extends QualityTool {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         boolean includeUnindexed = args.has(PARAM_INCLUDE_UNINDEXED) && args.get(PARAM_INCLUDE_UNINDEXED).getAsBoolean();
+        int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : 0;
+        int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : 0;
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
@@ -111,7 +117,7 @@ public final class GetHighlightsTool extends QualityTool {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                getHighlightsCached(pathStr, limit, includeUnindexed, resultFuture);
+                getHighlightsCached(pathStr, limit, includeUnindexed, startLine, endLine, resultFuture);
             } catch (Exception e) {
                 LOG.error("Error getting highlights", e);
                 resultFuture.complete("Error getting highlights: " + e.getMessage());
@@ -121,6 +127,7 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
+                                     int startLine, int endLine,
                                      CompletableFuture<String> resultFuture) {
         StringBuilder result = new StringBuilder();
         ApplicationManager.getApplication().runReadAction(() -> {
@@ -132,7 +139,7 @@ public final class GetHighlightsTool extends QualityTool {
             LOG.info("Analyzing " + allFiles.size() + " files for highlights (cached mode)");
 
             List<String> problems = new ArrayList<>();
-            int[] counts = analyzeFilesForHighlights(allFiles, limit, problems);
+            int[] counts = analyzeFilesForHighlights(allFiles, limit, startLine, endLine, problems);
 
             if (problems.isEmpty()) {
                 result.append(String.format("No highlights found in %d files analyzed (0 files with issues). " +
@@ -242,7 +249,8 @@ public final class GetHighlightsTool extends QualityTool {
         }
     }
 
-    private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, int limit, List<String> problems) {
+    private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, int limit,
+                                             int startLine, int endLine, List<String> problems) {
         String basePath = project.getBasePath();
         int totalCount = 0;
         int filesWithProblems = 0;
@@ -251,7 +259,7 @@ public final class GetHighlightsTool extends QualityTool {
             Document doc = FileDocumentManager.getInstance().getDocument(vf);
             if (doc != null) {
                 String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getName();
-                int added = collectFileHighlights(doc, relPath, limit - totalCount, problems);
+                int added = collectFileHighlights(doc, relPath, limit - totalCount, startLine, endLine, problems);
                 if (added > 0) filesWithProblems++;
                 totalCount += added;
             }
@@ -259,7 +267,8 @@ public final class GetHighlightsTool extends QualityTool {
         return new int[]{totalCount, filesWithProblems};
     }
 
-    private int collectFileHighlights(Document doc, String relPath, int remaining, List<String> problems) {
+    private int collectFileHighlights(Document doc, String relPath, int remaining,
+                                       int startLine, int endLine, List<String> problems) {
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
         int added = 0;
         DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
@@ -273,6 +282,7 @@ public final class GetHighlightsTool extends QualityTool {
                 if (h.getDescription() == null) continue;
                 if (!filter.shouldInclude(h)) continue;
                 int line = doc.getLineNumber(h.getStartOffset()) + 1;
+                if (startLine > 0 && (line < startLine || (endLine > 0 && line > endLine))) continue;
                 StringBuilder entry = new StringBuilder(
                     String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription()));
                 List<String> fixes = collectQuickFixNames(h);
