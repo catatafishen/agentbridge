@@ -14,19 +14,10 @@ import org.jetbrains.annotations.NotNull;
  * has its own toggle so users can sandbox individual agents (e.g. only Copilot, which
  * is the only agent currently tested with bwrap) without affecting the others.</p>
  *
- * <p>Per-agent key format: {@code agentbridge.sandbox.<agentId>.enabled}.</p>
- *
- * <p>A legacy global key {@code agentbridge.sandbox.enabled} is honoured as a fallback
- * so existing installs that enabled sandboxing under the old global "Security" page
- * keep their setting until the user opens the per-agent settings page and explicitly
- * toggles the per-agent value.</p>
+ * <p>Per-agent key format: {@code agentbridge.sandbox.<agentId>.enabled}. Each agent defaults
+ * to <em>off</em> — users must opt in per agent on its settings page.</p>
  */
 public final class SandboxSettings {
-
-    /**
-     * Legacy global key kept only for the migration fallback in {@link #isSandboxEnabled(String)}.
-     */
-    private static final String LEGACY_KEY_SANDBOX_ENABLED = "agentbridge.sandbox.enabled";
 
     private static final String PER_AGENT_KEY_PREFIX = "agentbridge.sandbox.";
     private static final String PER_AGENT_KEY_SUFFIX = ".enabled";
@@ -40,27 +31,18 @@ public final class SandboxSettings {
     }
 
     /**
-     * Returns whether the sandbox is enabled for the given agent.
-     *
-     * <p>If no per-agent value has been stored we fall back to the legacy global key
-     * so existing installs that enabled sandboxing under the old global "Security" page
-     * keep their setting until the user explicitly toggles the per-agent value.</p>
+     * Returns whether the sandbox is enabled for the given agent. Defaults to {@code false} —
+     * sandboxing is opt-in per agent.
      */
     public static boolean isSandboxEnabled(@NotNull String agentId) {
         Application app = ApplicationManager.getApplication();
         if (app == null) return false;
-        PropertiesComponent props = PropertiesComponent.getInstance();
-        String key = perAgentKey(agentId);
-        if (props.isValueSet(key)) {
-            return props.getBoolean(key, false);
-        }
-        return props.getBoolean(LEGACY_KEY_SANDBOX_ENABLED, false);
+        return PropertiesComponent.getInstance().getBoolean(perAgentKey(agentId), false);
     }
 
     public static void setSandboxEnabled(@NotNull String agentId, boolean enabled) {
         Application app = ApplicationManager.getApplication();
         if (app == null) return;
-        // Persist even the "false" value so we stop falling back to the legacy global key.
         PropertiesComponent.getInstance().setValue(perAgentKey(agentId), enabled, false);
     }
 

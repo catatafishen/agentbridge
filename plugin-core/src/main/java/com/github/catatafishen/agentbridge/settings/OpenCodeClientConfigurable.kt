@@ -28,7 +28,6 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "OpenCode",
-        testedWithSandbox = false,
         binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
         binaryNameProvider = { "opencode" },
     )

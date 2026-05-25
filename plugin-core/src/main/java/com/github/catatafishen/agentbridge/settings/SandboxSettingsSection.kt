@@ -11,12 +11,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.AlignY
-import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
-import com.intellij.ui.dsl.builder.Panel
-import com.intellij.ui.dsl.builder.RowLayout
-import com.intellij.ui.dsl.builder.bindSelected
+import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Font
@@ -44,12 +39,6 @@ internal class SandboxSettingsSection(
     private val agentId: String,
     /** Display name used in the section title and restart prompt (e.g. "GitHub Copilot"). */
     private val displayName: String,
-    /**
-     * Whether this agent has actually been tested under bwrap. Currently only {@code true}
-     * for Copilot. The section appends an "Untested" warning for everything else so users
-     * know what to expect.
-     */
-    private val testedWithSandbox: Boolean = false,
     /**
      * Supplier returning the user-configured binary path (typically the contents of the
      * "Binary" text field). Empty/null means "auto-detect on PATH" — the preview will
@@ -91,18 +80,6 @@ internal class SandboxSettingsSection(
                         "(git, gh, curl, …) are hidden. Network traffic is <i>not</i> isolated.",
                     MAX_LINE_LENGTH_WORD_WRAP
                 ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
-            }
-            if (!testedWithSandbox) {
-                row {
-                    text(
-                        "⚠ <b>Untested:</b> bwrap support has only been verified end-to-end with " +
-                            "GitHub Copilot. Other agents may fail to launch, authenticate, or read " +
-                            "the project. Report issues at " +
-                            "<a href='https://github.com/catatafishen/agentbridge/issues'>" +
-                            "github.com/catatafishen/agentbridge/issues</a>.",
-                        MAX_LINE_LENGTH_WORD_WRAP
-                    ).applyToComponent { foreground = JBColor(0xB8860B, 0xE0A030) }
-                }
             }
             row("bwrap status:") {
                 cell(bwrapStatusLabel)
@@ -208,16 +185,19 @@ internal class SandboxSettingsSection(
                     builder.append("--\n")
                     i++
                 }
+
                 arg.startsWith("--") && i + 2 < cmd.size && isBindLikeFlag(arg) -> {
                     builder.append("  ").append(arg)
                         .append(' ').append(cmd[i + 1])
                         .append(' ').append(cmd[i + 2]).append('\n')
                     i += 3
                 }
+
                 arg.startsWith("--") && i + 1 < cmd.size && isSingleArgFlag(arg) -> {
                     builder.append("  ").append(arg).append(' ').append(cmd[i + 1]).append('\n')
                     i += 2
                 }
+
                 else -> {
                     builder.append("  ").append(arg).append('\n')
                     i++
