@@ -788,4 +788,48 @@ class PsiBridgeServiceStaticMethodsTest {
             assertEquals(500L, PsiBridgeService.computeExtraSleep(lastFinished, settle, now));
         }
     }
+
+    @Nested
+    class ParseContextLineRangeTest {
+
+        @Test
+        void parsesRangeFromTypicalEditResult() {
+            String result = "Written: src/Foo.java\n\nContext after edit (lines 42-55):\n42:     doSomething();";
+            int[] range = PsiBridgeService.parseContextLineRange(result);
+            assertNotNull(range);
+            assertEquals(42, range[0]);
+            assertEquals(55, range[1]);
+        }
+
+        @Test
+        void returnsNullWhenNoContextSectionPresent() {
+            String result = "Written: src/Foo.java (no highlights)";
+            assertNull(PsiBridgeService.parseContextLineRange(result));
+        }
+
+        @Test
+        void returnsNullForEmptyString() {
+            assertNull(PsiBridgeService.parseContextLineRange(""));
+        }
+
+        @Test
+        void returnsNullForNull() {
+            assertNull(PsiBridgeService.parseContextLineRange(null));
+        }
+
+        @Test
+        void parsesLargeLineNumbers() {
+            String result = "Context after edit (lines 1000-1050):\n...";
+            int[] range = PsiBridgeService.parseContextLineRange(result);
+            assertNotNull(range);
+            assertEquals(1000, range[0]);
+            assertEquals(1050, range[1]);
+        }
+
+        @Test
+        void returnsNullWhenStartLineGreaterThanEndLine() {
+            String result = "Context after edit (lines 55-42):\n...";
+            assertNull(PsiBridgeService.parseContextLineRange(result));
+        }
+    }
 }

@@ -28,6 +28,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Executes MCP tool calls inside IntelliJ, providing PSI/AST-backed code intelligence.
@@ -85,6 +87,11 @@ public final class PsiBridgeService implements Disposable {
     private static final String TOOL_REPLACE_SYMBOL_BODY = "replace_symbol_body";
     private static final String TOOL_INSERT_BEFORE_SYMBOL = "insert_before_symbol";
     private static final String TOOL_INSERT_AFTER_SYMBOL = "insert_after_symbol";
+
+    /**
+     * Matches the "Context after edit (lines X-Y):" header written by WriteFileTool.
+     */
+    static final Pattern CONTEXT_LINES_PATTERN = Pattern.compile("Context after edit \\(lines (\\d+)-(\\d+)\\)");
 
     /**
      * Tools disabled in Rider because they depend on detailed PSI (which lives in
@@ -1019,12 +1026,33 @@ public final class PsiBridgeService implements Disposable {
         JsonObject highlightArgs = new JsonObject();
         highlightArgs.addProperty("path", path);
         highlightArgs.addProperty("include_unindexed", true);
+        int[] lineRange = parseContextLineRange(writeResult);
+        if (lineRange != null) {
+            highlightArgs.addProperty("start_line", lineRange[0]);
+            highlightArgs.addProperty("end_line", lineRange[1]);
+        }
         String highlights = highlightDef.execute(highlightArgs);
         if (highlights != null) {
             LOG.info("Auto-highlights: appended " + highlights.split("\n").length + " lines for " + path);
         }
 
         return formatHighlightResult(writeResult, highlights);
+    }
+
+    /**
+     * Extracts the edited line range from a write-tool result string.
+     * Returns {@code [startLine, endLine]} (1-based, inclusive) if a
+     * {@code "Context after edit (lines X-Y):"} header is present, or {@code null} otherwise.
+     */
+    @Nullable
+    static int[] parseContextLineRange(String writeResult) {
+        if (writeResult == null || writeResult.isEmpty()) return null;
+        Matcher m = CONTEXT_LINES_PATTERN.matcher(writeResult);
+        if (!m.find()) return null;
+        int start = Integer.parseInt(m.group(1));
+        int end = Integer.parseInt(m.group(2));
+        if (start > end) return null;
+        return new int[]{start, end};
     }
 
     private DaemonWaiter resolveActiveWaiter(
