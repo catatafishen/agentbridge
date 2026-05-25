@@ -29,6 +29,14 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
         font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.Fonts.label().size)
     }
 
+    private val sandboxSection = SandboxSettingsSection(
+        agentId = AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
+        displayName = "Claude CLI",
+        testedWithSandbox = false,
+        binaryPathProvider = { profile()?.customBinaryPath },
+        binaryNameProvider = { "claude" },
+    )
+
     override fun getId(): String = ID
 
     override fun createPanel() = panel {
@@ -45,7 +53,10 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent {
+                    emptyText.text = "Auto-detect (leave empty)"
+                    sandboxSection.wireBinaryPathField(this)
+                }
                 .comment("Leave empty to auto-detect on PATH.")
                 .bindText(
                     { profile()?.customBinaryPath.orEmpty() },
@@ -97,6 +108,12 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
                     customModelsArea.caretPosition = 0
                 }
         }.layout(RowLayout.PARENT_GRID).resizableRow()
+        sandboxSection.render(this@panel)
+    }
+
+    override fun reset() {
+        super<BoundConfigurable>.reset()
+        sandboxSection.reset()
     }
 
     private fun profile() = AgentProfileManager.getInstance()

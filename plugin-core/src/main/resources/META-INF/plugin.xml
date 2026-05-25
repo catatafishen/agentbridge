@@ -321,11 +321,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       displayName="Web Access"/>
 
     <!-- ── Security / Sandbox ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.settings"
-      instance="com.github.catatafishen.agentbridge.settings.SecurityConfigurable"
-      id="com.github.catatafishen.agentbridge.security"
-      displayName="Security"/>
+    <!-- Removed: sandbox is now configured per-agent in each agent's settings page. -->
 
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity

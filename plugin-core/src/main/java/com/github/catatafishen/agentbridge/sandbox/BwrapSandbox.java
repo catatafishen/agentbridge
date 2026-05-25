@@ -170,6 +170,44 @@ public final class BwrapSandbox {
         return buildWrappedCommand(realBinaryPath, configBinds, resolvedCommand);
     }
 
+    /**
+     * Builds the bwrap command that <em>would</em> be invoked for the given agent
+     * <strong>without</strong> launching anything. Used by the settings UI to preview the
+     * exact sandbox invocation so users can see what the plugin is doing.
+     *
+     * <p>Unlike {@link #wrap} / {@link #wrapCommand}, this method does <strong>not</strong>
+     * require bwrap to be available on the host — it returns a best-effort preview even on
+     * macOS/Windows or when bwrap is not installed, so the settings UI can render an
+     * accurate "if you were on Linux with bwrap installed, this is what would run" command.
+     * Symlinks are still resolved so the preview matches the real invocation.</p>
+     *
+     * @param agentBinaryPath absolute path to the agent binary (may not yet exist on disk)
+     * @param configBinds     writable bind-mount paths (auth/config dirs)
+     * @param projectDir      project directory to bind read-only into the sandbox, or {@code null}
+     * @param originalCommand the command the plugin would run unsandboxed (binary + args)
+     * @return the full command list as it would be passed to {@code exec()} — i.e. starting
+     * with {@code bwrap} followed by the sandbox arguments and then the agent command
+     */
+    @NotNull
+    public static List<String> previewCommand(
+        @NotNull String agentBinaryPath,
+        @NotNull List<Path> configBinds,
+        @Nullable String projectDir,
+        @NotNull List<String> originalCommand
+    ) {
+        String realBinaryPath = resolveSymlink(agentBinaryPath);
+        List<String> resolvedCommand;
+        if (!realBinaryPath.equals(agentBinaryPath) && !originalCommand.isEmpty()) {
+            resolvedCommand = new ArrayList<>(originalCommand);
+            resolvedCommand.set(0, realBinaryPath);
+        } else {
+            resolvedCommand = originalCommand;
+        }
+        return buildWrappedCommandWithResolution(
+            realBinaryPath, configBinds, resolvedCommand,
+            detectInterpreterResolution(realBinaryPath), projectDir);
+    }
+
     @VisibleForTesting
     static List<String> buildWrappedCommand(
         @NotNull String agentBinaryPath,

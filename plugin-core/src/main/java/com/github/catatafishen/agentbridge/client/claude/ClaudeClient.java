@@ -472,7 +472,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
             File workDir = (project != null && project.getBasePath() != null)
                 ? new File(project.getBasePath()) : null;
 
-            List<String> effectiveCmd = SandboxSettings.shouldSandbox() && resolvedBinaryPath != null
+            List<String> effectiveCmd = SandboxSettings.shouldSandbox(PROFILE_ID) && resolvedBinaryPath != null
                 ? BwrapSandbox.wrapCommand(cmd, resolvedBinaryPath, config.getSandboxConfigBinds())
                 : cmd;
 

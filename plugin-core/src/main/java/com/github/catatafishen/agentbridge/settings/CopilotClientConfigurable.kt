@@ -32,6 +32,14 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
 
     private var liveBinaryFieldText: () -> String = { "" }
 
+    private val sandboxSection = SandboxSettingsSection(
+        agentId = AGENT_ID,
+        displayName = "GitHub Copilot",
+        testedWithSandbox = true,
+        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryNameProvider = { "copilot" },
+    )
+
     override fun getDisplayName(): String = "GitHub Copilot"
     override fun getId(): String = ID
 
@@ -84,7 +92,10 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
             val cell = textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent {
+                    emptyText.text = "Auto-detect (leave empty)"
+                    sandboxSection.wireBinaryPathField(this)
+                }
                 .comment("Leave empty to auto-detect on PATH.")
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID).orEmpty() },
@@ -104,6 +115,7 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                     { AcpClient.saveAgentBubbleColorKey(AGENT_ID, it?.name) }
                 )
         }
+        sandboxSection.render(this@panel)
     }
 
     override fun isModified(): Boolean =
@@ -118,6 +130,7 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
         configPanel?.reset()
         billing.reset()
         refreshStatusAsync()
+        sandboxSection.reset()
     }
 
     override fun disposeUIResources() {

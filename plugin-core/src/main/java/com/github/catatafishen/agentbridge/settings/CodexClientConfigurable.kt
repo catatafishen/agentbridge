@@ -24,6 +24,17 @@ class CodexClientConfigurable(private val project: Project) :
     SearchableConfigurable {
 
     private val statusLabel = JBLabel(CHECKING)
+    private val sandboxSection = SandboxSettingsSection(
+        agentId = PROFILE_ID,
+        displayName = "Codex",
+        testedWithSandbox = false,
+        binaryPathProvider = {
+            binaryPathField?.text?.takeIf { it.isNotBlank() }
+                ?: AgentProfileManager.getInstance().loadBinaryPath(PROFILE_ID)
+        },
+        binaryNameProvider = { "codex" },
+    )
+    private var binaryPathField: javax.swing.JTextField? = null
 
     override fun getId(): String = ID
 
@@ -48,7 +59,11 @@ class CodexClientConfigurable(private val project: Project) :
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent {
+                    emptyText.text = "Auto-detect (leave empty)"
+                    binaryPathField = this
+                    sandboxSection.wireBinaryPathField(this)
+                }
                 .comment("Leave empty to auto-detect on PATH.")
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(PROFILE_ID).orEmpty() },
@@ -77,11 +92,13 @@ class CodexClientConfigurable(private val project: Project) :
             note.foreground = UIUtil.getContextHelpForeground()
             cell(note)
         }
+        sandboxSection.render(this@panel)
     }
 
     override fun reset() {
         super<BoundConfigurable>.reset()
         refreshStatusAsync()
+        sandboxSection.reset()
     }
 
     private fun refreshStatusAsync() {

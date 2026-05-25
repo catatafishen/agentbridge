@@ -464,7 +464,7 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
             }
             pb.redirectErrorStream(false);
 
-            if (SandboxSettings.shouldSandbox()) {
+            if (SandboxSettings.shouldSandbox(PROFILE_ID)) {
                 String projectPath = project.getBasePath();
                 BwrapSandbox.wrap(pb, resolvedBinaryPath, config.getSandboxConfigBinds(), projectPath);
             }
