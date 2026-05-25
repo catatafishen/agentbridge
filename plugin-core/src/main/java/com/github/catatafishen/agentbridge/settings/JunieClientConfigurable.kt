@@ -36,6 +36,13 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             "Generate a token at https://junie.jetbrains.com/cli. Leave empty to use CLI credentials."
     }
     private val genericSettings = GenericSettings(AGENT_ID)
+    private val sandboxSection = SandboxSettingsSection(
+        agentId = AGENT_ID,
+        displayName = "Junie",
+        testedWithSandbox = false,
+        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryNameProvider = { "junie" },
+    )
 
     override fun getId(): String = ID
 
@@ -92,7 +99,10 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent {
+                    emptyText.text = "Auto-detect (leave empty)"
+                    sandboxSection.wireBinaryPathField(this)
+                }
                 .comment("Leave empty to auto-detect on PATH.")
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID).orEmpty() },
@@ -120,11 +130,13 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                     { genericSettings.setContextHistoryLimit(it) }
                 )
         }
+        sandboxSection.render(this@panel)
     }
 
     override fun reset() {
         super<BoundConfigurable>.reset()
         refreshStatusAsync()
+        sandboxSection.reset()
     }
 
     private fun refreshStatusAsync() {

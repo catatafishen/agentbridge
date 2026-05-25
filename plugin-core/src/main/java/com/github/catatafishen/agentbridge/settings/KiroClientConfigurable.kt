@@ -25,6 +25,13 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
 
     private val statusLabel = JBLabel()
     private val genericSettings = GenericSettings(AGENT_ID)
+    private val sandboxSection = SandboxSettingsSection(
+        agentId = AGENT_ID,
+        displayName = "Kiro",
+        testedWithSandbox = false,
+        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryNameProvider = { "kiro-cli" },
+    )
 
     override fun getId(): String = ID
 
@@ -47,7 +54,10 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent {
+                    emptyText.text = "Auto-detect (leave empty)"
+                    sandboxSection.wireBinaryPathField(this)
+                }
                 .comment("Leave empty to auto-detect on PATH.")
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID).orEmpty() },
@@ -75,11 +85,13 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                     { genericSettings.setContextHistoryLimit(it) }
                 )
         }
+        sandboxSection.render(this@panel)
     }
 
     override fun reset() {
         super<BoundConfigurable>.reset()
         refreshStatusAsync()
+        sandboxSection.reset()
     }
 
     private fun refreshStatusAsync() {

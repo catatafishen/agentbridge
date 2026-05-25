@@ -23,6 +23,13 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     SearchableConfigurable {
 
     private val statusLabel = JBLabel()
+    private val sandboxSection = SandboxSettingsSection(
+        agentId = AGENT_ID,
+        displayName = "Hermes",
+        testedWithSandbox = false,
+        binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
+        binaryNameProvider = { "hermes" },
+    )
 
     override fun getId(): String = ID
 
@@ -46,7 +53,10 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent {
+                    emptyText.text = "Auto-detect (leave empty)"
+                    sandboxSection.wireBinaryPathField(this)
+                }
                 .comment("Leave empty to auto-detect on PATH. Override if hermes is not on PATH.")
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID).orEmpty() },
@@ -63,11 +73,13 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                     { AcpClient.saveAgentBubbleColorKey(AGENT_ID, it?.name) }
                 )
         }
+        sandboxSection.render(this@panel)
     }
 
     override fun reset() {
         super<BoundConfigurable>.reset()
         refreshStatusAsync()
+        sandboxSection.reset()
     }
 
     private fun refreshStatusAsync() {
