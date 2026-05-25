@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponseDeserializer;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
+import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
@@ -1229,24 +1230,7 @@ public abstract class AcpClient extends AbstractClient {
     @NotNull
     protected List<Path> getSandboxConfigBinds() {
         Path homeDir = Path.of(SystemProperties.getUserHome());
-        return switch (agentId()) {
-            case "copilot" -> existingSandboxPaths(homeDir.resolve(".copilot"),
-                homeDir.resolve(".config/github-copilot"));
-            case "claude-cli" -> existingSandboxPaths(homeDir.resolve(".claude"));
-            case "codex" -> existingSandboxPaths(homeDir.resolve(".codex"));
-            case "kiro" -> existingSandboxPaths(homeDir.resolve(".kiro"));
-            case "hermes" -> existingSandboxPaths(homeDir.resolve(".hermes"));
-            case "opencode" -> existingSandboxPaths(homeDir.resolve(".config/opencode"));
-            default -> List.of();
-        };
-    }
-
-    private static List<Path> existingSandboxPaths(Path... candidates) {
-        List<Path> result = new ArrayList<>();
-        for (Path p : candidates) {
-            if (p.toFile().exists()) result.add(p);
-        }
-        return result;
+        return AgentConfig.sandboxConfigBindsForAgentId(agentId(), homeDir);
     }
 
     /**

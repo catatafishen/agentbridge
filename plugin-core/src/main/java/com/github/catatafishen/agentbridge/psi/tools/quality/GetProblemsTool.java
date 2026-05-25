@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.quality;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
+import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -189,8 +190,8 @@ public final class GetProblemsTool extends QualityTool {
             for (var s : smells) {
                 String msg = s.getDescription();
                 if (msg == null || msg.isBlank()) continue;
-                com.intellij.lang.annotation.HighlightSeverity severity = s.getSeverity();
-                if (severity != null && !filter.isSeverityEnabled(severity)) continue;
+                HighlightSeverity severity = s.getSeverity();
+                if (!filter.isSeverityEnabled(severity != null ? severity : HighlightSeverity.WARNING)) continue;
                 int line = s.getStartLine() >= 0 ? s.getStartLine() + 1 : 1;
                 String severityName = severity != null ? severity.getName() : "WARNING";
                 problems.add(String.format(FORMAT_LOCATION, relPath, line, severityName, msg));

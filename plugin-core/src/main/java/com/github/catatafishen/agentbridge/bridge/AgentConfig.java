@@ -7,6 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -240,5 +241,38 @@ public interface AgentConfig {
     @NotNull
     default List<Path> getSandboxConfigBinds() {
         return List.of();
+    }
+
+    /**
+     * Returns the conventional auth/config paths that a sandboxed agent with the given
+     * {@code agentId} needs read-only access to. Paths that do not exist on disk are silently skipped.
+     *
+     * <p>Both {@link com.github.catatafishen.agentbridge.client.acp.AcpClient} and
+     * {@link ProfileBasedAgentConfig} delegate to this method so the mapping stays in one place.</p>
+     *
+     * @param agentId the agent identifier (e.g., "copilot", "claude-cli")
+     * @param homeDir the user home directory to resolve paths against
+     * @return list of existing paths; empty list if the agent has no conventional config dirs
+     */
+    @NotNull
+    static List<Path> sandboxConfigBindsForAgentId(String agentId, Path homeDir) {
+        return switch (agentId) {
+            case "copilot" -> existingSandboxConfigPaths(homeDir.resolve(".copilot"),
+                homeDir.resolve(".config/github-copilot"));
+            case "claude-cli" -> existingSandboxConfigPaths(homeDir.resolve(".claude"));
+            case "codex" -> existingSandboxConfigPaths(homeDir.resolve(".codex"));
+            case "kiro" -> existingSandboxConfigPaths(homeDir.resolve(".kiro"));
+            case "hermes" -> existingSandboxConfigPaths(homeDir.resolve(".hermes"));
+            case "opencode" -> existingSandboxConfigPaths(homeDir.resolve(".config/opencode"));
+            default -> List.of();
+        };
+    }
+
+    private static List<Path> existingSandboxConfigPaths(Path... candidates) {
+        List<Path> result = new ArrayList<>();
+        for (Path p : candidates) {
+            if (p.toFile().exists()) result.add(p);
+        }
+        return result;
     }
 }

@@ -24,6 +24,7 @@ import com.intellij.openapi.util.SystemInfo;
 import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 
 import java.io.File;
 import java.io.IOException;
@@ -42,7 +43,7 @@ import java.util.regex.Pattern;
 public class ProfileBasedAgentConfig implements AgentConfig {
 
     private static final Logger LOG = Logger.getInstance(ProfileBasedAgentConfig.class);
-    private static final Pattern NVM_NODE_VERSION_PATTERN = Pattern.compile("/node/v(\\d+)\\.");
+    private static final Pattern NVM_NODE_VERSION_PATTERN = Pattern.compile("/node/v(\\d+)");
     private static final String MCP_SERVERS_KEY = "mcpServers";
 
     private final AgentProfile profile;
@@ -377,29 +378,40 @@ public class ProfileBasedAgentConfig implements AgentConfig {
      */
     private void addNodeAndCommand(@NotNull List<String> cmd, @NotNull String binaryPath) throws ClientException {
         if (binaryPath.contains("/.nvm/versions/node/") && binaryPath.contains("/bin/")) {
-            String nodeDir = binaryPath.substring(0, binaryPath.lastIndexOf("/bin/"));
             int minVersion = profile.getMinNodeVersion();
             if (minVersion > 0) {
-                Matcher m = NVM_NODE_VERSION_PATTERN.matcher(binaryPath);
-                if (m.find()) {
-                    int major = Integer.parseInt(m.group(1));
-                    if (major < minVersion) {
-                        throw new ClientException(
-                            "GitHub Copilot requires Node.js v" + minVersion + " or higher. "
-                                + "Currently using Node.js v" + major + " (from NVM). "
-                                + "Update with: nvm install " + minVersion
-                                + " && nvm use " + minVersion
-                                + " && npm install -g @github/copilot-cli",
-                            null, false);
-                    }
-                }
+                checkNvmVersion(binaryPath, minVersion);
             }
+            String nodeDir = binaryPath.substring(0, binaryPath.lastIndexOf("/bin/"));
             String nodePath = nodeDir + "/bin/node";
             if (new File(nodePath).exists()) {
                 cmd.add(nodePath);
             }
         }
         cmd.add(binaryPath);
+    }
+
+    /**
+     * Validates that the Node.js major version in an NVM-managed binary path meets the minimum
+     * required version. Throws {@link ClientException} with an actionable message if not.
+     *
+     * <p>The version is extracted from the NVM path segment {@code /node/vN/} or {@code /node/vN.M.P/}.
+     * If the path does not contain a recognisable version number, the check is skipped silently.
+     */
+    @VisibleForTesting
+    static void checkNvmVersion(@NotNull String binaryPath, int minVersion) throws ClientException {
+        Matcher m = NVM_NODE_VERSION_PATTERN.matcher(binaryPath);
+        if (!m.find()) return;
+        int major = Integer.parseInt(m.group(1));
+        if (major < minVersion) {
+            throw new ClientException(
+                "GitHub Copilot requires Node.js v" + minVersion + " or higher. "
+                    + "Currently using Node.js v" + major + " (from NVM). "
+                    + "Update with: nvm install " + minVersion
+                    + " && nvm use " + minVersion
+                    + " && npm install -g @github/copilot-cli",
+                null, false);
+        }
     }
 
     private void addMcpConfigFlag(@NotNull List<String> cmd, int mcpPort) {
@@ -722,33 +734,8 @@ public class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     @NotNull
     public List<Path> getSandboxConfigBinds() {
-        String home = SystemProperties.getUserHome();
-        Path homeDir = Path.of(home);
-        String profileId = profile.getId();
-
-        return switch (profileId) {
-            case "copilot" -> existingPaths(homeDir.resolve(".copilot"),
-                homeDir.resolve(".config/github-copilot"));
-            case "claude-cli" -> existingPaths(homeDir.resolve(".claude"));
-            case "codex" -> existingPaths(homeDir.resolve(".codex"));
-            case "kiro" -> existingPaths(homeDir.resolve(".kiro"));
-            case "hermes" -> existingPaths(homeDir.resolve(".hermes"));
-            // opencode: ~/.config/opencode is the standard config dir (consistent with AcpClient.getSandboxConfigBinds)
-            case "opencode" -> existingPaths(homeDir.resolve(".config/opencode"));
-            // junie uses IDE-level credentials — no extra paths needed
-            default -> List.of();
-        };
-    }
-
-    /**
-     * Returns a new list containing only the paths that exist on disk.
-     */
-    private static List<Path> existingPaths(Path... candidates) {
-        List<Path> result = new ArrayList<>();
-        for (Path p : candidates) {
-            if (p.toFile().exists()) result.add(p);
-        }
-        return result;
+        Path homeDir = Path.of(SystemProperties.getUserHome());
+        return AgentConfig.sandboxConfigBindsForAgentId(profile.getId(), homeDir);
     }
 
 }

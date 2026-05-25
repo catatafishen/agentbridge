@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.sandbox;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.VisibleForTesting;
@@ -35,7 +36,6 @@ public final class BwrapSandbox {
     record InterpreterResolution(String interpreterPath, boolean requiresExplicitCall) {
     }
 
-
     /**
      * Cached availability check; null = not yet checked.
      */
@@ -58,8 +58,8 @@ public final class BwrapSandbox {
     }
 
     /**
-     * Clears the cached availability result, forcing a re-check on the next {@link #isAvailable()} call.
-     * Use this when the system environment may have changed (e.g. bwrap installed or uninstalled).
+     * Clears the cached availability result so the next {@link #isAvailable()} call performs a fresh check.
+     * Use from production code when system state may have changed (e.g., bwrap was installed or removed).
      */
     public static void forceRecheck() {
         available = null;
@@ -214,6 +214,10 @@ public final class BwrapSandbox {
         // instead, and bwrap creates any missing intermediate directories as needed.
         args.addAll(List.of(TMPFS, "/home"));
         args.addAll(List.of(TMPFS, "/root"));
+        String userHome = SystemProperties.getUserHome();
+        if (!userHome.startsWith("/home/") && !userHome.equals("/root")) {
+            args.addAll(List.of(TMPFS, userHome));
+        }
 
         // ── Agent binary (mounted read-only at its exact path) ────────────────
         // Must come AFTER --tmpfs /home and --tmpfs /root so the bind is visible
@@ -305,9 +309,18 @@ public final class BwrapSandbox {
             String interpreterExe = parts[0];
 
             if (interpreterExe.endsWith("/env") && parts.length > 1) {
-                // #!/usr/bin/env PROGRAM — /usr/bin/env is absent from the sandbox, so we must
-                // invoke the interpreter explicitly rather than relying on env resolution.
-                String programName = parts[1].split("\\s+")[0];
+                // #!/usr/bin/env PROGRAM [args] or #!/usr/bin/env -S PROGRAM [args]
+                // Skip any option flags (e.g. -S) before the program name.
+                // /usr/bin/env is absent from the sandbox, so we must invoke the interpreter
+                // explicitly rather than relying on env resolution.
+                String programName = null;
+                for (String arg : parts[1].split("\\s+")) {
+                    if (!arg.startsWith("-")) {
+                        programName = arg;
+                        break;
+                    }
+                }
+                if (programName == null) return null;
                 String resolved = resolveOnShellPath(programName);
                 return resolved != null ? new InterpreterResolution(resolved, true) : null;
             }

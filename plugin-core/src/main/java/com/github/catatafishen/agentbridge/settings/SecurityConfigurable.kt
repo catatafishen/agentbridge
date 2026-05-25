@@ -100,7 +100,7 @@ class SecurityConfigurable(
 
     /**
      * If any agent session is currently running, asks the user whether to restart it now.
-     * If the user declines, a balloon notification explains the setting takes effect on the next restart.
+     * Declining leaves the setting persisted; it takes effect on the next session start.
      */
     private fun offerSessionRestart() {
         val runningManagers = ProjectManager.getInstance().openProjects
