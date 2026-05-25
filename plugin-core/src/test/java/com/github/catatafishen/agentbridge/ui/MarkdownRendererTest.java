@@ -1182,7 +1182,7 @@ class MarkdownRendererTest {
     @Nested
     class EdgeCases {
         @Test
-        void singleAsteriskNotBold() {
+        void singleAsteriskRendersAsItalic() {
             // * with a space is a list item; without space, single-asterisk italics are rendered as <em>
             String html = render("Use *italics* maybe");
             assertTrue(html.contains("<em>italics</em>"), html);

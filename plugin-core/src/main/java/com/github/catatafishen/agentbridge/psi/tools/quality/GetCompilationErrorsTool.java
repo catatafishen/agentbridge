@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
-import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -113,7 +112,6 @@ public final class GetCompilationErrorsTool extends QualityTool {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return false;
 
-        DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getName();
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
         com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx.processHighlights(
@@ -122,8 +120,7 @@ public final class GetCompilationErrorsTool extends QualityTool {
         boolean fileHasErrors = false;
         for (var h : highlights) {
             if (h.getDescription() != null
-                && h.getSeverity() == com.intellij.lang.annotation.HighlightSeverity.ERROR
-                && filter.shouldInclude(h)) {
+                && h.getSeverity() == com.intellij.lang.annotation.HighlightSeverity.ERROR) {
                 int line = doc.getLineNumber(h.getStartOffset()) + 1;
                 errors.add(String.format(FORMAT_LOCATION, relPath, line, "ERROR", h.getDescription()));
                 fileHasErrors = true;

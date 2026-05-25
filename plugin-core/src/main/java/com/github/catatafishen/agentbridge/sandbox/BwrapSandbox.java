@@ -35,6 +35,7 @@ public final class BwrapSandbox {
     record InterpreterResolution(String interpreterPath, boolean requiresExplicitCall) {
     }
 
+
     /**
      * Cached availability check; null = not yet checked.
      */
@@ -54,6 +55,14 @@ public final class BwrapSandbox {
         available = result;
         LOG.info("bwrap sandbox availability: " + result);
         return result;
+    }
+
+    /**
+     * Clears the cached availability result, forcing a re-check on the next {@link #isAvailable()} call.
+     * Use this when the system environment may have changed (e.g. bwrap installed or uninstalled).
+     */
+    public static void forceRecheck() {
+        available = null;
     }
 
     /**
