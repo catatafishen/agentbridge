@@ -1333,6 +1333,10 @@ class ChatToolWindowContent(
 
     private fun handleInputNotEmpty() {
         // First keystroke with text in the input — auto-pause if not already paused.
+        // Skip when no turn is in flight: pausing the agent is meaningless if it isn't
+        // running, and the resulting "Agent is paused while you type" bubble would be
+        // misleading (there's nothing to pause).
+        if (!isSending) return
         if (!pausedByTyping && !userResumedWhileTyping
             && ChatInputSettings.getInstance().isPauseOnInputFocus
         ) {
@@ -1380,13 +1384,6 @@ class ChatToolWindowContent(
 
     private fun onSendStopClicked() {
         val rawText = promptTextArea.text.trim()
-        if (consolePanel.hasPendingAskUserRequest()) {
-            if (rawText.isNotEmpty()) {
-                consolePanel.consumePendingAskUserResponse(rawText)
-                promptTextArea.text = ""
-            }
-            return
-        }
         if (isSending) {
             promptOrchestrator.stop()
             setSendingState(false)
@@ -1564,7 +1561,12 @@ class ChatToolWindowContent(
         isSending = sending
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
+            // Clear typing-pause state so a stale bubble doesn't linger after the turn ends,
+            // and so the next keystroke starts fresh rather than seeing a stuck flag.
+            pausedByTyping = false
+            userResumedWhileTyping = false
             McpPauseService.getInstance(project).setPaused(false)
+            ApplicationManager.getApplication().invokeLater { dismissPauseTypingBubble() }
             restoreUnhandledNudgeIfNeeded()
         }
         ApplicationManager.getApplication().invokeLater {
@@ -1872,7 +1874,7 @@ class ChatToolWindowContent(
             button.toolTipText = presentation.description
             // Direct routing avoids the deprecated AnActionEvent.createFromAnAction.
             button.addActionListener {
-                if (!isSending || consolePanel.hasPendingAskUserRequest()) {
+                if (!isSending) {
                     onSendStopClicked()
                 } else {
                     showSendDropdown(button)
@@ -1894,7 +1896,7 @@ class ChatToolWindowContent(
 
         override fun update(e: AnActionEvent) {
             // Icon colour is handled by adaptiveIcon at paint time — no async delay.
-            if (isSending && !consolePanel.hasPendingAskUserRequest()) {
+            if (isSending) {
                 e.presentation.text = ""
                 e.presentation.description = "Nudge, queue, or stop and send"
             } else {
@@ -1905,7 +1907,7 @@ class ChatToolWindowContent(
         }
 
         override fun actionPerformed(e: AnActionEvent) {
-            if (!isSending || consolePanel.hasPendingAskUserRequest()) {
+            if (!isSending) {
                 onSendStopClicked()
                 return
             }
@@ -2516,9 +2518,7 @@ class ChatToolWindowContent(
         }
         consolePanel.onQuickReply = { text ->
             ApplicationManager.getApplication().invokeLater {
-                if (!consolePanel.consumePendingAskUserResponse(text)) {
-                    sendQuickReply(text)
-                }
+                sendQuickReply(text)
             }
         }
         nativeChatPanel.onRestoreQueuedMessage = { _, text ->
@@ -2650,9 +2650,7 @@ class ChatToolWindowContent(
             ApplicationManager.getApplication().invokeLater { sendPromptDirectly(prompt) }
         }
         ws.setOnQuickReply { text ->
-            ApplicationManager.getApplication().invokeLater {
-                if (!consolePanel.consumePendingAskUserResponse(text)) sendQuickReply(text)
-            }
+            ApplicationManager.getApplication().invokeLater { sendQuickReply(text) }
         }
         ws.setOnNudge { text ->
             ApplicationManager.getApplication().invokeLater {

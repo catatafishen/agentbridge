@@ -16,54 +16,43 @@ class PromptEditorSetupTest {
 
         @Test
         fun `blank prompt returns noop`() {
-            assertEquals("noop", PromptEditorLogic.resolveEnterAction(
-                promptText = "", hasAuthPendingError = false,
-                hasPendingAskUserRequest = false, isSending = false
-            ))
-            assertEquals("noop", PromptEditorLogic.resolveEnterAction(
-                promptText = "   ", hasAuthPendingError = false,
-                hasPendingAskUserRequest = false, isSending = false
-            ))
+            assertEquals(
+                "noop", PromptEditorLogic.resolveEnterAction(
+                    promptText = "", hasAuthPendingError = false, isSending = false
+                )
+            )
+            assertEquals(
+                "noop", PromptEditorLogic.resolveEnterAction(
+                    promptText = "   ", hasAuthPendingError = false, isSending = false
+                )
+            )
         }
 
         @Test
         fun `auth pending error returns noop`() {
-            assertEquals("noop", PromptEditorLogic.resolveEnterAction(
-                promptText = "hello", hasAuthPendingError = true,
-                hasPendingAskUserRequest = false, isSending = false
-            ))
-        }
-
-        @Test
-        fun `pending ask-user request returns send`() {
-            assertEquals("send", PromptEditorLogic.resolveEnterAction(
-                promptText = "yes", hasAuthPendingError = false,
-                hasPendingAskUserRequest = true, isSending = false
-            ))
+            assertEquals(
+                "noop", PromptEditorLogic.resolveEnterAction(
+                    promptText = "hello", hasAuthPendingError = true, isSending = false
+                )
+            )
         }
 
         @Test
         fun `is sending returns nudge`() {
-            assertEquals("nudge", PromptEditorLogic.resolveEnterAction(
-                promptText = "follow up", hasAuthPendingError = false,
-                hasPendingAskUserRequest = false, isSending = true
-            ))
-        }
-
-        @Test
-        fun `pending ask-user takes precedence over is sending`() {
-            assertEquals("send", PromptEditorLogic.resolveEnterAction(
-                promptText = "y", hasAuthPendingError = false,
-                hasPendingAskUserRequest = true, isSending = true
-            ))
+            assertEquals(
+                "nudge", PromptEditorLogic.resolveEnterAction(
+                    promptText = "follow up", hasAuthPendingError = false, isSending = true
+                )
+            )
         }
 
         @Test
         fun `normal send when idle with text`() {
-            assertEquals("send", PromptEditorLogic.resolveEnterAction(
-                promptText = "hello world", hasAuthPendingError = false,
-                hasPendingAskUserRequest = false, isSending = false
-            ))
+            assertEquals(
+                "send", PromptEditorLogic.resolveEnterAction(
+                    promptText = "hello world", hasAuthPendingError = false, isSending = false
+                )
+            )
         }
     }
 

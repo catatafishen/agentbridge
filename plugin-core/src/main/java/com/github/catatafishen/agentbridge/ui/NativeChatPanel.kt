@@ -999,9 +999,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         panel.add(JBLabel("<html>$question</html>"), BorderLayout.NORTH)
 
         val buttons = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
-        options.forEach { opt ->
-            buttons.add(JButton(opt).apply { addActionListener { onRespond(opt) } })
-        }
+        val buttonComponents = mutableListOf<JButton>()
 
         val countdownLabel = JBLabel().apply {
             foreground = UIUtil.getContextHelpForeground()
@@ -1010,23 +1008,54 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         val extendButton = JButton("I need more time").apply {
             applyChatFont(-1)
-            addActionListener {
-                val newDeadline = onExtend()
-                putClientProperty("deadline", newDeadline)
-            }
         }
         extendButton.putClientProperty("deadline", deadlineEpochMs)
 
-        val countdownTimer = Timer(1000) {
+        val countdownTimer = Timer(1000, null).apply { isRepeats = true }
+
+        // Single point of completion: stop timer, disable buttons, mark row as resolved
+        // so a late click can't fire a second response. Removing the row would change the
+        // chat scroll height after the fact, so we keep it as a static history entry.
+        val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
+        val completeOnce: (String?) -> Unit = { answer ->
+            if (resolved.compareAndSet(false, true)) {
+                countdownTimer.stop()
+                buttonComponents.forEach { it.isEnabled = false }
+                extendButton.isEnabled = false
+                if (answer != null) {
+                    countdownLabel.text = "✓ Answered: $answer"
+                    onRespond(answer)
+                } else {
+                    onSuperseded()
+                }
+                panel.revalidate()
+                panel.repaint()
+            }
+        }
+
+        options.forEach { opt ->
+            val btn = JButton(opt).apply { addActionListener { completeOnce(opt) } }
+            buttonComponents.add(btn)
+            buttons.add(btn)
+        }
+
+        extendButton.addActionListener {
+            if (resolved.get()) return@addActionListener
+            val newDeadline = onExtend()
+            extendButton.putClientProperty("deadline", newDeadline)
+        }
+
+        countdownTimer.addActionListener {
+            if (resolved.get()) return@addActionListener
             val dl = (extendButton.getClientProperty("deadline") as? Long) ?: deadlineEpochMs
             val remaining = (dl - System.currentTimeMillis()) / 1000
             if (remaining <= 0) {
                 countdownLabel.text = "⏱ Time expired"
-                onSuperseded()
+                completeOnce(null)
             } else {
                 countdownLabel.text = "⏱ ${remaining}s remaining"
             }
-        }.apply { isRepeats = true }
+        }
 
         val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply { isOpaque = false }
         bottomRow.add(buttons)
@@ -1036,11 +1065,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         panel.add(bottomRow, BorderLayout.SOUTH)
         addRow(panel)
         countdownTimer.start()
-    }
-
-    override fun hasPendingAskUserRequest(): Boolean = false
-    override fun consumePendingAskUserResponse(response: String): Boolean = false
-    override fun clearPendingAskUserRequest(reqId: String?) { /* Ask-user state is managed by JCEF panel only */
     }
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()

@@ -152,7 +152,6 @@ internal class PromptEditorSetup(
                 when (PromptEditorLogic.resolveEnterAction(
                     promptTextArea.text,
                     callbacks.authPendingError != null,
-                    callbacks.consolePanel.hasPendingAskUserRequest(),
                     callbacks.isSending
                 )) {
                     "send" -> callbacks.onSendOrStop()

@@ -7,23 +7,14 @@ package com.github.catatafishen.agentbridge.ui
  */
 object PromptEditorLogic {
 
-    /**
-     * Determines which action the Enter key should trigger based on current state.
-     * @return one of: "send", "nudge", or "noop"
-     */
     @JvmStatic
     fun resolveEnterAction(
         promptText: String,
         hasAuthPendingError: Boolean,
-        hasPendingAskUserRequest: Boolean,
         isSending: Boolean
     ): String {
         if (promptText.isBlank() || hasAuthPendingError) return "noop"
-        return when {
-            hasPendingAskUserRequest -> "send"
-            isSending -> "nudge"
-            else -> "send"
-        }
+        return if (isSending) "nudge" else "send"
     }
 
     /**
