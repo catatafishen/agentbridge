@@ -245,34 +245,32 @@ public interface AgentConfig {
 
     /**
      * Returns the conventional auth/config paths that a sandboxed agent with the given
-     * {@code agentId} needs read-only access to. Paths that do not exist on disk are silently skipped.
+     * {@code agentId} needs writable access to inside the bwrap sandbox.
+     *
+     * <p>Paths are returned unconditionally — callers are responsible for pre-creating
+     * them on the host before binding (see {@link com.github.catatafishen.agentbridge.sandbox.BwrapSandbox#wrap}). This is intentional:
+     * filtering out non-existent paths prevents tokens from being persisted on first
+     * authentication, because the CLI would write to the ephemeral tmpfs instead of the
+     * host filesystem.</p>
      *
      * <p>Both {@link com.github.catatafishen.agentbridge.client.acp.AcpClient} and
      * {@link ProfileBasedAgentConfig} delegate to this method so the mapping stays in one place.</p>
      *
      * @param agentId the agent identifier (e.g., "copilot", "claude-cli")
      * @param homeDir the user home directory to resolve paths against
-     * @return list of existing paths; empty list if the agent has no conventional config dirs
+     * @return list of paths to bind writably; empty list if the agent has no conventional config dirs
      */
     @NotNull
     static List<Path> sandboxConfigBindsForAgentId(String agentId, Path homeDir) {
         return switch (agentId) {
-            case "copilot" -> existingSandboxConfigPaths(homeDir.resolve(".copilot"),
+            case "copilot" -> List.of(homeDir.resolve(".copilot"),
                 homeDir.resolve(".config/github-copilot"));
-            case "claude-cli" -> existingSandboxConfigPaths(homeDir.resolve(".claude"));
-            case "codex" -> existingSandboxConfigPaths(homeDir.resolve(".codex"));
-            case "kiro" -> existingSandboxConfigPaths(homeDir.resolve(".kiro"));
-            case "hermes" -> existingSandboxConfigPaths(homeDir.resolve(".hermes"));
-            case "opencode" -> existingSandboxConfigPaths(homeDir.resolve(".config/opencode"));
+            case "claude-cli" -> List.of(homeDir.resolve(".claude"));
+            case "codex" -> List.of(homeDir.resolve(".codex"));
+            case "kiro" -> List.of(homeDir.resolve(".kiro"));
+            case "hermes" -> List.of(homeDir.resolve(".hermes"));
+            case "opencode" -> List.of(homeDir.resolve(".config/opencode"));
             default -> List.of();
         };
-    }
-
-    private static List<Path> existingSandboxConfigPaths(Path... candidates) {
-        List<Path> result = new ArrayList<>();
-        for (Path p : candidates) {
-            if (p.toFile().exists()) result.add(p);
-        }
-        return result;
     }
 }
