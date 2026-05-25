@@ -100,6 +100,19 @@ public final class GetHighlightsTool extends QualityTool {
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : 0;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : 0;
 
+        // Normalize: end_line without start_line → treat start_line as 1
+        if (endLine > 0 && startLine == 0) {
+            startLine = 1;
+        }
+        if (startLine < 0 || endLine < 0) {
+            return "Error: start_line and end_line must be positive (1-based) line numbers.";
+        }
+        if (endLine > 0 && startLine > endLine) {
+            return "Error: Invalid range — start_line (" + startLine + ") > end_line (" + endLine + "). Lines are 1-based.";
+        }
+        final int startLineFinal = startLine;
+        final int endLineFinal = endLine;
+
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
         }
@@ -117,7 +130,7 @@ public final class GetHighlightsTool extends QualityTool {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                getHighlightsCached(pathStr, limit, includeUnindexed, startLine, endLine, resultFuture);
+                getHighlightsCached(pathStr, limit, includeUnindexed, startLineFinal, endLineFinal, resultFuture);
             } catch (Exception e) {
                 LOG.error("Error getting highlights", e);
                 resultFuture.complete("Error getting highlights: " + e.getMessage());

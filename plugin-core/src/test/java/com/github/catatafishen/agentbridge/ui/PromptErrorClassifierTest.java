@@ -303,8 +303,10 @@ class PromptErrorClassifierTest {
             "Agent process exited unexpectedly: (node:2) Warning: To load an ES module, " +
                 "set \"type\": \"module\" in the package.json or use the .mjs extension.");
         var result = classify(ex, false, NO_AUTH, true);
-        assertTrue(result.getDisplayMessage().contains("upgrade Node.js"),
-            "Expected actionable upgrade message, got: " + result.getDisplayMessage());
+        assertTrue(result.getDisplayMessage().contains("package.json"),
+            "Expected message to mention package.json, got: " + result.getDisplayMessage());
+        assertTrue(result.getDisplayMessage().contains("reinstalling the CLI"),
+            "Expected actionable reinstall message, got: " + result.getDisplayMessage());
     }
 
     @Test
@@ -313,15 +315,17 @@ class PromptErrorClassifierTest {
             "To load an ES module, set \"type\": \"module\" in the package.json");
         var wrapper = new RuntimeException("Agent process exited unexpectedly: ...", nodeEx);
         var result = classify(wrapper, false, NO_AUTH, true);
-        assertTrue(result.getDisplayMessage().contains("upgrade Node.js"),
-            "Expected actionable upgrade message, got: " + result.getDisplayMessage());
+        assertTrue(result.getDisplayMessage().contains("package.json"),
+            "Expected message to mention package.json, got: " + result.getDisplayMessage());
+        assertTrue(result.getDisplayMessage().contains("reinstalling the CLI"),
+            "Expected actionable reinstall message, got: " + result.getDisplayMessage());
     }
 
     @Test
     void classify_unrelatedProcessCrash_doesNotTriggerEsModuleMessage() {
         var ex = new IOException("Agent process exited unexpectedly: signal 9");
         var result = classify(ex, false, NO_AUTH, true);
-        assertFalse(result.getDisplayMessage().contains("upgrade Node.js"),
+        assertFalse(result.getDisplayMessage().contains("package.json"),
             "ES module message should not appear for unrelated crash");
     }
 
