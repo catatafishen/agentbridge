@@ -238,4 +238,50 @@ class BwrapSandboxTest {
         assertEquals("/tmp", bwrapArgs.get(chDirIdx + 1),
             "--chdir must be set to /tmp so the process starts in a valid sandbox directory");
     }
+
+    // ─── package.json directory binding ─────────────────────────────────────────
+
+    @Test
+    void packageDirBoundWhenPackageJsonPresent() throws IOException {
+        // When the agent binary lives next to a package.json (e.g. a Node.js package),
+        // bwrap must bind the entire parent directory — not just the binary file.
+        // Node.js walks up from the script's directory to find package.json and determine
+        // whether the file is ESM or CommonJS. Binding only the binary leaves that search
+        // with nothing to find, causing "To load an ES module, set 'type': 'module'" errors.
+        Path pkgDir = tempDir.resolve("mypkg");
+        Files.createDirectory(pkgDir);
+        Files.writeString(pkgDir.resolve("package.json"), "{\"type\":\"module\"}");
+        Path script = pkgDir.resolve("index.js");
+        Files.writeString(script, "#!/usr/bin/env node\nexport default {};\n");
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            script.toString(), List.of(), List.of(script.toString()), null);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        assertTrue(bwrapArgs.contains(pkgDir.toString()),
+            "Package directory must be bound (not just the binary) when package.json is present");
+        assertFalse(bwrapArgs.contains(script.toString()),
+            "Binary file path alone must NOT appear as a bind when the package directory is bound");
+    }
+
+    @Test
+    void singleBinaryBoundWhenNoPackageJson() throws IOException {
+        // When the binary has no adjacent package.json (e.g. a compiled ELF binary),
+        // the binary file itself is bound — no directory bind.
+        Path elfBinary = tempDir.resolve("agent");
+        Files.write(elfBinary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
+
+        List<String> wrapped = BwrapSandbox.buildWrappedCommandWithResolution(
+            elfBinary.toString(), List.of(), List.of(elfBinary.toString()), null);
+
+        int dashDash = wrapped.indexOf("--");
+        List<String> bwrapArgs = wrapped.subList(0, dashDash);
+
+        assertTrue(bwrapArgs.contains(elfBinary.toString()),
+            "Binary file path must be bound directly when no package.json is present");
+        assertFalse(bwrapArgs.contains(tempDir.toString()),
+            "Parent directory must NOT be bound when no package.json is present");
+    }
 }

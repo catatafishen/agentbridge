@@ -99,10 +99,24 @@ public final class BwrapSandbox {
                     "Install bubblewrap: https://github.com/containers/bubblewrap");
         }
 
-        InterpreterResolution resolution = detectInterpreterResolution(agentBinaryPath);
-        List<String> original = pb.command();
-        pb.command(buildWrappedCommandWithResolution(agentBinaryPath, configBinds, original, resolution));
+        // Resolve symlinks so the command and mounts use the real path. Script runtimes
+        // (e.g. Node.js) determine module type (ESM vs CJS) by walking up from the script
+        // file's directory to find package.json. If we pass the symlink path, Node looks
+        // in the symlink's parent instead of the real package directory and cannot find it.
+        String realBinaryPath = resolveSymlink(agentBinaryPath);
+        List<String> pbCommand = pb.command();
+        List<String> commandForSandbox;
+        if (!realBinaryPath.equals(agentBinaryPath) && !pbCommand.isEmpty()) {
+            commandForSandbox = new ArrayList<>(pbCommand);
+            commandForSandbox.set(0, realBinaryPath);
+        } else {
+            commandForSandbox = pbCommand;
+        }
+
+        InterpreterResolution resolution = detectInterpreterResolution(realBinaryPath);
+        pb.command(buildWrappedCommandWithResolution(realBinaryPath, configBinds, commandForSandbox, resolution));
         LOG.info("Agent sandboxed with bwrap: " + agentBinaryPath
+            + (realBinaryPath.equals(agentBinaryPath) ? "" : " → " + realBinaryPath)
             + " | configBinds=" + configBinds.size()
             + " | interpreter=" + (resolution != null ? resolution.interpreterPath() : null)
             + " | explicitCall=" + (resolution != null && resolution.requiresExplicitCall()));
@@ -124,7 +138,15 @@ public final class BwrapSandbox {
                 "bwrap sandbox requested but bwrap is not available on this system. " +
                     "Install bubblewrap: https://github.com/containers/bubblewrap");
         }
-        return buildWrappedCommand(agentBinaryPath, configBinds, command);
+        String realBinaryPath = resolveSymlink(agentBinaryPath);
+        List<String> resolvedCommand;
+        if (!realBinaryPath.equals(agentBinaryPath) && !command.isEmpty()) {
+            resolvedCommand = new ArrayList<>(command);
+            resolvedCommand.set(0, realBinaryPath);
+        } else {
+            resolvedCommand = command;
+        }
+        return buildWrappedCommand(realBinaryPath, configBinds, resolvedCommand);
     }
 
     @VisibleForTesting
@@ -219,10 +241,20 @@ public final class BwrapSandbox {
             args.addAll(List.of(TMPFS, userHome));
         }
 
-        // ── Agent binary (mounted read-only at its exact path) ────────────────
+        // ── Agent binary (mounted read-only) ─────────────────────────────────
         // Must come AFTER --tmpfs /home and --tmpfs /root so the bind is visible
         // even when the binary lives under a user home directory (e.g. ~/.nvm/...).
-        roBind(args, agentBinaryPath);
+        //
+        // When the binary is part of an npm package (package.json in the same directory),
+        // bind the entire package directory. Node.js resolves module type (ESM vs CommonJS)
+        // by searching for package.json from the script's directory — binding only the binary
+        // file would leave that search with nothing to find.
+        Path binaryParent = Path.of(agentBinaryPath).getParent();
+        if (binaryParent != null && Files.exists(binaryParent.resolve("package.json"))) {
+            roBind(args, binaryParent.toString());
+        } else {
+            roBind(args, agentBinaryPath);
+        }
 
         // ── Runtime interpreter (e.g., Node.js for CLI agents) ────────────────
         // Must also come after the tmpfs mounts for the same reason.
@@ -350,6 +382,19 @@ public final class BwrapSandbox {
             }
         }
         return null;
+    }
+
+    /**
+     * Resolves symlinks in the given binary path to its canonical real path.
+     * Returns the input unchanged if resolution fails.
+     */
+    private static String resolveSymlink(@NotNull String binaryPath) {
+        try {
+            return Path.of(binaryPath).toRealPath().toString();
+        } catch (IOException e) {
+            LOG.warn("Could not resolve symlink for " + binaryPath + ": " + e.getMessage());
+            return binaryPath;
+        }
     }
 
     private static boolean detectBwrap() {
