@@ -12,12 +12,7 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTabbedPane
-import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.bindSelected
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.UIUtil
 import java.io.File
 import javax.swing.JComponent
@@ -35,7 +30,6 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "GitHub Copilot",
-        testedWithSandbox = true,
         binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
         binaryNameProvider = { "copilot" },
     )

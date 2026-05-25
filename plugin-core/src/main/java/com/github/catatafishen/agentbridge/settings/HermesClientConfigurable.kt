@@ -26,7 +26,6 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "Hermes",
-        testedWithSandbox = false,
         binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
         binaryNameProvider = { "hermes" },
     )

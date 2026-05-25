@@ -7,16 +7,11 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
-import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.AlignY
-import com.intellij.ui.dsl.builder.RowLayout
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import com.intellij.ui.components.JBScrollPane
 import java.awt.Font
 
 @Suppress("unused")
@@ -32,7 +27,6 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
     private val sandboxSection = SandboxSettingsSection(
         agentId = AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
         displayName = "Claude CLI",
-        testedWithSandbox = false,
         binaryPathProvider = { profile()?.customBinaryPath },
         binaryNameProvider = { "claude" },
     )

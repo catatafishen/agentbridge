@@ -11,11 +11,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.bindIntValue
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.UIUtil
 
 @Suppress("unused")
@@ -28,7 +24,6 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "Kiro",
-        testedWithSandbox = false,
         binaryPathProvider = { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID) },
         binaryNameProvider = { "kiro-cli" },
     )

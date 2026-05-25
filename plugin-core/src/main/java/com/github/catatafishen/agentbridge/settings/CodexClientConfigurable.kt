@@ -27,7 +27,6 @@ class CodexClientConfigurable(private val project: Project) :
     private val sandboxSection = SandboxSettingsSection(
         agentId = PROFILE_ID,
         displayName = "Codex",
-        testedWithSandbox = false,
         binaryPathProvider = {
             binaryPathField?.text?.takeIf { it.isNotBlank() }
                 ?: AgentProfileManager.getInstance().loadBinaryPath(PROFILE_ID)
@@ -135,11 +134,13 @@ class CodexClientConfigurable(private val project: Project) :
                 when {
                     os.contains("win") ->
                         ProcessBuilder("cmd", "/c", "start", "cmd", "/k", cmd).start()
+
                     os.contains("mac") ->
                         ProcessBuilder(
                             "osascript", "-e",
                             "tell application \"Terminal\" to do script \"$cmd\""
                         ).start()
+
                     else -> ProcessBuilder(
                         "sh", "-c",
                         "x-terminal-emulator -e '$cmd' || gnome-terminal -- bash -c '$cmd' " +
@@ -165,5 +166,6 @@ class CodexClientConfigurable(private val project: Project) :
 }
 
 private const val CHECKING = "Checking…"
+
 // Mirrors CodexClient.PROFILE_ID (kept in sync; cannot reference the Java constant from a const val).
 private const val PROFILE_ID = "codex"
