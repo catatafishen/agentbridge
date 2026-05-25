@@ -2,10 +2,13 @@ package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox
 import com.github.catatafishen.agentbridge.sandbox.SandboxSettings
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.ui.Messages
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
@@ -70,8 +73,15 @@ class SecurityConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     }
 
     override fun isModified(): Boolean = configPanel?.isModified() == true
+
     override fun apply() {
+        val sandboxWasEnabled = SandboxSettings.isSandboxEnabled()
         configPanel?.apply()
+        val sandboxIsNowEnabled = SandboxSettings.isSandboxEnabled()
+
+        if (sandboxWasEnabled != sandboxIsNowEnabled) {
+            offerSessionRestart()
+        }
     }
 
     override fun reset() {
@@ -81,6 +91,43 @@ class SecurityConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
 
     override fun disposeUIResources() {
         configPanel = null
+    }
+
+    /**
+     * If any agent session is currently running, asks the user whether to restart it now.
+     * If the user declines, a balloon notification explains the setting takes effect on the next restart.
+     */
+    private fun offerSessionRestart() {
+        val runningManagers = ProjectManager.getInstance().openProjects
+            .asSequence()
+            .map { ActiveAgentManager.getInstance(it) }
+            .filter { it.clientIfRunning != null }
+            .toList()
+
+        if (runningManagers.isEmpty()) return
+
+        val projectCount = runningManagers.size
+        val message = if (projectCount == 1) {
+            "The sandbox setting was changed. The active agent session must be restarted to apply it.\n\nRestart the session now?"
+        } else {
+            "The sandbox setting was changed. $projectCount active agent sessions must be restarted to apply it.\n\nRestart the sessions now?"
+        }
+
+        val choice = Messages.showYesNoDialog(
+            message,
+            "Agent Sandbox Setting Changed",
+            "Restart Now",
+            "Later",
+            Messages.getQuestionIcon()
+        )
+
+        if (choice == Messages.YES) {
+            ApplicationManager.getApplication().invokeLater {
+                runningManagers.forEach { it.restart() }
+            }
+        }
+        // If the user picks "Later", the setting is already persisted and will take effect
+        // on the next session start — no extra action needed.
     }
 
     private fun refreshBwrapStatusAsync() {
