@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -97,6 +98,11 @@ public final class PromptUserTool extends InfrastructureTool {
         final long[] deadlineMs = {System.currentTimeMillis() + RESPONSE_TIMEOUT_MS};
         String reqId = UUID.randomUUID().toString();
 
+        // Register so that an agent-process crash can unblock the waiter immediately rather than
+        // leaving this pooled thread stuck for the full 2-minute timeout (see issue #749).
+        InFlightMcpToolRegistry registry = InFlightMcpToolRegistry.getInstance(project);
+        registry.register(reqId, responseFuture);
+
         EdtUtil.invokeLater(() -> showAskUserRequestCompat(panel, reqId, question, options, deadlineMs, responseFuture));
 
         try {
@@ -107,6 +113,7 @@ public final class PromptUserTool extends InfrastructureTool {
         } catch (ExecutionException e) {
             return "Error: failed to read user response";
         } finally {
+            registry.unregister(reqId);
             EdtUtil.invokeLater(() -> panel.clearPendingAskUserRequest(reqId));
         }
     }
@@ -196,6 +203,9 @@ public final class PromptUserTool extends InfrastructureTool {
                 String result = future.get(remaining, TimeUnit.MILLISECONDS);
                 if ("__cancelled__".equals(result)) {
                     return "Error: ask-user request cancelled (superseded by another request)";
+                }
+                if (InFlightMcpToolRegistry.CANCELLATION_SENTINEL.equals(result)) {
+                    return "Error: agent process exited while waiting for user response";
                 }
                 return result;
             } catch (TimeoutException ignored) {
