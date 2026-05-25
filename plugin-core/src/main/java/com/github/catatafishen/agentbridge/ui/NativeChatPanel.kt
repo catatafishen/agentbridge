@@ -171,6 +171,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         override fun onCorrelated(record: ToolCallRecord) {
             allChips[record.recordId]?.setMcpHandled()
         }
+
+        override fun onAgentCrashed(record: ToolCallRecord, reason: String) {
+            updateToolCall(
+                record.recordId,
+                "failed",
+                ChatPanelApi.ToolCallUpdate(details = reason),
+            )
+        }
     }
 
     private val pauseListener = McpPauseService.PauseListener { state ->

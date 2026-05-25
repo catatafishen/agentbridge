@@ -23,7 +23,9 @@ import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.services.McpServerControl;
+import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
@@ -377,6 +379,17 @@ public abstract class AcpClient extends AbstractClient {
             terminalHandler.releaseAll();
             loadedSessionHistory.set(null);
             updateConsumer.set(null);
+            // Release any in-flight MCP tools (e.g. prompt_user waiters) and mark their chips
+            // as failed so users see a clear failure state instead of a spinner that never
+            // resolves. See issue #749.
+            if (project != null && !project.isDisposed()) {
+                try {
+                    InFlightMcpToolRegistry.getInstance(project).cancelAll("agent process exited");
+                    ToolCallTracker.getInstance(project).failAllInFlight("agent process exited");
+                } catch (Exception e) {
+                    LOG.warn("Failed to release in-flight tools on stop", e);
+                }
+            }
         }
     }
 

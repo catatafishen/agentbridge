@@ -75,6 +75,15 @@ public final class ToolCallTracker {
          */
         default void onFlushed(@NotNull ToolCallRecord callRecord) {
         }
+
+        /**
+         * Agent process exited or crashed while this tool call was still in flight.
+         * Fires before {@link #onFlushed(ToolCallRecord)} for the same record. UI listeners
+         * should transition the chip out of the spinning state into a failed state with
+         * {@code reason} as the displayed details.
+         */
+        default void onAgentCrashed(@NotNull ToolCallRecord callRecord, @NotNull String reason) {
+        }
     }
 
     // ── Live set ─────────────────────────────────────────────────────────────
@@ -399,6 +408,29 @@ public final class ToolCallTracker {
         if (!all.isEmpty()) LOG.debug("ToolCallTracker: cleared " + all.size() + " records");
     }
 
+    /**
+     * Fail every live record because the agent process exited or crashed. Fires
+     * {@link Listener#onAgentCrashed(ToolCallRecord, String)} followed by
+     * {@link Listener#onFlushed(ToolCallRecord)} for each record, then clears all internal
+     * maps. UI listeners use this to transition orphan spinning chips into a failed state.
+     *
+     * @param reason human-readable cause shown to the user in the chip details
+     */
+    public synchronized void failAllInFlight(@NotNull String reason) {
+        if (liveRecords.isEmpty()) return;
+        List<ToolCallRecord> all = new ArrayList<>(liveRecords.values());
+        liveRecords.clear();
+        acpIdToRecordId.clear();
+        toolUseIdToRecordId.clear();
+        acpSequence = 0;
+        for (ToolCallRecord r : all) {
+            r.setState(ToolCallRecord.State.FAILED);
+            fireOnAgentCrashed(r, reason);
+            fireOnFlushed(r);
+        }
+        LOG.info("ToolCallTracker: failed " + all.size() + " in-flight record(s) — " + reason);
+    }
+
     // ── Flush logic ──────────────────────────────────────────────────────────
 
     /**
@@ -544,6 +576,19 @@ public final class ToolCallTracker {
             for (Listener l : listeners) {
                 try {
                     l.onFlushed(callRecord);
+                } catch (Exception e) {
+                    LOG.warn(LISTENER_ERROR_MSG, e);
+                }
+            }
+        });
+    }
+
+    private void fireOnAgentCrashed(@NotNull ToolCallRecord callRecord, @NotNull String reason) {
+        if (listeners.isEmpty()) return;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            for (Listener l : listeners) {
+                try {
+                    l.onAgentCrashed(callRecord, reason);
                 } catch (Exception e) {
                     LOG.warn(LISTENER_ERROR_MSG, e);
                 }

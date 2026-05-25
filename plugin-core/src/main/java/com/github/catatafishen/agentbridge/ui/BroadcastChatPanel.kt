@@ -51,6 +51,14 @@ class BroadcastChatPanel(
         override fun onCorrelated(record: ToolCallRecord) {
             entryStore.markToolCallMcp(record.recordId, record.effectiveToolName)
         }
+
+        override fun onAgentCrashed(record: ToolCallRecord, reason: String) {
+            entryStore.updateToolCall(
+                record.recordId,
+                "failed",
+                ChatPanelApi.ToolCallUpdate(details = reason),
+            )
+        }
     }
 
     init {
