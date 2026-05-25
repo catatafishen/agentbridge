@@ -268,8 +268,19 @@ public final class BwrapSandbox {
 
         // ── Agent config directories (auth tokens, cached credentials) ────────
         // Also after the tmpfs mounts — these dirs live under /home/... too.
+        // WRITABLE bind mounts (not read-only): the agent needs to write auth tokens
+        // when authenticating for the first time or refreshing credentials. With
+        // --ro-bind the CLI sees EACCES and silently writes to the ephemeral tmpfs
+        // instead, which is discarded when bwrap exits — causing a re-auth prompt
+        // on every launch. We use --bind-try (writable) and pre-create the directory
+        // on the host so the bind succeeds even before the first authentication.
         for (Path bind : configBinds) {
-            roBindTry(args, bind.toString());
+            try {
+                Files.createDirectories(bind);
+            } catch (IOException e) {
+                LOG.warn("Could not pre-create config bind dir: " + bind + " — auth may not persist", e);
+            }
+            rwBindTry(args, bind.toString());
         }
 
         // ── Working directory ─────────────────────────────────────────────────
@@ -301,6 +312,15 @@ public final class BwrapSandbox {
      */
     private static void roBindTry(List<String> args, String path) {
         args.add("--ro-bind-try");
+        args.add(path);
+        args.add(path);
+    }
+
+    /**
+     * Adds {@code --bind-try SRC DEST} where SRC == DEST (writable). Silently skipped by bwrap if SRC is absent.
+     */
+    private static void rwBindTry(List<String> args, String path) {
+        args.add("--bind-try");
         args.add(path);
         args.add(path);
     }
