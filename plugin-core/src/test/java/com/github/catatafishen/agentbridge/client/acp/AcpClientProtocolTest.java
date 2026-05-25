@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.client.ClientPromptException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -373,6 +374,56 @@ class AcpClientProtocolTest {
 
             assertEquals(1, client.getAvailableConfigOptions().size());
             assertEquals("model", client.getAvailableConfigOptions().get(0).id());
+        }
+
+        @Test
+        void getAvailableModelsReturnsSnapshotNotLiveView() throws Exception {
+            // Regression: getAvailableModels() must return an immutable snapshot, NOT a
+            // live unmodifiableList view. The ACP agent can be restarted between prompts
+            // (e.g. Copilot --resume) which clears the underlying availableModels list.
+            // If the UI cached a live view it would observe an empty list and hide the
+            // model-dropdown forever. See https://github.com/catatafishen/agentbridge/issues
+            String responseJson = """
+                {
+                  "sessionId": "s1",
+                  "models": {
+                    "availableModels": [
+                      {"modelId": "gpt-4o", "name": "GPT-4o"},
+                      {"modelId": "claude-3-5", "name": "Claude 3.5"}
+                    ],
+                    "currentModelId": "gpt-4o"
+                  }
+                }""";
+            CompletableFuture<JsonElement> future =
+                CompletableFuture.completedFuture(JsonParser.parseString(responseJson));
+            when(mockTransport.sendRequest(eq("session/new"), any())).thenReturn(future);
+
+            client.createSession("/tmp/test");
+            List<Model> cached = client.getAvailableModels();
+            assertEquals(2, cached.size());
+
+            // Simulate the agent being restarted with a different model list — this clears
+            // and re-populates the underlying availableModels list inside the client.
+            String secondResponseJson = """
+                {
+                  "sessionId": "s2",
+                  "models": {
+                    "availableModels": [
+                      {"modelId": "different-model", "name": "Different"}
+                    ],
+                    "currentModelId": "different-model"
+                  }
+                }""";
+            when(mockTransport.sendRequest(eq("session/new"), any())).thenReturn(
+                CompletableFuture.completedFuture(JsonParser.parseString(secondResponseJson)));
+            client.createSession("/tmp/test");
+            assertEquals(1, client.getAvailableModels().size());
+
+            // The previously returned list must NOT have been mutated.
+            assertEquals(2, cached.size(),
+                "getAvailableModels() must return a snapshot — mutating the underlying " +
+                    "list after the fact must not change a previously returned list");
+            assertEquals("gpt-4o", cached.getFirst().id());
         }
     }
 

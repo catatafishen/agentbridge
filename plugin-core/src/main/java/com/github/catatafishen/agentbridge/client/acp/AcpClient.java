@@ -1032,7 +1032,14 @@ public abstract class AcpClient extends AbstractClient {
 
     @Override
     public final List<Model> getAvailableModels() {
-        return Collections.unmodifiableList(availableModels);
+        // Return a defensive snapshot, NOT a live unmodifiableList view.
+        // The ACP agent process can be restarted between prompts (e.g. Copilot exports
+        // and re-launches with --resume after every prompt). When that happens
+        // ActiveAgentManager.start() creates a brand-new client and the old client's
+        // availableModels list is cleared. A live view stored elsewhere in the UI
+        // (e.g. ModelSelectorService.loadedModels) would then become permanently empty,
+        // hiding the model-dropdown until the user manually reconnects.
+        return List.copyOf(availableModels);
     }
 
     @Override
@@ -1042,12 +1049,14 @@ public abstract class AcpClient extends AbstractClient {
 
     @Override
     public final List<AbstractClient.AgentMode> getAvailableModes() {
-        return Collections.unmodifiableList(availableModes);
+        // Defensive snapshot — see getAvailableModels() for rationale.
+        return List.copyOf(availableModes);
     }
 
     @Override
     public final List<String> getAvailableCommands() {
-        return Collections.unmodifiableList(availableCommandNames);
+        // Defensive snapshot — see getAvailableModels() for rationale.
+        return List.copyOf(availableCommandNames);
     }
 
     @Override
@@ -1072,7 +1081,8 @@ public abstract class AcpClient extends AbstractClient {
 
     @Override
     public final List<AbstractClient.AgentConfigOption> getAvailableConfigOptions() {
-        return Collections.unmodifiableList(availableConfigOptions);
+        // Defensive snapshot — see getAvailableModels() for rationale.
+        return List.copyOf(availableConfigOptions);
     }
 
     /**
