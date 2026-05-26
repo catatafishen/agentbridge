@@ -16,6 +16,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.*
 import com.intellij.ui.components.JBCheckBox
@@ -44,6 +45,15 @@ private const val SILENT_TOOLTIP =
     "<html>This tool runs without a permission request — no control available</html>"
 
 private const val PERM_LABEL_WIDTH = 150
+
+/** Optional secondary filter that hides tools by enablement state. */
+private enum class StatusFilter(val label: String) {
+    ALL("All tools"),
+    ENABLED("Enabled only"),
+    DISABLED("Disabled only");
+
+    override fun toString(): String = label
+}
 
 /** Permission batch groups, matching the tool-chip CSS color palette. */
 private enum class KindGroup(val label: String, val description: String) {
@@ -150,6 +160,7 @@ class ToolsConfigurable(private val project: Project) :
     private var counterLabel: JBLabel? = null
     private var filterField: JTextField? = null
     private var hooksOnlyBox: JCheckBox? = null
+    private var statusFilterCombo: ComboBox<StatusFilter>? = null
     private var hookStatusPanel: HookFileStatusPanel? = null
     private var cardsContent: JBPanel<*>? = null
     private var currentNavFilter: (ToolDefinition) -> Boolean = { true }
@@ -283,17 +294,27 @@ class ToolsConfigurable(private val project: Project) :
         }
         hooksOnlyBox = hooksOnly
 
+        val statusCombo = ComboBox(StatusFilter.entries.toTypedArray()).apply {
+            toolTipText = "Filter by enablement state"
+            maximumSize = Dimension(JBUI.scale(160), preferredSize.height)
+            preferredSize = Dimension(JBUI.scale(140), preferredSize.height)
+        }
+        statusFilterCombo = statusCombo
+
         searchField.textEditor.document.addDocumentListener(object : DocumentListener {
             override fun insertUpdate(e: DocumentEvent) = rebuildCards()
             override fun removeUpdate(e: DocumentEvent) = rebuildCards()
             override fun changedUpdate(e: DocumentEvent) = rebuildCards()
         })
         hooksOnly.addItemListener { rebuildCards() }
+        statusCombo.addActionListener { rebuildCards() }
 
         return JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             border = JBUI.Borders.emptyBottom(4)
             add(searchField)
+            add(Box.createHorizontalStrut(JBUI.scale(12)))
+            add(statusCombo)
             add(Box.createHorizontalStrut(JBUI.scale(12)))
             add(hooksOnly)
             add(Box.createHorizontalGlue())
@@ -391,7 +412,6 @@ class ToolsConfigurable(private val project: Project) :
 
     private fun buildSplitter(): JComponent {
         val root = DefaultMutableTreeNode("root")
-        root.add(DefaultMutableTreeNode(NavNode.All))
 
         val plugin = DefaultMutableTreeNode(NavNode.Section(isBuiltIn = false))
         toolRows.values
@@ -399,7 +419,6 @@ class ToolsConfigurable(private val project: Project) :
             .map { it.tool.category() }
             .distinct()
             .forEach { plugin.add(DefaultMutableTreeNode(NavNode.Cat(it, isBuiltIn = false))) }
-        if (plugin.childCount > 0) root.add(plugin)
 
         val builtIn = DefaultMutableTreeNode(NavNode.Section(isBuiltIn = true))
         toolRows.values
@@ -407,7 +426,15 @@ class ToolsConfigurable(private val project: Project) :
             .map { it.tool.category() }
             .distinct()
             .forEach { builtIn.add(DefaultMutableTreeNode(NavNode.Cat(it, isBuiltIn = true))) }
-        if (builtIn.childCount > 0) root.add(builtIn)
+
+        // Only surface "All Tools" when there's more than one source section to
+        // aggregate. With a single section it's redundant with that section.
+        val sections = listOfNotNull(
+            plugin.takeIf { it.childCount > 0 },
+            builtIn.takeIf { it.childCount > 0 },
+        )
+        if (sections.size > 1) root.add(DefaultMutableTreeNode(NavNode.All))
+        sections.forEach { root.add(it) }
 
         val tree = Tree(DefaultTreeModel(root))
         tree.isRootVisible = false
@@ -433,7 +460,8 @@ class ToolsConfigurable(private val project: Project) :
             rebuildCards()
         }
 
-        // Default selection → All Tools
+        // Default selection → first node (All Tools when present, otherwise
+        // the single available source section).
         tree.selectionPath = TreePath(arrayOf(root, root.getChildAt(0)))
 
         val treeScroll = JBScrollPane(tree).apply {
@@ -734,6 +762,7 @@ class ToolsConfigurable(private val project: Project) :
 
         val query = filterField?.text?.trim()?.lowercase(Locale.ROOT) ?: ""
         val hooksOnly = hooksOnlyBox?.isSelected ?: false
+        val statusFilter = statusFilterCombo?.selectedItem as? StatusFilter ?: StatusFilter.ALL
         val hookRegistry = HookRegistry.getInstance(project)
 
         var lastCategory: Category? = null
@@ -749,11 +778,16 @@ class ToolsConfigurable(private val project: Project) :
                 val cfg = hookRegistry.findConfig(tool.id())
                 if (cfg == null || cfg.isEmpty) continue
             }
+            when (statusFilter) {
+                StatusFilter.ENABLED -> if (!row.checkbox.isSelected) continue
+                StatusFilter.DISABLED -> if (row.checkbox.isSelected) continue
+                StatusFilter.ALL -> {}
+            }
             if (tool.category() != lastCategory) {
                 lastCategory = tool.category()
                 cards.add(buildCategoryHeader(tool.category()))
             } else if (shown > 0) {
-                cards.add(Box.createVerticalStrut(JBUI.scale(6)))
+                cards.add(Box.createVerticalStrut(JBUI.scale(12)))
             }
             cards.add(row.card)
             shown++
@@ -773,7 +807,7 @@ class ToolsConfigurable(private val project: Project) :
     private fun buildCategoryHeader(category: Category): JComponent {
         val row = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             alignmentX = Component.LEFT_ALIGNMENT
-            border = JBUI.Borders.empty(8, 0, 2, 0)
+            border = JBUI.Borders.empty(14, 0, 4, 0)
         }
         row.add(TitledSeparator(category.displayName), BorderLayout.CENTER)
 
@@ -813,7 +847,12 @@ class ToolsConfigurable(private val project: Project) :
 
     // ── Counter & batch ───────────────────────────────────────────────────────
 
-    private fun onAnyEnablementChange() = updateCounter()
+    private fun onAnyEnablementChange() {
+        updateCounter()
+        if ((statusFilterCombo?.selectedItem as? StatusFilter ?: StatusFilter.ALL) != StatusFilter.ALL) {
+            rebuildCards()
+        }
+    }
 
     private fun updateCounter() {
         val label = counterLabel ?: return
@@ -914,6 +953,7 @@ class ToolsConfigurable(private val project: Project) :
         counterLabel = null
         filterField = null
         hooksOnlyBox = null
+        statusFilterCombo = null
         hookStatusPanel = null
         cardsContent = null
         toolRows.clear()
