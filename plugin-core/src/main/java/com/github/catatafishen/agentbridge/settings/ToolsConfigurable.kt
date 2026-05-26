@@ -145,6 +145,7 @@ class ToolsConfigurable(private val project: Project) :
     private val toolRows = LinkedHashMap<String, ToolRow>()
     private val categoryRows = LinkedHashMap<Category, MutableList<ToolRow>>()
     private val groupCombos = mutableMapOf<KindGroup, PermissionComboBox>()
+    private var outsideProjectCombo: PermissionComboBox? = null
 
     private var counterLabel: JBLabel? = null
     private var filterField: JTextField? = null
@@ -211,7 +212,7 @@ class ToolsConfigurable(private val project: Project) :
             "Only enable tools you intend to use.</html>"
     ).apply {
         font = JBUI.Fonts.smallFont()
-        foreground = UIUtil.getContextHelpForeground()
+        foreground = UIUtil.getLabelForeground()
         border = JBUI.Borders.emptyBottom(8)
         alignmentX = Component.LEFT_ALIGNMENT
         isAllowAutoWrapping = true
@@ -303,53 +304,89 @@ class ToolsConfigurable(private val project: Project) :
 
     private fun buildQuickPermissionsRow(): JComponent {
         groupCombos.clear()
-        val panel = JBPanel<JBPanel<*>>(GridBagLayout())
-        panel.alignmentX = Component.LEFT_ALIGNMENT
-        panel.border = JBUI.Borders.empty(6, 0, 4, 0)
-
-        val gbc = GridBagConstraints().apply {
-            anchor = GridBagConstraints.WEST
-            fill = GridBagConstraints.HORIZONTAL
-            weightx = 1.0
-            gridwidth = 4
-            gridx = 0; gridy = 0
+        val container = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(6, 0, 4, 0)
         }
-        panel.add(TitledSeparator("Quick Permissions"), gbc)
 
-        gbc.gridy++
-        gbc.gridwidth = 1
-        gbc.fill = GridBagConstraints.NONE
-        gbc.weightx = 0.0
-        gbc.insets = JBUI.insets(4, 0, 2, 0)
+        container.add(TitledSeparator("Quick Permissions").apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        })
 
+        // Kind groups evenly spaced across the row using horizontal glue.
+        val kindRow = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(4, 0, 2, 0)
+        }
         for ((i, group) in KindGroup.entries.withIndex()) {
-            gbc.gridx = i * 2
-            gbc.insets = JBUI.insets(4, if (i == 0) 0 else 16, 2, 6)
-            panel.add(JBLabel(group.label).apply {
+            if (i > 0) kindRow.add(Box.createHorizontalGlue())
+            kindRow.add(buildKindGroupPair(group))
+        }
+        kindRow.add(Box.createHorizontalGlue())
+        kindRow.maximumSize = Dimension(Int.MAX_VALUE, kindRow.preferredSize.height)
+        container.add(kindRow)
+
+        container.add(buildOutsideProjectQuickRow())
+        container.add(buildSecurityNotice())
+
+        container.maximumSize = Dimension(Int.MAX_VALUE, container.preferredSize.height)
+        return container
+    }
+
+    private fun buildKindGroupPair(group: KindGroup): JComponent =
+        JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            add(JBLabel(group.label).apply {
                 toolTipText = group.description
                 icon = ColorDotIcon(group.color(mcpSettings))
-            }, gbc)
-
-            gbc.gridx = i * 2 + 1
-            gbc.insets = JBUI.insets(4, 0, 2, 0)
+                border = JBUI.Borders.emptyRight(6)
+            })
             val combo = PermissionComboBox(PermOption.ALLOW_ASK).apply {
                 selectPermission(computeGroupInitialPermission(group))
-                toolTipText = "<html>Set <b>${group.label}</b> permission for all tools in this group</html>"
+                toolTipText =
+                    "<html>Set <b>${group.label}</b> permission for all tools in this group</html>"
                 addActionListener { applyGroupPermission(group) }
             }
             groupCombos[group] = combo
-            panel.add(combo, gbc)
+            add(combo)
         }
 
-        gbc.gridx = KindGroup.entries.size * 2
-        gbc.weightx = 1.0
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        panel.add(JBPanel<JBPanel<*>>(), gbc)
+    private fun buildOutsideProjectQuickRow(): JComponent =
+        JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(6, 0, 2, 0)
+            add(JBLabel("All actions outside project directory:").apply {
+                icon = AllIcons.Nodes.Folder
+                toolTipText =
+                    "Apply this permission to every path-aware tool's 'Outside project' sub-permission"
+                border = JBUI.Borders.emptyRight(6)
+            })
+            val combo = PermissionComboBox(PermOption.ALL).apply {
+                selectPermission(computeOutsideProjectInitialPermission())
+                toolTipText =
+                    "Set the outside-project sub-permission for every path-aware tool at once"
+                addActionListener { applyOutsideProjectQuickPermission() }
+            }
+            outsideProjectCombo = combo
+            add(combo)
+            add(Box.createHorizontalGlue())
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
 
-        // Cap the max height AFTER children are added so BoxLayout in the top
-        // stack doesn't squash this row to the border-only height (~10px).
-        panel.maximumSize = Dimension(Int.MAX_VALUE, panel.preferredSize.height)
-        return panel
+    private fun buildSecurityNotice(): JComponent = JBLabel(
+        "<html><b>Note:</b> Terminal and <i>Run command</i> tools inherit whatever permissions " +
+            "the IDE process was started with — agents can still bypass these rules via the shell.</html>"
+    ).apply {
+        icon = AllIcons.General.BalloonWarning
+        font = JBUI.Fonts.smallFont()
+        foreground = UIUtil.getLabelForeground()
+        border = JBUI.Borders.empty(4, 0, 4, 0)
+        alignmentX = Component.LEFT_ALIGNMENT
+        isAllowAutoWrapping = true
     }
 
     private fun buildSplitter(): JComponent {
@@ -474,6 +511,7 @@ class ToolsConfigurable(private val project: Project) :
 
         val checkbox = JBCheckBox(tool.displayName(), enabled).apply {
             border = JBUI.Borders.emptyTop(1)
+            isOpaque = false
             addItemListener {
                 onAnyEnablementChange()
                 refreshCardEnabledState(toolId)
@@ -514,6 +552,7 @@ class ToolsConfigurable(private val project: Project) :
             toolTipText = if (enabled) "Permission when agent requests this tool"
             else "This tool is disabled — enable it to control its permission"
             isEnabled = enabled
+            isOpaque = false
         }
 
         if (!tool.supportsPathSubPermissions() || tool.isBuiltIn) {
@@ -529,11 +568,13 @@ class ToolsConfigurable(private val project: Project) :
             isEnabled = enabled && topIsAllow
             selectPermission(uiSettings.getToolPermissionInsideProject(tool.id()))
             toolTipText = subTip(true, topIsAllow)
+            isOpaque = false
         }
         val outCombo = PermissionComboBox(PermOption.ALL).apply {
             isEnabled = enabled && topIsAllow
             selectPermission(uiSettings.getToolPermissionOutsideProject(tool.id()))
             toolTipText = subTip(false, topIsAllow)
+            isOpaque = false
         }
         permCombo.addActionListener {
             val allow = permCombo.selectedPermission() == ToolPermission.ALLOW
@@ -588,7 +629,8 @@ class ToolsConfigurable(private val project: Project) :
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             toolTipText = "Edit hook configuration for this tool"
             foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.empty(0, 6)
+            font = font.deriveFont((JBUI.Fonts.label().size + 4).toFloat())
+            border = JBUI.Borders.empty(0, 8)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent?) =
                     showToolOptionsDialog(toolId, tool.displayName())
@@ -603,51 +645,82 @@ class ToolsConfigurable(private val project: Project) :
             gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL
             card.add(JBLabel("<html>$desc</html>").apply {
                 font = font.deriveFont((JBUI.Fonts.label().size - 1).toFloat())
-                foreground = UIUtil.getContextHelpForeground()
+                foreground = UIUtil.getLabelForeground()
                 border = JBUI.Borders.emptyBottom(2)
                 isAllowAutoWrapping = true
             }, gbc)
             gbc.gridwidth = 1; gbc.weightx = 0.0; gbc.fill = GridBagConstraints.NONE
         }
 
-        // Row 2: permission. Fixed-width label so the combo aligns across all cards.
-        gbc.gridy = 2; gbc.gridx = 0
-        card.add(permLabel("Permission:"), gbc)
-        gbc.gridx = 1; gbc.gridwidth = 3
+        // Row 2 spans the full card: permission sub-panel owns its own column
+        // widths so the combos line up identically across cards regardless of
+        // the card's top-row layout (checkbox/spacer/hook indicator/gear).
+        gbc.gridy = 2; gbc.gridx = 0; gbc.gridwidth = 4
+        gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL
+        card.add(buildPermissionSubPanel(permCombo, inCombo, outCombo), gbc)
+        gbc.gridwidth = 1; gbc.weightx = 0.0; gbc.fill = GridBagConstraints.NONE
+
+        return card
+    }
+
+    /**
+     * Self-contained permission grid for one tool card. Owning its own
+     * GridBagLayout keeps the label column (and therefore the combos) aligned
+     * across cards — independent of whatever the card's top row contains.
+     */
+    private fun buildPermissionSubPanel(
+        permCombo: PermissionComboBox?,
+        inCombo: PermissionComboBox?,
+        outCombo: PermissionComboBox?,
+    ): JComponent {
+        val panel = JBPanel<JBPanel<*>>(GridBagLayout()).apply { isOpaque = false }
+        val pgbc = GridBagConstraints().apply {
+            anchor = GridBagConstraints.WEST
+            fill = GridBagConstraints.NONE
+            insets = JBUI.insets(2, 0, 2, 0)
+            gridy = 0; gridx = 0
+        }
+
+        panel.add(permLabel("Permission:"), pgbc)
+        pgbc.gridx = 1
         if (permCombo != null) {
-            card.add(permCombo, gbc)
+            panel.add(permCombo, pgbc)
         } else {
-            card.add(JBLabel("Runs silently", AllIcons.Actions.Suspend, SwingConstants.LEFT).apply {
+            panel.add(JBLabel("Runs silently", AllIcons.Actions.Suspend, SwingConstants.LEFT).apply {
                 foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 font = JBUI.Fonts.smallFont()
                 toolTipText = SILENT_TOOLTIP
-            }, gbc)
+            }, pgbc)
         }
-        gbc.gridwidth = 1
 
-        // Row 3/4: sub-permissions if path-aware
+        // Trailing glue cell absorbs horizontal space so the combo stays
+        // pinned to the left even though the parent cell stretches.
+        pgbc.gridx = 2; pgbc.weightx = 1.0; pgbc.fill = GridBagConstraints.HORIZONTAL
+        panel.add(JBPanel<JBPanel<*>>().apply { isOpaque = false }, pgbc)
+        pgbc.weightx = 0.0; pgbc.fill = GridBagConstraints.NONE
+
         if (inCombo != null && outCombo != null) {
-            gbc.gridy = 3; gbc.gridx = 0
-            card.add(permLabel("▸ Inside project:", small = true), gbc)
-            gbc.gridx = 1; gbc.gridwidth = 3
-            card.add(inCombo, gbc); gbc.gridwidth = 1
+            pgbc.gridy = 1; pgbc.gridx = 0
+            panel.add(permLabel("▸ Inside project:", small = true), pgbc)
+            pgbc.gridx = 1
+            panel.add(inCombo, pgbc)
 
-            gbc.gridy = 4; gbc.gridx = 0
-            card.add(permLabel("▸ Outside project:", small = true), gbc)
-            gbc.gridx = 1; gbc.gridwidth = 3
-            card.add(outCombo, gbc); gbc.gridwidth = 1
+            pgbc.gridy = 2; pgbc.gridx = 0
+            panel.add(permLabel("▸ Outside project:", small = true), pgbc)
+            pgbc.gridx = 1
+            panel.add(outCombo, pgbc)
         }
-
-        return card
+        return panel
     }
 
     /** Fixed-width permission label so combos align in column across cards. */
     private fun permLabel(text: String, small: Boolean = false): JBLabel = JBLabel(text).apply {
         if (small) {
             font = JBUI.Fonts.smallFont()
-            foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            foreground = UIUtil.getLabelForeground()
             border = JBUI.Borders.empty(1, 16, 1, 8)
         } else {
+            foreground = UIUtil.getLabelForeground()
             border = JBUI.Borders.empty(2, 0, 2, 8)
         }
         preferredSize = Dimension(JBUI.scale(PERM_LABEL_WIDTH), preferredSize.height)
@@ -679,6 +752,8 @@ class ToolsConfigurable(private val project: Project) :
             if (tool.category() != lastCategory) {
                 lastCategory = tool.category()
                 cards.add(buildCategoryHeader(tool.category()))
+            } else if (shown > 0) {
+                cards.add(Box.createVerticalStrut(JBUI.scale(6)))
             }
             cards.add(row.card)
             shown++
@@ -762,6 +837,18 @@ class ToolsConfigurable(private val project: Project) :
         }
     }
 
+    private fun computeOutsideProjectInitialPermission(): ToolPermission {
+        val rows = toolRows.values.mapNotNull { it.outProjectCombo }
+        if (rows.isEmpty()) return ToolPermission.ALLOW
+        val perms = rows.map { it.selectedPermission() }.distinct()
+        return if (perms.size == 1) perms.first() else ToolPermission.ASK
+    }
+
+    private fun applyOutsideProjectQuickPermission() {
+        val perm = outsideProjectCombo?.selectedPermission() ?: return
+        toolRows.values.forEach { row -> row.outProjectCombo?.selectPermission(perm) }
+    }
+
     // ── Persist / modify ──────────────────────────────────────────────────────
 
     private fun computeIsModified(): Boolean {
@@ -818,6 +905,7 @@ class ToolsConfigurable(private val project: Project) :
         for ((group, combo) in groupCombos) {
             combo.selectPermission(computeGroupInitialPermission(group))
         }
+        outsideProjectCombo?.selectPermission(computeOutsideProjectInitialPermission())
         updateCounter()
     }
 
@@ -831,6 +919,7 @@ class ToolsConfigurable(private val project: Project) :
         toolRows.clear()
         categoryRows.clear()
         groupCombos.clear()
+        outsideProjectCombo = null
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

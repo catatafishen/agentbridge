@@ -57,6 +57,16 @@ public abstract class FileTool extends Tool {
     public static final Color HIGHLIGHT_EDIT = new Color(80, 160, 80, 40);
     public static final Color HIGHLIGHT_READ = new Color(80, 120, 200, 35);
 
+    /**
+     * File tools all accept a path argument, so they support the inside-project /
+     * outside-project sub-permission split. Subclasses that don't take a path
+     * (none currently) can override back to {@code false}.
+     */
+    @Override
+    public boolean supportsPathSubPermissions() {
+        return true;
+    }
+
     // ── Deferred auto-format (per-project) ────────────────────────────────────
 
     /**
