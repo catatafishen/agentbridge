@@ -374,10 +374,15 @@ class BroadcastChatPanel(
             nativePanel.onLoadMoreRequested = value
         }
 
-    fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) =
+    fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) {
+        entryStore.insertEntries(entries)
         dispatchUi { nativePanel.appendEntries(entries, totalPromptCount) }
+    }
 
-    fun prependEntries(entries: List<EntryData>) = dispatchUi { nativePanel.prependEntries(entries) }
+    fun prependEntries(entries: List<EntryData>) {
+        entryStore.insertEntries(entries, index = 0)
+        dispatchUi { nativePanel.prependEntries(entries) }
+    }
 
     fun showLoadMore(deferredCount: Int) = dispatchUi { nativePanel.showLoadMore(deferredCount) }
 

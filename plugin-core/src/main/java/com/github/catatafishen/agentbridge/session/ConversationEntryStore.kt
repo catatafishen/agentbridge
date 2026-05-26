@@ -239,6 +239,36 @@ class ConversationEntryStore {
         _entries.add(EntryData.SessionSeparator(timestamp, agent))
     }
 
+    /**
+     * Bulk-inserts entries restored from disk (or any other source) at the given position.
+     *
+     * Use `index = -1` to append to the end (default), or `0` to prepend.
+     * Re-indexes the [_toolCallEntries] and [_subAgentEntries] maps so subsequent updates
+     * (status changes, results) still find their targets after a restore. Does NOT touch
+     * the streaming pointers [_currentText] / [_currentThinking] — restored text/thinking
+     * blocks are treated as finalized.
+     *
+     * Fires a single change-listener notification after the batch is inserted.
+     */
+    fun insertEntries(entries: List<EntryData>, index: Int = -1) {
+        if (entries.isEmpty()) return
+        synchronized(lock) {
+            if (index < 0 || index >= _entries.size) {
+                _entries.addAll(entries)
+            } else {
+                _entries.addAll(index, entries)
+            }
+            for (entry in entries) {
+                when (entry) {
+                    is EntryData.ToolCall -> _toolCallEntries[entry.entryId] = entry
+                    is EntryData.SubAgent -> _subAgentEntries[entry.entryId] = entry
+                    else -> {}
+                }
+            }
+        }
+        fireChanged()
+    }
+
     fun clear() {
         synchronized(lock) {
             _entries.clear()
