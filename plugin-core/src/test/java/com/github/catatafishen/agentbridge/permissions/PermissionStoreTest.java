@@ -230,4 +230,83 @@ class PermissionStoreTest {
         assertTrue(store.isSessionAllowed("tool_0"));
         assertTrue(store.isSessionAllowed("tool_199"));
     }
+
+    // ── path-scope aware persistence ──────────────────────────────────────────
+
+    @Test
+    void setExplicitInsideUsesLegacyKey() {
+        store.setExplicitPermission("read_file", PathScope.INSIDE_PROJECT, ToolPermission.ALLOW);
+
+        assertEquals("ALLOW", properties.getValue(PREFIX + "read_file"));
+        assertNull(properties.getValue(PREFIX + "read_file.outside"));
+    }
+
+    @Test
+    void setExplicitOutsideUsesOutsideSuffix() {
+        store.setExplicitPermission("read_file", PathScope.OUTSIDE_PROJECT, ToolPermission.DENY);
+
+        assertEquals("DENY", properties.getValue(PREFIX + "read_file.outside"));
+        assertNull(properties.getValue(PREFIX + "read_file"));
+    }
+
+    @Test
+    void getExplicitInsideAndOutsideAreIndependent() {
+        store.setExplicitPermission("read_file", PathScope.INSIDE_PROJECT, ToolPermission.ALLOW);
+        store.setExplicitPermission("read_file", PathScope.OUTSIDE_PROJECT, ToolPermission.DENY);
+
+        assertEquals(ToolPermission.ALLOW,
+            store.getExplicitPermission("read_file", PathScope.INSIDE_PROJECT));
+        assertEquals(ToolPermission.DENY,
+            store.getExplicitPermission("read_file", PathScope.OUTSIDE_PROJECT));
+    }
+
+    @Test
+    void notApplicableScopeMapsToLegacyKey() {
+        store.setExplicitPermission("git_commit", PathScope.NOT_APPLICABLE, ToolPermission.DENY);
+
+        assertEquals("DENY", properties.getValue(PREFIX + "git_commit"));
+        assertEquals(ToolPermission.DENY,
+            store.getExplicitPermission("git_commit", PathScope.NOT_APPLICABLE));
+    }
+
+    @Test
+    void removeExplicitOutsideOnlyClearsOutsideKey() {
+        store.setExplicitPermission("read_file", PathScope.INSIDE_PROJECT, ToolPermission.ALLOW);
+        store.setExplicitPermission("read_file", PathScope.OUTSIDE_PROJECT, ToolPermission.DENY);
+
+        store.removeExplicitPermission("read_file", PathScope.OUTSIDE_PROJECT);
+
+        assertEquals(ToolPermission.ALLOW,
+            store.getExplicitPermission("read_file", PathScope.INSIDE_PROJECT));
+        assertNull(store.getExplicitPermission("read_file", PathScope.OUTSIDE_PROJECT));
+    }
+
+    @Test
+    void sessionAllowanceIsScopeIsolated() {
+        store.allowForSession("read_file", PathScope.OUTSIDE_PROJECT);
+
+        assertTrue(store.isSessionAllowed("read_file", PathScope.OUTSIDE_PROJECT));
+        assertFalse(store.isSessionAllowed("read_file", PathScope.INSIDE_PROJECT));
+        // Legacy zero-arg overload targets INSIDE_PROJECT.
+        assertFalse(store.isSessionAllowed("read_file"));
+    }
+
+    @Test
+    void legacyAllowForSessionTargetsInsideScope() {
+        store.allowForSession("read_file");
+
+        assertTrue(store.isSessionAllowed("read_file", PathScope.INSIDE_PROJECT));
+        assertFalse(store.isSessionAllowed("read_file", PathScope.OUTSIDE_PROJECT));
+    }
+
+    @Test
+    void clearSessionPermissionsClearsAllScopes() {
+        store.allowForSession("read_file", PathScope.INSIDE_PROJECT);
+        store.allowForSession("read_file", PathScope.OUTSIDE_PROJECT);
+
+        store.clearSessionPermissions();
+
+        assertFalse(store.isSessionAllowed("read_file", PathScope.INSIDE_PROJECT));
+        assertFalse(store.isSessionAllowed("read_file", PathScope.OUTSIDE_PROJECT));
+    }
 }
