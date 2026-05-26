@@ -970,23 +970,66 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         reqId: String, toolDisplayName: String, description: String,
         onRespond: (PermissionResponse) -> Unit
     ) {
-        val panel = JBPanel<JBPanel<*>>(BorderLayout(0, 4)).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(4, 0)
-            alignmentX = Component.LEFT_ALIGNMENT
+        hideWorkingIndicator()
+        val markdown = buildString {
+            append("🔐 **Permission requested:** `")
+            append(toolDisplayName)
+            append("`")
+            val args = description.trim()
+            if (args.isNotEmpty()) {
+                append("\n\n")
+                val looksLikeJson = (args.startsWith("{") && args.endsWith("}")) ||
+                    (args.startsWith("[") && args.endsWith("]"))
+                if (looksLikeJson) {
+                    append("```json\n").append(args).append("\n```")
+                } else {
+                    append("```\n").append(args).append("\n```")
+                }
+            }
         }
-        panel.add(JBLabel("<html><b>Allow:</b> $toolDisplayName — $description</html>"), BorderLayout.NORTH)
-        val buttons = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
-        listOf(
+        val pane = createMarkdownPane(markdown)
+        val (bubbleRow, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
+            row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        }
+        addRow(bubbleRow)
+
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyLeft(8)
+        }
+        val buttons = mutableListOf<JButton>()
+        var buttonsRow: JComponent? = null
+        val choices = listOf(
             "Deny" to PermissionResponse.DENY,
             "Allow Once" to PermissionResponse.ALLOW_ONCE,
             "Allow Session" to PermissionResponse.ALLOW_SESSION,
             "Allow Always" to PermissionResponse.ALLOW_ALWAYS
-        ).forEach { (text, resp) ->
-            buttons.add(JButton(text).apply { addActionListener { onRespond(resp) } })
+        )
+        choices.forEach { (text, resp) ->
+            val btn = JButton(text).apply {
+                applyChatFont()
+                addActionListener {
+                    buttons.forEach { it.isEnabled = false }
+                    buttonsRow?.let { contentPanel.remove(it) }
+                    contentPanel.revalidate()
+                    contentPanel.repaint()
+                    addUserDecisionBubble(text)
+                    onRespond(resp)
+                }
+            }
+            buttons.add(btn)
+            buttonsPanel.add(btn)
         }
-        panel.add(buttons, BorderLayout.SOUTH)
-        addRow(panel)
+        buttonsRow = addRow(buttonsPanel)
+    }
+
+    private fun addUserDecisionBubble(label: String) {
+        val pane = createMarkdownPane(label)
+        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        }
+        addRow(row)
     }
 
     override fun showAskUserRequest(
@@ -995,16 +1038,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         onExtend: () -> Long, onSuperseded: () -> Unit,
     ) {
         hideWorkingIndicator()
-        val panel = JBPanel<JBPanel<*>>(BorderLayout(0, 4)).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(4, 0)
-            alignmentX = Component.LEFT_ALIGNMENT
+        val pane = createMarkdownPane(question)
+        val (bubbleRow, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
+            row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
-        panel.add(JBLabel("<html>$question</html>"), BorderLayout.NORTH)
+        addRow(bubbleRow)
 
-        val buttons = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
-        val buttonComponents = mutableListOf<JButton>()
-
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
         val countdownLabel = JBLabel().apply {
             foreground = UIUtil.getContextHelpForeground()
             applyChatFont(-1)
@@ -1015,32 +1055,39 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         extendButton.putClientProperty("deadline", deadlineEpochMs)
 
+        val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyLeft(8)
+        }
+
+        val allButtons = mutableListOf<JButton>()
+        allButtons.add(extendButton)
+
         val countdownTimer = Timer(1000, null).apply { isRepeats = true }
         askUserTimers.add(countdownTimer)
 
-        // Single point of completion: stop timer, disable buttons, mark row as resolved
-        // so a late click can't fire a second response. Removing the row would change the
-        // chat scroll height after the fact, so we keep it as a static history entry.
+        var controlsRow: JComponent? = null
+
+        // Single point of completion: stop the timer, disable the buttons, drop the
+        // controls row, and add a user-decision bubble — guarded by an AtomicBoolean
+        // so a late timer tick or a duplicate click can't fire onRespond twice.
         val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
-        val completeOnce: (String?) -> Unit = { answer ->
+        val completeOnce: (String) -> Unit = { answer ->
             if (resolved.compareAndSet(false, true)) {
                 countdownTimer.stop()
                 askUserTimers.remove(countdownTimer)
-                buttonComponents.forEach { it.isEnabled = false }
-                extendButton.isEnabled = false
-                if (answer != null) {
-                    countdownLabel.text = "✓ Answered: $answer"
-                    onRespond(answer)
-                } else {
-                    onSuperseded()
-                }
-                panel.revalidate()
-                panel.repaint()
+                allButtons.forEach { it.isEnabled = false }
+                controlsRow?.let { contentPanel.remove(it) }
+                contentPanel.revalidate()
+                contentPanel.repaint()
+                addUserDecisionBubble(answer)
+                onRespond(answer)
             }
         }
 
         // Called when the UI countdown reaches zero. We deliberately do NOT invoke
-        // onSuperseded() here — that would complete the backend future with a
+        // onSuperseded() here — that would complete the backend future with the
         // "cancelled (superseded)" sentinel that's indistinguishable from an actual
         // supersede. Instead we stop the UI, disable the buttons, and let the backend's
         // own deadline-polling loop (PromptUserTool.awaitWithExtensibleDeadline) time
@@ -1049,24 +1096,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             if (resolved.compareAndSet(false, true)) {
                 countdownTimer.stop()
                 askUserTimers.remove(countdownTimer)
-                buttonComponents.forEach { it.isEnabled = false }
-                extendButton.isEnabled = false
+                allButtons.forEach { it.isEnabled = false }
                 countdownLabel.text = "⏱ Time expired"
-                panel.revalidate()
-                panel.repaint()
+                bottomRow.revalidate()
+                bottomRow.repaint()
             }
-        }
-
-        options.forEach { opt ->
-            val btn = JButton(opt).apply { addActionListener { completeOnce(opt) } }
-            buttonComponents.add(btn)
-            buttons.add(btn)
-        }
-
-        extendButton.addActionListener {
-            if (resolved.get()) return@addActionListener
-            val newDeadline = onExtend()
-            extendButton.putClientProperty("deadline", newDeadline)
         }
 
         countdownTimer.addActionListener {
@@ -1080,13 +1114,29 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
         }
 
-        val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply { isOpaque = false }
-        bottomRow.add(buttons)
+        extendButton.addActionListener {
+            if (resolved.get()) return@addActionListener
+            val newDeadline = onExtend()
+            extendButton.putClientProperty("deadline", newDeadline)
+        }
+
+        // Populate the controls panel BEFORE handing it to addRow so the layout sees
+        // every child on first realization (otherwise dynamic adds after addRow can
+        // leave the option buttons invisible until the next revalidate).
+        options.forEach { opt ->
+            val btn = JButton(opt).apply {
+                applyChatFont()
+                addActionListener { completeOnce(opt) }
+            }
+            allButtons.add(btn)
+            buttonsPanel.add(btn)
+        }
+
+        bottomRow.add(buttonsPanel)
         bottomRow.add(extendButton)
         bottomRow.add(countdownLabel)
+        controlsRow = addRow(bottomRow)
 
-        panel.add(bottomRow, BorderLayout.SOUTH)
-        addRow(panel)
         countdownTimer.start()
     }
 
