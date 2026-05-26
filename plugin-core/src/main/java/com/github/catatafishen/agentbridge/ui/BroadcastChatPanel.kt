@@ -266,6 +266,34 @@ class BroadcastChatPanel(
 
     override fun cancelAllRunning() = dispatchUi { nativePanel.cancelAllRunning() }
 
+    // ── Conversation export ──────────────────────────────────────────
+    //
+    // NativeChatPanel doesn't track entries itself (it just renders Swing components),
+    // so its export methods return empty strings. The canonical entry list lives in
+    // [entryStore], so we run [ConversationExporter] over a snapshot of that instead.
+    //
+    // This is what makes the conversation-history *injection fallback* actually work:
+    // when ACP session/resume isn't supported, AcpClient flips the InjectConversationHistory
+    // flag, and on the next prompt PromptOrchestrator calls getCompressedSummary() to
+    // prepend a compressed history to the user's message. Without these overrides the
+    // summary was always empty and the fallback silently did nothing.
+
+    override fun getConversationText(): String =
+        ConversationExporter(entryStore.entriesSnapshot()).getConversationText()
+
+    override fun getCompressedSummary(maxChars: Int): String =
+        ConversationExporter(entryStore.entriesSnapshot()).getCompressedSummary(maxChars)
+
+    override fun getConversationHtml(): String =
+        ConversationExporter(entryStore.entriesSnapshot()).getConversationHtml()
+
+    override fun getLastResponseText(): String =
+        entryStore.entriesSnapshot()
+            .asReversed()
+            .firstOrNull { it is EntryData.Text }
+            ?.let { (it as EntryData.Text).raw }
+            ?: ""
+
     override fun showNudgeBubble(id: String, text: String, source: NudgeSource) =
         dispatchUi { nativePanel.showNudgeBubble(id, text, source) }
 
