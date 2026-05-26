@@ -222,13 +222,13 @@ public final class CopilotClient extends AcpClient {
             boolean sessionDirExists = Files.isDirectory(sessionDir);
             if (sessionDirExists) {
                 cmd.add("--resume=" + resumeId);
-                LOG.info("Copilot --resume=" + resumeId + " sessionDir=" + sessionDir);
+                LOG.info("Copilot launch: adding --resume=" + resumeId + " (sessionDir=" + sessionDir + ")");
             } else {
-                LOG.info("Copilot: skipping --resume=" + resumeId
-                    + " — session directory " + sessionDir + " does not exist; starting fresh ACP session");
+                LOG.info("Copilot launch: omitting --resume=" + resumeId
+                    + " — session directory " + sessionDir + " does not exist");
             }
         } else {
-            LOG.info("Copilot: no resumeSessionId set, starting fresh ACP session");
+            LOG.info("Copilot launch: no resumeSessionId persisted, omitting --resume");
         }
 
         return cmd;
@@ -250,8 +250,8 @@ public final class CopilotClient extends AcpClient {
             // Defensive guard — callers should check supportsSessionResumption() before calling,
             // but we throw here to surface the error clearly if they don't.
             throw new ClientSessionException(
-                "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
-                    + "The --resume CLI flag is passed at launch but is currently ignored.");
+                "Copilot CLI does not advertise ACP session/resume capability. "
+                    + "Install a newer Copilot CLI version that supports session resumption.");
         }
         try {
             return sendLoadSessionRequest("session/resume", cwd, sessionId);
