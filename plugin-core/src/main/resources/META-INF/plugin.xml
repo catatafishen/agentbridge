@@ -214,9 +214,9 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
 
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.mcp"
-      instance="com.github.catatafishen.agentbridge.settings.ToolPermissionsConfigurable"
-      id="com.github.catatafishen.agentbridge.toolPermissions"
-      displayName="Tool Permissions"/>
+      instance="com.github.catatafishen.agentbridge.settings.McpAppearanceConfigurable"
+      id="com.github.catatafishen.agentbridge.mcp.appearance"
+      displayName="Appearance"/>
 
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.mcp"
