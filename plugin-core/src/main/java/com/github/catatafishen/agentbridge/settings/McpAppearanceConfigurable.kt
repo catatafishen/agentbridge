@@ -71,16 +71,16 @@ class McpAppearanceConfigurable(private val project: Project) :
             isAllowAutoWrapping = true
         })
 
-        readColorCombo = ThemeColorComboBox().also {
+        readColorCombo = ThemeColorComboBox(ThemeColor.TEAL).also {
             it.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
         }
-        searchColorCombo = ThemeColorComboBox().also {
+        searchColorCombo = ThemeColorComboBox(ThemeColor.BLUE).also {
             it.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
         }
-        editColorCombo = ThemeColorComboBox().also {
+        editColorCombo = ThemeColorComboBox(ThemeColor.AMBER).also {
             it.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
         }
-        executeColorCombo = ThemeColorComboBox().also {
+        executeColorCombo = ThemeColorComboBox(ThemeColor.GREEN).also {
             it.selectedThemeColor = ThemeColor.fromKey(settings.kindExecuteColorKey)
         }
         root.add(colorRow("Read & Navigate", readColorCombo!!))

@@ -10,14 +10,24 @@ import java.awt.*;
 
 /**
  * A combo box for picking a {@link ThemeColor}, with a null "Default" option at the top.
- * The selected color is theme-aware: when the IDE theme changes, the swatch automatically
- * reflects the new palette because the underlying {@link JBColor} adapts at paint time.
+ *
+ * <p>The "Default" row shows the actual default color name and swatch (e.g. "Teal (default)"),
+ * so the user can see at a glance what the unset value resolves to. The selected color is
+ * theme-aware: when the IDE theme changes, the swatch automatically reflects the new palette
+ * because the underlying {@link JBColor} adapts at paint time.
  */
 final class ThemeColorComboBox extends ComboBox<ThemeColor> {
 
+    private final @Nullable ThemeColor defaultColor;
+
     ThemeColorComboBox() {
+        this(null);
+    }
+
+    ThemeColorComboBox(@Nullable ThemeColor defaultColor) {
         super(buildItems());
-        setRenderer(new ThemeColorRenderer());
+        this.defaultColor = defaultColor;
+        setRenderer(new ThemeColorRenderer(defaultColor));
         setMaximumRowCount(12);
     }
 
@@ -37,18 +47,31 @@ final class ThemeColorComboBox extends ComboBox<ThemeColor> {
         setSelectedItem(color);
     }
 
+    @SuppressWarnings("unused")
+    @Nullable
+    ThemeColor getDefaultColor() {
+        return defaultColor;
+    }
+
     private static ThemeColor[] buildItems() {
         ThemeColor[] values = ThemeColor.values();
         ThemeColor[] items = new ThemeColor[values.length + 1];
-        // items[0] stays null → rendered as "Default"
+        // items[0] stays null → rendered as "<default name> (default)"
         System.arraycopy(values, 0, items, 1, values.length);
         return items;
     }
 
     /**
-     * Renders a colored swatch alongside the color name.
+     * Renders a colored swatch alongside the color name. The "Default" row shows the
+     * actual default value's name and swatch.
      */
     private static final class ThemeColorRenderer extends DefaultListCellRenderer {
+
+        private final @Nullable ThemeColor defaultColor;
+
+        ThemeColorRenderer(@Nullable ThemeColor defaultColor) {
+            this.defaultColor = defaultColor;
+        }
 
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -56,8 +79,13 @@ final class ThemeColorComboBox extends ComboBox<ThemeColor> {
             JLabel label = (JLabel) super.getListCellRendererComponent(
                 list, value, index, isSelected, cellHasFocus);
             if (value == null) {
-                label.setText("Default");
-                label.setIcon(null);
+                if (defaultColor != null) {
+                    label.setText(defaultColor.getDisplayName() + " (default)");
+                    label.setIcon(new SwatchIcon(defaultColor.getColor()));
+                } else {
+                    label.setText("Default");
+                    label.setIcon(null);
+                }
             } else {
                 ThemeColor tc = (ThemeColor) value;
                 label.setText(tc.getDisplayName());
