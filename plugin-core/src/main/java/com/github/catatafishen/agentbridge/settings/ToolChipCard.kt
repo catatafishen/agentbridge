@@ -2,12 +2,7 @@ package com.github.catatafishen.agentbridge.settings
 
 import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
-import java.awt.BasicStroke
-import java.awt.Color
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.GridBagLayout
-import java.awt.RenderingHints
+import java.awt.*
 
 /**
  * A rounded "chip"-style panel that mirrors the chat-pane tool-chip look:

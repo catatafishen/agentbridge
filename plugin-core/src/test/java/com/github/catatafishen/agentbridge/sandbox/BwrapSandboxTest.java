@@ -274,11 +274,16 @@ class BwrapSandboxTest {
     // ─── project directory binding ─────────────────────────────────────────────
 
     @Test
-    void projectDirMountedAfterHomeTmpfsWhenProvided() throws IOException {
-        // When a projectDir is given, it must appear as --ro-bind-try AFTER the --tmpfs /home
-        // mount so that a project under /home is visible inside the sandbox namespace.
-        // The Copilot CLI validates the cwd parameter on session start; without this mount,
-        // the cwd directory is not visible in the sandbox and the session fails.
+    void projectDirMountedAsEmptyTmpfsAfterHomeTmpfsWhenProvided() throws IOException {
+        // When a projectDir is given, it must appear as --tmpfs AFTER the --tmpfs /home
+        // mount so that the project path is a visible (but EMPTY) directory inside
+        // the sandbox namespace. The Copilot CLI validates the cwd parameter on
+        // session start; without this mount, the cwd is invisible and the session fails.
+        //
+        // It is intentionally an empty tmpfs (not a --ro-bind of the real project
+        // directory): the agent's built-in tools (read_file, grep, bash) must not
+        // be able to read project files directly — all project access must go
+        // through the AgentBridge MCP server, which runs outside the sandbox.
         Path elfBinary = tempDir.resolve("agent");
         Files.write(elfBinary, new byte[]{0x7F, 'E', 'L', 'F', 0, 0, 0, 0});
 
@@ -291,23 +296,30 @@ class BwrapSandboxTest {
         List<String> bwrapArgs = wrapped.subList(0, dashDash);
 
         int homeTmpfsIdx = -1;
-        int projectBindIdx = -1;
+        int projectTmpfsIdx = -1;
+        int projectRoBindIdx = -1;
         for (int i = 0; i < bwrapArgs.size(); i++) {
             if ("--tmpfs".equals(bwrapArgs.get(i)) && i + 1 < bwrapArgs.size()
                 && "/home".equals(bwrapArgs.get(i + 1))) {
                 homeTmpfsIdx = i;
             }
+            if ("--tmpfs".equals(bwrapArgs.get(i)) && i + 1 < bwrapArgs.size()
+                && projectDir.equals(bwrapArgs.get(i + 1))) {
+                projectTmpfsIdx = i;
+            }
             if ("--ro-bind-try".equals(bwrapArgs.get(i)) && i + 1 < bwrapArgs.size()
                 && projectDir.equals(bwrapArgs.get(i + 1))) {
-                projectBindIdx = i;
+                projectRoBindIdx = i;
             }
         }
 
         assertNotEquals(-1, homeTmpfsIdx, "--tmpfs /home must be present in bwrap args");
-        assertNotEquals(-1, projectBindIdx, "--ro-bind-try for projectDir must be present in bwrap args");
-        assertTrue(homeTmpfsIdx < projectBindIdx,
-            "--tmpfs /home (idx=" + homeTmpfsIdx + ") must come before project dir bind (idx="
-                + projectBindIdx + ") so the bind overlays the tmpfs and is visible");
+        assertNotEquals(-1, projectTmpfsIdx, "--tmpfs for projectDir must be present in bwrap args");
+        assertEquals(-1, projectRoBindIdx,
+            "projectDir must NOT be bound read-only — built-in tools could then read project files, bypassing AgentBridge MCP");
+        assertTrue(homeTmpfsIdx < projectTmpfsIdx,
+            "--tmpfs /home (idx=" + homeTmpfsIdx + ") must come before project dir tmpfs (idx="
+                + projectTmpfsIdx + ") so the project tmpfs overlays the home tmpfs and is visible");
     }
 
     @Test
@@ -498,7 +510,7 @@ class BwrapSandboxTest {
     }
 
     @Test
-    void previewCommandIncludesProjectDirReadOnlyBind() throws IOException {
+    void previewCommandIncludesProjectDirEmptyTmpfs() throws IOException {
         Path binary = tempDir.resolve("agent");
         Files.writeString(binary, "#!/bin/sh\n");
         assertTrue(binary.toFile().setExecutable(true));
@@ -508,14 +520,19 @@ class BwrapSandboxTest {
             binary.toString(), List.of(), projectDir,
             List.of(binary.toString()));
 
-        boolean found = false;
+        boolean foundTmpfs = false;
+        boolean foundRoBind = false;
         for (int i = 0; i + 1 < cmd.size(); i++) {
+            if ("--tmpfs".equals(cmd.get(i)) && projectDir.equals(cmd.get(i + 1))) {
+                foundTmpfs = true;
+            }
             if ("--ro-bind-try".equals(cmd.get(i)) && projectDir.equals(cmd.get(i + 1))) {
-                found = true;
-                break;
+                foundRoBind = true;
             }
         }
-        assertTrue(found, "preview should include --ro-bind-try " + projectDir);
+        assertTrue(foundTmpfs, "preview should include --tmpfs " + projectDir);
+        assertFalse(foundRoBind,
+            "preview must NOT bind projectDir read-only — that would expose project files to built-in tools");
     }
 
     @Test

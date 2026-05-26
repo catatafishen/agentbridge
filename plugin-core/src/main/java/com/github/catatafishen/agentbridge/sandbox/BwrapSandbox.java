@@ -389,10 +389,18 @@ public final class BwrapSandbox {
         // accessible directory inside the sandbox namespace. Because /home is hidden
         // by --tmpfs above, project directories under /home would otherwise be
         // invisible to the CLI and cause a "-32603 Directory does not exist" error.
-        // Mount the project directory read-only so the cwd check passes without
-        // exposing other home-directory content to the agent.
+        //
+        // We mount an EMPTY tmpfs at the project path (not a --ro-bind of the
+        // real directory). This satisfies the directory-existence check while
+        // hiding all project contents from the agent's built-in tools (read_file,
+        // grep, bash, etc.). All project access is intentionally funneled through
+        // the AgentBridge MCP server, which runs OUTSIDE the sandbox in the IDE
+        // process and therefore has full host access — so MCP tools still work
+        // exactly as before. The sandbox specifically prevents the agent's own
+        // tools from bypassing the MCP layer (and its permission gating, hooks,
+        // and audit trail) to touch project files directly.
         if (projectDir != null && !projectDir.isBlank()) {
-            roBindTry(args, projectDir);
+            args.addAll(List.of(TMPFS, projectDir));
         }
 
         // ── Working directory ─────────────────────────────────────────────────
