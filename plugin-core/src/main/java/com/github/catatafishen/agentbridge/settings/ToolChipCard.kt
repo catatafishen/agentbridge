@@ -21,7 +21,7 @@ class ToolChipCard(private val kindColor: Color?) : JBPanel<ToolChipCard>(GridBa
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(8, 12)
+        border = JBUI.Borders.empty(10, 14)
     }
 
     @Suppress("UseJBColor")
