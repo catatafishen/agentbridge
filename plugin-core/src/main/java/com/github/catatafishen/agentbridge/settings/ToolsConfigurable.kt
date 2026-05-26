@@ -18,11 +18,7 @@ import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
-import com.intellij.ui.OnePixelSplitter
-import com.intellij.ui.SimpleColoredComponent
-import com.intellij.ui.SimpleTextAttributes
-import com.intellij.ui.TitledSeparator
-import com.intellij.ui.TreeUIHelper
+import com.intellij.ui.*
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -34,36 +30,16 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.BorderLayout
-import java.awt.Color
-import java.awt.Component
-import java.awt.Cursor
-import java.awt.Dimension
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
+import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.util.Locale
+import java.util.*
 import java.util.concurrent.ExecutionException
-import javax.swing.Box
-import javax.swing.BoxLayout
-import javax.swing.JButton
-import javax.swing.JCheckBox
-import javax.swing.JComponent
-import javax.swing.JEditorPane
-import javax.swing.JTextField
-import javax.swing.JTree
-import javax.swing.ScrollPaneConstants
-import javax.swing.SwingConstants
-import javax.swing.SwingWorker
+import javax.swing.*
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import javax.swing.event.HyperlinkEvent
-import javax.swing.tree.DefaultMutableTreeNode
-import javax.swing.tree.DefaultTreeModel
-import javax.swing.tree.TreeCellRenderer
-import javax.swing.tree.TreePath
-import javax.swing.tree.TreeSelectionModel
+import javax.swing.tree.*
 
 private val PERM_OPTIONS = arrayOf("Allow", "Ask")
 private const val SILENT_TOOLTIP =
@@ -93,6 +69,7 @@ private fun ToolDefinition.kindGroup(): KindGroup? = when {
     isReadOnly -> KindGroup.READ
     kind() == ToolDefinition.Kind.EDIT || kind() == ToolDefinition.Kind.WRITE ||
         kind() == ToolDefinition.Kind.DELETE || kind() == ToolDefinition.Kind.MOVE -> KindGroup.EDIT
+
     kind() == ToolDefinition.Kind.EXECUTE -> KindGroup.EXECUTE
     else -> null
 }
@@ -101,7 +78,9 @@ private sealed class NavNode(val label: String) {
     object All : NavNode("All Tools")
     class Section(val isBuiltIn: Boolean) :
         NavNode(if (isBuiltIn) "Built-in Tools" else "Plugin Tools")
+
     class Cat(val category: Category, val isBuiltIn: Boolean) : NavNode(category.displayName)
+
     override fun toString() = label
 }
 
@@ -123,14 +102,17 @@ private class NavTreeCellRenderer : TreeCellRenderer {
                 label.icon = AllIcons.Nodes.ConfigFolder
                 label.append(nav.label, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
+
             is NavNode.Section -> {
                 label.icon = if (nav.isBuiltIn) AllIcons.Nodes.Plugin else AllIcons.Nodes.Module
                 label.append(nav.label, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
+
             is NavNode.Cat -> {
                 label.icon = AllIcons.Nodes.Folder
                 label.append(nav.label, SimpleTextAttributes.REGULAR_ATTRIBUTES)
             }
+
             else -> label.append(value.toString(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
         }
         return label
@@ -224,7 +206,7 @@ class ToolsConfigurable(private val project: Project) :
     private fun buildCounterRow(): JComponent {
         val label = JBLabel().apply {
             alignmentX = Component.LEFT_ALIGNMENT
-            border = JBUI.Borders.emptyBottom(4)
+            border = JBUI.Borders.emptyBottom(2)
         }
         counterLabel = label
         return label
@@ -236,7 +218,7 @@ class ToolsConfigurable(private val project: Project) :
     ).apply {
         font = JBUI.Fonts.smallFont()
         foreground = UIUtil.getContextHelpForeground()
-        border = JBUI.Borders.emptyBottom(6)
+        border = JBUI.Borders.emptyBottom(8)
         alignmentX = Component.LEFT_ALIGNMENT
         isAllowAutoWrapping = true
     }
@@ -293,18 +275,20 @@ class ToolsConfigurable(private val project: Project) :
     }
 
     private fun buildFilterRow(): JComponent {
-        val searchField = JTextField().apply {
+        val searchField = SearchTextField().apply {
+            textEditor.emptyText.text = "Filter tools by name or ID"
             toolTipText = "Filter by tool name or ID"
-            maximumSize = Dimension(JBUI.scale(240), preferredSize.height)
+            maximumSize = Dimension(JBUI.scale(320), preferredSize.height)
+            preferredSize = Dimension(JBUI.scale(280), preferredSize.height)
         }
-        filterField = searchField
+        filterField = searchField.textEditor
         val hooksOnly = JCheckBox("Has hooks").apply {
             toolTipText = "Only show tools with hook configurations"
             isOpaque = false
         }
         hooksOnlyBox = hooksOnly
 
-        searchField.document.addDocumentListener(object : DocumentListener {
+        searchField.textEditor.document.addDocumentListener(object : DocumentListener {
             override fun insertUpdate(e: DocumentEvent) = rebuildCards()
             override fun removeUpdate(e: DocumentEvent) = rebuildCards()
             override fun changedUpdate(e: DocumentEvent) = rebuildCards()
@@ -314,7 +298,6 @@ class ToolsConfigurable(private val project: Project) :
         return JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             border = JBUI.Borders.emptyBottom(4)
-            add(JBLabel("Tool name: ").apply { font = JBUI.Fonts.smallFont() })
             add(searchField)
             add(Box.createHorizontalStrut(JBUI.scale(12)))
             add(hooksOnly)
@@ -329,7 +312,6 @@ class ToolsConfigurable(private val project: Project) :
         val panel = JBPanel<JBPanel<*>>(GridBagLayout())
         panel.alignmentX = Component.LEFT_ALIGNMENT
         panel.border = JBUI.Borders.empty(6, 0, 4, 0)
-        panel.maximumSize = Dimension(Int.MAX_VALUE, panel.preferredSize.height)
 
         val gbc = GridBagConstraints().apply {
             anchor = GridBagConstraints.WEST
@@ -372,6 +354,9 @@ class ToolsConfigurable(private val project: Project) :
         gbc.fill = GridBagConstraints.HORIZONTAL
         panel.add(JBPanel<JBPanel<*>>(), gbc)
 
+        // Cap the max height AFTER children are added so BoxLayout in the top
+        // stack doesn't squash this row to the border-only height (~10px).
+        panel.maximumSize = Dimension(Int.MAX_VALUE, panel.preferredSize.height)
         return panel
     }
 
@@ -863,6 +848,7 @@ class ToolsConfigurable(private val project: Project) :
         ToolDefinition.Kind.SEARCH -> ToolKindColors.searchColor(mcpSettings)
         ToolDefinition.Kind.EDIT, ToolDefinition.Kind.WRITE,
         ToolDefinition.Kind.DELETE, ToolDefinition.Kind.MOVE -> ToolKindColors.editColor(mcpSettings)
+
         ToolDefinition.Kind.EXECUTE -> ToolKindColors.executeColor(mcpSettings)
         else -> ToolKindColors.readColor(mcpSettings)
     }
@@ -942,6 +928,7 @@ private class ColorDotIcon(private val color: Color, private val sizePx: Int = 1
             g2.dispose()
         }
     }
+
     override fun getIconWidth(): Int = JBUI.scale(sizePx)
     override fun getIconHeight(): Int = JBUI.scale(sizePx)
 }
