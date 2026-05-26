@@ -26,26 +26,32 @@ import java.util.Set;
  */
 public final class PathScopeDetector {
 
-    /** Tools whose scope depends on a path argument and the project root. */
+    /**
+     * Tools whose scope depends on a path argument and the project root.
+     */
     public static final Set<String> PATH_BEARING_TOOLS = Set.of(
-            "read_file",
-            "get_file_outline",
-            "find_file",
-            "list_directory_tree",
-            "list_project_files"
+        "read_file",
+        "get_file_outline",
+        "find_file",
+        "list_directory_tree",
+        "list_project_files"
     );
 
-    /** Tools whose scope depends on a {@code scope} string argument. */
+    /**
+     * Tools whose scope depends on a {@code scope} string argument.
+     */
     public static final Set<String> SEARCH_SCOPE_TOOLS = Set.of(
-            "search_text",
-            "search_symbols",
-            "find_references",
-            "find_implementations"
+        "search_text",
+        "search_symbols",
+        "find_references",
+        "find_implementations"
     );
 
-    /** Tools that always operate outside the project. */
+    /**
+     * Tools that always operate outside the project.
+     */
     public static final Set<String> ALWAYS_OUTSIDE_TOOLS = Set.of(
-            "attach_external_dir"
+        "attach_external_dir"
     );
 
     private PathScopeDetector() {
@@ -137,9 +143,32 @@ public final class PathScopeDetector {
     private static boolean isUnder(Path absolute, String rootPath) {
         try {
             Path root = Path.of(rootPath).toAbsolutePath().normalize();
-            return absolute.startsWith(root);
+            // First do a fast lexical check on normalized paths.
+            if (absolute.startsWith(root)) {
+                // Resolve symlinks on both sides where possible: a path that is lexically
+                // under the project root can still resolve (via a symlink) to a real
+                // location outside the project. Treat such paths as OUTSIDE to avoid
+                // applying more-permissive inside-project defaults to a symlink-escape.
+                Path realAbsolute = toRealPathOrNull(absolute);
+                Path realRoot = toRealPathOrNull(root);
+                if (realAbsolute != null && realRoot != null) {
+                    return realAbsolute.startsWith(realRoot);
+                }
+                // Either side doesn't exist yet on disk (or can't be read) — fall back
+                // to the lexical result. Non-existent targets can't be symlink-escapes.
+                return true;
+            }
+            return false;
         } catch (java.nio.file.InvalidPathException e) {
             return false;
+        }
+    }
+
+    private static @Nullable Path toRealPathOrNull(Path p) {
+        try {
+            return p.toRealPath();
+        } catch (java.io.IOException | SecurityException e) {
+            return null;
         }
     }
 }

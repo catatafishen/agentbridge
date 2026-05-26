@@ -78,7 +78,7 @@ class PermissionComboBox(options: Array<PermOption>) : ComboBox<PermOption>(opti
             // index == -1 means "render the currently selected item in the combo button"
             if (index == -1 && !combo.isEnabled) {
                 label.text = "Disabled"
-                label.icon = SwatchIcon(JBColor.gray)
+                label.icon = SwatchIcon(JBColor.GRAY)
                 label.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 return label
             }
