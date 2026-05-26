@@ -5,11 +5,11 @@ import com.github.catatafishen.agentbridge.services.hooks.HookHashRegistry
 import com.github.catatafishen.agentbridge.services.hooks.HookRegistry
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Component
 import java.awt.Dimension
 import javax.swing.Box
 import javax.swing.BoxLayout
@@ -20,12 +20,18 @@ import javax.swing.JPanel
  * Displays the status of each managed hook file and lets the user revert individual files
  * to their bundled plugin defaults.
  *
- * Each row shows the relative filename, a colored status badge (Up to date / Plugin version /
- * Modified / Missing / Unknown), and an optional Revert button for files that can be restored.
+ * Files that require user attention (Modified / Plugin-version / Missing / Unknown) are
+ * always visible. The larger set of up-to-date files is collapsed behind a single
+ * "Show N up-to-date files" link to keep the page focused on what needs action.
+ *
+ * Each visible row shows the relative filename, a colored status badge, and an optional
+ * Revert button for files that can be restored.
  *
  * Call [refresh] after any operation that modifies hook files.
  */
 class HookFileStatusPanel(private val project: Project) : JPanel() {
+
+    private var showUpToDate = false
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -40,16 +46,50 @@ class HookFileStatusPanel(private val project: Project) : JPanel() {
         val storedHashes = HookHashRegistry.load(hooksDir)
         val bundledHashes = HookHashRegistry.loadBundledHashes()
 
-        bundledHashes.keys
+        val entries = bundledHashes.keys
             .filter { !it.endsWith(".history") }
             .sorted()
-            .forEach { filename ->
-                val status = HookHashRegistry.computeFileStatus(filename, hooksDir, storedHashes, bundledHashes)
-                add(buildRow(filename, status))
+            .map { filename ->
+                filename to HookHashRegistry.computeFileStatus(filename, hooksDir, storedHashes, bundledHashes)
             }
+
+        val (upToDate, needsAttention) = entries.partition { (_, status) ->
+            status == HookHashRegistry.FileStatus.UP_TO_DATE
+        }
+
+        // Always show files that need attention first.
+        needsAttention.forEach { (filename, status) -> add(buildRow(filename, status)) }
+
+        if (upToDate.isNotEmpty()) {
+            if (needsAttention.isNotEmpty()) {
+                add(Box.createVerticalStrut(JBUI.scale(4)))
+            }
+            add(buildToggleRow(upToDate.size))
+            if (showUpToDate) {
+                upToDate.forEach { (filename, status) -> add(buildRow(filename, status)) }
+            }
+        }
 
         revalidate()
         repaint()
+    }
+
+    private fun buildToggleRow(count: Int): JPanel {
+        val row = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            alignmentX = LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyTop(2)
+        }
+        val linkText = if (showUpToDate) "Hide $count up-to-date files" else "Show $count up-to-date files"
+        val link = ActionLink(linkText) {
+            showUpToDate = !showUpToDate
+            refresh()
+        }.apply {
+            font = JBUI.Fonts.smallFont()
+        }
+        row.add(link)
+        row.add(Box.createHorizontalGlue())
+        return row
     }
 
     private fun buildRow(filename: String, status: HookHashRegistry.FileStatus): JPanel {
@@ -97,4 +137,5 @@ class HookFileStatusPanel(private val project: Project) : JPanel() {
         HookHashRegistry.FileStatus.MISSING -> JBColor.RED
         HookHashRegistry.FileStatus.UNKNOWN -> UIUtil.getContextHelpForeground()
     }
+
 }
