@@ -207,29 +207,17 @@ public final class CopilotClient extends AcpClient {
             cmd.add(agentSlug);
         }
 
-        // The Copilot CLI ignores resumeSessionId (ACP param) in ACP mode as of v1.0.12; the
-        // --resume CLI flag is the only resume mechanism that older Copilot versions honour.
-        // When the agent advertises ACP-native resume (session/resume), AcpClient uses that
-        // path instead (gated by supportsSessionResumption()).
-        //
-        // We MUST only pass --resume when the on-disk session directory still exists. Passing
-        // it with a stale ID (after a crash, manual cleanup, or CLI cache eviction) makes
-        // Copilot crash on startup, which the plugin then restarts, locking into an infinite
-        // crash loop with no recovery path (issue #750).
-        String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
-        if (resumeId != null) {
-            Path sessionDir = copilotHome().resolve(SESSION_STATE_DIR).resolve(resumeId);
-            boolean sessionDirExists = Files.isDirectory(sessionDir);
-            if (sessionDirExists) {
-                cmd.add("--resume=" + resumeId);
-                LOG.info("Copilot launch: adding --resume=" + resumeId + " (sessionDir=" + sessionDir + ")");
-            } else {
-                LOG.info("Copilot launch: omitting --resume=" + resumeId
-                    + " — session directory " + sessionDir + " does not exist");
-            }
-        } else {
-            LOG.info("Copilot launch: no resumeSessionId persisted, omitting --resume");
-        }
+        // Resume is handled exclusively over ACP (session/resume) by AcpClient when the agent
+        // advertises the capability. We intentionally do NOT pass --resume here:
+        //   * --resume forces a restart of the Copilot process to attempt resume, whereas
+        //     session/resume happens over the running ACP transport with no restart.
+        //   * Passing --resume with a stale ID (after a crash, manual cleanup, or CLI cache
+        //     eviction) made Copilot crash on startup. The plugin then restarted it, which
+        //     crashed again with the same stale ID, locking the user into an infinite crash
+        //     loop with no recovery path (issue #750).
+        //   * When the agent does not advertise session/resume, loadSession() throws, the
+        //     standard AcpClient fallback enables conversation-history injection and notifies
+        //     the user that resume was unavailable.
 
         return cmd;
     }
