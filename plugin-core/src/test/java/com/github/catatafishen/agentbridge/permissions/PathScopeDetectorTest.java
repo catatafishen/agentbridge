@@ -147,9 +147,11 @@ class PathScopeDetectorTest {
     @Test
     @DisplayName("detectByPath: invalid path string is treated as INSIDE (degrades gracefully)")
     void detectByPathInvalidPath() {
-        // Java's Path.of rarely throws on POSIX, but we still cover the contract.
+        // A NUL byte makes Path.of throw InvalidPathException, exercising the catch
+        // branch in absolutize(...). An empty string would be filtered earlier by
+        // the isBlank() guard, so it wouldn't actually cover this code path.
         assertEquals(PathScope.INSIDE_PROJECT,
-            PathScopeDetector.detectByPath("", "/proj", null));
+            PathScopeDetector.detectByPath("bad\u0000name", "/proj", null));
     }
 
     // ── detectBySearchScope ─────────────────────────────────────────────

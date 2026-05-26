@@ -19,6 +19,11 @@ class ToolChipCard(private val kindColor: Color?) : JBPanel<ToolChipCard>(GridBa
         border = JBUI.Borders.empty(10, 14)
     }
 
+    // Suppression is intentional: we derive semi-transparent ARGB fills from a single
+    // theme-aware base color ([kindColor], which is already a JBColor where applicable).
+    // The plain java.awt.Color(r,g,b,a) constructor is the only way to inject the alpha
+    // channel; JBColor doesn't expose an alpha-adjustment helper. The derived colors are
+    // recomputed every paint, so theme changes still take effect.
     @Suppress("UseJBColor")
     override fun paintComponent(g: Graphics) {
         if (kindColor != null) {
