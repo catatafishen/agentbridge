@@ -254,6 +254,20 @@ jobs:
           import json, subprocess, os, re
 
           body = open('release-body.md').read()
+
+          # The release body may have two sections:
+          #   1. "This release" changes (since last v* tag)
+          #   2. <details><summary>All changes since last Marketplace publish</summary>
+          # For the marketplace we only want the accumulated since-marketplace section.
+          # If that section is absent (first publish, both sections are identical),
+          # fall back to the full body.
+          details_match = re.search(
+              r'<details><summary>All changes since last Marketplace publish</summary>\s*(.*?)\s*</details>',
+              body, flags=re.DOTALL
+          )
+          if details_match:
+              body = details_match.group(1).strip()
+
           payload = json.dumps({
               'text': body,
               'mode': 'gfm',
