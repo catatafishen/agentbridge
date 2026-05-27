@@ -27,6 +27,22 @@ public final class BwrapSandbox {
 
     private static final String TMPFS = "--tmpfs";
 
+    // Per-tmpfs size caps (bytes). Without these, each bwrap tmpfs defaults to 50% of host
+    // RAM. Because tmpfs is backed by RAM (not disk), writes consume host memory until the
+    // kernel OOM killer fires. The agent then dies with SIGKILL (exit 137) and no stderr —
+    // a symptom that is bwrap-specific because outside the sandbox the same writes go to
+    // disk. The /tmp cap is generous so legitimate scratch use still works; the home-tree
+    // tmpfs mounts are pure placeholders that binds layer over, so a tiny size is enough.
+    private static final String TMPFS_SIZE_TMP = String.valueOf(1024L * 1024 * 1024); // 1 GiB
+    private static final String TMPFS_SIZE_PLACEHOLDER = String.valueOf(16L * 1024 * 1024); // 16 MiB
+
+    /**
+     * Append {@code --size N --tmpfs PATH} so the next tmpfs mount has an explicit cap.
+     */
+    private static void sizedTmpfs(List<String> args, String sizeBytes, String path) {
+        args.addAll(List.of("--size", sizeBytes, TMPFS, path));
+    }
+
     /**
      * Interpreter resolution result: the absolute interpreter path and whether bwrap must
      * invoke it explicitly (true for {@code #!/usr/bin/env} shebangs, where {@code /usr/bin/env}
@@ -301,8 +317,18 @@ public final class BwrapSandbox {
         roBindTry(args, "/etc/ca-certificates");
         roBindTry(args, "/etc/pki/tls/certs");
 
+        // ── cgroup info (so Node.js V8 can size its heap correctly) ───────────
+        // Modern Node reads /sys/fs/cgroup/memory.max (cgroup v2) or the v1 equivalents
+        // to pick a sensible default for --max-old-space-size. Without /sys mounted, Node
+        // falls back to /proc/meminfo (full host RAM), then over-commits and gets killed
+        // by the kernel OOM killer. Read-only binding /sys/fs/cgroup is enough — we do
+        // not need the rest of /sys, and read-only keeps the sandbox safe.
+        roBindTry(args, "/sys/fs/cgroup");
+
         // ── Writable temporary space ──────────────────────────────────────────
-        args.addAll(List.of(TMPFS, "/tmp"));
+        // Capped at 1 GiB so a runaway agent gets ENOSPC instead of slowly consuming
+        // host RAM until OOM kicks in (tmpfs is backed by RAM, not disk).
+        sizedTmpfs(args, TMPFS_SIZE_TMP, "/tmp");
 
         // ── Block user home directories with empty tmpfs ──────────────────────
         // This prevents the agent from reading SSH keys, cloud credentials, or any
@@ -314,11 +340,11 @@ public final class BwrapSandbox {
         // bwrap processes arguments sequentially — a --tmpfs on a parent path hides
         // all earlier binds beneath it. Binds placed after the tmpfs layer on top
         // instead, and bwrap creates any missing intermediate directories as needed.
-        args.addAll(List.of(TMPFS, "/home"));
-        args.addAll(List.of(TMPFS, "/root"));
+        sizedTmpfs(args, TMPFS_SIZE_PLACEHOLDER, "/home");
+        sizedTmpfs(args, TMPFS_SIZE_PLACEHOLDER, "/root");
         String userHome = SystemProperties.getUserHome();
         if (!userHome.startsWith("/home/") && !userHome.equals("/root")) {
-            args.addAll(List.of(TMPFS, userHome));
+            sizedTmpfs(args, TMPFS_SIZE_PLACEHOLDER, userHome);
         }
 
         // ── Agent binary (mounted read-only) ─────────────────────────────────
@@ -400,7 +426,7 @@ public final class BwrapSandbox {
         // tools from bypassing the MCP layer (and its permission gating, hooks,
         // and audit trail) to touch project files directly.
         if (projectDir != null && !projectDir.isBlank()) {
-            args.addAll(List.of(TMPFS, projectDir));
+            sizedTmpfs(args, TMPFS_SIZE_PLACEHOLDER, projectDir);
         }
 
         // ── Working directory ─────────────────────────────────────────────────
