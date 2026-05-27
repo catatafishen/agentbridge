@@ -674,6 +674,88 @@ class AcpMessageParserTest {
         assertEquals("binary not found", tcu.error());
     }
 
+    // ── status promotion: completed + error signal → FAILED ─────────────────────
+    // Some agents (notably Copilot CLI's execute/bash tool) always report
+    // status="completed" because the tool call itself completed even when the
+    // wrapped command failed. The parser must promote such cases to FAILED so
+    // the UI chip reflects the underlying failure.
+
+    @Test
+    void completedToolCallUpdate_withError_isPromotedToFailed() {
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "tc-bash-fail");
+        params.addProperty("status", "completed");
+        params.addProperty("error", "Failed to start bash process");
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.FAILED, tcu.status());
+        assertEquals("Failed to start bash process", tcu.error());
+    }
+
+    @Test
+    void completedToolCallUpdate_withEmptyErrorString_remainsCompleted() {
+        // Empty error string is not a failure signal — treat as no error.
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "tc-empty-err");
+        params.addProperty("status", "completed");
+        params.addProperty("error", "");
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.COMPLETED, tcu.status());
+        assertNull(tcu.error());
+    }
+
+    @Test
+    void completedToolCallUpdate_withIsErrorTrue_isPromotedToFailed() {
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "tc-mcp-err");
+        params.addProperty("status", "completed");
+        params.addProperty("isError", true);
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.FAILED, tcu.status());
+    }
+
+    @Test
+    void completedToolCallUpdate_withIsErrorFalse_remainsCompleted() {
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "tc-ok");
+        params.addProperty("status", "completed");
+        params.addProperty("isError", false);
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.COMPLETED, tcu.status());
+    }
+
+    @Test
+    void completedToolCallUpdate_withContentBlockIsError_isPromotedToFailed() {
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "tc-cb-err");
+        params.addProperty("status", "completed");
+        JsonArray content = new JsonArray();
+        JsonObject block = new JsonObject();
+        block.addProperty("type", "text");
+        block.addProperty("text", "boom");
+        block.addProperty("isError", true);
+        content.add(block);
+        params.add("content", content);
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.FAILED, tcu.status());
+    }
+
+    @Test
+    void completedToolCallUpdate_withoutAnyErrorSignal_staysCompleted() {
+        // Sanity check: a plain successful update must not be promoted.
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "tc-clean");
+        params.addProperty("status", "completed");
+        params.addProperty("result", "all good");
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.COMPLETED, tcu.status());
+    }
+
     @Test
     void parsesConfigOptionUpdate_fullListFormat() {
         JsonObject params = updateParams("config_option_update");

@@ -71,7 +71,33 @@ class PromptOrchestrator(
     /** Copilot built-in tool whose summary should render as agent text, not a tool chip. */
     private val taskCompleteTool = "task_complete"
 
-    internal var currentSessionId: String? = null
+    /**
+     * The active session ID, delegated to [agentManager.client] which is the single source of truth.
+     *
+     * Reads return the client's live session ID (or null when no session has been created yet
+     * or the client has been reset). Writes accept only `null` and call
+     * [AbstractClient.dropCurrentSession] — this is how callers force the next prompt to start a
+     * fresh session (e.g. on auth recovery, agent switch, or "New Conversation").
+     *
+     * Keeping the orchestrator's view in lockstep with the client avoids the stale-cache bug
+     * where the client transparently restarts its subprocess (allocating a new session ID) but
+     * the orchestrator still sends prompts with the previous, now-unknown ID — which the agent
+     * rejects as "session not found", surfacing as a scary "Session resume failed" toast.
+     */
+    internal var currentSessionId: String?
+        get() = agentManager.client.activeSessionId
+        set(value) {
+            require(value == null) { "currentSessionId can only be cleared (set to null), not assigned." }
+            agentManager.client.dropCurrentSession()
+            lastInitialisedSessionId = null
+        }
+
+    /**
+     * Tracks the session ID we last applied model + session-option settings to, so we re-run
+     * that one-time setup only when the client hands us a session ID we haven't seen before.
+     */
+    private var lastInitialisedSessionId: String? = null
+
     internal var conversationSummaryInjected: Boolean = false
     private var currentPromptThread: Thread? = null
 
@@ -209,8 +235,13 @@ class PromptOrchestrator(
     }
 
     private fun ensureSessionCreated(client: AbstractClient): String {
-        if (currentSessionId == null) {
-            currentSessionId = client.createSession(project.basePath)
+        // Always delegate to client.createSession() — its own reuse early-return makes this cheap
+        // when the session is already alive, and returns a fresh ID transparently after a CLI
+        // restart. The orchestrator must NOT maintain its own cached ID alongside the client's,
+        // otherwise the two drift apart on restart and the next prompt is sent with a stale ID.
+        val sessionId = client.createSession(project.basePath)
+        if (sessionId != lastInitialisedSessionId) {
+            lastInitialisedSessionId = sessionId
             callbacks.updateSessionInfo()
             val savedModel = agentManager.settings.selectedModel
             if (!savedModel.isNullOrEmpty()) {
@@ -225,7 +256,7 @@ class PromptOrchestrator(
                 }
                 if (availableModels.isEmpty() || availableModels.any { it.id() == savedModel }) {
                     try {
-                        client.setModel(currentSessionId!!, savedModel)
+                        client.setModel(sessionId, savedModel)
                     } catch (ex: Exception) {
                         log.warn("Failed to set model $savedModel on new session", ex)
                     }
@@ -237,14 +268,14 @@ class PromptOrchestrator(
                 val savedValue = agentManager.settings.getSessionOptionValue(option.key)
                 if (savedValue.isNotEmpty()) {
                     try {
-                        client.setSessionOption(currentSessionId!!, option.key, savedValue)
+                        client.setSessionOption(sessionId, option.key, savedValue)
                     } catch (ex: Exception) {
                         log.warn("Failed to restore session option ${option.key}=$savedValue", ex)
                     }
                 }
             }
         }
-        return currentSessionId!!
+        return sessionId
     }
 
     private fun wirePermissionListener(client: AbstractClient) {
@@ -559,10 +590,9 @@ class PromptOrchestrator(
         codeChangeListener = null
         pendingBanner = null
 
-        // Drop the ACP client's cached session ID too, so the next createSession()
-        // goes through the full load/new flow instead of hitting the early-return
-        // "reuse" path with the still-corrupted session.
-        agentManager.client.dropCurrentSession()
+        // Drop the cached session so the next createSession() goes through the full load/new
+        // flow instead of hitting the early-return "reuse" path with the still-corrupted session.
+        // The setter delegates to AbstractClient.dropCurrentSession() (single source of truth).
         currentSessionId = null
         callbacks.updateSessionInfo()
 
@@ -916,7 +946,7 @@ class PromptOrchestrator(
                 log.info("Agent process crashed but recovered — preserving session ...")
             } else {
                 agentManager.client.dropCurrentSession()
-                currentSessionId = null
+                lastInitialisedSessionId = null
             }
             callbacks.updateSessionInfo()
         }
