@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -621,10 +622,11 @@ public final class CopilotClient extends AcpClient {
      * which is small; entries are removed on terminal status. Cleared on turn start to drop any
      * stragglers from a prior turn that never received a terminal update.
      */
-    private final java.util.concurrent.ConcurrentHashMap<String, PendingReprimand> pendingReprimands =
-        new java.util.concurrent.ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PendingReprimand> pendingReprimands =
+        new ConcurrentHashMap<>();
 
-    private record PendingReprimand(String kind, boolean showBubble) {}
+    private record PendingReprimand(String kind, boolean showBubble) {
+    }
 
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
@@ -670,17 +672,23 @@ public final class CopilotClient extends AcpClient {
      * and auto-denied calls don't need a reprimand: the agent already saw the failure result and
      * adding a "[User nudge]" on top is duplicate negative signal that escalates the bypass
      * counter spuriously.
+     * <p>
+     * Non-terminal updates ({@link SessionUpdate.ToolCallStatus#PENDING} /
+     * {@link SessionUpdate.ToolCallStatus#IN_PROGRESS}) stream while a tool runs and are ignored
+     * here — the pending entry must survive them so the eventual terminal update can consume it.
      */
     private void handleToolCallTerminalUpdate(SessionUpdate.ToolCallUpdate update) {
+        boolean terminal = update.autoDenied()
+            || update.status() == SessionUpdate.ToolCallStatus.COMPLETED
+            || update.status() == SessionUpdate.ToolCallStatus.FAILED;
+        if (!terminal) return;
         PendingReprimand pending = pendingReprimands.remove(update.toolCallId());
         if (pending == null) return;
         if (update.autoDenied() || update.status() == SessionUpdate.ToolCallStatus.FAILED) {
             return;
         }
-        if (update.status() == SessionUpdate.ToolCallStatus.COMPLETED) {
-            AgentNudgeService.getInstance(project).addNudge(
-                buildReprimand(pending.kind()), NudgeSource.NATIVE_TOOL_REPRIMAND, pending.showBubble());
-        }
+        AgentNudgeService.getInstance(project).addNudge(
+            buildReprimand(pending.kind()), NudgeSource.NATIVE_TOOL_REPRIMAND, pending.showBubble());
     }
 
     /**
