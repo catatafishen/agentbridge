@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -94,6 +95,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
     private static final String STOP_REASON_END_TURN = "end_turn";
     private static final String PROFILE_FLAG = "--profile";
     private static final int STDERR_BUFFER_MAX_LINES = 100;
+    private static final String SUBTYPE_INIT = "init";
+    private static final String FIELD_SLASH_COMMANDS = "slash_commands";
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -153,6 +156,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
      */
     private final Map<String, String> cliSessionIds = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
+    /** Slash commands reported by the CLI in the {@code system/init} event. */
+    private final List<String> availableSlashCommands = new CopyOnWriteArrayList<>();
 
     private String resolvedBinaryPath;
 
@@ -193,6 +198,11 @@ public final class ClaudeClient extends AbstractClaudeClient {
     @Override
     public boolean isHealthy() {
         return started;
+    }
+
+    @Override
+    public List<String> getAvailableCommands() {
+        return List.copyOf(availableSlashCommands);
     }
 
     @Override
@@ -642,6 +652,21 @@ public final class ClaudeClient extends AbstractClaudeClient {
                 if (event.has(FIELD_SESSION_ID)) {
                     cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
                 }
+                // The init event carries the list of slash commands supported by this CLI version.
+                // Parse them so the autocomplete popup can surface them to the user.
+                if (SUBTYPE_INIT.equals(event.has(FIELD_SUBTYPE)
+                    ? event.get(FIELD_SUBTYPE).getAsString() : null)
+                    && event.has(FIELD_SLASH_COMMANDS)
+                    && event.get(FIELD_SLASH_COMMANDS).isJsonArray()) {
+                    List<String> cmds = new ArrayList<>();
+                    for (JsonElement el : event.getAsJsonArray(FIELD_SLASH_COMMANDS)) {
+                        String cmd = el.getAsString();
+                        cmds.add(cmd.startsWith("/") ? cmd : "/" + cmd);
+                    }
+                    availableSlashCommands.clear();
+                    availableSlashCommands.addAll(cmds);
+                    LOG.info("ClaudeClient: " + cmds.size() + " slash command(s) available: " + cmds);
+                }
                 yield currentStopReason;
             }
             case "assistant" -> {
@@ -1004,6 +1029,13 @@ public final class ClaudeClient extends AbstractClaudeClient {
 
     @NotNull
     private String buildFullPrompt(@NotNull String prompt, boolean isNewSession) {
+        // Slash commands must reach the CLI with '/' as the very first character.
+        // Prepending a <system-reminder> block would hide the '/' and prevent the
+        // CLI from recognising the command; skip instruction injection entirely.
+        if (prompt.trim().startsWith("/")) {
+            return prompt;
+        }
+
         StringBuilder sb = new StringBuilder();
 
         if (isNewSession) {
