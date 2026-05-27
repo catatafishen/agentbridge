@@ -40,6 +40,8 @@ class AcpMessageParser {
     private static final String KEY_AVAILABLE_COMMANDS = "availableCommands";
     private static final String KEY_COMMANDS = "commands";
     private static final String KEY_INPUT = "input";
+    private static final String KEY_ERROR = "error";
+    private static final String KEY_IS_ERROR = "isError";
 
     /**
      * Callbacks into the owning client for the three points where agent-specific logic is needed.
@@ -194,7 +196,11 @@ class AcpMessageParser {
             kind = SessionUpdate.ToolKind.fromString(params.get("kind").getAsString());
         }
 
-        String error = params.has("error") ? params.get("error").getAsString() : null;
+        String error = params.has(KEY_ERROR) && params.get(KEY_ERROR).isJsonPrimitive()
+            ? params.get(KEY_ERROR).getAsString() : null;
+        if (error != null && error.isEmpty()) {
+            error = null;
+        }
         String description = params.has(KEY_DESCRIPTION) ? params.get(KEY_DESCRIPTION).getAsString() : null;
         String result = extractResultText(params);
 
@@ -204,7 +210,39 @@ class AcpMessageParser {
             arguments = params.get(KEY_RAW_INPUT).getAsJsonObject().toString();
         }
 
+        // Some agents (notably Copilot CLI's built-in execute/bash) always report
+        // status="completed" because the *tool call* completed even when the
+        // underlying command failed. Promote to FAILED when the agent provides an
+        // explicit failure signal so the UI chip reflects reality.
+        // Signals (in priority order):
+        //   1. top-level `error` string is non-empty
+        //   2. top-level `isError: true` boolean (MCP-style tool result flag)
+        //   3. any content block carries `isError: true`
+        if (status == SessionUpdate.ToolCallStatus.COMPLETED
+            && (error != null
+            || (params.has(KEY_IS_ERROR) && params.get(KEY_IS_ERROR).isJsonPrimitive()
+            && params.get(KEY_IS_ERROR).getAsBoolean())
+            || hasErrorFlaggedContent(params))) {
+            status = SessionUpdate.ToolCallStatus.FAILED;
+        }
+
         return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments, kind);
+    }
+
+    private static boolean hasErrorFlaggedContent(JsonObject params) {
+        if (!params.has(KEY_CONTENT) || !params.get(KEY_CONTENT).isJsonArray()) {
+            return false;
+        }
+        for (JsonElement el : params.getAsJsonArray(KEY_CONTENT)) {
+            if (el.isJsonObject()) {
+                JsonObject obj = el.getAsJsonObject();
+                if (obj.has(KEY_IS_ERROR) && obj.get(KEY_IS_ERROR).isJsonPrimitive()
+                    && obj.get(KEY_IS_ERROR).getAsBoolean()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private @Nullable String extractResultText(JsonObject params) {

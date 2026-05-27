@@ -610,6 +610,22 @@ public final class CopilotClient extends AcpClient {
 
     // ─── Built-in tool reprimand ─────────────────────────────────────────────
 
+    /**
+     * Pending reprimands captured at tool-call start, keyed by {@code toolCallId}. The reprimand
+     * is only delivered to {@link AgentNudgeService} when the matching {@link SessionUpdate.ToolCallUpdate}
+     * arrives with {@link SessionUpdate.ToolCallStatus#COMPLETED}. Calls that {@code FAILED} or were
+     * auto-denied by the plugin discard their pending reprimand — the agent already received an
+     * error result, so a behavioural correction nudge on top is redundant noise.
+     * <p>
+     * The map is bounded in practice by the number of in-flight built-in tool calls per turn,
+     * which is small; entries are removed on terminal status. Cleared on turn start to drop any
+     * stragglers from a prior turn that never received a terminal update.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, PendingReprimand> pendingReprimands =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record PendingReprimand(String kind, boolean showBubble) {}
+
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
         if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
@@ -621,12 +637,19 @@ public final class CopilotClient extends AcpClient {
             // agent's current context, so reprimanding would be confusing and spurious.
             if (isRestoringHistory()) return update;
 
-            maybeAddReprimandForBuiltinTool(toolCall);
+            maybeRegisterReprimandForBuiltinTool(toolCall);
+        } else if (update instanceof SessionUpdate.ToolCallUpdate toolCallUpdate) {
+            handleToolCallTerminalUpdate(toolCallUpdate);
         }
         return update;
     }
 
-    private void maybeAddReprimandForBuiltinTool(SessionUpdate.ToolCall toolCall) {
+    /**
+     * Captures the reprimand parameters at tool-call start without firing the nudge. The nudge
+     * is only added to {@link AgentNudgeService} on successful completion — see
+     * {@link #handleToolCallTerminalUpdate}.
+     */
+    private void maybeRegisterReprimandForBuiltinTool(SessionUpdate.ToolCall toolCall) {
         String title = toolCall.title();
         boolean isBuiltIn = !isMcpToolTitle(title)
             && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
@@ -636,8 +659,27 @@ public final class CopilotClient extends AcpClient {
             if (mode != ChatInputSettings.ReprimandNudgeMode.DISABLED) {
                 boolean showBubble = mode == ChatInputSettings.ReprimandNudgeMode.ENABLED;
                 String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
-                AgentNudgeService.getInstance(project).addNudge(buildReprimand(kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
+                pendingReprimands.put(toolCall.toolCallId(), new PendingReprimand(kind, showBubble));
             }
+        }
+    }
+
+    /**
+     * Emits the deferred reprimand on {@link SessionUpdate.ToolCallStatus#COMPLETED} and discards
+     * it on {@link SessionUpdate.ToolCallStatus#FAILED} or when the call was auto-denied. Failed
+     * and auto-denied calls don't need a reprimand: the agent already saw the failure result and
+     * adding a "[User nudge]" on top is duplicate negative signal that escalates the bypass
+     * counter spuriously.
+     */
+    private void handleToolCallTerminalUpdate(SessionUpdate.ToolCallUpdate update) {
+        PendingReprimand pending = pendingReprimands.remove(update.toolCallId());
+        if (pending == null) return;
+        if (update.autoDenied() || update.status() == SessionUpdate.ToolCallStatus.FAILED) {
+            return;
+        }
+        if (update.status() == SessionUpdate.ToolCallStatus.COMPLETED) {
+            AgentNudgeService.getInstance(project).addNudge(
+                buildReprimand(pending.kind()), NudgeSource.NATIVE_TOOL_REPRIMAND, pending.showBubble());
         }
     }
 
@@ -654,6 +696,10 @@ public final class CopilotClient extends AcpClient {
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
         AgentNudgeService.getInstance(project).clearHumanNudges();
         nativeToolBypassCount.set(0);
+        // Drop any stragglers from a previous turn whose terminal status update never arrived
+        // (e.g. agent process restart mid-turn). Without this, a stale entry could fire as a
+        // reprimand against an unrelated tool call in the new turn if IDs were ever reused.
+        pendingReprimands.clear();
         return request;
     }
 
