@@ -973,7 +973,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         hideWorkingIndicator()
         val parsed = PermissionRequestContent.parse(toolDisplayName, description)
         val markdown = buildString {
-            append("**").append(parsed.headline).append("**")
+            if (parsed.question != null) {
+                append(parsed.question)
+            } else {
+                append("**").append(PermissionRequestContent.DEFAULT_HEADLINE).append("**")
+            }
             append("\n\ntool: `").append(parsed.toolName).append("`")
             for (arg in parsed.args) {
                 append("\n\n").append(arg.key).append(": ").append(arg.value)
