@@ -104,22 +104,22 @@ class ToolKindColorsTest {
 
         @Test
         void readColor_returnsDefaultRead() {
-            assertSame(ToolKindColors.DEFAULT_READ, ToolKindColors.readColor(null));
+            assertSame(ToolKindColors.DEFAULT_READ_KEY.getColor(), ToolKindColors.readColor(null));
         }
 
         @Test
         void searchColor_returnsDefaultSearch() {
-            assertSame(ToolKindColors.DEFAULT_SEARCH, ToolKindColors.searchColor(null));
+            assertSame(ToolKindColors.DEFAULT_SEARCH_KEY.getColor(), ToolKindColors.searchColor(null));
         }
 
         @Test
         void editColor_returnsDefaultEdit() {
-            assertSame(ToolKindColors.DEFAULT_EDIT, ToolKindColors.editColor(null));
+            assertSame(ToolKindColors.DEFAULT_EDIT_KEY.getColor(), ToolKindColors.editColor(null));
         }
 
         @Test
         void executeColor_returnsDefaultExecute() {
-            assertSame(ToolKindColors.DEFAULT_EXECUTE, ToolKindColors.executeColor(null));
+            assertSame(ToolKindColors.DEFAULT_EXECUTE_KEY.getColor(), ToolKindColors.executeColor(null));
         }
     }
 }

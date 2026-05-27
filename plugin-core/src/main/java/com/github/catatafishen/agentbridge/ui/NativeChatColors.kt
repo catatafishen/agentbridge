@@ -40,8 +40,8 @@ object NativeChatColors {
      */
     fun kindColor(kind: String?, settings: McpServerSettings? = null): Color = when (kind?.lowercase()) {
         "read" -> ToolKindColors.readColor(settings)
-        "edit", "write", "move" -> ToolKindColors.editColor(settings)
-        "execute", "delete" -> ToolKindColors.executeColor(settings)
+        "edit", "write", "delete", "move" -> ToolKindColors.editColor(settings)
+        "execute" -> ToolKindColors.executeColor(settings)
         "search" -> ToolKindColors.searchColor(settings)
         else -> ChatTheme.THINK_COLOR
     }

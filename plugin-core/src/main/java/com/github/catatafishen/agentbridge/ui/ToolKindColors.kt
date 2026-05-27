@@ -7,8 +7,8 @@ import java.awt.Color
 
 /**
  * Resolves semantic tool-kind colors, honoring per-project user overrides stored in
- * [McpServerSettings]. Falls back to the defaults that match the chat panel CSS palette
- * in [ChatTheme].
+ * [McpServerSettings]. Defaults are sourced from the [ThemeColor] enum so the palette
+ * has a single canonical source — there are no hardcoded RGB values in this file.
  *
  * These colors are used in:
  * - Quick Permissions combo-box tints in [PermissionsPanel]
@@ -17,34 +17,34 @@ import java.awt.Color
  */
 object ToolKindColors {
 
-    // Defaults match ChatTheme.KIND_*_COLOR values.
+    /** Default theme color for each kind. Override in [McpServerSettings] per project. */
     @JvmField
-    val DEFAULT_READ: JBColor = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
+    val DEFAULT_READ_KEY: ThemeColor = ThemeColor.TEAL
 
     @JvmField
-    val DEFAULT_SEARCH: JBColor = JBColor(Color(0x36, 0x6A, 0x9A), Color(110, 165, 210))
+    val DEFAULT_SEARCH_KEY: ThemeColor = ThemeColor.BLUE
 
     @JvmField
-    val DEFAULT_EDIT: JBColor = JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95))
+    val DEFAULT_EDIT_KEY: ThemeColor = ThemeColor.AMBER
 
     @JvmField
-    val DEFAULT_EXECUTE: JBColor = JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
+    val DEFAULT_EXECUTE_KEY: ThemeColor = ThemeColor.GREEN
 
     @JvmStatic
     fun readColor(settings: McpServerSettings?): JBColor =
-        ThemeColor.fromKey(settings?.kindReadColorKey)?.color ?: DEFAULT_READ
+        ThemeColor.fromKey(settings?.kindReadColorKey)?.color ?: DEFAULT_READ_KEY.color
 
     @JvmStatic
     fun searchColor(settings: McpServerSettings?): JBColor =
-        ThemeColor.fromKey(settings?.kindSearchColorKey)?.color ?: DEFAULT_SEARCH
+        ThemeColor.fromKey(settings?.kindSearchColorKey)?.color ?: DEFAULT_SEARCH_KEY.color
 
     @JvmStatic
     fun editColor(settings: McpServerSettings?): JBColor =
-        ThemeColor.fromKey(settings?.kindEditColorKey)?.color ?: DEFAULT_EDIT
+        ThemeColor.fromKey(settings?.kindEditColorKey)?.color ?: DEFAULT_EDIT_KEY.color
 
     @JvmStatic
     fun executeColor(settings: McpServerSettings?): JBColor =
-        ThemeColor.fromKey(settings?.kindExecuteColorKey)?.color ?: DEFAULT_EXECUTE
+        ThemeColor.fromKey(settings?.kindExecuteColorKey)?.color ?: DEFAULT_EXECUTE_KEY.color
 
     /**
      * Returns a tinted background by blending [alpha] proportion of [color] into the

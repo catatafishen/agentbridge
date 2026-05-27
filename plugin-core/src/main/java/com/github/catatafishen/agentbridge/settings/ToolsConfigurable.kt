@@ -10,7 +10,9 @@ import com.github.catatafishen.agentbridge.services.ToolPermission
 import com.github.catatafishen.agentbridge.services.ToolRegistry.Category
 import com.github.catatafishen.agentbridge.services.hooks.DefaultHookProvisioner
 import com.github.catatafishen.agentbridge.services.hooks.HookRegistry
+import com.github.catatafishen.agentbridge.ui.NativeChatColors
 import com.github.catatafishen.agentbridge.ui.ToolKindColors
+import com.github.catatafishen.agentbridge.ui.cssKindName
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.BoundConfigurable
@@ -968,14 +970,8 @@ class ToolsConfigurable(private val project: Project) :
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun kindColorFor(tool: ToolDefinition): Color = when (tool.kind()) {
-        ToolDefinition.Kind.SEARCH -> ToolKindColors.searchColor(mcpSettings)
-        ToolDefinition.Kind.EDIT, ToolDefinition.Kind.WRITE,
-        ToolDefinition.Kind.DELETE, ToolDefinition.Kind.MOVE -> ToolKindColors.editColor(mcpSettings)
-
-        ToolDefinition.Kind.EXECUTE -> ToolKindColors.executeColor(mcpSettings)
-        else -> ToolKindColors.readColor(mcpSettings)
-    }
+    private fun kindColorFor(tool: ToolDefinition): Color =
+        NativeChatColors.kindColor(tool.cssKindName(), mcpSettings)
 
     private fun updateHookIndicator(indicator: JBLabel, hasHooks: Boolean) {
         indicator.text = if (hasHooks) "[hooks]" else ""

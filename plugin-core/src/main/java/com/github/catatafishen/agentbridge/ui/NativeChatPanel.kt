@@ -613,12 +613,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             finalizeTurn()
         }
         val turn = ensureTurn()
-        val resolvedKind = kind ?: "other"
-        val displayTitle = resolveToolDisplayName(title)
+        // When the tool is one of our local agentbridge-* MCP tools, prefer the locally
+        // declared ToolDefinition.Kind over the ACP-supplied kind string. This keeps the
+        // chip color in the chat strip and the tool card color in Settings perfectly in
+        // sync — both ultimately route through cssKindName() → NativeChatColors.kindColor().
+        // Otherwise the agent's runtime classification (e.g. Copilot CLI mapping TERMINAL
+        // → EXECUTE for read_terminal_output) would diverge from the tool's declared Kind.
+        val localDef = toolRegistry.findById(title)
+        val effectiveKind = localDef?.cssKindName() ?: kind
+        val resolvedKind = effectiveKind ?: "other"
+        val displayTitle = localDef?.displayName() ?: resolveToolDisplayName(title)
         toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
         val chip = ToolChipComponent(
             displayTitle,
-            kind,
+            effectiveKind,
             "running",
             isMcpHandled,
             McpServerSettings.getInstance(project)
