@@ -4,11 +4,7 @@ import com.github.catatafishen.agentbridge.services.ToolPermission
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
-import java.awt.Color
-import java.awt.Component
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.RenderingHints
+import java.awt.*
 import javax.swing.DefaultListCellRenderer
 import javax.swing.Icon
 import javax.swing.JLabel
@@ -56,6 +52,12 @@ class PermissionComboBox(options: Array<PermOption>) : ComboBox<PermOption>(opti
         renderer = PermRenderer(this)
         setMinimumAndPreferredWidth(JBUI.scale(112))
     }
+
+    // Cap the max size to the preferred size so BoxLayout parents (Quick
+    // Permissions row, outside-project row) can't stretch the combo to fill
+    // available horizontal space — every PermissionComboBox in the panel ends
+    // up the same visual width as the per-tool Permission combos.
+    override fun getMaximumSize(): Dimension = preferredSize
 
     /** Set the selection to match a [ToolPermission]. */
     fun selectPermission(p: ToolPermission) {

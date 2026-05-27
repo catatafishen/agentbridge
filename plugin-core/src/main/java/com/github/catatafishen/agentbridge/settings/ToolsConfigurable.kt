@@ -544,6 +544,9 @@ class ToolsConfigurable(private val project: Project) :
         val checkbox = JBCheckBox(tool.displayName(), enabled).apply {
             border = JBUI.Borders.emptyTop(1)
             isOpaque = false
+            // Tint the tool name in the kind color so the card title matches
+            // the chip color used for that tool in chat output.
+            foreground = kindColorFor(tool)
             addItemListener {
                 onAnyEnablementChange()
                 refreshCardEnabledState(toolId)
