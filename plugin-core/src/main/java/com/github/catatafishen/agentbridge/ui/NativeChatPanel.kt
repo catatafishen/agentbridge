@@ -971,20 +971,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         onRespond: (PermissionResponse) -> Unit
     ) {
         hideWorkingIndicator()
+        val parsed = PermissionRequestContent.parse(toolDisplayName, description)
         val markdown = buildString {
-            append("🔐 **Permission requested:** `")
-            append(toolDisplayName)
-            append("`")
-            val args = description.trim()
-            if (args.isNotEmpty()) {
-                append("\n\n")
-                val looksLikeJson = (args.startsWith("{") && args.endsWith("}")) ||
-                    (args.startsWith("[") && args.endsWith("]"))
-                if (looksLikeJson) {
-                    append("```json\n").append(args).append("\n```")
-                } else {
-                    append("```\n").append(args).append("\n```")
-                }
+            append("**").append(parsed.headline).append("**")
+            append("\n\ntool: `").append(parsed.toolName).append("`")
+            for (arg in parsed.args) {
+                append("\n\n").append(arg.key).append(": ").append(arg.value)
             }
         }
         val pane = createMarkdownPane(markdown)
@@ -1031,6 +1023,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         addRow(row)
     }
+
+    private fun escapeHtml(s: String): String = s
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
 
     override fun showAskUserRequest(
         reqId: String, question: String, options: List<String>,
