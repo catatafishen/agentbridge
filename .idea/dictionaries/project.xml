@@ -63,6 +63,7 @@
       <w>oneline</w>
       <w>opencode</w>
       <w>openfile</w>
+      <w>pipefail</w>
       <w>pnpx</w>
       <w>psi</w>
       <w>pwsh</w>

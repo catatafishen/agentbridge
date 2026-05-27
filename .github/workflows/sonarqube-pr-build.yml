@@ -88,19 +88,22 @@ jobs:
             --no-daemon --quiet --build-cache
 
       - name: Package analysis artifacts
+        # Sources are NOT included — sonarqube-pr-analyze.yml restores them
+        # directly from the PR commit via `git checkout` so that
+        # SCM blame works and SonarCloud can identify "new code". Including
+        # sources here would just be overwritten and break SCM resolution.
+        # Coverage outputs that live inside source trees (js-tests/coverage)
+        # are still included so the analyze job picks them up after the
+        # source restore.
         run: |
           tar -czf sonar-artifacts.tar.gz \
             --exclude='*/node_modules' \
             --exclude='*/lcov-report' \
-            plugin-core/src \
             plugin-core/build/reports/jacoco \
             plugin-core/build/classes \
-            plugin-core/chat-ui/src \
-            plugin-core/js-tests \
-            mcp-server/src \
+            plugin-core/js-tests/coverage \
             mcp-server/build/reports/jacoco \
             mcp-server/build/classes \
-            plugin-experimental/src \
             plugin-experimental/build/reports/jacoco \
             plugin-experimental/build/classes
 

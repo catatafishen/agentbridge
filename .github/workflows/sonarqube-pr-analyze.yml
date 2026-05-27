@@ -84,21 +84,84 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 
       # Check out the BASE repository (our trusted code) to get the Gradle wrapper
-      # and build configuration. The fork's source files and compiled outputs are
-      # restored from the artifact in the next step.
+      # and build configuration. The fork's source files are restored from git in
+      # the next step and pre-built outputs are restored from the artifact after.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      # Overlay the fork's source files and pre-built outputs onto the base checkout.
-      # tar -x merges files: build.gradle.kts, gradlew, and all other base-repo files
-      # not in the archive are preserved. Only the paths included in the artifact
-      # (src/, build/reports/, build/classes/, js-tests/, chat-ui/src/) are replaced.
-      # The fork's code is read-only from this point — no build scripts are executed.
+      # Fetch the exact PR head commit by SHA and overlay the PR's source files
+      # from it. Fetching by SHA (not by refs/pull/N/head) is race-free: even if
+      # the PR has been force-pushed since the build job ran, we still get the
+      # commit that produced the artifact. Then we restore only source paths —
+      # build.gradle.kts, gradlew, workflow files stay at the trusted base version,
+      # so no fork code is ever executed.
+      #
+      # WHY this matters: SonarCloud's SCM-Git plugin uses `git blame` to decide
+      # which lines are "new" in the PR. If the working-tree sources don't map to
+      # any commit (e.g. when they were dropped in from a tarball), blame returns
+      # nothing → Sonar concludes "no new code" → the new-code quality gate is
+      # trivially green even when the analyzer flagged issues in fork files.
+      - name: Fetch and overlay PR source files from git
+        env:
+          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # Fetch full history (no --depth=1): the later "Verify PR has SCM diff"
+          # step uses the symmetric-diff range origin/$PR_BASE_REF...$HEAD_SHA,
+          # which needs a merge-base. A shallow fetch leaves the PR head with no
+          # local parents, so the merge-base lookup fails. Full history also lets
+          # Sonar's SCM-Git plugin walk blame across the PR's commits.
+          git fetch origin "$HEAD_SHA"
+
+          # Nuke target source trees before restoring so files deleted in the PR
+          # don't linger from the base checkout. `git checkout $SHA -- paths` on
+          # its own would overwrite modified/added files but leave deleted ones.
+          SOURCE_PATHS=(
+            plugin-core/src
+            plugin-core/chat-ui/src
+            plugin-core/js-tests
+            mcp-server/src
+            plugin-experimental/src
+          )
+          for path in "${SOURCE_PATHS[@]}"; do
+            rm -rf "$path"
+          done
+
+          # Restore each path individually so a path missing in the PR commit
+          # (e.g. a new module added on master that doesn't exist on the fork)
+          # doesn't fail the whole step.
+          for path in "${SOURCE_PATHS[@]}"; do
+            git checkout "$HEAD_SHA" -- "$path" 2>/dev/null || \
+              echo "::notice::Path '$path' not present in PR head $HEAD_SHA (skipped)"
+          done
+
+      # Overlay the build outputs and coverage reports from the artifact AFTER
+      # the source restore so they sit on top of the PR sources. The artifact no
+      # longer contains source files (see sonarqube-pr-build.yml).
       - name: Restore analysis artifacts
         run: |
           tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz"
+
+      # Sanity check: verify the PR actually has source changes vs its base. If
+      # the diff is empty, Sonar would report 0 new lines and the quality gate
+      # would pass without evaluating anything — surface that as a warning so
+      # we notice when SCM data is still broken (e.g. wrong ref names).
+      - name: Verify PR has SCM diff vs base
+        env:
+          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
+          PR_BASE_REF: ${{ steps.pr-meta.outputs.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$PR_BASE_REF"
+          CHANGED=$(git diff --name-only "origin/$PR_BASE_REF...$HEAD_SHA" \
+            -- '*.java' '*.kt' '*.kts' '*.ts' '*.tsx' '*.js' '*.jsx' \
+            | wc -l)
+          echo "PR changes $CHANGED source files vs origin/$PR_BASE_REF"
+          if [ "$CHANGED" -eq 0 ]; then
+            echo "::warning::No source-file changes detected between PR base and head — SonarCloud will report 0 new code. This usually means SCM data is misconfigured."
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
