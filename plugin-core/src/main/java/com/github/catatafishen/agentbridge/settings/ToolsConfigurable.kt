@@ -461,8 +461,12 @@ class ToolsConfigurable(private val project: Project) :
         }
 
         // Default selection → first node (All Tools when present, otherwise
-        // the single available source section).
-        tree.selectionPath = TreePath(arrayOf(root, root.getChildAt(0)))
+        // the single available source section). Skip when the tree is empty,
+        // which happens during searchable-options indexing before tools have
+        // been registered with the configurable.
+        if (root.childCount > 0) {
+            tree.selectionPath = TreePath(arrayOf(root, root.getChildAt(0)))
+        }
 
         val treeScroll = JBScrollPane(tree).apply {
             border = JBUI.Borders.empty()
