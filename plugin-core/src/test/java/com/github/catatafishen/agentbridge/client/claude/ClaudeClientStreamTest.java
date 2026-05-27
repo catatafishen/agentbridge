@@ -207,6 +207,40 @@ class ClaudeClientStreamTest {
         }
 
         @Test
+        void systemInitEventPopulatesAvailableCommands() throws Exception {
+            String events = """
+                {"type":"system","subtype":"init","session_id":"cli-sess-slash","slash_commands":["clear","compact","context"]}
+                {"type":"result","subtype":"success","cost_usd":0.0}
+                """;
+
+            client = createClient(events);
+            String sessionId = client.createSession(null);
+            PromptRequest req = new PromptRequest(
+                sessionId, List.of(new ContentBlock.Text("hi")), null, null);
+            client.sendPrompt(req, onUpdate);
+
+            List<String> cmds = client.getAvailableCommands();
+            assertEquals(List.of("/clear", "/compact", "/context"), cmds);
+        }
+
+        @Test
+        void systemEventWithoutSubtypeDoesNotPopulateCommands() throws Exception {
+            // A plain system event (no subtype) must not overwrite an empty command list
+            String events = """
+                {"type":"system","session_id":"cli-sess-no-init"}
+                {"type":"result","subtype":"success","cost_usd":0.0}
+                """;
+
+            client = createClient(events);
+            String sessionId = client.createSession(null);
+            PromptRequest req = new PromptRequest(
+                sessionId, List.of(new ContentBlock.Text("hi")), null, null);
+            client.sendPrompt(req, onUpdate);
+
+            assertTrue(client.getAvailableCommands().isEmpty());
+        }
+
+        @Test
         void multipleTextBlocks() throws Exception {
             String events = """
                 {"type":"system","session_id":"cli-sess-multi"}
