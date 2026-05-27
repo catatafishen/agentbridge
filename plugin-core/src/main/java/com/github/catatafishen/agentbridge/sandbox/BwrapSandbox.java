@@ -8,8 +8,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.VisibleForTesting;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.OutputStream;
+import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -37,10 +38,17 @@ public final class BwrapSandbox {
     private static final String TMPFS_SIZE_PLACEHOLDER = String.valueOf(16L * 1024 * 1024); // 16 MiB
 
     /**
-     * Append {@code --size N --tmpfs PATH} so the next tmpfs mount has an explicit cap.
+     * Append a tmpfs mount for {@code path}, including an explicit {@code --size N} cap when
+     * the installed bwrap version supports it (≥ 0.7.0).  Older versions (e.g. 0.6.x) do not
+     * accept {@code --size} and will abort with "Unknown option --size".
      */
     private static void sizedTmpfs(List<String> args, String sizeBytes, String path) {
-        args.addAll(List.of("--size", sizeBytes, TMPFS, path));
+        if (Boolean.TRUE.equals(tmpfsSizeSupported)) {
+            args.addAll(List.of("--size", sizeBytes, TMPFS, path));
+        } else {
+            args.add(TMPFS);
+            args.add(path);
+        }
     }
 
     /**
@@ -56,6 +64,12 @@ public final class BwrapSandbox {
      * Cached availability check; null = not yet checked.
      */
     private static volatile Boolean available;
+
+    /**
+     * Cached flag: true if this bwrap installation supports {@code --size} before {@code --tmpfs}
+     * (added in bubblewrap 0.7.0). Null until {@link #detectBwrap()} runs.
+     */
+    private static volatile Boolean tmpfsSizeSupported;
 
     private BwrapSandbox() {
     }
@@ -79,6 +93,7 @@ public final class BwrapSandbox {
      */
     public static void forceRecheck() {
         available = null;
+        tmpfsSizeSupported = null;
     }
 
     /**
@@ -88,6 +103,7 @@ public final class BwrapSandbox {
     @VisibleForTesting
     public static void resetDetectionCache() {
         available = null;
+        tmpfsSizeSupported = null;
     }
 
     /**
@@ -601,14 +617,40 @@ public final class BwrapSandbox {
             Process proc = new ProcessBuilder(BWRAP_BINARY, "--version")
                 .redirectErrorStream(true)
                 .start();
-            try (OutputStream sink = OutputStream.nullOutputStream()) {
-                proc.getInputStream().transferTo(sink);
+            String versionLine;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                versionLine = reader.readLine();
+                while (reader.readLine() != null) { /* drain */ }
             }
-            return proc.waitFor() == 0;
+            if (proc.waitFor() != 0) return false;
+            boolean supportsSize = parseSupportsTmpfsSize(versionLine);
+            tmpfsSizeSupported = supportsSize;
+            LOG.info("bwrap version line: \"" + versionLine + "\"; --size support: " + supportsSize);
+            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
         } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Returns true if the bwrap version reported in {@code versionLine} (e.g. {@code "bubblewrap 0.7.0"})
+     * is at least 0.7.0, which is when {@code --size} support for {@code --tmpfs} was introduced.
+     */
+    @VisibleForTesting
+    static boolean parseSupportsTmpfsSize(@Nullable String versionLine) {
+        if (versionLine == null) return false;
+        String[] tokens = versionLine.trim().split("\\s+");
+        if (tokens.length == 0) return false;
+        String ver = tokens[tokens.length - 1];
+        String[] parts = ver.split("\\.");
+        try {
+            int major = Integer.parseInt(parts[0]);
+            int minor = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+            return major > 0 || minor >= 7; // >= 0.7.0
+        } catch (NumberFormatException e) {
             return false;
         }
     }

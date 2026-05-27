@@ -546,4 +546,30 @@ class BwrapSandboxTest {
 
         assertEquals("bwrap", cmd.getFirst());
     }
+
+    // ─── parseSupportsTmpfsSize ───────────────────────────────────────────────
+
+    @Test
+    void parseSupportsTmpfsSizeReturnsFalseForOldVersion() {
+        assertFalse(BwrapSandbox.parseSupportsTmpfsSize("bubblewrap 0.6.1"));
+        assertFalse(BwrapSandbox.parseSupportsTmpfsSize("bubblewrap 0.6.0"));
+        assertFalse(BwrapSandbox.parseSupportsTmpfsSize("bubblewrap 0.5.0"));
+    }
+
+    @Test
+    void parseSupportsTmpfsSizeReturnsTrueForNewVersion() {
+        assertTrue(BwrapSandbox.parseSupportsTmpfsSize("bubblewrap 0.7.0"));
+        assertTrue(BwrapSandbox.parseSupportsTmpfsSize("bubblewrap 0.8.0"));
+        assertTrue(BwrapSandbox.parseSupportsTmpfsSize("bubblewrap 1.0.0"));
+    }
+
+    @Test
+    void parseSupportsTmpfsSizeReturnsFalseForNull() {
+        assertFalse(BwrapSandbox.parseSupportsTmpfsSize(null));
+    }
+
+    @Test
+    void parseSupportsTmpfsSizeReturnsFalseForGarbage() {
+        assertFalse(BwrapSandbox.parseSupportsTmpfsSize("not a version"));
+    }
 }
