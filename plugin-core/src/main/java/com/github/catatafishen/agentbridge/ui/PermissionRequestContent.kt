@@ -21,14 +21,14 @@ import com.google.gson.JsonParser
  *    with strings wrapped in double quotes.
  */
 data class PermissionRequestContent(
-    val headline: String,
+    val question: String?,
     val toolName: String,
     val args: List<Arg>,
 ) {
     data class Arg(val key: String, val value: String)
 
     companion object {
-        private const val DEFAULT_HEADLINE = "Permission requested"
+        const val DEFAULT_HEADLINE = "Permission requested"
         private val PRETTY = GsonBuilder().setPrettyPrinting().create()
 
         fun parse(toolDisplayName: String, description: String?): PermissionRequestContent {
@@ -62,7 +62,7 @@ data class PermissionRequestContent(
             }
 
             return PermissionRequestContent(
-                headline = question ?: DEFAULT_HEADLINE,
+                question = question,
                 toolName = toolDisplayName,
                 args = args,
             )
@@ -74,6 +74,7 @@ data class PermissionRequestContent(
                 val p = value.asJsonPrimitive
                 if (p.isString) "\"${p.asString}\"" else p.asString
             }
+
             else -> PRETTY.toJson(value)
         }
     }

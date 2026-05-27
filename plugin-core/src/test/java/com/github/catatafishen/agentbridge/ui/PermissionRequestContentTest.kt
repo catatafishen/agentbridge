@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -11,27 +12,27 @@ class PermissionRequestContentTest {
         val json = """{"question":"Can I use Read File?","args":{"path":"/tmp/x.txt"}}"""
         val parsed = PermissionRequestContent.parse("Read File", json)
 
-        assertEquals("Can I use Read File?", parsed.headline)
+        assertEquals("Can I use Read File?", parsed.question)
         assertEquals("Read File", parsed.toolName)
         assertEquals(listOf(PermissionRequestContent.Arg("path", "\"/tmp/x.txt\"")), parsed.args)
     }
 
     @Test
-    fun `falls back to default headline when no question field`() {
+    fun `question is null when field missing so caller renders default headline`() {
         val json = """{"args":{"path":"/tmp/x.txt"}}"""
         val parsed = PermissionRequestContent.parse("Read File", json)
 
-        assertEquals("Permission requested", parsed.headline)
+        assertNull(parsed.question)
         assertEquals("Read File", parsed.toolName)
         assertEquals(listOf(PermissionRequestContent.Arg("path", "\"/tmp/x.txt\"")), parsed.args)
     }
 
     @Test
-    fun `default headline used when question is blank`() {
+    fun `question is null when blank`() {
         val json = """{"question":"   ","args":{"k":1}}"""
         val parsed = PermissionRequestContent.parse("Tool", json)
 
-        assertEquals("Permission requested", parsed.headline)
+        assertNull(parsed.question)
     }
 
     @Test
@@ -80,28 +81,28 @@ class PermissionRequestContentTest {
     }
 
     @Test
-    fun `non-JSON description is surfaced as description arg with default headline`() {
+    fun `non-JSON description is surfaced as description arg with null question`() {
         val parsed = PermissionRequestContent.parse("Tool", "just some text")
 
-        assertEquals("Permission requested", parsed.headline)
+        assertNull(parsed.question)
         assertEquals(listOf(PermissionRequestContent.Arg("description", "just some text")), parsed.args)
     }
 
     @Test
-    fun `null or blank description produces empty args and default headline`() {
+    fun `null or blank description produces empty args and null question`() {
         val a = PermissionRequestContent.parse("Tool", null)
-        assertEquals("Permission requested", a.headline)
+        assertNull(a.question)
         assertEquals(emptyList<PermissionRequestContent.Arg>(), a.args)
 
         val b = PermissionRequestContent.parse("Tool", "   ")
-        assertEquals("Permission requested", b.headline)
+        assertNull(b.question)
         assertEquals(emptyList<PermissionRequestContent.Arg>(), b.args)
     }
 
     @Test
-    fun `JSON object without args field yields no args but uses question if present`() {
+    fun `JSON object without args field yields no args but exposes question if present`() {
         val parsed = PermissionRequestContent.parse("Tool", """{"question":"Proceed?"}""")
-        assertEquals("Proceed?", parsed.headline)
+        assertEquals("Proceed?", parsed.question)
         assertEquals(emptyList<PermissionRequestContent.Arg>(), parsed.args)
     }
 }
