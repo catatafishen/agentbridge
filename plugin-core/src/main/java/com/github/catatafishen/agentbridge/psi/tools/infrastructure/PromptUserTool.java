@@ -115,7 +115,6 @@ public final class PromptUserTool extends InfrastructureTool {
             return "Error: failed to read user response";
         } finally {
             registry.unregister(reqId);
-            EdtUtil.invokeLater(() -> panel.clearPendingAskUserRequest(reqId));
         }
     }
 
