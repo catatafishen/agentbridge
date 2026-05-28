@@ -357,6 +357,8 @@ class BroadcastChatPanel(
         nativePanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
     }
 
+    override fun resolvePendingAskUser(answer: String): Boolean = nativePanel.resolvePendingAskUser(answer)
+
     // ── PermissionPromptProvider (Java interface bridge) ────────────────────────
 
     override fun showPermissionPrompt(

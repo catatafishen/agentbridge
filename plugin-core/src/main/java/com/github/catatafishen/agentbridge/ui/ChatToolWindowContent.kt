@@ -1458,6 +1458,12 @@ class ChatToolWindowContent(
         val contextItems = contextManager.collectInlineContextItems()
         val text = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
 
+        // If a prompt_user request is pending, route the typed text to it instead of nudging.
+        if (consolePanel.resolvePendingAskUser(text)) {
+            promptTextArea.text = ""
+            return
+        }
+
         promptTextArea.text = ""
         submitNudge(text)
     }
