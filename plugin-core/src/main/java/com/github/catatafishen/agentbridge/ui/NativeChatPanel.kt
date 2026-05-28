@@ -104,7 +104,44 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         background = UIUtil.getPanelBackground()
     }
 
-    private val scrollPane = JBScrollPane(contentPanel).apply {
+    /**
+     * Wraps [contentPanel] in a host that pins it to the bottom of the viewport when the
+     * chat is shorter than the visible area. Without this, [BoxLayout] inside [contentPanel]
+     * has nothing to absorb the extra vertical space, so the row containers' unbounded
+     * `getMaximumSize().height` lets the bubbles stretch to fill the viewport — making
+     * them unnaturally tall on an empty/short chat.
+     *
+     * Implements [Scrollable] so the viewport matches the host to its own height whenever
+     * there is room, which lets [BorderLayout.SOUTH] do the bottom-pinning. When content
+     * exceeds the viewport, [getScrollableTracksViewportHeight] returns false and normal
+     * scrolling kicks in.
+     */
+    private val bottomAlignedHost = object : JBPanel<JBPanel<*>>(BorderLayout()), Scrollable {
+        init {
+            background = UIUtil.getPanelBackground()
+            add(contentPanel, BorderLayout.SOUTH)
+        }
+
+        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+
+        override fun getScrollableUnitIncrement(
+            visibleRect: Rectangle, orientation: Int, direction: Int
+        ): Int = 16
+
+        override fun getScrollableBlockIncrement(
+            visibleRect: Rectangle, orientation: Int, direction: Int
+        ): Int =
+            if (orientation == SwingConstants.VERTICAL) visibleRect.height else visibleRect.width
+
+        override fun getScrollableTracksViewportWidth(): Boolean = true
+
+        override fun getScrollableTracksViewportHeight(): Boolean {
+            val vp = parent as? JViewport ?: return false
+            return vp.height > preferredSize.height
+        }
+    }
+
+    private val scrollPane = JBScrollPane(bottomAlignedHost).apply {
         border = JBUI.Borders.empty()
         horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         background = UIUtil.getPanelBackground()
@@ -292,6 +329,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             SwingUtilities.invokeLater {
                 val bg = UIUtil.getPanelBackground()
                 contentPanel.background = bg
+                bottomAlignedHost.background = bg
                 scrollPane.background = bg
                 scrollPane.viewport.background = bg
                 contentPanel.repaint()
