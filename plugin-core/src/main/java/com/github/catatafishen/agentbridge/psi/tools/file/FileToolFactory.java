@@ -21,7 +21,6 @@ public final class FileToolFactory {
             new ReadFileTool(project),
             new WriteFileTool(project),
             new EditTextTool(project),
-            new CreateFileTool(project),
             new DeleteFileTool(project),
             new RenameFileTool(project),
             new MoveFileTool(project),
