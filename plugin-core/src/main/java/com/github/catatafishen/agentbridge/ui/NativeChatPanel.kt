@@ -916,6 +916,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // on disposed components after the chat was cleared (e.g. session reset).
         askUserTimers.forEach { it.stop() }
         askUserTimers.clear()
+        pendingAskUserRespond.set(null)
         placeholderLabel = null
     }
 
