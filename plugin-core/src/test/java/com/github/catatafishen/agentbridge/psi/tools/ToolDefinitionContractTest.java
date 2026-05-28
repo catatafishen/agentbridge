@@ -25,7 +25,6 @@ import com.github.catatafishen.agentbridge.psi.tools.editor.QueryTurnsTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.RunScratchFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.SetThemeTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.ShowDiffTool;
-import com.github.catatafishen.agentbridge.psi.tools.file.CreateFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.file.DeleteFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.file.EditTextTool;
 import com.github.catatafishen.agentbridge.psi.tools.file.MoveFileTool;
@@ -182,7 +181,6 @@ class ToolDefinitionContractTest {
             new ReadFileTool(null),
             new WriteFileTool(null),
             new EditTextTool(null),
-            new CreateFileTool(null),
             new DeleteFileTool(null),
             new RenameFileTool(null),
             new MoveFileTool(null),

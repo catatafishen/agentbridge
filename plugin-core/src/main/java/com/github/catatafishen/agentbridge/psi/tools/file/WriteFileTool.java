@@ -67,7 +67,9 @@ public class WriteFileTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Write full file content or create a new file through IntelliJ's editor buffer. "
+        return "Write full file content, creating the file if it does not exist. "
+            + "Use this for both new files and full rewrites of existing files. "
+            + "Goes through IntelliJ's editor buffer so changes are immediately visible in the IDE. "
             + "Auto-format and import optimization is deferred until turn end "
             + "(controlled by auto_format_and_optimize_imports param)";
     }
