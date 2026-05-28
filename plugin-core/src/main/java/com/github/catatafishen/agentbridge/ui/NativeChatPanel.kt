@@ -983,10 +983,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         queuedMessages.clear()
         currentModelLabel = null
         if (spinTimer.isRunning) spinTimer.stop()
-        // Stop any still-pending ask-user countdown timers so they don't keep firing
-        // on disposed components after the chat was cleared (e.g. session reset).
-        askUserTimers.forEach { it.stop() }
-        askUserTimers.clear()
         pendingAskUserRespond.set(null)
         placeholderLabel = null
     }
@@ -1153,6 +1149,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // naturally so the tool returns "user response timed out".
         val markTimedOut = {
             if (resolved.compareAndSet(false, true)) {
+                isWaitingMode = false
+                waitTimeoutAction = null
+                workingTimer.stop()
                 pendingAskUserRespond.set(null)
                 waitExtendButton?.isVisible = false
                 workingLabel?.text = "\u23f1 Time expired"
@@ -1278,9 +1277,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private var currentModelLabel: JBLabel? = null
-
-    /** Active ask-user countdown timers that must be stopped on [clear] to avoid EDT leaks. */
-    private val askUserTimers = mutableListOf<Timer>()
 
     /** The completion callback for the currently pending ask-user request; null when idle. */
     private val pendingAskUserRespond = java.util.concurrent.atomic.AtomicReference<((String) -> Unit)?>(null)
