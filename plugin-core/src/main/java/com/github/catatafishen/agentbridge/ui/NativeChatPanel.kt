@@ -217,6 +217,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var workingStartMs = 0L
     private val workingTimer = Timer(1000) { updateWorkingLabel() }.apply { isRepeats = true }
 
+    /** True when the indicator is counting elapsed/total time waiting for a prompt_user response. */
+    private var isWaitingMode = false
+    private var waitStartMs = 0L
+    private var waitDeadlineMs = 0L
+    private var waitExtendButton: JButton? = null
+    private var waitTimeoutAction: (() -> Unit)? = null
+
     /**
      * Set to true when a tool call or sub-agent reaches a terminal state.
      * The next [appendThinkingText] or [appendText] call checks this flag via
@@ -429,15 +436,26 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun showWorkingIndicator() {
         if (isReplaying) return
         hideWorkingIndicator()
+        isWaitingMode = false
         workingStartMs = System.currentTimeMillis()
         val label = JBLabel("Working…").apply {
             foreground = UIUtil.getContextHelpForeground()
             applyChatFont()
         }
+        val extendBtn = JButton("I need more time").apply {
+            applyChatFont(-1)
+            isVisible = false
+        }
+        val innerPanel = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+            isOpaque = false
+            add(label)
+            add(extendBtn)
+        }
         val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
-        bubble.add(label, BorderLayout.CENTER)
+        bubble.add(innerPanel, BorderLayout.CENTER)
         workingIndicator = row
         workingLabel = label
+        waitExtendButton = extendBtn
         val wrapper = rowContainer(row)
         workingIndicatorWrapper = wrapper
         // Insert before any queued messages so they remain at the very bottom.
@@ -454,6 +472,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun hideWorkingIndicator() {
         workingTimer.stop()
         workingLabel = null
+        waitExtendButton = null
+        waitTimeoutAction = null
+        isWaitingMode = false
         workingIndicatorWrapper?.let {
             contentPanel.remove(it)
             contentPanel.revalidate()
@@ -465,23 +486,73 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun updateWorkingLabel() {
         val label = workingLabel ?: return
-        val elapsed = (System.currentTimeMillis() - workingStartMs) / 1000
-        label.text = "Working… ${elapsed}s"
+        if (isWaitingMode) {
+            val now = System.currentTimeMillis()
+            val elapsed = (now - waitStartMs) / 1000
+            val total = (waitDeadlineMs - waitStartMs) / 1000
+            label.text = "Waiting\u2026 ${elapsed}s / ${total}s"
+            if (now >= waitDeadlineMs) {
+                val action = waitTimeoutAction
+                waitTimeoutAction = null
+                action?.invoke()
+            }
+        } else {
+            val elapsed = (System.currentTimeMillis() - workingStartMs) / 1000
+            label.text = "Working\u2026 ${elapsed}s"
+        }
         // No scrollToBottom() here — the streaming path handles scrolling during active
         // streaming, and when idle the working indicator height is fixed so no scroll is needed.
     }
 
     private fun pauseWorkingIndicator(state: McpPauseService.PauseState) {
+        if (isWaitingMode) return
         val label = workingLabel ?: return
         workingTimer.stop()
         label.text = if (state == McpPauseService.PauseState.PAUSED) "Paused" else "Pausing\u2026"
     }
 
     private fun resumeWorkingIndicator() {
+        if (isWaitingMode) return
         val label = workingLabel ?: return
         workingStartMs = System.currentTimeMillis()
         label.text = "Working\u2026"
         workingTimer.start()
+    }
+
+    /**
+     * Switches the working indicator to "waiting for user" countdown mode.
+     * Creates the indicator if not yet shown.
+     *
+     * @param deadlineEpochMs absolute epoch-ms when the ask-user request expires
+     * @param onExtend called when the user clicks "I need more time"; returns the new deadline epoch-ms
+     * @param onTimeout called once when [deadlineEpochMs] is reached without a response
+     */
+    private fun showWaitingMode(deadlineEpochMs: Long, onExtend: () -> Long, onTimeout: () -> Unit) {
+        if (workingLabel == null) showWorkingIndicator()
+        isWaitingMode = true
+        waitStartMs = System.currentTimeMillis()
+        waitDeadlineMs = deadlineEpochMs
+        waitTimeoutAction = onTimeout
+        waitExtendButton?.apply {
+            actionListeners.forEach { removeActionListener(it) }
+            addActionListener {
+                val newDeadline = onExtend()
+                waitDeadlineMs = newDeadline
+            }
+            isVisible = true
+        }
+        updateWorkingLabel()
+        if (autoScrollEnabled) scrollToBottom()
+    }
+
+    /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user completes. */
+    private fun stopWaitingMode() {
+        isWaitingMode = false
+        workingStartMs = System.currentTimeMillis()
+        waitTimeoutAction = null
+        waitExtendButton?.isVisible = false
+        workingLabel?.text = "Working\u2026"
+        if (!workingTimer.isRunning && workingLabel != null) workingTimer.start()
     }
 
     /** Creates a markdown pane pre-filled with [text] and registers it for disposal. */
@@ -612,8 +683,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (currentTurn?.markdownPane != null) {
             finalizeTurn()
         }
+        if (!isWaitingMode) workingStartMs = System.currentTimeMillis()
         val turn = ensureTurn()
-        // When the tool is one of our local agentbridge-* MCP tools, prefer the locally
         // declared ToolDefinition.Kind over the ACP-supplied kind string. This keeps the
         // chip color in the chat strip and the tool card color in Settings perfectly in
         // sync — both ultimately route through cssKindName() → NativeChatColors.kindColor().
@@ -1047,7 +1118,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         deadlineEpochMs: Long, onRespond: (String) -> Unit,
         onExtend: () -> Long, onSuperseded: () -> Unit,
     ) {
-        hideWorkingIndicator()
         val pane = createMarkdownPane(question)
         val (bubbleRow, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
             row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
@@ -1055,39 +1125,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         addRow(bubbleRow)
 
         val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
-        val countdownLabel = JBLabel().apply {
-            foreground = UIUtil.getContextHelpForeground()
-            applyChatFont(-1)
-        }
-
-        val extendButton = JButton("I need more time").apply {
-            applyChatFont(-1)
-        }
-        extendButton.putClientProperty("deadline", deadlineEpochMs)
-
-        val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
-            isOpaque = false
-            alignmentX = Component.LEFT_ALIGNMENT
-            border = JBUI.Borders.emptyLeft(8)
-        }
-
         val allButtons = mutableListOf<JButton>()
-        allButtons.add(extendButton)
-
-        val countdownTimer = Timer(1000, null).apply { isRepeats = true }
-        askUserTimers.add(countdownTimer)
-
         var controlsRow: JComponent? = null
 
-        // Single point of completion: stop the timer, disable the buttons, drop the
+        // Single point of completion: revert waiting mode, disable the buttons, drop the
         // controls row, and add a user-decision bubble — guarded by an AtomicBoolean
         // so a late timer tick or a duplicate click can't fire onRespond twice.
         val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
         val completeOnce: (String) -> Unit = { answer ->
             if (resolved.compareAndSet(false, true)) {
                 pendingAskUserRespond.set(null)
-                countdownTimer.stop()
-                askUserTimers.remove(countdownTimer)
+                stopWaitingMode()
                 allButtons.forEach { it.isEnabled = false }
                 controlsRow?.let { contentPanel.remove(it) }
                 contentPanel.revalidate()
@@ -1097,39 +1145,22 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
         }
 
-        // Called when the UI countdown reaches zero. We deliberately do NOT invoke
-        // onSuperseded() here — that would complete the backend future with the
-        // "cancelled (superseded)" sentinel that's indistinguishable from an actual
-        // supersede. Instead we stop the UI, disable the buttons, and let the backend's
-        // own deadline-polling loop (PromptUserTool.awaitWithExtensibleDeadline) time
-        // out naturally so the tool returns "user response timed out".
+        // Called when the working indicator countdown reaches zero. We deliberately do NOT
+        // invoke onSuperseded() here — that would complete the backend future with the
+        // "cancelled (superseded)" sentinel that's indistinguishable from an actual supersede.
+        // Instead we stop the UI, disable the buttons, and let the backend's own
+        // deadline-polling loop (PromptUserTool.awaitWithExtensibleDeadline) time out
+        // naturally so the tool returns "user response timed out".
         val markTimedOut = {
             if (resolved.compareAndSet(false, true)) {
                 pendingAskUserRespond.set(null)
-                countdownTimer.stop()
-                askUserTimers.remove(countdownTimer)
+                waitExtendButton?.isVisible = false
+                workingLabel?.text = "\u23f1 Time expired"
                 allButtons.forEach { it.isEnabled = false }
-                countdownLabel.text = "⏱ Time expired"
-                bottomRow.revalidate()
-                bottomRow.repaint()
+                controlsRow?.let { contentPanel.remove(it) }
+                contentPanel.revalidate()
+                contentPanel.repaint()
             }
-        }
-
-        countdownTimer.addActionListener {
-            if (resolved.get()) return@addActionListener
-            val dl = (extendButton.getClientProperty("deadline") as? Long) ?: deadlineEpochMs
-            val remaining = (dl - System.currentTimeMillis()) / 1000
-            if (remaining <= 0) {
-                markTimedOut()
-            } else {
-                countdownLabel.text = "⏱ ${remaining}s remaining"
-            }
-        }
-
-        extendButton.addActionListener {
-            if (resolved.get()) return@addActionListener
-            val newDeadline = onExtend()
-            extendButton.putClientProperty("deadline", newDeadline)
         }
 
         // Populate the controls panel BEFORE handing it to addRow so the layout sees
@@ -1144,12 +1175,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             buttonsPanel.add(btn)
         }
 
-        bottomRow.add(buttonsPanel)
-        bottomRow.add(extendButton)
-        bottomRow.add(countdownLabel)
-        controlsRow = addRow(bottomRow)
+        if (options.isNotEmpty()) {
+            val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+                isOpaque = false
+                alignmentX = Component.LEFT_ALIGNMENT
+                border = JBUI.Borders.emptyLeft(8)
+            }
+            bottomRow.add(buttonsPanel)
+            controlsRow = addRow(bottomRow)
+        }
         pendingAskUserRespond.set(completeOnce)
-        countdownTimer.start()
+        showWaitingMode(deadlineEpochMs, onExtend) { markTimedOut() }
     }
 
     override fun resolvePendingAskUser(answer: String): Boolean {
