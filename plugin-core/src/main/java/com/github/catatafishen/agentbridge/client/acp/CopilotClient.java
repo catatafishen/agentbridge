@@ -809,7 +809,7 @@ public final class CopilotClient extends AcpClient {
     private static String equivalentsForKind(String kind) {
         return switch (kind) {
             case "read" -> "read_file, list_project_files, list_directory_tree";
-            case "edit" -> "write_file, edit_text, create_file, replace_symbol_body";
+            case "edit" -> "write_file, edit_text, replace_symbol_body";
             case "delete" -> "delete_file";
             case "move" -> "move_file";
             case "search" -> "search_text, search_symbols, find_file, find_references";

@@ -9,7 +9,6 @@
     "@intellij-code-tools/read_file",
     "@intellij-code-tools/write_file",
     "@intellij-code-tools/edit_text",
-    "@intellij-code-tools/create_file",
     "@intellij-code-tools/delete_file",
     "@intellij-code-tools/rename_file",
     "@intellij-code-tools/move_file",

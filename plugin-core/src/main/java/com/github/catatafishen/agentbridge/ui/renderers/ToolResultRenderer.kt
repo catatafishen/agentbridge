@@ -85,7 +85,6 @@ object ToolRenderers {
         "edit_text" to WriteFileRenderer,
         "read_file" to ReadFileRenderer,
         "write_file" to WriteFileRenderer,
-        "create_file" to WriteFileRenderer,
         // OpenCode / Claude built-in tools
         "task" to TaskToolRenderer,
         "bash" to RunCommandRenderer,

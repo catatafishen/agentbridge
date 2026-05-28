@@ -187,7 +187,12 @@ public final class ExternalDirRegistry implements Disposable {
      * Used by write tools to reject modifications to read-only external directories.
      */
     public boolean isExternalPath(@NotNull String absolutePath) {
-        Path candidate = Path.of(absolutePath).normalize();
+        Path candidate;
+        try {
+            candidate = Path.of(absolutePath).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return false;
+        }
         for (AttachedDir dir : attached.values()) {
             if (isUnderDirectory(candidate, Path.of(dir.absolutePath()))) {
                 return true;
