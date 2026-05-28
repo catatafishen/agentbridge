@@ -6,7 +6,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.nio.file.Path;
 import java.util.regex.Pattern;
 
 /**
@@ -22,6 +21,16 @@ public final class ExportUtils {
     private static final String AGENTBRIDGE_KIRO = "@agentbridge/";
 
     private static final String SESSIONS_SUBDIR = "sessions";
+
+    /**
+     * Legacy hardcoded sessions path retained for callers that still read from disk
+     * directly (e.g. {@code SessionStoreV2}, {@code SessionSwitchService}). New code
+     * should resolve the sessions directory via {@link #sessionsDir(Project)}, which
+     * honors {@link AgentBridgeStorageSettings}.
+     *
+     * @deprecated Use {@link #sessionsDir(Project)} instead.
+     */
+    @Deprecated(since = "0.9")
     public static final String LEGACY_SESSIONS_DIR = ".agent-work/sessions";
 
     private ExportUtils() {
@@ -82,9 +91,9 @@ public final class ExportUtils {
      * Returns the project-specific v2 sessions directory using the configured storage root.
      *
      * <p>Uses {@link AgentBridgeStorageSettings} to resolve the storage root (e.g.
-     * {@code {project}/.agentbridge}), then appends {@code sessions/}. Falls back to the
-     * legacy {@code .agent-work/sessions/} path when the configured directory does not yet
-     * exist, ensuring backwards-compatibility with existing data.</p>
+     * {@code {project}/.agentbridge}), then appends {@code sessions/}. The legacy
+     * {@code .agent-work/sessions/} path is migrated into this location by
+     * {@code LegacyAgentWorkCleanup} at project open.</p>
      *
      * <b>Prefer this overload over {@link #sessionsDir(String)} when a {@link Project} is
      * available.</b>
@@ -94,34 +103,30 @@ public final class ExportUtils {
      */
     @NotNull
     public static File sessionsDir(@NotNull Project project) {
-        Path storageRoot = AgentBridgeStorageSettings.getInstance().getProjectStorageDir(project);
-        File configured = storageRoot.resolve(SESSIONS_SUBDIR).toFile();
-        if (!configured.exists() || !configured.isDirectory()) {
-            String basePath = project.getBasePath();
-            if (basePath != null) {
-                File legacy = new File(basePath, LEGACY_SESSIONS_DIR);
-                if (legacy.exists() && legacy.isDirectory()) {
-                    return legacy;
-                }
-            }
-        }
-        return configured;
+        return AgentBridgeStorageSettings.getInstance()
+            .getProjectStorageDir(project)
+            .resolve(SESSIONS_SUBDIR)
+            .toFile();
     }
 
     /**
-     * Returns the project-specific v2 sessions directory.
+     * Returns the project-specific v2 sessions directory using a path-only fallback.
+     *
+     * <p>Falls back to {@code {basePath}/.agentbridge/sessions/} (the default storage
+     * mode) since no {@link Project} is available to consult
+     * {@link AgentBridgeStorageSettings}.</p>
      *
      * @param basePath project base path (may be {@code null})
      * @return the sessions directory (may not yet exist on disk)
      * @deprecated Prefer {@link #sessionsDir(Project)} when a {@link Project} is available;
-     * it uses the configured storage root instead of the hardcoded legacy path.
+     * it uses the configured storage root.
      */
     @Deprecated(since = "0.9")
     @NotNull
     public static File sessionsDir(@Nullable String basePath) {
         if (basePath == null || basePath.isEmpty()) {
-            return new File(LEGACY_SESSIONS_DIR);
+            return new File(".agentbridge", SESSIONS_SUBDIR);
         }
-        return new File(basePath, LEGACY_SESSIONS_DIR);
+        return new File(new File(basePath, ".agentbridge"), SESSIONS_SUBDIR);
     }
 }

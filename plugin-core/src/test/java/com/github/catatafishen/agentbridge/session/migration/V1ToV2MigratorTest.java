@@ -17,35 +17,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for {@link V1ToV2Migrator}.
+ *
+ * <p>These tests target the package-private
+ * {@link V1ToV2Migrator#migrateIfNeeded(String, File)} overload so the destination
+ * sessions directory can be controlled directly. The production
+ * {@link V1ToV2Migrator#migrateIfNeeded(com.intellij.openapi.project.Project)}
+ * resolves the destination from
+ * {@link com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings} —
+ * verified in fixture-backed integration tests.</p>
  */
 class V1ToV2MigratorTest {
 
     @TempDir
     Path projectRoot;
 
-    // ── no-op when index already exists ──────────────────────────────────────
+    @TempDir
+    Path storageRoot;
+
+    private File sessionsDir() {
+        return storageRoot.resolve("sessions").toFile();
+    }
 
     @Test
     void doesNotMigrateWhenIndexAlreadyExists() throws IOException {
-        Path sessionsDir = projectRoot.resolve(".agent-work/sessions");
-        Files.createDirectories(sessionsDir);
-        Path indexFile = sessionsDir.resolve("sessions-index.json");
+        File sessionsDir = sessionsDir();
+        Files.createDirectories(sessionsDir.toPath());
+        Path indexFile = sessionsDir.toPath().resolve("sessions-index.json");
         Files.writeString(indexFile, "[{\"id\":\"existing\"}]", StandardCharsets.UTF_8);
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir);
 
         assertEquals("[{\"id\":\"existing\"}]",
             Files.readString(indexFile, StandardCharsets.UTF_8),
             "index must not be overwritten when migration already ran");
     }
 
-    // ── nothing to migrate (no conversation.json) ─────────────────────────────
-
     @Test
     void doesNothingWhenNoV1DataExists() {
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
+        Path indexFile = sessionsDir().toPath().resolve("sessions-index.json");
         assertFalse(indexFile.toFile().exists(), "no sentinel file should be created on fresh installs");
     }
 
@@ -53,9 +64,9 @@ class V1ToV2MigratorTest {
     void doesNothingWhenConversationJsonIsEmpty() throws IOException {
         writeConversationJson("   ");
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
+        Path indexFile = sessionsDir().toPath().resolve("sessions-index.json");
         assertFalse(indexFile.toFile().exists(), "no sentinel file should be created for empty/tiny v1 files");
     }
 
@@ -63,32 +74,28 @@ class V1ToV2MigratorTest {
     void doesNothingWhenConversationJsonHasEmptyArray() throws IOException {
         writeConversationJson("[]");
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
+        Path indexFile = sessionsDir().toPath().resolve("sessions-index.json");
         assertFalse(indexFile.toFile().exists(), "no sentinel file should be created for empty v1 array");
     }
 
-    // ── null basePath ─────────────────────────────────────────────────────────
-
     @Test
     void handlesNullBasePathWithoutException() {
-        // Must not throw; may write an empty index relative to working directory.
-        // We only verify it doesn't throw — the exact path is environment-dependent.
-        V1ToV2Migrator.migrateIfNeeded(null);
-        assertTrue(true); // assertion confirms no exception was thrown
+        // Must not throw; with no basePath there is no v1 data to migrate.
+        V1ToV2Migrator.migrateIfNeeded(null, sessionsDir());
+        assertFalse(sessionsDir().toPath().resolve("sessions-index.json").toFile().exists(),
+            "no index when there is no v1 data");
     }
-
-    // ── successful single-session migration ───────────────────────────────────
 
     @Test
     void migratesSingleSessionFromV1Json() throws IOException {
         writeConversationJson(singleSessionV1Json());
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path sessionsDir = projectRoot.resolve(".agent-work/sessions");
-        Path indexFile = sessionsDir.resolve("sessions-index.json");
+        File sessionsDir = sessionsDir();
+        Path indexFile = sessionsDir.toPath().resolve("sessions-index.json");
         assertTrue(indexFile.toFile().exists());
 
         String indexContent = Files.readString(indexFile, StandardCharsets.UTF_8);
@@ -97,35 +104,32 @@ class V1ToV2MigratorTest {
         assertTrue(indexContent.contains("\"directory\":\"" + projectRoot + "\""),
             "index must contain directory field");
 
-        File[] jsonlFiles = sessionsDir.toFile().listFiles((d, n) -> n.endsWith(".jsonl"));
+        File[] jsonlFiles = sessionsDir.listFiles((d, n) -> n.endsWith(".jsonl"));
         assertNotNull(jsonlFiles, "sessions directory must contain JSONL files");
         assertEquals(1, jsonlFiles.length, "one JSONL file per session");
 
         String jsonlContent = Files.readString(jsonlFiles[0].toPath(), StandardCharsets.UTF_8);
         assertTrue(jsonlContent.contains("\"prompt\""), "JSONL must contain serialized prompt entry");
 
-        Path currentIdFile = sessionsDir.resolve(".current-session-id");
+        Path currentIdFile = sessionsDir.toPath().resolve(".current-session-id");
         assertTrue(currentIdFile.toFile().exists(), ".current-session-id must be written");
     }
-
-    // ── two-session migration with separator ─────────────────────────────────
 
     @Test
     void migratesTwoSessionsSplitBySeparator() throws IOException {
         writeConversationJson(twoSessionsV1Json());
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path sessionsDir = projectRoot.resolve(".agent-work/sessions");
-        File[] jsonlFiles = sessionsDir.toFile().listFiles((d, n) -> n.endsWith(".jsonl"));
+        File sessionsDir = sessionsDir();
+        File[] jsonlFiles = sessionsDir.listFiles((d, n) -> n.endsWith(".jsonl"));
         assertNotNull(jsonlFiles, "sessions directory must contain JSONL files");
         assertEquals(2, jsonlFiles.length, "two sessions must produce two JSONL files");
 
-        String indexContent = Files.readString(sessionsDir.resolve("sessions-index.json"), StandardCharsets.UTF_8);
+        String indexContent = Files.readString(sessionsDir.toPath().resolve("sessions-index.json"),
+            StandardCharsets.UTF_8);
         assertTrue(indexContent.contains("jsonlPath"), "index must include jsonlPath entries");
     }
-
-    // ── archive fallback ──────────────────────────────────────────────────────
 
     @Test
     void fallsBackToMostRecentArchiveWhenPrimaryMissing() throws IOException {
@@ -136,30 +140,25 @@ class V1ToV2MigratorTest {
             singleSessionV1Json(),
             StandardCharsets.UTF_8);
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path indexFile = projectRoot.resolve(".agent-work/sessions/sessions-index.json");
+        Path indexFile = sessionsDir().toPath().resolve("sessions-index.json");
         assertTrue(indexFile.toFile().exists());
         String indexContent = Files.readString(indexFile, StandardCharsets.UTF_8);
         assertNotEquals("[]", indexContent, "archive must have been migrated, not treated as empty");
     }
 
-    // ── idempotence ───────────────────────────────────────────────────────────
-
     @Test
     void callingTwiceIsIdempotent() throws IOException {
         writeConversationJson(singleSessionV1Json());
 
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
-        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
+        V1ToV2Migrator.migrateIfNeeded(projectRoot.toString(), sessionsDir());
 
-        Path sessionsDir = projectRoot.resolve(".agent-work/sessions");
-        File[] jsonlFiles = sessionsDir.toFile().listFiles((d, n) -> n.endsWith(".jsonl"));
+        File[] jsonlFiles = sessionsDir().listFiles((d, n) -> n.endsWith(".jsonl"));
         assertNotNull(jsonlFiles, "sessions directory must contain JSONL files");
         assertEquals(1, jsonlFiles.length, "second migration call must not duplicate sessions");
     }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
 
     private void writeConversationJson(String content) throws IOException {
         Path agentWork = projectRoot.resolve(".agent-work");

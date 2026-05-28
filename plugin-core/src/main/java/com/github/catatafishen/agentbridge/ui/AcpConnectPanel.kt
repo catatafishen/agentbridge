@@ -696,8 +696,7 @@ class AcpConnectPanel(
     }
 
     private fun switchCurrentSession(sessionId: String) {
-        val basePath = project.basePath ?: return
-        val sessionsDir = java.io.File(basePath, ".agent-work/sessions")
+        val sessionsDir = com.github.catatafishen.agentbridge.session.exporters.ExportUtils.sessionsDir(project)
         val currentIdFile = java.io.File(sessionsDir, ".current-session-id")
         try {
             sessionsDir.mkdirs()

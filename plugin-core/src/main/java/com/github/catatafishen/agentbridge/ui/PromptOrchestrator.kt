@@ -21,7 +21,6 @@ data class PromptOrchestratorCallbacks(
     val onSendingStateChanged: (Boolean) -> Unit,
     val appendNewEntries: () -> Unit,
     val notifyIfUnfocused: (toolCallCount: Int) -> Unit,
-    val saveTurnStatistics: (prompt: String, toolCallCount: Int, modelId: String) -> Unit,
     val updateSessionInfo: () -> Unit,
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
@@ -537,7 +536,6 @@ class PromptOrchestrator(
 
         callbacks.notifyIfUnfocused(turnToolCallCount)
 
-        callbacks.saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
         callbacks.appendNewEntries()
         val lastResponse = consolePanel().getLastResponseText()
         val quickReplies = detectQuickReplies(lastResponse)

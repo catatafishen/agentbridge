@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.session.migration;
 
+import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.agentbridge.ui.ConversationSerializer;
 import com.github.catatafishen.agentbridge.bridge.EntryData;
@@ -8,6 +9,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -45,15 +48,19 @@ public final class V1ToV2Migrator {
     }
 
     /**
-     * Runs the migration if it hasn't been done yet.
+     * Runs the migration if it hasn't been done yet, writing the V2 sessions into the
+     * configured storage root (see
+     * {@link com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings}).
      *
      * <p>Safe to call on every plugin startup — it is a no-op once
-     * {@code sessions-index.json} exists.
-     *
-     * @param basePath absolute path to the project root, may be {@code null}
+     * {@code sessions-index.json} exists in the target directory.</p>
      */
-    public static void migrateIfNeeded(@Nullable String basePath) {
-        File sessionsDir = new File(agentWorkDir(basePath), SESSIONS_DIR);
+    public static void migrateIfNeeded(@NotNull Project project) {
+        migrateIfNeeded(project.getBasePath(), ExportUtils.sessionsDir(project));
+    }
+
+    /** Visible for tests so they can target an explicit sessions directory. */
+    static void migrateIfNeeded(@Nullable String basePath, @NotNull File sessionsDir) {
         File indexFile = new File(sessionsDir, SESSIONS_INDEX);
         if (indexFile.exists()) return; // already migrated
 
