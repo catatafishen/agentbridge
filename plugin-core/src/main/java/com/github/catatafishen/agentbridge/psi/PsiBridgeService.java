@@ -866,7 +866,7 @@ public final class PsiBridgeService implements Disposable {
      */
     static boolean isWriteToolName(String toolName) {
         return switch (toolName) {
-            case "write_file", "edit_text", "create_file",
+            case "write_file", "edit_text",
                  TOOL_REPLACE_SYMBOL_BODY, TOOL_INSERT_BEFORE_SYMBOL,
                  TOOL_INSERT_AFTER_SYMBOL -> true;
             default -> false;
@@ -875,8 +875,8 @@ public final class PsiBridgeService implements Disposable {
 
     static boolean isSuccessfulWrite(String toolName, String result) {
         return switch (toolName) {
-            case "write_file", "edit_text" -> result.startsWith("Edited:") || result.startsWith("Written:");
-            case "create_file" -> result.startsWith("✓ Created file:");
+            case "write_file", "edit_text" ->
+                result.startsWith("Edited:") || result.startsWith("Written:") || result.startsWith("Created:");
             case TOOL_REPLACE_SYMBOL_BODY -> result.startsWith("Replaced lines ");
             case TOOL_INSERT_BEFORE_SYMBOL -> result.startsWith("Inserted ") && result.contains(" before ");
             case TOOL_INSERT_AFTER_SYMBOL -> result.startsWith("Inserted ") && result.contains(" after ");

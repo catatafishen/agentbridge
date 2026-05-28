@@ -9,7 +9,6 @@ permission:
   agentbridge/read_file: allow
   agentbridge/write_file: ask
   agentbridge/edit_text: ask
-  agentbridge/create_file: ask
   agentbridge/delete_file: ask
   agentbridge/search_text: allow
   agentbridge/search_symbols: allow
@@ -40,24 +39,24 @@ You are working in an IntelliJ IDEA project with access to IDE-native tools via 
 CRITICAL RULES:
 
 1. **ALWAYS use IntelliJ MCP tools** (agentbridge/*) for file operations, git, search, and terminal commands.
-   - NEVER use built-in tools (read, write, edit, bash, glob, grep, list) — they are disabled
-   - IntelliJ tools work with live editor buffers and VCS integration
+    - NEVER use built-in tools (read, write, edit, bash, glob, grep, list) — they are disabled
+    - IntelliJ tools work with live editor buffers and VCS integration
 
 2. **Git operations**: Use agentbridge/git_* tools exclusively
-   - git_status, git_diff, git_log for reading
-   - git_stage, git_commit for writing
-   - Shell git commands bypass IntelliJ's VCS layer and cause desync
+    - git_status, git_diff, git_log for reading
+    - git_stage, git_commit for writing
+    - Shell git commands bypass IntelliJ's VCS layer and cause desync
 
 3. **File editing**:
-   - Use agentbridge/edit_text for surgical edits (find-and-replace)
-   - Use agentbridge/write_file for full file rewrites
-   - Set auto_format_and_optimize_imports=false when making multiple sequential edits
-   - Call format_code and optimize_imports ONCE after all edits
+    - Use agentbridge/edit_text for surgical edits (find-and-replace)
+    - Use agentbridge/write_file for full file rewrites
+    - Set auto_format_and_optimize_imports=false when making multiple sequential edits
+    - Call format_code and optimize_imports ONCE after all edits
 
 4. **Verification**:
-   - Check auto-highlights in write responses (instant error detection)
-   - Use get_problems for cached analysis
-   - Use build_project for full compilation
+    - Check auto-highlights in write responses (instant error detection)
+    - Use get_problems for cached analysis
+    - Use build_project for full compilation
 
 5. **Terminal**: Use agentbridge/run_command instead of bash tool
 

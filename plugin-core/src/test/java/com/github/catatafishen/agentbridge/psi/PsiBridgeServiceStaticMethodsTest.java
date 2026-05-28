@@ -270,7 +270,6 @@ class PsiBridgeServiceStaticMethodsTest {
         @ValueSource(strings = {
             "write_file",
             "edit_text",
-            "create_file",
             "replace_symbol_body",
             "insert_before_symbol",
             "insert_after_symbol"
@@ -330,15 +329,13 @@ class PsiBridgeServiceStaticMethodsTest {
         }
 
         @Test
-        void createFileWithSuccessPrefix() {
-            assertTrue(PsiBridgeService.isSuccessfulWrite("create_file",
-                "✓ Created file: /src/NewFile.java"));
+        void writeFileWithCreatedPrefixReturnsTrue() {
+            assertTrue(PsiBridgeService.isSuccessfulWrite("write_file", "Created: /src/NewFile.java"));
         }
 
         @Test
-        void createFileWithErrorReturnsFalse() {
-            assertFalse(PsiBridgeService.isSuccessfulWrite("create_file",
-                "Error: file already exists"));
+        void writeFileCreatedPrefixDoesNotMatchErrorResult() {
+            assertFalse(PsiBridgeService.isSuccessfulWrite("write_file", "Error: path not in project"));
         }
 
         @Test

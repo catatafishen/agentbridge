@@ -102,7 +102,6 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
     "read_file" to "path",
     "write_file" to "path",
     "edit_text" to "path",
-    "create_file" to "path",
     "delete_file" to "path",
     "open_in_editor" to "file",
     "show_diff" to "file",

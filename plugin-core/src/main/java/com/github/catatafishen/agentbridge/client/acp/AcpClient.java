@@ -616,8 +616,8 @@ public abstract class AcpClient extends AbstractClient {
         for (NewSessionResponse.SessionConfigOption opt : options) {
             List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
-                .toList();
+                  .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
+                  .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String label = opt.label() != null ? opt.label() : optId;
             result.add(new AbstractClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
@@ -643,8 +643,8 @@ public abstract class AcpClient extends AbstractClient {
         for (NewSessionResponse.SessionConfigOption opt : incoming) {
             List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
-                .toList();
+                  .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
+                  .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String optLabel = opt.label() != null ? opt.label() : optId;
             AbstractClient.AgentConfigOption updated =
@@ -2046,7 +2046,7 @@ public abstract class AcpClient extends AbstractClient {
         return switch (builtInTool) {
             case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
             case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
-            case "create" -> "agentbridge-create_file";
+            case "create" -> "agentbridge-write_file";
             case "view" -> "agentbridge-read_file";
             case "glob" -> "agentbridge-list_project_files";
             case "grep" -> "agentbridge-search_text";

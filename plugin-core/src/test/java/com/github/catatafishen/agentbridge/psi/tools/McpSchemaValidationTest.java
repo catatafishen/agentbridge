@@ -76,7 +76,6 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.file.ReadFileTool",
         "com.github.catatafishen.agentbridge.psi.tools.file.WriteFileTool",
         "com.github.catatafishen.agentbridge.psi.tools.file.EditTextTool",
-        "com.github.catatafishen.agentbridge.psi.tools.file.CreateFileTool",
         "com.github.catatafishen.agentbridge.psi.tools.file.DeleteFileTool",
         "com.github.catatafishen.agentbridge.psi.tools.file.RenameFileTool",
         "com.github.catatafishen.agentbridge.psi.tools.file.MoveFileTool",
