@@ -1179,13 +1179,6 @@ class ChatToolWindowContent(
         onSendingStateChanged = ::setSendingState,
         appendNewEntries = { persistenceManager.appendNewEntries() },
         notifyIfUnfocused = ::notifyIfUnfocused,
-        saveTurnStatistics = { prompt, toolCalls, modelId ->
-            persistenceManager.saveTurnStatistics(
-                prompt,
-                toolCalls,
-                modelId
-            )
-        },
         updateSessionInfo = ::updateSessionInfo,
         requestFocusAfterTurn = { promptTextArea.requestFocusInWindow() },
         onTimerIncrementToolCalls = {
@@ -2593,14 +2586,6 @@ class ChatToolWindowContent(
             }
 
             override fun getAgentDisplayName(): String = agentManager.activeProfile.displayName
-
-            override fun getModelMultiplier(modelId: String): String? = try {
-                agentManager.client.getModelMultiplier(modelId)
-            } catch (_: Exception) {
-                null
-            }
-
-            override fun supportsMultiplier(): Boolean = agentManager.client.supportsMultiplier()
         }
 
     private fun setupNudgeLifecycleListener() {

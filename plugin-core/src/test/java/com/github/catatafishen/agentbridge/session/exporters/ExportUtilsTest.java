@@ -142,22 +142,22 @@ class ExportUtilsTest {
     @Test
     void sessionsDirWithNullBasePathReturnsRelativePath() {
         File dir = ExportUtils.sessionsDir((String) null);
-        assertEquals(".agent-work/sessions", dir.getPath().replace('\\', '/'));
+        assertEquals(".agentbridge/sessions", dir.getPath().replace('\\', '/'));
     }
 
     @SuppressWarnings("deprecation")
     @Test
     void sessionsDirWithEmptyBasePathReturnsRelativePath() {
         File dir = ExportUtils.sessionsDir("");
-        assertEquals(".agent-work/sessions", dir.getPath().replace('\\', '/'));
+        assertEquals(".agentbridge/sessions", dir.getPath().replace('\\', '/'));
     }
 
     @SuppressWarnings("deprecation")
     @Test
     void sessionsDirWithAbsoluteBasePathCombinesCorrectly() {
         File dir = ExportUtils.sessionsDir("/projects/myapp");
-        assertTrue(dir.getPath().endsWith(".agent-work/sessions".replace('/', File.separatorChar)),
-            "Expected path to end with .agent-work/sessions, got: " + dir.getPath());
+        assertTrue(dir.getPath().endsWith(".agentbridge/sessions".replace('/', File.separatorChar)),
+            "Expected path to end with .agentbridge/sessions, got: " + dir.getPath());
     }
 
     @SuppressWarnings("deprecation")
@@ -165,7 +165,7 @@ class ExportUtilsTest {
     void sessionsDirDoesNotRequireDirectoryToExist() {
         File dir = ExportUtils.sessionsDir("/nonexistent/path");
         // just verifies no exception thrown and returns a File
-        assertTrue(dir.getPath().contains(".agent-work"));
+        assertTrue(dir.getPath().contains(".agentbridge"));
     }
 
     // ── sanitizeToolName — additional edge cases ─────────────────────────────

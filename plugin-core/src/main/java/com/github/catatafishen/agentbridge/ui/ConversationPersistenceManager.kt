@@ -8,12 +8,9 @@ import com.github.catatafishen.agentbridge.session.ConversationEntryStore
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
-import com.google.gson.JsonObject
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import java.io.File
-import java.time.Instant
 
 /**
  * Manages conversation persistence: incremental saves, restore from disk,
@@ -26,7 +23,6 @@ class ConversationPersistenceManager(
 
     companion object {
         private val LOG = Logger.getInstance(ConversationPersistenceManager::class.java)
-        private const val AGENT_WORK_DIR = ".agent-work"
     }
 
     private val conversationReplayer = ConversationReplayer()
@@ -78,12 +74,6 @@ class ConversationPersistenceManager(
 
         /** Get the active agent's display name */
         fun getAgentDisplayName(): String
-
-        /** Get the model multiplier for a model ID (may return null) */
-        fun getModelMultiplier(modelId: String): String?
-
-        /** Check if the agent client supports multiplier */
-        fun supportsMultiplier(): Boolean
     }
 
     // ------------------------------------------------------------------
@@ -166,7 +156,7 @@ class ConversationPersistenceManager(
      */
     fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            V1ToV2Migrator.migrateIfNeeded(project.basePath)
+            V1ToV2Migrator.migrateIfNeeded(project)
             val result = conversationStore.loadRecentEntries(project.basePath)
             val entries = result?.entries() ?: emptyList()
             val hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
@@ -275,40 +265,6 @@ class ConversationPersistenceManager(
         }
         conversationStore.archive()
         persistedEntryCount = 0
-    }
-
-    // ------------------------------------------------------------------
-    // Usage stats
-    // ------------------------------------------------------------------
-
-    /**
-     * Appends a turn's statistics to the usage-stats.jsonl file.
-     */
-    fun saveTurnStatistics(prompt: String, toolCalls: Int, modelId: String) {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val statsDir = File(project.basePath ?: return@executeOnPooledThread, AGENT_WORK_DIR)
-                statsDir.mkdirs()
-                val statsFile = File(statsDir, "usage-stats.jsonl")
-                val cb = callbacks
-                val entry = JsonObject().apply {
-                    addProperty("timestamp", Instant.now().toString())
-                    addProperty("prompt", prompt.take(200))
-                    addProperty("model", modelId)
-                    if (cb?.supportsMultiplier() == true) {
-                        val multiplier = try {
-                            cb.getModelMultiplier(modelId)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (multiplier != null) addProperty("multiplier", multiplier)
-                    }
-                    addProperty("toolCalls", toolCalls)
-                }
-                statsFile.appendText(entry.toString() + "\n")
-            } catch (_: Exception) { /* best-effort */
-            }
-        }
     }
 
     // ------------------------------------------------------------------

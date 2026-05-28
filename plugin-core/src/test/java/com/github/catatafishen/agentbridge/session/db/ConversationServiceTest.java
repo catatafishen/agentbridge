@@ -57,7 +57,7 @@ class ConversationServiceTest {
     }
 
     private Path currentSessionIdFile() {
-        return tempDir.resolve(".agent-work").resolve("sessions").resolve(".current-session-id");
+        return tempDir.resolve(".agentbridge").resolve("sessions").resolve(".current-session-id");
     }
 
     // ── getCurrentSessionId ───────────────────────────────────────────────
