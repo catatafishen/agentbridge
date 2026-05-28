@@ -1084,6 +1084,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
         val completeOnce: (String) -> Unit = { answer ->
             if (resolved.compareAndSet(false, true)) {
+                pendingAskUserRespond.set(null)
                 countdownTimer.stop()
                 askUserTimers.remove(countdownTimer)
                 allButtons.forEach { it.isEnabled = false }
@@ -1103,6 +1104,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // out naturally so the tool returns "user response timed out".
         val markTimedOut = {
             if (resolved.compareAndSet(false, true)) {
+                pendingAskUserRespond.set(null)
                 countdownTimer.stop()
                 askUserTimers.remove(countdownTimer)
                 allButtons.forEach { it.isEnabled = false }
@@ -1145,8 +1147,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         bottomRow.add(extendButton)
         bottomRow.add(countdownLabel)
         controlsRow = addRow(bottomRow)
-
+        pendingAskUserRespond.set(completeOnce)
         countdownTimer.start()
+    }
+
+    override fun resolvePendingAskUser(answer: String): Boolean {
+        val respond = pendingAskUserRespond.get() ?: return false
+        respond(answer)
+        return true
     }
 
     private val nudgeBubbles = mutableMapOf<String, JComponent>()
@@ -1236,6 +1244,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** Active ask-user countdown timers that must be stopped on [clear] to avoid EDT leaks. */
     private val askUserTimers = mutableListOf<Timer>()
+
+    /** The completion callback for the currently pending ask-user request; null when idle. */
+    private val pendingAskUserRespond = java.util.concurrent.atomic.AtomicReference<((String) -> Unit)?>(null)
 
     override fun setCurrentModel(modelId: String) {
         updateMetaLabel(modelId.substringAfterLast('/').substringAfterLast(':'))

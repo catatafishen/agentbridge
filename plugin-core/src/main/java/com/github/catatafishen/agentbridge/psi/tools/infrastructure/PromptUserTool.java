@@ -51,7 +51,8 @@ public final class PromptUserTool extends InfrastructureTool {
     @Override
     public @NotNull String description() {
         return "Ask the user a question and wait for their response. Blocks until the user replies (timeout: 120s, extensible — the user can request more time). " +
-            "Use options parameter to show quick-reply buttons.";
+            "Use options parameter to show quick-reply buttons. " +
+            "The user can also reply by typing in the chat input field and pressing Enter — a free-form reply is not restricted to the provided options.";
     }
 
     @Override
@@ -68,7 +69,7 @@ public final class PromptUserTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         JsonObject schema = schema(
             Param.required(PARAM_QUESTION, TYPE_STRING, "Question to ask the user"),
-            Param.required(PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons")
+            Param.optional(PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons (optional — the user can also type a free-form reply in the chat input)")
         );
         addArrayItems(schema, PARAM_OPTIONS);
         return schema;
@@ -82,9 +83,6 @@ public final class PromptUserTool extends InfrastructureTool {
         }
 
         List<String> options = parseOptions(args);
-        if (options.isEmpty()) {
-            return "Error: at least one reply option is required";
-        }
 
         BroadcastChatPanel panel = BroadcastChatPanel.getInstance(project);
         if (panel == null) {

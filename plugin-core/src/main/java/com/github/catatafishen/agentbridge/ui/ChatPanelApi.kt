@@ -35,7 +35,9 @@ interface ChatPanelApi : Disposable {
 
     fun removePromptEntry(entryId: String)
 
-    fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) { /* no-op default */ }
+    fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) { /* no-op default */
+    }
+
     fun setCurrentModel(modelId: String)
     fun setCurrentProfile(profileId: String)
     fun setCurrentAgent(agentName: String, profileId: String, clientType: String = "")
@@ -44,14 +46,16 @@ interface ChatPanelApi : Disposable {
      * Records context file references. Default is a no-op; implementations may
      * override to track files for export or history persistence.
      */
-    fun addContextFilesEntry(files: List<Pair<String, String>>) { /* no-op default */ }
+    fun addContextFilesEntry(files: List<Pair<String, String>>) { /* no-op default */
+    }
 
     /**
      * Displays image thumbnails below the most recently added user message bubble.
      * Called after [addPromptEntry] when the prompt includes image attachments.
      * Default is a no-op; implementations that can render images should override.
      */
-    fun addImageThumbnails(images: List<ImageAttachment>) { /* no-op default */ }
+    fun addImageThumbnails(images: List<ImageAttachment>) { /* no-op default */
+    }
 
     /** Resolved image attachment ready for thumbnail display. */
     data class ImageAttachment(val name: String, val base64Data: String, val mimeType: String)
@@ -197,6 +201,13 @@ interface ChatPanelApi : Disposable {
         onExtend: () -> Long,
         onSuperseded: () -> Unit,
     )
+
+    /**
+     * Resolves the currently pending ask-user request with [answer], as if the user had clicked
+     * a quick-reply button. Returns `true` if a request was pending and was resolved; `false` if
+     * there is no active ask-user request (e.g., it already timed out or was already answered).
+     */
+    fun resolvePendingAskUser(answer: String): Boolean
 
     fun showNudgeBubble(id: String, text: String, source: NudgeSource = NudgeSource.HUMAN)
     fun resolveNudgeBubble(id: String)
