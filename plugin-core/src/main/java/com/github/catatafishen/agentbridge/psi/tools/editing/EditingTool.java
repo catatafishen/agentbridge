@@ -73,6 +73,11 @@ public abstract class EditingTool extends Tool {
     }
 
     protected @Nullable SymbolLocation resolveSymbol(String pathStr, String symbolName, @Nullable Integer lineHint) {
+        // Sync PSI with any pending document edits before reading symbol offsets.
+        // Without this, PSI-derived line numbers can be stale relative to the
+        // document, causing replaceString to use wrong offsets and triggering
+        // "Inconsistent FILE tree" on the subsequent commitDocument.
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
         // Cast required: resolves ambiguity between runReadAction(Computable) and runReadAction(Runnable)
         return ApplicationManager.getApplication().runReadAction((Computable<SymbolLocation>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
