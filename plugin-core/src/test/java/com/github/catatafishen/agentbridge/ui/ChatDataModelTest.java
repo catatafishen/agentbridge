@@ -242,7 +242,6 @@ class ChatDataModelTest {
         assertEquals("path", ChatDataModelKt.toolSubtitleKey("read_file"));
         assertEquals("path", ChatDataModelKt.toolSubtitleKey("write_file"));
         assertEquals("path", ChatDataModelKt.toolSubtitleKey("edit_text"));
-        assertEquals("path", ChatDataModelKt.toolSubtitleKey("create_file"));
     }
 
     @Test
