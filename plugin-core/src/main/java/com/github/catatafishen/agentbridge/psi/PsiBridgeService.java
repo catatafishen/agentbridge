@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolCallRecord;
@@ -814,8 +815,15 @@ public final class PsiBridgeService implements Disposable {
         return null;
     }
 
+    /**
+     * Returns true if the path is inside the project root, OR inside any currently attached
+     * external directory. Attached external dirs require External permission only for the
+     * {@code attach_external_dir} call itself; subsequent reads must not re-prompt.
+     */
     private boolean isInsideProject(String path) {
-        return isPathUnderBase(path, project.getBasePath());
+        if (isPathUnderBase(path, project.getBasePath())) return true;
+        ExternalDirRegistry externalDirs = ExternalDirRegistry.getInstance(project);
+        return externalDirs != null && externalDirs.isExternalPath(path);
     }
 
     /**
