@@ -472,7 +472,12 @@ class AcpClientProtocolTest {
         }
 
         @Test
-        void cancelClearsCurrentSessionId() throws Exception {
+        void cancelPreservesCurrentSessionId() throws Exception {
+            // Per ACP spec, session/cancel cancels the *current turn*, not the session.
+            // The session must remain alive so the next prompt reuses it and the agent
+            // keeps conversation context. Regression: cancelSession used to null
+            // currentSessionId, which caused the next prompt to create a brand-new
+            // session and lose all context after the user hit the Stop button.
             String responseJson = """
                 {"sessionId": "s1", "models": {"availableModels": []}}""";
             CompletableFuture<JsonElement> future =
@@ -482,7 +487,8 @@ class AcpClientProtocolTest {
 
             assertNotNull(client.getActiveSessionId());
             client.cancelSession("s1");
-            assertNull(client.getActiveSessionId());
+            assertEquals("s1", client.getActiveSessionId(),
+                "cancelSession must keep the session ID — only dropCurrentSession() may clear it");
         }
     }
 

@@ -847,10 +847,11 @@ public abstract class AcpClient extends AbstractClient {
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         transport.sendNotification("session/cancel", params);
-        // Clear the cached session ID so the next createSession() starts a new one
-        if (sessionId.equals(currentSessionId)) {
-            currentSessionId = null;
-        }
+        // Do NOT clear currentSessionId here. Per ACP spec, session/cancel
+        // cancels the *current turn*, not the session — the session remains
+        // alive and the next prompt must reuse it so the agent keeps the
+        // conversation context. Use dropCurrentSession() when you actually
+        // want a fresh session.
     }
 
     // ── Session resumption helpers ───────────────────────────────────────────
