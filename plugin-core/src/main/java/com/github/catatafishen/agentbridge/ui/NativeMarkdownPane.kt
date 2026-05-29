@@ -67,6 +67,18 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedForVersion = -1
     private var cachedHeight = -1
 
+    /**
+     * Single-shot timer used to recover an accurate layout after a burst of resize-driven
+     * [getPreferredSize] calls returned a tolerance-matched stale height. Restarted on every
+     * tolerance hit; fires once the resize burst has been quiet for [RESIZE_SETTLE_MS].
+     * When it fires, the cache is invalidated and [revalidate] is called so the parent
+     * re-queries at the actual current width and gets a fresh accurate measurement.
+     */
+    private val resizeSettleTimer = Timer(RESIZE_SETTLE_MS) {
+        cachedForWidth = -1
+        revalidate()
+    }.apply { isRepeats = false }
+
     init {
         contentType = "text/html"
         isEditable = false
@@ -174,6 +186,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     /** Stops the render timer and disconnects the color scheme subscription. */
     fun dispose() {
         renderTimer.stop()
+        resizeSettleTimer.stop()
         Disposer.dispose(schemeDisposable)
     }
 
@@ -243,6 +256,24 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
         // Exact cache hit: same width and same content.
         if (pw == cachedForWidth && contentVersion == cachedForVersion) {
+            return Dimension(pw, cachedHeight)
+        }
+
+        // Tolerance cache hit: width has nudged slightly (typical during a window resize
+        // drag or side-panel animation, which fires many ComponentEvents per second) but
+        // content is unchanged. Returning the previously cached height avoids the expensive
+        // HTML re-layout on every pixel of drag. The visual mismatch — text wrap at the new
+        // width while the bubble still reports the old height — is at most RESIZE_TOLERANCE_PX
+        // pixels worth and lasts only until [resizeSettleTimer] fires (~150 ms after the
+        // resize burst ends), at which point we invalidate and revalidate for an accurate
+        // final layout. Critical on Windows where Swing HTML/GDI text measurement is several
+        // times slower than FreeType on Linux and the per-pane cost compounds across many
+        // bubbles into an EDT freeze during resize.
+        if (cachedForWidth > 0 &&
+            contentVersion == cachedForVersion &&
+            (kotlin.math.abs(pw - cachedForWidth) <= RESIZE_TOLERANCE_PX)
+        ) {
+            resizeSettleTimer.restart()
             return Dimension(pw, cachedHeight)
         }
 
@@ -322,6 +353,22 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     companion object {
         private const val RENDER_INTERVAL_MS = 30  // ~30fps cap; mirrors JCEF's rAF throttle
+
+        /**
+         * Width delta (px) within which [getPreferredSize] reuses the previously cached
+         * height instead of performing a full HTML re-layout. Sized to absorb the small
+         * per-event width changes Swing fires during a window resize drag or a tool-window
+         * panel animation, while keeping any visual right-edge mismatch imperceptible.
+         */
+        private const val RESIZE_TOLERANCE_PX = 16
+
+        /**
+         * Quiet-window (ms) after the last tolerance-matched [getPreferredSize] call before
+         * we invalidate the cache and revalidate to obtain a pixel-accurate final layout.
+         * Long enough to cover the gap between successive resize events; short enough to
+         * feel instantaneous once the user releases the mouse.
+         */
+        private const val RESIZE_SETTLE_MS = 150
 
         private fun colorToHex(c: Color): String =
             "#%02x%02x%02x".format(c.red, c.green, c.blue)
