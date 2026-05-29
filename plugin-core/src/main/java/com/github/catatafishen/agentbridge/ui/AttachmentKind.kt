@@ -10,9 +10,15 @@ package com.github.catatafishen.agentbridge.ui
  *              agents can consume it directly.
  * - [BINARY] — any other binary file (PDF, archive, etc.) on disk; sent as a
  *              `Resource` link with mime type but without inline content.
+ * - [PROMPT] — a reference to a historical prompt turn from the conversation
+ *              database. Doesn't map to a file on disk — the full turn details
+ *              (prompt, agent response, tool calls, stats, commits) are carried
+ *              inline on [ContextItemData.inlineText] and sent as a `Resource`
+ *              link with an `agentbridge://prompt/<id>` URI.
  */
 enum class AttachmentKind {
     TEXT,
     IMAGE,
     BINARY,
+    PROMPT,
 }

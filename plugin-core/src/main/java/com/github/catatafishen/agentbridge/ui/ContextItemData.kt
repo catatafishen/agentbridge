@@ -17,4 +17,12 @@ data class ContextItemData @JvmOverloads constructor(
     val fileTypeName: String?,
     val isSelection: Boolean,
     val attachmentKind: AttachmentKind = AttachmentKind.TEXT,
+    /**
+     * Inline text content carried by chips that do not map to a file on disk
+     * — currently only [AttachmentKind.PROMPT], which serializes a full turn
+     * (prompt + response + tool calls + stats) into this field at chip-creation
+     * time. `null` for file-backed attachments, which read their content from
+     * disk when the prompt is sent.
+     */
+    val inlineText: String? = null,
 )

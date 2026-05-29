@@ -55,6 +55,26 @@ class ChatToolWindowContent(
         fun getInstance(project: Project): ChatToolWindowContent? = instances[project]
     }
 
+    /**
+     * Inserts an inline context chip at the current caret in the prompt input — the same
+     * mechanism used by the "Attach file" / "Attach selection" actions. Used by, e.g.,
+     * [com.github.catatafishen.agentbridge.ui.side.HistoryContextWindow]'s "Reference in
+     * chat" button to attach a historical turn to the next prompt.
+     *
+     * Brings the chat tool window to the front and focuses the prompt editor so the user
+     * sees the chip land and can continue typing.
+     */
+    fun insertContextChip(data: ContextItemData) {
+        ApplicationManager.getApplication().invokeLater {
+            if (!::contextManager.isInitialized) return@invokeLater
+            val editor = (promptTextArea.editor as? com.intellij.openapi.editor.ex.EditorEx) ?: return@invokeLater
+            com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+                .getToolWindow("AgentBridge")?.activate(null, true)
+            contextManager.insertInlineChip(editor, data)
+            promptTextArea.requestFocusInWindow()
+        }
+    }
+
     private val cardLayout = CardLayout()
     private val mainPanel = JBPanel<JBPanel<*>>(cardLayout)
 

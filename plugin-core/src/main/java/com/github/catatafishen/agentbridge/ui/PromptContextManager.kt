@@ -320,7 +320,18 @@ class PromptContextManager(
             AttachmentKind.TEXT -> buildTextAttachment(item)
             AttachmentKind.IMAGE -> buildImageAttachment(item)
             AttachmentKind.BINARY -> buildBinaryAttachment(item)
+            AttachmentKind.PROMPT -> buildPromptAttachment(item)
         }
+    }
+
+    private fun buildPromptAttachment(item: ContextItemData): PromptAttachment.TextRef? {
+        val text = item.inlineText ?: return null
+        return PromptAttachment.TextRef(
+            uri = item.path.ifEmpty { "agentbridge://prompt/${item.name}" },
+            mimeType = "text/markdown",
+            displayName = item.name,
+            text = text,
+        )
     }
 
     private fun buildTextAttachment(item: ContextItemData): PromptAttachment.TextRef? {

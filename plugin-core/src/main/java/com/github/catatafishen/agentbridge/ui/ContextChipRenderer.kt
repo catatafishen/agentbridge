@@ -22,6 +22,7 @@ class ContextChipRenderer(val contextData: ContextItemData) : EditorCustomElemen
     private val leadingIcon: Icon? = when (contextData.attachmentKind) {
         AttachmentKind.IMAGE -> AllIcons.FileTypes.Image
         AttachmentKind.BINARY -> AllIcons.FileTypes.Any_type
+        AttachmentKind.PROMPT -> AllIcons.Vcs.History
         AttachmentKind.TEXT -> null
     }
 
