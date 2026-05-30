@@ -8,18 +8,29 @@ import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.lastR
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import com.intellij.ui.JBColor
 import java.awt.Color
 import java.awt.Dimension
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.Point
+import java.awt.Rectangle
+import java.awt.Shape
+import java.awt.geom.AffineTransform
 import javax.swing.JEditorPane
-import javax.swing.JViewport
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
 import javax.swing.plaf.TextUI
 import javax.swing.text.DefaultCaret
+import javax.swing.text.Element
+import javax.swing.text.StyleConstants
 import javax.swing.text.View
+import javax.swing.text.html.BlockView
+import javax.swing.text.html.HTML
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.StyleSheet
+import javax.swing.text.ViewFactory
 
 /**
  * A [JEditorPane]-based component that renders streaming markdown as HTML.
@@ -71,16 +82,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedForVersion = -1
     private var cachedHeight = -1
 
-    /** Natural (unconstrained) content width of the latest render — cached per content version. */
-    private var cachedNaturalWidth = 0
-    private var cachedNaturalWidthForVersion = -1
-
-    /**
-     * Wall-clock time (ms) of the most recent content change in this pane. Used to decide
-     * whether the pane is "live" (recently streamed/updated) or "stale" (older history)
-     * for the purpose of [LIVE_PANE_AGE_MS]-based freezing during resize bursts.
-     * Stale panes are skipped entirely during a drag and revalidated once it settles.
-     */
     private var lastContentChangeMs: Long = 0L
 
     /**
@@ -108,9 +109,18 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         caret.updatePolicy = DefaultCaret.NEVER_UPDATE
         setCaret(caret)
 
-        val kit = HTMLEditorKit()
+        val kit = ScrollableHTMLEditorKit()
         kit.styleSheet = createStyleSheet()
         editorKit = kit
+
+        addMouseWheelListener { e ->
+            if (e.isShiftDown) {
+                e.consume()
+                val view = findScrollableCodeViewAt(e.point) ?: return@addMouseWheelListener
+                view.scroll((e.wheelRotation * JBUI.scale(15)).toInt())
+                repaint()
+            }
+        }
 
         addHyperlinkListener { e ->
             if (e.eventType == HyperlinkEvent.EventType.ACTIVATED) {
@@ -258,35 +268,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     override fun getMinimumSize(): Dimension = Dimension(0, 0)
 
     /**
-     * Walks the Swing view tree and returns the maximum preferred X-axis span of any
-     * `pre` or `blockquote` view. These block types do not wrap, so their preferred X
-     * span reflects the natural (un-clipped) content width. Regular paragraph views wrap
-     * at the allocated width, so their spans stay ≤ [pw] and do not inflate the result.
-     */
-    private fun maxBlockPreferredX(view: View): Float {
-        val elemName = try {
-            view.element?.name
-        } catch (_: Throwable) {
-            null
-        }
-        if (elemName == "pre" || elemName == "blockquote") {
-            return try {
-                view.getPreferredSpan(View.X_AXIS)
-            } catch (_: Throwable) {
-                0f
-            }
-        }
-        var maxW = 0f
-        for (i in 0 until view.viewCount) {
-            try {
-                maxW = maxOf(maxW, maxBlockPreferredX(view.getView(i)))
-            } catch (_: Throwable) { /* view tree may be transiently stale */
-            }
-        }
-        return maxW
-    }
-
-    /**
      * Computes the preferred height for the HTML content at the parent's available width.
      *
      * **Caching**: result is cached by `(parentWidth, contentVersion)`. Same width and
@@ -299,53 +280,19 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
 
-        // When inside a JScrollPane's viewport we want to report the natural (unconstrained)
-        // content width so the JScrollPane can show a horizontal scrollbar for pre/blockquote
-        // blocks. The height is still computed at the constrained viewport width so the bubble
-        // grows vertically as expected and does not clip text.
-        val inJViewport = p is JViewport
-
         val pw = when {
-            inJViewport -> {
-                val vw = p.width
-                if (vw > 0) {
-                    vw - ins.left - ins.right
-                } else {
-                    // First layout pass: viewport has not been sized yet.
-                    // Walk up through JScrollPane → bubble to obtain the constrained width.
-                    val scrollPane = p.parent
-                    val bubble = scrollPane?.parent
-                    val bubbleIns = bubble?.insets ?: java.awt.Insets(0, 0, 0, 0)
-                    val maxW = bubble?.maximumSize?.width ?: 0
-                    when {
-                        maxW in 1 until Short.MAX_VALUE.toInt() ->
-                            maxW - bubbleIns.left - bubbleIns.right
-
-                        bubble != null && bubble.width > 0 ->
-                            bubble.width - bubbleIns.left - bubbleIns.right
-
-                        else -> return Dimension(0, cachedHeight.takeIf { it > 0 } ?: 1)
-                    }
-                }
-            }
-
             p.maximumSize.width in 1 until Short.MAX_VALUE.toInt() ->
                 p.maximumSize.width - ins.left - ins.right
 
             p.width > 0 ->
                 p.width - ins.left - ins.right
 
-            else -> return super.getPreferredSize()
-        }.takeIf { it > 0 } ?: return super.getPreferredSize()
-
-        // When in a JScrollPane viewport, report the natural pre/blockquote width so the
-        // scroll pane can show a horizontal scrollbar. Falls back to pw when no wide blocks
-        // are present. Only recomputed when content changes (not on width changes).
-        fun reportedWidth() = if (inJViewport) cachedNaturalWidth.coerceAtLeast(pw) else pw
+            else -> return Dimension(0, cachedHeight.takeIf { it > 0 } ?: 1)
+        }.takeIf { it > 0 } ?: return Dimension(0, cachedHeight.takeIf { it > 0 } ?: 1)
 
         // Exact cache hit: same width and same content.
         if ((pw == cachedForWidth) && (contentVersion == cachedForVersion)) {
-            return Dimension(reportedWidth(), cachedHeight)
+            return Dimension(pw, cachedHeight)
         }
 
         // Width changed since the last accurate measurement — record this as a tick in the
@@ -360,81 +307,50 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // Frozen-during-drag cache hit: a resize burst is active AND this pane's content
         // has not changed in the last [LIVE_PANE_AGE_MS] ms (older history bubble). Skip
         // the HTML re-layout entirely for any width and return the previously cached height.
-        // The visual mismatch (text wraps to new width, bubble height still matches old
-        // wrap) is acceptable for off-screen / non-streaming history and resolves once
-        // [resizeSettleTimer] fires after the drag ends. Only the recently-changed bubbles
-        // (typically the streaming/last bubble) pay the full layout cost during the drag,
-        // which keeps total per-event work O(1) instead of O(bubbles) and avoids the EDT
-        // freeze on Windows when there are many history bubbles.
         if (cachedHeight > 0 &&
             contentVersion == cachedForVersion &&
             (System.nanoTime() - lastResizeNanos) < RESIZE_BURST_WINDOW_NANOS &&
             (System.currentTimeMillis() - lastContentChangeMs) > LIVE_PANE_AGE_MS
         ) {
             resizeSettleTimer.restart()
-            return Dimension(reportedWidth(), cachedHeight)
+            return Dimension(pw, cachedHeight)
         }
 
         // Tolerance cache hit: width has nudged slightly (typical during a window resize
-        // drag or side-panel animation, which fires many ComponentEvents per second) but
-        // content is unchanged. Returning the previously cached height avoids the expensive
-        // HTML re-layout on every pixel of drag. The visual mismatch — text wrap at the new
-        // width while the bubble still reports the old height — is at most RESIZE_TOLERANCE_PX
-        // pixels worth and lasts only until [resizeSettleTimer] fires (~150 ms after the
-        // resize burst ends), at which point we invalidate and revalidate for an accurate
-        // final layout. Critical on Windows where Swing HTML/GDI text measurement is several
-        // times slower than FreeType on Linux and the per-pane cost compounds across many
-        // bubbles into an EDT freeze during resize.
+        // drag or side-panel animation). Returning the previously cached height avoids
+        // expensive HTML re-layout on every pixel of drag.
         if (cachedForWidth > 0 &&
             contentVersion == cachedForVersion &&
             (kotlin.math.abs(pw - cachedForWidth) <= RESIZE_TOLERANCE_PX)
         ) {
             resizeSettleTimer.restart()
-            return Dimension(reportedWidth(), cachedHeight)
+            return Dimension(pw, cachedHeight)
         }
 
         // Accurate layout.
-        // setSize() alone does not synchronously force the HTML view hierarchy to re-layout
-        // at pw — views retain their previous allocation until the next paint.
-        // Calling rootView.setSize() directly forces a layout pass at pw, so
-        // getPreferredSpan(Y_AXIS) returns the correct height for the current content.
         val textUI = ui as? TextUI
         if (textUI != null) {
             val rootView = textUI.getRootView(this)
             try {
                 rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
                 val h = rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1)
-                // Compute the natural (unconstrained) content width once per content version.
-                // maxBlockPreferredX walks only pre/blockquote views; regular wrapped paragraphs
-                // stay ≤ pw and do not inflate cachedNaturalWidth unnecessarily.
-                if (inJViewport && contentVersion != cachedNaturalWidthForVersion) {
-                    cachedNaturalWidth = maxBlockPreferredX(rootView).toInt()
-                    cachedNaturalWidthForVersion = contentVersion
-                }
                 cachedForWidth = pw
                 cachedForVersion = contentVersion
                 cachedHeight = h
-                return Dimension(reportedWidth(), h)
+                return Dimension(pw, h)
             } catch (_: Throwable) {
                 // Multiple Swing internal exceptions can be thrown here when renderNow()
-                // replaced the document while a layout pass was already in flight:
-                //  - javax.swing.text.StateInvariantError (extends AssertionError):
-                //    GlyphView detects stale element references.
-                //  - ArrayIndexOutOfBoundsException (extends RuntimeException):
-                //    BoxView.updateChildSizes finds its sizes array stale after the
-                //    document was replaced but the view count changed.
-                //  - NullPointerException: TextLayout not yet computed (GlyphPainter2).
-                // Fall through to the fallback below. The next validation cycle will
-                // have fresh views and produce the correct size.
+                // replaced the document while a layout pass was already in flight.
+                // Fall through to the fallback below.
             }
         }
         // Document is in a transient state. Prefer the last known height so the
         // layout does not collapse while the document stabilises.
-        if (cachedHeight > 0) return Dimension(reportedWidth(), cachedHeight)
+        if (cachedHeight > 0) return Dimension(pw, cachedHeight)
         // First render: attempt the slower JEditorPane path with the same guard.
         return try {
             setSize(pw, Short.MAX_VALUE.toInt())
-            Dimension(reportedWidth(), super.getPreferredSize().height)
+            Dimension(pw, super.getPreferredSize().height)
         } catch (_: Throwable) {
             Dimension(pw, 1)  // safe minimum; revalidated on next cycle
         }
@@ -472,6 +388,24 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         ss.addRule("hr { border: none; border-top: 1px solid $tblBorder; margin: 8px 0; }")
 
         return ss
+    }
+
+    /** Returns the [ScrollableCodeView] whose allocated area contains [pt], or null. */
+    private fun findScrollableCodeViewAt(pt: Point): ScrollableCodeView? {
+        val ui = ui as? TextUI ?: return null
+        @Suppress("DEPRECATION")
+        val pos = ui.viewToModel(this, pt) // char offset under cursor
+        return findScrollableCodeViewAt(ui.getRootView(this), pos)
+    }
+
+    private fun findScrollableCodeViewAt(view: View, pos: Int): ScrollableCodeView? {
+        if (view is ScrollableCodeView && pos in view.startOffset until view.endOffset) return view
+        for (i in 0 until view.viewCount) {
+            val child = try { view.getView(i) } catch (_: Throwable) { continue }
+            val found = findScrollableCodeViewAt(child, pos)
+            if (found != null) return found
+        }
+        return null
     }
 
     companion object {
@@ -526,4 +460,106 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         private fun colorToHex(c: Color): String =
             "#%02x%02x%02x".format(c.red, c.green, c.blue)
     }
+}
+
+/**
+ * A [BlockView] for `<pre>` elements that clips to its allocated width and paints a
+ * thin inline scrollbar when the content is wider than the allocation.
+ *
+ * **Why not JScrollPane**: wrapping the whole [NativeMarkdownPane] in a JScrollPane caused
+ * a layout feedback loop (slow bubble-width expansion on hover). Per-block clipping keeps
+ * the outer component unaware of the code block's natural width.
+ */
+private class ScrollableCodeView(elem: Element) : BlockView(elem, View.Y_AXIS) {
+
+    /** Current horizontal scroll position in pixels. */
+    var scrollX = 0
+        private set
+
+    /** Natural (unconstrained) content width — only valid after [setSize] has been called. */
+    private var naturalWidth = 0f
+
+    companion object {
+        private const val SCROLLBAR_H = 6  // px — thin track
+        private const val SCROLLBAR_TRACK_ALPHA = 60
+        private const val SCROLLBAR_THUMB_ALPHA = 140
+    }
+
+    /** Reports 0 so the outer pane never inflates to code-block natural width. */
+    override fun getPreferredSpan(axis: Int): Float =
+        if (axis == X_AXIS) 0f else super.getPreferredSpan(axis)
+
+    /**
+     * Lays out children at their natural width (calling `super.getPreferredSpan` bypasses
+     * our override and returns the real content width). Resets [scrollX] if content changed.
+     */
+    override fun setSize(width: Float, height: Float) {
+        val nw = super.getPreferredSpan(X_AXIS)
+        if (nw != naturalWidth) {
+            naturalWidth = nw
+            scrollX = 0
+        }
+        super.setSize(nw, height)
+    }
+
+    /** Moves the horizontal scroll by [delta] pixels, clamped to valid range. */
+    fun scroll(delta: Int) {
+        val maxScroll = (naturalWidth - lastAllocWidth).coerceAtLeast(0f)
+        scrollX = (scrollX + delta).coerceIn(0, maxScroll.toInt())
+    }
+
+    private var lastAllocWidth = 0f
+
+    override fun paint(g: Graphics, allocation: Shape) {
+        val r = (allocation as? Rectangle) ?: allocation.bounds
+        lastAllocWidth = r.width.toFloat()
+
+        val scrollable = naturalWidth > r.width
+        val contentH = if (scrollable) r.height - JBUI.scale(SCROLLBAR_H) else r.height
+
+        val g2 = g as Graphics2D
+        val savedTransform = g2.transform.clone() as AffineTransform
+        val savedClip = g2.clip
+
+        // Clip to content area and translate for horizontal scroll
+        g2.setClip(r.x, r.y, r.width, contentH)
+        g2.translate(-scrollX.toDouble(), 0.0)
+        super.paint(g2, Rectangle(r.x, r.y, naturalWidth.toInt(), contentH))
+
+        // Restore
+        g2.transform = savedTransform
+        g2.clip = savedClip
+
+        if (scrollable) paintScrollbar(g2, r, contentH)
+    }
+
+    private fun paintScrollbar(g2: Graphics2D, r: Rectangle, contentTop: Int) {
+        val trackY = r.y + contentTop
+        val trackH = JBUI.scale(SCROLLBAR_H)
+        val maxScroll = (naturalWidth - r.width).coerceAtLeast(1f)
+        val thumbFrac = (r.width / naturalWidth).coerceIn(0.05f, 1f)
+        val thumbW = (r.width * thumbFrac).toInt().coerceAtLeast(JBUI.scale(20))
+        val thumbX = r.x + ((scrollX / maxScroll) * (r.width - thumbW)).toInt()
+
+        // Track
+        g2.color = JBColor(Color(128, 128, 128, SCROLLBAR_TRACK_ALPHA), Color(200, 200, 200, SCROLLBAR_TRACK_ALPHA))
+        g2.fillRect(r.x, trackY, r.width, trackH)
+
+        // Thumb
+        g2.color = JBColor(Color(128, 128, 128, SCROLLBAR_THUMB_ALPHA), Color(200, 200, 200, SCROLLBAR_THUMB_ALPHA))
+        g2.fillRoundRect(thumbX, trackY + 1, thumbW, trackH - 2, trackH, trackH)
+    }
+}
+
+/** An [HTMLEditorKit] whose view factory creates [ScrollableCodeView] for `<pre>` elements. */
+private class ScrollableHTMLEditorKit : HTMLEditorKit() {
+    private val factory = object : HTMLFactory() {
+        override fun create(elem: Element): View {
+            val tag = elem.attributes?.getAttribute(StyleConstants.NameAttribute) as? HTML.Tag
+            if (tag == HTML.Tag.PRE) return ScrollableCodeView(elem)
+            return super.create(elem)
+        }
+    }
+
+    override fun getViewFactory(): ViewFactory = factory
 }
