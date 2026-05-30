@@ -1,11 +1,13 @@
 package com.github.catatafishen.agentbridge.ui.side
 
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.services.PromptDbService
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel
-import com.github.catatafishen.agentbridge.bridge.EntryData
+import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
+import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -16,6 +18,7 @@ import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.event.HierarchyEvent
 import java.awt.event.MouseAdapter
@@ -629,9 +632,9 @@ internal class PromptsPanel(
         init {
             outer.isOpaque = true
             tsLabel.font = JBUI.Fonts.miniFont()
-            tsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            tsLabel.foreground = UIUtil.getContextHelpForeground()
             statsLabel.font = JBUI.Fonts.miniFont()
-            statsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            statsLabel.foreground = UIUtil.getContextHelpForeground()
             headerPanel.isOpaque = false
             headerPanel.add(tsLabel, BorderLayout.WEST)
             headerPanel.add(statsLabel, BorderLayout.EAST)
@@ -643,7 +646,7 @@ internal class PromptsPanel(
             textArea.border = null
             textArea.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             commitsLabel.font = JBUI.Fonts.miniFont()
-            commitsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            commitsLabel.foreground = UIUtil.getContextHelpForeground()
             outer.add(headerPanel, BorderLayout.NORTH)
             outer.add(textArea, BorderLayout.CENTER)
             outer.add(commitsPanel, BorderLayout.SOUTH)
@@ -684,9 +687,9 @@ internal class PromptsPanel(
             } else {
                 outer.background = list?.background ?: UIManager.getColor("List.background")
                 textArea.foreground = list?.foreground ?: UIManager.getColor("List.foreground")
-                tsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-                statsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-                commitsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+                tsLabel.foreground = UIUtil.getContextHelpForeground()
+                statsLabel.foreground = UIUtil.getContextHelpForeground()
+                commitsLabel.foreground = UIUtil.getContextHelpForeground()
             }
 
             val commitsHeight = if (commitsPanel.isVisible) commitsLabel.preferredSize.height + JBUI.scale(2) else 0
