@@ -561,11 +561,13 @@ class PromptOrchestrator(
             // for the dequeue fires before the one for emitTurnStats.
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().emitTurnStats(stats)
+                callbacks.appendNewEntries()
                 consolePanel().removeQueuedMessageByText(nextMsg)
                 callbacks.sendPromptDirectly(nextMsg)
             }
         } else {
             consolePanel().emitTurnStats(stats)
+            callbacks.appendNewEntries()
         }
 
         ApplicationManager.getApplication().invokeLater {

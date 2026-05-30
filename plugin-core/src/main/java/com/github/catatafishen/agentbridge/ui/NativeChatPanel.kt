@@ -1523,6 +1523,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 is EntryData.Thinking -> {
                     appendThinkingText(entry.raw)
                     collapseThinking()
+                    // Reset chip reference so the next thinking entry creates a fresh chip
+                    currentTurn?.thinkingChip = null
+                    currentTurn?.thinkingPane = null
                 }
 
                 is EntryData.ToolCall -> {
