@@ -240,14 +240,18 @@ public final class PromptUserTool extends InfrastructureTool {
     }
 
     private void notifyIfUnfocused(@NotNull String question) {
-        var frame = WindowManager.getInstance().getFrame(project);
-        if (frame == null || frame.isActive()) return;
         String title = "Agent Needs Your Input";
         String content = question.length() > 80 ? question.substring(0, 80) + "…" : question;
+        // Notification.notify and SystemNotifications are background-safe; AppIcon and
+        // frame.isActive() require EDT — run the whole block there to keep it consistent.
         new Notification(NOTIFICATION_GROUP_ID, title, content, NotificationType.INFORMATION)
             .notify(project);
         SystemNotifications.getInstance().notify(NOTIFICATION_GROUP_ID, title, content);
-        AppIcon.getInstance().requestAttention(project, false);
+        EdtUtil.invokeLater(() -> {
+            var frame = WindowManager.getInstance().getFrame(project);
+            if (frame == null || frame.isActive()) return;
+            AppIcon.getInstance().requestAttention(project, false);
+        });
     }
 
     private @NotNull String askViaDialog(@NotNull String question, @NotNull List<String> options) {
