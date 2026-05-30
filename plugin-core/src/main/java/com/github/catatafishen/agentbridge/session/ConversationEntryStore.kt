@@ -240,6 +240,7 @@ class ConversationEntryStore {
                 linesRemoved = stats.linesRemoved,
                 model = stats.model,
                 multiplier = stats.multiplier,
+                commitHashes = stats.commitHashes,
                 timestamp = timestamp(),
                 entryId = resolvedTurnId + "-stats",
             )
