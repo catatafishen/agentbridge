@@ -606,44 +606,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             allMarkdownPanes += pane
         }
 
-    /** Wraps a [NativeMarkdownPane] in a transparent [JScrollPane] with horizontal scrolling. */
-    private fun NativeMarkdownPane.inScrollPane(): JScrollPane = object : JScrollPane(this) {
-        /**
-         * Forward vertical scroll events to the parent so the outer chat scroll pane handles
-         * them. Without this the inner [JScrollPane] consumes all wheel events even though
-         * [JScrollPane.VERTICAL_SCROLLBAR_NEVER] is set, making the chat panel unscrollable.
-         * Shift+Wheel is kept for horizontal scrolling.
-         */
-        override fun processMouseWheelEvent(e: java.awt.event.MouseWheelEvent) {
-            if (!e.isShiftDown) {
-                val p = parent
-                p?.dispatchEvent(SwingUtilities.convertMouseEvent(this, e, p))
-            } else {
-                super.processMouseWheelEvent(e)
-            }
-        }
-
-        /**
-         * Cap the preferred width at the parent (bubble) width so the JScrollPane never
-         * asks the bubble to grow wider than its layout-allocated space. Without this the
-         * JScrollPane propagates the content's natural (unconstrained) width up through
-         * the bubble's [BorderLayout], triggering repeated [resizeSettleTimer] cycles that
-         * slowly expand the bubble over several seconds on hover.
-         */
-        override fun getPreferredSize(): Dimension {
-            val ps = super.getPreferredSize()
-            val w = parent?.width?.takeIf { it > 0 }
-            return if (w != null) Dimension(w, ps.height) else ps
-        }
-    }.apply {
-        horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_NEVER
-        border = null
-        isOpaque = false
-        viewport.isOpaque = false
-        viewport.background = null
-    }
-
     /** Creates a streaming bubble: an aligned row ready to add to a container, plus its pane and [BubbleRow]. */
     private fun createMarkdownBubble(
         bg: Color,
@@ -654,7 +616,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
             allMarkdownPanes += it
         }
-        bubbleRow.bubble.add(pane.inScrollPane(), BorderLayout.CENTER)
+        bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         return Triple(bubbleRow.row, pane, bubbleRow)
     }
 
@@ -669,8 +631,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ): Pair<JPanel, RoundedPanel> {
         val bubbleRow = createBubble(bg, rightAligned, explicitBorder, noBorder)
         onBubbleRow?.invoke(bubbleRow)
-        val child = if (content is NativeMarkdownPane) content.inScrollPane() else content
-        bubbleRow.bubble.add(child, BorderLayout.CENTER)
+        bubbleRow.bubble.add(content, BorderLayout.CENTER)
         return bubbleRow.row to bubbleRow.bubble
     }
 
@@ -887,7 +848,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 NativeChatColors.agentBubbleBg(accent),
                 explicitBorder = NativeChatColors.agentBubbleBorder(accent)
             )
-            bubbleRow.bubble.add(pane.inScrollPane(), BorderLayout.CENTER)
+            bubbleRow.bubble.add(pane, BorderLayout.CENTER)
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
             addRow(bubbleRow.row)
         }
@@ -952,7 +913,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             NativeChatColors.agentBubbleBg(accent),
             explicitBorder = NativeChatColors.agentBubbleBorder(accent)
         )
-        bubbleRow.bubble.add(pane.inScrollPane(), BorderLayout.CENTER)
+        bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         section.contentBox.add(bubbleRow.row)
         section.resultRow = bubbleRow.row
