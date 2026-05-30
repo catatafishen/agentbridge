@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.bridge.EntryData
-import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.*
 import com.intellij.icons.AllIcons
@@ -23,11 +22,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import javax.swing.Box
-import javax.swing.BoxLayout
-import javax.swing.JDialog
-import javax.swing.JLabel
-import javax.swing.JPanel
+import javax.swing.*
 
 /**
  * Non-modal floating window showing a single conversation turn from history.
@@ -239,7 +234,7 @@ internal class HistoryContextWindow private constructor(
         val ref = currentTurnId
         val sid = sessionId
         ApplicationManager.getApplication().executeOnPooledThread {
-            val adjacent = service.loadAdjacentTurnIds(sid, ref, direction)
+            val adjacent: List<String> = service.loadAdjacentTurnIds(sid, ref, direction)
             if (adjacent.isEmpty()) return@executeOnPooledThread
             val targetId = if (direction < 0) adjacent.last() else adjacent.first()
             ApplicationManager.getApplication().invokeLater {
@@ -310,8 +305,9 @@ internal class HistoryContextWindow private constructor(
                 val entries = hashes.map { CommitEntry(it) }.toTypedArray()
                 ignoreComboAction = true
                 try {
-                    commitsCombo.removeAllItems()
-                    val jCombo = commitsCombo as javax.swing.JComboBox<CommitEntry>
+                    @Suppress("UNCHECKED_CAST")
+                    val jCombo = commitsCombo as JComboBox<CommitEntry>
+                    jCombo.removeAllItems()
                     entries.forEach { jCombo.addItem(it) }
                 } finally {
                     ignoreComboAction = false
@@ -331,31 +327,35 @@ internal class HistoryContextWindow private constructor(
         ApplicationManager.getApplication().executeOnPooledThread {
             val updates = entries.map { e -> e to fetchCommitSubject(e.hash) }
             ApplicationManager.getApplication().invokeLater {
-                if (!isDisplayable) return@invokeLater
-                if (entries.size == 1) {
-                    // Single-commit mode: update the hyperlink label text
-                    if (commitLinkLabel.isVisible && singleCommitHash == entries[0].hash) {
-                        val (e, subject) = updates[0]
-                        commitLinkLabel.setHyperlinkText("${e.hash.take(7)}  $subject")
-                    }
-                    return@invokeLater
-                }
-                // Guard against stale updates: if the combo was already replaced by a newer turn, skip.
-                if (commitsCombo.itemCount == 0 || commitsCombo.getItemAt(0) !== entries.first()) return@invokeLater
-                ignoreComboAction = true
-                try {
-                    val selectedIdx = commitsCombo.selectedIndex
-                    updates.forEach { (e, subject) -> e.subject = subject }
-                    val jCombo = commitsCombo as javax.swing.JComboBox<CommitEntry>
-                    jCombo.removeAllItems()
-                    entries.forEach { jCombo.addItem(it) }
-                    if (selectedIdx >= 0 && selectedIdx < entries.size) {
-                        commitsCombo.selectedIndex = selectedIdx
-                    }
-                } finally {
-                    ignoreComboAction = false
-                }
+                if (isDisplayable) applyCommitSubjectUpdates(entries, updates)
             }
+        }
+    }
+
+    private fun applyCommitSubjectUpdates(entries: Array<CommitEntry>, updates: List<Pair<CommitEntry, String>>) {
+        if (entries.size == 1) {
+            applySingleCommitLabel(entries[0], updates[0])
+            return
+        }
+        if (commitsCombo.itemCount == 0 || commitsCombo.getItemAt(0) !== entries.first()) return
+        ignoreComboAction = true
+        try {
+            val selectedIdx = commitsCombo.selectedIndex
+            updates.forEach { (e, subject) -> e.subject = subject }
+            @Suppress("UNCHECKED_CAST")
+            val jCombo = commitsCombo as JComboBox<CommitEntry>
+            jCombo.removeAllItems()
+            entries.forEach { jCombo.addItem(it) }
+            if (selectedIdx in entries.indices) commitsCombo.selectedIndex = selectedIdx
+        } finally {
+            ignoreComboAction = false
+        }
+    }
+
+    private fun applySingleCommitLabel(entry: CommitEntry, update: Pair<CommitEntry, String>) {
+        if (commitLinkLabel.isVisible && singleCommitHash == entry.hash) {
+            val (e, subject) = update
+            commitLinkLabel.setHyperlinkText("${e.hash.take(7)}  $subject")
         }
     }
 
