@@ -64,22 +64,18 @@ internal class HistoryContextWindow private constructor(
 
     private val chatPanel = NativeChatPanel(project)
 
-    private val promptInfoLabel = JBLabel("").apply {
+    private val metaLabel = JBLabel("").apply {
         foreground = UIUtil.getContextHelpForeground()
-        font = JBUI.Fonts.miniFont()
+        font = JBUI.Fonts.smallFont()
         horizontalAlignment = SwingConstants.LEFT
         border = JBUI.Borders.empty(0, 8, 0, 4)
     }
 
-    private val statsLabel = JBLabel("").apply {
-        foreground = UIUtil.getContextHelpForeground()
-        font = JBUI.Fonts.miniFont()
-        horizontalAlignment = SwingConstants.RIGHT
-        border = JBUI.Borders.empty(0, 4, 0, 8)
-    }
-
     @Volatile
     private var currentTurnId: String = initialTurnId
+
+    @Volatile
+    private var currentSessionRecord: ConversationService.SessionRecord? = null
 
     @Volatile
     private var hasPrev: Boolean = false
@@ -143,17 +139,11 @@ internal class HistoryContextWindow private constructor(
             .createActionToolbar(ActionPlaces.TOOLWINDOW_CONTENT, toolbarGroup, true)
         toolbar.targetComponent = chatPanel.component
 
-        val metaPanel = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            add(promptInfoLabel, BorderLayout.WEST)
-            add(statsLabel, BorderLayout.EAST)
-        }
-
         val titleBar = JPanel(BorderLayout()).apply {
             background = UIUtil.getPanelBackground()
             border = JBUI.Borders.empty(2, 4)
             add(toolbar.component, BorderLayout.WEST)
-            add(metaPanel, BorderLayout.CENTER)
+            add(metaLabel, BorderLayout.CENTER)
         }
 
         val body = JPanel(BorderLayout()).apply {
@@ -204,9 +194,11 @@ internal class HistoryContextWindow private constructor(
             val entries: List<EntryData> = service.loadTurnEntries(turnId)
             val earlier: List<String> = service.loadAdjacentTurnIds(sid, turnId, -1)
             val later: List<String> = service.loadAdjacentTurnIds(sid, turnId, 1)
+            val sessionRec: ConversationService.SessionRecord? = service.listSessions().find { it.id == sid }
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 currentTurnId = turnId
+                currentSessionRecord = sessionRec
                 currentEntries = entries
                 currentPrompt = entries.firstNotNullOfOrNull { it as? EntryData.Prompt }
                 currentStats = entries.firstNotNullOfOrNull { it as? EntryData.TurnStats }
@@ -225,25 +217,27 @@ internal class HistoryContextWindow private constructor(
     }
 
     private fun updateMetaLabels() {
-        // Prompt info: timestamp + turn ID prefix
-        val infoParts = mutableListOf<String>()
+        val parts = mutableListOf<String>()
+
+        val rec = currentSessionRecord
+        if (rec != null && rec.name.isNotEmpty()) parts.add(rec.name)
+
         currentPrompt?.let { prompt ->
             val ts = PromptsPanel.formatTimestamp(prompt.timestamp)
-            if (ts.isNotEmpty()) infoParts.add(ts)
+            if (ts.isNotEmpty()) parts.add(ts)
         }
-        val turnShort = currentTurnId.takeIf { it.length >= 8 }?.take(8)?.let { "$it…" } ?: ""
-        if (turnShort.isNotEmpty()) infoParts.add(turnShort)
-        promptInfoLabel.text = infoParts.joinToString(" · ")
 
-        // Stats: tool calls, duration, model, commits
-        val statsParts = mutableListOf<String>()
-        currentStats?.let { stats ->
-            val s = PromptsPanel.formatStats(stats)
-            if (s.isNotEmpty()) statsParts.add(s)
-            val commits = PromptsPanel.formatCommits(stats.commitHashes)
-            if (commits.isNotEmpty()) statsParts.add(commits)
-        }
-        statsLabel.text = statsParts.joinToString(" · ")
+        val turnShort = currentTurnId.takeIf { it.length >= 8 }?.take(8) ?: currentTurnId
+        if (turnShort.isNotEmpty()) parts.add(turnShort)
+
+        val agentName = rec?.agent ?: ""
+        val stats = PromptsPanel.formatStats(currentStats, agentName)
+        if (stats.isNotEmpty()) parts.add(stats)
+
+        val commits = currentStats?.let { PromptsPanel.formatCommits(it.commitHashes) } ?: ""
+        if (commits.isNotEmpty()) parts.add(commits)
+
+        metaLabel.text = parts.joinToString(" · ")
     }
 
     private fun referenceInChat() {
