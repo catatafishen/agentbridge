@@ -619,7 +619,7 @@ internal class PromptsPanel(
 
     private class BubbleRenderer : ListCellRenderer<PromptItem> {
         private val outer = JPanel(BorderLayout(0, JBUI.scale(2)))
-        private val headerPanel = JPanel(BorderLayout())
+        private val headerPanel = JPanel()
         private val tsLabel = JLabel()
         private val statsLabel = JLabel()
         private val textArea = JTextArea()
@@ -631,13 +631,16 @@ internal class PromptsPanel(
 
         init {
             outer.isOpaque = true
-            tsLabel.font = JBUI.Fonts.miniFont()
+            tsLabel.font = JBUI.Fonts.smallFont()
             tsLabel.foreground = UIUtil.getContextHelpForeground()
-            statsLabel.font = JBUI.Fonts.miniFont()
+            statsLabel.font = JBUI.Fonts.smallFont()
             statsLabel.foreground = UIUtil.getContextHelpForeground()
             headerPanel.isOpaque = false
-            headerPanel.add(tsLabel, BorderLayout.WEST)
-            headerPanel.add(statsLabel, BorderLayout.EAST)
+            headerPanel.layout = BoxLayout(headerPanel, BoxLayout.Y_AXIS)
+            tsLabel.alignmentX = LEFT_ALIGNMENT
+            statsLabel.alignmentX = LEFT_ALIGNMENT
+            headerPanel.add(tsLabel)
+            headerPanel.add(statsLabel)
             textArea.isOpaque = false
             textArea.isEditable = false
             textArea.lineWrap = true
@@ -645,7 +648,7 @@ internal class PromptsPanel(
             textArea.font = UIManager.getFont("Label.font") ?: textArea.font
             textArea.border = null
             textArea.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            commitsLabel.font = JBUI.Fonts.miniFont()
+            commitsLabel.font = JBUI.Fonts.smallFont()
             commitsLabel.foreground = UIUtil.getContextHelpForeground()
             outer.add(headerPanel, BorderLayout.NORTH)
             outer.add(textArea, BorderLayout.CENTER)
@@ -671,6 +674,7 @@ internal class PromptsPanel(
             val turnIdSuffix = value.turnId.takeIf { it.length >= 8 }?.let { " · ${it.take(8)}…" } ?: ""
             tsLabel.text = formatTimestamp(value.prompt.timestamp) + turnIdSuffix
             statsLabel.text = formatStats(value.stats, value.agentDisplayName)
+            statsLabel.isVisible = statsLabel.text.isNotEmpty()
             textArea.text = truncatePrompt(value.prompt.text.trim())
 
             val commitsText = formatCommits(value.commits)
@@ -693,10 +697,11 @@ internal class PromptsPanel(
             }
 
             val commitsHeight = if (commitsPanel.isVisible) commitsLabel.preferredSize.height + JBUI.scale(2) else 0
+            val statsHeight = if (statsLabel.isVisible) statsLabel.preferredSize.height + JBUI.scale(1) else 0
             val textHeight = textArea.preferredSize.height
             outer.preferredSize = Dimension(
                 listWidth,
-                tsLabel.preferredSize.height + JBUI.scale(2) + textHeight + commitsHeight + JBUI.scale(10)
+                tsLabel.preferredSize.height + statsHeight + JBUI.scale(4) + textHeight + commitsHeight + JBUI.scale(10)
             )
             return outer
         }
