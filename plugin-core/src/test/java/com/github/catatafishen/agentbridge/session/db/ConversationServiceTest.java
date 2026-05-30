@@ -403,4 +403,32 @@ class ConversationServiceTest {
         List<ConversationService.SessionRecord> sessions = service.listSessions();
         assertTrue(sessions.isEmpty(), "no sessions should be created for empty entry list");
     }
+
+    // ── runAfterPendingSave ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("runAfterPendingSave runs action immediately when no save is pending")
+    void runAfterPendingSave_runsImmediatelyWhenNoPendingSave() throws Exception {
+        ConversationService service = newService();
+
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        service.runAfterPendingSave(latch::countDown);
+
+        assertTrue(latch.await(2, java.util.concurrent.TimeUnit.SECONDS),
+            "action should have run after the (empty) pending save chain");
+    }
+
+    @Test
+    @DisplayName("runAfterPendingSave runs action after an in-flight async append")
+    void runAfterPendingSave_runsAfterAppend() throws Exception {
+        ConversationService service = newService();
+        EntryData.Prompt entry = new EntryData.Prompt("hello", "", null, "eid-1", "eid-1");
+
+        service.appendEntriesAsync(tempDir.toString(), List.of(entry));
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        service.runAfterPendingSave(latch::countDown);
+
+        assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS),
+            "action should have run after the async append completed");
+    }
 }

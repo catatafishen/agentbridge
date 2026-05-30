@@ -8,6 +8,8 @@ codecov:
 ignore:
   - "**/*Panel.java"
   - "**/*Panel.kt"
+  - "**/*Window.kt"
+  - "**/*Window.java"
   - "**/*Action.java"
   - "**/AgentEditHighlighter.java"
   - "**/AgentEditNotificationProvider.java"
