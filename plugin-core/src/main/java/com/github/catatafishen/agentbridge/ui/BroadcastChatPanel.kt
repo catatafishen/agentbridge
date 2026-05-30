@@ -94,9 +94,7 @@ class BroadcastChatPanel(
 
     fun entriesSnapshot(): List<EntryData> = entryStore.entriesSnapshot()
 
-    fun isEntryRendered(entryId: String): Boolean = entryStore.isEntryTracked(entryId)
-
-    fun scrollToEntry(entryId: String) = dispatchUi { nativePanel.scrollToEntry(entryId) }
+    fun scrollToTop() = dispatchUi { nativePanel.scrollToTop() }
 
     fun addEntriesChangeListener(listener: Runnable) = entryStore.addChangeListener(listener)
 

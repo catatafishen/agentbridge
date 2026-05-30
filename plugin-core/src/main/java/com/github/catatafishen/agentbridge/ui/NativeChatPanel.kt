@@ -471,6 +471,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
+    fun scrollToTop() {
+        SwingUtilities.invokeLater {
+            scrollPane.verticalScrollBar.value = 0
+        }
+    }
+
     private fun showWorkingIndicator() {
         if (isReplaying) return
         hideWorkingIndicator()

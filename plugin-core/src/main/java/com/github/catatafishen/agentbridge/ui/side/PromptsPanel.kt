@@ -40,7 +40,8 @@ internal class PromptsPanel(
         val stats: EntryData.TurnStats?,
         val commits: List<String>,
         val sessionId: String = "",
-        val turnId: String = ""
+        val turnId: String = "",
+        val agentDisplayName: String = ""
     )
 
     // ── Main search ──────────────────────────────────────────────────────────
@@ -116,6 +117,9 @@ internal class PromptsPanel(
     @Volatile
     private var promptSessionMap: Map<String, String> = emptyMap()
 
+    @Volatile
+    private var sessionDisplayNameMap: Map<String, String> = emptyMap()
+
     private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
         font = JBUI.Fonts.miniFont()
         foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
@@ -149,12 +153,8 @@ internal class PromptsPanel(
                 val item = listModel.getElementAt(idx) ?: return
                 val entryId = promptEntryId(item.prompt)
                 if (entryId.isEmpty()) return
-                if (chatConsole.isEntryRendered(entryId)) {
-                    chatConsole.scrollToEntry(entryId)
-                } else {
-                    val sessionId = item.sessionId.ifEmpty { promptSessionMap[entryId] ?: return }
-                    HistoryContextWindow.open(project, sessionId, entryId)
-                }
+                val sessionId = item.sessionId.ifEmpty { promptSessionMap[entryId] ?: return }
+                HistoryContextWindow.open(project, sessionId, entryId)
             }
         })
 
@@ -433,6 +433,8 @@ internal class PromptsPanel(
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
             val allPrompts = sessionStore.loadPromptsFromAllSessions().toList()
+            val sessions = sessionStore.listSessions()
+            val nameMap = sessions.associate { it.id() to it.name() }
             val entries = ArrayList<EntryData>()
             val sessionMap = HashMap<String, String>()
             for (pwc in allPrompts) {
@@ -445,6 +447,7 @@ internal class PromptsPanel(
                 if (serial != historyLoadSerial.get()) return@invokeLater
                 historyEntries = entries
                 promptSessionMap = sessionMap
+                sessionDisplayNameMap = nameMap
                 initialLoadDone = true
                 refresh()
             }
@@ -502,7 +505,7 @@ internal class PromptsPanel(
                     turn.userMessage(), turn.timestamp().toString(),
                     null, turn.turnId(), turn.turnId()
                 )
-                PromptItem(prompt, null, emptyList(), turn.sessionId(), turn.turnId())
+                PromptItem(prompt, null, emptyList(), turn.sessionId(), turn.turnId(), turn.agentDisplayName())
             }
             ApplicationManager.getApplication().invokeLater {
                 if (serial != historyLoadSerial.get()) return@invokeLater
@@ -546,7 +549,8 @@ internal class PromptsPanel(
             val data = turnDataMap[key]
             val sid = promptSessionMap[key] ?: ""
             val tid = p.id.takeIf { it.isNotEmpty() } ?: p.entryId
-            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid, tid))
+            val agentName = sessionDisplayNameMap[sid] ?: ""
+            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid, tid, agentName))
         }
 
         if (scrollToBottom && listModel.size() > 0) {
@@ -663,7 +667,7 @@ internal class PromptsPanel(
             }
             val turnIdSuffix = value.turnId.takeIf { it.length >= 8 }?.let { " · ${it.take(8)}…" } ?: ""
             tsLabel.text = formatTimestamp(value.prompt.timestamp) + turnIdSuffix
-            statsLabel.text = formatStats(value.stats)
+            statsLabel.text = formatStats(value.stats, value.agentDisplayName)
             textArea.text = truncatePrompt(value.prompt.text.trim())
 
             val commitsText = formatCommits(value.commits)
@@ -764,14 +768,18 @@ internal class PromptsPanel(
             return result
         }
 
-        fun formatStats(stats: EntryData.TurnStats?): String {
-            if (stats == null) return ""
+        fun formatStats(stats: EntryData.TurnStats?, agentDisplayName: String = ""): String {
+            if (stats == null && agentDisplayName.isEmpty()) return ""
             val parts = mutableListOf<String>()
-            if (stats.toolCallCount > 0) parts.add("${stats.toolCallCount} tools")
-            if (stats.durationMs > 0) {
-                val s = stats.durationMs / 1000.0
-                parts.add(if (s < 60) "%.1fs".format(s) else "${(s / 60).toInt()}m ${(s % 60).toInt()}s")
+            if (stats != null) {
+                if (stats.toolCallCount > 0) parts.add("${stats.toolCallCount} tools")
+                if (stats.durationMs > 0) {
+                    val s = stats.durationMs / 1000.0
+                    parts.add(if (s < 60) "%.1fs".format(s) else "${(s / 60).toInt()}m ${(s % 60).toInt()}s")
+                }
+                if (stats.model.isNotEmpty()) parts.add(stats.model)
             }
+            if (agentDisplayName.isNotEmpty()) parts.add(agentDisplayName)
             return parts.joinToString(" · ")
         }
 
