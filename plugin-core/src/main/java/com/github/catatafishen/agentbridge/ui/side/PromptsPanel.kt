@@ -112,16 +112,9 @@ internal class PromptsPanel(
 
     private var displayedCount = PAGE_SIZE
     private var autoLoadingMore = false
-    private var initialLoadDone = false
 
     @Volatile
-    private var historyEntries: List<EntryData> = emptyList()
-
-    @Volatile
-    private var promptSessionMap: Map<String, String> = emptyMap()
-
-    @Volatile
-    private var sessionDisplayNameMap: Map<String, String> = emptyMap()
+    private var loadedOnce = false
 
     private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
         font = JBUI.Fonts.miniFont()
@@ -154,10 +147,8 @@ internal class PromptsPanel(
                 val cellBounds = promptList.getCellBounds(idx, idx) ?: return
                 if (!cellBounds.contains(e.point)) return
                 val item = listModel.getElementAt(idx) ?: return
-                val entryId = promptEntryId(item.prompt)
-                if (entryId.isEmpty()) return
-                val sessionId = item.sessionId.ifEmpty { promptSessionMap[entryId] ?: return }
-                HistoryContextWindow.open(project, sessionId, entryId)
+                if (item.sessionId.isEmpty() || item.turnId.isEmpty()) return
+                HistoryContextWindow.open(project, item.sessionId, item.turnId)
             }
         })
 
@@ -258,7 +249,7 @@ internal class PromptsPanel(
         // Auto-load when the user scrolls to the very top and loadMorePanel is visible.
         scrollPane.viewport.addChangeListener {
             val vp = scrollPane.viewport
-            if (vp.viewPosition.y == 0 && loadMorePanel.isVisible && !autoLoadingMore && initialLoadDone) {
+            if (vp.viewPosition.y == 0 && loadMorePanel.isVisible && !autoLoadingMore && loadedOnce) {
                 autoLoadingMore = true
                 try {
                     loadMore()
@@ -272,7 +263,6 @@ internal class PromptsPanel(
         addHierarchyListener(hierarchyListener)
         PromptDbService.getInstance(project).registerNavigateCallback(::applySearchParams)
         populateFilterCombos()
-        reloadHistoryAsync()
         refresh()
     }
 
@@ -369,14 +359,7 @@ internal class PromptsPanel(
     }
 
     private fun onEntriesChanged() {
-        if (chatConsole.entriesSnapshot().isEmpty()) {
-            historyEntries = emptyList()
-            listModel.clear()
-            loadMorePanel.isVisible = false
-            reloadHistoryAsync()
-        } else {
-            refresh()
-        }
+        refresh()
     }
 
     /** Populates Branch (from DB ordered by recency), Agent, and Tool (from ToolRegistry) dropdowns. */
@@ -432,53 +415,12 @@ internal class PromptsPanel(
         }
     }
 
-    private fun reloadHistoryAsync() {
-        val serial = historyLoadSerial.incrementAndGet()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val allPrompts = sessionStore.loadPromptsFromAllSessions().toList()
-            val sessions = sessionStore.listSessions()
-            val nameMap = sessions.associate { it.id() to it.agent() }
-            val entries = ArrayList<EntryData>()
-            val sessionMap = HashMap<String, String>()
-            for (pwc in allPrompts) {
-                entries.add(pwc.prompt)
-                pwc.stats?.let { entries.add(it) }
-                val key = promptEntryId(pwc.prompt)
-                if (key.isNotEmpty()) sessionMap[key] = pwc.sessionId
-            }
-            ApplicationManager.getApplication().invokeLater {
-                if (serial != historyLoadSerial.get()) return@invokeLater
-                historyEntries = entries
-                promptSessionMap = sessionMap
-                sessionDisplayNameMap = nameMap
-                initialLoadDone = true
-                refresh()
-            }
-        }
-    }
-
-    /** Returns true if any filter is active; triggers SQL-backed query when true. */
-    private fun hasActiveFilters(): Boolean {
-        if (searchField.text.isNotBlank()) return true
-        val branch = (branchCombo.editor?.item as? String)?.trim().orEmpty()
-        val agent = agentCombo.selectedItem as? String
-        val tool = toolCombo.selectedItem as? String
-        return (branch.isNotEmpty() && branch != ALL_BRANCHES) ||
-            (agent != null && agent != ALL_AGENTS) ||
-            (tool != null && tool != ALL_TOOLS) ||
-            fileField.text.isNotBlank()
-    }
-
     private fun refresh() {
         refresh(scrollToBottom = true)
     }
 
     private fun refresh(scrollToBottom: Boolean) {
-        if (hasActiveFilters()) {
-            reloadWithSqlFilters(scrollToBottom)
-        } else {
-            refreshFromMemory(scrollToBottom)
-        }
+        reloadWithSqlFilters(scrollToBottom)
     }
 
     /**
@@ -495,15 +437,18 @@ internal class PromptsPanel(
         val scopes = if (combinedText != null) buildSearchScopes() else null
 
         val serial = historyLoadSerial.incrementAndGet()
+        val limit = displayedCount + 1
         ApplicationManager.getApplication().executeOnPooledThread {
             val params = ConversationQuery.QueryParams(
-                null, null, PAGE_SIZE, null,
+                null, null, limit, null,
                 null, null, tool, file, branch, agent,
                 null, null, false, false, Int.MAX_VALUE,
                 combinedText, scopes
             )
             val turns = sessionStore.query(params).toList()
-            val items = turns.map { turn ->
+            val hasMore = turns.size > displayedCount
+            val visible = if (hasMore) turns.take(displayedCount) else turns
+            val items = visible.reversed().map { turn ->
                 val prompt = EntryData.Prompt(
                     turn.userMessage(), turn.timestamp().toString(),
                     null, turn.turnId(), turn.turnId()
@@ -528,7 +473,8 @@ internal class PromptsPanel(
             }
             ApplicationManager.getApplication().invokeLater {
                 if (serial != historyLoadSerial.get()) return@invokeLater
-                loadMorePanel.isVisible = false
+                loadedOnce = true
+                loadMorePanel.isVisible = hasMore
                 listModel.clear()
                 items.forEach { listModel.addElement(it) }
                 if (scrollToBottom && listModel.size() > 0) {
@@ -547,36 +493,6 @@ internal class PromptsPanel(
         if (scopeThinking.isSelected) scopes.add(ConversationQuery.SearchScope.THINKING)
         if (scopeToolCalls.isSelected) scopes.add(ConversationQuery.SearchScope.TOOL_CALLS)
         return scopes
-    }
-
-    /** In-memory refresh: uses loaded history entries + live chatConsole entries. No filters active. */
-    private fun refreshFromMemory(scrollToBottom: Boolean) {
-        val query = searchField.text.orEmpty()
-        val allEntries = mergeEntries(historyEntries, chatConsole.entriesSnapshot())
-        val prompts = allEntries.filterIsInstance<EntryData.Prompt>()
-            .sortedBy { it.timestamp }
-        val filtered = filterPrompts(prompts, query)
-        val turnDataMap = buildTurnDataMap(allEntries)
-
-        val hasMore = filtered.size > displayedCount
-        loadMorePanel.isVisible = hasMore
-        val visible = if (hasMore) filtered.takeLast(displayedCount) else filtered
-
-        listModel.clear()
-        visible.forEach { p ->
-            val key = promptEntryId(p)
-            val data = turnDataMap[key]
-            val sid = promptSessionMap[key] ?: ""
-            val tid = p.id.takeIf { it.isNotEmpty() } ?: p.entryId
-            val agentName = sessionDisplayNameMap[sid] ?: ""
-            listModel.addElement(PromptItem(p, data?.stats, sid, tid, agentName))
-        }
-
-        if (scrollToBottom && listModel.size() > 0) {
-            ApplicationManager.getApplication().invokeLater {
-                promptList.ensureIndexIsVisible(listModel.size() - 1)
-            }
-        }
     }
 
     private fun loadMore() {
@@ -731,8 +647,6 @@ internal class PromptsPanel(
         const val MAX_CHARS = 200
         const val MAX_ROWS = 5
 
-        private data class TurnData(val stats: EntryData.TurnStats)
-
         /**
          * Truncates [text] to at most [MAX_ROWS] lines and at most [MAX_CHARS] characters,
          * whichever limit is reached first. Appends "…" when truncation occurs.
@@ -746,54 +660,6 @@ internal class PromptsPanel(
 
         fun formatTimestamp(iso: String): String =
             com.github.catatafishen.agentbridge.ui.util.TimestampDisplayFormatter.formatIsoTimestamp(iso)
-
-        fun filterPrompts(prompts: List<EntryData.Prompt>, query: String): List<EntryData.Prompt> {
-            val q = query.trim()
-            if (q.isEmpty()) return prompts
-            val needle = q.lowercase()
-            return prompts.filter { it.text.lowercase().contains(needle) }
-        }
-
-        fun mergeEntries(historyEntries: List<EntryData>, liveEntries: List<EntryData>): List<EntryData> {
-            if (liveEntries.isEmpty()) return historyEntries
-            if (historyEntries.isEmpty()) return liveEntries
-
-            // Live entries are the source of truth — they include entries loaded at startup
-            // plus any new entries added during the session. Supplement with history entries
-            // that the live set doesn't have (old entries pruned from bounded chat memory).
-            val liveIds = liveEntries.mapTo(HashSet()) { it.entryId }
-            val supplemental = historyEntries.filter { it.entryId !in liveIds }
-            return supplemental + liveEntries
-        }
-
-        fun promptEntryId(p: EntryData.Prompt): String = p.id.ifEmpty { p.entryId }
-
-        /**
-         * Builds a map from prompt key → TurnData (stats).
-         *
-         * For V2 sessions, [EntryData.TurnStats.turnId] matches [EntryData.Prompt.id] directly
-         * and is used as the primary lookup. For V1 sessions where turnId is empty, we fall back
-         * to positional matching: the TurnStats immediately following a Prompt is attributed to it.
-         */
-        private fun buildTurnDataMap(entries: List<EntryData>): Map<String, TurnData> {
-            val result = mutableMapOf<String, TurnData>()
-            var lastPromptId: String? = null
-            for (entry in entries) {
-                when (entry) {
-                    is EntryData.Prompt -> lastPromptId = promptEntryId(entry)
-                    is EntryData.TurnStats -> {
-                        val key = entry.turnId.takeIf { it.isNotEmpty() } ?: lastPromptId
-                        if (key != null) {
-                            result[key] = TurnData(entry)
-                            lastPromptId = null
-                        }
-                    }
-
-                    else -> Unit
-                }
-            }
-            return result
-        }
 
         fun formatCommits(hashes: List<String>): String {
             if (hashes.isEmpty()) return ""
