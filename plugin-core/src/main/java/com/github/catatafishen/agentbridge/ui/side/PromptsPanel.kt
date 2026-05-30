@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel
+import com.github.catatafishen.agentbridge.ui.LineDiffBar
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.openapi.Disposable
@@ -629,6 +630,13 @@ internal class PromptsPanel(
             add(commitsLabel, BorderLayout.CENTER)
         }
 
+        private val diffContainer = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            isVisible = false
+        }
+
         init {
             outer.isOpaque = true
             tsLabel.font = JBUI.Fonts.smallFont()
@@ -641,6 +649,7 @@ internal class PromptsPanel(
             statsLabel.alignmentX = LEFT_ALIGNMENT
             headerPanel.add(tsLabel)
             headerPanel.add(statsLabel)
+            headerPanel.add(diffContainer)
             textArea.isOpaque = false
             textArea.isEditable = false
             textArea.lineWrap = true
@@ -675,6 +684,15 @@ internal class PromptsPanel(
             tsLabel.text = formatTimestamp(value.prompt.timestamp) + turnIdSuffix
             statsLabel.text = formatStats(value.stats, value.agentDisplayName)
             statsLabel.isVisible = statsLabel.text.isNotEmpty()
+            val linesAdded = value.stats?.linesAdded ?: 0
+            val linesRemoved = value.stats?.linesRemoved ?: 0
+            if (linesAdded > 0 || linesRemoved > 0) {
+                diffContainer.removeAll()
+                diffContainer.add(LineDiffBar(linesAdded, linesRemoved))
+                diffContainer.isVisible = true
+            } else {
+                diffContainer.isVisible = false
+            }
             textArea.text = truncatePrompt(value.prompt.text.trim())
 
             val commitsText = formatCommits(value.commits)
@@ -698,10 +716,11 @@ internal class PromptsPanel(
 
             val commitsHeight = if (commitsPanel.isVisible) commitsLabel.preferredSize.height + JBUI.scale(2) else 0
             val statsHeight = if (statsLabel.isVisible) statsLabel.preferredSize.height + JBUI.scale(1) else 0
+            val diffHeight = if (diffContainer.isVisible) diffContainer.preferredSize.height + JBUI.scale(1) else 0
             val textHeight = textArea.preferredSize.height
             outer.preferredSize = Dimension(
                 listWidth,
-                tsLabel.preferredSize.height + statsHeight + JBUI.scale(4) + textHeight + commitsHeight + JBUI.scale(10)
+                tsLabel.preferredSize.height + statsHeight + diffHeight + JBUI.scale(4) + textHeight + commitsHeight + JBUI.scale(10)
             )
             return outer
         }
@@ -781,6 +800,8 @@ internal class PromptsPanel(
             val parts = mutableListOf<String>()
             if (stats != null) {
                 if (stats.toolCallCount > 0) parts.add("${stats.toolCallCount} tools")
+                if (stats.inputTokens > 0 || stats.outputTokens > 0)
+                    parts.add("${stats.inputTokens}↑ ${stats.outputTokens}↓")
                 if (stats.durationMs > 0) {
                     val s = stats.durationMs / 1000.0
                     parts.add(if (s < 60) "%.1fs".format(s) else "${(s / 60).toInt()}m ${(s % 60).toInt()}s")

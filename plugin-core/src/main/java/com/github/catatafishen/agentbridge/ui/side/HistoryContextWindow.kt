@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.AttachmentKind
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
 import com.github.catatafishen.agentbridge.ui.ContextItemData
+import com.github.catatafishen.agentbridge.ui.LineDiffBar
 import com.github.catatafishen.agentbridge.ui.NativeChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -20,9 +21,10 @@ import java.awt.Dimension
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.util.concurrent.ConcurrentHashMap
+import javax.swing.Box
+import javax.swing.BoxLayout
 import javax.swing.JDialog
 import javax.swing.JPanel
-import javax.swing.SwingConstants
 
 /**
  * Non-modal floating window showing a single conversation turn from history.
@@ -64,11 +66,25 @@ internal class HistoryContextWindow private constructor(
 
     private val chatPanel = NativeChatPanel(project)
 
-    private val metaLabel = JBLabel("").apply {
+    private val metaTextLabel = JBLabel("").apply {
         foreground = UIUtil.getContextHelpForeground()
         font = JBUI.Fonts.smallFont()
-        horizontalAlignment = SwingConstants.LEFT
         border = JBUI.Borders.empty(0, 8, 0, 4)
+    }
+
+    private val metaDiffContainer = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.X_AXIS)
+        isOpaque = false
+        border = JBUI.Borders.empty(0, 0, 0, 4)
+        isVisible = false
+    }
+
+    private val metaPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.X_AXIS)
+        isOpaque = false
+        add(metaTextLabel)
+        add(metaDiffContainer)
+        add(Box.createHorizontalGlue())
     }
 
     @Volatile
@@ -143,7 +159,7 @@ internal class HistoryContextWindow private constructor(
             background = UIUtil.getPanelBackground()
             border = JBUI.Borders.empty(2, 4)
             add(toolbar.component, BorderLayout.WEST)
-            add(metaLabel, BorderLayout.CENTER)
+            add(metaPanel, BorderLayout.CENTER)
         }
 
         val body = JPanel(BorderLayout()).apply {
@@ -219,9 +235,6 @@ internal class HistoryContextWindow private constructor(
     private fun updateMetaLabels() {
         val parts = mutableListOf<String>()
 
-        val rec = currentSessionRecord
-        if (rec != null && rec.name.isNotEmpty()) parts.add(rec.name)
-
         currentPrompt?.let { prompt ->
             val ts = PromptsPanel.formatTimestamp(prompt.timestamp)
             if (ts.isNotEmpty()) parts.add(ts)
@@ -230,14 +243,24 @@ internal class HistoryContextWindow private constructor(
         val turnShort = currentTurnId.takeIf { it.length >= 8 }?.take(8) ?: currentTurnId
         if (turnShort.isNotEmpty()) parts.add(turnShort)
 
-        val agentName = rec?.agent ?: ""
+        val agentName = currentSessionRecord?.agent ?: ""
         val stats = PromptsPanel.formatStats(currentStats, agentName)
         if (stats.isNotEmpty()) parts.add(stats)
 
         val commits = currentStats?.let { PromptsPanel.formatCommits(it.commitHashes) } ?: ""
         if (commits.isNotEmpty()) parts.add(commits)
 
-        metaLabel.text = parts.joinToString(" · ")
+        val linesAdded = currentStats?.linesAdded ?: 0
+        val linesRemoved = currentStats?.linesRemoved ?: 0
+        if (linesAdded > 0 || linesRemoved > 0) {
+            metaDiffContainer.removeAll()
+            metaDiffContainer.add(LineDiffBar(linesAdded, linesRemoved))
+            metaDiffContainer.isVisible = true
+        } else {
+            metaDiffContainer.isVisible = false
+        }
+
+        metaTextLabel.text = parts.joinToString(" · ")
     }
 
     private fun referenceInChat() {
