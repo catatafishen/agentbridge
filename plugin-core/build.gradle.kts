@@ -45,7 +45,6 @@ dependencies {
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
-        bundledPlugin("com.intellij.database")
     }
 
     // Kotlin stdlib for UI layer

@@ -359,7 +359,12 @@ internal class PromptsPanel(
     }
 
     private fun onEntriesChanged() {
-        refresh()
+        // The in-memory listener fires before ConversationPersistenceManager.appendNewEntries()
+        // completes its async DB write. Chain the refresh onto the pending save so it always
+        // reads from SQLite after the write has landed.
+        sessionStore.runAfterPendingSave {
+            ApplicationManager.getApplication().invokeLater { refresh() }
+        }
     }
 
     /** Populates Branch (from DB ordered by recency), Agent, and Tool (from ToolRegistry) dropdowns. */
@@ -427,7 +432,7 @@ internal class PromptsPanel(
      * SQL-backed refresh: queries conversation DB with all active filters.
      * Text search is scoped to the checked event types (user prompt, text events, thinking, tool I/O).
      */
-    private fun reloadWithSqlFilters(scrollToBottom: Boolean) {
+    private fun reloadWithSqlFilters(scrollToBottom: Boolean, postLoad: (() -> Unit)? = null) {
         val combinedText = searchField.text.orEmpty().trim().takeIf { it.isNotEmpty() }
         val branch = (branchCombo.editor?.item as? String)?.trim()
             ?.takeIf { it.isNotEmpty() && it != ALL_BRANCHES }
@@ -482,6 +487,7 @@ internal class PromptsPanel(
                         promptList.ensureIndexIsVisible(listModel.size() - 1)
                     }
                 }
+                postLoad?.invoke()
             }
         }
     }
@@ -496,13 +502,15 @@ internal class PromptsPanel(
     }
 
     private fun loadMore() {
-        val targetIndex = PAGE_SIZE.coerceAtMost(listModel.size())
-        displayedCount += PAGE_SIZE
-        refresh(scrollToBottom = false)
-        if (targetIndex > 0 && targetIndex < listModel.size()) {
-            val bounds = promptList.getCellBounds(targetIndex, targetIndex)
-            if (bounds != null) promptList.scrollRectToVisible(bounds)
-        }
+        val pageSize = PAGE_SIZE
+        displayedCount += pageSize
+        reloadWithSqlFilters(scrollToBottom = false, postLoad = {
+            val targetIndex = pageSize.coerceAtMost(listModel.size())
+            if (targetIndex > 0 && targetIndex < listModel.size()) {
+                val bounds = promptList.getCellBounds(targetIndex, targetIndex)
+                if (bounds != null) promptList.scrollRectToVisible(bounds)
+            }
+        })
     }
 
     /**

@@ -175,6 +175,17 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Runs {@code action} on a pooled thread after all pending saves have completed.
+     * Use this to schedule work that must see the fully-persisted state (e.g. a UI refresh
+     * that reads from SQLite after a write has been queued with {@link #appendEntriesAsync}).
+     */
+    public void runAfterPendingSave(@NotNull Runnable action) {
+        synchronized (saveLock) {
+            pendingSave.thenRunAsync(action, AppExecutorUtil.getAppExecutorService());
+        }
+    }
+
+    /**
      * Updates a tool call's completion state (result, status) asynchronously.
      *
      * <p>Chained through {@link #pendingSave} to guarantee it runs after any pending INSERT.

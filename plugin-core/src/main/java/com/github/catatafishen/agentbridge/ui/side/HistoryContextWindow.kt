@@ -89,7 +89,9 @@ internal class HistoryContextWindow private constructor(
         isVisible = false
     }
 
-    private val commitsCombo = ComboBox<CommitEntry>().apply {
+    private val commitsComboModel = DefaultComboBoxModel<CommitEntry>()
+
+    private val commitsCombo = ComboBox(commitsComboModel).apply {
         font = JBUI.Fonts.smallFont()
         foreground = UIUtil.getContextHelpForeground()
         isVisible = false
@@ -305,10 +307,8 @@ internal class HistoryContextWindow private constructor(
                 val entries = hashes.map { CommitEntry(it) }.toTypedArray()
                 ignoreComboAction = true
                 try {
-                    @Suppress("UNCHECKED_CAST")
-                    val jCombo = commitsCombo as JComboBox<CommitEntry>
-                    jCombo.removeAllItems()
-                    entries.forEach { jCombo.addItem(it) }
+                    commitsCombo.removeAllItems()
+                    entries.forEach { commitsComboModel.addElement(it) }
                 } finally {
                     ignoreComboAction = false
                 }
@@ -342,10 +342,8 @@ internal class HistoryContextWindow private constructor(
         try {
             val selectedIdx = commitsCombo.selectedIndex
             updates.forEach { (e, subject) -> e.subject = subject }
-            @Suppress("UNCHECKED_CAST")
-            val jCombo = commitsCombo as JComboBox<CommitEntry>
-            jCombo.removeAllItems()
-            entries.forEach { jCombo.addItem(it) }
+            commitsCombo.removeAllItems()
+            entries.forEach { commitsComboModel.addElement(it) }
             if (selectedIdx in entries.indices) commitsCombo.selectedIndex = selectedIdx
         } finally {
             ignoreComboAction = false
