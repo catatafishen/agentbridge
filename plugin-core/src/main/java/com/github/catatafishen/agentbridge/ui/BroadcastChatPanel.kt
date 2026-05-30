@@ -133,7 +133,10 @@ class BroadcastChatPanel(
         dispatchUi { nativePanel.appendThinkingText(text) }
     }
 
-    override fun collapseThinking() = dispatchUi { nativePanel.collapseThinking() }
+    override fun collapseThinking() {
+        entryStore.closeCurrentThinkingEntry()
+        dispatchUi { nativePanel.collapseThinking() }
+    }
 
     /**
      * Resets the current text entry in [entryStore] so the next [appendText] creates a new entry.
