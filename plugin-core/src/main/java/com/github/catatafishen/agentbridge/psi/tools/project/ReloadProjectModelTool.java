@@ -105,8 +105,15 @@ public final class ReloadProjectModelTool extends ProjectTool {
                 try {
                     StringBuilder sb = new StringBuilder();
                     int synced = 0;
+                    int notConfigured = 0;
                     for (Object manager : managers) {
                         String name = getSystemName(manager);
+                        Boolean linked = hasLinkedProjects(apiUtilClass, manager);
+                        if (linked == Boolean.FALSE) {
+                            sb.append("– ").append(name).append(" (no linked projects — skipped)\n");
+                            notConfigured++;
+                            continue;
+                        }
                         if (refresh(externalSystemUtilClass, manager)) {
                             sb.append("✓ ").append(name).append("\n");
                             synced++;
@@ -114,9 +121,15 @@ public final class ReloadProjectModelTool extends ProjectTool {
                             sb.append("✗ ").append(name).append(" (refresh failed — see IDE log)\n");
                         }
                     }
+                    if (synced == 0 && notConfigured == managers.size()) {
+                        future.complete("No build systems are configured for this project. "
+                            + "Open the Gradle tool window and link a project, "
+                            + "or run 'gradle wrapper' and sync from File → Sync Project with Gradle Files.");
+                        return;
+                    }
                     if (synced == 0) {
-                        future.complete("Error: Refresh failed for all " + managers.size()
-                            + " build system(s). See IDE log for details.");
+                        future.complete("Error: Refresh failed for all configured build system(s). "
+                            + "See IDE log for details.\n" + sb);
                         return;
                     }
                     sb.append("\nProject model reload triggered for ").append(synced)
@@ -163,6 +176,27 @@ public final class ReloadProjectModelTool extends ProjectTool {
         } catch (Exception e) {
             LOG.warn("Failed to refresh external system: " + e.getMessage(), e);
             return false;
+        }
+    }
+
+    /**
+     * Returns {@code true} if the project has at least one linked project for the given
+     * build system, {@code false} if definitely none, or {@code null} if the settings
+     * API could not be accessed (treat as "unknown — try anyway").
+     */
+    private @org.jetbrains.annotations.Nullable Boolean hasLinkedProjects(Class<?> apiUtilClass, Object manager) {
+        try {
+            Object systemId = manager.getClass().getMethod("getSystemId").invoke(manager);
+            Class<?> systemIdClass = Class.forName(
+                "com.intellij.openapi.externalSystem.model.ProjectSystemId");
+            Method getSettings = apiUtilClass.getMethod("getSettings", Project.class, systemIdClass);
+            Object settings = getSettings.invoke(null, project, systemId);
+            Method getLinked = settings.getClass().getMethod("getLinkedProjectsSettings");
+            Collection<?> linked = (Collection<?>) getLinked.invoke(settings);
+            return !linked.isEmpty();
+        } catch (Exception e) {
+            LOG.debug("Could not check linked projects for " + getSystemName(manager) + ": " + e.getMessage());
+            return null; // unknown — let the refresh attempt proceed
         }
     }
 
