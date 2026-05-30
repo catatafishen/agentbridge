@@ -314,6 +314,8 @@ internal class HistoryContextWindow private constructor(
             val updates = entries.map { e -> e to fetchCommitSubject(e.hash) }
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
+                // Guard against stale updates: if the combo was already replaced by a newer turn, skip.
+                if (commitsCombo.itemCount == 0 || commitsCombo.getItemAt(0) !== entries.first()) return@invokeLater
                 ignoreComboAction = true
                 try {
                     val selectedIdx = commitsCombo.selectedIndex
@@ -338,9 +340,14 @@ internal class HistoryContextWindow private constructor(
                 .directory(File(gitDir))
                 .redirectErrorStream(true)
                 .start()
-            val output = process.inputStream.bufferedReader().readText().trim()
-            process.waitFor(5L, TimeUnit.SECONDS)
-            output.ifEmpty { hash.take(7) }
+            try {
+                if (!process.waitFor(5L, TimeUnit.SECONDS)) {
+                    return hash.take(7)
+                }
+                process.inputStream.bufferedReader().readText().trim().ifEmpty { hash.take(7) }
+            } finally {
+                process.destroy()
+            }
         } catch (_: Exception) {
             hash.take(7)
         }
