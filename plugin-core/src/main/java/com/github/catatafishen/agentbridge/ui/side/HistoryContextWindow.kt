@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.bridge.EntryData
+import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.*
 import com.intellij.icons.AllIcons
@@ -249,6 +250,9 @@ internal class HistoryContextWindow private constructor(
             val earlier: List<String> = service.loadAdjacentTurnIds(sid, turnId, -1)
             val later: List<String> = service.loadAdjacentTurnIds(sid, turnId, 1)
             val sessionRec: ConversationService.SessionRecord? = service.listSessions().find { it.id == sid }
+            val commitHashes: List<String> =
+                service.query(ConversationQuery.QueryParams.byTurnId(turnId))
+                    .firstOrNull()?.commitHashes() ?: emptyList()
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 if (serial != loadSerial.get()) return@invokeLater  // stale: a newer load superseded this one
@@ -256,7 +260,9 @@ internal class HistoryContextWindow private constructor(
                 currentSessionRecord = sessionRec
                 currentEntries = entries
                 currentPrompt = entries.firstNotNullOfOrNull { it as? EntryData.Prompt }
-                currentStats = entries.firstNotNullOfOrNull { it as? EntryData.TurnStats }
+                val rawStats = entries.firstNotNullOfOrNull { it as? EntryData.TurnStats }
+                currentStats = if (rawStats != null && rawStats.commitHashes.isEmpty() && commitHashes.isNotEmpty())
+                    rawStats.copy(commitHashes = commitHashes) else rawStats
                 hasPrev = earlier.isNotEmpty()
                 hasNext = later.isNotEmpty()
 
@@ -288,6 +294,7 @@ internal class HistoryContextWindow private constructor(
                 commitsCombo.isVisible = false
                 commitLinkLabel.isVisible = false
             }
+
             hashes.size == 1 -> {
                 singleCommitHash = hashes[0]
                 commitLinkLabel.setHyperlinkText(hashes[0].take(7))
@@ -295,6 +302,7 @@ internal class HistoryContextWindow private constructor(
                 commitLinkLabel.isVisible = true
                 loadCommitSubjectsAsync(hashes.map { CommitEntry(it) }.toTypedArray())
             }
+
             else -> {
                 singleCommitHash = null
                 val entries = hashes.map { CommitEntry(it) }.toTypedArray()
