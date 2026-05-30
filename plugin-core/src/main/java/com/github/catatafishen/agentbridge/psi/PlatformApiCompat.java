@@ -970,19 +970,15 @@ public final class PlatformApiCompat {
     );
 
     /**
-     * Finds a plugin descriptor by plugin ID using the public {@code PluginManager.getPlugins()} API.
+     * Finds a plugin descriptor by plugin ID.
      *
-     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} is annotated
-     * {@code @ApiStatus.Internal} — the entire {@code PluginManagerCore} class is internal.
-     * The public replacement is to search through {@code PluginManager.getPlugins()}, which is
-     * the non-internal facade. This helper centralises the iteration so callers remain clean.</p>
+     * <p><b>Why extracted:</b> The previous approach iterated {@code PluginManager.getPlugins()},
+     * which was flagged as {@code @ApiStatus.Internal} in 2026.2+. {@code PluginManager.getPlugin(PluginId)}
+     * is the direct O(1) lookup on the same public facade class and is not flagged.</p>
      */
     private static @Nullable com.intellij.ide.plugins.IdeaPluginDescriptor findPluginById(@NotNull String pluginId) {
         com.intellij.openapi.extensions.PluginId id = com.intellij.openapi.extensions.PluginId.getId(pluginId);
-        for (var descriptor : com.intellij.ide.plugins.PluginManager.getPlugins()) {
-            if (id.equals(descriptor.getPluginId())) return descriptor;
-        }
-        return null;
+        return com.intellij.ide.plugins.PluginManager.getPlugin(id);
     }
 
     /**
