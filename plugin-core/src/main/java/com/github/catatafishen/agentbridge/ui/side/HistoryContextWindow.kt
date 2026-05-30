@@ -2,15 +2,12 @@ package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.session.db.ConversationService
-import com.github.catatafishen.agentbridge.ui.AttachmentKind
-import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
-import com.github.catatafishen.agentbridge.ui.ContextItemData
-import com.github.catatafishen.agentbridge.ui.LineDiffBar
-import com.github.catatafishen.agentbridge.ui.NativeChatPanel
+import com.github.catatafishen.agentbridge.ui.*
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.components.JBLabel
@@ -20,7 +17,10 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JDialog
@@ -64,6 +64,11 @@ internal class HistoryContextWindow private constructor(
         }
     }
 
+    /** A git commit shown in the commits dropdown. Subject is loaded asynchronously. */
+    private data class CommitEntry(val hash: String, var subject: String = "…") {
+        override fun toString() = "${hash.take(7)}  $subject"
+    }
+
     private val chatPanel = NativeChatPanel(project)
 
     private val metaTextLabel = JBLabel("").apply {
@@ -79,13 +84,37 @@ internal class HistoryContextWindow private constructor(
         isVisible = false
     }
 
+    private val commitsCombo = ComboBox<CommitEntry>().apply {
+        font = JBUI.Fonts.smallFont()
+        foreground = UIUtil.getContextHelpForeground()
+        isVisible = false
+        maximumSize = Dimension(JBUI.scale(220), Int.MAX_VALUE)
+    }
+
+    /** Set to true while programmatically populating the combo to suppress navigation. */
+    @Volatile
+    private var ignoreComboAction = false
+
     private val metaPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.X_AXIS)
         isOpaque = false
         add(metaTextLabel)
         add(metaDiffContainer)
+        add(commitsCombo)
         add(Box.createHorizontalGlue())
     }
+
+    init {
+        commitsCombo.addActionListener {
+            if (ignoreComboAction) return@addActionListener
+            val entry = commitsCombo.selectedItem as? CommitEntry ?: return@addActionListener
+            ApplicationManager.getApplication().executeOnPooledThread {
+                FileNavigator(project).handleFileLink("gitshow://${entry.hash}")
+            }
+        }
+    }
+
+    private val loadSerial = AtomicInteger(0)
 
     @Volatile
     private var currentTurnId: String = initialTurnId
@@ -204,6 +233,7 @@ internal class HistoryContextWindow private constructor(
     }
 
     private fun loadTurnAsync(turnId: String) {
+        val serial = loadSerial.incrementAndGet()
         val service = ConversationService.getInstance(project)
         val sid = sessionId
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -213,6 +243,7 @@ internal class HistoryContextWindow private constructor(
             val sessionRec: ConversationService.SessionRecord? = service.listSessions().find { it.id == sid }
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
+                if (serial != loadSerial.get()) return@invokeLater  // stale: a newer load superseded this one
                 currentTurnId = turnId
                 currentSessionRecord = sessionRec
                 currentEntries = entries
@@ -247,9 +278,6 @@ internal class HistoryContextWindow private constructor(
         val stats = PromptsPanel.formatStats(currentStats, agentName)
         if (stats.isNotEmpty()) parts.add(stats)
 
-        val commits = currentStats?.let { PromptsPanel.formatCommits(it.commitHashes) } ?: ""
-        if (commits.isNotEmpty()) parts.add(commits)
-
         val linesAdded = currentStats?.linesAdded ?: 0
         val linesRemoved = currentStats?.linesRemoved ?: 0
         if (linesAdded > 0 || linesRemoved > 0) {
@@ -260,7 +288,62 @@ internal class HistoryContextWindow private constructor(
             metaDiffContainer.isVisible = false
         }
 
+        val hashes = currentStats?.commitHashes.orEmpty()
+        if (hashes.isEmpty()) {
+            commitsCombo.isVisible = false
+        } else {
+            val entries = hashes.map { CommitEntry(it) }.toTypedArray()
+            ignoreComboAction = true
+            try {
+                commitsCombo.removeAllItems()
+                val jCombo = commitsCombo as javax.swing.JComboBox<CommitEntry>
+                entries.forEach { jCombo.addItem(it) }
+            } finally {
+                ignoreComboAction = false
+            }
+            commitsCombo.isVisible = true
+            loadCommitSubjectsAsync(entries)
+        }
+
         metaTextLabel.text = parts.joinToString(" · ")
+    }
+
+    private fun loadCommitSubjectsAsync(entries: Array<CommitEntry>) {
+        if (entries.isEmpty()) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val updates = entries.map { e -> e to fetchCommitSubject(e.hash) }
+            ApplicationManager.getApplication().invokeLater {
+                if (!isDisplayable) return@invokeLater
+                ignoreComboAction = true
+                try {
+                    val selectedIdx = commitsCombo.selectedIndex
+                    updates.forEach { (e, subject) -> e.subject = subject }
+                    val jCombo = commitsCombo as javax.swing.JComboBox<CommitEntry>
+                    jCombo.removeAllItems()
+                    entries.forEach { jCombo.addItem(it) }
+                    if (selectedIdx >= 0 && selectedIdx < entries.size) {
+                        commitsCombo.selectedIndex = selectedIdx
+                    }
+                } finally {
+                    ignoreComboAction = false
+                }
+            }
+        }
+    }
+
+    private fun fetchCommitSubject(hash: String): String {
+        return try {
+            val gitDir = project.basePath ?: return hash.take(7)
+            val process = ProcessBuilder("git", "log", "--format=%s", "-1", hash)
+                .directory(File(gitDir))
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().readText().trim()
+            process.waitFor(5L, TimeUnit.SECONDS)
+            output.ifEmpty { hash.take(7) }
+        } catch (_: Exception) {
+            hash.take(7)
+        }
     }
 
     private fun referenceInChat() {

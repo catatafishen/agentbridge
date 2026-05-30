@@ -158,7 +158,13 @@ public final class ConversationQuery {
         @NotNull Instant timestamp,
         int toolCallCount,
         @NotNull List<ToolCallSummary> toolCalls,
-        @NotNull List<String> thinkingBlocks
+        @NotNull List<String> thinkingBlocks,
+        long inputTokens,
+        long outputTokens,
+        long durationMs,
+        int linesAdded,
+        int linesRemoved,
+        @NotNull List<String> commitHashes
     ) {
     }
 
@@ -251,6 +257,8 @@ public final class ConversationQuery {
             SELECT t.id, t.session_id, t.prompt_text, t.started_at, t.model,
                    t.git_branch_at_start, t.tool_call_count,
                    s.agent_name, COALESCE(s.display_name, ''),
+                   t.input_tokens, t.output_tokens, t.duration_ms,
+                   t.lines_added, t.lines_removed,
                    (SELECT id FROM turns
                      WHERE started_at < t.started_at
                         OR (started_at = t.started_at AND id < t.id)
@@ -447,7 +455,12 @@ public final class ConversationQuery {
         int toolCallCount = rs.getInt(7);
         String agentName = nullToEmpty(rs.getString(8));
         String agentDisplayName = nullToEmpty(rs.getString(9));
-        String prevTurnId = rs.getString(10);
+        long inputTokens = rs.getLong(10);
+        long outputTokens = rs.getLong(11);
+        long durationMs = rs.getLong(12);
+        int linesAdded = rs.getInt(13);
+        int linesRemoved = rs.getInt(14);
+        String prevTurnId = rs.getString(15);
         Instant timestamp = parseInstant(startedAt);
 
         List<String> humanNudges = loadHumanNudges(conn, turnId);
@@ -456,14 +469,31 @@ public final class ConversationQuery {
             ? loadThinkingBlocks(conn, turnId) : List.of();
         List<ToolCallSummary> toolCalls = p.includeToolCalls()
             ? loadToolCalls(conn, turnId) : List.of();
+        List<String> commitHashes = loadCommitHashesForTurn(conn, turnId);
 
         return new TurnSummary(
             turnId, sessionId, prevTurnId,
             agentName, agentDisplayName,
             promptText, humanNudges, assistantText,
             model, branch, timestamp, toolCallCount,
-            toolCalls, thinkingBlocks
+            toolCalls, thinkingBlocks,
+            inputTokens, outputTokens, durationMs,
+            linesAdded, linesRemoved, commitHashes
         );
+    }
+
+    @NotNull
+    private List<String> loadCommitHashesForTurn(
+        @NotNull Connection conn, @NotNull String turnId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT commit_hash FROM commits WHERE turn_id = ?")) {
+            ps.setString(1, turnId);
+            List<String> hashes = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) hashes.add(rs.getString(1));
+            }
+            return hashes;
+        }
     }
 
     // ── Event loaders ─────────────────────────────────────────────────────────

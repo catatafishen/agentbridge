@@ -456,7 +456,7 @@ class ConversationEntryStoreTest {
     private TurnStatsData makeTurnStats() {
         return new TurnStatsData(
             1000L, 500, 200, 0.01, 3, 10, 5,
-            "gpt-4", "1x", List.of(), null, null
+            "gpt-4", "1x", List.of(), null, null, ""
         );
     }
 }

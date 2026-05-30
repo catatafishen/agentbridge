@@ -10,7 +10,9 @@ data class TurnStatsData(
     val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
     val model: String, val multiplier: String, val commitHashes: List<String> = emptyList(),
     val gitBranchAtStart: String? = null,
-    val gitBranchAtEnd: String? = null
+    val gitBranchAtEnd: String? = null,
+    /** The entry ID of the prompt this turn belongs to; empty for legacy/unknown turns. */
+    val promptEntryId: String = ""
 )
 
 /**

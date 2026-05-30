@@ -42,7 +42,6 @@ internal class PromptsPanel(
     private data class PromptItem(
         val prompt: EntryData.Prompt,
         val stats: EntryData.TurnStats?,
-        val commits: List<String>,
         val sessionId: String = "",
         val turnId: String = "",
         val agentDisplayName: String = ""
@@ -438,7 +437,7 @@ internal class PromptsPanel(
         ApplicationManager.getApplication().executeOnPooledThread {
             val allPrompts = sessionStore.loadPromptsFromAllSessions().toList()
             val sessions = sessionStore.listSessions()
-            val nameMap = sessions.associate { it.id() to it.name() }
+            val nameMap = sessions.associate { it.id() to it.agent() }
             val entries = ArrayList<EntryData>()
             val sessionMap = HashMap<String, String>()
             for (pwc in allPrompts) {
@@ -509,7 +508,22 @@ internal class PromptsPanel(
                     turn.userMessage(), turn.timestamp().toString(),
                     null, turn.turnId(), turn.turnId()
                 )
-                PromptItem(prompt, null, emptyList(), turn.sessionId(), turn.turnId(), turn.agentDisplayName())
+                val stats = if (turn.durationMs() > 0 || turn.toolCallCount() > 0 || turn.inputTokens() > 0) {
+                    EntryData.TurnStats(
+                        turnId = turn.turnId(),
+                        durationMs = turn.durationMs(),
+                        inputTokens = turn.inputTokens(),
+                        outputTokens = turn.outputTokens(),
+                        toolCallCount = turn.toolCallCount(),
+                        linesAdded = turn.linesAdded(),
+                        linesRemoved = turn.linesRemoved(),
+                        model = turn.model(),
+                        commitHashes = turn.commitHashes(),
+                        timestamp = turn.timestamp().toString(),
+                        entryId = turn.turnId() + "-stats"
+                    )
+                } else null
+                PromptItem(prompt, stats, turn.sessionId(), turn.turnId(), turn.agentName())
             }
             ApplicationManager.getApplication().invokeLater {
                 if (serial != historyLoadSerial.get()) return@invokeLater
@@ -554,7 +568,7 @@ internal class PromptsPanel(
             val sid = promptSessionMap[key] ?: ""
             val tid = p.id.takeIf { it.isNotEmpty() } ?: p.entryId
             val agentName = sessionDisplayNameMap[sid] ?: ""
-            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid, tid, agentName))
+            listModel.addElement(PromptItem(p, data?.stats, sid, tid, agentName))
         }
 
         if (scrollToBottom && listModel.size() > 0) {
@@ -624,11 +638,6 @@ internal class PromptsPanel(
         private val tsLabel = JLabel()
         private val statsLabel = JLabel()
         private val textArea = JTextArea()
-        private val commitsLabel = JLabel()
-        private val commitsPanel = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            add(commitsLabel, BorderLayout.CENTER)
-        }
 
         private val diffContainer = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
@@ -657,11 +666,8 @@ internal class PromptsPanel(
             textArea.font = UIManager.getFont("Label.font") ?: textArea.font
             textArea.border = null
             textArea.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            commitsLabel.font = JBUI.Fonts.smallFont()
-            commitsLabel.foreground = UIUtil.getContextHelpForeground()
             outer.add(headerPanel, BorderLayout.NORTH)
             outer.add(textArea, BorderLayout.CENTER)
-            outer.add(commitsPanel, BorderLayout.SOUTH)
             outer.border = JBUI.Borders.compound(
                 JBUI.Borders.empty(1, 0),
                 JBUI.Borders.empty(4, 8, 4, 6)
@@ -695,32 +701,25 @@ internal class PromptsPanel(
             }
             textArea.text = truncatePrompt(value.prompt.text.trim())
 
-            val commitsText = formatCommits(value.commits)
-            commitsLabel.text = commitsText
-            commitsPanel.isVisible = commitsText.isNotEmpty()
-
             if (isSelected) {
                 val selFg = list?.selectionForeground ?: UIManager.getColor("List.selectionForeground")
                 outer.background = list?.selectionBackground ?: UIManager.getColor("List.selectionBackground")
                 textArea.foreground = selFg
                 tsLabel.foreground = selFg
                 statsLabel.foreground = selFg
-                commitsLabel.foreground = selFg
             } else {
                 outer.background = list?.background ?: UIManager.getColor("List.background")
                 textArea.foreground = list?.foreground ?: UIManager.getColor("List.foreground")
                 tsLabel.foreground = UIUtil.getContextHelpForeground()
                 statsLabel.foreground = UIUtil.getContextHelpForeground()
-                commitsLabel.foreground = UIUtil.getContextHelpForeground()
             }
 
-            val commitsHeight = if (commitsPanel.isVisible) commitsLabel.preferredSize.height + JBUI.scale(2) else 0
             val statsHeight = if (statsLabel.isVisible) statsLabel.preferredSize.height + JBUI.scale(1) else 0
             val diffHeight = if (diffContainer.isVisible) diffContainer.preferredSize.height + JBUI.scale(1) else 0
             val textHeight = textArea.preferredSize.height
             outer.preferredSize = Dimension(
                 listWidth,
-                tsLabel.preferredSize.height + statsHeight + diffHeight + JBUI.scale(4) + textHeight + commitsHeight + JBUI.scale(10)
+                tsLabel.preferredSize.height + statsHeight + diffHeight + JBUI.scale(4) + textHeight + JBUI.scale(10)
             )
             return outer
         }
@@ -731,7 +730,7 @@ internal class PromptsPanel(
         const val MAX_CHARS = 200
         const val MAX_ROWS = 5
 
-        private data class TurnData(val stats: EntryData.TurnStats, val commits: List<String>)
+        private data class TurnData(val stats: EntryData.TurnStats)
 
         /**
          * Truncates [text] to at most [MAX_ROWS] lines and at most [MAX_CHARS] characters,
@@ -769,7 +768,7 @@ internal class PromptsPanel(
         fun promptEntryId(p: EntryData.Prompt): String = p.id.ifEmpty { p.entryId }
 
         /**
-         * Builds a map from prompt key → TurnData (stats + commit hashes).
+         * Builds a map from prompt key → TurnData (stats).
          *
          * For V2 sessions, [EntryData.TurnStats.turnId] matches [EntryData.Prompt.id] directly
          * and is used as the primary lookup. For V1 sessions where turnId is empty, we fall back
@@ -784,7 +783,7 @@ internal class PromptsPanel(
                     is EntryData.TurnStats -> {
                         val key = entry.turnId.takeIf { it.isNotEmpty() } ?: lastPromptId
                         if (key != null) {
-                            result[key] = TurnData(entry, entry.commitHashes)
+                            result[key] = TurnData(entry)
                             lastPromptId = null
                         }
                     }
@@ -795,6 +794,13 @@ internal class PromptsPanel(
             return result
         }
 
+        fun formatCommits(hashes: List<String>): String {
+            if (hashes.isEmpty()) return ""
+            return "Commits: " + hashes.joinToString(", ") { it.take(7) }
+        }
+
+        @JvmStatic
+        @JvmOverloads
         fun formatStats(stats: EntryData.TurnStats?, agentDisplayName: String = ""): String {
             if (stats == null && agentDisplayName.isEmpty()) return ""
             val parts = mutableListOf<String>()
@@ -810,13 +816,6 @@ internal class PromptsPanel(
             }
             if (agentDisplayName.isNotEmpty()) parts.add(agentDisplayName)
             return parts.joinToString(" · ")
-        }
-
-        fun formatCommits(hashes: List<String>): String {
-            if (hashes.isEmpty()) return ""
-            val abbrev = hashes.map { it.take(7) }
-            val label = if (hashes.size == 1) "Commit" else "${hashes.size} commits"
-            return "$label: ${abbrev.joinToString(", ")}"
         }
     }
 }

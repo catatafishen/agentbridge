@@ -346,17 +346,17 @@ public final class ConversationService implements Disposable {
 
     @NotNull
     private String readCurrentSessionId(@Nullable String basePath, @NotNull ConversationReader reader) throws IOException {
-        // The database is the source of truth for active sessions.
-        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
-        if (!sessions.isEmpty()) {
-            return sessions.get(0).id();
-        }
-        // No sessions in the database — check the session ID file for a session
-        // that may not have finished writing its first turn yet.
+        // Prefer the persisted current-session-id file maintained by the active session writer.
         File idFile = currentSessionIdFile(basePath);
         if (idFile.exists()) {
             String id = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
             if (!id.isEmpty()) return id;
+        }
+        // Fall back to the most recently updated session in the database (e.g. first launch
+        // before any file has been written, or after the file is cleaned up on close).
+        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
+        if (!sessions.isEmpty()) {
+            return sessions.get(0).id();
         }
         return "";
     }
