@@ -228,8 +228,9 @@ class ConversationEntryStore {
     fun emitTurnStats(stats: TurnStatsData): EntryData.TurnStats {
         val entry: EntryData.TurnStats
         synchronized(lock) {
+            val resolvedTurnId = stats.promptEntryId.ifEmpty { UUID.randomUUID().toString() }
             entry = EntryData.TurnStats(
-                turnId = stats.promptEntryId,
+                turnId = resolvedTurnId,
                 durationMs = stats.durationMs,
                 inputTokens = stats.inputTokens.toLong(),
                 outputTokens = stats.outputTokens.toLong(),
@@ -240,8 +241,7 @@ class ConversationEntryStore {
                 model = stats.model,
                 multiplier = stats.multiplier,
                 timestamp = timestamp(),
-                entryId = if (stats.promptEntryId.isNotEmpty()) stats.promptEntryId + "-stats"
-                else UUID.randomUUID().toString(),
+                entryId = resolvedTurnId + "-stats",
             )
             _entries.add(entry)
         }
