@@ -297,7 +297,7 @@ public final class ConversationReader {
                     EntryData.Prompt prompt = new EntryData.Prompt(promptText, startedAt,
                         ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId);
 
-                    EntryData.TurnStats stats = reconstructTurnStats(rs, turnId);
+                    EntryData.TurnStats stats = reconstructTurnStats(rs, turnId, List.of());
                     result.add(new PromptWithStats(sessionId, prompt, stats));
                 }
             }
@@ -559,6 +559,9 @@ public final class ConversationReader {
         @NotNull Connection conn, @NotNull String turnId,
         @NotNull List<EntryData> result) throws SQLException {
 
+        // Always load commit hashes — they exist independent of whether the turn ended.
+        List<String> hashes = loadCommitHashes(conn, turnId);
+
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT ended_at, model, token_multiplier, input_tokens, output_tokens,
                    cost_usd, duration_ms, tool_call_count, lines_added, lines_removed,
@@ -567,46 +570,29 @@ public final class ConversationReader {
             """)) {
             ps.setString(1, turnId);
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) return;
-                EntryData.TurnStats stats = reconstructTurnStats(rs, turnId);
-                if (stats != null) result.add(stats);
-            }
-        }
-        // Also load commit hashes
-        List<String> hashes = loadCommitHashes(conn, turnId);
-        if (!hashes.isEmpty()) {
-            // The stats entry was already added; we need to replace it with one that has hashes.
-            // Find the last TurnStats in result and replace it.
-            for (int i = result.size() - 1; i >= 0; i--) {
-                if (result.get(i) instanceof EntryData.TurnStats existingStats
-                    && existingStats.getTurnId().equals(turnId)) {
-                    result.set(i, new EntryData.TurnStats(
-                        existingStats.getTurnId(),
-                        existingStats.getDurationMs(),
-                        existingStats.getInputTokens(),
-                        existingStats.getOutputTokens(),
-                        existingStats.getCostUsd(),
-                        existingStats.getToolCallCount(),
-                        existingStats.getLinesAdded(),
-                        existingStats.getLinesRemoved(),
-                        existingStats.getModel(),
-                        existingStats.getMultiplier(),
-                        0, 0, 0, 0.0, 0, 0, 0,
-                        existingStats.getTimestamp(),
-                        existingStats.getEntryId(),
-                        hashes,
-                        existingStats.getGitBranchAtStart(),
-                        existingStats.getGitBranchAtEnd()
-                    ));
-                    break;
+                if (rs.next()) {
+                    // Full stats available — build TurnStats with hashes in one shot.
+                    EntryData.TurnStats stats = reconstructTurnStats(rs, turnId, hashes);
+                    if (stats != null) result.add(stats);
+                    return;
                 }
             }
+        }
+
+        // Turn has no ended_at yet (in-progress or abandoned) but may still have commits.
+        if (!hashes.isEmpty()) {
+            result.add(new EntryData.TurnStats(
+                turnId, 0, 0, 0, 0.0, 0, 0, 0, "", "",
+                0, 0, 0, 0.0, 0, 0, 0,
+                "", turnId + "-stats",
+                hashes, null, null
+            ));
         }
     }
 
     @Nullable
-    private EntryData.TurnStats reconstructTurnStats(@NotNull ResultSet rs, @NotNull String turnId)
-        throws SQLException {
+    private EntryData.TurnStats reconstructTurnStats(@NotNull ResultSet rs, @NotNull String turnId,
+        @NotNull List<String> commitHashes) throws SQLException {
         // For the allPrompts query, columns start at 5 (ended_at)
         // For the addTurnStatsIfPresent query, columns start at 1
         // We use column names to be safe
@@ -631,7 +617,7 @@ public final class ConversationReader {
             toolCallCount, linesAdded, linesRemoved, model, multiplierStr,
             0, 0, 0, 0.0, 0, 0, 0,
             endedAt, turnId + "-stats",
-            List.of(), branchAtStart, branchAtEnd
+            commitHashes, branchAtStart, branchAtEnd
         );
     }
 

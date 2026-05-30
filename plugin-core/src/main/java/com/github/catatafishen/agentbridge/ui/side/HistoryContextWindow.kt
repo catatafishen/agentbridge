@@ -258,9 +258,6 @@ internal class HistoryContextWindow private constructor(
             val earlier: List<String> = service.loadAdjacentTurnIds(sid, turnId, -1)
             val later: List<String> = service.loadAdjacentTurnIds(sid, turnId, 1)
             val sessionRec: ConversationService.SessionRecord? = service.listSessions().find { it.id == sid }
-            val commitHashes: List<String> =
-                service.query(ConversationQuery.QueryParams.byTurnId(turnId))
-                    .firstOrNull()?.commitHashes() ?: emptyList()
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 if (serial != loadSerial.get()) return@invokeLater  // stale: a newer load superseded this one
@@ -268,14 +265,7 @@ internal class HistoryContextWindow private constructor(
                 currentSessionRecord = sessionRec
                 currentEntries = entries
                 currentPrompt = entries.firstNotNullOfOrNull { it as? EntryData.Prompt }
-                val rawStats = entries.firstNotNullOfOrNull { it as? EntryData.TurnStats }
-                currentStats = when {
-                    rawStats != null && rawStats.commitHashes.isEmpty() && commitHashes.isNotEmpty() ->
-                        rawStats.copy(commitHashes = commitHashes)
-                    rawStats == null && commitHashes.isNotEmpty() ->
-                        EntryData.TurnStats(turnId = turnId, commitHashes = commitHashes)
-                    else -> rawStats
-                }
+                currentStats = entries.firstNotNullOfOrNull { it as? EntryData.TurnStats }
                 hasPrev = earlier.isNotEmpty()
                 hasNext = later.isNotEmpty()
 
