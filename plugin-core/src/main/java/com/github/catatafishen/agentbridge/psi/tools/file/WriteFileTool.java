@@ -18,6 +18,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
 
@@ -532,21 +533,30 @@ public class WriteFileTool extends FileTool {
     /**
      * Check for syntax errors in a file after writing.
      * Returns a warning string if errors are found, or empty string if clean.
-     * Runs on EDT (caller must be on EDT). Commits only the supplied document rather than
-     * all open documents to avoid stalling unrelated document trees.
+     *
+     * <p>Parses a fresh standalone PSI from the document text via {@link PsiFileFactory}
+     * rather than committing the document. Committing can trigger IntelliJ's internal
+     * length-consistency check ({@code checkLengthConsistency}) when the cached PSI tree
+     * has a stale length — for example after an external VFS modification or when the file
+     * has multiple view providers — which logs a user-visible IDE error even though the
+     * write itself succeeded.
      */
     private String checkSyntaxErrors(Document doc, String pathStr) {
         try {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return "";
-            // Commit only the document we just wrote — not all open documents
-            PsiDocumentManager.getInstance(project).commitDocument(doc);
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (psiFile == null) return "";
+            PsiFile templateFile = PsiManager.getInstance(project).findFile(vf);
+            if (templateFile == null) return "";
+
+            // Create a standalone PSI from the current document text. This sidesteps
+            // commitDocument entirely, avoiding the document-PSI synchronisation path
+            // that raises "Inconsistent FILE tree" errors when the cached PSI is stale.
+            PsiFile freshPsi = PsiFileFactory.getInstance(project)
+                .createFileFromText(templateFile.getName(), templateFile.getFileType(), doc.getText());
 
             List<String> errors = new ArrayList<>();
             int[] nodeCount = {0};
-            collectPsiErrors(psiFile, doc, errors, nodeCount);
+            collectPsiErrors(freshPsi, doc, errors, nodeCount);
 
             if (errors.isEmpty()) return "";
             int count = Math.min(errors.size(), 5);
