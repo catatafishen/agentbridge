@@ -419,16 +419,18 @@ class ConversationServiceTest {
     }
 
     @Test
-    @DisplayName("runAfterPendingSave runs action after an in-flight async append")
-    void runAfterPendingSave_runsAfterAppend() throws Exception {
+    @DisplayName("runAfterPendingSave runs action after a synchronous append")
+    void runAfterPendingSave_runsAfterSynchronousAppend() throws Exception {
         ConversationService service = newService();
-        EntryData.Prompt entry = new EntryData.Prompt("hello", "", null, "eid-1", "eid-1");
+        EntryData.Prompt entry = new EntryData.Prompt("hello", "", null, "eid-2", "eid-2");
 
-        service.appendEntriesAsync(tempDir.toString(), List.of(entry));
+        // Sync append keeps the DB connection on the test thread (avoids SQLite cross-thread issues)
+        service.appendEntries(tempDir.toString(), List.of(entry));
+
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         service.runAfterPendingSave(latch::countDown);
 
-        assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS),
-            "action should have run after the async append completed");
+        assertTrue(latch.await(2, java.util.concurrent.TimeUnit.SECONDS),
+            "action should run after the synchronous append has completed");
     }
 }
