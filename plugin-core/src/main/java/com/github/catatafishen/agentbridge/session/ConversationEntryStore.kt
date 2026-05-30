@@ -205,6 +205,18 @@ class ConversationEntryStore {
         _currentText = null
     }
 
+    /**
+     * Closes the current thinking entry so the next [appendThinkingText] call starts a fresh
+     * [EntryData.Thinking] with a new entry ID.
+     *
+     * Called when the model signals the end of a thinking block (collapseThinking). Without
+     * this, a second thinking block in the same turn would be merged into the first entry
+     * instead of being persisted as a separate chip.
+     */
+    fun closeCurrentThinkingEntry() = synchronized(lock) {
+        _currentThinking = null
+    }
+
     fun finishResponse() {
         synchronized(lock) {
             _currentText = null
