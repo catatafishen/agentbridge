@@ -7,6 +7,8 @@ import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel
 import com.github.catatafishen.agentbridge.ui.LineDiffBar
+import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
+import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -506,21 +508,22 @@ internal class PromptsPanel(
                     turn.userMessage(), turn.timestamp().toString(),
                     null, turn.turnId(), turn.turnId()
                 )
-                val stats = if (turn.durationMs() > 0 || turn.toolCallCount() > 0 || turn.inputTokens() > 0 || turn.outputTokens() > 0) {
-                    EntryData.TurnStats(
-                        turnId = turn.turnId(),
-                        durationMs = turn.durationMs(),
-                        inputTokens = turn.inputTokens(),
-                        outputTokens = turn.outputTokens(),
-                        toolCallCount = turn.toolCallCount(),
-                        linesAdded = turn.linesAdded(),
-                        linesRemoved = turn.linesRemoved(),
-                        model = turn.model(),
-                        commitHashes = turn.commitHashes(),
-                        timestamp = turn.timestamp().toString(),
-                        entryId = turn.turnId() + "-stats"
-                    )
-                } else null
+                val stats =
+                    if (turn.durationMs() > 0 || turn.toolCallCount() > 0 || turn.inputTokens() > 0 || turn.outputTokens() > 0) {
+                        EntryData.TurnStats(
+                            turnId = turn.turnId(),
+                            durationMs = turn.durationMs(),
+                            inputTokens = turn.inputTokens(),
+                            outputTokens = turn.outputTokens(),
+                            toolCallCount = turn.toolCallCount(),
+                            linesAdded = turn.linesAdded(),
+                            linesRemoved = turn.linesRemoved(),
+                            model = turn.model(),
+                            commitHashes = turn.commitHashes(),
+                            timestamp = turn.timestamp().toString(),
+                            entryId = turn.turnId() + "-stats"
+                        )
+                    } else null
                 PromptItem(prompt, stats, turn.sessionId(), turn.turnId(), turn.agentName())
             }
             ApplicationManager.getApplication().invokeLater {

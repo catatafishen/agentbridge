@@ -2338,8 +2338,11 @@ class ChatToolWindowContent(
                 }
 
                 val activeIdx = (sidePanel?.selectedTab ?: 0).coerceIn(0, contentWrappers.lastIndex)
-                contentWrappers[activeIdx].add(rootSplitter, BorderLayout.CENTER)
+                // Select first so ensureSelectedContentVisible sees an empty wrapper (avoids deep
+                // ComponentTreeWatcher walk + native getLocationOnScreen on every scroll pane).
                 contentManager.setSelectedContent(contentManager.getContent(activeIdx)!!, false)
+                contentWrappers[activeIdx].add(rootSplitter, BorderLayout.CENTER)
+                contentWrappers[activeIdx].revalidate()
 
                 val listener = object : com.intellij.ui.content.ContentManagerListener {
                     override fun selectionChanged(event: com.intellij.ui.content.ContentManagerEvent) {
