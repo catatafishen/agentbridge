@@ -422,7 +422,7 @@ class ConversationServiceTest {
     @DisplayName("runAfterPendingSave runs action after a synchronous append")
     void runAfterPendingSave_runsAfterSynchronousAppend() throws Exception {
         ConversationService service = newService();
-        EntryData.Prompt entry = new EntryData.Prompt("hello", "", null, "eid-2", "eid-2");
+        EntryData.Prompt entry = new EntryData.Prompt("hello", "2026-01-01T10:00:00Z", null, "eid-2", "eid-2");
 
         // Sync append keeps the DB connection on the test thread (avoids SQLite cross-thread issues)
         service.appendEntries(tempDir.toString(), List.of(entry));
