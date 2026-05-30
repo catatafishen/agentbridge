@@ -592,7 +592,7 @@ public final class ConversationReader {
 
     @Nullable
     private EntryData.TurnStats reconstructTurnStats(@NotNull ResultSet rs, @NotNull String turnId,
-        @NotNull List<String> commitHashes) throws SQLException {
+                                                     @NotNull List<String> commitHashes) throws SQLException {
         // For the allPrompts query, columns start at 5 (ended_at)
         // For the addTurnStatsIfPresent query, columns start at 1
         // We use column names to be safe
