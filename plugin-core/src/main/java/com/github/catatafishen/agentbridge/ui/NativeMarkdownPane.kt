@@ -1,13 +1,17 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.LIVE_PANE_AGE_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
+import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_SETTLE_MS
+import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.lastResizeNanos
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
 import javax.swing.JEditorPane
+import javax.swing.JViewport
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
@@ -66,6 +70,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedForWidth = -1
     private var cachedForVersion = -1
     private var cachedHeight = -1
+
+    /** Natural (unconstrained) content width of the latest render — cached per content version. */
+    private var cachedNaturalWidth = 0
+    private var cachedNaturalWidthForVersion = -1
 
     /**
      * Wall-clock time (ms) of the most recent content change in this pane. Used to decide
@@ -242,6 +250,43 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     }
 
     /**
+     * Prevents [BoxLayout] in the bubble row from expanding the row to accommodate the
+     * HTML content's natural minimum width (e.g. long `pre` lines). Without this override
+     * the bubble would overflow the viewport whenever a code block's longest line is wider
+     * than the available space.
+     */
+    override fun getMinimumSize(): Dimension = Dimension(0, 0)
+
+    /**
+     * Walks the Swing view tree and returns the maximum preferred X-axis span of any
+     * `pre` or `blockquote` view. These block types do not wrap, so their preferred X
+     * span reflects the natural (un-clipped) content width. Regular paragraph views wrap
+     * at the allocated width, so their spans stay ≤ [pw] and do not inflate the result.
+     */
+    private fun maxBlockPreferredX(view: View): Float {
+        val elemName = try {
+            view.element?.name
+        } catch (_: Throwable) {
+            null
+        }
+        if (elemName == "pre" || elemName == "blockquote") {
+            return try {
+                view.getPreferredSpan(View.X_AXIS)
+            } catch (_: Throwable) {
+                0f
+            }
+        }
+        var maxW = 0f
+        for (i in 0 until view.viewCount) {
+            try {
+                maxW = maxOf(maxW, maxBlockPreferredX(view.getView(i)))
+            } catch (_: Throwable) { /* view tree may be transiently stale */
+            }
+        }
+        return maxW
+    }
+
+    /**
      * Computes the preferred height for the HTML content at the parent's available width.
      *
      * **Caching**: result is cached by `(parentWidth, contentVersion)`. Same width and
@@ -253,7 +298,37 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     override fun getPreferredSize(): Dimension {
         val p = parent ?: return super.getPreferredSize()
         val ins = p.insets
+
+        // When inside a JScrollPane's viewport we want to report the natural (unconstrained)
+        // content width so the JScrollPane can show a horizontal scrollbar for pre/blockquote
+        // blocks. The height is still computed at the constrained viewport width so the bubble
+        // grows vertically as expected and does not clip text.
+        val inJViewport = p is JViewport
+
         val pw = when {
+            inJViewport -> {
+                val vw = p.width
+                if (vw > 0) {
+                    vw - ins.left - ins.right
+                } else {
+                    // First layout pass: viewport has not been sized yet.
+                    // Walk up through JScrollPane → bubble to obtain the constrained width.
+                    val scrollPane = p.parent
+                    val bubble = scrollPane?.parent
+                    val bubbleIns = bubble?.insets ?: java.awt.Insets(0, 0, 0, 0)
+                    val maxW = bubble?.maximumSize?.width ?: 0
+                    when {
+                        maxW in 1 until Short.MAX_VALUE.toInt() ->
+                            maxW - bubbleIns.left - bubbleIns.right
+
+                        bubble != null && bubble.width > 0 ->
+                            bubble.width - bubbleIns.left - bubbleIns.right
+
+                        else -> return Dimension(0, cachedHeight.takeIf { it > 0 } ?: 1)
+                    }
+                }
+            }
+
             p.maximumSize.width in 1 until Short.MAX_VALUE.toInt() ->
                 p.maximumSize.width - ins.left - ins.right
 
@@ -263,9 +338,14 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             else -> return super.getPreferredSize()
         }.takeIf { it > 0 } ?: return super.getPreferredSize()
 
+        // When in a JScrollPane viewport, report the natural pre/blockquote width so the
+        // scroll pane can show a horizontal scrollbar. Falls back to pw when no wide blocks
+        // are present. Only recomputed when content changes (not on width changes).
+        fun reportedWidth() = if (inJViewport) cachedNaturalWidth.coerceAtLeast(pw) else pw
+
         // Exact cache hit: same width and same content.
         if ((pw == cachedForWidth) && (contentVersion == cachedForVersion)) {
-            return Dimension(pw, cachedHeight)
+            return Dimension(reportedWidth(), cachedHeight)
         }
 
         // Width changed since the last accurate measurement — record this as a tick in the
@@ -292,7 +372,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             (System.currentTimeMillis() - lastContentChangeMs) > LIVE_PANE_AGE_MS
         ) {
             resizeSettleTimer.restart()
-            return Dimension(pw, cachedHeight)
+            return Dimension(reportedWidth(), cachedHeight)
         }
 
         // Tolerance cache hit: width has nudged slightly (typical during a window resize
@@ -310,7 +390,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             (kotlin.math.abs(pw - cachedForWidth) <= RESIZE_TOLERANCE_PX)
         ) {
             resizeSettleTimer.restart()
-            return Dimension(pw, cachedHeight)
+            return Dimension(reportedWidth(), cachedHeight)
         }
 
         // Accurate layout.
@@ -324,10 +404,17 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             try {
                 rootView.setSize(pw.toFloat(), Short.MAX_VALUE.toFloat())
                 val h = rootView.getPreferredSpan(View.Y_AXIS).toInt().coerceAtLeast(1)
+                // Compute the natural (unconstrained) content width once per content version.
+                // maxBlockPreferredX walks only pre/blockquote views; regular wrapped paragraphs
+                // stay ≤ pw and do not inflate cachedNaturalWidth unnecessarily.
+                if (inJViewport && contentVersion != cachedNaturalWidthForVersion) {
+                    cachedNaturalWidth = maxBlockPreferredX(rootView).toInt()
+                    cachedNaturalWidthForVersion = contentVersion
+                }
                 cachedForWidth = pw
                 cachedForVersion = contentVersion
                 cachedHeight = h
-                return Dimension(pw, h)
+                return Dimension(reportedWidth(), h)
             } catch (_: Throwable) {
                 // Multiple Swing internal exceptions can be thrown here when renderNow()
                 // replaced the document while a layout pass was already in flight:
@@ -343,11 +430,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         }
         // Document is in a transient state. Prefer the last known height so the
         // layout does not collapse while the document stabilises.
-        if (cachedHeight > 0) return Dimension(pw, cachedHeight)
+        if (cachedHeight > 0) return Dimension(reportedWidth(), cachedHeight)
         // First render: attempt the slower JEditorPane path with the same guard.
         return try {
             setSize(pw, Short.MAX_VALUE.toInt())
-            Dimension(pw, super.getPreferredSize().height)
+            Dimension(reportedWidth(), super.getPreferredSize().height)
         } catch (_: Throwable) {
             Dimension(pw, 1)  // safe minimum; revalidated on next cycle
         }

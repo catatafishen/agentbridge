@@ -78,7 +78,11 @@ public final class RunPanelExecutor {
                                              @NotNull String title,
                                              int timeoutSec) throws Exception {
         CompletableFuture<Integer> exitFuture = new CompletableFuture<>();
-        StringBuilder output = new StringBuilder();
+        // StringBuffer is used instead of StringBuilder because OSProcessHandler drives
+        // separate reader threads for stdout and stderr, so onTextAvailable can be called
+        // concurrently from two threads. StringBuilder is not thread-safe and concurrent
+        // appends can corrupt its internal buffer, causing ArrayIndexOutOfBoundsException.
+        StringBuffer output = new StringBuffer();
 
         OSProcessHandler processHandler = new OSProcessHandler(process, commandLine);
         processHandler.addProcessListener(new ProcessListener() {
