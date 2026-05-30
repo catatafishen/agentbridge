@@ -796,7 +796,8 @@ internal class PromptsPanel(
 
         fun formatCommits(hashes: List<String>): String {
             if (hashes.isEmpty()) return ""
-            return "Commits: " + hashes.joinToString(", ") { it.take(7) }
+            val abbrevs = hashes.joinToString(", ") { it.take(7) }
+            return if (hashes.size == 1) "Commit: $abbrevs" else "${hashes.size} commits: $abbrevs"
         }
 
         @JvmStatic
