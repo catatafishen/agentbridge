@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JDialog
+import javax.swing.JLabel
 import javax.swing.JPanel
 
 /**
@@ -82,6 +83,12 @@ internal class HistoryContextWindow private constructor(
     @Volatile
     private var singleCommitHash: String? = null
 
+    private val commitSeparatorLabel = JLabel(" · ").apply {
+        font = JBUI.Fonts.smallFont()
+        foreground = UIUtil.getContextHelpForeground()
+        isVisible = false
+    }
+
     private val commitLinkLabel = HyperlinkLabel("").apply {
         font = JBUI.Fonts.smallFont()
         isVisible = false
@@ -102,6 +109,7 @@ internal class HistoryContextWindow private constructor(
         layout = BoxLayout(this, BoxLayout.X_AXIS)
         isOpaque = false
         add(metaTextLabel)
+        add(commitSeparatorLabel)
         add(commitsCombo)
         add(commitLinkLabel)
         add(Box.createHorizontalGlue())
@@ -261,8 +269,13 @@ internal class HistoryContextWindow private constructor(
                 currentEntries = entries
                 currentPrompt = entries.firstNotNullOfOrNull { it as? EntryData.Prompt }
                 val rawStats = entries.firstNotNullOfOrNull { it as? EntryData.TurnStats }
-                currentStats = if (rawStats != null && rawStats.commitHashes.isEmpty() && commitHashes.isNotEmpty())
-                    rawStats.copy(commitHashes = commitHashes) else rawStats
+                currentStats = when {
+                    rawStats != null && rawStats.commitHashes.isEmpty() && commitHashes.isNotEmpty() ->
+                        rawStats.copy(commitHashes = commitHashes)
+                    rawStats == null && commitHashes.isNotEmpty() ->
+                        EntryData.TurnStats(turnId = turnId, commitHashes = commitHashes)
+                    else -> rawStats
+                }
                 hasPrev = earlier.isNotEmpty()
                 hasNext = later.isNotEmpty()
 
@@ -285,13 +298,11 @@ internal class HistoryContextWindow private constructor(
             if (ts.isNotEmpty()) parts.add(ts)
         }
 
-        val turnShort = currentTurnId.takeIf { it.length >= 8 }?.take(8) ?: currentTurnId
-        if (turnShort.isNotEmpty()) parts.add(turnShort)
-
         val hashes = currentStats?.commitHashes.orEmpty()
         when {
             hashes.isEmpty() -> {
                 commitsCombo.isVisible = false
+                commitSeparatorLabel.isVisible = false
                 commitLinkLabel.isVisible = false
             }
 
@@ -299,6 +310,7 @@ internal class HistoryContextWindow private constructor(
                 singleCommitHash = hashes[0]
                 commitLinkLabel.setHyperlinkText(hashes[0].take(7))
                 commitsCombo.isVisible = false
+                commitSeparatorLabel.isVisible = true
                 commitLinkLabel.isVisible = true
                 loadCommitSubjectsAsync(hashes.map { CommitEntry(it) }.toTypedArray())
             }
@@ -315,6 +327,7 @@ internal class HistoryContextWindow private constructor(
                     ignoreComboAction = false
                 }
                 commitsCombo.isVisible = true
+                commitSeparatorLabel.isVisible = true
                 commitLinkLabel.isVisible = false
                 loadCommitSubjectsAsync(entries)
             }
