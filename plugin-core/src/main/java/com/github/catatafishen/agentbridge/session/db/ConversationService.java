@@ -328,10 +328,7 @@ public final class ConversationService implements Disposable {
         ConversationReader reader = getOrCreateReader();
         if (reader == null) return null;
         try {
-            File idFile = currentSessionIdFile(basePath);
-            if (!idFile.exists()) return null;
-
-            String sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
+            String sessionId = readCurrentSessionId(basePath, reader);
             if (sessionId.isEmpty()) return null;
 
             List<EntryData> entries = reader.loadRecentEntries(sessionId, 50);
@@ -345,6 +342,23 @@ public final class ConversationService implements Disposable {
             LOG.warn("Failed to load recent entries from SQLite", e);
             return null;
         }
+    }
+
+    @NotNull
+    private String readCurrentSessionId(@Nullable String basePath, @NotNull ConversationReader reader) throws IOException {
+        // The database is the source of truth for active sessions.
+        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
+        if (!sessions.isEmpty()) {
+            return sessions.get(0).id();
+        }
+        // No sessions in the database — check the session ID file for a session
+        // that may not have finished writing its first turn yet.
+        File idFile = currentSessionIdFile(basePath);
+        if (idFile.exists()) {
+            String id = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
+            if (!id.isEmpty()) return id;
+        }
+        return "";
     }
 
     /**
