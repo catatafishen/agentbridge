@@ -1,12 +1,14 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.event.ContainerAdapter
 import java.awt.event.ContainerEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.geom.Path2D
+import java.awt.image.BufferedImage
 import javax.swing.*
 
 internal const val BUBBLE_V_PAD = 8
@@ -37,17 +39,44 @@ open class RoundedPanel(
         isOpaque = false
     }
 
+    private var cachedBg: BufferedImage? = null
+    private var cachedBgW = -1
+    private var cachedBgH = -1
+    private var cachedBgColorRGB = Int.MIN_VALUE
+    private var cachedBorderColorRGB = Int.MIN_VALUE
+
     override fun paintComponent(g: Graphics) {
-        val g2 = g.create() as Graphics2D
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        val r = radius.toFloat()
-        g2.color = bgColor
-        g2.fill(cornerPath(0f, 0f, width.toFloat(), height.toFloat(), r, squaredCorner))
-        borderColor?.let {
-            g2.color = it
-            g2.draw(cornerPath(0.5f, 0.5f, width - 1f, height - 1f, r, squaredCorner))
+        val w = width;
+        val h = height
+        if (w <= 0 || h <= 0) return
+        val bgRGB = bgColor.rgb
+        val borderRGB = borderColor?.rgb ?: Int.MIN_VALUE
+        if (cachedBg == null || cachedBgW != w || cachedBgH != h ||
+            cachedBgColorRGB != bgRGB || cachedBorderColorRGB != borderRGB
+        ) {
+            cachedBg = renderBgToImage(w, h)
+            cachedBgW = w; cachedBgH = h
+            cachedBgColorRGB = bgRGB; cachedBorderColorRGB = borderRGB
         }
-        g2.dispose()
+        UIUtil.drawImage(g, cachedBg!!, 0, 0, null)
+    }
+
+    private fun renderBgToImage(w: Int, h: Int): BufferedImage {
+        val img = UIUtil.createImage(this, w, h, BufferedImage.TYPE_INT_ARGB)
+        val g2 = img.createGraphics()
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            val r = radius.toFloat()
+            g2.color = bgColor
+            g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
+            borderColor?.let {
+                g2.color = it
+                g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
+            }
+        } finally {
+            g2.dispose()
+        }
+        return img
     }
 
     private companion object {
