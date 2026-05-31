@@ -89,6 +89,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
     private var lastContentChangeMs: Long = 0L
 
+    /** Guards against scheduling multiple async repaints from the stale-frame tab-switch path. */
+    private var staleRepaintPending = false
+
     /**
      * Single-shot timer used to recover an accurate layout after a burst of resize-driven
      * [getPreferredSize] calls returned a tolerance-matched stale height. Restarted on every
@@ -98,7 +101,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      */
     private val resizeSettleTimer = Timer(RESIZE_SETTLE_MS) {
         cachedForWidth = -1
+        paintCache = null   // force a fresh paint at the final settled width
         revalidate()
+        repaint()
     }.apply { isRepeats = false }
 
     init {
@@ -189,6 +194,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         rawText.setLength(0)
         rawText.append(text)
         renderNow()
+        // Mark as "old" immediately so burst-freeze works from the first resize event.
+        // renderNow() sets lastContentChangeMs = now, which would prevent freezing for 1.5s.
+        lastContentChangeMs = 0L
     }
 
     /** Forces an immediate HTML render, resetting the throttle state. */
@@ -219,6 +227,8 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      */
     fun notifyStreamDone() {
         renderNow()
+        // Streaming is finished — mark as "old" so burst-freeze applies immediately.
+        lastContentChangeMs = 0L
         revalidate()
         onHeightGrew?.invoke()
     }
@@ -326,6 +336,19 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             (System.nanoTime() - lastResizeNanos) < RESIZE_BURST_WINDOW_NANOS
         ) {
             UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+            return
+        }
+
+        // Stale-frame (tab switch after resize): content unchanged but dimensions differ.
+        // Blit the old frame immediately for a zero-cost first paint, then schedule a single
+        // accurate repaint on the next EDT pass so the correct frame appears right after.
+        if (paintCache != null && paintCacheVersion == contentVersion && !staleRepaintPending) {
+            UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+            staleRepaintPending = true
+            SwingUtilities.invokeLater {
+                staleRepaintPending = false
+                if (isShowing) { paintCache = null; repaint() }
+            }
             return
         }
 
