@@ -10,8 +10,10 @@ import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
+import java.awt.event.MouseWheelEvent
 import java.awt.geom.AffineTransform
 import javax.swing.JEditorPane
+import javax.swing.JScrollPane
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
@@ -109,6 +111,19 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
                 e.consume()
                 view.scroll((e.wheelRotation * JBUI.scale(15)).toInt())
                 repaint()
+            } else {
+                // Registering any MouseWheelListener blocks automatic Swing propagation,
+                // so forward vertical scroll events explicitly to the enclosing scroll pane.
+                val sp = SwingUtilities.getAncestorOfClass(JScrollPane::class.java, this) as? JScrollPane
+                    ?: return@addMouseWheelListener
+                val pt = SwingUtilities.convertPoint(this, e.point, sp)
+                sp.dispatchEvent(
+                    MouseWheelEvent(
+                        sp, e.id, e.`when`, e.modifiersEx, pt.x, pt.y,
+                        e.xOnScreen, e.yOnScreen, e.clickCount, e.isPopupTrigger,
+                        e.scrollType, e.scrollAmount, e.wheelRotation, e.preciseWheelRotation
+                    )
+                )
             }
         }
 
