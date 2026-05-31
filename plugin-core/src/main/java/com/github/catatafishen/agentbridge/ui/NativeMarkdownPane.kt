@@ -94,6 +94,12 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var staleRepaintPending = false
 
     /**
+     * Guards against scheduling multiple [revalidate] calls from the lazy-layout path in
+     * [getPreferredSize]. Cleared by the invokeLater callback that triggers the revalidation.
+     */
+    private var lazyRevalidatePending = false
+
+    /**
      * Single-shot timer used to recover an accurate layout after a burst of resize-driven
      * [getPreferredSize] calls returned a tolerance-matched stale height. Restarted on every
      * tolerance hit; fires once the resize burst has been quiet for [RESIZE_SETTLE_MS].
@@ -429,6 +435,21 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             return Dimension(pw, cachedHeight)
         }
 
+        // Lazy layout: panel became visible after an off-screen resize (no burst active).
+        // Return the stale height immediately so the panel opens without blocking the EDT,
+        // then revalidate on the next pass for accurate heights. Guard: cachedForWidth > 0
+        // so this never fires after the settle timer resets cachedForWidth to -1.
+        if (cachedForWidth > 0 && cachedHeight > 0 &&
+            contentVersion == cachedForVersion && !lazyRevalidatePending
+        ) {
+            lazyRevalidatePending = true
+            SwingUtilities.invokeLater {
+                lazyRevalidatePending = false
+                if (isShowing) { cachedForWidth = -1; revalidate() }
+            }
+            return Dimension(pw, cachedHeight)
+        }
+
         // Accurate layout.
         val textUI = ui as? TextUI
         if (textUI != null) {
@@ -527,19 +548,21 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         private const val RESIZE_TOLERANCE_PX = 16
 
         /**
-         * Quiet-window (ms) after the last tolerance-matched [getPreferredSize] call before
+         * Quiet-window (ms) after the last fast-path [getPreferredSize] call before
          * we invalidate the cache and revalidate to obtain a pixel-accurate final layout.
-         * Long enough to cover the gap between successive resize events; short enough to
-         * feel instantaneous once the user releases the mouse.
+         * Must be strictly greater than [RESIZE_BURST_WINDOW_NANOS] / 1_000_000 (200 ms)
+         * so the settle timer always fires after the burst window has expired. If it were
+         * shorter, the burst-freeze path would re-restart the settle timer on its own
+         * revalidation pass, creating a loop that delays accurate layout.
          */
-        private const val RESIZE_SETTLE_MS = 150
+        private const val RESIZE_SETTLE_MS = 250
 
         /**
          * Window (ms) during which any pane that observed a width change "broadcasts"
          * an active resize burst via [lastResizeNanos]. Other panes that see [getPreferredSize]
          * calls within this window may take the frozen-during-drag fast path if they are
-         * also stale per [LIVE_PANE_AGE_MS]. Slightly longer than [RESIZE_SETTLE_MS] so
-         * the freeze decision and the settle-revalidate decision use overlapping windows.
+         * also stale per [LIVE_PANE_AGE_MS]. Must be strictly less than [RESIZE_SETTLE_MS]
+         * so the settle timer fires only after the burst has expired.
          */
         private const val RESIZE_BURST_WINDOW_NANOS: Long = 200L * 1_000_000
 
