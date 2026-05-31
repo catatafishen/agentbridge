@@ -142,6 +142,7 @@ public final class ConversationStatistics {
         FROM tool_call_events tce
         JOIN events e ON tce.event_id = e.id
         WHERE tce.is_mcp = 1
+          AND tce.category IS NOT NULL
           AND (? IS NULL OR e.timestamp >= ?)
           AND (? IS NULL OR tce.client_id = ?)
         GROUP BY tce.tool_name, tce.category
