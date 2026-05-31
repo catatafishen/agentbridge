@@ -64,12 +64,10 @@ class ThinkingChipComponent(
             override fun mouseClicked(e: MouseEvent) = onToggle()
             override fun mouseEntered(e: MouseEvent) {
                 hovered = true
-                repaint()
             }
 
             override fun mouseExited(e: MouseEvent) {
                 hovered = false
-                repaint()
                 pendingCollapseAction?.let { action ->
                     pendingCollapseAction = null
                     action()

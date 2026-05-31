@@ -6,31 +6,21 @@ import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDE
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_SETTLE_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.lastResizeNanos
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import com.intellij.ui.JBColor
-import java.awt.Color
-import java.awt.Dimension
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.Point
-import java.awt.Rectangle
-import java.awt.Shape
+import java.awt.*
 import java.awt.geom.AffineTransform
 import javax.swing.JEditorPane
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.event.HyperlinkEvent
 import javax.swing.plaf.TextUI
-import javax.swing.text.DefaultCaret
-import javax.swing.text.Element
-import javax.swing.text.StyleConstants
-import javax.swing.text.View
+import javax.swing.text.*
 import javax.swing.text.html.BlockView
 import javax.swing.text.html.HTML
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.StyleSheet
-import javax.swing.text.ViewFactory
 
 /**
  * A [JEditorPane]-based component that renders streaming markdown as HTML.
@@ -393,6 +383,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     /** Returns the [ScrollableCodeView] whose allocated area contains [pt], or null. */
     private fun findScrollableCodeViewAt(pt: Point): ScrollableCodeView? {
         val ui = ui as? TextUI ?: return null
+
         @Suppress("DEPRECATION")
         val pos = ui.viewToModel(this, pt) // char offset under cursor
         return findScrollableCodeViewAt(ui.getRootView(this), pos)
@@ -401,7 +392,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private fun findScrollableCodeViewAt(view: View, pos: Int): ScrollableCodeView? {
         if (view is ScrollableCodeView && pos in view.startOffset until view.endOffset) return view
         for (i in 0 until view.viewCount) {
-            val child = try { view.getView(i) } catch (_: Throwable) { continue }
+            val child = try {
+                view.getView(i)
+            } catch (_: Throwable) {
+                continue
+            }
             val found = findScrollableCodeViewAt(child, pos)
             if (found != null) return found
         }

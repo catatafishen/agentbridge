@@ -129,11 +129,11 @@ class ToolChipComponent(
             }
 
             override fun mouseEntered(e: MouseEvent) {
-                hovered = true; repaint()
+                hovered = true
             }
 
             override fun mouseExited(e: MouseEvent) {
-                hovered = false; repaint()
+                hovered = false
             }
         })
     }
