@@ -271,6 +271,17 @@ class TripleExtractorTest {
     }
 
     @Test
+    void longFragmentSubjectFallsBackToWing() {
+        // 4-word noun phrase is a sentence fragment — should not become a dashified garbage subject
+        String text = "The auth service registry layer uses PostgreSQL for storage.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertFalse(triples.isEmpty(), "Triple should still be extracted");
+        assertEquals(WING, triples.getFirst().subject(),
+            "4-word fragment subject should fall back to wing");
+    }
+
+    @Test
     void subjectFallsBackToWingWithoutExplicitSubject() {
         String text = "We use Gradle for building.";
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);

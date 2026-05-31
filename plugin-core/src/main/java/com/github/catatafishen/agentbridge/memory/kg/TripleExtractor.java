@@ -58,7 +58,7 @@ public final class TripleExtractor {
      * Words that should not appear at the start of a triple object.
      * Objects beginning with these are typically sentence fragments captured
      * by the greedy regex, not meaningful entities (e.g., "the constant",
-     * "to retry until...", "a focus ping-pong storm").
+     * "to retry until...", "a focus ping-pong storm", "directly to bubbles").
      */
     private static final Set<String> LEADING_WEAK_WORDS = Set.of(
         "a", "an", "the", "this", "that", "these", "those",
@@ -66,7 +66,11 @@ public final class TripleExtractor {
         "it", "its", "they", "we", "i", "my", "our", "you", "your",
         "some", "any", "all", "both", "each", "every",
         "very", "really", "quite", "just", "only", "also",
-        "how", "what", "where", "when", "which", "who"
+        "how", "what", "where", "when", "which", "who",
+        // adverbs that produce low-value objects ("implemented explicitly", "added directly")
+        "directly", "explicitly", "properly", "correctly", "effectively",
+        "successfully", "automatically", "manually", "locally", "fully",
+        "already", "currently", "recently", "now", "then", "here", "back"
     );
 
     /**
@@ -318,7 +322,11 @@ public final class TripleExtractor {
     }
 
     private static @NotNull String cleanSubject(@NotNull String raw) {
-        return raw.strip().toLowerCase().replaceAll("\\s+", "-");
+        String stripped = raw.strip().toLowerCase();
+        // Reject subjects with more than 3 words — they are likely sentence fragments
+        // captured by the greedy regex (e.g., "sub-agent sections now all" → garbage)
+        if (stripped.split("\\s+").length > 3) return "";
+        return stripped.replaceAll("\\s+", "-");
     }
 
     private record ExtractionRule(

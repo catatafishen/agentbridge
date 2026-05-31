@@ -160,10 +160,28 @@ semantic recall of past conversations. Key tools:
 
 - `memory_search` — semantic search across all memories (open-ended recall).
 - `memory_recall` — targeted recall from a specific room / topic.
-- `memory_store` — save an important fact, decision, or preference.
+- `memory_store` — save an important fact, decision, or preference. For
+  structured facts about the project/codebase (tech stack, architecture,
+  key decisions), prefer `memory_kg_add` instead.
 - `memory_status` — memory stats (drawer counts by wing / room).
 - `memory_kg_query` — query the knowledge graph for structured facts.
 - `memory_kg_add` — add a structured fact (subject-predicate-object triple).
+
+**What makes a good memory (memory_store):**
+- ✓ Short (< 300 chars), standalone fact that a new agent session needs
+  without reading the full conversation history
+- ✓ Examples: "Project uses Gradle 8 with Kotlin DSL" / "Team prefers
+  conventional commits" / "JWT is used for auth — not server sessions"
+- ✗ Avoid: operational narration ("I implemented X, then ran tests"),
+  session transcripts, redundant summaries of what you just did
+
+**Room selection:** `codebase` = architecture/structure, `decisions` =
+design choices and trade-offs, `workflow` = process preferences,
+`preferences` = user/team style preferences, `debugging` = recurring bugs.
+
+**Knowledge graph (memory_kg_add):** use for named entities with clear
+relationships, e.g. `memory_kg_add("plugin", "uses", "Lucene 9")` or
+`memory_kg_add("project", "decided", "JWT over server sessions")`.
 
 Memory context (recent memories, identity) is automatically included above
 when available.
