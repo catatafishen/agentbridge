@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.LIVE_PANE_AGE_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
+import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_BURST_WINDOW_NANOS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_SETTLE_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.lastResizeNanos
 import com.intellij.openapi.util.Disposer
@@ -347,7 +348,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             staleRepaintPending = true
             SwingUtilities.invokeLater {
                 staleRepaintPending = false
-                if (isShowing) { paintCache = null; repaint() }
+                if (isShowing) {
+                    paintCache = null; repaint()
+                }
             }
             return
         }
