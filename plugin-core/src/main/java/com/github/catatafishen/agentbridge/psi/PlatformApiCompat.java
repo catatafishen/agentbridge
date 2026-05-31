@@ -997,6 +997,20 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns the raw version string for the given plugin (e.g. {@code "1.2.3"}), or
+     * {@code null} if the plugin is not loaded.
+     *
+     * <p>Like {@link #getPluginVersionInfo}, calls to {@code descriptor.getVersion()} fail
+     * in the IDE daemon against the unresolved return type — isolating the call here keeps
+     * false positives confined.</p>
+     */
+    public static @Nullable String getPluginVersion(@NotNull String pluginId) {
+        var descriptor = findPluginById(pluginId);
+        if (descriptor == null) return null;
+        return descriptor.getVersion();
+    }
+
+    /**
      * Formats a plugin name and version into the standard display string.
      *
      * @param name    plugin display name
