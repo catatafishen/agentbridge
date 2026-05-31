@@ -12,6 +12,7 @@ import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.event.MouseWheelEvent
 import java.awt.geom.AffineTransform
+import java.awt.image.BufferedImage
 import javax.swing.JEditorPane
 import javax.swing.JScrollPane
 import javax.swing.SwingUtilities
@@ -73,6 +74,18 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedForWidth = -1
     private var cachedForVersion = -1
     private var cachedHeight = -1
+
+    /**
+     * Cached rendered pixels for this pane. Keyed by [paintCacheW] × [paintCacheH] ×
+     * [paintCacheVersion]. When all three match the current state, [paint] draws from this
+     * image (~0.05 ms) instead of invoking the full HTML view rendering chain (~2–10 ms on
+     * Windows GDI+). Cleared to null only when the component is made invisible or disposed;
+     * otherwise always holds the last successfully rendered frame.
+     */
+    private var paintCache: BufferedImage? = null
+    private var paintCacheW = -1
+    private var paintCacheH = -1
+    private var paintCacheVersion = -1
 
     private var lastContentChangeMs: Long = 0L
 
@@ -273,7 +286,65 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     override fun getMinimumSize(): Dimension = Dimension(0, 0)
 
     /**
-     * Computes the preferred height for the HTML content at the parent's available width.
+     * Paints from a cached [BufferedImage] when the component bounds and content version have
+     * not changed since the last render. On a cache miss, delegates to [super.paint] (full
+     * HTML rendering) and stores the result.
+     *
+     * **During a resize burst** (within [RESIZE_BURST_WINDOW_NANOS] of the last observed
+     * width change): draws the previous frame at its original dimensions. The image may be
+     * slightly clipped or padded, but this is imperceptible while the user is dragging. Once
+     * the burst settles, [resizeSettleTimer] forces a revalidation so the next paint captures
+     * an accurate frame at the final width.
+     *
+     * **Text selection**: if the user has selected text, the cache is bypassed so the
+     * selection highlight is always painted live.
+     */
+    override fun paint(g: Graphics) {
+        val w = width
+        val h = height
+        if (w <= 0 || h <= 0) return
+
+        // Never cache while text is selected — selection highlight must update live.
+        if (selectionStart != selectionEnd) {
+            super.paint(g)
+            return
+        }
+
+        // Exact cache hit: same bounds and same content — just blit.
+        if (paintCache != null &&
+            paintCacheW == w && paintCacheH == h &&
+            paintCacheVersion == contentVersion
+        ) {
+            UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+            return
+        }
+
+        // Resize burst: draw the stale frame rather than triggering an expensive re-render
+        // on every pixel of drag. The old image is drawn at its stored dimensions; Swing's
+        // clip region limits any over-draw beyond the component's current bounds.
+        if (paintCache != null &&
+            (System.nanoTime() - lastResizeNanos) < RESIZE_BURST_WINDOW_NANOS
+        ) {
+            UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+            return
+        }
+
+        // Cache miss: render to a fresh BufferedImage, then blit.
+        val img = UIUtil.createImage(this, w, h, BufferedImage.TYPE_INT_ARGB)
+        val g2 = img.createGraphics()
+        try {
+            super.paint(g2)
+        } finally {
+            g2.dispose()
+        }
+        paintCache = img
+        paintCacheW = w
+        paintCacheH = h
+        paintCacheVersion = contentVersion
+        UIUtil.drawImage(g, img, 0, 0, null)
+    }
+
+    /**
      *
      * **Caching**: result is cached by `(parentWidth, contentVersion)`. Same width and
      * same content → return immediately. Any other combination — new content, or a width
