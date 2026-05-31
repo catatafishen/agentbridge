@@ -268,7 +268,7 @@ public final class McpProtocolHandler {
             JsonObject tool = new JsonObject();
             tool.addProperty("name", entry.id());
             tool.addProperty(KEY_DESCRIPTION, entry.description());
-            JsonObject schema = entry.inputSchema();
+            JsonObject schema = entry.effectiveInputSchema();
             tool.add("inputSchema", schema != null ? schema : new JsonObject());
             tool.add("annotations", entry.mcpAnnotations());
             tools.add(tool);

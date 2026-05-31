@@ -231,6 +231,27 @@ public interface ToolDefinition {
         return null;
     }
 
+    /**
+     * Returns the input schema with the optional {@code title} parameter injected if not already
+     * defined by the tool. The {@code title} is used as the chip display text in the chat UI.
+     * Tools that already declare {@code title} (e.g. {@code run_command}) keep their own description.
+     */
+    default @Nullable JsonObject effectiveInputSchema() {
+        JsonObject schema = inputSchema();
+        if (schema == null) return null;
+        JsonObject props = schema.getAsJsonObject("properties");
+        if (props != null && !props.has("title")) {
+            JsonObject titleProp = new JsonObject();
+            titleProp.addProperty("type", "string");
+            titleProp.addProperty("description",
+                "Optional label shown as the tool chip display text in the chat UI. " +
+                    "Set this to a short, descriptive name for what this specific call does " +
+                    "(e.g. 'Check CI for PR 784', 'Fix auth bug').");
+            props.add("title", titleProp);
+        }
+        return schema;
+    }
+
     // ── Permission question ──────────────────────────────────
 
     /**
