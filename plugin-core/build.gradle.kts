@@ -63,6 +63,15 @@ dependencies {
     // SQLite JDBC (used by OpenCode session import)
     implementation("org.xerial:sqlite-jdbc:${providers.gradleProperty("sqliteJdbcVersion").get()}")
 
+    // IntelliJ's bundled Lucene (used by MemoryStore for vector search).
+    // In IJ 2025.x the JAR is in lib/modules/ and auto-exposed by the Gradle plugin.
+    // In IJ 2026.x+ it moved to lib/ and must be added explicitly as compileOnly.
+    run {
+        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull ?: return@run
+        val jar = file("$localPath/lib/intellij.libraries.lucene.common.jar")
+        if (jar.exists()) compileOnly(files(jar))
+    }
+
     testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
     testImplementation(
         "junit:junit:${
