@@ -62,6 +62,11 @@ public final class FindFileTool extends NavigationTool {
     }
 
     @Override
+    public long indexWaitTimeoutMs() {
+        return 300_000L; // 5 minutes — initial project indexing can take well over 30 s
+    }
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),

@@ -59,7 +59,7 @@ public final class ToolReadinessGate {
             if (startupErr != null) return startupErr;
         }
         if (def.requiresIndex()) {
-            String indexErr = awaitSmartMode(project, def.id(), INDEX_WAIT_MS);
+            String indexErr = awaitSmartMode(project, def.id(), def.indexWaitTimeoutMs());
             if (indexErr != null) return indexErr;
         }
         if (def.requiresInteractiveEdt()) {
@@ -83,8 +83,14 @@ public final class ToolReadinessGate {
 
     @NotNull
     public static String indexingErrorMessage(@NotNull String toolName) {
+        return indexingErrorMessage(toolName, INDEX_WAIT_MS);
+    }
+
+    @NotNull
+    public static String indexingErrorMessage(@NotNull String toolName, long waitedMs) {
+        long seconds = waitedMs / 1000;
         return ToolError.of(McpErrorCode.INDEX_NOT_READY,
-            "IDE is still indexing after waiting 30s. Tool '" + toolName
+            "IDE is still indexing after waiting " + seconds + "s. Tool '" + toolName
                 + "' depends on the symbol index, which is not yet ready.",
             "Call get_indexing_status with wait=true to wait longer, then retry.");
     }
@@ -160,7 +166,7 @@ public final class ToolReadinessGate {
             smart.get(timeoutMs, TimeUnit.MILLISECONDS);
             return null;
         } catch (TimeoutException e) {
-            return indexingErrorMessage(toolName);
+            return indexingErrorMessage(toolName, timeoutMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolError.of(McpErrorCode.INTERNAL_ERROR,

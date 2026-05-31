@@ -166,8 +166,19 @@ public final class SearchTextTool extends NavigationTool {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
-        Pattern pattern = compileSearchPattern(cfg.query(), cfg.isRegex(), cfg.caseSensitive());
-        if (pattern == null) return "Error: invalid regex: " + cfg.query();
+        Pattern pattern;
+        try {
+            int flags = cfg.isRegex() ? 0 : Pattern.LITERAL;
+            if (!cfg.caseSensitive()) flags |= Pattern.CASE_INSENSITIVE;
+            pattern = Pattern.compile(cfg.query(), flags);
+        } catch (PatternSyntaxException e) {
+            String msg = "Error: invalid regex: " + cfg.query() + " — " + e.getDescription();
+            if (cfg.isRegex()) {
+                msg += "\nTip: use | for OR (not \\|), and escape special characters"
+                    + " like ( and { with \\ (e.g. \\( and \\{)";
+            }
+            return msg;
+        }
 
         List<String> results = new ArrayList<>();
         List<MatchPosition> positions = cfg.followAgent() ? new ArrayList<>() : null;
@@ -309,13 +320,4 @@ public final class SearchTextTool extends NavigationTool {
         return entry.toString();
     }
 
-    private static Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {
-        try {
-            int flags = isRegex ? 0 : Pattern.LITERAL;
-            if (!caseSensitive) flags |= Pattern.CASE_INSENSITIVE;
-            return Pattern.compile(query, flags);
-        } catch (PatternSyntaxException e) {
-            return null;
-        }
-    }
 }

@@ -28,7 +28,8 @@ public final class EditTextTool extends WriteFileTool {
     public @NotNull String description() {
         return "Surgical find-and-replace edit within a file -- for small changes inside methods, "
             + "imports, or config. Auto-format and import optimization is deferred until turn end "
-            + "(controlled by auto_format_and_optimize_imports param)";
+            + "(controlled by auto_format_and_optimize_imports param). "
+            + "Use show_diff first to preview a proposed change to the user before applying.";
     }
 
     @Override
