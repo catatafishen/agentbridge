@@ -621,6 +621,11 @@ class PromptOrchestrator(
                     StreamBlockType.THOUGHT -> {
                         // Thought block ended — save it now (appendThinkingText is synchronous).
                         callbacks.appendNewEntries()
+                        // Close the thinking entry so a later THOUGHT block (THOUGHT→TEXT→THOUGHT)
+                        // creates a fresh EntryData.Thinking with a new ID. Without this,
+                        // _currentThinking still points at the persisted entry and INSERT OR IGNORE
+                        // silently drops the second block's content.
+                        consolePanel().collapseThinking()
                         // Close the pre-thought text entry (if any) so the continuation creates
                         // a fresh entry at a new index past persistedEntryCount. Without this,
                         // appending to an already-persisted entry would be silently dropped.

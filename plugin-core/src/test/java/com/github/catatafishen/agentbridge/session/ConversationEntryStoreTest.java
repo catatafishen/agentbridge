@@ -193,6 +193,28 @@ class ConversationEntryStoreTest {
             "first entry ID must be unchanged");
     }
 
+    @Test
+    void closeCurrentThinkingEntry_newAppendCreatesNewEntry() {
+        // Reproduces the THOUGHT→TEXT→THOUGHT persistence bug: the second thinking block must
+        // not append to the already-persisted first thinking entry — it must land in a new entry.
+        store.startStreaming();
+        store.appendThinkingText("first thinking block");
+        assertEquals(1, store.getEntries().size());
+        String firstEntryId = store.getEntries().getFirst().getEntryId();
+
+        store.closeCurrentThinkingEntry();
+        store.appendThinkingText("second thinking block");
+
+        var entries = store.getEntries();
+        assertEquals(2, entries.size(), "second thinking block must be a separate entry, not appended in-place");
+        assertNotEquals(entries.get(0).getEntryId(), entries.get(1).getEntryId(),
+            "new thinking entry must have a distinct ID");
+        assertEquals("first thinking block", ((EntryData.Thinking) entries.get(0)).getRaw());
+        assertEquals("second thinking block", ((EntryData.Thinking) entries.get(1)).getRaw());
+        assertEquals(firstEntryId, entries.get(0).getEntryId(),
+            "first entry ID must be unchanged");
+    }
+
     // ── Tool calls ────────────────────────────────────────────────────────────
 
     @Test
