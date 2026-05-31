@@ -108,9 +108,21 @@ public final class MoveFileTool extends FileTool {
                 if (parentVf == null) parentVf = refreshAndFindVirtualFile(parent.toString());
             }
             if (parentVf != null && parentVf.isDirectory()) {
-                // Parent directory already exists → treat destination as full target path (move + rename).
-                destDir = parentVf;
-                newFileName = destPath.getFileName().toString();
+                String leaf = destPath.getFileName().toString();
+                if (leaf.contains(".")) {
+                    // Leaf has a file extension → treat as full target path (move + rename).
+                    destDir = parentVf;
+                    newFileName = leaf;
+                } else {
+                    // No extension → destination is a new directory; create it.
+                    try {
+                        absoluteDestPath = createDirectoryOnDisk(destStr);
+                        destDir = null;
+                    } catch (IOException e) {
+                        return ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                            "Destination directory could not be created: " + destStr + " — " + e.getMessage());
+                    }
+                }
             } else {
                 // No existing parent — create the full destination path as a new directory.
                 try {
