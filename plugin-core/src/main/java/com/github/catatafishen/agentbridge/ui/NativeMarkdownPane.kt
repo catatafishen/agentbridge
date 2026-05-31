@@ -115,8 +115,8 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
 
         addMouseWheelListener { e ->
             if (e.isShiftDown) {
-                e.consume()
                 val view = findScrollableCodeViewAt(e.point) ?: return@addMouseWheelListener
+                e.consume()
                 view.scroll((e.wheelRotation * JBUI.scale(15)).toInt())
                 repaint()
             }
@@ -515,26 +515,26 @@ private class ScrollableCodeView(elem: Element) : BlockView(elem, View.Y_AXIS) {
         lastAllocWidth = r.width.toFloat()
 
         val scrollable = naturalWidth > r.width
-        val contentH = if (scrollable) r.height - JBUI.scale(SCROLLBAR_H) else r.height
 
         val g2 = g as Graphics2D
         val savedTransform = g2.transform.clone() as AffineTransform
         val savedClip = g2.clip
 
-        // Clip to content area and translate for horizontal scroll
-        g2.setClip(r.x, r.y, r.width, contentH)
+        // Clip to allocated area and translate for horizontal scroll
+        g2.setClip(r.x, r.y, r.width, r.height)
         g2.translate(-scrollX.toDouble(), 0.0)
-        super.paint(g2, Rectangle(r.x, r.y, naturalWidth.toInt(), contentH))
+        super.paint(g2, Rectangle(r.x, r.y, naturalWidth.toInt(), r.height))
 
         // Restore
         g2.transform = savedTransform
         g2.clip = savedClip
 
-        if (scrollable) paintScrollbar(g2, r, contentH)
+        // Overlay scrollbar on top — avoids cutting off the last line of code
+        if (scrollable) paintScrollbar(g2, r)
     }
 
-    private fun paintScrollbar(g2: Graphics2D, r: Rectangle, contentTop: Int) {
-        val trackY = r.y + contentTop
+    private fun paintScrollbar(g2: Graphics2D, r: Rectangle) {
+        val trackY = r.y + r.height - JBUI.scale(SCROLLBAR_H)
         val trackH = JBUI.scale(SCROLLBAR_H)
         val maxScroll = (naturalWidth - r.width).coerceAtLeast(1f)
         val thumbFrac = (r.width / naturalWidth).coerceIn(0.05f, 1f)
