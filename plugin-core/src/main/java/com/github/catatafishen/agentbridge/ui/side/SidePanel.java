@@ -14,6 +14,7 @@ import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -275,7 +276,10 @@ public final class SidePanel extends JPanel implements Disposable {
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             setOpaque(false);
             setFocusable(true);
-            getAccessibleContext().setAccessibleName(text);
+            AccessibleContext ac = getAccessibleContext();
+            if (ac != null) {
+                ac.setAccessibleName(text);
+            }
 
             // Enter and Space activate the tab (keyboard navigation support).
             InputMap im = getInputMap(WHEN_FOCUSED);
