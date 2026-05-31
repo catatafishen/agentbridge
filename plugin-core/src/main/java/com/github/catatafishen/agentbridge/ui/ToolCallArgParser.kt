@@ -40,7 +40,25 @@ object ToolCallArgParser {
     }
 
     /**
-     * Extracts a file path from tool-call arguments JSON.
+     * Extracts the optional `"title"` field from tool-call arguments JSON.
+     * When present, this is used as the chip display label instead of the generic tool name.
+     * Returns `null` if the field is absent, blank, or arguments are not valid JSON.
+     */
+    fun extractChipTitle(arguments: String?): String? {
+        if (arguments.isNullOrBlank()) return null
+        return try {
+            val json = JsonParser.parseString(arguments)
+            if (!json.isJsonObject) return null
+            json.asJsonObject["title"]
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString
+                ?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Checks common keys: `path`, `file`, `filename`, `filepath`.
      * Returns `null` if no file path is found or arguments are not valid JSON.
      */
