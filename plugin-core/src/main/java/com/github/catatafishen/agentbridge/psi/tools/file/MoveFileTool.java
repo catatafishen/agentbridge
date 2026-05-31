@@ -50,7 +50,10 @@ public final class MoveFileTool extends FileTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("path", TYPE_STRING, "Path to the file to move (absolute or project-relative)"),
-            Param.required(PARAM_DESTINATION, TYPE_STRING, "Destination directory path (absolute or project-relative)")
+            Param.required(PARAM_DESTINATION, TYPE_STRING,
+                "Destination path. Can be a directory (to move into it keeping the filename) " +
+                    "or a full target path including a new filename (to move + rename). " +
+                    "The destination directory is created automatically (including any missing parents) if it does not exist.")
         );
     }
 
@@ -59,7 +62,9 @@ public final class MoveFileTool extends FileTool {
         return "Move a file to a different directory using IntelliJ's refactoring engine when PSI is available. " +
             "Language-aware IDE move handlers update imports, package declarations, and references where supported. " +
             "Falls back to a plain VFS move only for files/directories the IDE cannot represent as PSI. " +
-            "The destination directory is created automatically (including any missing parents) if it does not exist.";
+            "The destination can be a directory path (file keeps its name) or a full target path including a new " +
+            "filename (move + rename in one step). The destination directory is created automatically " +
+            "(including any missing parents) if it does not exist.";
     }
 
     @Override
@@ -70,47 +75,68 @@ public final class MoveFileTool extends FileTool {
         String pathStr = args.get("path").getAsString();
         String destStr = args.get(PARAM_DESTINATION).getAsString();
 
-        // Resolve files outside ReadAction so refreshAndFindFileByPath can be used as a fallback
-        // when the VFS cache is stale (same fix as RenameFileTool).
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) vf = refreshAndFindVirtualFile(pathStr);
         if (vf == null) return ToolError.of(McpErrorCode.FILE_NOT_FOUND, pathStr,
             "Check the path and try again. Use find_file to search by name.");
 
-        VirtualFile destDir = resolveVirtualFile(destStr);
-        if (destDir == null) destDir = refreshAndFindVirtualFile(destStr);
+        VirtualFile destFile = resolveVirtualFile(destStr);
+        if (destFile == null) destFile = refreshAndFindVirtualFile(destStr);
 
-        // absoluteDestPath is non-null when we created the directory on disk.
-        // VFS registration is deferred to the EDT inside performMoveOnEdt to avoid
-        // creating an async refresh session from a pooled thread (which can deadlock in tests).
+        VirtualFile destDir;
+        String newFileName = null;   // null = keep source filename
         String absoluteDestPath = null;
-        if (destDir == null) {
-            try {
-                absoluteDestPath = createDirectoryOnDisk(destStr);
-            } catch (IOException e) {
-                return ToolError.of(McpErrorCode.INTERNAL_ERROR,
-                    "Destination directory could not be created: " + destStr + " — " + e.getMessage());
-            }
-        } else if (!destDir.isDirectory()) {
+
+        if (destFile != null && destFile.isDirectory()) {
+            // Existing directory — move into it, keep filename.
+            destDir = destFile;
+        } else if (destFile != null) {
+            // Destination exists but is a file, not a directory.
             return ToolError.of(McpErrorCode.FILE_NOT_FOUND,
-                "Destination path is not a directory: " + destStr);
+                "Destination path exists but is not a directory: " + destStr);
+        } else {
+            // Destination doesn't exist — determine intent from whether the parent exists.
+            Path destPath = Path.of(destStr.replace('\\', '/'));
+            if (!destPath.isAbsolute()) {
+                String basePath = project.getBasePath();
+                if (basePath != null) destPath = Path.of(basePath).resolve(destPath);
+            }
+            Path parent = destPath.getParent();
+            VirtualFile parentVf = null;
+            if (parent != null) {
+                parentVf = resolveVirtualFile(parent.toString());
+                if (parentVf == null) parentVf = refreshAndFindVirtualFile(parent.toString());
+            }
+            if (parentVf != null && parentVf.isDirectory()) {
+                // Parent directory already exists → treat destination as full target path (move + rename).
+                destDir = parentVf;
+                newFileName = destPath.getFileName().toString();
+            } else {
+                // No existing parent — create the full destination path as a new directory.
+                try {
+                    absoluteDestPath = createDirectoryOnDisk(destStr);
+                    destDir = null;
+                } catch (IOException e) {
+                    return ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                        "Destination directory could not be created: " + destStr + " — " + e.getMessage());
+                }
+            }
         }
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        performMoveOnEdt(vf, destDir, absoluteDestPath, resultFuture);
+        performMoveOnEdt(vf, destDir, absoluteDestPath, newFileName, resultFuture);
         return resultFuture.get(MOVE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private void performMoveOnEdt(VirtualFile vf, @Nullable VirtualFile destDir,
                                   @Nullable String absoluteDestPath,
+                                  @Nullable String newFileName,
                                   CompletableFuture<String> resultFuture) {
         EdtUtil.invokeLater(() -> {
             try {
                 VirtualFile resolvedDestDir = destDir;
                 if (resolvedDestDir == null && absoluteDestPath != null) {
-                    // refreshAndFindFileByPath runs synchronously when called from the EDT
-                    // (RefreshQueueImpl detects isDispatchThread() == true and runs inline),
-                    // so no async session is created and no deadlock is possible.
+                    // refreshAndFindFileByPath runs synchronously on the EDT.
                     resolvedDestDir = LocalFileSystem.getInstance()
                         .refreshAndFindFileByPath(absoluteDestPath);
                 }
@@ -122,9 +148,9 @@ public final class MoveFileTool extends FileTool {
                 PsiMoveTarget target = resolvePsiMoveTarget(vf, resolvedDestDir);
                 String result;
                 if (target.canUseRefactoring()) {
-                    result = performRefactoringMove(target);
+                    result = performRefactoringMove(target, newFileName);
                 } else {
-                    result = performPlainVfsMove(vf, resolvedDestDir);
+                    result = performPlainVfsMove(vf, resolvedDestDir, newFileName);
                 }
                 resultFuture.complete(result);
             } catch (Exception e) {
@@ -167,11 +193,12 @@ public final class MoveFileTool extends FileTool {
             });
     }
 
-    private String performRefactoringMove(PsiMoveTarget target) {
+    private String performRefactoringMove(PsiMoveTarget target, @Nullable String newFileName) {
         String oldPath = target.sourceFile().getPath();
+        String finalName = newFileName != null ? newFileName : target.sourceFile().getName();
         String newPath = com.intellij.openapi.util.io.FileUtil.join(
             target.destinationDirectory().getPath(),
-            target.sourceFile().getName()
+            finalName
         );
         var document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(target.sourceFile());
         notifyBeforeEdit(project, target.sourceFile(), document);
@@ -188,6 +215,17 @@ public final class MoveFileTool extends FileTool {
             );
             processor.setPreviewUsages(false);
             processor.run();
+            // After the move, target.sourceFile() now lives in destinationDirectory.
+            // If a rename was requested, run a separate PSI rename refactoring.
+            if (newFileName != null) {
+                var movedPsi = com.intellij.psi.PsiManager.getInstance(project).findFile(target.sourceFile());
+                if (movedPsi != null && movedPsi.isValid()) {
+                    var renameProcessor = new com.intellij.refactoring.rename.RenameProcessor(
+                        project, movedPsi, newFileName, false, false);
+                    renameProcessor.setPreviewUsages(false);
+                    renameProcessor.run();
+                }
+            }
             com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
             com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments();
             return "Moved " + oldPath + " to " + newPath + " using IntelliJ refactoring engine";
@@ -196,8 +234,9 @@ public final class MoveFileTool extends FileTool {
         }
     }
 
-    private String performPlainVfsMove(VirtualFile vf, VirtualFile destDir) {
+    private String performPlainVfsMove(VirtualFile vf, VirtualFile destDir, @Nullable String newFileName) {
         String oldPath = vf.getPath();
+        String finalName = newFileName != null ? newFileName : vf.getName();
         MoveFileTool requestor = this;
         ApplicationManager.getApplication().runWriteAction(() ->
             com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
@@ -205,15 +244,18 @@ public final class MoveFileTool extends FileTool {
                 () -> {
                     try {
                         vf.move(requestor, destDir);
+                        if (newFileName != null) {
+                            vf.rename(requestor, newFileName);
+                        }
                     } catch (java.io.IOException e) {
                         throw new IllegalStateException("VFS move failed", e);
                     }
                 },
-                "Move File: " + vf.getName(),
+                "Move File: " + vf.getName() + (newFileName != null ? " -> " + newFileName : ""),
                 null
             )
         );
-        return "Moved " + oldPath + " to " + destDir.getPath() + "/" + vf.getName() +
+        return "Moved " + oldPath + " to " + destDir.getPath() + "/" + finalName +
             " using plain VFS move (no PSI refactoring available)";
     }
 
