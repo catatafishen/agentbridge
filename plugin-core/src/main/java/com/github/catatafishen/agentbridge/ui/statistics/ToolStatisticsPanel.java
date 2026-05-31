@@ -100,12 +100,16 @@ public class ToolStatisticsPanel extends JPanel {
         String clientId = ALL_CLIENTS.equals(clientCombo.getSelectedItem())
             ? null : (String) clientCombo.getSelectedItem();
 
+        // Only apply the knownToolIds filter when the registry is populated; if the
+        // registry is still empty (panel opened before PsiBridgeService.registerAll()),
+        // pass null so all non-null-category rows are shown rather than hiding everything.
         Set<String> knownToolIds = ToolRegistry.getInstance(project).getAllTools().stream()
             .filter(t -> !t.isBuiltIn())
             .map(ToolDefinition::id)
             .collect(java.util.stream.Collectors.toSet());
+        Set<String> toolFilter = knownToolIds.isEmpty() ? null : knownToolIds;
 
-        List<ToolAggregate> aggregates = ConversationStatistics.queryToolAggregates(db, since, clientId, knownToolIds);
+        List<ToolAggregate> aggregates = ConversationStatistics.queryToolAggregates(db, since, clientId, toolFilter);
         tableModel.setData(aggregates);
 
         // Derive summary from the same filtered aggregates so both panels are consistent.
