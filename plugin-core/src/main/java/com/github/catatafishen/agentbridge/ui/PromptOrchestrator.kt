@@ -660,9 +660,14 @@ class PromptOrchestrator(
                         // Text block ended — appendText is now synchronous, so save directly.
                         callbacks.appendNewEntries()
 
-                    StreamBlockType.THOUGHT ->
-                        // Thought block ended (appendThinkingText is synchronous).
+                    StreamBlockType.THOUGHT -> {
+                        // Thought block ended. Persist it, then close the thinking entry so
+                        // the next thinking block creates a fresh EntryData.Thinking with its
+                        // own ID. Without this, the next block appends to the already-persisted
+                        // entry and INSERT OR IGNORE silently drops the content update.
                         callbacks.appendNewEntries()
+                        consolePanel().collapseThinking()
+                    }
 
                     else -> {}
                 }
