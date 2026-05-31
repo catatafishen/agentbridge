@@ -466,7 +466,7 @@ intellijPlatform {
             // stable-IDE jobs that verify against our build target (2025.3).
             // Build 262.6653.22 = IntelliJ IDEA 2026.2 EAP (the version the Marketplace validator
             // uses for new plugin uploads as of May 2026).
-            if (target == "IU-EAP") create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2")
+            if (target == "IU-EAP") create(IntelliJPlatformType.IntellijIdeaUltimate, "262.6653.22")
             // Note: Android Studio verification via Gradle plugin is broken
             // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
             // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
