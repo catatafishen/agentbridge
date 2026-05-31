@@ -114,9 +114,9 @@ public class ToolStatisticsPanel extends JPanel {
 
         // Derive summary from the same filtered aggregates so both panels are consistent.
         Map<String, Long> summary = Map.of(
-            "totalCalls",       aggregates.stream().mapToLong(ToolAggregate::callCount).sum(),
-            "totalErrors",      aggregates.stream().mapToLong(ToolAggregate::errorCount).sum(),
-            "totalInputBytes",  aggregates.stream().mapToLong(ToolAggregate::totalInputBytes).sum(),
+            "totalCalls", aggregates.stream().mapToLong(ToolAggregate::callCount).sum(),
+            "totalErrors", aggregates.stream().mapToLong(ToolAggregate::errorCount).sum(),
+            "totalInputBytes", aggregates.stream().mapToLong(ToolAggregate::totalInputBytes).sum(),
             "totalOutputBytes", aggregates.stream().mapToLong(ToolAggregate::totalOutputBytes).sum()
         );
         updateSummary(summary);
