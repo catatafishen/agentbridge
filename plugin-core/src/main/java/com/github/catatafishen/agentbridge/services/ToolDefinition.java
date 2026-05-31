@@ -195,12 +195,22 @@ public interface ToolDefinition {
 
     /**
      * True if this tool depends on the symbol index. When true, the central
-     * pre-flight gate waits briefly for indexing to finish and otherwise
-     * returns an actionable error to the agent (so it can call
+     * pre-flight gate waits for indexing to finish (up to {@link #indexWaitTimeoutMs()})
+     * and otherwise returns an actionable error to the agent (so it can call
      * {@code get_indexing_status} or retry). Default: false.
      */
     default boolean requiresIndex() {
         return false;
+    }
+
+    /**
+     * How long the pre-flight gate should wait for indexing to finish before
+     * returning an error (milliseconds). Only relevant when {@link #requiresIndex()}
+     * is true. Default: 30 seconds. Override to extend for tools where initial
+     * indexing routinely takes longer.
+     */
+    default long indexWaitTimeoutMs() {
+        return 30_000L;
     }
 
     /**

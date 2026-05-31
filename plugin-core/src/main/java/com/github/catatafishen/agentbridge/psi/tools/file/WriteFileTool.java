@@ -72,7 +72,8 @@ public class WriteFileTool extends FileTool {
             + "Use this for both new files and full rewrites of existing files. "
             + "Goes through IntelliJ's editor buffer so changes are immediately visible in the IDE. "
             + "Auto-format and import optimization is deferred until turn end "
-            + "(controlled by auto_format_and_optimize_imports param)";
+            + "(controlled by auto_format_and_optimize_imports param). "
+            + "Use show_diff first to preview changes to the user before applying.";
     }
 
     @Override

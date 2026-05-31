@@ -43,7 +43,9 @@ public final class MemoryStoreTool extends Tool {
             + "milestones, problems, or technical insights. "
             + "If a drawer with the same content signature (same wing, room, and first 100 characters) "
             + "already exists it is overwritten with the new content — re-storing updated decisions "
-            + "is safe and always writes the latest version. Returns the drawer ID on success.";
+            + "is safe and always writes the latest version. Returns the drawer ID on success. "
+            + "For structured facts about the project or codebase (e.g. tech stack, naming conventions, "
+            + "key decisions), prefer memory_kg_add which supports rich querying.";
     }
 
     @Override
