@@ -131,7 +131,7 @@ public final class ConversationStatistics {
         """;
 
     private static final String SQL_TOOL_AGGREGATES = """
-        SELECT COALESCE(tce.display_name, tce.tool_name)              AS tool_name,
+        SELECT tce.tool_name,
                tce.category,
                COUNT(*)                                               AS call_count,
                ROUND(AVG(tce.duration_ms))                           AS avg_duration_ms,
@@ -144,7 +144,7 @@ public final class ConversationStatistics {
         WHERE tce.is_mcp = 1
           AND (? IS NULL OR e.timestamp >= ?)
           AND (? IS NULL OR tce.client_id = ?)
-        GROUP BY COALESCE(tce.display_name, tce.tool_name), tce.category
+        GROUP BY tce.tool_name, tce.category
         ORDER BY call_count DESC
         """;
 
@@ -348,6 +348,20 @@ public final class ConversationStatistics {
         @NotNull ConversationDatabase db,
         @Nullable String since,
         @Nullable String clientId) {
+        return queryToolAggregates(db, since, clientId, null);
+    }
+
+    /**
+     * Same as {@link #queryToolAggregates(ConversationDatabase, String, String)} but filters
+     * the results to only include rows whose {@code tool_name} is in {@code knownToolIds}.
+     * Pass {@code null} to skip filtering (returns all MCP-flagged tools).
+     */
+    @NotNull
+    public static List<ToolAggregate> queryToolAggregates(
+        @NotNull ConversationDatabase db,
+        @Nullable String since,
+        @Nullable String clientId,
+        @Nullable Set<String> knownToolIds) {
 
         try {
             List<ToolAggregate> result = db.withConnection(conn -> {
@@ -359,8 +373,10 @@ public final class ConversationStatistics {
                     List<ToolAggregate> rows = new ArrayList<>();
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) {
+                            String toolName = rs.getString("tool_name");
+                            if (knownToolIds != null && !knownToolIds.contains(toolName)) continue;
                             rows.add(new ToolAggregate(
-                                rs.getString("tool_name"),
+                                toolName,
                                 rs.getString("category"),
                                 rs.getLong("call_count"),
                                 rs.getLong("avg_duration_ms"),
