@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
+import com.github.catatafishen.agentbridge.services.ToolDefinition;
+import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.session.db.ConversationStatistics.ToolAggregate;
@@ -16,6 +18,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Panel displaying per-tool MCP call statistics in a filterable table with summary labels.
@@ -97,7 +100,12 @@ public class ToolStatisticsPanel extends JPanel {
         String clientId = ALL_CLIENTS.equals(clientCombo.getSelectedItem())
             ? null : (String) clientCombo.getSelectedItem();
 
-        List<ToolAggregate> aggregates = ConversationStatistics.queryToolAggregates(db, since, clientId);
+        Set<String> knownToolIds = ToolRegistry.getInstance(project).getAllTools().stream()
+            .filter(t -> !t.isBuiltIn())
+            .map(ToolDefinition::id)
+            .collect(java.util.stream.Collectors.toSet());
+
+        List<ToolAggregate> aggregates = ConversationStatistics.queryToolAggregates(db, since, clientId, knownToolIds);
         tableModel.setData(aggregates);
 
         Map<String, Long> summary = ConversationStatistics.querySummary(db, since, clientId);
