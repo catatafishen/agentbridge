@@ -445,7 +445,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             lazyRevalidatePending = true
             SwingUtilities.invokeLater {
                 lazyRevalidatePending = false
-                if (isShowing) { cachedForWidth = -1; revalidate() }
+                if (isShowing) {
+                    cachedForWidth = -1; revalidate()
+                }
             }
             return Dimension(pw, cachedHeight)
         }

@@ -6,24 +6,29 @@ import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
 /**
  * Container for the left-hand tool-window pane.
  * <p>
- * Tab selection is driven from outside (via the title-bar tab header in
- * {@link com.github.catatafishen.agentbridge.ui.ChatToolWindowContent}). This panel uses a
- * plain {@link CardLayout} so the tab strip appears in the IDE title bar rather than as a
- * separate row inside the panel itself.
+ * Uses a plain {@link CardLayout} to switch between tabs. When the side panel is open,
+ * a compact tab strip ({@link #tabStrip}) is displayed at the top of this panel, driven
+ * by {@link #setCustomTabStripVisible(boolean)}. This keeps {@code rootSplitter} stationary
+ * in the component tree — no re-parenting on tab switch — avoiding the expensive
+ * {@code addNotify}/{@code removeNotify} cascade on Windows (GDI+ font-metrics recalculation).
  * <p>
  * Hosts five tabs:
  * <ol>
@@ -55,6 +60,10 @@ public final class SidePanel extends JPanel implements Disposable {
     private int selectedTab = TAB_REVIEW;
     private String planBadge = "";
     private transient @Nullable Consumer<String> onPlanTitleChanged;
+
+    private JPanel tabStrip;
+    private TabLabel[] tabLabels;
+    private boolean customTabStripVisible = false;
 
     private final transient Project project;
     private final TodoPanel todoPanel;
@@ -94,6 +103,10 @@ public final class SidePanel extends JPanel implements Disposable {
             promptsPanel.applySearchParams(params);
         });
 
+        tabLabels = new TabLabel[TAB_NAMES.size()];
+        tabStrip = buildTabStrip();
+
+        add(tabStrip, BorderLayout.NORTH);
         add(contentContainer, BorderLayout.CENTER);
     }
 
@@ -102,6 +115,10 @@ public final class SidePanel extends JPanel implements Disposable {
      */
     public void selectTab(int index) {
         if (index == selectedTab) return;
+        if (tabLabels != null) {
+            tabLabels[selectedTab].setSelected(false);
+            tabLabels[index].setSelected(true);
+        }
         selectedTab = index;
         cardLayout.show(contentContainer, String.valueOf(index));
         if (index == TAB_TODOS) todoPanel.refresh();
@@ -134,6 +151,38 @@ public final class SidePanel extends JPanel implements Disposable {
      */
     public void selectReviewTab() {
         selectTab(TAB_REVIEW);
+    }
+
+    /**
+     * Shows or hides the in-panel tab strip header. Call with {@code true} when the side panel
+     * is expanded, {@code false} when collapsed, so tab labels track the open/closed state.
+     * Also syncs the Plan tab badge text to the current value on show.
+     */
+    public void setCustomTabStripVisible(boolean visible) {
+        customTabStripVisible = visible;
+        if (visible) {
+            tabLabels[TAB_TODOS].setText(getPlanTitle());
+        }
+        tabStrip.setVisible(visible);
+        revalidate();
+        repaint();
+    }
+
+    /**
+     * Returns {@code true} if the in-panel tab strip is currently visible.
+     */
+    public boolean isCustomTabStripVisible() {
+        return customTabStripVisible;
+    }
+
+    /**
+     * Updates the Plan tab label text (including badge). Called whenever the plan badge changes.
+     * No-op if the tab strip is not yet built.
+     */
+    public void updatePlanTabText(String title) {
+        if (tabLabels != null) {
+            tabLabels[TAB_TODOS].setText(title);
+        }
     }
 
     /**
@@ -171,5 +220,116 @@ public final class SidePanel extends JPanel implements Disposable {
     @Override
     public void dispose() {
         PromptDbService.getInstance(project).registerNavigateCallback(null);
+    }
+
+    private @NotNull JPanel buildTabStrip() {
+        JPanel strip = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                g.setColor(JBColor.border());
+                g.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+            }
+        };
+        strip.setLayout(new BoxLayout(strip, BoxLayout.X_AXIS));
+        strip.setOpaque(false);
+        strip.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
+        strip.setVisible(false);
+
+        for (int i = 0; i < TAB_NAMES.size(); i++) {
+            final int idx = i;
+            TabLabel label = new TabLabel(TAB_NAMES.get(i), i == selectedTab);
+            tabLabels[i] = label;
+            label.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    selectTab(idx);
+                }
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    label.setHovered(true);
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    label.setHovered(false);
+                }
+            });
+            strip.add(label);
+        }
+        return strip;
+    }
+
+    private static final class TabLabel extends JComponent {
+        private String text;
+        private boolean selected;
+        private boolean hovered;
+
+        private static final int H_PAD = JBUI.scale(10);
+        private static final int V_PAD = JBUI.scale(4);
+        private static final int INDICATOR_H = JBUI.scale(2);
+
+        TabLabel(String text, boolean selected) {
+            this.text = text;
+            this.selected = selected;
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            setOpaque(false);
+        }
+
+        void setText(String text) {
+            if (this.text.equals(text)) return;
+            this.text = text;
+            revalidate();
+            repaint();
+        }
+
+        void setSelected(boolean selected) {
+            if (this.selected == selected) return;
+            this.selected = selected;
+            repaint();
+        }
+
+        void setHovered(boolean hovered) {
+            if (this.hovered == hovered) return;
+            this.hovered = hovered;
+            repaint();
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            Font boldFont = UIUtil.getLabelFont().deriveFont(Font.BOLD);
+            FontMetrics fm = getFontMetrics(boldFont);
+            return new Dimension(
+                fm.stringWidth(text) + H_PAD * 2,
+                fm.getHeight() + V_PAD * 2 + INDICATOR_H
+            );
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                Font font = selected
+                    ? UIUtil.getLabelFont().deriveFont(Font.BOLD)
+                    : UIUtil.getLabelFont();
+                g2.setFont(font);
+                FontMetrics fm = g2.getFontMetrics();
+                Color textColor = (selected || hovered)
+                    ? UIUtil.getLabelForeground()
+                    : UIUtil.getLabelDisabledForeground();
+                g2.setColor(textColor);
+                g2.drawString(text, H_PAD, V_PAD + fm.getAscent());
+                if (selected) {
+                    g2.setColor(JBColor.namedColor("TabbedPane.underlineColor",
+                        new JBColor(new Color(0x4883C8), new Color(0x5897C8))));
+                    g2.fillRect(0, getHeight() - INDICATOR_H, getWidth(), INDICATOR_H);
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
     }
 }

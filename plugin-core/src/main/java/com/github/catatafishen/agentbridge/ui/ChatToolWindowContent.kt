@@ -103,15 +103,8 @@ class ChatToolWindowContent(
     /** Proportion used when expanding the review panel after it was collapsed. */
     private val defaultReviewProportion = 0.3f
 
-    /** Wrapper panels for per-tab ContentManager contents, indexed by tab index. Non-empty iff side panel is open. */
-    private val contentWrappers = mutableListOf<JPanel>()
-
-    /** Listener that syncs ContentManager tab selection to the side panel. Null when side panel is closed. */
-    private var contentTabListener: com.intellij.ui.content.ContentManagerListener? = null
-
-    /** True while [updateSideTabContents] is rebuilding the ContentManager — prevents listener re-entrance. */
-    @Volatile
-    private var isUpdatingContentTabs = false
+    /** True iff the side panel tab strip is currently open (proportion > 0 and tab strip visible). */
+    private var sidePanelOpen = false
     private val agentManager = ActiveAgentManager.getInstance(project)
     private lateinit var connectPanel: AcpConnectPanel
     private var chatPanel: JComponent? = null
@@ -778,10 +771,7 @@ class ChatToolWindowContent(
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
         side.setOnPlanTitleChanged { newTitle ->
-            if (contentWrappers.isNotEmpty()) {
-                toolWindow.contentManager.getContent(com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
-                    ?.displayName = newTitle
-            }
+            sidePanel?.updatePlanTabText(newTitle)
             ActivityTracker.getInstance().inc()
         }
         rootSplitter.firstComponent = side
@@ -1153,22 +1143,12 @@ class ChatToolWindowContent(
     }
 
     /**
-     * Called from the [rootSplitter] [java.beans.PropertyChangeListener] on every proportion change
-     * (drag or toggle button). Updates the title-bar tab mode when the open/closed threshold is
-     * crossed and persists the preference.
-     *
-     * <p>Runtime open/closed state is canonical in [contentWrappers] — [SidePanelToggleAction] sets
-     * it atomically and uses it as the source of truth. [PREF_SIDE_PANEL_OPEN] is only used to
-     * restore state on startup.
-     *
-     * <p>Guarded by [isUpdatingContentTabs]: when [updateSideTabContents] reparents [rootSplitter]
-     * into a wrapper, layout recomputes the splitter proportion (KEEP_SECOND_SIZE strategy). Without
-     * the guard this would re-enter [syncTabsIfNeeded] mid-update and produce the 4-click oscillation.
+     * Called whenever [rootSplitter]'s proportion changes. Detects open/closed transitions
+     * and updates the side panel tab strip visibility accordingly.
      */
     private fun syncTabsIfNeeded() {
-        if (isUpdatingContentTabs) return
         val isOpen = rootSplitter.proportion >= 0.01f
-        val wasOpen = contentWrappers.isNotEmpty()
+        val wasOpen = sidePanelOpen
         if (isOpen == wasOpen) return
         updateSideTabContents(isOpen)
         com.intellij.ide.util.PropertiesComponent.getInstance(project).setValue(PREF_SIDE_PANEL_OPEN, isOpen)
@@ -2261,28 +2241,19 @@ class ChatToolWindowContent(
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
-            // contentWrappers is the canonical open/closed state — it is set atomically
-            // in actionPerformed and is not affected by mid-layout proportion oscillations.
-            val isOpen = contentWrappers.isNotEmpty()
+            val isOpen = sidePanelOpen
             e.presentation.icon = if (isOpen) AllIcons.General.ChevronRight else AllIcons.General.ChevronLeft
             e.presentation.text = if (isOpen) "Hide Side Panel" else "Show Side Panel"
         }
 
         override fun actionPerformed(e: AnActionEvent) {
-            val isOpen = contentWrappers.isNotEmpty()
+            val isOpen = sidePanelOpen
             val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
             if (!isOpen) {
                 ensureSidePanelAvailable()
                 val chatWidth = rootSplitter.width
-                // Update tabs first inside the guard so the subsequent proportion change does NOT
-                // re-trigger syncTabsIfNeeded and produce the 4-click oscillation.
-                isUpdatingContentTabs = true
-                try {
-                    updateSideTabContents(true)
-                    rootSplitter.proportion = defaultReviewProportion
-                } finally {
-                    isUpdatingContentTabs = false
-                }
+                updateSideTabContents(true)
+                rootSplitter.proportion = defaultReviewProportion
                 props.setValue(PREF_SIDE_PANEL_OPEN, true)
                 if (chatWidth > 0) {
                     val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
@@ -2290,13 +2261,8 @@ class ChatToolWindowContent(
                 }
             } else {
                 val sideWidth = rootSplitter.firstComponent?.width ?: 0
-                isUpdatingContentTabs = true
-                try {
-                    rootSplitter.proportion = 0.0f
-                    updateSideTabContents(false)
-                } finally {
-                    isUpdatingContentTabs = false
-                }
+                updateSideTabContents(false)
+                rootSplitter.proportion = 0.0f
                 props.setValue(PREF_SIDE_PANEL_OPEN, false)
                 if (sideWidth > 0) {
                     (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
@@ -2306,84 +2272,15 @@ class ChatToolWindowContent(
     }
 
     /**
-     * Switches between single-content mode (side panel closed) and multi-content
-     * tab mode (side panel open). In tab mode, each tab becomes a native IntelliJ
-     * {@link com.intellij.ui.content.Content} tab rendered in the tool window header,
-     * matching the look of the Commit/Version Control tool window.
+     * Shows or hides the custom tab strip inside [SidePanel]. No ContentManager contents are
+     * added or removed — [rootSplitter] remains parented in the single ContentManager content
+     * created at startup by [ChatToolWindowFactory] for the lifetime of the tool window.
      *
-     * <p>{@code rootSplitter} is moved between wrapper panels via Swing re-parenting —
-     * only the currently selected wrapper is in the view hierarchy, so the component moves
-     * rather than being duplicated.
-     *
-     * <p>Must be called on the EDT.
+     * Must be called on the EDT.
      */
     private fun updateSideTabContents(open: Boolean) {
-        val alreadyGuarded = isUpdatingContentTabs
-        isUpdatingContentTabs = true
-        try {
-            val contentManager = toolWindow.contentManager
-            val contentFactory = com.intellij.ui.content.ContentFactory.getInstance()
-
-            contentTabListener?.let { contentManager.removeContentManagerListener(it) }
-            contentTabListener = null
-            contentManager.removeAllContents(false)
-            contentWrappers.clear()
-
-            if (open) {
-                toolWindow.title = ""
-                val tabNames = com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_NAMES.toList()
-                tabNames.forEachIndexed { i, name ->
-                    val wrapper = JPanel(BorderLayout())
-                    contentWrappers.add(wrapper)
-                    val displayName = if (i == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
-                        (sidePanel?.planTitle ?: name) else name
-                    val content = contentFactory.createContent(wrapper, displayName, false)
-                    content.isCloseable = false
-                    contentManager.addContent(content)
-                }
-
-                val activeIdx = (sidePanel?.selectedTab ?: 0).coerceIn(0, contentWrappers.lastIndex)
-                // Select first so ensureSelectedContentVisible sees an empty wrapper (avoids deep
-                // ComponentTreeWatcher walk + native getLocationOnScreen on every scroll pane).
-                contentManager.setSelectedContent(contentManager.getContent(activeIdx)!!, false)
-                contentWrappers[activeIdx].add(rootSplitter, BorderLayout.CENTER)
-                contentWrappers[activeIdx].revalidate()
-
-                val listener = object : com.intellij.ui.content.ContentManagerListener {
-                    override fun selectionChanged(event: com.intellij.ui.content.ContentManagerEvent) {
-                        if (!isUpdatingContentTabs
-                            && event.operation == com.intellij.ui.content.ContentManagerEvent.ContentOperation.add
-                        ) {
-                            val idx = contentManager.getIndexOfContent(event.content)
-                            if (idx >= 0) onContentTabSelected(idx)
-                        }
-                    }
-                }
-                contentTabListener = listener
-                contentManager.addContentManagerListener(listener)
-            } else {
-                toolWindow.title = ""
-                val content = contentFactory.createContent(rootSplitter, "", false)
-                content.isCloseable = false
-                contentManager.addContent(content)
-            }
-        } finally {
-            if (!alreadyGuarded) isUpdatingContentTabs = false
-        }
-    }
-    private fun onContentTabSelected(tabIndex: Int) {
-        isUpdatingContentTabs = true
-        try {
-            val wrapper = contentWrappers.getOrNull(tabIndex) ?: return
-            if (rootSplitter.parent !== wrapper) {
-                wrapper.add(rootSplitter, BorderLayout.CENTER)
-                wrapper.revalidate()
-                wrapper.repaint()
-            }
-            sidePanel?.selectTab(tabIndex)
-        } finally {
-            isUpdatingContentTabs = false
-        }
+        sidePanel?.setCustomTabStripVisible(open)
+        sidePanelOpen = open
     }
 
     @Volatile
