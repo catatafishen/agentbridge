@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui.side;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.ui.MarkdownRenderer;
 import com.github.catatafishen.agentbridge.ui.util.EmptyStateStyles;
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -28,6 +29,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,15 +47,14 @@ import java.util.regex.Pattern;
  * Copilot CLI's SQL tool), a split pane shows the structured task database below
  * the markdown plan.
  * <p>
- * The panel polls the file's modification time every {@link #POLL_INTERVAL_MS} ms while
- * showing, so edits made by the agent (or the user) appear without requiring a manual
- * refresh. Polling stops when the panel is removed from the component hierarchy.
+ * The panel does not poll automatically. It refreshes once when the tab is opened and
+ * exposes a footer with a manual refresh button and a "last updated" timestamp.
  */
 final class TodoPanel extends JPanel implements Disposable {
 
     private static final Pattern CHECKBOX_LINE = Pattern.compile("^\\s*+[-*]\\s++\\[([ xX])]\\s++.++$");
-    private static final int POLL_INTERVAL_MS = 1500;
     private static final String SESSION_DB_NAME = "session.db";
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final transient Project project;
     private final JEditorPane markdownPane;
@@ -60,7 +62,7 @@ final class TodoPanel extends JPanel implements Disposable {
     private final JBLabel headerLabel;
     private final JPanel markdownContentPanel;
     private final TodoDatabasePanel databasePanel;
-    private final transient Timer pollTimer;
+    private final JBLabel lastRefreshedLabel;
     private transient @Nullable Runnable onProgressChanged;
     private boolean splitVisible;
     private final JPanel body;
@@ -69,7 +71,7 @@ final class TodoPanel extends JPanel implements Disposable {
     private final JPanel mainArea;
 
     /**
-     * Last observed (path, mtime, done, total) so the poll timer can skip work when nothing changed.
+     * Last observed (path, mtime, done, total) to skip redundant re-renders when nothing changed.
      */
     private transient @Nullable Path lastPath;
     private long lastMtime = -1L;
@@ -123,8 +125,22 @@ final class TodoPanel extends JPanel implements Disposable {
         outerSplitter.setSecondComponent(sessionSection);
         add(outerSplitter, BorderLayout.CENTER);
 
-        pollTimer = new Timer(POLL_INTERVAL_MS, e -> pollIfVisible());
-        pollTimer.setRepeats(true);
+        JButton refreshButton = new JButton("Refresh", AllIcons.Actions.Refresh);
+        refreshButton.setFocusPainted(false);
+        refreshButton.addActionListener(e -> refresh());
+
+        lastRefreshedLabel = new JBLabel("—");
+        lastRefreshedLabel.setForeground(UIUtil.getLabelDisabledForeground());
+        lastRefreshedLabel.setFont(UIUtil.getLabelFont().deriveFont(11f));
+
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, JBColor.border()),
+            BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
+        footer.add(refreshButton, BorderLayout.WEST);
+        footer.add(lastRefreshedLabel, BorderLayout.EAST);
+        add(footer, BorderLayout.SOUTH);
     }
 
     /**
@@ -169,29 +185,18 @@ final class TodoPanel extends JPanel implements Disposable {
     public void addNotify() {
         super.addNotify();
         refresh();
-        pollTimer.start();
-    }
-
-    @Override
-    public void removeNotify() {
-        pollTimer.stop();
-        super.removeNotify();
     }
 
     @Override
     public void dispose() {
-        pollTimer.stop();
         databasePanel.dispose();
-    }
-
-    private void pollIfVisible() {
-        refresh();
     }
 
     /**
      * Re-reads the plan file and repaints if anything changed. Safe to call from the EDT.
      */
     void refresh() {
+        lastRefreshedLabel.setText("Updated " + LocalTime.now().format(TIME_FMT));
         sessionFilesPanel.refresh();
         Path sessionDir = resolveSessionDir();
         updateDatabasePanel(sessionDir);
