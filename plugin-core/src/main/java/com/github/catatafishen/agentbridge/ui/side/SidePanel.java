@@ -321,7 +321,10 @@ public final class SidePanel extends JPanel implements Disposable {
         void setText(String text) {
             if (this.text.equals(text)) return;
             this.text = text;
-            getAccessibleContext().setAccessibleName(text);
+            AccessibleContext ac = getAccessibleContext();
+            if (ac != null) {
+                ac.setAccessibleName(text);
+            }
             revalidate();
             repaint();
         }
