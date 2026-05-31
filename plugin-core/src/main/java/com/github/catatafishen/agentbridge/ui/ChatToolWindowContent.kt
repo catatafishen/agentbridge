@@ -134,6 +134,9 @@ class ChatToolWindowContent(
     private lateinit var promptTextArea: EditorTextField
     private val shortcutHintGroup = DefaultActionGroup()
     private lateinit var shortcutHintToolbar: ActionToolbar
+    // Keyed by (stroke, label) so the same action instance is reused across refreshShortcutHints()
+    // calls. ActionToolbarImpl warns (and creates broken UI) when new instances appear every update.
+    private val shortcutHintActionCache = HashMap<Pair<KeyStroke, String>, ShortcutHintAction>()
     private val queuedTexts = ArrayDeque<String>()
 
     /** Tracks whether the current pause was triggered by typing in the input box. */
@@ -1571,7 +1574,9 @@ class ChatToolWindowContent(
             list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
         }
         shortcutHintGroup.removeAll()
-        list.forEach { (stroke, label) -> shortcutHintGroup.add(ShortcutHintAction(stroke, label)) }
+        list.forEach { (stroke, label) ->
+            shortcutHintGroup.add(shortcutHintActionCache.getOrPut(stroke to label) { ShortcutHintAction(stroke, label) })
+        }
         shortcutHintToolbar.component.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
         shortcutHintToolbar.updateActionsAsync()
     }
