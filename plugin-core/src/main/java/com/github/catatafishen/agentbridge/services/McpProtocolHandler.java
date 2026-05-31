@@ -839,9 +839,11 @@ public final class McpProtocolHandler {
         long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
         long outputSize = data.output() != null
             ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
+        String pluginVersion = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            .getPluginVersion(com.github.catatafishen.agentbridge.bridge.McpServerJarLocator.PLUGIN_ID);
         service.enrichToolCallStats(new ToolCallStatsEnrichment(
             dbEventId, inputSize, outputSize, data.durationMs(),
-            data.success(), data.errorMessage(), data.category(), data.displayName()));
+            data.success(), data.errorMessage(), data.category(), data.displayName(), pluginVersion));
         // Only record hook stages when we have a confirmed tracker record — the FK on
         // hook_executions.tool_event_id requires the events row to already exist.
         // When callRecord is null we're falling back to a raw toolUseId that may not be
