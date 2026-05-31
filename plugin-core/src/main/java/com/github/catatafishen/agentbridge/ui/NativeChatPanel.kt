@@ -737,7 +737,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val localDef = toolRegistry.findById(title)
         val effectiveKind = localDef?.cssKindName() ?: kind
         val resolvedKind = effectiveKind ?: "other"
-        val displayTitle = localDef?.displayName() ?: resolveToolDisplayName(title)
+        val toolDisplayName = localDef?.displayName() ?: resolveToolDisplayName(title)
+        val displayTitle = ToolCallArgParser.extractChipTitle(arguments) ?: toolDisplayName
         toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
         val chip = ToolChipComponent(
             displayTitle,
@@ -943,7 +944,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             return
         }
         val resolvedKind = kind ?: "other"
-        val displayTitle = resolveToolDisplayName(title)
+        val displayTitle = ToolCallArgParser.extractChipTitle(arguments) ?: resolveToolDisplayName(title)
         toolCallData[toolId] = ToolCallData(displayTitle, resolvedKind, arguments)
         val chip = ToolChipComponent(
             displayTitle, kind, "running", false,

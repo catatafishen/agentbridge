@@ -16,8 +16,7 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
@@ -275,11 +274,50 @@ public final class SidePanel extends JPanel implements Disposable {
             this.selected = selected;
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             setOpaque(false);
+            setFocusable(true);
+            getAccessibleContext().setAccessibleName(text);
+
+            // Enter and Space activate the tab (keyboard navigation support).
+            InputMap im = getInputMap(WHEN_FOCUSED);
+            ActionMap am = getActionMap();
+            im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "activate");
+            im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "activate");
+            am.put("activate", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    doClick();
+                }
+            });
+
+            // Repaint when focus changes so the focus ring updates.
+            addFocusListener(new FocusAdapter() {
+                @Override
+                public void focusGained(FocusEvent e) {
+                    repaint();
+                }
+
+                @Override
+                public void focusLost(FocusEvent e) {
+                    repaint();
+                }
+            });
+        }
+
+        /**
+         * Programmatically fire all registered MouseListeners (click behaviour).
+         */
+        void doClick() {
+            MouseEvent evt = new MouseEvent(this, MouseEvent.MOUSE_CLICKED,
+                System.currentTimeMillis(), 0, 0, 0, 1, false);
+            for (MouseListener ml : getMouseListeners()) {
+                ml.mouseClicked(evt);
+            }
         }
 
         void setText(String text) {
             if (this.text.equals(text)) return;
             this.text = text;
+            getAccessibleContext().setAccessibleName(text);
             revalidate();
             repaint();
         }
@@ -326,6 +364,12 @@ public final class SidePanel extends JPanel implements Disposable {
                     g2.setColor(JBColor.namedColor("TabbedPane.underlineColor",
                         new JBColor(new Color(0x4883C8), new Color(0x5897C8))));
                     g2.fillRect(0, getHeight() - INDICATOR_H, getWidth(), INDICATOR_H);
+                }
+                if (isFocusOwner()) {
+                    g2.setColor(UIUtil.getFocusedBorderColor());
+                    g2.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f,
+                        new float[]{2f, 2f}, 0f));
+                    g2.drawRect(1, 1, getWidth() - 3, getHeight() - INDICATOR_H - 2);
                 }
             } finally {
                 g2.dispose();
