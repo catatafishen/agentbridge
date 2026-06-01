@@ -6,11 +6,12 @@ import com.github.catatafishen.agentbridge.ui.ResizeBurstClock.tick
 /**
  * Process-wide resize burst clock shared by all paint-caching components.
  *
- * **Who ticks:** only [NativeMarkdownPane.getPreferredSize] calls [tick], because a width
- * change observed during layout is a true window-resize signal. Paint-path components
- * (e.g. [RoundedPanel]) must NOT call [tick] — doing so creates a renewal loop where each
- * streaming repaint of a stale-width bubble re-arms the burst, suppressing all
- * NativeMarkdownPane renders until the stream pauses.
+ * **Who ticks:** [NativeChatPanel]'s scroll viewport `ComponentListener` calls [tick] on
+ * every `componentResized` event, i.e. whenever the chat panel is being dragged/resized.
+ * This keeps the signal tied to genuine window-resize events rather than to layout passes,
+ * which previously caused a cascading settle-timer renewal loop: each settle-phase layout
+ * pass would call [tick] from `NativeMarkdownPane.getPreferredSize`, re-arming the burst
+ * and keeping all bubble backgrounds stale until the stream paused.
  *
  * **Who checks:** any component that wants to skip expensive work during a resize drag
  * calls [isBurstActive]. It should also schedule its own settle repaint (e.g. a Timer at

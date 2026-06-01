@@ -399,15 +399,6 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             return Dimension(pw, cachedHeight)
         }
 
-        // Width changed since the last accurate measurement — record this as a tick in the
-        // process-wide resize burst clock so OTHER panes can treat themselves as "during
-        // resize" without each needing its own ComponentListener on the scroll viewport.
-        // Skip the very first measurement (cachedForWidth < 0) to avoid mis-classifying
-        // initial layout as a resize burst.
-        if (cachedForWidth > 0 && pw != cachedForWidth) {
-            ResizeBurstClock.tick()
-        }
-
         // Frozen-during-drag cache hit: a resize burst is active AND this pane's content
         // has not changed in the last [LIVE_PANE_AGE_MS] ms (older history bubble). Skip
         // the HTML re-layout entirely for any width and return the previously cached height.
