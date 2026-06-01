@@ -3,9 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.LIVE_PANE_AGE_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
-import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_BURST_WINDOW_NANOS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_SETTLE_MS
-import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.lastResizeNanos
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
@@ -339,9 +337,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // Resize burst: draw the stale frame rather than triggering an expensive re-render
         // on every pixel of drag. The old image is drawn at its stored dimensions; Swing's
         // clip region limits any over-draw beyond the component's current bounds.
-        if (paintCache != null &&
-            (System.nanoTime() - lastResizeNanos) < RESIZE_BURST_WINDOW_NANOS
-        ) {
+        if (paintCache != null && ResizeBurstClock.isBurstActive()) {
             UIUtil.drawImage(g, paintCache!!, 0, 0, null)
             return
         }
@@ -409,7 +405,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // Skip the very first measurement (cachedForWidth < 0) to avoid mis-classifying
         // initial layout as a resize burst.
         if (cachedForWidth > 0 && pw != cachedForWidth) {
-            lastResizeNanos = System.nanoTime()
+            ResizeBurstClock.tick()
         }
 
         // Frozen-during-drag cache hit: a resize burst is active AND this pane's content
@@ -417,7 +413,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // the HTML re-layout entirely for any width and return the previously cached height.
         if (cachedHeight > 0 &&
             contentVersion == cachedForVersion &&
-            (System.nanoTime() - lastResizeNanos) < RESIZE_BURST_WINDOW_NANOS &&
+            ResizeBurstClock.isBurstActive() &&
             (System.currentTimeMillis() - lastContentChangeMs) > LIVE_PANE_AGE_MS
         ) {
             resizeSettleTimer.restart()
@@ -550,44 +546,20 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         private const val RESIZE_TOLERANCE_PX = 16
 
         /**
-         * Quiet-window (ms) after the last fast-path [getPreferredSize] call before
+         * Window (ms) after the last fast-path [getPreferredSize] call before
          * we invalidate the cache and revalidate to obtain a pixel-accurate final layout.
-         * Must be strictly greater than [RESIZE_BURST_WINDOW_NANOS] / 1_000_000 (200 ms)
-         * so the settle timer always fires after the burst window has expired. If it were
-         * shorter, the burst-freeze path would re-restart the settle timer on its own
-         * revalidation pass, creating a loop that delays accurate layout.
+         * Must be strictly greater than [ResizeBurstClock]'s burst window (200 ms)
+         * so the settle timer always fires after the burst window has expired.
          */
         private const val RESIZE_SETTLE_MS = 250
-
-        /**
-         * Window (ms) during which any pane that observed a width change "broadcasts"
-         * an active resize burst via [lastResizeNanos]. Other panes that see [getPreferredSize]
-         * calls within this window may take the frozen-during-drag fast path if they are
-         * also stale per [LIVE_PANE_AGE_MS]. Must be strictly less than [RESIZE_SETTLE_MS]
-         * so the settle timer fires only after the burst has expired.
-         */
-        private const val RESIZE_BURST_WINDOW_NANOS: Long = 200L * 1_000_000
 
         /**
          * Age threshold (ms): panes whose [lastContentChangeMs] is more recent than this
          * are considered "live" and always get an accurate HTML layout, even during a
          * resize burst. Panes older than this are frozen during the burst and revalidated
-         * once it settles. Sized to comfortably cover the gap between two consecutive
-         * agent message renders during normal streaming, so the actively-streaming bubble
-         * is never frozen mid-stream while everything above it is.
+         * once it settles.
          */
         private const val LIVE_PANE_AGE_MS: Long = 1500
-
-        /**
-         * Process-wide clock (nanoTime) of the last width-change observation across ALL
-         * panes. Updated by any pane whose [getPreferredSize] sees a width different from
-         * its own cached width; consulted by every pane to decide whether the user is
-         * currently dragging the window / animating a side panel. Volatile because Swing
-         * may call [getPreferredSize] from non-EDT validation paths in rare cases and we
-         * want fresh reads without locking.
-         */
-        @Volatile
-        private var lastResizeNanos: Long = 0L
 
         private fun colorToHex(c: Color): String =
             "#%02x%02x%02x".format(c.red, c.green, c.blue)

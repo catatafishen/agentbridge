@@ -51,6 +51,15 @@ open class RoundedPanel(
         if (w <= 0 || h <= 0) return
         val bgRGB = bgColor.rgb
         val borderRGB = borderColor?.rgb ?: Int.MIN_VALUE
+        // Detect resize burst: width changed from a previously rendered size
+        if (cachedBg != null && cachedBgW != w) ResizeBurstClock.tick()
+        // During resize burst: blit stale background rather than re-rendering per pixel of drag.
+        // NativeMarkdownPane's settle timer fires revalidate() after the burst, which triggers
+        // an accurate repaint of all panels.
+        if (cachedBg != null && ResizeBurstClock.isBurstActive()) {
+            UIUtil.drawImage(g, cachedBg!!, 0, 0, null)
+            return
+        }
         if (cachedBg == null || cachedBgW != w || cachedBgH != h ||
             cachedBgColorRGB != bgRGB || cachedBorderColorRGB != borderRGB
         ) {
