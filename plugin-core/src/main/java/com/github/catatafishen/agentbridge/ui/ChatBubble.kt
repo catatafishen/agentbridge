@@ -45,19 +45,34 @@ open class RoundedPanel(
     private var cachedBgColorRGB = Int.MIN_VALUE
     private var cachedBorderColorRGB = Int.MIN_VALUE
 
+    /**
+     * Fires after the resize burst quiets down, ensuring any bubble whose background
+     * was blitted stale (wrong dimensions) gets an accurate repaint.
+     * Needed for panels without a NativeMarkdownPane child (e.g. tool-chip rows)
+     * that don't have their own settle timer.
+     */
+    private val settleTimer = Timer(300) {
+        if (isShowing && (cachedBgW != width || cachedBgH != height)) {
+            cachedBg = null
+            repaint()
+        }
+    }.apply { isRepeats = false }
+
     override fun paintComponent(g: Graphics) {
         val w = width;
         val h = height
         if (w <= 0 || h <= 0) return
         val bgRGB = bgColor.rgb
         val borderRGB = borderColor?.rgb ?: Int.MIN_VALUE
-        // Detect resize burst: width changed from a previously rendered size
-        if (cachedBg != null && cachedBgW != w) ResizeBurstClock.tick()
         // During resize burst: blit stale background rather than re-rendering per pixel of drag.
-        // NativeMarkdownPane's settle timer fires revalidate() after the burst, which triggers
-        // an accurate repaint of all panels.
+        // NOTE: we intentionally do NOT tick ResizeBurstClock here — ticking from paintComponent
+        // caused a renewal loop that suppressed streaming renders (each streaming repaint of a
+        // stale-width bubble would re-arm the burst, preventing NativeMarkdownPane from painting
+        // new content). Only NativeMarkdownPane.getPreferredSize() ticks the clock (a true resize
+        // signal). The settleTimer below self-heals any stale background after the burst expires.
         if (cachedBg != null && ResizeBurstClock.isBurstActive()) {
             UIUtil.drawImage(g, cachedBg!!, 0, 0, null)
+            settleTimer.restart()
             return
         }
         if (cachedBg == null || cachedBgW != w || cachedBgH != h ||
