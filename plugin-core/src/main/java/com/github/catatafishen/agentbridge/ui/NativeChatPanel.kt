@@ -146,6 +146,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         background = UIUtil.getPanelBackground()
         viewport.background = UIUtil.getPanelBackground()
+        // Tick the process-wide burst clock whenever the viewport is resized (i.e. the chat
+        // panel is being dragged/resized). NativeMarkdownPane instances observe this clock to
+        // skip expensive HTML re-layouts on every pixel of drag. Placing the tick here — driven
+        // by the real viewport ComponentResized event — avoids the cascading settle-timer
+        // renewal bug that occurred when the tick lived inside getPreferredSize(): each
+        // settle-phase layout pass would retick the clock, keeping the burst perpetually active
+        // and leaving bubble backgrounds stale after a resize.
+        viewport.addComponentListener(object : ComponentAdapter() {
+            override fun componentResized(e: ComponentEvent) = ResizeBurstClock.tick()
+        })
     }
 
     override val component: JComponent = scrollPane
