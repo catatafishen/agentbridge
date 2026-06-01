@@ -168,6 +168,7 @@ semantic recall of past conversations. Key tools:
 - `memory_kg_add` — add a structured fact (subject-predicate-object triple).
 
 **What makes a good memory (memory_store):**
+
 - ✓ Short (< 300 chars), standalone fact that a new agent session needs
   without reading the full conversation history
 - ✓ Examples: "Project uses Gradle 8 with Kotlin DSL" / "Team prefers
