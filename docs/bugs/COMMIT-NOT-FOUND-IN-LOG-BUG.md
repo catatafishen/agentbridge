@@ -1,7 +1,6 @@
 # "Commit not found in VCS Log" Bug — Recurring Regression
 
-**Status**: Fixed again — Cause 6 removed (`showVcsToolWindow()` premature `tw.activate` in `GitCommitTool`, sonar
-refactoring `9a07ecd67c`)
+**Status**: Fixed — Cause 6 removed + silent-failure fast-path added (§7)
 **Related**: [`FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md)
 
 > ⚠️ **This bug has regressed multiple times.** Read this document end-to-end before
@@ -62,7 +61,8 @@ GitTool.showNewCommitInLog(repoRoot)
     ↓ EDT:
     └─ PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash, repoRoot, openVcsTwCallback)
         ↓
-        ┌─ Snapshot current VcsLogGraphData (the "initial pack")
+        ┌─ FAST-PATH: isCommitIndexed already? → navigateToRevisionInMainLog immediately (§7)
+        ├─ [if not indexed] Snapshot current VcsLogGraphData (the "initial pack")
         ├─ Register DataPackChangeListener
         ├─ VcsLogData.refresh(List.of(repoRootVf))    ← refreshes the COMMIT'S repo, not project base
         ├─ On every DataPack event, check both:
@@ -180,6 +180,38 @@ directly. The VCS tool window is opened exclusively by the `openVcsTw` callback 
 fires only after the `DataPackChangeListener` confirms the graph contains the new commit. Refactoring helpers that call
 `tw.activate` are safe to add only inside that callback.
 
+### §7 — Silent failure when Git4Idea refreshes before our `invokeLater` arrives
+
+**Not a "commit not found" bubble** — navigation simply never happens (10-second timeout).
+
+**Scenario**: On a fast machine (or under light load), Git4Idea's filesystem watcher detects the new commit and FULLY
+refreshes the VCS log graph — storage update + PermanentGraph rebuild + DataPack publication — between the moment
+`runGitIn(repoRoot, "rev-parse", "HEAD")` returns on the pooled thread and the moment our `EdtUtil.invokeLater` callback
+is dispatched on the EDT.
+
+When our callback finally runs:
+
+1. `isCommitIndexed(data, hash, root)` = **true** (commit is in storage and graph).
+2. `data.refresh(List.of(repoRootVf))` is a **no-op** (the log is already fresh; nothing to refresh).
+3. The `DataPackChangeListener` **never fires** (no new DataPack published; graph is stable).
+4. The 10-second timeout fires → listener removed → **no navigation, no bubble**.
+
+The user sees the VCS log open (if it was already open), with the commit present in the log but NOT selected. "Follow
+Agent Files" appears to do nothing.
+
+**Fix**: Check `isCommitIndexed` at the very start of `showRevisionInLogAfterRefreshImpl`, BEFORE registering a listener
+or capturing `initialGraph`. If the commit is already indexed, navigate immediately and return.
+
+**Trade-off / risk**: In the narrow storage-before-graph window (typically < 50 ms) where `containsCommit` has returned
+`true` but the PermanentGraph has not yet been rebuilt, calling `showRevisionInMainLog` may emit the "commit not found"
+bubble (same as Cause 2). In practice the EDT `invokeLater` queue delay is longer than this window — by the time the EDT
+dispatch lands, the rebuild is almost certainly complete. The occasional rare bubble is far better than a guaranteed
+silent failure every time Git4Idea is faster than our dispatch.
+
+**Fix invariant**: The fast-path check in `showRevisionInLogAfterRefreshImpl` must remain at the TOP of the method (after
+`resolveLogProviderRoot`, before `getCurrentGraphIdentity`). Moving it after `getCurrentGraphIdentity` or removing it
+reintroduces the silent failure.
+
 ---
 
 ## Past fix attempts
@@ -193,6 +225,7 @@ fires only after the `DataPackChangeListener` confirms the graph contains the ne
 | `fix/commit-not-found-regression` | Move `tw.activate(null)` into `navigateToRevisionInMainLog` via pre-navigation callback | Addresses Cause 5 — IntelliJ 2025.3 auto-highlights HEAD on activation before graph is rebuilt                              |
 | `9a07ecd67c` (sonar refactoring)  | Extracted `showVcsToolWindow()` helper in `GitCommitTool` for SonarCloud findings       | Called it BEFORE `runGitIn(commit)` — reintroduced premature `tw.activate(null)` (Cause 6)                                  |
 | `fix/recurring-regressions`       | Removed `showVcsToolWindow()` from `GitCommitTool.execute()` entirely                   | Cause 6 removed; `openVcsTw` callback in `showNewCommitInLog()` is the sole VCS TW opener                                   |
+| `fix/commit-not-found-regression` | Added fast-path `isCommitIndexed` check before listener setup                           | Addresses §7 silent failure — navigates immediately when Git4Idea already refreshed the graph before our EDT dispatch       |
 
 ---
 
@@ -261,6 +294,8 @@ Before merging *any* change to the files listed above, manually verify:
   VCS tool window opener is the `openVcsTw` lambda inside `showNewCommitInLog()` (called after graph is confirmed
   fresh).
   Grep for `showVcsToolWindow\|tw\.activate` in `GitCommitTool.java` before merging.
+- [ ] The fast-path `isCommitIndexed` check is present at the TOP of `showRevisionInLogAfterRefreshImpl`, BEFORE
+  `getCurrentGraphIdentity` is called. Removing or moving it reintroduces the §7 silent failure on fast machines.
 
 ---
 
@@ -296,3 +331,7 @@ If the bubble reappears after a future change, in order:
    is a race that triggers IntelliJ 2025.3's "highlight current revision" on a stale graph. The sonar refactoring
    `9a07ecd67c`
    reintroduced this as a separate `showVcsToolWindow()` method called even before `runGitIn(commit)` completed.
+
+7. **No bubble, but VCS Log doesn't navigate at all (silent failure)?** That is §7.
+   The fast-path `isCommitIndexed` check at the top of `showRevisionInLogAfterRefreshImpl` should have caught this.
+   Check that it wasn't accidentally removed or moved AFTER the `getCurrentGraphIdentity` call.
