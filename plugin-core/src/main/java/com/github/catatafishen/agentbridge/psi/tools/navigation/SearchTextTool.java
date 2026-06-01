@@ -149,9 +149,21 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     /**
-     * Builds a file filter predicate for production/test scope filtering.
-     * Returns {@code null} for project/libraries/all scopes (no filtering needed).
+     * Compiles the search pattern from user-provided parameters.
+     *
+     * @return the compiled {@link Pattern}, or {@code null} if {@code query} is
+     *         an invalid regex (only possible when {@code isRegex=true})
      */
+    private static @Nullable Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {
+        try {
+            int flags = isRegex ? 0 : Pattern.LITERAL;
+            if (!caseSensitive) flags |= Pattern.CASE_INSENSITIVE;
+            return Pattern.compile(query, flags);
+        } catch (PatternSyntaxException e) {
+            return null;
+        }
+    }
+
     private @Nullable Predicate<VirtualFile> buildScopeFilter(String scopeName) {
         if (scopeName == null) return null;
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
@@ -166,13 +178,9 @@ public final class SearchTextTool extends NavigationTool {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
-        Pattern pattern;
-        try {
-            int flags = cfg.isRegex() ? 0 : Pattern.LITERAL;
-            if (!cfg.caseSensitive()) flags |= Pattern.CASE_INSENSITIVE;
-            pattern = Pattern.compile(cfg.query(), flags);
-        } catch (PatternSyntaxException e) {
-            String msg = "Error: invalid regex: " + cfg.query() + " — " + e.getDescription();
+        Pattern pattern = compileSearchPattern(cfg.query(), cfg.isRegex(), cfg.caseSensitive());
+        if (pattern == null) {
+            String msg = "Error: invalid regex: " + cfg.query();
             if (cfg.isRegex()) {
                 msg += "\nTip: use | for OR (not \\|), and escape special characters"
                     + " like ( and { with \\ (e.g. \\( and \\{)";

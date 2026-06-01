@@ -353,7 +353,7 @@ public final class TripleExtractor {
         // Usage with subject: "The auth module uses JWT" → auth-module → uses → JWT
         // Requires "the" or "our" prefix to avoid matching pronouns as subjects
         rules.add(new ExtractionRule(
-            Pattern.compile("(?:the |our )(\\w[\\w -]{1,25})\\s+uses?\\s+(.+?)" + end,
+            Pattern.compile("(?:the |our )(\\w[\\w -]{1,35})\\s+uses?\\s+(.+?)" + end,
                 Pattern.CASE_INSENSITIVE),
             "uses", 1, 2));
 
@@ -373,7 +373,7 @@ public final class TripleExtractor {
         // Dependency with subject: "The plugin depends on X"
         // Requires "the" or "our" prefix to avoid matching pronouns as subjects
         rules.add(new ExtractionRule(
-            Pattern.compile("(?:the |our )(\\w[\\w -]{1,25})\\s+(?:depends on|requires|needs)\\s+(.+?)" + end,
+            Pattern.compile("(?:the |our )(\\w[\\w -]{1,35})\\s+(?:depends on|requires|needs)\\s+(.+?)" + end,
                 Pattern.CASE_INSENSITIVE),
             "depends-on", 1, 2));
 

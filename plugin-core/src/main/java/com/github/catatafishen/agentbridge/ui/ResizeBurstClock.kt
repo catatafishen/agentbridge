@@ -1,5 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.ui.ResizeBurstClock.isBurstActive
+import com.github.catatafishen.agentbridge.ui.ResizeBurstClock.tick
+
 /**
  * Process-wide resize burst clock shared by all paint-caching components
  * ([NativeMarkdownPane], [RoundedPanel], etc.).
