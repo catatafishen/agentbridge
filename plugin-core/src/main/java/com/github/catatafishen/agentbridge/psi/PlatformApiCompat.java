@@ -596,6 +596,21 @@ public final class PlatformApiCompat {
             return;
         }
 
+        // Fast-path: if the commit is already indexed, Git4Idea refreshed the VCS log graph
+        // before this EDT invokeLater was dispatched. In that case data.refresh() below would
+        // be a no-op, the DataPackChangeListener would never fire, and we'd silently time out
+        // after 10 seconds with no navigation (the "silent failure" scenario).
+        // Navigating immediately here avoids that. See COMMIT-NOT-FOUND-IN-LOG-BUG.md §7.
+        //
+        // Trade-off: in the narrow (<50 ms) storage-before-graph window where containsCommit
+        // is true but the PermanentGraph is still being rebuilt, showRevisionInMainLog may
+        // emit the "commit not found" bubble. In practice the EDT invokeLater queue delay
+        // exceeds this window, so the fast path is safe for the vast majority of cases.
+        if (isCommitIndexed(data, hash, repoRootVf)) {
+            navigateToRevisionInMainLog(project, repoRootVf, hash, preNavigationCallback);
+            return;
+        }
+
         // Capture the current visible graph identity BEFORE registering the listener. We use this
         // as the freshness baseline: navigation only fires when a NEW graph/data-pack object has
         // been published (i.e. the listener observed a refresh, or the immediate race-check sees

@@ -1,0 +1,49 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Open PR" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="#!/bin/bash
+set -e
+
+echo &quot;=== Open Pull Request ===&quot;
+echo &quot;&quot;
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2&gt;/dev/null) || { echo &quot;ERROR: not in a git repo&quot;; exit 1; }
+echo &quot;Branch: $BRANCH&quot;
+echo &quot;Repo:   catatafishen/agentbridge&quot;
+echo &quot;&quot;
+
+if [ &quot;$BRANCH&quot; = &quot;master&quot; ] || [ &quot;$BRANCH&quot; = &quot;main&quot; ]; then
+  echo &quot;ERROR: cannot open a PR from &apos;$BRANCH&apos;&quot;
+  exit 1
+fi
+
+read -r -p &quot;PR title: &quot; TITLE
+if [ -z &quot;$TITLE&quot; ]; then
+  echo &quot;ERROR: title cannot be empty&quot;
+  exit 1
+fi
+
+echo &quot;&quot;
+echo &quot;PR description (optional — end with Ctrl-D, or just press Enter then Ctrl-D for no body):&quot;
+BODY=$(cat)
+echo &quot;&quot;
+
+echo &quot;Opening PR...&quot;
+gh pr create \
+  --repo catatafishen/agentbridge \
+  --title &quot;$TITLE&quot; \
+  --body &quot;${BODY}&quot; \
+  --base master
+" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="/bin/bash" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="EXECUTE_IN_TERMINAL" value="true" />
+    <option name="EXECUTE_SCRIPT_FILE" value="false" />
+    <method v="2" />
+  </configuration>
+</component>
