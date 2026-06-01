@@ -987,13 +987,20 @@ public final class PlatformApiCompat {
     /**
      * Finds a plugin descriptor by plugin ID.
      *
-     * <p><b>Why extracted:</b> The previous approach iterated {@code PluginManager.getPlugins()},
-     * which was flagged as {@code @ApiStatus.Internal} in 2026.2+. {@code PluginManager.getPlugin(PluginId)}
-     * is the direct O(1) lookup on the same public facade class and is not flagged.</p>
+     * <p><b>Why extracted:</b> Both {@code PluginManagerCore.getPlugin(PluginId)} (the whole
+     * {@code PluginManagerCore} class is {@code @ApiStatus.Internal}) and
+     * {@code PluginManager.getPlugin(PluginId)} (individually annotated {@code @ApiStatus.Internal}
+     * in 2026.2) are flagged by the JetBrains marketplace plugin verifier.
+     * The public replacement is {@code PluginManager.getLoadedPlugins()} — not flagged, available
+     * across all supported IDE versions, and semantically equivalent for our use cases (disabled
+     * plugins have no live classloader or version info).</p>
      */
     private static @Nullable com.intellij.ide.plugins.IdeaPluginDescriptor findPluginById(@NotNull String pluginId) {
         com.intellij.openapi.extensions.PluginId id = com.intellij.openapi.extensions.PluginId.getId(pluginId);
-        return com.intellij.ide.plugins.PluginManager.getPlugin(id);
+        return com.intellij.ide.plugins.PluginManager.getLoadedPlugins().stream()
+                .filter(p -> id.equals(p.getPluginId()))
+                .findFirst()
+                .orElse(null);
     }
 
     /**
