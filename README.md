@@ -359,6 +359,23 @@ agentbridge/
 | [docs/SESSION-RESUME.md](docs/SESSION-RESUME.md)                 | Cross-client session migration                        |
 | [docs/PERMISSIONS.md](docs/PERMISSIONS.md)                       | Per-agent tool permission architecture                |
 
+## Supporting the Project
+
+If you find AgentBridge useful, you can sponsor its development:
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github-sponsors)](https://github.com/sponsors/catatafishen)
+
+AgentBridge is a one-person evening project. A significant part of the development is done
+using AI coding agents, and recent usage-based billing changes (e.g. Copilot UBB) have made
+that significantly more expensive. Sponsorships effectively fund AI credits, which directly
+impacts how fast development and maintenance can continue. I'm happy to keep working on it,
+but the pace will reflect how sustainable that cost is over time.
+
+Contributions are also very welcome — bug reports, issue triage, feature feedback, and pull
+requests. If you're interested in becoming a more regular contributor, feel free to reach out.
+I'm open to adding collaborators to the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+how to get involved.
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

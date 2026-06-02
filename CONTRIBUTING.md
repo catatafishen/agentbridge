@@ -172,6 +172,15 @@ worth more than a hundred stars.
 
 ---
 
+## Supporting the project
+
+If you find AgentBridge useful and want to support its development, you can sponsor it at
+[github.com/sponsors/catatafishen](https://github.com/sponsors/catatafishen). A large part
+of development is done using AI coding agents, and sponsorships directly help cover those
+costs.
+
+---
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
