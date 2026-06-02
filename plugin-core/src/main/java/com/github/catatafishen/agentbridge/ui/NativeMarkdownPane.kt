@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
-import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.LIVE_PANE_AGE_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_SETTLE_MS
 import com.intellij.openapi.util.Disposer

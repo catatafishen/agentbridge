@@ -728,8 +728,32 @@ class ToolUtilsTest {
             "CSharpMethodDeclaration, method",
             "CSharpPropertyDeclaration, field",
             "CSharpFieldDeclaration, field",
-            // Generic fallback
+            // Generic fallback — keyword-based for unknown/future language engines
             "SomeInterfaceDeclaration, interface",
+            "SomeTraitDeclaration, interface",
+            "SomeEnumDeclaration, enum",
+            "SomeStructDeclaration, class",
+            "SomeClassDeclaration, class",
+            "SomeFunctionDeclaration, function",
+            "SomeMethodDeclaration, method",
+            "SomeConstructorDeclaration, method",
+            "SomeFieldDeclaration, field",
+            "SomeVariableDeclaration, field",
+            "SomePropertyDeclaration, field",
+            "SomeConstantDeclaration, field",
+            // CLion Nova C/C++ engine (no OC prefix)
+            "CidrFunctionDeclaration, function",
+            "CidrStructDeclaration, class",
+            "CidrClassDeclaration, class",
+            "CidrMethodDeclaration, method",
+            "CidrFieldDeclaration, field",
+            "CidrVariableDeclaration, field",
+            "NovaFunctionDeclaration, function",
+            "NovaStructDeclaration, class",
+            // Noise nodes that must NOT be classified
+            "CidrCallExpression,",
+            "CidrReferenceExpression,",
+            "CidrParameterDeclaration,",
             // Unknown — should return null
             "PsiWhiteSpaceImpl,",
             "PsiCommentImpl,"

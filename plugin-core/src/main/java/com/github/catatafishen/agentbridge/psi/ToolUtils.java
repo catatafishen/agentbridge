@@ -151,10 +151,39 @@ public final class ToolUtils {
         if (cls.startsWith("Rs")) return classifyRustElement(cls);
         if (cls.startsWith("CSharp")) return classifyCSharpElement(cls);
 
-        // Generic fallback for unrecognized languages
-        if (cls.contains(PSI_PATTERN_INTERFACE) && !cls.contains("Reference")) return ELEMENT_TYPE_INTERFACE;
-        if (cls.contains("Enum") && cls.contains(PSI_PATTERN_CLASS)) return ELEMENT_TYPE_CLASS;
+        // Generic keyword fallback for unrecognized language engines and future language plugins
+        // (e.g. CLion Nova C/C++ engine whose PSI class names don't start with "OC").
+        return classifyUnknownLanguageElement(cls);
+    }
 
+    /**
+     * Generic PSI classification by keyword matching in the class simple name.
+     * <p>
+     * Structural definition nodes almost universally encode their element type in the class name
+     * (e.g. {@code CidrFunctionDeclaration}, {@code NovaStructDeclaration}). We apply exclusions
+     * for non-structural nodes first, then match structural keywords in decreasing specificity order.
+     * <p>
+     * Used as a fallback for CLion Nova C/C++ engine and any other language plugin whose class
+     * name prefix is not handled by the language-specific dispatch in {@link #classifyGenericElement}.
+     */
+    static String classifyUnknownLanguageElement(String cls) {
+        // Exclude non-structural nodes to avoid false positives
+        if (cls.contains("Reference") || cls.contains("Expression") || cls.contains("Literal")
+            || cls.contains("Statement") || cls.contains("Comment") || cls.contains("Import")
+            || cls.contains("Parameter") || cls.contains("Argument")) {
+            return null;
+        }
+        if (cls.contains(PSI_PATTERN_INTERFACE) || cls.contains("Trait")) return ELEMENT_TYPE_INTERFACE;
+        if (cls.contains("Enum")) return ELEMENT_TYPE_ENUM;
+        if (cls.contains("Struct") || cls.contains(PSI_PATTERN_CLASS)) return ELEMENT_TYPE_CLASS;
+        if (cls.contains(PSI_PATTERN_FUNCTION) && !cls.contains("Call") && !cls.contains("Pointer")
+            && !cls.contains("Type")) return ELEMENT_TYPE_FUNCTION;
+        if ((cls.contains(PSI_PATTERN_METHOD) || cls.contains("Constructor")) && !cls.contains("Call"))
+            return ELEMENT_TYPE_METHOD;
+        if (cls.contains("Declarator") || cls.contains(PSI_PATTERN_FIELD)
+            || (cls.contains("Variable") && !cls.contains("Access"))
+            || (cls.contains("Property") && !cls.contains("Access"))
+            || cls.contains("Constant")) return ELEMENT_TYPE_FIELD;
         return null;
     }
 
