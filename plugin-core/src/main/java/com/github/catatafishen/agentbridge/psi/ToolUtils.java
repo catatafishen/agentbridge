@@ -151,20 +151,23 @@ public final class ToolUtils {
         if (cls.startsWith("Rs")) return classifyRustElement(cls);
         if (cls.startsWith("CSharp")) return classifyCSharpElement(cls);
 
-        // Generic keyword fallback for unrecognized language engines and future language plugins
-        // (e.g. CLion Nova C/C++ engine whose PSI class names don't start with "OC").
+        // Language-agnostic fallback: classify by structural keywords in the PSI class name.
+        // This works for any language plugin that follows the near-universal IntelliJ convention
+        // of encoding the element type in the class name (FunctionDeclaration, StructDeclaration, …).
         return classifyUnknownLanguageElement(cls);
     }
 
     /**
-     * Generic PSI classification by keyword matching in the class simple name.
+     * Language-agnostic PSI classification by structural keywords in the class simple name.
      * <p>
-     * Structural definition nodes almost universally encode their element type in the class name
-     * (e.g. {@code CidrFunctionDeclaration}, {@code NovaStructDeclaration}). We apply exclusions
-     * for non-structural nodes first, then match structural keywords in decreasing specificity order.
+     * The IntelliJ platform convention is that PSI node class names encode the element type:
+     * {@code XxxFunctionDeclaration}, {@code XxxClassDeclaration}, {@code XxxFieldDeclaration}, etc.
+     * This method exploits that convention so that any language plugin — present or future — is
+     * automatically supported without needing its own prefix-specific handler.
      * <p>
-     * Used as a fallback for CLion Nova C/C++ engine and any other language plugin whose class
-     * name prefix is not handled by the language-specific dispatch in {@link #classifyGenericElement}.
+     * Non-structural node types (expressions, references, statements, comments, etc.) are excluded
+     * up front to prevent false positives. Structural keywords are then matched in decreasing
+     * specificity order.
      */
     static String classifyUnknownLanguageElement(String cls) {
         // Exclude non-structural nodes to avoid false positives
