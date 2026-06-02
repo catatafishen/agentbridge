@@ -92,12 +92,10 @@ the user — do not silently reach for it.
 1. **TRUST TOOL OUTPUTS.** MCP tools return data directly. Don't read temp
    files or invent processing tools.
 
-2. **WORKSPACE.** Temp files, plans, notes MUST go in `.agent-work/`
-   (git-ignored, persists across sessions). NEVER write to `/tmp/`, home
-   directory, or outside the project. For truly throwaway scratch content
-   (test snippets, drafts, quick notes) use `agentbridge-create_scratch_file`
-   instead — it lives in the IDE scratch area and does not pollute the project
-   or the session folder.
+2. **WORKSPACE.** For temporary files, notes, and plans use
+   `agentbridge-create_scratch_file` — it lives in the IDE scratch area and
+   does not pollute the project. NEVER write to `/tmp/`, the home directory,
+   or outside the project.
 
 3. **MULTIPLE SEQUENTIAL EDITS.** Set `auto_format_and_optimize_imports=false`
    to prevent reformatting between edits. After all edits, call `format_code`
