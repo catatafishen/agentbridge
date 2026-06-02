@@ -385,11 +385,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         val ins = p.insets
 
         val pw = when {
-            p.width > 0 ->
-                p.width - ins.left - ins.right
-
             p.maximumSize.width in 1 until Short.MAX_VALUE.toInt() ->
                 p.maximumSize.width - ins.left - ins.right
+
+            p.width > 0 ->
+                p.width - ins.left - ins.right
 
             else -> return Dimension(0, cachedHeight.takeIf { it > 0 } ?: 1)
         }.takeIf { it > 0 } ?: return Dimension(0, cachedHeight.takeIf { it > 0 } ?: 1)

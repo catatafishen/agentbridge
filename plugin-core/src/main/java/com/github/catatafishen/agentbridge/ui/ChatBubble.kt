@@ -252,7 +252,9 @@ fun createBubble(
                 if (anc is JViewport && anc.width > 0) {
                     val available = (anc.width - insetH).coerceAtLeast(0)
                     return Dimension(
-                        (available * MAX_BUBBLE_WIDTH_FRACTION).toInt().coerceAtLeast(JBUI.scale(200)),
+                        (available * MAX_BUBBLE_WIDTH_FRACTION).toInt()
+                            .coerceAtLeast(JBUI.scale(200))
+                            .coerceAtMost(available),
                         Int.MAX_VALUE
                     )
                 }
