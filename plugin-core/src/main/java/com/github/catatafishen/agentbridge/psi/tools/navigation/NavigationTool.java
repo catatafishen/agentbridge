@@ -5,19 +5,21 @@ import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.intellij.ide.structureView.StructureViewBuilder;
+import com.intellij.ide.structureView.StructureViewModel;
+import com.intellij.ide.structureView.StructureViewTreeElement;
+import com.intellij.ide.structureView.TreeBasedStructureViewBuilder;
+import com.intellij.ide.util.treeView.smartTree.TreeElement;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.PsiClass;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiField;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiModifier;
 import com.intellij.psi.PsiModifierList;
 import com.intellij.psi.PsiModifierListOwner;
 import com.intellij.psi.PsiNamedElement;
-import com.intellij.psi.PsiParameter;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.GlobalSearchScopes;
 import com.intellij.psi.search.PsiSearchHelper;
@@ -187,7 +189,60 @@ public abstract class NavigationTool extends Tool {
         }
     }
 
+    /**
+     * Builds the file outline using the IDE's own {@link StructureViewModel} for the file's language.
+     * This delegates to the same source as IntelliJ's Structure panel, so every language plugin
+     * automatically gets correct, language-aware structural filtering without any classification
+     * code in this plugin.
+     * <p>
+     * Falls back to a PSI walk for file types that don't register a {@code StructureViewBuilder}.
+     */
     protected List<String> collectOutlineEntries(PsiFile psiFile, Document document) {
+        com.intellij.openapi.vfs.VirtualFile vf = psiFile.getVirtualFile();
+        if (vf != null) {
+            StructureViewBuilder svBuilder = StructureViewBuilder.PROVIDER.getStructureViewBuilder(
+                psiFile.getFileType(), vf, project);
+            if (svBuilder instanceof TreeBasedStructureViewBuilder treeBuilder) {
+                StructureViewModel model = treeBuilder.createStructureViewModel(null);
+                try {
+                    List<String> outline = new java.util.ArrayList<>();
+                    visitStructureNode(model.getRoot(), 0, document, outline);
+                    if (!outline.isEmpty()) return outline;
+                } finally {
+                    Disposer.dispose(model);
+                }
+            }
+        }
+        return collectOutlineEntriesByPsiWalk(psiFile, document);
+    }
+
+    /**
+     * Recursively traverses a {@link StructureViewModel} tree node, emitting one outline line per
+     * element. The IDE decides what is structural; {@code classifyElement} provides the type label
+     * ("class", "method", etc.) but a {@code null} result no longer excludes the element — it
+     * falls back to the generic label {@code "symbol"}.
+     */
+    private void visitStructureNode(TreeElement node, int depth, Document document, List<String> outline) {
+        for (TreeElement child : node.getChildren()) {
+            if (!(child instanceof StructureViewTreeElement svte)) continue;
+            Object value = svte.getValue();
+            if (!(value instanceof PsiElement psiElement)) continue;
+            String label = child.getPresentation().getPresentableText();
+            if (label == null || label.isEmpty()) continue;
+            int line = document.getLineNumber(psiElement.getTextOffset()) + 1;
+            String type = ToolUtils.classifyElement(psiElement);
+            String displayLabel = (psiElement instanceof PsiModifierListOwner owner)
+                ? prefixModifiers(owner, label) : label;
+            outline.add(String.format("  %s%d: %s %s",
+                "  ".repeat(depth), line, type != null ? type : "symbol", displayLabel));
+            visitStructureNode(child, depth + 1, document, outline);
+        }
+    }
+
+    /**
+     * PSI-walk fallback used when no {@code StructureViewBuilder} is registered for the language.
+     */
+    private List<String> collectOutlineEntriesByPsiWalk(PsiFile psiFile, Document document) {
         List<String> outline = new java.util.ArrayList<>();
         psiFile.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
             @Override
@@ -198,9 +253,8 @@ public abstract class NavigationTool extends Tool {
                         String type = ToolUtils.classifyElement(element);
                         if (type != null) {
                             int line = document.getLineNumber(element.getTextOffset()) + 1;
-                            int depth = structuralAncestorDepth(element);
                             outline.add(String.format("  %s%d: %s %s",
-                                "  ".repeat(depth), line, type, outlineLabel(named)));
+                                "  ".repeat(0), line, type, named.getName()));
                         }
                     }
                 }
@@ -210,48 +264,7 @@ public abstract class NavigationTool extends Tool {
         return outline;
     }
 
-    private int structuralAncestorDepth(PsiElement element) {
-        int depth = 0;
-        PsiElement parent = element.getParent();
-        while (parent != null) {
-            if (parent instanceof PsiNamedElement && ToolUtils.classifyElement(parent) != null) {
-                depth++;
-            }
-            parent = parent.getParent();
-        }
-        return depth;
-    }
-
-    private String outlineLabel(PsiNamedElement element) {
-        String name = element.getName();
-        StringBuilder label = new StringBuilder(name == null ? "<anonymous>" : name);
-        if (element instanceof PsiMethod method) {
-            appendMethodSignature(label, method);
-        } else if (element instanceof PsiField field) {
-            label.append(": ").append(field.getType().getPresentableText());
-        } else if (element instanceof PsiClass psiClass) {
-            String qualifiedName = psiClass.getQualifiedName();
-            if (qualifiedName != null && !qualifiedName.equals(name)) {
-                label.append(" [").append(qualifiedName).append(']');
-            }
-        }
-        return prefixModifiers(element, label.toString());
-    }
-
-    private static void appendMethodSignature(StringBuilder label, PsiMethod method) {
-        label.append('(');
-        java.util.List<String> parameters = new java.util.ArrayList<>();
-        for (PsiParameter parameter : method.getParameterList().getParameters()) {
-            parameters.add(parameter.getType().getPresentableText());
-        }
-        label.append(String.join(", ", parameters)).append(')');
-        if (!method.isConstructor() && method.getReturnType() != null) {
-            label.append(": ").append(method.getReturnType().getPresentableText());
-        }
-    }
-
-    private static String prefixModifiers(PsiNamedElement element, String label) {
-        if (!(element instanceof PsiModifierListOwner owner)) return label;
+    private static String prefixModifiers(PsiModifierListOwner owner, String label) {
         PsiModifierList modifierList = owner.getModifierList();
         if (modifierList == null) return label;
         java.util.List<String> modifiers = new java.util.ArrayList<>();
