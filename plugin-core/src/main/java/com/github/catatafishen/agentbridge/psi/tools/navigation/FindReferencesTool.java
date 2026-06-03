@@ -98,12 +98,13 @@ public final class FindReferencesTool extends NavigationTool {
             String basePath = project.getBasePath();
             GlobalSearchScope scope = resolveScope(scopeName);
 
-            PsiElement definition = findDefinition(symbol, scope);
-            if (definition != null) {
+            List<PsiElement> definitions = findDefinitions(symbol, scope);
+            for (PsiElement definition : definitions) {
                 collectDefinitionReferences(definition, scope, filePattern, basePath, results, maxResults, offset);
+                if (results.size() >= maxResults) break;
             }
             if (results.isEmpty()) {
-                collectWordReferences(symbol, scope, filePattern, basePath, results, maxResults, offset);
+                collectWordReferences(simpleNameOf(symbol), scope, filePattern, basePath, results, maxResults, offset);
             }
             if (results.isEmpty()) return "No references found for '" + symbol + "'";
             String footer = results.size() >= maxResults

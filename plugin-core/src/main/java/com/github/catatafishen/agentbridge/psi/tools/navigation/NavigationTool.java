@@ -26,7 +26,10 @@ import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Abstract base for code navigation tools. Provides shared constants
@@ -119,23 +122,117 @@ public abstract class NavigationTool extends Tool {
         });
     }
 
-    protected PsiElement findDefinition(String name, GlobalSearchScope scope) {
-        PsiElement[] result = {null};
+    /**
+     * Finds all structural definitions (non-field {@link PsiNamedElement}s) whose simple name
+     * matches the simple name extracted from {@code name}.
+     *
+     * <p>When {@code name} is a qualified symbol (e.g. {@code vsc::for_each_delim} or
+     * {@code ProcessorA.process}), ALL candidates with the matching simple name are collected
+     * and then filtered by comparing qualifier tokens against each candidate's PSI ancestor
+     * name chain. This disambiguation is language-agnostic: it relies only on the PSI tree
+     * structure — namespaces, classes, and modules appear as named ancestors regardless of
+     * language.
+     *
+     * <p>If the qualifier filter produces no match (e.g. package-qualified Java names where
+     * package nodes are not in the PSI tree), all candidates are returned so the caller can
+     * still search references rather than silently returning nothing.
+     *
+     * <p>For unqualified names the word index search stops at the first structural match,
+     * preserving existing behavior.
+     */
+    protected List<PsiElement> findDefinitions(String name, GlobalSearchScope scope) {
+        String simpleName = simpleNameOf(name);
+        boolean isQualified = !simpleName.equals(name);
+
+        List<PsiElement> candidates = new ArrayList<>();
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
                 PsiElement parent = element.getParent();
-                if (parent instanceof PsiNamedElement named && name.equals(named.getName())) {
+                if (parent instanceof PsiNamedElement named && simpleName.equals(named.getName())) {
                     String type = ToolUtils.classifyElement(parent);
                     if (type != null && !type.equals(ToolUtils.ELEMENT_TYPE_FIELD)) {
-                        result[0] = parent;
-                        return false;
+                        candidates.add(parent);
+                        if (!isQualified) return false; // unqualified: stop at first match
                     }
                 }
                 return true;
             },
-            scope, name, UsageSearchContext.IN_CODE, true
+            scope, simpleName, UsageSearchContext.IN_CODE, true
         );
-        return result[0];
+
+        if (isQualified && candidates.size() > 1) {
+            String[] qualifierTokens = qualifierTokensOf(name);
+            List<PsiElement> filtered = candidates.stream()
+                .filter(e -> matchesQualifier(e, qualifierTokens))
+                .collect(Collectors.toList());
+            if (!filtered.isEmpty()) return filtered;
+            // Qualifier didn't match any ancestor chain (e.g. package-qualified Java name);
+            // return all candidates so the caller can still find references.
+        }
+        return candidates;
+    }
+
+    /**
+     * Extracts the rightmost identifier token from a possibly qualified symbol name.
+     * For example: {@code vsc::for_each_delim} → {@code for_each_delim},
+     * {@code com.example.MyClass} → {@code MyClass}.
+     * <p>
+     * The PSI word index only accepts single identifier tokens. Any non-identifier
+     * character (regardless of language) acts as a qualifier separator, so this
+     * extraction is language-agnostic.
+     */
+    protected static String simpleNameOf(String symbol) {
+        for (int i = symbol.length() - 1; i >= 0; i--) {
+            char c = symbol.charAt(i);
+            if (!Character.isLetterOrDigit(c) && c != '_') {
+                return symbol.substring(i + 1);
+            }
+        }
+        return symbol;
+    }
+
+    /**
+     * Extracts the qualifier name tokens from a qualified symbol.
+     * For example: {@code vsc::for_each_delim} → {@code ["vsc"]},
+     * {@code ProcessorA.method} → {@code ["ProcessorA"]},
+     * {@code com.example.MyClass.method} → {@code ["com", "example", "MyClass"]}.
+     */
+    protected static String[] qualifierTokensOf(String symbol) {
+        String simpleName = simpleNameOf(symbol);
+        if (simpleName.equals(symbol)) return new String[0];
+        String qualifier = symbol.substring(0, symbol.length() - simpleName.length());
+        return Arrays.stream(qualifier.split("[^a-zA-Z0-9_]+"))
+            .filter(s -> !s.isEmpty())
+            .toArray(String[]::new);
+    }
+
+    /**
+     * Returns true if the qualifier tokens match a suffix of the named PSI ancestors of
+     * {@code element} (walking up from the element's direct parent to the containing file).
+     *
+     * <p>This is language-agnostic: C++ namespaces, Java/Kotlin classes, Rust modules, and
+     * similar structural containers all appear as {@link PsiNamedElement}s in the PSI tree,
+     * so the check works without any language-specific knowledge.
+     *
+     * <p>Example: method {@code "process"} inside class {@code "ProcessorA"} has ancestor
+     * names {@code ["ProcessorA"]}. Qualifier tokens {@code ["ProcessorA"]} → match.
+     */
+    protected static boolean matchesQualifier(PsiElement element, String[] qualifierTokens) {
+        if (qualifierTokens.length == 0) return true;
+        List<String> ancestorNames = new ArrayList<>();
+        PsiElement current = element.getParent();
+        while (current != null && !(current instanceof PsiFile)) {
+            if (current instanceof PsiNamedElement named && named.getName() != null) {
+                ancestorNames.add(0, named.getName()); // prepend → outer-first order
+            }
+            current = current.getParent();
+        }
+        if (ancestorNames.size() < qualifierTokens.length) return false;
+        int offset = ancestorNames.size() - qualifierTokens.length;
+        for (int i = 0; i < qualifierTokens.length; i++) {
+            if (!qualifierTokens[i].equals(ancestorNames.get(offset + i))) return false;
+        }
+        return true;
     }
 
     protected String buildReferenceEntry(com.intellij.psi.PsiReference ref, String filePattern,

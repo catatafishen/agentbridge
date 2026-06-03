@@ -12,6 +12,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 /**
  * Extended platform tests for {@link GetFileOutlineTool} and
@@ -329,5 +330,94 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
             result.contains("RefCaller_5522.java") || result.contains("RefTarget_5522.java"));
         assertTrue("Expected a 'no references' message, got: " + result,
             result.contains("No references found"));
+    }
+
+    // ─── simpleNameOf ────────────────────────────────────────────────────────
+
+    public void testSimpleNameOfAlreadySimple() {
+        assertEquals("for_each", NavigationTool.simpleNameOf("for_each"));
+    }
+
+    public void testSimpleNameOfCxxScopeResolution() {
+        assertEquals("for_each_delim", NavigationTool.simpleNameOf("vsc::for_each_delim"));
+    }
+
+    public void testSimpleNameOfJavaDotQualified() {
+        assertEquals("MyClass", NavigationTool.simpleNameOf("com.example.MyClass"));
+    }
+
+    public void testSimpleNameOfArrowOperator() {
+        assertEquals("method", NavigationTool.simpleNameOf("obj->method"));
+    }
+
+    public void testSimpleNameOfEmpty() {
+        assertEquals("", NavigationTool.simpleNameOf(""));
+    }
+
+    // ─── qualifierTokensOf ───────────────────────────────────────────────────
+
+    public void testQualifierTokensOfSimpleName() {
+        assertSameElements(Arrays.asList(NavigationTool.qualifierTokensOf("process")));
+    }
+
+    public void testQualifierTokensOfCxxQualified() {
+        assertSameElements(Arrays.asList(NavigationTool.qualifierTokensOf("vsc::for_each_delim")), "vsc");
+    }
+
+    public void testQualifierTokensOfDotQualified() {
+        assertSameElements(Arrays.asList(NavigationTool.qualifierTokensOf("ProcessorA.process")), "ProcessorA");
+    }
+
+    // ─── find_references with qualified names ────────────────────────────────
+
+    /**
+     * Regression test: a qualified symbol name such as {@code "ClassName.method"} previously
+     * returned 0 results because the full qualified string was passed to the word-index search,
+     * which only handles single identifier tokens.
+     */
+    public void testFindReferencesWithQualifiedJavaName() {
+        myFixture.addFileToProject("ProcessorB_2341.java", """
+            public class ProcessorB_2341 {
+                public void processData() {}
+            }
+            """);
+        myFixture.addFileToProject("CallerB_2341.java", """
+            public class CallerB_2341 {
+                public void run() { new ProcessorB_2341().processData(); }
+            }
+            """);
+
+        // Qualified form "ClassName.method" must now find the caller
+        String result = findReferencesTool.execute(args("symbol", "ProcessorB_2341.processData"));
+        assertFalse("Qualified name should find references, got: " + result,
+            result.startsWith("No references found"));
+        assertTrue("Expected CallerB_2341.java in results, got: " + result,
+            result.contains("CallerB_2341.java"));
+    }
+
+    /**
+     * When two classes have identically-named methods, the qualifier must be used to return
+     * only references to the intended class, not the other one.
+     */
+    public void testFindReferencesQualifierDisambiguates() {
+        myFixture.addFileToProject("WidgetA_2342.java", """
+            public class WidgetA_2342 { public void render() {} }
+            """);
+        myFixture.addFileToProject("WidgetB_2342.java", """
+            public class WidgetB_2342 { public void render() {} }
+            """);
+        myFixture.addFileToProject("RendererA_2342.java", """
+            public class RendererA_2342 { public void go() { new WidgetA_2342().render(); } }
+            """);
+        myFixture.addFileToProject("RendererB_2342.java", """
+            public class RendererB_2342 { public void go() { new WidgetB_2342().render(); } }
+            """);
+
+        // Qualified search for WidgetA_2342.render must return RendererA but NOT RendererB
+        String result = findReferencesTool.execute(args("symbol", "WidgetA_2342.render"));
+        assertTrue("Expected RendererA_2342 in results: " + result,
+            result.contains("RendererA_2342.java"));
+        assertFalse("RendererB_2342 must not appear for WidgetA qualifier: " + result,
+            result.contains("RendererB_2342.java"));
     }
 }
