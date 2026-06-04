@@ -201,7 +201,8 @@ public final class ReloadProjectModelTool extends ProjectTool {
             Method getLinked = settings.getClass().getMethod("getLinkedProjectsSettings");
             Collection<?> linked = (Collection<?>) getLinked.invoke(settings);
             return !linked.isEmpty();
-        } catch (Throwable e) { // intentional: must also catch Error (e.g. IllegalAccessError from Java module restrictions)
+        } catch (
+            Throwable e) { // intentional: must also catch Error (e.g. IllegalAccessError from Java module restrictions)
             LOG.warn("Could not check linked projects for " + getSystemName(manager) + " — will skip", e);
             return null;
         }
