@@ -8,8 +8,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "4.1.6",
+    "@vitest/coverage-v8": "4.1.7",
     "happy-dom": "20.9.0",
-    "vitest": "4.1.6"
+    "vitest": "4.1.7"
   }
 }
