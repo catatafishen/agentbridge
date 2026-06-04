@@ -109,8 +109,9 @@ public final class ReloadProjectModelTool extends ProjectTool {
                     for (Object manager : managers) {
                         String name = getSystemName(manager);
                         Boolean linked = hasLinkedProjects(apiUtilClass, manager);
-                        if (linked == Boolean.FALSE) {
-                            sb.append("– ").append(name).append(" (no linked projects — skipped)\n");
+                        if (linked != Boolean.TRUE) {
+                            String reason = linked == null ? "skipped (status check failed — see IDE log)" : "no linked projects — skipped";
+                            sb.append("– ").append(name).append(" (").append(reason).append(")\n");
                             notConfigured++;
                             continue;
                         }
@@ -122,9 +123,15 @@ public final class ReloadProjectModelTool extends ProjectTool {
                         }
                     }
                     if (synced == 0 && notConfigured == managers.size()) {
+                        // Check if this is a CMake project — CMake is not an ExternalSystemManager
+                        String cmakeResult = tryCMakeReload();
+                        if (cmakeResult != null) {
+                            future.complete(cmakeResult);
+                            return;
+                        }
                         future.complete("No build systems are configured for this project. "
-                            + "Open the Gradle tool window and link a project, "
-                            + "or run 'gradle wrapper' and sync from File → Sync Project with Gradle Files.");
+                            + "Trigger a sync manually from the IDE's build tool window "
+                            + "(Gradle, Maven, BSP, etc.) or by opening the relevant project file.");
                         return;
                     }
                     if (synced == 0) {
@@ -181,8 +188,8 @@ public final class ReloadProjectModelTool extends ProjectTool {
 
     /**
      * Returns {@code true} if the project has at least one linked project for the given
-     * build system, {@code false} if definitely none, or {@code null} if the settings
-     * API could not be accessed (treat as "unknown — try anyway").
+     * build system, {@code false} if definitely none, or {@code null} if the status could
+     * not be determined (settings API threw — manager will be skipped).
      */
     private @org.jetbrains.annotations.Nullable Boolean hasLinkedProjects(Class<?> apiUtilClass, Object manager) {
         try {
@@ -194,9 +201,9 @@ public final class ReloadProjectModelTool extends ProjectTool {
             Method getLinked = settings.getClass().getMethod("getLinkedProjectsSettings");
             Collection<?> linked = (Collection<?>) getLinked.invoke(settings);
             return !linked.isEmpty();
-        } catch (Exception e) {
-            LOG.debug("Could not check linked projects for " + getSystemName(manager) + ": " + e.getMessage());
-            return null; // unknown — let the refresh attempt proceed
+        } catch (Throwable e) { // intentional: must also catch Error (e.g. IllegalAccessError from Java module restrictions)
+            LOG.warn("Could not check linked projects for " + getSystemName(manager) + " — will skip", e);
+            return null;
         }
     }
 
@@ -218,6 +225,34 @@ public final class ReloadProjectModelTool extends ProjectTool {
         } catch (Exception e) {
             LOG.warn("ImportSpecBuilder refresh failed, will try legacy API", e);
             return false;
+        }
+    }
+
+    /**
+     * Attempts to trigger a CMake project reload via {@code CMakeWorkspace.scheduleReload()}.
+     * CMake is not an {@code ExternalSystemManager} — it has its own workspace mechanism.
+     *
+     * <p>Returns a success message if CMake reloaded, an error message if CMake is present
+     * but reload failed, or {@code null} if CMake is not available in this IDE installation.
+     */
+    private @org.jetbrains.annotations.Nullable String tryCMakeReload() {
+        Class<?> workspaceClass;
+        try {
+            workspaceClass = Class.forName("com.jetbrains.cidr.cpp.cmake.workspace.CMakeWorkspace");
+        } catch (ClassNotFoundException ignored) {
+            return null; // CMake plugin not installed
+        }
+        try {
+            Method getInstance = workspaceClass.getMethod("getInstance", Project.class);
+            Object workspace = getInstance.invoke(null, project);
+            if (workspace == null) return null; // no CMake project in this IDE instance
+            Method scheduleReload = workspaceClass.getMethod("scheduleReload", boolean.class);
+            scheduleReload.invoke(workspace, true);
+            return "✓ CMake (reload scheduled)\n\nProject model reload triggered for 1 build system(s). "
+                + "Indexing will run in the background.";
+        } catch (Throwable e) { // intentional: must also catch Error (e.g. linkage errors from module restrictions)
+            LOG.warn("CMake reload failed", e);
+            return "✗ CMake (reload failed — see IDE log): " + e.getMessage();
         }
     }
 
