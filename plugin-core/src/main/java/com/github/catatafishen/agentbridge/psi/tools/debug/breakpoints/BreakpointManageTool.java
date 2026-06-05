@@ -335,11 +335,17 @@ public final class BreakpointManageTool extends DebugTool {
         return ApplicationManager.getApplication()
             .runReadAction((Computable<XLineBreakpoint<?>>) () -> {
                 for (XBreakpoint<?> bp : mgr.getAllBreakpoints()) {
-                    if (bp instanceof XLineBreakpoint<?> lbp
-                        && lbp.getSourcePosition() != null
-                        && file.equals(lbp.getSourcePosition().getFile())
-                        && lbp.getLine() == line) {
-                        return lbp;
+                    if (!(bp instanceof XLineBreakpoint<?> lbp)) continue;
+                    if (lbp.getLine() != line) continue;
+                    // Prefer matching via resolved source position (fast path for Java/Kotlin).
+                    // Fall back to raw file URL for C/C++ breakpoints in CLion: the source
+                    // position may be null immediately after toggleLineBreakpoint() because
+                    // the debug index hasn't resolved the symbol yet, but the breakpoint IS
+                    // registered and getFileUrl() / getLine() are always available.
+                    if (lbp.getSourcePosition() != null) {
+                        if (file.equals(lbp.getSourcePosition().getFile())) return lbp;
+                    } else {
+                        if (file.getUrl().equals(lbp.getFileUrl())) return lbp;
                     }
                 }
                 return null;

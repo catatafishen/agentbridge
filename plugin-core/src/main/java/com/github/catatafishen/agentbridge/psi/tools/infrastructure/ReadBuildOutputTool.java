@@ -82,24 +82,66 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
     private String readBuildOutputOnEdt(String tabName, int maxChars, int offset) {
         var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .getToolWindow("Build");
-        if (toolWindow == null) {
-            return "Build tool window is not available (no Java/Kotlin project, or no build has run yet).";
+        if (toolWindow != null) {
+            var contentManager = toolWindow.getContentManager();
+            var contents = contentManager.getContents();
+            if (contents.length > 0) {
+                com.intellij.ui.content.Content target = resolveTargetContent(contentManager, contents, tabName);
+                if (target != null) {
+                    String displayName = target.getDisplayName() != null ? target.getDisplayName() : "Build";
+                    String text = extractBuildTabText(target);
+                    if (text != null && !text.isBlank()) return formatRunOutput(displayName, text, maxChars, offset);
+                }
+                // tab_name not found in Build window, or Build content had no text → fall through to Run window
+            }
         }
-        var contentManager = toolWindow.getContentManager();
-        var contents = contentManager.getContents();
-        if (contents.length == 0) {
-            return "Build tool window is empty — no build has been run yet.";
+        // Build tool window absent or empty — fall back to Run tool window.
+        // In CLion/CMake, builds run as run configurations and write to the Run panel,
+        // not the JPS Build panel. Return that output directly so the agent gets what it needs.
+        return readFromRunWindow(tabName, maxChars, offset);
+    }
+
+    /**
+     * Falls back to the Run tool window when the Build tool window is absent or empty.
+     * Matches the requested tab name if provided, otherwise returns the most recent tab.
+     */
+    private String readFromRunWindow(String tabName, int maxChars, int offset) {
+        var descriptors = com.intellij.openapi.application.ApplicationManager.getApplication()
+            .runReadAction((com.intellij.openapi.util.Computable<java.util.List<com.intellij.execution.ui.RunContentDescriptor>>)
+                () -> new java.util.ArrayList<>(
+                    com.intellij.execution.ui.RunContentManager.getInstance(project).getAllDescriptors()));
+        if (descriptors.isEmpty()) {
+            return "No build output available. The Build tool window is empty and no Run panel tabs exist. "
+                + "Trigger a build or run first.";
         }
-        com.intellij.ui.content.Content target = resolveTargetContent(contentManager, contents, tabName);
-        if (target == null) {
-            return buildTabNotFoundMessage(tabName, contents);
+
+        com.intellij.execution.ui.RunContentDescriptor target = null;
+        if (tabName != null) {
+            for (var d : descriptors) {
+                if (d.getDisplayName() != null && d.getDisplayName().contains(tabName)) {
+                    target = d;
+                    break;
+                }
+            }
+            if (target == null) {
+                var sb = new StringBuilder("No tab matching '").append(tabName)
+                    .append("' in Build or Run panel. Available Run tabs:\n");
+                for (var d : descriptors) sb.append("  - ").append(d.getDisplayName()).append("\n");
+                return sb.toString();
+            }
+        } else {
+            target = descriptors.getLast();
         }
-        String displayName = target.getDisplayName() != null ? target.getDisplayName() : "Build";
-        String text = extractBuildTabText(target);
+
+        var console = target.getExecutionConsole();
+        if (console == null) return "Run tab '" + target.getDisplayName() + "' has no console output.";
+
+        String text = readConsoleTextOnEdt(console);
         if (text == null || text.isBlank()) {
-            return buildEmptyContentMessage(displayName, contents, target);
+            return "Run tab '" + target.getDisplayName() + "' has no text content yet "
+                + "(build may still be running).";
         }
-        return formatRunOutput(displayName, text, maxChars, offset);
+        return formatRunOutput(target.getDisplayName(), text, maxChars, offset);
     }
 
     @Nullable
@@ -112,26 +154,6 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
         }
         var selected = contentManager.getSelectedContent();
         return selected != null ? selected : contents[contents.length - 1];
-    }
-
-    private static String buildTabNotFoundMessage(String tabName, com.intellij.ui.content.Content[] contents) {
-        StringBuilder available = new StringBuilder("No Build tab matching '").append(tabName).append("'. Available tabs:\n");
-        for (var c : contents) available.append("  - ").append(c.getDisplayName()).append("\n");
-        return available.toString();
-    }
-
-    private static String buildEmptyContentMessage(String displayName,
-                                                   com.intellij.ui.content.Content[] contents,
-                                                   com.intellij.ui.content.Content target) {
-        StringBuilder msg = new StringBuilder("Build tab '").append(displayName)
-            .append("' has no text content yet (build may still be running).\n");
-        if (contents.length > 1) {
-            msg.append("Other available tabs:\n");
-            for (var c : contents) {
-                if (c != target) msg.append("  - ").append(c.getDisplayName()).append("\n");
-            }
-        }
-        return msg.toString();
     }
 
     private static @Nullable com.intellij.ui.content.Content findBuildContentByName(
