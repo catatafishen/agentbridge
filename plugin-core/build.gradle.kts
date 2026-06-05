@@ -84,6 +84,14 @@ dependencies {
     testImplementation("com.code-intelligence:jazzer-api:${providers.gradleProperty("jazzerVersion").get()}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
+    // JaCoCo offline instrumentation runtime: when the sandbox JAR classes call
+    // Offline.getProbes() (baked in by jacocoOfflineInstrument), PathClassLoader must
+    // be able to find org.jacoco.agent.rt.internal_*.Offline. The javaagent adds it to
+    // the bootstrap classloader locally, but IntelliJ's PathClassLoader bypasses that
+    // chain in CI. Adding the runtime JAR to testRuntimeOnly makes it directly available.
+    testRuntimeOnly("org.jacoco:org.jacoco.agent:${jacoco.toolVersion}") {
+        artifact { classifier = "runtime" }
+    }
 }
 
 // Ensure annotations 26.x is used everywhere (needed for TYPE_USE @NotNull on functional interfaces)
