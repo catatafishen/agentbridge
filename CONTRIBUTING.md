@@ -152,6 +152,56 @@ worth more than a hundred stars.
 
 ---
 
+## Test coverage
+
+The overall coverage number (~40% on Codecov/SonarQube) is a blend of two very different groups:
+
+| Module        | Language           | Typical coverage | Reason                                           |
+|---------------|--------------------|------------------|--------------------------------------------------|
+| `chat-ui`     | TypeScript         | ~60–70%          | Standard Jest/Vitest with full JaCoCo visibility |
+| `mcp-server`  | TypeScript/Node.js | ~60–70%          | Standard Node.js test runner                     |
+| `plugin-core` | Java/Kotlin        | **~2%**          | IntelliJ Platform class loader issue (see below) |
+
+### Why plugin-core Java coverage is near 0%
+
+All tests in the `plugin-core` module run inside the **IntelliJ Platform test runner**,
+which replaces the JVM system class loader with `com.intellij.util.lang.PathClassLoader`
+(`-Djava.system.class.loader=com.intellij.util.lang.PathClassLoader`). This custom class
+loader loads plugin classes directly from the pre-built plugin JAR (the test sandbox),
+bypassing the standard `ClassLoader.defineClass()` path.
+
+JaCoCo instruments classes by inserting probes via a `ClassFileTransformer` registered
+with the JVM's instrumentation API. The IntelliJ class loader bypasses this transformer,
+so **JaCoCo cannot instrument any class loaded from the plugin JAR** — which is every
+non-trivial plugin class.
+
+**Consequence:** Tests written with `BasePlatformTestCase` (most of the `psi/tools/*`
+tests) correctly exercise the production code and pass, but JaCoCo records 0% for those
+code paths. The `plugin-core` coverage in Codecov patch reports will show 0% for Java
+changes even when real tests are added.
+
+This is a known limitation of IntelliJ plugin development. A proper fix would require
+either:
+
+- Restructuring all tests to avoid `BasePlatformTestCase` (not feasible for tool code
+  that interacts with the IDE's PSI/VFS APIs)
+- A custom JaCoCo + IntelliJ class loader integration (significant engineering work)
+
+**What this means in practice:**
+
+- The `codecov/patch` CI check will fail for Java changes. This is expected and is why
+  the threshold in `codecov.yml` is set to 15% (with UI classes excluded). For changes
+  to `psi/tools/**` that are covered by `BasePlatformTestCase` tests, the check will
+  still fail — this is a false negative, not a real coverage gap.
+- If you add a `BasePlatformTestCase` test for a tool class, the test will run and pass
+  but will NOT appear in coverage reports. This is intentional — do not skip writing
+  tests just because they won't show up in coverage.
+- Pure unit tests (no `BasePlatformTestCase`) for helper/utility classes should in theory
+  show coverage, but in practice they often don't because the IntelliJ class loader
+  handles all `plugin-core` classes the same way.
+
+---
+
 ## Reporting issues
 
 - Use GitHub Issues for bugs and feature requests
