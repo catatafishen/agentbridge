@@ -154,51 +154,45 @@ worth more than a hundred stars.
 
 ## Test coverage
 
-The overall coverage number (~40% on Codecov/SonarQube) is a blend of two very different groups:
+The overall coverage number (~50% on Codecov/SonarQube) reflects real test coverage
+across the project. Plugin-core Java/Kotlin coverage was historically near zero due to a
+class loader issue (fixed in June 2025 via JaCoCo offline instrumentation — see below).
 
-| Module        | Language           | Typical coverage | Reason                                           |
-|---------------|--------------------|------------------|--------------------------------------------------|
-| `chat-ui`     | TypeScript         | ~60–70%          | Standard Jest/Vitest with full JaCoCo visibility |
-| `mcp-server`  | TypeScript/Node.js | ~60–70%          | Standard Node.js test runner                     |
-| `plugin-core` | Java/Kotlin        | **~2%**          | IntelliJ Platform class loader issue (see below) |
+| Module        | Language           | Typical coverage             |
+|---------------|--------------------|------------------------------|
+| `chat-ui`     | TypeScript         | ~60–70%                      |
+| `mcp-server`  | TypeScript/Node.js | ~60–70%                      |
+| `plugin-core` | Java/Kotlin        | **~49% lines, ~59% methods** |
 
-### Why plugin-core Java coverage is near 0%
+### How plugin-core coverage works (offline instrumentation)
 
 All tests in the `plugin-core` module run inside the **IntelliJ Platform test runner**,
-which replaces the JVM system class loader with `com.intellij.util.lang.PathClassLoader`
-(`-Djava.system.class.loader=com.intellij.util.lang.PathClassLoader`). This custom class
-loader loads plugin classes directly from the pre-built plugin JAR (the test sandbox),
-bypassing the standard `ClassLoader.defineClass()` path.
+which loads plugin classes from the test sandbox JAR via
+`com.intellij.util.lang.PathClassLoader`. This custom class loader bypasses JaCoCo's
+standard `ClassFileTransformer`, so on-the-fly instrumentation never fires for plugin
+classes.
 
-JaCoCo instruments classes by inserting probes via a `ClassFileTransformer` registered
-with the JVM's instrumentation API. The IntelliJ class loader bypasses this transformer,
-so **JaCoCo cannot instrument any class loaded from the plugin JAR** — which is every
-non-trivial plugin class.
+**The fix** (`plugin-core/build.gradle.kts`): JaCoCo offline instrumentation bakes
+coverage probes directly into the class bytecode before the JAR is assembled:
 
-**Consequence:** Tests written with `BasePlatformTestCase` (most of the `psi/tools/*`
-tests) correctly exercise the production code and pass, but JaCoCo records 0% for those
-code paths. The `plugin-core` coverage in Codecov patch reports will show 0% for Java
-changes even when real tests are added.
+1. `jacocoOfflineInstrument` — after IntelliJ's `instrumentCode` task, runs JaCoCo's
+   `InstrumentTask` on the compiled class files, producing probe-instrumented copies.
+2. `instrumentedJar.doLast` — updates the plugin JAR with the probe-instrumented classes.
+3. `jacocoInstrumentSandbox` — after `prepareTestSandbox`, updates all plugin JARs in
+   `.intellijPlatform/sandbox/` directly (handles UP-TO-DATE sandbox reuse).
+4. Agent `excludes` — adds `com.github.catatafishen.agentbridge.*` to JaCoCo agent
+   exclusions so the on-the-fly agent doesn't throw `"Cannot process instrumented class"`
+   for the pre-instrumented sandbox classes.
 
-This is a known limitation of IntelliJ plugin development. A proper fix would require
-either:
-
-- Restructuring all tests to avoid `BasePlatformTestCase` (not feasible for tool code
-  that interacts with the IDE's PSI/VFS APIs)
-- A custom JaCoCo + IntelliJ class loader integration (significant engineering work)
+When PathClassLoader loads the pre-instrumented classes from the sandbox JAR, the probes
+fire and coverage data is recorded correctly.
 
 **What this means in practice:**
 
-- The `codecov/patch` CI check will fail for Java changes. This is expected and is why
-  the threshold in `codecov.yml` is set to 15% (with UI classes excluded). For changes
-  to `psi/tools/**` that are covered by `BasePlatformTestCase` tests, the check will
-  still fail — this is a false negative, not a real coverage gap.
-- If you add a `BasePlatformTestCase` test for a tool class, the test will run and pass
-  but will NOT appear in coverage reports. This is intentional — do not skip writing
-  tests just because they won't show up in coverage.
-- Pure unit tests (no `BasePlatformTestCase`) for helper/utility classes should in theory
-  show coverage, but in practice they often don't because the IntelliJ class loader
-  handles all `plugin-core` classes the same way.
+- Coverage numbers for plugin-core Java/Kotlin code are now meaningful (~49% lines).
+- `jacocoInstrumentSandbox` uses `outputs.upToDateWhen { false }` and always re-runs
+  when tests run. This adds ~1–2 seconds per test run.
+- Codecov `patch` coverage checks now work correctly for Java changes.
 
 ---
 

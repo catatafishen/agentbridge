@@ -6,11 +6,9 @@ codecov:
 # runtime to instantiate and cannot be unit-tested in isolation. They are covered
 # by manual testing and the integration-tests module.
 #
-# Note: plugin-core tool classes (psi/tools/**) ARE tested via BasePlatformTestCase,
-# but JaCoCo cannot instrument them because the IntelliJ Platform test runner loads
-# plugin classes from the test sandbox JAR via PathClassLoader, bypassing JaCoCo's
-# ClassFileTransformer. The patch check will show 0% for these classes even when
-# tests exist. See CONTRIBUTING.md#test-coverage for full explanation.
+# Note: plugin-core tool classes (psi/tools/**) are tested via BasePlatformTestCase
+# with JaCoCo offline instrumentation (see CONTRIBUTING.md#test-coverage). Coverage
+# now works correctly for these classes (~49% line coverage as of June 2025).
 ignore:
   - "**/*Panel.java"
   - "**/*Panel.kt"
