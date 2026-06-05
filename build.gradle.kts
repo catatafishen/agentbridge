@@ -1,3 +1,13 @@
+buildscript {
+    // SLF4J 2.x provider for the SonarQube scanner — without this, the scanner's
+    // internal logging silently falls back to NOP, hiding diagnostic messages.
+    // The buildscript classpath is visible to Gradle's build ClassLoader which the
+    // SonarQube plugin scanner uses for SLF4J provider discovery.
+    dependencies {
+        classpath("org.slf4j:slf4j-simple:2.0.9")
+    }
+}
+
 plugins {
     id("java")
     id("org.sonarqube") version "7.3.0.8198"

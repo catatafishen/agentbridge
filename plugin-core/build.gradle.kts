@@ -63,15 +63,6 @@ dependencies {
     // SQLite JDBC (used by OpenCode session import)
     implementation("org.xerial:sqlite-jdbc:${providers.gradleProperty("sqliteJdbcVersion").get()}")
 
-    // IntelliJ's bundled Lucene (used by MemoryStore for vector search).
-    // In IJ 2025.x the JAR is in lib/modules/ and auto-exposed by the Gradle plugin.
-    // In IJ 2026.x+ it moved to lib/ and must be added explicitly as compileOnly.
-    run {
-        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull ?: return@run
-        val jar = file("$localPath/lib/intellij.libraries.lucene.common.jar")
-        if (jar.exists()) compileOnly(files(jar))
-    }
-
     testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
     testImplementation(
         "junit:junit:${
@@ -84,14 +75,6 @@ dependencies {
     testImplementation("com.code-intelligence:jazzer-api:${providers.gradleProperty("jazzerVersion").get()}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
-    // JaCoCo offline instrumentation runtime: when the sandbox JAR classes call
-    // Offline.getProbes() (baked in by jacocoOfflineInstrument), PathClassLoader must
-    // be able to find org.jacoco.agent.rt.internal_*.Offline. The javaagent adds it to
-    // the bootstrap classloader locally, but IntelliJ's PathClassLoader bypasses that
-    // chain in CI. Adding the runtime JAR to testRuntimeOnly makes it directly available.
-    testRuntimeOnly("org.jacoco:org.jacoco.agent:${jacoco.toolVersion}") {
-        artifact { classifier = "runtime" }
-    }
 }
 
 // Ensure annotations 26.x is used everywhere (needed for TYPE_USE @NotNull on functional interfaces)
@@ -667,10 +650,21 @@ tasks {
         doLast {
             val jarFile = outputs.files.first { it.extension == "jar" }
             val classesDir = jacocoOfflineDir.get().asFile
+            val agentJar = configurations.jacocoAgent.get().singleFile
             ant.withGroovyBuilder {
                 "jar"("destfile" to jarFile.absolutePath, "update" to "true") {
+                    // Inject offline-instrumented classes
                     "fileset"("dir" to classesDir.absolutePath) {
                         "include"("name" to "**/*.class")
+                    }
+                    // Inline the JaCoCo runtime classes (Offline etc.) directly into the
+                    // plugin JAR so PathClassLoader finds them in the same classloader context.
+                    // Adding a separate jacoco-offline-runtime.jar to the sandbox lib/ doesn't
+                    // work in IntelliJ 2025.3+: the plugin.xml <classpath> entries are generated
+                    // by patchPluginXml before our task runs, so extra JARs added later are
+                    // invisible to PluginClassLoader.
+                    "zipfileset"("src" to agentJar.absolutePath) {
+                        "include"("name" to "org/jacoco/agent/rt/internal_*/**")
                     }
                 }
             }
@@ -686,10 +680,20 @@ tasks {
         outputs.upToDateWhen { false }
         doLast {
             val classesDir = jacocoOfflineDir.get().asFile
-            var count = 0
-            fileTree(projectDir.resolve(".intellijPlatform/sandbox")).matching {
-                include("*/plugins/plugin-core/lib/*.jar")
+            // Resolve the JaCoCo agent JAR: it contains org.jacoco.agent.rt.internal_*.Offline,
+            // which offline-instrumented classes call at class-initialization time. PathClassLoader
+            // in IntelliJ's test sandbox only looks in its own URL list (sandbox + platform), not
+            // in the Gradle test classpath or the JVM bootstrap, so we must place the JAR there.
+            val jacocoAgentJar = configurations.jacocoAgent.get().singleFile
+
+            // Find all plugin JARs in the sandbox using ** (matches any path depth).
+            // Sandbox structure: .intellijPlatform/sandbox/plugin-core/IU-<version>/plugins/plugin-core/lib/*.jar
+            var sandboxCount = 0
+            fileTree(rootDir.resolve(".intellijPlatform/sandbox")).matching {
+                include("**/plugins/plugin-core/lib/*.jar")
             }.forEach { sandboxJar ->
+                val libDir = sandboxJar.parentFile
+                // Inject offline-instrumented class files into the plugin JAR
                 ant.withGroovyBuilder {
                     "jar"("destfile" to sandboxJar.absolutePath, "update" to "true") {
                         "fileset"("dir" to classesDir.absolutePath) {
@@ -697,9 +701,16 @@ tasks {
                         }
                     }
                 }
-                count++
+                // Copy the JaCoCo agent JAR into the same lib/ directory so PathClassLoader
+                // can resolve Offline.getProbes() — PathClassLoader loads ALL JARs from lib/
+                copy {
+                    from(jacocoAgentJar)
+                    into(libDir)
+                    rename { "jacoco-offline-runtime.jar" }
+                }
+                sandboxCount++
             }
-            logger.lifecycle("JaCoCo offline: updated $count sandbox JAR(s) with ${classesDir.listFiles()?.size ?: 0} instrumented class roots")
+            logger.lifecycle("JaCoCo offline: updated $sandboxCount sandbox JAR(s); copied agent runtime to lib dirs")
         }
     }
 
