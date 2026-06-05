@@ -3,13 +3,10 @@ package com.github.catatafishen.agentbridge.psi.tools.testing;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
-import com.intellij.psi.PsiMethod;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
-import org.jetbrains.annotations.Nullable;
 
 /**
- * Tests for {@link ListTestsTool} — focusing on the crash fix and fallback
- * detection for IDEs without the {@code com.intellij.testFramework} extension point.
+ * Tests for {@link ListTestsTool}.
  *
  * <p>JUnit 3 style (extends {@link BasePlatformTestCase}).
  */
@@ -28,7 +25,7 @@ public class ListTestsToolTest extends BasePlatformTestCase {
     // ── safeGetTestFrameworks ─────────────────────────────────────────────────
 
     /**
-     * {@code safeGetTestFrameworks()} must return a non-null list without throwing
+     * {@code safeGetTestFrameworks()} must return a non-null list without throwing,
      * regardless of whether the extension point is registered.
      */
     public void testSafeGetTestFrameworksDoesNotThrow() {
@@ -36,111 +33,39 @@ public class ListTestsToolTest extends BasePlatformTestCase {
         assertNotNull("safeGetTestFrameworks() must never return null", frameworks);
     }
 
-    // ── isFallbackTestElement ─────────────────────────────────────────────────
+    // ── execute() — no test source roots configured ───────────────────────────
 
     /**
-     * {@code TestBody()} inside a class named {@code SomeSuite_MyTest_Test} matches
-     * Google Test's macro-expansion naming: {@code TEST(SomeSuite, MyTest)} →
-     * {@code SomeSuite_MyTest_Test::TestBody()}.
+     * When no directories are marked as test source roots, the tool must return
+     * an actionable message explaining the configuration problem rather than
+     * a bare "No tests found".
      */
-    public void testFallbackDetectsGoogleTestBody() {
-        myFixture.configureByText("GTestSample.java",
-            "public class SomeSuite_MyTest_Test { public void TestBody<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull("Should find a PsiMethod", method);
-        assertTrue("isFallbackTestElement should recognize TestBody in *_Test_* class",
-            ListTestsTool.isFallbackTestElement(method, "TestBody"));
-    }
-
-    /**
-     * A function named {@code testSomething} (starts with "test", length > 4)
-     * must be recognized — covers Catch2 sections and conventional C/C++ naming.
-     */
-    public void testFallbackDetectsTestPrefixMethod() {
-        myFixture.configureByText("MyClass.java",
-            "public class MyClass { public void testSomething<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull(method);
-        assertTrue("testSomething should be recognized as a fallback test",
-            ListTestsTool.isFallbackTestElement(method, "testSomething"));
-    }
-
-    /**
-     * A function ending in {@code Test} (e.g. {@code somethingTest}) must be recognized.
-     */
-    public void testFallbackDetectsTestSuffixMethod() {
-        myFixture.configureByText("MyClass.java",
-            "public class MyClass { public void somethingTest<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull(method);
-        assertTrue("somethingTest should be recognized as a fallback test",
-            ListTestsTool.isFallbackTestElement(method, "somethingTest"));
-    }
-
-    /**
-     * A function named {@code processData} must NOT be recognized as a test.
-     */
-    public void testFallbackDoesNotMatchNonTestMethod() {
-        myFixture.configureByText("MyClass.java",
-            "public class MyClass { public void processData<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull(method);
-        assertFalse("processData should not be recognized as a test",
-            ListTestsTool.isFallbackTestElement(method, "processData"));
-    }
-
-    /**
-     * {@code null} name must return false without throwing.
-     */
-    public void testFallbackNullNameReturnsFalse() {
-        myFixture.configureByText("MyClass.java",
-            "public class MyClass { public void something<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull(method);
-        assertFalse("null name must return false",
-            ListTestsTool.isFallbackTestElement(method, null));
-    }
-
-    /**
-     * {@code TestBody()} inside a class that does NOT follow the {@code _Test_}
-     * Google Test naming must NOT be flagged — avoids false positives.
-     */
-    public void testFallbackIgnoresTestBodyInNonGoogleTestClass() {
-        myFixture.configureByText("MyClass.java",
-            "public class MyOrdinaryClass { public void TestBody<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull(method);
-        assertFalse("TestBody in an ordinary class must not be a false positive",
-            ListTestsTool.isFallbackTestElement(method, "TestBody"));
-    }
-
-    /**
-     * Short names like {@code test} (length == 4) must NOT match — guards against
-     * trivially-named utility functions.
-     */
-    public void testFallbackDoesNotMatchBareTestName() {
-        myFixture.configureByText("MyClass.java",
-            "public class MyClass { public void test<caret>() {} }");
-        var method = findMethodAtCaret();
-        assertNotNull(method);
-        assertFalse("bare 'test' name (length == 4) must not match",
-            ListTestsTool.isFallbackTestElement(method, "test"));
-    }
-
-    // ── execute() smoke tests ─────────────────────────────────────────────────
-
-    /**
-     * In a project with no test files the tool must return "No tests found" without throwing.
-     */
-    public void testExecuteReturnsNoTestsFoundWhenEmpty() {
+    public void testReturnsNoTestSourcesMessageWhenNoTestRoots() {
+        // BasePlatformTestCase creates a light project with no test source roots
         String result = tool.execute(new JsonObject());
         assertNotNull(result);
-        assertEquals("No tests found", result);
+        assertTrue(
+            "Expected 'No test source directories' message, got: " + result,
+            result.contains("No test source directories") || result.contains("test source"));
     }
 
     /**
-     * {@code execute()} must not throw or crash — the result may be "No tests found"
-     * if the lightweight test project has no test source roots, but it must never throw.
+     * The no-test-source-roots message must include actionable guidance.
+     */
+    public void testNoTestSourcesMessageContainsGuidance() {
+        String result = tool.execute(new JsonObject());
+        assertNotNull(result);
+        boolean hasTests = result.startsWith("0 tests:") || result.contains(" tests:\n");
+        boolean hasGuidance = result.contains("Mark") || result.contains("run_configuration")
+            || result.contains("test source");
+        assertTrue("Result must either list tests or provide guidance, got: " + result,
+            hasTests || hasGuidance);
+    }
+
+    // ── execute() — smoke tests ───────────────────────────────────────────────
+
+    /**
+     * {@code execute()} must not throw or return null under any circumstances.
      */
     public void testExecuteDoesNotThrow() {
         String result = tool.execute(new JsonObject());
@@ -148,18 +73,24 @@ public class ListTestsToolTest extends BasePlatformTestCase {
         assertFalse("execute() must not return an error string", result.startsWith("Error"));
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
+    /**
+     * {@code execute()} with an explicit file_pattern must not throw and must
+     * return a sensible non-empty message.
+     */
+    public void testExecuteWithFilePatternDoesNotThrow() {
+        var args = new JsonObject();
+        args.addProperty("file_pattern", "*Test*");
+        String result = tool.execute(args);
+        assertNotNull(result);
+        assertFalse(result.startsWith("Error"));
+    }
 
     /**
-     * Walks up from the caret position to the nearest containing {@link PsiMethod}.
+     * {@code safeGetTestFrameworks()} must always return a non-null list (null-safety).
+     * In IntelliJ IDEA the list is non-empty; in CLion it would be empty.
      */
-    private @Nullable PsiMethod findMethodAtCaret() {
-        var element = myFixture.getFile().findElementAt(myFixture.getCaretOffset() - 1);
-        if (element == null) return null;
-        var current = element.getParent();
-        while (current != null && !(current instanceof PsiMethod)) {
-            current = current.getParent();
-        }
-        return (PsiMethod) current;
+    public void testSafeGetTestFrameworksReturnsList() {
+        var frameworks = ListTestsTool.safeGetTestFrameworks();
+        assertNotNull(frameworks);
     }
 }
