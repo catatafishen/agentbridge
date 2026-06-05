@@ -393,18 +393,39 @@ public class ProjectToolsTest extends BasePlatformTestCase {
 
     /**
      * When {@code CMakeWorkspace} is not on the classpath (standard IDEA test sandbox),
-     * {@code tryCMakeReload()} returns {@code null} and the tool falls back to the
-     * generic "No build systems configured" message — not an exception, not blank, not CMake-specific.
+     * {@code tryCMakeReload()} must return {@code null} — ClassNotFoundException is the
+     * "CMake not installed" signal, not an error.
      */
-    public void testReloadProjectModelWithoutCMakeFallsBackToGenericMessage() throws Exception {
-        String result = executeSyncReload();
-        // CMakeWorkspace not available → null → show generic message
-        // Accept any valid non-crash output: generic message, per-manager skip lines, or a success line
-        boolean isValid = result.contains("No build systems")
-            || result.contains("external build systems")
-            || result.contains("no linked projects")
-            || result.contains("status check failed")
-            || result.contains("✓") || result.contains("✗");
-        assertTrue("Expected valid fallback output, got: " + result, isValid);
+    public void testTryCMakeReloadReturnsNullWhenCMakeNotInstalled() {
+        ReloadProjectModelTool tool = new ReloadProjectModelTool(getProject());
+        assertNull("tryCMakeReload() must return null when CMakeWorkspace is not on classpath",
+            tool.tryCMakeReload());
+    }
+
+    /**
+     * {@code hasLinkedProjects()} must return {@code null} (and log a warning rather than
+     * propagating) when the manager's {@code getSystemId()} throws an unchecked Error —
+     * the Java 25 module-access scenario that caused the original crash (PR #804).
+     *
+     * <p>Uses a stub manager whose {@code getSystemId()} method throws
+     * {@link IllegalAccessError} to simulate the Meson crash path.
+     */
+    public void testHasLinkedProjectsReturnsNullOnError() throws Exception {
+        // Create a stub manager class at runtime with a getSystemId() that throws
+        // IllegalAccessError — same error class thrown by Java 25 module access violations.
+        Object badManager = new Object() {
+            @SuppressWarnings("unused")
+            public Object getSystemId() {
+                throw new IllegalAccessError("simulated Java 25 module access error");
+            }
+        };
+
+        ReloadProjectModelTool tool = new ReloadProjectModelTool(getProject());
+        Class<?> apiUtilClass = Class.forName(
+            "com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil");
+        Boolean result = tool.hasLinkedProjects(apiUtilClass, badManager);
+
+        assertNull("hasLinkedProjects() must return null when manager throws Error, not propagate",
+            result);
     }
 }

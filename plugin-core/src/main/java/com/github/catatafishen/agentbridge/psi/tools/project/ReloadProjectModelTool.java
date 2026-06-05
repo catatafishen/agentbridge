@@ -190,8 +190,10 @@ public final class ReloadProjectModelTool extends ProjectTool {
      * Returns {@code true} if the project has at least one linked project for the given
      * build system, {@code false} if definitely none, or {@code null} if the status could
      * not be determined (settings API threw — manager will be skipped).
+     *
+     * <p>Package-private for testing.
      */
-    private @org.jetbrains.annotations.Nullable Boolean hasLinkedProjects(Class<?> apiUtilClass, Object manager) {
+    @org.jetbrains.annotations.Nullable Boolean hasLinkedProjects(Class<?> apiUtilClass, Object manager) {
         try {
             Object systemId = manager.getClass().getMethod("getSystemId").invoke(manager);
             Class<?> systemIdClass = Class.forName(
@@ -235,8 +237,10 @@ public final class ReloadProjectModelTool extends ProjectTool {
      *
      * <p>Returns a success message if CMake reloaded, an error message if CMake is present
      * but reload failed, or {@code null} if CMake is not available in this IDE installation.
+     *
+     * <p>Package-private for testing.
      */
-    private @org.jetbrains.annotations.Nullable String tryCMakeReload() {
+    @org.jetbrains.annotations.Nullable String tryCMakeReload() {
         Class<?> workspaceClass;
         try {
             workspaceClass = Class.forName("com.jetbrains.cidr.cpp.cmake.workspace.CMakeWorkspace");
