@@ -153,4 +153,107 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
 
         assertEquals("Error: 'symbol' parameter is required", result);
     }
+
+    /**
+     * Invalid {@code direction} values must be rejected up-front with a clear error
+     * listing the supported values, regardless of whether Java PSI is available.
+     */
+    public void testGetTypeHierarchyRejectsInvalidDirection() throws Exception {
+        String result = getTypeHierarchyTool.execute(args(
+            "symbol", "java.lang.Object",
+            "direction", "sideways"
+        ));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected validation error for bad direction, got: " + result,
+            result.startsWith("Error:") && result.contains("sideways"));
+        assertTrue("Error must list supported directions, got: " + result,
+            result.contains("supertypes") && result.contains("subtypes") && result.contains("both"));
+    }
+
+    /**
+     * Regression for bug #6 in issue-794: requesting {@code direction=both} in a non-Java
+     * IDE (e.g. CLion) used to hard-fail with "Direction 'both' requires a Java project".
+     * The tool now falls back to a language-agnostic subtypes-only result and appends a clear
+     * note explaining that supertypes need the Java module. This matches the most common user
+     * intent of "show me what I can about this type" without losing partial results.
+     */
+    public void testGetTypeHierarchyBothInNonJavaReturnsSubtypesWithNote() throws Exception {
+        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("type-hierarchy-test");
+        try {
+            java.nio.file.Path file = tempDir.resolve("Base_7421.java");
+            java.nio.file.Files.writeString(file, """
+                public class Base_7421 {}
+                """);
+            VirtualFile vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                .refreshAndFindFileByNioFile(file);
+            assertNotNull("Failed to register temp file in VFS", vf);
+
+            GetTypeHierarchyTool nonJavaTool = new GetTypeHierarchyTool(getProject(), false);
+            String result = nonJavaTool.execute(args(
+                "symbol", "Base_7421",
+                "direction", "both",
+                "file", vf.getPath(),
+                "line", "1"
+            ));
+
+            assertNotNull("Result must not be null", result);
+            // The pre-fix code returned "Error: Direction 'both' requires a Java project" — must
+            // no longer happen.
+            assertFalse("Expected no 'requires a Java project' error, got: " + result,
+                result.contains("requires a Java project"));
+            // The subtypes path runs successfully (the test fixture's project scope may not
+            // contain descendants of Base_7421, so the body may be "No subtypes ..." — that's
+            // fine, we only care that the fallback was taken and the note was appended).
+            assertTrue("Expected supertypes-limitation note in result, got: " + result,
+                result.contains("supertypes lookup is not supported") && result.contains("Type Hierarchy view"));
+        } finally {
+            try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(tempDir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try { java.nio.file.Files.deleteIfExists(p); } catch (java.io.IOException ignored) { /* best-effort cleanup */ }
+                });
+            }
+        }
+    }
+
+    /**
+     * In a non-Java IDE, {@code direction=supertypes} cannot be served (no language-agnostic
+     * supertype search exists). The tool must return a clear, actionable error pointing the
+     * user at {@code direction=subtypes} and the IDE's own Type Hierarchy view, NOT the old
+     * generic "requires a Java project" message that gave no path forward.
+     */
+    public void testGetTypeHierarchySupertypesInNonJavaReturnsActionableError() throws Exception {
+        GetTypeHierarchyTool nonJavaTool = new GetTypeHierarchyTool(getProject(), false);
+        String result = nonJavaTool.execute(args(
+            "symbol", "SomeClass",
+            "direction", "supertypes",
+            "file", "/tmp/SomeClass.cpp",
+            "line", "3"
+        ));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected error, got: " + result, result.startsWith("Error:"));
+        assertTrue("Error must mention the subtypes alternative, got: " + result,
+            result.contains("subtypes"));
+        assertTrue("Error must mention the IDE's built-in Type Hierarchy view, got: " + result,
+            result.contains("Type Hierarchy view"));
+    }
+
+    /**
+     * In a non-Java IDE without file+line, a {@code subtypes} request must error out with a
+     * clear message asking for the location parameters (the language-agnostic
+     * DefinitionsScopedSearch path needs them to anchor the search).
+     */
+    public void testGetTypeHierarchySubtypesInNonJavaWithoutFileErrors() throws Exception {
+        GetTypeHierarchyTool nonJavaTool = new GetTypeHierarchyTool(getProject(), false);
+        String result = nonJavaTool.execute(args(
+            "symbol", "SomeClass",
+            "direction", "subtypes"
+        ));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected error, got: " + result, result.startsWith("Error:"));
+        assertTrue("Error must ask for 'file' and 'line', got: " + result,
+            result.contains("file") && result.contains("line"));
+    }
 }
