@@ -176,9 +176,8 @@ class ModelSelectorService(
                 return agentManager.client.getAvailableModels()
             } catch (e: Exception) {
                 lastError = e
-                if (AuthLoginService(project).isAuthenticationError(e.message ?: "") ||
-                    PromptErrorClassifier.isCLINotFoundError(e)
-                ) break
+                // Stop retrying immediately for permanent failures (e.g. binary not installed).
+                if (PromptErrorClassifier.isCLINotFoundError(e)) break
             }
         }
         throw lastError ?: RuntimeException(MSG_UNKNOWN_ERROR)

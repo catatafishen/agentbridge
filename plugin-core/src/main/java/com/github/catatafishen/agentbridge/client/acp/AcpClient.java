@@ -259,7 +259,7 @@ public abstract class AcpClient extends AbstractClient {
             eagerFetchModelsWithLogging();
             LOG.info(displayName() + " agent started successfully");
         } catch (Exception e) {
-            LOG.warn(displayName() + " startup failed at: " + getStartupStepFromException(e), e);
+            LOG.error(displayName() + " startup failed at: " + getStartupStepFromException(e) + " — " + e.getMessage(), e);
             stop();
             throw new ClientStartException("Failed to start " + displayName(), e);
         }
@@ -284,12 +284,7 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     private void eagerFetchModelsWithLogging() {
-        try {
-            eagerFetchModels();
-        } catch (RuntimeException e) {
-            LOG.warn(displayName() + " model fetching failed: " + e.getMessage(), e);
-            throw e;
-        }
+        eagerFetchModels(); // any exception is already logged and rethrown by eagerFetchModels
     }
 
     private String getStartupStepFromException(Exception e) {
@@ -317,26 +312,20 @@ public abstract class AcpClient extends AbstractClient {
             return null;
         }
         // No session yet (eagerFetchModels() may have failed) — try creating one to surface
-        // auth errors that only manifest on the first API call.
+        // errors that only manifest on the first API call.
         try {
             String cwd = project.getBasePath();
             if (cwd == null) {
                 cwd = SystemProperties.getUserHome();
             }
             createSession(cwd);
-            return null; // Auth successful
+            return null; // Session created successfully
         } catch (ClientSessionException e) {
-            // Check if it's an auth error
-            Throwable cause = e;
-            while (cause != null) {
-                String msg = cause.getMessage();
-                if (msg != null && (msg.toLowerCase().contains("auth") || msg.toLowerCase().contains("sign in"))) {
-                    return msg;
-                }
-                cause = cause.getCause();
-            }
-            // Not an auth error, agent is healthy
-            return null;
+            // Return the exact error so callers can report it accurately.
+            // Fall back through the cause chain and toString() in case getMessage() is null.
+            String msg = e.getMessage();
+            if (msg == null && e.getCause() != null) msg = e.getCause().getMessage();
+            return msg != null ? msg : e.toString();
         }
     }
 
@@ -616,8 +605,8 @@ public abstract class AcpClient extends AbstractClient {
         for (NewSessionResponse.SessionConfigOption opt : options) {
             List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                  .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
-                  .toList();
+                .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
+                .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String label = opt.label() != null ? opt.label() : optId;
             result.add(new AbstractClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
@@ -643,8 +632,8 @@ public abstract class AcpClient extends AbstractClient {
         for (NewSessionResponse.SessionConfigOption opt : incoming) {
             List<AbstractClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                  .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
-                  .toList();
+                .map(v -> new AbstractClient.AgentConfigOptionValue(v.id(), v.label()))
+                .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String optLabel = opt.label() != null ? opt.label() : optId;
             AbstractClient.AgentConfigOption updated =
@@ -1666,50 +1655,12 @@ public abstract class AcpClient extends AbstractClient {
             // Keep currentSessionId set — createSession() will reuse it when the user sends a prompt
             LOG.info(displayName() + ": eagerly loaded " + availableModels.size() + " model(s), session=" + currentSessionId);
         } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            String errorMsg = e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : "");
-
-            // Check if this is an auth error - if so, re-throw it so startup fails immediately
-            String authMessage = extractAuthErrorMessage(e);
-            if (authMessage != null) {
-                LOG.warn(displayName() + ": authentication required during session creation");
-                throw new IllegalStateException(authMessage, e);
-            }
-
-            // Not an auth error - log and continue (models will be empty but agent can still work)
-            LOG.warn(displayName() + ": eager session creation failed (models will be empty): " + errorMsg);
+            // Log at ERROR level so the full stack trace appears in IDE logs for bug reports.
+            // Re-throw so start() fails and the error is surfaced to the user rather than
+            // silently connecting with an empty model list.
+            LOG.error(displayName() + ": startup session creation failed — agent will not connect: " + e.getMessage(), e);
+            throw e instanceof RuntimeException ? (RuntimeException) e : new RuntimeException(e.getMessage(), e);
         }
-    }
-
-    /**
-     * Walks the exception cause chain looking for an authentication-related error.
-     * Returns a clean user-facing message if found, or {@code null} if no auth error is detected.
-     */
-    static @Nullable String extractAuthErrorMessage(Exception e) {
-        Throwable current = e;
-        while (current != null) {
-            String msg = current.getMessage();
-            if (msg != null && (msg.toLowerCase().contains("auth") || msg.toLowerCase().contains("sign in"))) {
-                return cleanAuthMessage(msg);
-            }
-            current = current.getCause();
-        }
-        return null;
-    }
-
-    /**
-     * Extracts a clean message from JsonRpcException format:
-     * "JsonRpcException{code=-32000, message='Authentication required'}" → "Authentication required"
-     */
-    static String cleanAuthMessage(String msg) {
-        if (msg.contains("message='") && msg.contains("'}")) {
-            int start = msg.indexOf("message='") + 9;
-            int end = msg.indexOf("'}", start);
-            if (end > start) {
-                return msg.substring(start, end);
-            }
-        }
-        return msg;
     }
 
     protected void registerHandlers() {

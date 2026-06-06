@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.client.claude.ClaudeClient
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -56,9 +56,11 @@ class AuthLoginService(private val project: Project) {
             authCheck ?: pendingAuthError
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Failed to connect to agent"
-            if (errorMsg.lowercase().contains("auth") || errorMsg.lowercase().contains("sign in")) {
-                pendingAuthError = errorMsg
-            }
+            // Return the error as-is without setting pendingAuthError — setting it here
+            // would incorrectly block the send button and show "Sign in" UI for any
+            // runtime failure (network error, session timeout, etc.), not just auth errors.
+            // pendingAuthError is set explicitly by markAuthError() when a prompt actually
+            // fails due to authentication.
             errorMsg
         }
     }

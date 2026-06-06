@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,89 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Additional tests for AcpClient static methods not covered by AcpClientTest.
  */
 class AcpClientExtendedTest {
-
-    @Nested
-    class CleanAuthMessage {
-        @Test
-        void extractsFromJsonRpcFormat() {
-            String msg = "JsonRpcException{code=-32000, message='Authentication required'}";
-            assertEquals("Authentication required", AcpClient.cleanAuthMessage(msg));
-        }
-
-        @Test
-        void returnsOriginalWhenNoPattern() {
-            String msg = "Some random error";
-            assertEquals("Some random error", AcpClient.cleanAuthMessage(msg));
-        }
-
-        @Test
-        void extractsNestedMessage() {
-            String msg = "JsonRpcException{code=-32000, message='Please sign in to continue'}";
-            assertEquals("Please sign in to continue", AcpClient.cleanAuthMessage(msg));
-        }
-
-        @Test
-        void returnsOriginalWhenPatternIncomplete() {
-            String msg = "message='missing closing";
-            assertEquals("message='missing closing", AcpClient.cleanAuthMessage(msg));
-        }
-
-        @Test
-        void handlesEmptyMessageValue() {
-            // When message value is empty like message='', end == start so it falls through
-            String msg = "JsonRpcException{code=-32000, message=''}";
-            String result = AcpClient.cleanAuthMessage(msg);
-            // Falls through because end == start (empty message), returns original
-            assertEquals(msg, result);
-        }
-    }
-
-    @Nested
-    class ExtractAuthErrorMessage {
-        @Test
-        void findsAuthInDirectException() {
-            Exception e = new Exception("Authentication failed: token expired");
-            assertEquals("Authentication failed: token expired", AcpClient.extractAuthErrorMessage(e));
-        }
-
-        @Test
-        void findsSignInInCauseChain() {
-            Exception root = new Exception("Please sign in to your account");
-            Exception wrapper = new Exception("Operation failed", root);
-            String result = AcpClient.extractAuthErrorMessage(wrapper);
-            assertNotNull(result);
-            assertTrue(result.contains("sign in"));
-        }
-
-        @Test
-        void returnsNullWhenNoAuthError() {
-            Exception e = new Exception("Connection timeout");
-            assertNull(AcpClient.extractAuthErrorMessage(e));
-        }
-
-        @Test
-        void returnsNullForNullMessage() {
-            Exception e = new Exception((String) null);
-            assertNull(AcpClient.extractAuthErrorMessage(e));
-        }
-
-        @Test
-        void cleansJsonRpcAuthMessage() {
-            Exception e = new Exception("JsonRpcException{code=-32000, message='Auth token invalid'}");
-            String result = AcpClient.extractAuthErrorMessage(e);
-            assertEquals("Auth token invalid", result);
-        }
-
-        @Test
-        void findsAuthDeepInChain() {
-            Exception leaf = new Exception("auth error: expired session");
-            Exception mid = new Exception("wrapper", leaf);
-            Exception top = new Exception("top level", mid);
-            String result = AcpClient.extractAuthErrorMessage(top);
-            assertNotNull(result);
-            assertTrue(result.contains("auth"));
-        }
-    }
 
     @Nested
     class IsMcpResourceTool {
