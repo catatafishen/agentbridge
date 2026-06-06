@@ -28,10 +28,17 @@ public class TypeHierarchySupport {
     /**
      * Finds all subtypes and direct implementations of the named element at the given
      * source location. Delegates to {@link DefinitionsScopedSearch} which is language-agnostic.
+     * <p>
+     * Symbol resolution uses {@link ToolUtils#resolveNamedElement}: tries to locate a declaration
+     * on the target line first, then falls back to reference-based resolution at any
+     * whole-identifier occurrence of {@code symbol} on the line. The fallback lets the caller
+     * point at either a declaration or a usage (e.g. the call site of an overridable method)
+     * without breaking the lookup — important for languages like C/C++ where leaf identifiers
+     * usually have no reference of their own.
      *
      * @param project  current project
      * @param filePath absolute or project-relative path to the source file
-     * @param line     1-based line number where the symbol is defined
+     * @param line     1-based line number where the symbol is defined OR used
      * @param symbol   symbol name (used for display and disambiguation)
      * @return formatted result text, or an error string starting with {@code "Error: "}
      */
@@ -44,7 +51,7 @@ public class TypeHierarchySupport {
             return "Error: Could not read '" + filePath + "'. Check the path is correct.";
         }
 
-        com.intellij.psi.PsiNameIdentifierOwner element = ToolUtils.findNamedElement(ctx, symbol);
+        com.intellij.psi.PsiNameIdentifierOwner element = ToolUtils.resolveNamedElement(ctx, symbol);
         if (element == null) {
             return "Error: Symbol '" + symbol + "' not found at " + filePath + ":" + line;
         }
