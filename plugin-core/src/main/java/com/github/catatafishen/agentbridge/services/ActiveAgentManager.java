@@ -362,7 +362,8 @@ public final class ActiveAgentManager implements Disposable {
 
             LOG.info(profile.getDisplayName() + " agent client started");
         } catch (Exception e) {
-            LOG.warn("Failed to start agent client", e);
+            // Log at ERROR level so the full stack trace is accessible for bug reports.
+            LOG.error("Failed to start " + getActiveProfileId() + " agent client: " + e.getMessage(), e);
             String message = e.getMessage();
             if (e.getCause() != null && e.getCause().getMessage() != null) {
                 message = e.getCause().getMessage();

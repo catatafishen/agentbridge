@@ -11,7 +11,6 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings
-import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.PREF_SIDE_PANEL_OPEN
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
@@ -313,19 +312,19 @@ class ChatToolWindowContent(
             }
 
             override fun onModelsLoadFailed(error: Exception) {
-                val errorMsg = error.message ?: MSG_UNKNOWN_ERROR
-                if (PromptErrorClassifier.isCLINotFoundError(error)) {
-                    agentManager.isConnected = false
-                    restartSessionGroup?.updateIconForDisconnect()
-                    connectPanel.showError(errorMsg)
-                    cardLayout.show(mainPanel, CARD_CONNECT)
-                } else {
-                    statusBanner?.showError(errorMsg)
-                    if (authService.isAuthenticationError(errorMsg)) {
-                        authService.markAuthError(errorMsg)
-                        copilotBanner?.triggerCheck()
-                    }
-                }
+                // Derive a single non-null display message: message → cause message → fallback.
+                val msg = error.message
+                    ?: error.cause?.message
+                    ?: MSG_UNKNOWN_ERROR
+                // Log at ERROR level so the full stack trace is always visible in IDE logs.
+                LOG.error("Failed to connect to ${agentManager.activeProfile.displayName}: $msg", error)
+                agentManager.isConnected = false
+                restartSessionGroup?.updateIconForDisconnect()
+                // Always surface the exact error message and return to the connect screen so
+                // the user can see what went wrong and retry. Never silently stay on the chat
+                // panel with a broken state.
+                connectPanel.showError(msg)
+                cardLayout.show(mainPanel, CARD_CONNECT)
             }
         })
         setupTitleBarActions()
