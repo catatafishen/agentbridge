@@ -115,21 +115,11 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
                 + "Trigger a build or run first.";
         }
 
-        com.intellij.execution.ui.RunContentDescriptor target = null;
-        if (tabName != null) {
-            for (var d : descriptors) {
-                if (d.getDisplayName() != null && d.getDisplayName().contains(tabName)) {
-                    target = d;
-                    break;
-                }
-            }
-            if (target == null) {
-                var sb = new StringBuilder("No tab matching '").append(tabName)
-                    .append("' in Build or Run panel. Available Run tabs:\n");
-                for (var d : descriptors) sb.append("  - ").append(d.getDisplayName()).append("\n");
-                return sb.toString();
-            }
-        } else {
+        com.intellij.execution.ui.RunContentDescriptor target = findRunDescriptor(descriptors, tabName);
+        if (tabName != null && target == null) {
+            return buildNoTabError(descriptors, tabName);
+        }
+        if (target == null) {
             target = descriptors.getLast();
         }
 
@@ -162,6 +152,23 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
             if (c.getDisplayName() != null && c.getDisplayName().contains(tabName)) return c;
         }
         return null;
+    }
+
+    private static com.intellij.execution.ui.RunContentDescriptor findRunDescriptor(
+        java.util.List<com.intellij.execution.ui.RunContentDescriptor> descriptors, String tabName) {
+        if (tabName == null) return null;
+        for (var d : descriptors) {
+            if (d.getDisplayName() != null && d.getDisplayName().contains(tabName)) return d;
+        }
+        return null;
+    }
+
+    private static String buildNoTabError(
+        java.util.List<com.intellij.execution.ui.RunContentDescriptor> descriptors, String tabName) {
+        var sb = new StringBuilder("No tab matching '").append(tabName)
+            .append("' in Build or Run panel. Available Run tabs:\n");
+        for (var d : descriptors) sb.append("  - ").append(d.getDisplayName()).append("\n");
+        return sb.toString();
     }
 
     private String extractBuildTabText(com.intellij.ui.content.Content content) {

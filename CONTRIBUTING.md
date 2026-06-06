@@ -154,45 +154,21 @@ worth more than a hundred stars.
 
 ## Test coverage
 
-The overall coverage number (~50% on Codecov/SonarQube) reflects real test coverage
-across the project. Plugin-core Java/Kotlin coverage was historically near zero due to a
-class loader issue (fixed in June 2025 via JaCoCo offline instrumentation — see below).
+Coverage is collected by Gradle's standard `jacoco` plugin. The JaCoCo agent added
+automatically to the test JVM instruments classes via Java's `ClassFileTransformer`,
+which fires for all class loads — including those by IntelliJ's `PathClassLoader`
+that runs plugin code inside the test sandbox. No special configuration is needed
+beyond the standard `jacoco` plugin and `jacocoTestReport` task.
 
-| Module        | Language           | Typical coverage             |
-|---------------|--------------------|------------------------------|
-| `chat-ui`     | TypeScript         | ~60–70%                      |
-| `mcp-server`  | TypeScript/Node.js | ~60–70%                      |
-| `plugin-core` | Java/Kotlin        | **~49% lines, ~59% methods** |
+| Module        | Language           | Typical coverage                       |
+|---------------|--------------------|----------------------------------------|
+| `chat-ui`     | TypeScript         | ~36%                                   |
+| `mcp-server`  | TypeScript/Node.js | ~24%                                   |
+| `plugin-core` | Java/Kotlin        | ~44% lines (Codecov), ~39% (SonarQube) |
 
-### How plugin-core coverage works (offline instrumentation)
-
-All tests in the `plugin-core` module run inside the **IntelliJ Platform test runner**,
-which loads plugin classes from the test sandbox JAR via
-`com.intellij.util.lang.PathClassLoader`. This custom class loader bypasses JaCoCo's
-standard `ClassFileTransformer`, so on-the-fly instrumentation never fires for plugin
-classes.
-
-**The fix** (`plugin-core/build.gradle.kts`): JaCoCo offline instrumentation bakes
-coverage probes directly into the class bytecode before the JAR is assembled:
-
-1. `jacocoOfflineInstrument` — after IntelliJ's `instrumentCode` task, runs JaCoCo's
-   `InstrumentTask` on the compiled class files, producing probe-instrumented copies.
-2. `instrumentedJar.doLast` — updates the plugin JAR with the probe-instrumented classes.
-3. `jacocoInstrumentSandbox` — after `prepareTestSandbox`, updates all plugin JARs in
-   `.intellijPlatform/sandbox/` directly (handles UP-TO-DATE sandbox reuse).
-4. Agent `excludes` — adds `com.github.catatafishen.agentbridge.*` to JaCoCo agent
-   exclusions so the on-the-fly agent doesn't throw `"Cannot process instrumented class"`
-   for the pre-instrumented sandbox classes.
-
-When PathClassLoader loads the pre-instrumented classes from the sandbox JAR, the probes
-fire and coverage data is recorded correctly.
-
-**What this means in practice:**
-
-- Coverage numbers for plugin-core Java/Kotlin code are now meaningful (~49% lines).
-- `jacocoInstrumentSandbox` uses `outputs.upToDateWhen { false }` and always re-runs
-  when tests run. This adds ~1–2 seconds per test run.
-- Codecov `patch` coverage checks now work correctly for Java changes.
+Coverage excludes Swing UI classes, AnAction subclasses, and other IDE-runtime-coupled
+code that cannot be unit tested — see the `jacocoTestReport` exclusion list in
+`plugin-core/build.gradle.kts`.
 
 ---
 
