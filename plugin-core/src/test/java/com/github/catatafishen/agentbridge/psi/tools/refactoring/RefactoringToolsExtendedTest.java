@@ -269,6 +269,81 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             result.startsWith("Error:") && result.contains("line"));
     }
 
+    /**
+     * End-to-end resolution: a Java file contains both a method declaration and a usage of that
+     * method; asks {@code go_to_declaration} to navigate from the usage to the declaration.
+     * <p>
+     * Exercises the language-agnostic path that resolves via
+     * {@code psiFile.findReferenceAt(offset)} — the same path that allows the tool to work for
+     * C/C++ in CLion Nova, Python in PyCharm, JS in WebStorm, etc. without per-language code.
+     * Java is used here because we have a stable PSI for it in tests; the resolution path itself
+     * is language-agnostic.
+     */
+    public void testGoToDeclarationResolvesUsageToDeclaration() throws Exception {
+        VirtualFile vf = createTestFile("Foo.java", String.join("\n",
+            "public class Foo {",
+            "    public int bar() { return 1; }",
+            "    public int baz() { return this.bar(); }",
+            "}",
+            ""));
+
+        // Line 3 contains the usage `this.bar()` — resolve 'bar' to its declaration on line 2.
+        String result = goToDeclarationTool.execute(
+            args("file", vf.getPath(), "line", "3", "symbol", "bar"));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Resolution should succeed for 'bar' usage, got: " + result,
+            result.contains("Declaration of 'bar'") && result.contains("Foo.java")
+                && result.contains("Line: 2"));
+        assertFalse("Should not return the not-resolved error, got: " + result,
+            result.contains("Could not resolve"));
+    }
+
+    /**
+     * Regression test for review feedback on PR #815: a raw {@code indexOf(symbolName)} would
+     * locate {@code bar} inside {@code foobar()} and (mis)resolve it as a usage. The fix
+     * enforces an identifier-boundary check, so requesting symbol {@code "bar"} on a line that
+     * only contains {@code foobar} must fall through with "Could not resolve" rather than
+     * navigating to {@code foobar}'s declaration.
+     */
+    public void testGoToDeclarationRejectsSubstringMatch() throws Exception {
+        VirtualFile vf = createTestFile("Sub.java", String.join("\n",
+            "public class Sub {",
+            "    public int foobar() { return 1; }",
+            "    public int caller() { return this.foobar(); }",
+            "}",
+            ""));
+
+        // Asking for 'bar' on line 3 must NOT match the 'bar' substring inside 'foobar'.
+        String result = goToDeclarationTool.execute(
+            args("file", vf.getPath(), "line", "3", "symbol", "bar"));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Substring match should NOT resolve to foobar(), got: " + result,
+            result.contains("Could not resolve"));
+    }
+
+    /**
+     * When the caret line contains the declaration itself rather than a usage, the IDE's
+     * "go to declaration" behaviour is to return the declaration's own location. This is
+     * implemented via {@link com.intellij.codeInsight.TargetElementUtil#getNamedElement}
+     * as the third fallback in {@code resolveAtOffset}.
+     */
+    public void testGoToDeclarationOnDeclarationItself() throws Exception {
+        VirtualFile vf = createTestFile("Self.java", String.join("\n",
+            "public class Self {",
+            "    public void greet() { }",
+            "}",
+            ""));
+
+        String result = goToDeclarationTool.execute(
+            args("file", vf.getPath(), "line", "2", "symbol", "greet"));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Resolution should succeed for declaration-itself case, got: " + result,
+            result.contains("Declaration of 'greet'") && result.contains("Self.java"));
+    }
+
     // ── GetSymbolInfoTool ─────────────────────────────────────────────────────
 
     /**
