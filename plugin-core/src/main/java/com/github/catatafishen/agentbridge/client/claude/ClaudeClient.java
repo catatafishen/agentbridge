@@ -9,6 +9,8 @@ import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
@@ -17,8 +19,6 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
-import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
-import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -90,6 +90,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
         return isHealthy();
     }
 
+    public static final String PROP_CLI_RESUME_SESSION_ID = PROFILE_ID + ".cliResumeSessionId";
     private static final String FIELD_SESSION_ID = "session_id";
     private static final String SUBTYPE_ERROR = "error";
     private static final String STOP_REASON_END_TURN = "end_turn";
@@ -156,7 +157,9 @@ public final class ClaudeClient extends AbstractClaudeClient {
      */
     private final Map<String, String> cliSessionIds = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
-    /** Slash commands reported by the CLI in the {@code system/init} event. */
+    /**
+     * Slash commands reported by the CLI in the {@code system/init} event.
+     */
     private final List<String> availableSlashCommands = new CopyOnWriteArrayList<>();
 
     private String resolvedBinaryPath;
@@ -215,6 +218,17 @@ public final class ClaudeClient extends AbstractClaudeClient {
         sessionCancelled.clear();
     }
 
+    @Override
+    public void clearPersistedSession() {
+        // Wipe the resume ID so the next createSession() starts a completely fresh Claude CLI
+        // conversation without --resume.  Called when the user explicitly requests a new chat.
+        cliSessionIds.clear();
+        if (project != null) {
+            // clearClaudeResumeState unsets both PropertiesComponent and the file-based fallback.
+            SessionSwitchService.getInstance(project).clearClaudeResumeState();
+        }
+    }
+
     // ── Session management ───────────────────────────────────────────────────
 
     @Override
@@ -225,9 +239,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
         // Seed cliSessionIds from any pending session-switch export so that buildCommand
         // can add --resume on the very first prompt of this session.
         if (project != null) {
-            String propKey = PROFILE_ID + ".cliResumeSessionId";
             PropertiesComponent props = PropertiesComponent.getInstance(project);
-            String resumeId = props.getValue(propKey);
+            String resumeId = props.getValue(PROP_CLI_RESUME_SESSION_ID);
 
             // Fall back to file-based resume ID — PropertiesComponent values set during
             // dispose() are lost on plugin hot-reload because IntelliJ flushes project state
@@ -238,7 +251,9 @@ public final class ClaudeClient extends AbstractClaudeClient {
 
             if (resumeId != null && !resumeId.isEmpty()) {
                 cliSessionIds.put(sessionId, resumeId);
-                props.unsetValue(propKey);
+                // Do NOT clear the prop here — if the plugin disconnects again before the next
+                // successful result event re-persists the ID, we'd lose the only resume handle.
+                // handleResultEvent() will overwrite the prop on each successful result.
                 // Claude CLI handles resume natively via --resume flag — the CLI loads
                 // the full session context itself, so prompt injection is redundant.
                 ActiveAgentManager.setInjectConversationHistory(project, false);
@@ -649,9 +664,9 @@ public final class ClaudeClient extends AbstractClaudeClient {
         String type = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "";
         return switch (type) {
             case "system" -> {
-                if (event.has(FIELD_SESSION_ID)) {
-                    cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
-                }
+                // The result event is the authoritative source for session IDs.
+                // Updating here would overwrite the last known-good ID when Claude silently
+                // starts a fresh session because the --resume file was missing or invalid.
                 // The init event carries the list of slash commands supported by this CLI version.
                 // Parse them so the autocomplete popup can surface them to the user.
                 if (SUBTYPE_INIT.equals(event.has(FIELD_SUBTYPE)
@@ -719,11 +734,22 @@ public final class ClaudeClient extends AbstractClaudeClient {
                                      @NotNull OutputStream stdin,
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<SessionUpdate> onUpdate) {
-        if (event.has(FIELD_SESSION_ID)) {
-            cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
-        }
         boolean isError = event.has(FIELD_SUBTYPE)
             && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());
+        if (event.has(FIELD_SESSION_ID)) {
+            String cliId = event.get(FIELD_SESSION_ID).getAsString();
+            if (!isError) {
+                // Authoritative update: persist the CLI session ID so a reconnection can resume.
+                // On error, keep the last known-good ID — that way the next prompt still
+                // retries --resume with the same ID rather than following Claude to a
+                // potentially fresh (context-less) session.
+                cliSessionIds.put(sessionId, cliId);
+                if (project != null) {
+                    PropertiesComponent.getInstance(project)
+                        .setValue(PROP_CLI_RESUME_SESSION_ID, cliId);
+                }
+            }
+        }
         if (isError && event.has(SUBTYPE_ERROR)) {
             handleResultError(sessionId, event, onChunk, onUpdate);
         }

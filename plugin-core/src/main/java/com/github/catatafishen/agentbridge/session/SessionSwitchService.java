@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.session;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
 import com.github.catatafishen.agentbridge.client.codex.CodexClient;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
@@ -16,7 +17,6 @@ import com.github.catatafishen.agentbridge.session.exporters.OpenCodeClientExpor
 import com.github.catatafishen.agentbridge.settings.JunieClientConfigurable;
 import com.github.catatafishen.agentbridge.settings.KiroClientConfigurable;
 import com.github.catatafishen.agentbridge.settings.OpenCodeClientConfigurable;
-import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -235,7 +235,7 @@ public final class SessionSwitchService implements Disposable {
 
             // Store the resume ID in PropertiesComponent for same-process agent switches.
             PropertiesComponent.getInstance(project)
-                .setValue(ClaudeClient.PROFILE_ID + ".cliResumeSessionId", newSessionId);
+                .setValue(ClaudeClient.PROP_CLI_RESUME_SESSION_ID, newSessionId);
 
             // Also persist to a file — PropertiesComponent values set during dispose()
             // are lost on plugin hot-reload because IntelliJ flushes project state to disk
@@ -660,7 +660,7 @@ public final class SessionSwitchService implements Disposable {
      */
     public void clearClaudeResumeState() {
         PropertiesComponent.getInstance(project)
-            .unsetValue(ClaudeClient.PROFILE_ID + ".cliResumeSessionId");
+            .unsetValue(ClaudeClient.PROP_CLI_RESUME_SESSION_ID);
         String basePath = project.getBasePath();
         if (basePath != null) {
             try {
