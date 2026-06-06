@@ -315,15 +315,21 @@ public abstract class NavigationTool extends Tool {
      * element. The IDE decides what is structural; {@code classifyElement} provides the type label
      * ("class", "method", etc.) but a {@code null} result no longer excludes the element — it
      * falls back to the generic label {@code "symbol"}.
+     * <p>
+     * Some language plugins wrap their PSI elements in custom structure-view adapter objects, so
+     * {@code svte.getValue()} may not return a {@link PsiElement} directly. In that case we try
+     * common adapter accessor methods ({@code getPsiElement}, {@code getElement},
+     * {@code getNavigationElement}) reflectively before giving up on the node.
      */
     private void visitStructureNode(TreeElement node, int depth, Document document, List<String> outline) {
         for (TreeElement child : node.getChildren()) {
             if (!(child instanceof StructureViewTreeElement svte)) continue;
-            Object value = svte.getValue();
-            if (!(value instanceof PsiElement psiElement)) continue;
             String label = child.getPresentation().getPresentableText();
             if (label == null || label.isEmpty()) continue;
-            int line = document.getLineNumber(psiElement.getTextOffset()) + 1;
+            PsiElement psiElement = extractPsiElement(svte.getValue());
+            if (psiElement == null) continue;
+            int offset = Math.clamp(psiElement.getTextOffset(), 0, document.getTextLength());
+            int line = document.getLineNumber(offset) + 1;
             String type = ToolUtils.classifyElement(psiElement);
             String displayLabel = (psiElement instanceof PsiModifierListOwner owner)
                 ? prefixModifiers(owner, label) : label;
@@ -332,6 +338,29 @@ public abstract class NavigationTool extends Tool {
             visitStructureNode(child, depth + 1, document, outline);
         }
     }
+
+    /**
+     * Extracts a {@link PsiElement} from a structure-view node value. Most language plugins return
+     * the PSI element directly from {@link StructureViewTreeElement#getValue()}, but some (notably
+     * CLion's Nova C/C++ engine) wrap the PSI in an adapter object. Try common accessor names
+     * reflectively so we stay language-agnostic instead of depending on any specific wrapper type.
+     */
+    private static PsiElement extractPsiElement(Object value) {
+        if (value instanceof PsiElement psi) return psi;
+        if (value == null) return null;
+        for (String accessor : PSI_ACCESSORS) {
+            try {
+                java.lang.reflect.Method m = value.getClass().getMethod(accessor);
+                Object result = m.invoke(value);
+                if (result instanceof PsiElement psi) return psi;
+            } catch (ReflectiveOperationException ignored) {
+                // Accessor not present or threw — try the next one
+            }
+        }
+        return null;
+    }
+
+    private static final String[] PSI_ACCESSORS = {"getPsiElement", "getElement", "getNavigationElement"};
 
     /**
      * PSI-walk fallback used when no {@code StructureViewBuilder} is registered for the language.

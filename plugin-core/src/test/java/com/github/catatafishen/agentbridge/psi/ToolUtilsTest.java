@@ -665,8 +665,8 @@ class ToolUtilsTest {
     }
 
     @Nested
-    @DisplayName("classifyGenericElement — multi-language PSI classification")
-    class ClassifyGenericElementTest {
+    @DisplayName("classifyByName — single language-agnostic PSI classification")
+    class ClassifyByNameTest {
 
         @ParameterizedTest
         @CsvSource({
@@ -689,15 +689,16 @@ class ToolUtilsTest {
             "TypeScriptVariable, field",
             // ES6
             "ES6ClassImpl, class",
-            // Go
+            // Go (note: GoMethodDeclaration now classified as "method", matching the keyword —
+            // the legacy Go-specific path returned "function" which conflated methods and functions)
             "GoTypeSpec, class",
             "GoFunctionDeclaration, function",
-            "GoMethodDeclaration, function",
+            "GoMethodDeclaration, method",
             "GoVarDefinition, field",
             "GoConstDefinition, field",
             "GoFieldDefinition, field",
             "GoPackageClause,",
-            // C/C++
+            // C/C++ (OC engine — classified via generic keyword matching, no OC-specific branch)
             "OCStructlike, class",
             "OCFunctionDefinition, function",
             "OCDeclarator, field",
@@ -728,6 +729,14 @@ class ToolUtilsTest {
             "CSharpMethodDeclaration, method",
             "CSharpPropertyDeclaration, field",
             "CSharpFieldDeclaration, field",
+            // Kotlin (object declarations and type aliases classify as class)
+            "KtNamedFunction, function",
+            "KtProperty, field",
+            "KtObjectDeclaration, class",
+            "KtTypeAlias, class",
+            // Java's PsiEnumConstant is field-like
+            "PsiEnumConstantImpl, field",
+            "PsiClassInitializerImpl,",
             // Generic fallback — keyword-based for unknown/future language engines
             "SomeInterfaceDeclaration, interface",
             "SomeTraitDeclaration, interface",
@@ -759,7 +768,7 @@ class ToolUtilsTest {
             "PsiCommentImpl,"
         })
         void classifiesByPsiClassName(String className, String expectedType) {
-            String result = ToolUtils.classifyGenericElement(className);
+            String result = ToolUtils.classifyByName(className);
             if (expectedType == null || expectedType.isEmpty()) {
                 assertNull(result, "Expected null for " + className);
             } else {
@@ -769,17 +778,17 @@ class ToolUtilsTest {
 
         @Test
         void pythonClassImplReturnsClass() {
-            assertEquals("class", ToolUtils.classifyGenericElement("PyClassImpl"));
+            assertEquals("class", ToolUtils.classifyByName("PyClassImpl"));
         }
 
         @Test
         void jsEnumLiteralNotClassifiedAsEnum() {
-            assertNull(ToolUtils.classifyGenericElement("JSEnumLiteralExpression"));
+            assertNull(ToolUtils.classifyByName("JSEnumLiteralExpression"));
         }
 
         @Test
         void unknownPrefixReturnsNull() {
-            assertNull(ToolUtils.classifyGenericElement("XyzUnknownElement"));
+            assertNull(ToolUtils.classifyByName("XyzUnknownElement"));
         }
     }
 }
