@@ -22,13 +22,18 @@ dependencies {
         if (localPath != null) {
             local(localPath)
         } else {
-            intellijIdeaUltimate("2025.3")
+            // Compile against the same version as plugin-core (see gradle.properties → intellijPlatformVersion).
+            // IU 2026.1+ moved intellij.libraries.lucene.common.jar from lib/modules/ (auto-included)
+            // to lib/ (not auto-included), so it must be declared explicitly via bundledLibrary below.
+            intellijIdeaUltimate(providers.gradleProperty("intellijPlatformVersion").get())
         }
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
         bundledPlugin("com.intellij.database")
+        // Required in IU 2026.1+ (moved from lib/modules/ to lib/).
+        bundledLibrary("lib/intellij.libraries.lucene.common.jar")
     }
 
     compileOnly(project(":plugin-core"))
