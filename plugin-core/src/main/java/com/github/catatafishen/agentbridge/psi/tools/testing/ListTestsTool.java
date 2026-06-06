@@ -21,6 +21,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Lists test classes and methods in the project.
@@ -102,41 +103,40 @@ public final class ListTestsTool extends TestingTool {
 
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> tests = new ArrayList<>();
-            String basePath = project.getBasePath();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
             var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
-
-            // getExtensionList() throws IllegalArgumentException in IDEs where the Java
-            // plugin is not loaded (e.g. CLion): com.intellij.testFramework is declared
-            // in java-impl.jar and is never registered in CLion.
             List<TestFramework> frameworks = safeGetTestFrameworks();
-
-            // Count total test-source files (regardless of pattern) so we can
-            // distinguish "no test source roots at all" from "pattern matched nothing".
             int[] totalTestSourceFiles = {0};
 
             fileIndex.iterateContent(vf -> {
-                if (vf.isDirectory() || !fileIndex.isInTestSourceContent(vf)) return true;
-                totalTestSourceFiles[0]++;
-                if (filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(vf.getName(), filePattern, compiledGlob)) {
-                    collectTestMethodsFromFile(vf, basePath, tests, frameworks);
-                }
+                scanTestSourceFile(vf, filePattern, compiledGlob,
+                    tests, frameworks, totalTestSourceFiles);
                 return tests.size() < 500;
             });
 
-            if (totalTestSourceFiles[0] == 0) {
-                return noTestSourcesMessage(filePattern);
-            }
-            if (tests.isEmpty() && frameworks.isEmpty()) {
-                return noFrameworkMessage(totalTestSourceFiles[0], filePattern);
-            }
-            if (tests.isEmpty()) {
-                return filePattern.isEmpty()
-                    ? "No tests found"
-                    : "No tests found matching '" + filePattern + "'";
-            }
-            return tests.size() + " tests:\n" + String.join("\n", tests);
+            return summarizeResults(tests, frameworks, totalTestSourceFiles[0], filePattern);
         });
+    }
+
+    private void scanTestSourceFile(VirtualFile vf, String filePattern, Pattern compiledGlob,
+                                    List<String> tests, List<TestFramework> frameworks,
+                                    int[] totalTestSourceFiles) {
+        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+        if (vf.isDirectory() || !fileIndex.isInTestSourceContent(vf)) return;
+        totalTestSourceFiles[0]++;
+        if (filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(vf.getName(), filePattern, compiledGlob)) {
+            collectTestMethodsFromFile(vf, project.getBasePath(), tests, frameworks);
+        }
+    }
+
+    private static String summarizeResults(List<String> tests, List<TestFramework> frameworks,
+                                           int totalTestSourceFiles, String filePattern) {
+        if (totalTestSourceFiles == 0) return noTestSourcesMessage(filePattern);
+        if (tests.isEmpty() && frameworks.isEmpty()) return noFrameworkMessage(totalTestSourceFiles, filePattern);
+        if (tests.isEmpty()) {
+            return filePattern.isEmpty() ? "No tests found" : "No tests found matching '" + filePattern + "'";
+        }
+        return tests.size() + " tests:\n" + String.join("\n", tests);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ public final class ListTestsTool extends TestingTool {
     private void collectTestMethodsFromFile(VirtualFile vf, String basePath,
                                             List<String> tests,
                                             List<TestFramework> frameworks) {
-        if (frameworks.isEmpty()) return; // no framework → can't identify test methods
+        if (frameworks.isEmpty()) return;
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
@@ -169,23 +169,24 @@ public final class ListTestsTool extends TestingTool {
             @Override
             public void visitElement(@NotNull PsiElement element) {
                 if (element instanceof PsiNamedElement named) {
-                    String type = ToolUtils.classifyElement(element);
-                    if ((ToolUtils.ELEMENT_TYPE_METHOD.equals(type)
-                        || ToolUtils.ELEMENT_TYPE_FUNCTION.equals(type))
-                        && isTestElement(element, frameworks)) {
-                        String methodName = named.getName();
-                        String className = getContainingClassName(element);
-                        String relPath = basePath != null
-                            ? relativize(basePath, vf.getPath()) : vf.getPath();
-                        int line = doc != null
-                            ? doc.getLineNumber(element.getTextOffset()) + 1 : 0;
-                        tests.add(String.format("%s.%s (%s:%d)",
-                            className, methodName, relPath, line));
-                    }
+                    addTestEntry(element, named, doc, vf, basePath, tests, frameworks);
                 }
                 super.visitElement(element);
             }
         });
+    }
+
+    private void addTestEntry(PsiElement element, PsiNamedElement named, Document doc,
+                              VirtualFile vf, String basePath, List<String> tests,
+                              List<TestFramework> frameworks) {
+        String type = ToolUtils.classifyElement(element);
+        boolean isMethod = ToolUtils.ELEMENT_TYPE_METHOD.equals(type)
+            || ToolUtils.ELEMENT_TYPE_FUNCTION.equals(type);
+        if (!isMethod || !isTestElement(element, frameworks)) return;
+        String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getPath();
+        int line = doc != null ? doc.getLineNumber(element.getTextOffset()) + 1 : 0;
+        tests.add(String.format("%s.%s (%s:%d)",
+            getContainingClassName(element), named.getName(), relPath, line));
     }
 
     private static boolean isTestElement(PsiElement element, List<TestFramework> frameworks) {

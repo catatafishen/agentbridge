@@ -203,8 +203,7 @@ public final class ReloadProjectModelTool extends ProjectTool {
             Method getLinked = settings.getClass().getMethod("getLinkedProjectsSettings");
             Collection<?> linked = (Collection<?>) getLinked.invoke(settings);
             return !linked.isEmpty();
-        } catch (
-            Throwable e) { // intentional: must also catch Error (e.g. IllegalAccessError from Java module restrictions)
+        } catch (Throwable e) { // NOSONAR - reflection can also throw Error (e.g. IllegalAccessError)
             LOG.warn("Could not check linked projects for " + getSystemName(manager) + " — will skip", e);
             return null;
         }
@@ -253,9 +252,8 @@ public final class ReloadProjectModelTool extends ProjectTool {
             if (workspace == null) return null; // no CMake project in this IDE instance
             Method scheduleReload = workspaceClass.getMethod("scheduleReload", boolean.class);
             scheduleReload.invoke(workspace, true);
-            return "✓ CMake (reload scheduled)\n\nProject model reload triggered for 1 build system(s). "
-                + "Indexing will run in the background.";
-        } catch (Throwable e) { // intentional: must also catch Error (e.g. linkage errors from module restrictions)
+            return "✓ CMake (reload scheduled)\n\nProject model reload triggered for 1 build system(s). Indexing will run in the background.";
+        } catch (Throwable e) { // NOSONAR - reflection can also throw Error (e.g., IllegalAccessError)
             LOG.warn("CMake reload failed", e);
             return "✗ CMake (reload failed — see IDE log): " + e.getMessage();
         }

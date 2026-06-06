@@ -39,12 +39,15 @@ dependencies {
         if (localPath != null) {
             local(localPath)
         } else {
-            intellijIdeaUltimate("2025.3")
+            intellijIdeaUltimate("2026.1.3")
         }
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
+        // In IU-2026.1+, intellij.libraries.lucene.common.jar moved from lib/modules/ (auto-included)
+        // to lib/ (not auto-included). Add it explicitly so Lucene packages resolve in both versions.
+        bundledLibrary("lib/intellij.libraries.lucene.common.jar")
     }
 
     // Kotlin stdlib for UI layer
@@ -84,14 +87,6 @@ dependencies {
     testImplementation("com.code-intelligence:jazzer-api:${providers.gradleProperty("jazzerVersion").get()}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
-    // JaCoCo offline instrumentation runtime: when the sandbox JAR classes call
-    // Offline.getProbes() (baked in by jacocoOfflineInstrument), PathClassLoader must
-    // be able to find org.jacoco.agent.rt.internal_*.Offline. The javaagent adds it to
-    // the bootstrap classloader locally, but IntelliJ's PathClassLoader bypasses that
-    // chain in CI. Adding the runtime JAR to testRuntimeOnly makes it directly available.
-    testRuntimeOnly("org.jacoco:org.jacoco.agent:${jacoco.toolVersion}") {
-        artifact { classifier = "runtime" }
-    }
 }
 
 // Ensure annotations 26.x is used everywhere (needed for TYPE_USE @NotNull on functional interfaces)
@@ -522,17 +517,10 @@ tasks {
             excludeTags("integration")
         }
         // isIncludeNoLocationClasses: includes classes with no ProtectionDomain in the
-        // report (e.g. dynamically generated classes). This does NOT fix PathClassLoader
-        // bypassing the ClassFileTransformer — offline instrumentation (above) does that.
+        // report (e.g. dynamically generated classes).
         extensions.configure<JacocoTaskExtension> {
             isIncludeNoLocationClasses = true
-            excludes = listOf(
-                "jdk.internal.*",
-                // Exclude our plugin classes from on-the-fly instrumentation: the sandbox
-                // JARs are already offline-instrumented. The agent would throw
-                // "Cannot process instrumented class" if it tries to re-instrument them.
-                "com.github.catatafishen.agentbridge.*"
-            )
+            excludes = listOf("jdk.internal.*")
         }
         finalizedBy(named("jacocoTestReport"))
     }
@@ -617,98 +605,8 @@ tasks {
         sourceDirectories.setFrom(files("src/main/java"))
     }
 
-    // ===== JaCoCo offline instrumentation for IntelliJ Platform tests ============
-    // Problem (confirmed by exec-file inspection): JaCoCo's ClassFileTransformer is
-    // never called for plugin classes loaded from the test sandbox JAR via
-    // PathClassLoader. The exec file contains ZERO plugin-class entries despite
-    // isIncludeNoLocationClasses = true — the flag only controls report inclusion,
-    // not the transformer invocation. PathClassLoader bypasses the transformer entirely.
-    //
-    // Fix: pre-instrument class files with JaCoCo probes (offline mode) BEFORE they
-    // are packaged into the sandbox JAR. When PathClassLoader loads the pre-instrumented
-    // class, the probes are already in the bytecode and fire normally. JaCoCo's
-    // on-the-fly agent detects already-instrumented classes ($jacocoData field) and
-    // skips re-instrumentation, so there is no double-instrumentation problem.
-    //
-    // Pipeline: instrumentCode → jacocoOfflineInstrument → instrumentedJar (updated)
-    //           → composedJar → prepareTestSandbox → test
-
-    val jacocoOfflineDir = layout.buildDirectory.dir("jacoco-offline-classes")
-
-    val jacocoOfflineInstrument by registering {
-        dependsOn("instrumentCode")
-        val srcDir = layout.buildDirectory.dir("instrumented/instrumentCode")
-        inputs.dir(srcDir)
-        outputs.dir(jacocoOfflineDir)
-        doLast {
-            val outDir = jacocoOfflineDir.get().asFile
-            outDir.deleteRecursively()
-            outDir.mkdirs()
-            ant.withGroovyBuilder {
-                "taskdef"(
-                    "name" to "jacocoInstrument",
-                    "classname" to "org.jacoco.ant.InstrumentTask",
-                    "classpath" to configurations["jacocoAnt"].asPath
-                )
-                "jacocoInstrument"("destdir" to outDir.absolutePath) {
-                    "fileset"("dir" to srcDir.get().asFile.absolutePath) {
-                        "include"("name" to "**/*.class")
-                    }
-                }
-            }
-        }
-    }
-
-    // Inject offline-instrumented classes into instrumentedJar so they propagate
-    // through composedJar and prepareTestSandbox into the sandbox used by tests.
-    named("instrumentedJar") {
-        dependsOn(jacocoOfflineInstrument)
-        inputs.dir(jacocoOfflineDir)
-        doLast {
-            val jarFile = outputs.files.first { it.extension == "jar" }
-            val classesDir = jacocoOfflineDir.get().asFile
-            ant.withGroovyBuilder {
-                "jar"("destfile" to jarFile.absolutePath, "update" to "true") {
-                    "fileset"("dir" to classesDir.absolutePath) {
-                        "include"("name" to "**/*.class")
-                    }
-                }
-            }
-        }
-    }
-
-    // Belt-and-suspenders: also update the sandbox JARs directly after prepareTestSandbox.
-    // This runs even when prepareTestSandbox is UP-TO-DATE (reusing a prior sandbox).
-    // Uses outputs.upToDateWhen { false } since we're mutating existing JARs in-place
-    // and have no separate output to track freshness.
-    val jacocoInstrumentSandbox by registering {
-        dependsOn(jacocoOfflineInstrument, "prepareTestSandbox")
-        outputs.upToDateWhen { false }
-        doLast {
-            val classesDir = jacocoOfflineDir.get().asFile
-            var count = 0
-            fileTree(projectDir.resolve(".intellijPlatform/sandbox")).matching {
-                include("*/plugins/plugin-core/lib/*.jar")
-            }.forEach { sandboxJar ->
-                ant.withGroovyBuilder {
-                    "jar"("destfile" to sandboxJar.absolutePath, "update" to "true") {
-                        "fileset"("dir" to classesDir.absolutePath) {
-                            "include"("name" to "**/*.class")
-                        }
-                    }
-                }
-                count++
-            }
-            logger.lifecycle("JaCoCo offline: updated $count sandbox JAR(s) with ${classesDir.listFiles()?.size ?: 0} instrumented class roots")
-        }
-    }
-
-    named("prepareTestSandbox") {
-        finalizedBy(jacocoInstrumentSandbox)
-    }
 
     test {
-        dependsOn(jacocoInstrumentSandbox)
         // Resolve the mockito-core JAR for use as a Java agent (required for JBR/JDK 25+
         // since ByteBuddy/Mockito self-attachment is restricted on newer JVMs).
         // See: https://github.com/mockito/mockito/issues/3754

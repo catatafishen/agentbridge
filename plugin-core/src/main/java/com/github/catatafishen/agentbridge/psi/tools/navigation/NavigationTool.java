@@ -29,7 +29,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Abstract base for code navigation tools. Provides shared constants
@@ -164,10 +163,8 @@ public abstract class NavigationTool extends Tool {
             String[] qualifierTokens = qualifierTokensOf(name);
             List<PsiElement> filtered = candidates.stream()
                 .filter(e -> matchesQualifier(e, qualifierTokens))
-                .collect(Collectors.toList());
+                .toList();
             if (!filtered.isEmpty()) return filtered;
-            // Qualifier didn't match any ancestor chain (e.g. package-qualified Java name);
-            // return all candidates so the caller can still find references.
         }
         return candidates;
     }
