@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.tools.FqnResolver;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.codeInsight.TargetElementUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -15,9 +16,9 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiNamedElement;
-import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
+import com.intellij.psi.PsiPolyVariantReference;
 import com.intellij.psi.PsiReference;
+import com.intellij.psi.ResolveResult;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -161,12 +162,8 @@ public final class GoToDeclarationTool extends RefactoringTool {
         int lineStartOffset = document.getLineStartOffset(targetLine - 1);
         int lineEndOffset = document.getLineEndOffset(targetLine - 1);
 
-        List<PsiElement> declarations = findDeclarationsOnLine(
-            psiFile, lineStartOffset, lineEndOffset, symbolName);
-        if (declarations.isEmpty()) {
-            declarations = findDeclarationByOffset(
-                psiFile, document, lineStartOffset, lineEndOffset, symbolName);
-        }
+        List<PsiElement> declarations = resolveDeclarationsOnLine(
+            psiFile, document, lineStartOffset, lineEndOffset, symbolName);
         if (declarations.isEmpty()) {
             return "Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
                 " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
@@ -176,65 +173,96 @@ public final class GoToDeclarationTool extends RefactoringTool {
         return formatDeclarationResults(declarations, symbolName);
     }
 
-    private List<PsiElement> findDeclarationsOnLine(
-        PsiFile psiFile, int lineStartOffset, int lineEndOffset, String symbolName) {
+    /**
+     * Finds declarations for {@code symbolName} occurring anywhere on the target line.
+     * <p>
+     * Uses three layered strategies, all of which delegate to the IDE's own
+     * reference-resolution infrastructure and are therefore language-agnostic:
+     *
+     * <ol>
+     *   <li>For each text occurrence of {@code symbolName} on the line, ask the IDE for the
+     *       reference at that offset via {@link PsiFile#findReferenceAt(int)} (uses every language
+     *       plugin's registered reference contributors — works for C/C++, Python, JS, Go, etc.).
+     *       Handles polyvariant references via {@link PsiPolyVariantReference#multiResolve}.</li>
+     *   <li>If no reference resolves, walk up the PSI tree from each occurrence — some language
+     *       plugins put the reference on a parent expression rather than the leaf identifier.</li>
+     *   <li>Finally, if the caret sits on a declaration itself, return the enclosing named element
+     *       (matches the IDE's behaviour of "go to declaration on a declaration" showing the
+     *       declaration itself).</li>
+     * </ol>
+     */
+    private List<PsiElement> resolveDeclarationsOnLine(
+        PsiFile psiFile, Document document, int lineStartOffset, int lineEndOffset, String symbolName) {
         List<PsiElement> declarations = new ArrayList<>();
-        psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
-            @Override
-            public void visitElement(@NotNull PsiElement element) {
-                int offset = element.getTextOffset();
-                if (offset >= lineStartOffset && offset <= lineEndOffset
-                    && matchesSymbolName(element, symbolName)) {
-                    resolveDeclarations(element, declarations);
-                }
-                super.visitElement(element);
+        if (symbolName.isEmpty()) return declarations;
+        String lineText = document.getText(new TextRange(lineStartOffset, lineEndOffset));
+
+        int searchFrom = 0;
+        while (searchFrom <= lineText.length() - symbolName.length()) {
+            int symIdx = lineText.indexOf(symbolName, searchFrom);
+            if (symIdx < 0) break;
+            if (isWholeIdentifierMatch(lineText, symIdx, symbolName.length())) {
+                int rawOffset = lineStartOffset + symIdx;
+                int offset = TargetElementUtil.adjustOffset(psiFile, document, rawOffset);
+                resolveAtOffset(psiFile, offset, declarations);
+                if (!declarations.isEmpty()) return declarations;
             }
-        });
+            searchFrom = symIdx + symbolName.length();
+        }
         return declarations;
     }
 
-    private boolean matchesSymbolName(PsiElement element, String symbolName) {
-        return element.textMatches(symbolName)
-            || (element instanceof PsiNamedElement named && symbolName.equals(named.getName()));
+    /**
+     * Returns true if the substring at {@code [start, start+length)} in {@code text} is a whole
+     * identifier — i.e. it is not preceded or followed by an identifier character. This prevents
+     * spurious matches such as locating {@code bar} inside {@code foobar()}.
+     */
+    private static boolean isWholeIdentifierMatch(String text, int start, int length) {
+        if (start > 0 && Character.isJavaIdentifierPart(text.charAt(start - 1))) return false;
+        int end = start + length;
+        return end >= text.length() || !Character.isJavaIdentifierPart(text.charAt(end));
     }
 
-    private void resolveDeclarations(PsiElement element, List<PsiElement> declarations) {
-        PsiReference ref = element.getReference();
+    /**
+     * Resolves the reference at {@code offset} via the platform-level
+     * {@link PsiFile#findReferenceAt(int)}, then falls back to walking up the PSI tree (some
+     * language plugins attach the reference to a parent node rather than the leaf identifier),
+     * and finally to {@link TargetElementUtil#getNamedElement(PsiElement)} for the
+     * "go to declaration on a declaration" case.
+     */
+    private static void resolveAtOffset(PsiFile psiFile, int offset, List<PsiElement> declarations) {
+        PsiReference ref = psiFile.findReferenceAt(offset);
         if (ref != null) {
-            PsiElement resolved = ref.resolve();
-            if (resolved != null) declarations.add(resolved);
+            addResolved(ref, declarations);
+            if (!declarations.isEmpty()) return;
         }
-        if (element instanceof PsiNamedElement) {
-            for (PsiReference r : element.getReferences()) {
-                PsiElement res = r.resolve();
-                if (res != null && res != element) declarations.add(res);
-            }
-        }
-    }
-
-    private List<PsiElement> findDeclarationByOffset(
-        PsiFile psiFile, Document document, int lineStartOffset, int lineEndOffset, String symbolName) {
-        List<PsiElement> declarations = new ArrayList<>();
-        String lineText = document.getText(new TextRange(lineStartOffset, lineEndOffset));
-        int symIdx = lineText.indexOf(symbolName);
-        if (symIdx < 0) return declarations;
-
-        int offset = lineStartOffset + symIdx;
-        PsiElement elemAtOffset = psiFile.findElementAt(offset);
-        if (elemAtOffset == null) return declarations;
-
-        PsiElement current = elemAtOffset;
-        for (int i = 0; i < 5 && current != null; i++) {
-            PsiReference ref = current.getReference();
-            if (ref != null) {
-                PsiElement resolved = ref.resolve();
-                if (resolved != null) {
-                    declarations.add(resolved);
-                    break;
-                }
+        PsiElement elementAt = psiFile.findElementAt(offset);
+        PsiElement current = elementAt;
+        for (int i = 0; i < MAX_PARENT_WALK && current != null; i++) {
+            PsiReference parentRef = current.getReference();
+            if (parentRef != null) {
+                addResolved(parentRef, declarations);
+                if (!declarations.isEmpty()) return;
             }
             current = current.getParent();
         }
-        return declarations;
+        if (elementAt != null) {
+            PsiElement named = TargetElementUtil.getNamedElement(elementAt);
+            if (named != null && named != elementAt) declarations.add(named);
+        }
     }
+
+    private static void addResolved(PsiReference ref, List<PsiElement> declarations) {
+        if (ref instanceof PsiPolyVariantReference poly) {
+            for (ResolveResult rr : poly.multiResolve(false)) {
+                PsiElement el = rr.getElement();
+                if (el != null) declarations.add(el);
+            }
+        } else {
+            PsiElement resolved = ref.resolve();
+            if (resolved != null) declarations.add(resolved);
+        }
+    }
+
+    private static final int MAX_PARENT_WALK = 5;
 }
