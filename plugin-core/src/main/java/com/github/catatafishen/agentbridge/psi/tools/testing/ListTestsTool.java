@@ -107,26 +107,20 @@ public final class ListTestsTool extends TestingTool {
             var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
             List<TestFramework> frameworks = safeGetTestFrameworks();
             int[] totalTestSourceFiles = {0};
+            String basePath = project.getBasePath();
 
             fileIndex.iterateContent(vf -> {
-                scanTestSourceFile(vf, filePattern, compiledGlob,
-                    tests, frameworks, totalTestSourceFiles);
+                if (!vf.isDirectory() && fileIndex.isInTestSourceContent(vf)) {
+                    totalTestSourceFiles[0]++;
+                    if (filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(vf.getName(), filePattern, compiledGlob)) {
+                        collectTestMethodsFromFile(vf, basePath, tests, frameworks);
+                    }
+                }
                 return tests.size() < 500;
             });
 
             return summarizeResults(tests, frameworks, totalTestSourceFiles[0], filePattern);
         });
-    }
-
-    private void scanTestSourceFile(VirtualFile vf, String filePattern, Pattern compiledGlob,
-                                    List<String> tests, List<TestFramework> frameworks,
-                                    int[] totalTestSourceFiles) {
-        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-        if (vf.isDirectory() || !fileIndex.isInTestSourceContent(vf)) return;
-        totalTestSourceFiles[0]++;
-        if (filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(vf.getName(), filePattern, compiledGlob)) {
-            collectTestMethodsFromFile(vf, project.getBasePath(), tests, frameworks);
-        }
     }
 
     private static String summarizeResults(List<String> tests, List<TestFramework> frameworks,
