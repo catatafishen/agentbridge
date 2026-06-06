@@ -95,7 +95,7 @@
 ## Project Context
 
 - IntelliJ plugin integrating GitHub Copilot with MCP tools for code intelligence
-- Written in **Java 21**, targets IntelliJ 2024.3–2025.2, built with Gradle
+- Written in **Java 21**, targets IntelliJ 2025.3+ (verified against 2025.3–2026.1 in CI), built with Gradle
 - Three modules: `plugin-core` (UI + services), `mcp-server` (tool definitions), `integration-tests`
 - ACP protocol via Copilot CLI, MCP via stdio server, PSI bridge via HTTP
 
