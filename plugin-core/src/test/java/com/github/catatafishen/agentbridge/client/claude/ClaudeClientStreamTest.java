@@ -26,6 +26,7 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,13 +52,14 @@ class ClaudeClientStreamTest {
 
     private ClaudeClient createClient(String sseEvents) throws Exception {
         byte[] inputBytes = sseEvents.getBytes(StandardCharsets.UTF_8);
-
-        ClaudeClient.ProcessFactory factory = (cmd, env, workDir) -> new FakeProcess(
+        return createClient((cmd, env, workDir) -> new FakeProcess(
             new ByteArrayInputStream(inputBytes),
             new ByteArrayOutputStream(),
             new ByteArrayInputStream(new byte[0])
-        );
+        ));
+    }
 
+    private ClaudeClient createClient(ClaudeClient.ProcessFactory factory) throws Exception {
         AgentProfile profile = new AgentProfile();
         profile.setDisplayName("test-claude");
         AgentConfig config = new StubAgentConfig();
@@ -190,10 +192,13 @@ class ClaudeClientStreamTest {
         }
 
         @Test
-        void systemEventExtractsSessionId() throws Exception {
+        void resultEventExtractsSessionId() throws Exception {
+            // Session ID must come from the *result* event — not the system event.
+            // The system event is ignored so a failed resume (Claude starting fresh with a
+            // new ID) cannot silently overwrite the last known-good session ID.
             String events = """
-                {"type":"system","session_id":"unique-cli-id"}
-                {"type":"result","subtype":"success","cost_usd":0.0}
+                {"type":"system","session_id":"system-cli-id"}
+                {"type":"result","subtype":"success","cost_usd":0.0,"session_id":"result-cli-id"}
                 """;
 
             client = createClient(events);
@@ -201,9 +206,52 @@ class ClaudeClientStreamTest {
             PromptRequest req = new PromptRequest(
                 sessionId, List.of(new ContentBlock.Text("hi")), null, null);
             client.sendPrompt(req, onUpdate);
-            // Second call should use --resume with the CLI session ID
-            // The fact that it doesn't throw proves system event was parsed
-            assertNotNull(client);
+
+            // cliSessionIds should hold the id from the *result* event, not from the system event.
+            Field cliIdsField = findField(ClaudeClient.class, "cliSessionIds");
+            cliIdsField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> cliSessionIds =
+                (java.util.Map<String, String>) cliIdsField.get(client);
+            assertEquals("result-cli-id", cliSessionIds.get(sessionId));
+        }
+
+        @Test
+        void errorResultDoesNotUpdateSessionId() throws Exception {
+            // On an error result, cliSessionIds must NOT be updated — the last known-good ID
+            // is preserved so the next prompt retries --resume rather than following Claude
+            // to a potentially context-less fresh session.
+            String goodEvents = """
+                {"type":"result","subtype":"success","cost_usd":0.0,"session_id":"good-cli-id"}
+                """;
+            String errorEvents = """
+                {"type":"result","subtype":"error","error":"session invalid","session_id":"fresh-cli-id"}
+                """;
+
+            // Use a stateful factory that serves good events on the first invocation and
+            // error events on subsequent ones, so we can drive two prompts through the same
+            // client without reflectively mutating the final processFactory field.
+            AtomicInteger callCount = new AtomicInteger(0);
+            client = createClient((cmd, env, workDir) -> {
+                String events = callCount.getAndIncrement() == 0 ? goodEvents : errorEvents;
+                return new FakeProcess(
+                    new ByteArrayInputStream(events.getBytes(StandardCharsets.UTF_8)),
+                    new ByteArrayOutputStream(),
+                    new ByteArrayInputStream(new byte[0])
+                );
+            });
+
+            String sessionId = client.createSession(null);
+            client.sendPrompt(new PromptRequest(sessionId, List.of(new ContentBlock.Text("ok")), null, null), onUpdate);
+            client.sendPrompt(new PromptRequest(sessionId, List.of(new ContentBlock.Text("retry")), null, null), onUpdate);
+
+            Field cliIdsField = findField(ClaudeClient.class, "cliSessionIds");
+            cliIdsField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> cliSessionIds =
+                (java.util.Map<String, String>) cliIdsField.get(client);
+            // Must still be the last known-good ID, not the fresh one from the error result.
+            assertEquals("good-cli-id", cliSessionIds.get(sessionId));
         }
 
         @Test
@@ -410,28 +458,91 @@ class ClaudeClientStreamTest {
             this.stderr = stderr;
         }
 
-        @Override public OutputStream getOutputStream() { return stdin; }
-        @Override public InputStream getInputStream() { return stdout; }
-        @Override public InputStream getErrorStream() { return stderr; }
-        @Override public int waitFor() { return 0; }
-        @Override public int exitValue() { return 0; }
-        @Override public void destroy() {}
-        @Override public boolean isAlive() { return false; }
+        @Override
+        public OutputStream getOutputStream() {
+            return stdin;
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return stdout;
+        }
+
+        @Override
+        public InputStream getErrorStream() {
+            return stderr;
+        }
+
+        @Override
+        public int waitFor() {
+            return 0;
+        }
+
+        @Override
+        public int exitValue() {
+            return 0;
+        }
+
+        @Override
+        public void destroy() {
+        }
+
+        @Override
+        public boolean isAlive() {
+            return false;
+        }
     }
 
     /**
      * Minimal AgentConfig stub that avoids IntelliJ service dependencies.
      */
     private static class StubAgentConfig implements AgentConfig {
-        @Override public @NotNull String getDisplayName() { return "test"; }
-        @Override public @NotNull String getNotificationGroupId() { return "test"; }
-        @Override public void prepareForLaunch(String s) {}
-        @Override public @NotNull String findAgentBinary() { return "/usr/bin/claude"; }
-        @Override public @NotNull ProcessBuilder buildAcpProcess(String s, String s1, int i) { throw new UnsupportedOperationException(); }
-        @Override public void parseInitializeResponse(JsonObject o) {}
-        @Override public String parseModelUsage(JsonObject o) { return null; }
-        @Override public @NotNull AuthMethod getAuthMethod() { return new AuthMethod(); }
-        @Override public String getAgentBinaryPath() { return "/usr/bin/claude"; }
-        @Override public String getSessionInstructions() { return null; }
+        @Override
+        public @NotNull String getDisplayName() {
+            return "test";
+        }
+
+        @Override
+        public @NotNull String getNotificationGroupId() {
+            return "test";
+        }
+
+        @Override
+        public void prepareForLaunch(String s) {
+        }
+
+        @Override
+        public @NotNull String findAgentBinary() {
+            return "/usr/bin/claude";
+        }
+
+        @Override
+        public @NotNull ProcessBuilder buildAcpProcess(String s, String s1, int i) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void parseInitializeResponse(JsonObject o) {
+        }
+
+        @Override
+        public String parseModelUsage(JsonObject o) {
+            return null;
+        }
+
+        @Override
+        public @NotNull AuthMethod getAuthMethod() {
+            return new AuthMethod();
+        }
+
+        @Override
+        public String getAgentBinaryPath() {
+            return "/usr/bin/claude";
+        }
+
+        @Override
+        public String getSessionInstructions() {
+            return null;
+        }
     }
 }
