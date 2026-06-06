@@ -43,7 +43,7 @@ dependencies {
             // because IU 2026.1+ moved intellij.libraries.lucene.common.jar from
             // lib/modules/ (auto-included) to lib/ (opt-in, see bundledLibrary below).
             // The minimum *runtime* version is still 2025.3 as declared by sinceBuild="253".
-            intellijIdeaUltimate("2026.1.3")
+            intellijIdeaUltimate(providers.gradleProperty("intellijPlatformVersion").get())
         }
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         bundledPlugin("com.intellij.java")
