@@ -232,6 +232,63 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             result.startsWith("Error:") && result.contains("line"));
     }
 
+    /**
+     * End-to-end test: caller points at a USAGE (call site) of the target method. The old
+     * implementation only resolved declarations on the target line, so pointing at a call site
+     * would return "Could not find symbol at file:line". The new reference-fallback path
+     * resolves the call's reference to the declaration and reports callers from there.
+     * <p>
+     * Mirrors the language-agnostic fix made for {@code go_to_declaration} (PR #815) — same
+     * idea applied to call-hierarchy lookup so it works for any IDE whose PSI registers
+     * reference providers (CLion C/C++, PyCharm Python, GoLand Go, WebStorm JS/TS, etc.).
+     */
+    public void testGetCallHierarchyResolvesFromUsageLine() throws Exception {
+        VirtualFile vf = createTestFile("Lib.java", String.join("\n",
+            "public class Lib {",
+            "    public int target() { return 1; }",
+            "    public int callerOne() { return target(); }",
+            "    public int callerTwo() { return target(); }",
+            "}",
+            ""));
+
+        // Line 3 contains the USAGE `target()` inside callerOne — old code would fail here.
+        String result = getCallHierarchyTool.execute(
+            args("file", vf.getPath(), "line", "3", "symbol", "target"));
+
+        // The bug is "Could not find symbol at file:line" — the new fallback path resolves
+        // the call's reference to the declaration, so we must NOT see that error message.
+        // The actual references-search result is irrelevant for the resolution bug; the test
+        // fixture's project scope doesn't include /tmp files so 'no callers found' is fine.
+        assertNotNull("Result must not be null", result);
+        assertFalse("Resolution should succeed (no 'Could not find' error), got: " + result,
+            result.contains("Could not find"));
+        assertTrue("Expected target() to be resolved as the call target, got: " + result,
+            result.contains("target()"));
+    }
+
+    /**
+     * Regression test: requesting symbol {@code bar} on a line containing {@code foobar()}
+     * must not match the substring inside the longer identifier. Mirrors the
+     * {@code isWholeIdentifierMatch} fix from PR #815.
+     */
+    public void testGetCallHierarchyRejectsSubstringMatch() throws Exception {
+        VirtualFile vf = createTestFile("Sub.java", String.join("\n",
+            "public class Sub {",
+            "    public int foobar() { return 1; }",
+            "    public int caller() { return foobar(); }",
+            "}",
+            ""));
+
+        // Asking for 'bar' on line 3 must NOT match 'bar' inside 'foobar' — there is no
+        // declaration named 'bar', so the tool should report "Could not find".
+        String result = getCallHierarchyTool.execute(
+            args("file", vf.getPath(), "line", "3", "symbol", "bar"));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Substring match should NOT resolve to foobar, got: " + result,
+            result.contains("Could not find"));
+    }
+
     // ── GoToDeclarationTool ───────────────────────────────────────────────────
 
     /**
