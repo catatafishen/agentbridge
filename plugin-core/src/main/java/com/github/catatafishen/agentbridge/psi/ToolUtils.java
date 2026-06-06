@@ -317,6 +317,108 @@ public final class ToolUtils {
     }
 
     /**
+     * Resolves the named element {@code symbol} at the given line context using a two-step
+     * strategy that mirrors how the IDE's own navigation works:
+     * <ol>
+     *   <li>{@link #findNamedElement} — locate a DECLARATION named {@code symbol} on the line.</li>
+     *   <li>{@link #resolveViaReference} — if no declaration exists on this line, treat each
+     *   whole-identifier occurrence of {@code symbol} as a USAGE and resolve via the IDE's
+     *   registered reference contributors. Language-agnostic — works for Java, Kotlin, C/C++
+     *   in CLion, Python in PyCharm, Go in GoLand, JS/TS in WebStorm, etc.</li>
+     * </ol>
+     * Used by call-hierarchy ({@link CallHierarchySupport}) and type-hierarchy /
+     * find-implementations ({@link TypeHierarchySupport}). {@code go_to_declaration} uses the
+     * same conceptual approach but keeps its own implementation that returns multiple
+     * {@link com.intellij.psi.PsiElement} declarations (polyvariant) rather than a single named
+     * owner; consolidating it would change observable behaviour and is intentionally out of
+     * scope for this helper. Must be called inside a read action.
+     *
+     * @return the resolved {@link com.intellij.psi.PsiNameIdentifierOwner}, or {@code null} if
+     * neither a declaration nor a resolvable reference is found.
+     */
+    @Nullable
+    public static com.intellij.psi.PsiNameIdentifierOwner resolveNamedElement(
+        @NotNull LineContext ctx,
+        @NotNull String symbol) {
+        com.intellij.psi.PsiNameIdentifierOwner declaration = findNamedElement(ctx, symbol);
+        if (declaration != null) return declaration;
+        return resolveViaReference(ctx, symbol);
+    }
+
+    /**
+     * Resolves {@code symbol} via reference contributors at any whole-identifier occurrence of
+     * the symbol text on the target line. Each candidate offset is adjusted by
+     * {@link com.intellij.codeInsight.TargetElementUtil#adjustOffset} (so trailing whitespace
+     * or punctuation does not break lookup) before {@link com.intellij.psi.PsiFile#findReferenceAt}
+     * is consulted. Polyvariant references are iterated until a
+     * {@link com.intellij.psi.PsiNameIdentifierOwner} target is found.
+     */
+    @Nullable
+    private static com.intellij.psi.PsiNameIdentifierOwner resolveViaReference(
+        @NotNull LineContext ctx,
+        @NotNull String symbol) {
+        if (symbol.isEmpty()) return null;
+        com.intellij.psi.PsiFile psiFile = ctx.psiFile();
+        VirtualFile vf = psiFile.getVirtualFile();
+        if (vf == null) return null;
+        Document document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+        if (document == null) return null;
+
+        String lineText = document.getText(new com.intellij.openapi.util.TextRange(ctx.lineStart(), ctx.lineEnd()));
+        int searchFrom = 0;
+        while (searchFrom <= lineText.length() - symbol.length()) {
+            int symIdx = lineText.indexOf(symbol, searchFrom);
+            if (symIdx < 0) break;
+            if (isWholeIdentifierMatch(lineText, symIdx, symbol.length())) {
+                int rawOffset = ctx.lineStart() + symIdx;
+                int offset = com.intellij.codeInsight.TargetElementUtil.adjustOffset(psiFile, document, rawOffset);
+                com.intellij.psi.PsiNameIdentifierOwner target = resolveReferenceTarget(psiFile, offset);
+                if (target != null) return target;
+            }
+            searchFrom = symIdx + symbol.length();
+        }
+        return null;
+    }
+
+    @Nullable
+    private static com.intellij.psi.PsiNameIdentifierOwner resolveReferenceTarget(
+        @NotNull com.intellij.psi.PsiFile psiFile, int offset) {
+        com.intellij.psi.PsiReference ref = psiFile.findReferenceAt(offset);
+        if (ref != null) {
+            com.intellij.psi.PsiNameIdentifierOwner target = firstNamedTarget(ref);
+            if (target != null) return target;
+        }
+        com.intellij.psi.PsiElement elementAt = psiFile.findElementAt(offset);
+        if (elementAt != null) {
+            com.intellij.psi.PsiElement named = com.intellij.codeInsight.TargetElementUtil.getNamedElement(elementAt);
+            if (named instanceof com.intellij.psi.PsiNameIdentifierOwner owner) return owner;
+        }
+        return null;
+    }
+
+    /**
+     * Iterates every resolve candidate of {@code ref} and returns the first one that is a
+     * {@link com.intellij.psi.PsiNameIdentifierOwner}. For polyvariant references this matters:
+     * an earlier candidate that is not a named declaration must not shadow a later one that is.
+     */
+    @Nullable
+    private static com.intellij.psi.PsiNameIdentifierOwner firstNamedTarget(@NotNull com.intellij.psi.PsiReference ref) {
+        if (ref instanceof com.intellij.psi.PsiPolyVariantReference poly) {
+            for (com.intellij.psi.ResolveResult rr : poly.multiResolve(false)) {
+                if (rr.getElement() instanceof com.intellij.psi.PsiNameIdentifierOwner owner) return owner;
+            }
+            return null;
+        }
+        return ref.resolve() instanceof com.intellij.psi.PsiNameIdentifierOwner owner ? owner : null;
+    }
+
+    private static boolean isWholeIdentifierMatch(@NotNull String text, int start, int length) {
+        if (start > 0 && Character.isJavaIdentifierPart(text.charAt(start - 1))) return false;
+        int end = start + length;
+        return end >= text.length() || !Character.isJavaIdentifierPart(text.charAt(end));
+    }
+
+    /**
      * Holds a resolved PSI file and the character offsets bounding a specific source line.
      *
      * @param psiFile   the PSI file

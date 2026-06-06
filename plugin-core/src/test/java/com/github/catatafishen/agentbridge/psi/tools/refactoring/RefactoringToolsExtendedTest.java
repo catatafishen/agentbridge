@@ -196,6 +196,66 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         assertFalse("Result must not be blank", result.isBlank());
     }
 
+    /**
+     * End-to-end test: caller points at a USAGE of the target symbol (a constructor call
+     * site) rather than its declaration. The old implementation only located declarations on
+     * the target line via {@code findNamedElement}, so a usage line returned
+     * "Symbol 'X' not found at file:line".
+     * <p>
+     * Uses the same conceptual approach introduced for {@code go_to_declaration} (PR #815) and
+     * {@code get_call_hierarchy} (PR #816); the implementation now lives in
+     * {@link ToolUtils#resolveNamedElement} and is shared by {@code CallHierarchySupport} and
+     * {@code TypeHierarchySupport} (which backs {@code find_implementations}). The fix applies
+     * to any IDE whose PSI registers reference providers (CLion C/C++, PyCharm Python, GoLand
+     * Go, WebStorm JS/TS, etc.). {@code GoToDeclarationTool} keeps its own
+     * polyvariant-list-returning resolver and is intentionally not consolidated here.
+     */
+    public void testFindImplementationsResolvesFromUsageLine() throws Exception {
+        VirtualFile vf = createTestFile("Animal.java", String.join("\n",
+            "public class Animal {",
+            "    public String sound() { return \"...\"; }",
+            "    public static Animal make() { return new Animal(); }",
+            "}",
+            ""));
+
+        // Line 3 contains the USAGE `new Animal()` — old code would fail here.
+        String result = findImplementationsTool.execute(
+            args("file", vf.getPath(), "line", "3", "symbol", "Animal"));
+
+        // The bug is "Symbol 'X' not found at file:line" — the new shared resolver resolves
+        // the constructor reference to the Animal declaration, so we must NOT see that error.
+        // The DefinitionsScopedSearch result is irrelevant for the resolution bug; the test
+        // fixture's project scope doesn't include /tmp files so 'no subtypes found' is fine.
+        assertNotNull("Result must not be null", result);
+        assertFalse("Resolution should succeed (no 'not found' error), got: " + result,
+            result.contains("not found at"));
+        assertTrue("Expected Animal to be resolved as the target, got: " + result,
+            result.contains("Animal"));
+    }
+
+    /**
+     * Regression test: requesting symbol {@code Ani} on a line containing {@code Animal}
+     * must not match the substring inside the longer identifier. Mirrors the
+     * {@code isWholeIdentifierMatch} guard in {@link ToolUtils#resolveNamedElement}.
+     */
+    public void testFindImplementationsRejectsSubstringMatch() throws Exception {
+        VirtualFile vf = createTestFile("Zoo.java", String.join("\n",
+            "public class Zoo {",
+            "    public static Object make() { return new Animal(); }",
+            "}",
+            "class Animal {}",
+            ""));
+
+        // Asking for 'Ani' on line 2 must NOT match 'Ani' inside 'Animal' — no declaration
+        // named 'Ani' exists anywhere, so the tool must report "not found".
+        String result = findImplementationsTool.execute(
+            args("file", vf.getPath(), "line", "2", "symbol", "Ani"));
+
+        assertNotNull("Result must not be null", result);
+        assertTrue("Substring match should NOT resolve to Animal, got: " + result,
+            result.contains("not found at"));
+    }
+
     // ── GetCallHierarchyTool ──────────────────────────────────────────────────
 
     /**
