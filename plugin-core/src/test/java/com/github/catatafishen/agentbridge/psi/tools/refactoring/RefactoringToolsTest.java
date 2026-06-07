@@ -174,16 +174,22 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
     /**
      * Regression for bug #6 in issue-794: requesting {@code direction=both} in a non-Java
      * IDE (e.g. CLion) used to hard-fail with "Direction 'both' requires a Java project".
-     * The tool now falls back to a language-agnostic subtypes-only result and appends a clear
-     * note explaining that supertypes need the Java module. This matches the most common user
-     * intent of "show me what I can about this type" without losing partial results.
+     * The tool now returns programmatic subtypes AND supertypes (via the shared reflective
+     * {@code ToolUtils.findSuperElementsViaPlatform} helper) when the Java module is loaded —
+     * no manual-action hints anywhere in the output, because an autonomous agent cannot press
+     * hotkeys.
      */
-    public void testGetTypeHierarchyBothInNonJavaReturnsSubtypesWithNote() throws Exception {
+    public void testGetTypeHierarchyBothInNonJavaReturnsProgrammaticResults() throws Exception {
         java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("type-hierarchy-test");
         try {
-            java.nio.file.Path file = tempDir.resolve("Base_7421.java");
+            // Self-contained hierarchy in a single file so the parser can resolve references
+            // without needing the JDK on the classpath (the file lives outside the project's
+            // source roots).
+            java.nio.file.Path file = tempDir.resolve("Hierarchy_7421.java");
             java.nio.file.Files.writeString(file, """
-                public class Base_7421 {}
+                class Base_7421 {}
+                class Mid_7421 extends Base_7421 {}
+                class Leaf_7421 extends Mid_7421 {}
                 """);
             VirtualFile vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
                 .refreshAndFindFileByNioFile(file);
@@ -191,52 +197,80 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
 
             GetTypeHierarchyTool nonJavaTool = new GetTypeHierarchyTool(getProject(), false);
             String result = nonJavaTool.execute(args(
-                "symbol", "Base_7421",
+                "symbol", "Mid_7421",
                 "direction", "both",
                 "file", vf.getPath(),
-                "line", "1"
+                "line", "2"
             ));
 
             assertNotNull("Result must not be null", result);
-            // The pre-fix code returned "Error: Direction 'both' requires a Java project" — must
-            // no longer happen.
+            // Pre-fix: "Error: Direction 'both' requires a Java project". Must NOT happen.
             assertFalse("Expected no 'requires a Java project' error, got: " + result,
                 result.contains("requires a Java project"));
-            // The subtypes path runs successfully (the test fixture's project scope may not
-            // contain descendants of Base_7421, so the body may be "No subtypes ..." — that's
-            // fine, we only care that the fallback was taken and the note was appended).
-            assertTrue("Expected supertypes-limitation note in result, got: " + result,
-                result.contains("supertypes lookup is not supported") && result.contains("Type Hierarchy view"));
+            // Old approach added a manual-action hint ("use the IDE's built-in Type Hierarchy
+            // view (Ctrl+H)") — useless to an autonomous agent. Must NOT appear anywhere.
+            assertFalse("Result must not suggest Ctrl+H manual action, got: " + result,
+                result.contains("Ctrl+H") || result.contains("Cmd+H") || result.contains("Type Hierarchy view"));
+            // Subtypes path (any of these is acceptable — the project scope may not include
+            // /tmp files so 'no subtypes' is fine; the point is the path was taken).
+            assertTrue("Expected subtypes section or 'no subtypes' message, got: " + result,
+                result.contains("Subtypes") || result.contains("No subtypes"));
+            // Supertypes section must be present with Base_7421 (parent of Mid_7421).
+            assertTrue("Expected supertypes section listing Base_7421, got: " + result,
+                result.contains("Supertypes of Mid_7421") && result.contains("Base_7421"));
         } finally {
             try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(tempDir)) {
                 walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
-                    try { java.nio.file.Files.deleteIfExists(p); } catch (java.io.IOException ignored) { /* best-effort cleanup */ }
+                    try {
+                        java.nio.file.Files.deleteIfExists(p);
+                    } catch (java.io.IOException ignored) { /* best-effort cleanup */ }
                 });
             }
         }
     }
 
-    /**
-     * In a non-Java IDE, {@code direction=supertypes} cannot be served (no language-agnostic
-     * supertype search exists). The tool must return a clear, actionable error pointing the
-     * user at {@code direction=subtypes} and the IDE's own Type Hierarchy view, NOT the old
-     * generic "requires a Java project" message that gave no path forward.
-     */
-    public void testGetTypeHierarchySupertypesInNonJavaReturnsActionableError() throws Exception {
-        GetTypeHierarchyTool nonJavaTool = new GetTypeHierarchyTool(getProject(), false);
-        String result = nonJavaTool.execute(args(
-            "symbol", "SomeClass",
-            "direction", "supertypes",
-            "file", "/tmp/SomeClass.cpp",
-            "line", "3"
-        ));
+    public void testGetTypeHierarchySupertypesInNonJavaReturnsProgrammaticResults() throws Exception {
+        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("type-hierarchy-test");
+        try {
+            java.nio.file.Path file = tempDir.resolve("SuperHierarchy.java");
+            java.nio.file.Files.writeString(file, """
+                class GrandParent {}
+                class Parent extends GrandParent {}
+                class SuperProbe extends Parent {}
+                """);
+            VirtualFile vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                .refreshAndFindFileByNioFile(file);
+            assertNotNull("Failed to register temp file in VFS", vf);
 
-        assertNotNull("Result must not be null", result);
-        assertTrue("Expected error, got: " + result, result.startsWith("Error:"));
-        assertTrue("Error must mention the subtypes alternative, got: " + result,
-            result.contains("subtypes"));
-        assertTrue("Error must mention the IDE's built-in Type Hierarchy view, got: " + result,
-            result.contains("Type Hierarchy view"));
+            GetTypeHierarchyTool nonJavaTool = new GetTypeHierarchyTool(getProject(), false);
+            String result = nonJavaTool.execute(args(
+                "symbol", "SuperProbe",
+                "direction", "supertypes",
+                "file", vf.getPath(),
+                "line", "3"
+            ));
+
+            assertNotNull("Result must not be null", result);
+            assertFalse("Should not error when FindSuperElementsHelper is loadable, got: " + result,
+                result.startsWith("Error:"));
+            assertFalse("Result must not suggest Ctrl+H manual action, got: " + result,
+                result.contains("Ctrl+H") || result.contains("Cmd+H"));
+            assertTrue("Expected Supertypes header, got: " + result,
+                result.contains("Supertypes of SuperProbe"));
+            // Must walk the chain recursively: SuperProbe → Parent → GrandParent.
+            assertTrue("Expected Parent in supertypes, got: " + result,
+                result.contains("Parent"));
+            assertTrue("Expected GrandParent in supertypes (recursive walk), got: " + result,
+                result.contains("GrandParent"));
+        } finally {
+            try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(tempDir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        java.nio.file.Files.deleteIfExists(p);
+                    } catch (java.io.IOException ignored) { /* best-effort cleanup */ }
+                });
+            }
+        }
     }
 
     /**
