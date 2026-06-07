@@ -28,17 +28,36 @@ public final class FqnResolver {
     }
 
     /**
-     * Heuristic: returns {@code true} if the string looks like a fully-qualified name
-     * (contains at least one dot and does not look like a file path).
+     * Heuristic: returns {@code true} if the string looks like a fully-qualified name.
+     * Accepts both Java ({@code .}) and C++ ({@code ::}) separators.
      */
     public static boolean looksLikeFqn(@NotNull String symbol) {
-        if (!symbol.contains(".")) return false;
+        if (symbol.isEmpty()) return false;
+        // Accept Java (.) and C++ (::) separators
+        boolean hasSeparator = symbol.contains(".") || symbol.contains("::");
+        if (!hasSeparator) return false;
         // File paths contain slashes or common extensions
         if (symbol.contains("/") || symbol.contains("\\")) return false;
         if (symbol.endsWith(".java") || symbol.endsWith(".kt") || symbol.endsWith(".py")
-            || symbol.endsWith(".ts") || symbol.endsWith(".js")) return false;
-        // Must start with a letter (package names do)
+            || symbol.endsWith(".ts") || symbol.endsWith(".js")
+            || symbol.endsWith(".cpp") || symbol.endsWith(".hpp") || symbol.endsWith(".h")
+            || symbol.endsWith(".cc") || symbol.endsWith(".cxx") || symbol.endsWith(".cs")
+            || symbol.endsWith(".go") || symbol.endsWith(".rs") || symbol.endsWith(".rb")) return false;
+        // Must start with a letter (package/namespace names do)
         return Character.isLetter(symbol.charAt(0));
+    }
+
+    /**
+     * Extracts the short name (last segment after the final {@code ::} or {@code .} separator).
+     * Works for Java FQNs ({@code java.util.List → List}) and C++ FQNs
+     * ({@code vsc::Colour32 → Colour32}).
+     */
+    public static @NotNull String shortNameOf(@NotNull String fqn) {
+        int colonColon = fqn.lastIndexOf("::");
+        if (colonColon >= 0) return fqn.substring(colonColon + 2);
+        int dot = fqn.lastIndexOf('.');
+        if (dot >= 0) return fqn.substring(dot + 1);
+        return fqn;
     }
 
     /**

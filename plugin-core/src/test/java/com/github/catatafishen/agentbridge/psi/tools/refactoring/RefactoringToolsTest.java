@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -106,6 +107,41 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
             result.startsWith("Error: 'symbol' parameter required"));
         assertTrue("Expected 'symbol' mentioned in error, got: " + result,
             result.contains("symbol"));
+    }
+
+    /**
+     * When {@code file} and {@code line} are provided, the tool uses position-based
+     * resolution — the same language-agnostic approach used by go_to_declaration and
+     * find_implementations — instead of FQN lookup via JavaPsiFacade. This works for
+     * any language (C/C++, Python, Go, …) without any knowledge of language-specific
+     * FQN separators (:: vs . vs /).
+     *
+     * <p>In this test the fixture adds a Java file and the call uses the file+line path.
+     * Passing {@code symbol="demo::DocProbe"} (a C++-style FQN) exercises the
+     * {@code shortNameOf} extraction: "DocProbe" is extracted and resolved at the
+     * position — no word-index search, no disambiguation risk.
+     */
+    public void testGetDocumentationWithFileAndLineIsLanguageAgnostic() throws Exception {
+        com.intellij.psi.PsiFile file = myFixture.addFileToProject("demo/DocProbe.java", """
+            package demo;
+            /** Documentation probe class. */
+            public class DocProbe {
+                /** A probe method. */
+                public void probeMethod() {}
+            }
+            """);
+
+        // Position-based resolution: file+line points at the class declaration (line 3).
+        // symbol uses C++-style :: to verify that shortNameOf extracts "DocProbe" correctly.
+        String result = getDocumentationTool.execute(args(
+            "symbol", "demo::DocProbe",
+            "file", file.getVirtualFile().getPath(),
+            "line", "3"));
+
+        assertFalse("Position-based path must not error, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected 'DocProbe' in result, got: " + result,
+            result.contains("DocProbe"));
     }
 
     // ── GetTypeHierarchyTool ──────────────────────────────────────────────────

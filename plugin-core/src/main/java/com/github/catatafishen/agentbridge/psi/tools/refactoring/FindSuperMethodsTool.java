@@ -199,6 +199,10 @@ public final class FindSuperMethodsTool extends RefactoringTool {
         boolean anyHelperLoadable = false;
         PsiNameIdentifierOwner current = innermost;
         while (current != null) {
+            // Stop at class-level: PsiClass supers are types, not methods.
+            // Walking into the enclosing class would report interface/superclass parents
+            // as "super methods", which is semantically wrong for find_super_methods.
+            if (current instanceof PsiClass) break;
             PsiElement[] supers = ToolUtils.findSuperElementsViaPlatform(current);
             if (supers != null) {
                 anyHelperLoadable = true;
@@ -216,7 +220,8 @@ public final class FindSuperMethodsTool extends RefactoringTool {
                 + "PsiClass.getSupers() API is reachable, and the IntelliJ platform has no other "
                 + "language-agnostic equivalent of SuperMethodsSearch.";
         }
-        return "No super methods found for " + innermost.getName();
+        String name = innermost.getName();
+        return "No super methods found for " + (name != null ? name : "(unnamed)");
     }
 
     private String formatNonJavaSuperMethods(@NotNull PsiNameIdentifierOwner target,
