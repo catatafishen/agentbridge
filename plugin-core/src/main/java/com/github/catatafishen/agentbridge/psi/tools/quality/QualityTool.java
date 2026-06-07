@@ -13,6 +13,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
@@ -106,7 +107,10 @@ public abstract class QualityTool extends Tool {
     /**
      * Returns the names of all intention actions available at the current caret position
      * in {@code editor}.
-     * Skips any action whose {@code isAvailable()} throws, logging at WARN level.
+     * Skips any action whose {@code isAvailable()} throws a non-cancellation exception, logging at WARN level.
+     * {@link ProcessCanceledException} is <em>not</em> swallowed — it is rethrown so the platform
+     * can cancel the EDT operation cleanly. CLion Nova C++ intentions may throw this when their
+     * analysis engine is not yet ready.
      *
      * <p>Must be called on the EDT (caret position must already be set by the caller).
      * <b>Do NOT wrap the call body in {@code runReadAction()}</b>: this method runs on the EDT,
@@ -123,6 +127,10 @@ public abstract class QualityTool extends Tool {
                     String text = action.getText();
                     if (!text.isBlank()) names.add(text);
                 }
+            } catch (ProcessCanceledException e) {
+                // Platform cancellation — must propagate so IntelliJ can cancel the EDT operation cleanly.
+                // CLion Nova C++ intentions may throw this when their analysis engine is not yet ready.
+                throw e;
             } catch (Exception e) {
                 LOG.warn("Intention " + action.getClass().getSimpleName()
                     + " threw during isAvailable() — skipping", e);
@@ -145,11 +153,27 @@ public abstract class QualityTool extends Tool {
                 if (name.equals(action.getText()) && action.isAvailable(project, editor, psiFile)) {
                     return action;
                 }
+            } catch (ProcessCanceledException e) {
+                throw e;
             } catch (Exception ignored) {
                 // Skip poorly implemented intentions
             }
         }
         return null;
+    }
+
+    /**
+     * Resolves a VirtualFile by path, falling back to
+     * {@link ToolUtils#findFileInProjectContent} when {@link #resolveVirtualFile} returns null.
+     * Use this instead of the plain {@code resolveVirtualFile()} in all quality tools so that
+     * temp:/// paths (in-memory test fixtures) and files not yet synced to LocalFileSystem are
+     * handled consistently — and so that listing, applying, and inspecting actions all use the
+     * same resolver.
+     */
+    protected @Nullable VirtualFile resolveVirtualFileWithFallback(String pathStr) {
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) vf = ToolUtils.findFileInProjectContent(project, pathStr);
+        return vf;
     }
 
     /**
