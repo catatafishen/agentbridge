@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi;
 
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
@@ -215,6 +216,38 @@ public final class ToolUtils {
             if (vf != null) return vf;
         }
         return LocalFileSystem.getInstance().refreshAndFindFileByPath(normalized);
+    }
+
+    /**
+     * Fallback file-resolver that iterates the project's VFS index (including in-memory
+     * {@code temp:///} files used by test fixtures).  Returns {@code null} when no match is found.
+     * <p>
+     * A path matches when it equals the candidate's full VFS path, or when the candidate's
+     * path relative to the project base path equals the normalized input (leading slash stripped).
+     */
+    public static @Nullable VirtualFile findFileInProjectContent(@NotNull Project project, @NotNull String path) {
+        String normalized = path.replace('\\', '/');
+        String basePath = project.getBasePath();
+        VirtualFile[] match = {null};
+        ProjectFileIndex.getInstance(project).iterateContent(vf -> {
+            if (vf.isDirectory()) return true;
+            String virtualPath = vf.getPath().replace('\\', '/');
+            if (virtualPath.equals(normalized)) {
+                match[0] = vf;
+                return false;
+            }
+            if (basePath != null) {
+                String base = basePath.replace('\\', '/');
+                String relative = virtualPath.startsWith(base + "/") ? virtualPath.substring(base.length() + 1) : virtualPath;
+                String needle = normalized.startsWith("/") ? normalized.substring(1) : normalized;
+                if (relative.equals(needle)) {
+                    match[0] = vf;
+                    return false;
+                }
+            }
+            return true;
+        });
+        return match[0];
     }
 
     public static String relativize(@Nullable String basePath, @NotNull String filePath) {

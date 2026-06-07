@@ -11,14 +11,12 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * Gets Javadoc or KDoc for a symbol by fully-qualified name.
- */
-@SuppressWarnings("java:S112")
 public final class GetDocumentationTool extends RefactoringTool {
 
     private static final Logger LOG = Logger.getInstance(GetDocumentationTool.class);
     private static final String PARAM_SYMBOL = "symbol";
+    private static final String PARAM_FILE = "file";
+    private static final String PARAM_LINE = "line";
 
     public GetDocumentationTool(Project project) {
         super(project);
@@ -58,7 +56,14 @@ public final class GetDocumentationTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_SYMBOL, TYPE_STRING, "Fully qualified symbol name (e.g. java.util.List)")
+            Param.required(PARAM_SYMBOL, TYPE_STRING,
+                "Fully qualified symbol name (e.g. java.util.List, com.google.gson.Gson.fromJson). " +
+                    "For non-Java symbols, provide 'file' and 'line' for language-agnostic resolution."),
+            Param.optional(PARAM_FILE, TYPE_STRING,
+                "File path (absolute or project-relative). When provided together with 'line', " +
+                    "resolves the symbol by position instead of FQN — works for any language (C/C++, Python, Go, etc.)."),
+            Param.optional(PARAM_LINE, TYPE_INTEGER,
+                "1-based line number. Required when 'file' is provided.")
         );
     }
 
@@ -73,16 +78,66 @@ public final class GetDocumentationTool extends RefactoringTool {
         if (symbol.isEmpty())
             return "Error: 'symbol' parameter required (e.g. java.util.List, com.google.gson.Gson.fromJson)";
 
+        // Validate: file and line must be provided together.
+        if (args.has(PARAM_FILE) != args.has(PARAM_LINE)) {
+            return ToolUtils.ERROR_PREFIX + "'file' and 'line' must be provided together";
+        }
+
+        // Position-based path: language-agnostic, same approach as go_to_declaration / find_implementations.
+        // The IDE's reference resolution handles C/C++, Python, Go, and every other language
+        // without any knowledge of language-specific FQN separators (:: vs . vs /).
+        if (args.has(PARAM_FILE) && args.has(PARAM_LINE)) {
+            String filePath = args.get(PARAM_FILE).getAsString();
+            int line = args.get(PARAM_LINE).getAsInt();
+            // Resolve the VirtualFile before entering the read action — consistent with
+            // all other tools (FindSuperMethodsTool, GoToDeclarationTool, etc.) that call
+            // resolveVirtualFile outside the read-action lambda.
+            com.intellij.openapi.vfs.VirtualFile resolved = resolveVirtualFile(filePath);
+            if (resolved == null) resolved = ToolUtils.findFileInProjectContent(project, filePath);
+            if (resolved == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + filePath;
+            final com.intellij.openapi.vfs.VirtualFile vf = resolved;
+            return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+                try {
+                    com.intellij.psi.PsiFile psiFile =
+                        com.intellij.psi.PsiManager.getInstance(project).findFile(vf);
+                    if (psiFile == null)
+                        return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + filePath;
+                    com.intellij.openapi.editor.Document doc =
+                        com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+                    if (doc == null || line < 1 || line > doc.getLineCount())
+                        return ToolUtils.ERROR_PREFIX + "Line out of range: " + line;
+                    ToolUtils.LineContext ctx = new ToolUtils.LineContext(
+                        psiFile, doc.getLineStartOffset(line - 1), doc.getLineEndOffset(line - 1));
+                    String shortName = FqnResolver.shortNameOf(symbol);
+                    com.intellij.psi.PsiNameIdentifierOwner element =
+                        ToolUtils.resolveNamedElement(ctx, shortName);
+                    if (element == null)
+                        return ToolUtils.ERROR_PREFIX + "No symbol '" + shortName
+                            + "' found at " + filePath + ":" + line;
+                    return generateDocumentation(element, symbol);
+                } catch (Exception e) {
+                    LOG.warn("get_documentation (position) error", e);
+                    return ToolUtils.ERROR_PREFIX + e.getMessage();
+                }
+            });
+        }
+
+        // FQN-based path: Java/Kotlin only (JavaPsiFacade).
+        // For non-Java languages without a file+line, direct FQN resolution is not possible
+        // because FQN formats are language-specific and there is no platform-level FQN index.
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             try {
                 PsiElement element = FqnResolver.resolve(symbol, project);
                 if (element == null) {
-                    return "Symbol not found: " + symbol + ". Use a fully qualified name (e.g. java.util.List).";
+                    return "Symbol not found: " + symbol + ". "
+                        + "For Java/Kotlin use a fully qualified name (e.g. java.util.List). "
+                        + "For other languages (C/C++, Python, Go, ...) also provide 'file' and 'line' "
+                        + "for language-agnostic resolution.";
                 }
                 return generateDocumentation(element, symbol);
             } catch (Exception e) {
                 LOG.warn("get_documentation error", e);
-                return "Error retrieving documentation: " + e.getMessage();
+                return ToolUtils.ERROR_PREFIX + e.getMessage();
             }
         });
     }

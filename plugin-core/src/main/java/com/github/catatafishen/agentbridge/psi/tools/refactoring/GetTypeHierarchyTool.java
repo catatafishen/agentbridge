@@ -132,18 +132,22 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
     }
 
     private @NotNull String runSubtypesSearch(@NotNull String filePath, int line, @NotNull String symbolName) {
+        // Use shortNameOf so FQNs like "ns1::ns2::MyClass" resolve to "MyClass" at the declaration line.
+        String shortName = com.github.catatafishen.agentbridge.psi.tools.FqnResolver.shortNameOf(symbolName);
         return ApplicationManager.getApplication().runReadAction(
             (Computable<String>) () ->
                 com.github.catatafishen.agentbridge.psi.TypeHierarchySupport
-                    .findSubtypes(project, filePath, line, symbolName)
+                    .findSubtypes(project, filePath, line, shortName)
         );
     }
 
     private @NotNull String runSupertypesSearch(@NotNull String filePath, int line, @NotNull String symbolName) {
+        // Use shortNameOf so FQNs like "ns1::ns2::MyClass" resolve to "MyClass" at the declaration line.
+        String shortName = com.github.catatafishen.agentbridge.psi.tools.FqnResolver.shortNameOf(symbolName);
         return ApplicationManager.getApplication().runReadAction(
             (Computable<String>) () ->
                 com.github.catatafishen.agentbridge.psi.TypeHierarchySupport
-                    .findSupertypes(project, filePath, line, symbolName)
+                    .findSupertypes(project, filePath, line, shortName)
         );
     }
 
