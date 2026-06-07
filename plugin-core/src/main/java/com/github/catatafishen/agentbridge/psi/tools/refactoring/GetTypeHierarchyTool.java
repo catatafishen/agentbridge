@@ -46,12 +46,14 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
     public @NotNull String description() {
         return """
             Show supertypes and/or subtypes of a class or interface. \
-            When 'file' and 'line' are provided with direction='subtypes' (or with direction='both' \
-            in a non-Java IDE), uses platform-level DefinitionsScopedSearch — works for Java, \
-            Kotlin, TypeScript, Python, C/C++ in CLion, and any language with PSI support. \
-            Supertypes direction and symbol-only (name-based) lookup require a Java project; \
-            in non-Java IDEs the tool falls back to subtypes-only with a note when 'both' is \
-            requested.""";
+            When 'file' and 'line' are provided with direction='subtypes', uses platform-level \
+            DefinitionsScopedSearch — works for Java, Kotlin, TypeScript, Python, C/C++ in \
+            CLion, and any language with PSI support. \
+            For direction='supertypes' or direction='both' in a non-Java IDE, falls back to the \
+            platform's FindSuperElementsHelper via reflection when the Java module is loaded; \
+            returns programmatic supertypes results for any PSI it recognises. \
+            Returns a clear 'not available' error when the helper class is not loadable (pure \
+            non-Java IDE).""";
     }
 
     @Override
@@ -69,9 +71,8 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
         return schema(
             Param.required(PARAM_SYMBOL, TYPE_STRING, "Fully qualified or simple class/interface name"),
             Param.optional(PARAM_DIRECTION, TYPE_STRING,
-                "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both. " +
-                    "Non-Java IDEs only support 'subtypes' when 'file' and 'line' are provided. " +
-                    "Requesting 'both' in a non-Java IDE returns subtypes only with a note."),
+                "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both. "
+                    + "Non-Java IDEs require 'file' and 'line' for all directions."),
             Param.optional("file", TYPE_STRING,
                 "File path where the symbol is defined. Required for non-Java languages"),
             Param.optional("line", TYPE_INTEGER,
@@ -102,7 +103,9 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
             return runSubtypesSearch(filePath, line, symbolName);
         }
 
-        // Java path: supertypes, 'both' directions, or symbol-only lookup all need Java PSI.
+        // Java path: supertypes, 'both' directions, or symbol-only lookup all use Java PSI when
+        // the Java module is the most authoritative source (JavaPsiFacade-based lookup, full
+        // method signatures, etc.).
         if (hasJava) {
             return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
                 com.github.catatafishen.agentbridge.psi.java.RefactoringJavaSupport
@@ -110,27 +113,18 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
             );
         }
 
-        // Non-Java IDE fallbacks: prefer partial results over a hard "Java required" failure.
-        // For 'both' with file+line we can still return language-agnostic subtypes plus a note
-        // explaining the supertypes limitation; this matches the most common user intent of
-        // "show me what I can about this type".
-        if ("both".equals(direction) && filePath != null && line > 0) {
-            String subtypes = runSubtypesSearch(filePath, line, symbolName);
-            if (subtypes.startsWith("Error:")) return subtypes;
-            return subtypes + "\n\n"
-                + "(Note: supertypes lookup is not supported in this IDE without the Java module. "
-                + "Use the IDE's built-in Type Hierarchy view (Ctrl+H / Cmd+H) for supertypes, "
-                + "or run this tool inside an IDE that bundles the Java plugin.)";
+        // Non-Java IDE: use programmatic supertypes via the shared reflective platform helper
+        // (FindSuperElementsHelper). No manual-action suggestions — autonomous agents cannot
+        // press hotkeys, so emit either real results or a clear "not available" error.
+        if (filePath == null || line <= 0) {
+            return "Error: Provide 'file' and 'line' parameters to locate the symbol in non-Java projects.";
         }
 
-        if ("supertypes".equals(direction)) {
-            return "Error: 'supertypes' direction requires a Java project. "
-                + "Use direction='subtypes' with 'file' and 'line' for non-Java languages, "
-                + "or use the IDE's built-in Type Hierarchy view (Ctrl+H / Cmd+H).";
-        }
-
-        // direction='subtypes' or 'both' but missing file/line.
-        return "Error: Provide 'file' and 'line' parameters to locate the symbol in non-Java projects.";
+        return switch (direction) {
+            case "supertypes" -> runSupertypesSearch(filePath, line, symbolName);
+            case "both" -> runBothDirections(filePath, line, symbolName);
+            default -> "Error: Provide 'file' and 'line' parameters to locate the symbol in non-Java projects.";
+        };
     }
 
     private static boolean isValidDirection(@NotNull String direction) {
@@ -138,12 +132,37 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
     }
 
     private @NotNull String runSubtypesSearch(@NotNull String filePath, int line, @NotNull String symbolName) {
-        final String fp = filePath;
-        final int ln = line;
         return ApplicationManager.getApplication().runReadAction(
             (Computable<String>) () ->
                 com.github.catatafishen.agentbridge.psi.TypeHierarchySupport
-                    .findSubtypes(project, fp, ln, symbolName)
+                    .findSubtypes(project, filePath, line, symbolName)
         );
+    }
+
+    private @NotNull String runSupertypesSearch(@NotNull String filePath, int line, @NotNull String symbolName) {
+        return ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () ->
+                com.github.catatafishen.agentbridge.psi.TypeHierarchySupport
+                    .findSupertypes(project, filePath, line, symbolName)
+        );
+    }
+
+    /**
+     * Combined non-Java {@code direction=both} result. Runs subtypes and supertypes
+     * independently and concatenates the outputs. If the supertypes helper is unavailable
+     * (pure non-Java IDE), the supertypes section is replaced with a brief, agent-friendly
+     * note explaining the limitation — no manual-action suggestions.
+     */
+    private @NotNull String runBothDirections(@NotNull String filePath, int line, @NotNull String symbolName) {
+        String subtypes = runSubtypesSearch(filePath, line, symbolName);
+        if (subtypes.startsWith("Error:")) return subtypes;
+        String supertypes = runSupertypesSearch(filePath, line, symbolName);
+        if (supertypes.startsWith("Error:")) {
+            // Resolution succeeded for subtypes but the platform helper for supertypes is
+            // unavailable in this IDE. Return subtypes plus a concise programmatic note —
+            // NOT a manual-action hint.
+            return subtypes + "\nSupertypes: not available (FindSuperElementsHelper not loadable in this IDE).";
+        }
+        return subtypes + "\n" + supertypes;
     }
 }

@@ -419,6 +419,117 @@ public final class ToolUtils {
     }
 
     /**
+     * Reflectively invokes the platform's programmatic super-element APIs and returns the
+     * combined results. Tries two strategies in order:
+     *
+     * <ol>
+     *   <li>{@code com.intellij.psi.impl.FindSuperElementsHelper.findSuperElements(PsiElement)} —
+     *       designed for methods; returns the override chain for {@code PsiMethod}, empty
+     *       array otherwise. Ships with the Java module.</li>
+     *   <li>{@code element.getSupers()} — the standard {@code PsiClass} API for retrieving
+     *       superclass + implemented interfaces; reachable reflectively on {@code PsiClass}
+     *       instances.</li>
+     * </ol>
+     *
+     * <h4>Return-value contract (matters for distinguishing "no supers" from "tooling missing"):</h4>
+     * <ul>
+     *   <li>{@code null} — <b>neither</b> strategy is available on this IDE / for this element
+     *       (e.g., pure non-Java IDE without the Java plugin: the helper class is not on the
+     *       classpath and the element type has no {@code getSupers()} method). The caller
+     *       should report a "not available" / "tooling missing" error.</li>
+     *   <li>Empty array — at least one strategy ran successfully but found no supers. The
+     *       caller should report a clean "no super methods/types found" message, NOT a
+     *       "tooling missing" error.</li>
+     *   <li>Non-empty array — the supertypes / super-methods.</li>
+     * </ul>
+     * Other reflective failures (InvocationTargetException, ClassCastException, etc.) are
+     * treated as "strategy was loadable but the call failed" — they collapse into the
+     * empty-array branch when the other strategy was at least loadable, or into {@code null}
+     * when neither was loadable.
+     * <p>
+     * Shared by {@code FindSuperMethodsTool} (method-level super chain) and
+     * {@link com.github.catatafishen.agentbridge.psi.TypeHierarchySupport} (class/interface
+     * supertypes) so a single reflective access point keeps the brittle bit in one place.
+     */
+    public static com.intellij.psi.PsiElement @Nullable [] findSuperElementsViaPlatform(@NotNull com.intellij.psi.PsiElement element) {
+        StrategyResult viaHelper = invokeFindSuperElementsHelper(element);
+        if (viaHelper.results() != null && viaHelper.results().length > 0) {
+            return viaHelper.results();
+        }
+        StrategyResult viaGetSupers = invokeGetSupers(element);
+        if (viaGetSupers.results() != null && viaGetSupers.results().length > 0) {
+            return viaGetSupers.results();
+        }
+        // Neither strategy returned non-empty results. If at least one strategy was loadable
+        // (regardless of whether the invocation itself succeeded), the tooling IS available —
+        // report empty rather than null so the caller emits a clean "none found" message.
+        if (viaHelper.loadable() || viaGetSupers.loadable()) {
+            return new com.intellij.psi.PsiElement[0];
+        }
+        return null;
+    }
+
+    /**
+     * Result of one reflective lookup attempt.
+     * {@link #loadable()} is {@code true} when the target class / method exists on the
+     * classpath, regardless of whether the invocation itself succeeded.
+     * {@link #results()} holds the returned array when the call succeeded, or {@code null}
+     * for any failure (including the not-loadable case).
+     */
+    private record StrategyResult(boolean loadable, com.intellij.psi.PsiElement @Nullable [] results) {
+        static final StrategyResult NOT_LOADABLE = new StrategyResult(false, null);
+    }
+
+    private static StrategyResult invokeFindSuperElementsHelper(@NotNull com.intellij.psi.PsiElement element) {
+        Class<?> helper;
+        try {
+            helper = Class.forName("com.intellij.psi.impl.FindSuperElementsHelper");
+        } catch (ClassNotFoundException e) {
+            return StrategyResult.NOT_LOADABLE;
+        }
+        java.lang.reflect.Method method;
+        try {
+            method = helper.getMethod("findSuperElements", com.intellij.psi.PsiElement.class);
+        } catch (NoSuchMethodException e) {
+            return StrategyResult.NOT_LOADABLE;
+        }
+        try {
+            Object result = method.invoke(null, element);
+            return new StrategyResult(true, (com.intellij.psi.PsiElement[]) result);
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            return new StrategyResult(true, null);
+        }
+    }
+
+    private static StrategyResult invokeGetSupers(@NotNull com.intellij.psi.PsiElement element) {
+        java.lang.reflect.Method method;
+        try {
+            method = element.getClass().getMethod("getSupers");
+        } catch (NoSuchMethodException e) {
+            return StrategyResult.NOT_LOADABLE;
+        }
+        try {
+            Object result = method.invoke(element);
+            if (result instanceof com.intellij.psi.PsiElement[] array) {
+                return new StrategyResult(true, array);
+            }
+            if (result instanceof Object[] generic) {
+                com.intellij.psi.PsiElement[] out = new com.intellij.psi.PsiElement[generic.length];
+                for (int i = 0; i < generic.length; i++) {
+                    if (!(generic[i] instanceof com.intellij.psi.PsiElement pe)) {
+                        return new StrategyResult(true, null);
+                    }
+                    out[i] = pe;
+                }
+                return new StrategyResult(true, out);
+            }
+            return new StrategyResult(true, null);
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            return new StrategyResult(true, null);
+        }
+    }
+
+    /**
      * Holds a resolved PSI file and the character offsets bounding a specific source line.
      *
      * @param psiFile   the PSI file
