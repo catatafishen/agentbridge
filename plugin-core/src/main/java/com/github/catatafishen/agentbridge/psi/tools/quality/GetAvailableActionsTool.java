@@ -120,7 +120,7 @@ public final class GetAvailableActionsTool extends QualityTool {
     // ── Quick-fixes only (no symbol/column) ─────────────────────────
 
     private String collectQuickFixesOnly(String pathStr, int targetLine) {
-        VirtualFile vf = resolveVirtualFile(pathStr);
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
         if (vf == null) return "Error: File not found: " + pathStr;
 
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
@@ -171,7 +171,7 @@ public final class GetAvailableActionsTool extends QualityTool {
 
     private String collectActionsWithIntentions(String pathStr, int targetLine,
                                                 @Nullable String symbol, @Nullable Integer targetCol) {
-        VirtualFile vf = resolveVirtualFile(pathStr);
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
         if (vf == null) return "Error: File not found: " + pathStr;
 
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
@@ -200,13 +200,24 @@ public final class GetAvailableActionsTool extends QualityTool {
         List<String> intentions = collectIntentionNames(editor, psiFile);
 
         if (quickFixes.isEmpty() && intentions.isEmpty()) {
+            // Diagnose why nothing was found to help with non-Java IDEs (e.g. CLion C++).
+            int totalRegistered = com.intellij.codeInsight.intention.IntentionManager.getInstance()
+                .getAvailableIntentions().size();
+            int highlightCount = highlightsOnLine(doc, targetLine).size();
+            boolean hasSymbol = symbol != null && !symbol.isBlank();
             return "No actions available at " + pathStr + LINE_LABEL + targetLine
-                + (symbol != null ? " (symbol: '" + symbol + "')" : " col " + (col + 1)) + ".";
+                + (hasSymbol ? " (symbol: '" + symbol + "')" : " col " + (col + 1)) + "."
+                + " Checked " + totalRegistered + " registered intentions and "
+                + highlightCount + " daemon highlight(s) on this line."
+                + (highlightCount == 0
+                ? " The daemon may not have analyzed this file yet — open it in the editor first, wait a moment, then retry."
+                : "");
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("Actions at ").append(pathStr).append(LINE_LABEL).append(targetLine);
-        if (symbol != null) {
+        boolean hasSymbol = symbol != null && !symbol.isBlank();
+        if (hasSymbol) {
             sb.append(" (symbol: '").append(symbol).append("', col ").append(col + 1).append(')');
         } else {
             sb.append(" col ").append(col + 1);

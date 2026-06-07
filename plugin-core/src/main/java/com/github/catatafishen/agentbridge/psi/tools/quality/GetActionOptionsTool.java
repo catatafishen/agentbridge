@@ -115,7 +115,7 @@ public final class GetActionOptionsTool extends QualityTool {
 
     private String captureOptions(String pathStr, int targetLine, String actionName,
                                   @Nullable String symbol, @Nullable Integer targetCol) {
-        VirtualFile vf = resolveVirtualFile(pathStr);
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
         Document doc = FileDocumentManager.getInstance().getDocument(vf);

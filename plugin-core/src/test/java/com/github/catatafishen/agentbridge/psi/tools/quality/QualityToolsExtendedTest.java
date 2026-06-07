@@ -318,6 +318,81 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
         assertFalse("Result must not be blank", result.isBlank());
     }
 
+    /**
+     * When {@code symbol} is provided but blank, the tool must not include
+     * {@code "(symbol: '')"} in its output. It must fall back to the "col N" format
+     * because {@link QualityTool#resolveColumn} already ignores blank symbols, and the
+     * "No actions available" and header formatters must do the same.
+     *
+     * <p>Uses {@link #executeSync} because providing {@code symbol} triggers the
+     * {@code collectActionsWithIntentions} path which dispatches via
+     * {@code EdtUtil.invokeLater}.
+     */
+    public void testGetAvailableActionsBlankSymbolIsIgnored() throws Exception {
+        VirtualFile vf = createTestFile("BlankSymbolTest.java",
+            "public class BlankSymbolTest {\n    public void doSomething() {}\n}\n");
+
+        // Blank symbol — should be treated the same as no symbol (col format, not "symbol: ''")
+        String result = executeSync(() -> getAvailableActionsTool.execute(args(
+            "file", vf.getPath(),
+            "line", "1",
+            "symbol", "   ")));
+        assertNotNull("Result must not be null", result);
+        assertFalse("Result must not be a file-not-found error, got: " + result,
+            result.contains("File not found"));
+        assertFalse("Blank symbol must not produce \"(symbol: '   ')\", got: " + result,
+            result.contains("(symbol: '"));
+        // The output should use the "col N" form for blank symbols
+        assertTrue("Expected 'col ' in output for blank symbol, got: " + result,
+            result.contains("col ") || result.contains("No actions available"));
+    }
+
+    /**
+     * When the file is created via {@code myFixture.addFileToProject()} (in-memory
+     * temp:/// VFS), {@code LocalFileSystem.findFileByPath} cannot resolve it.
+     * {@code resolveVirtualFileWithFallback} must fall back to
+     * {@link com.github.catatafishen.agentbridge.psi.ToolUtils#findFileInProjectContent}
+     * and find the file, so the tool must not return "File not found".
+     *
+     * <p>Tests the quick-fixes-only path (no symbol/column) which uses
+     * {@code executeOnPooledThread} + {@code runReadAction} — safe from EDT.
+     */
+    public void testGetAvailableActionsResolvesInMemoryVfsFile() throws Exception {
+        // addFileToProject creates a temp:/// VFS file invisible to LocalFileSystem
+        com.intellij.psi.PsiFile psiFile = myFixture.addFileToProject(
+            "quality/VfsProbe.java",
+            "public class VfsProbe {\n    public void doNothing() {}\n}\n");
+        String tempPath = psiFile.getVirtualFile().getPath();
+
+        // No symbol → quick-fixes path → pooled thread + runReadAction → safe from EDT
+        String result = getAvailableActionsTool.execute(args(
+            "file", tempPath,
+            "line", "1"));
+        assertNotNull("Result must not be null", result);
+        assertFalse("resolveVirtualFileWithFallback must find the temp:/// file, got: " + result,
+            result.contains("File not found"));
+    }
+
+    /**
+     * Same as {@link #testGetAvailableActionsResolvesInMemoryVfsFile} but for the
+     * symbol path (which uses {@code collectActionsWithIntentions} on the EDT via
+     * {@link #executeSync}).
+     */
+    public void testGetAvailableActionsResolvesInMemoryVfsFileWithSymbol() throws Exception {
+        com.intellij.psi.PsiFile psiFile = myFixture.addFileToProject(
+            "quality/VfsProbeSymbol.java",
+            "public class VfsProbeSymbol {\n    public void doNothing() {}\n}\n");
+        String tempPath = psiFile.getVirtualFile().getPath();
+
+        String result = executeSync(() -> getAvailableActionsTool.execute(args(
+            "file", tempPath,
+            "line", "1",
+            "symbol", "VfsProbeSymbol")));
+        assertNotNull("Result must not be null", result);
+        assertFalse("resolveVirtualFileWithFallback must find the temp:/// file, got: " + result,
+            result.contains("File not found"));
+    }
+
     // ── SuppressInspectionTool ────────────────────────────────────────────────
 
     /**

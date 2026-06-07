@@ -216,7 +216,7 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
         boolean dryRun = request.dryRun();
         PopupHandler handler = request.handler();
         boolean isReplay = request.isReplay();
-        VirtualFile vf = resolveVirtualFile(pathStr);
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
