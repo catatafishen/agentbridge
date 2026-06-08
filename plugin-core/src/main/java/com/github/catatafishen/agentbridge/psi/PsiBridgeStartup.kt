@@ -79,16 +79,24 @@ class PsiBridgeStartup : ProjectActivity {
         // PsiBridgeService init raced with settings loading)
         try {
             val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
-            if (graphSettings.isEnabled) {
-                val registry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
-                if (registry.findById("query_code_graph") == null) {
-                    val tools = com.github.catatafishen.agentbridge.psi.tools.graph.GraphToolFactory.create(project)
-                    if (tools.isNotEmpty()) {
-                        registry.registerAll(tools)
-                        LOG.info("Code Graph tool registered at startup (deferred)")
-                    } else {
-                        LOG.warn("Code Graph enabled but factory returned empty — settings.isEnabled=${graphSettings.isEnabled}")
-                    }
+            val registry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
+            val alreadyRegistered = registry.findById("query_code_graph") != null
+            LOG.info("Code Graph startup check: enabled=${graphSettings.isEnabled}, alreadyRegistered=$alreadyRegistered")
+
+            if (!alreadyRegistered) {
+                // Self-healing: if graph has data but settings say disabled,
+                // the settings file was likely lost during clean rebuild. Auto-enable.
+                val stats = com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore.getInstance(project).stats
+                if (!graphSettings.isEnabled && stats.nodeCount() > 0) {
+                    LOG.warn("Code Graph has ${stats.nodeCount()} nodes but isEnabled=false — auto-enabling (settings were likely lost)")
+                    graphSettings.isEnabled = true
+                }
+
+                if (graphSettings.isEnabled) {
+                    // Bypass the factory and register directly to avoid any remaining gate logic
+                    val tool = com.github.catatafishen.agentbridge.psi.tools.graph.QueryCodeGraphTool(project)
+                    registry.register(tool)
+                    LOG.info("Code Graph tool registered at startup (deferred). ID=${tool.id()}")
                 }
             }
         } catch (e: Exception) {
