@@ -75,8 +75,8 @@ class PsiBridgeStartup : ProjectActivity {
             LOG.warn("Failed to wire Code Graph auto-refresh listener", e)
         }
 
-        // Ensure graph tool is registered if enabled + non-empty (handles edge case where
-        // PsiBridgeService init raced with DB readiness)
+        // Ensure graph tool is registered if enabled (handles edge case where
+        // PsiBridgeService init raced with settings loading)
         try {
             val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
             if (graphSettings.isEnabled) {
@@ -86,11 +86,13 @@ class PsiBridgeStartup : ProjectActivity {
                     if (tools.isNotEmpty()) {
                         registry.registerAll(tools)
                         LOG.info("Code Graph tool registered at startup (deferred)")
+                    } else {
+                        LOG.warn("Code Graph enabled but factory returned empty — settings.isEnabled=${graphSettings.isEnabled}")
                     }
                 }
             }
         } catch (e: Exception) {
-            LOG.debug("Code Graph startup registration check: ${e.message}")
+            LOG.warn("Code Graph startup registration check failed", e)
         }
 
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
