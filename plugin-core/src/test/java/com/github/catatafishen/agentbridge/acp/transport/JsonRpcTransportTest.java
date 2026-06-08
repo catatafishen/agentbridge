@@ -909,7 +909,8 @@ class JsonRpcTransportTest {
         @DisplayName("logs outgoing messages with >>> prefix")
         void logsOutgoing() throws Exception {
             List<String> logs = new CopyOnWriteArrayList<>();
-            transport.setDebugLogger(logs::add);
+            transport.setDebugLogger((dir, msg) ->
+                logs.add((dir == JsonRpcTransport.Direction.OUTGOING ? ">>>" : "<<<") + " " + msg));
             transport.start(mockProcess);
 
             transport.sendNotification("test/outgoing", null);
@@ -926,9 +927,10 @@ class JsonRpcTransportTest {
         void logsIncoming() throws Exception {
             CountDownLatch incomingLatch = new CountDownLatch(1);
             List<String> logs = new CopyOnWriteArrayList<>();
-            transport.setDebugLogger(msg -> {
-                logs.add(msg);
-                if (msg.startsWith("<<<")) incomingLatch.countDown();
+            transport.setDebugLogger((dir, msg) -> {
+                String entry = (dir == JsonRpcTransport.Direction.INCOMING ? "<<<" : ">>>") + " " + msg;
+                logs.add(entry);
+                if (entry.startsWith("<<<")) incomingLatch.countDown();
             });
             transport.onNotification(notif -> {
             }); // register handler so the message is processed
@@ -949,10 +951,11 @@ class JsonRpcTransportTest {
         void bothDirectionsLogged() throws Exception {
             CountDownLatch responseLatch = new CountDownLatch(1);
             List<String> logs = new CopyOnWriteArrayList<>();
-            transport.setDebugLogger(msg -> {
-                logs.add(msg);
+            transport.setDebugLogger((dir, msg) -> {
+                String entry = (dir == JsonRpcTransport.Direction.INCOMING ? "<<<" : ">>>") + " " + msg;
+                logs.add(entry);
                 // Count <<< entries for the response
-                if (msg.startsWith("<<<") && msg.contains("result")) {
+                if (entry.startsWith("<<<") && entry.contains("result")) {
                     responseLatch.countDown();
                 }
             });
@@ -980,7 +983,8 @@ class JsonRpcTransportTest {
         @DisplayName("null debug logger disables logging")
         void nullLoggerDisablesLogging() throws Exception {
             List<String> logs = new CopyOnWriteArrayList<>();
-            transport.setDebugLogger(logs::add);
+            transport.setDebugLogger((dir, msg) ->
+                logs.add((dir == JsonRpcTransport.Direction.OUTGOING ? ">>>" : "<<<") + " " + msg));
             transport.start(mockProcess);
 
             transport.sendNotification("logged/message", null);
