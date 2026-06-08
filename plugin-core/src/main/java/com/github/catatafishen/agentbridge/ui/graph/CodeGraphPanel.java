@@ -18,17 +18,8 @@ import com.intellij.ui.components.panels.VerticalLayout;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JComponent;
-import javax.swing.JPanel;
-import javax.swing.JTextArea;
-import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.FlowLayout;
-import java.io.IOException;
+import javax.swing.*;
+import java.awt.*;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -152,16 +143,12 @@ public final class CodeGraphPanel {
 
     private void onIndexFinished() {
         refreshStats();
-        // Re-register the tool only after the graph is non-empty.
+        // Re-register the tool after rebuild completes.
         ToolRegistry registry = ToolRegistry.getInstance(project);
         registry.unregister(TOOL_ID); // idempotent — clear stale registration first
         var tools = GraphToolFactory.create(project);
         registry.registerAll(tools);
-        if (tools.isEmpty()) {
-            setStatus("Build finished — graph is empty, tool not advertised.");
-        } else {
-            setStatus("Build finished — query_code_graph registered.");
-        }
+        setStatus("Build finished — query_code_graph registered.");
     }
 
     private void exportJson() {
