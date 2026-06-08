@@ -157,7 +157,7 @@ public final class GetProblemsTool extends QualityTool {
             highlights::add
         );
         for (var h : highlights) {
-            if (h.getDescription() == null) continue;
+            if (h.getDescription() == null || h.getDescription().isBlank()) continue;
             if (!filter.shouldInclude(h)) continue;
             int line = doc.getLineNumber(h.getStartOffset()) + 1;
             problems.add(String.format(FORMAT_LOCATION,
