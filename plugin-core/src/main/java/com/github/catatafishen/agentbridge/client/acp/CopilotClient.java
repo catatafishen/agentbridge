@@ -113,7 +113,7 @@ public final class CopilotClient extends AcpClient {
      * passed anyway so it takes effect once the bug is fixed upstream.
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
-        "view,edit,create,bash,glob,grep,task,report_intent";
+        "view,edit,create,bash,glob,grep";
     /**
      * Known Copilot CLI built-in tool names. Used by {@link #resolveToolId} to distinguish
      * actual tool names from human-readable task descriptions that the CLI sends as titles
