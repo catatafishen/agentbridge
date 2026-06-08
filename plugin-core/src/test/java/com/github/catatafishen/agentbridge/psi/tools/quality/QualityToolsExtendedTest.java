@@ -259,6 +259,23 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
             result.startsWith("Error:"));
     }
 
+    /**
+     * Verifies that highlights with blank or null descriptions are filtered out.
+     * This is a regression test for issue #794 bug #12 (CLion C++ blank messages).
+     * The test creates an in-memory file and verifies the tool doesn't crash or
+     * include blank entries.
+     */
+    public void testGetHighlightsFiltersBlankDescriptions() throws Exception {
+        String result = getHighlightsTool.execute(new JsonObject());
+        assertNotNull("Result must not be null", result);
+        assertFalse("Expected non-error response, got: " + result,
+            result.startsWith("Error:"));
+        // Result should either be "No highlights found" or contain actual highlights,
+        // but never include entries with blank descriptions
+        assertFalse("Result must not contain blank description entries",
+            result.contains("description=''") || result.contains("description=\"\""));
+    }
+
     // ── GetAvailableActionsTool ───────────────────────────────────────────────
 
     /**

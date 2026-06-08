@@ -231,19 +231,18 @@ public final class GetHighlightsTool extends QualityTool {
                 try {
                     com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
                         .openFile(vf, false);
-                    com.intellij.psi.PsiFile psiFile =
-                        com.intellij.psi.PsiManager.getInstance(project).findFile(vf);
-                    if (psiFile != null) {
-                        com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project)
-                            .restart(psiFile, "get_highlights: file opened for analysis");
-                    }
                 } finally {
                     opened.complete(null);
                 }
             });
             opened.get(5, TimeUnit.SECONDS);
 
-            if (!latch.await(5, TimeUnit.SECONDS)) {
+            // Wait for the daemon to finish analysis. We deliberately do NOT call
+            // DaemonCodeAnalyzer.restart() here — doing so clears any cached highlights
+            // and forces a full re-analysis, which breaks CLion C++ files whose Clang-Tidy
+            // pass takes longer than our wait timeout. Opening the file is sufficient to
+            // trigger daemon analysis automatically if the file hasn't been analyzed yet.
+            if (!latch.await(15, TimeUnit.SECONDS)) {
                 LOG.info("get_highlights: daemon analysis timed out for " + vf.getPath());
             }
         } catch (InterruptedException e) {
@@ -293,7 +292,7 @@ public final class GetHighlightsTool extends QualityTool {
             for (var h : highlights) {
                 if (added >= remaining) break;
                 var severity = h.getSeverity();
-                if (h.getDescription() == null) continue;
+                if (h.getDescription() == null || h.getDescription().isBlank()) continue;
                 if (!filter.shouldInclude(h)) continue;
                 int line = doc.getLineNumber(h.getStartOffset()) + 1;
                 if (startLine > 0 && (line < startLine || (endLine > 0 && line > endLine))) continue;
