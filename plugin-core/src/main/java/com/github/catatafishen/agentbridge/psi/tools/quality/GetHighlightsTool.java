@@ -235,7 +235,7 @@ public final class GetHighlightsTool extends QualityTool {
                     opened.complete(null);
                 }
             });
-            opened.get(5, TimeUnit.SECONDS);
+            opened.get(15, TimeUnit.SECONDS);
 
             // Wait for the daemon to finish analysis. We deliberately do NOT call
             // DaemonCodeAnalyzer.restart() here — doing so clears any cached highlights

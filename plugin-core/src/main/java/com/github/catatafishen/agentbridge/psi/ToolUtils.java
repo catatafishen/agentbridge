@@ -69,6 +69,36 @@ public final class ToolUtils {
     private static final java.util.regex.Pattern MVN_LIFECYCLE_PATTERN =
         java.util.regex.Pattern.compile("mvn\\s+(verify|package|install|deploy)(\\s|$)");
 
+    /**
+     * Maximum levels to walk up the PSI parent chain when searching for a named ancestor.
+     * A small limit avoids incorrectly returning an enclosing method or class when the caret
+     * is on an unresolved reference expression — in the "go to declaration on a declaration"
+     * case, the named element is always a direct parent of the leaf identifier token.
+     */
+    private static final int MAX_NAMED_ANCESTOR_WALK = 3;
+
+    /**
+     * Walks up the PSI parent chain from {@code element} and returns the first
+     * {@link com.intellij.psi.PsiNamedElement} ancestor, excluding {@link com.intellij.psi.PsiFile}.
+     * Starts from {@code element.getParent()} (skipping the element itself, which is typically a leaf
+     * identifier token rather than a named declaration).
+     * Depth-limited to {@value #MAX_NAMED_ANCESTOR_WALK} levels to avoid climbing to an unrelated
+     * enclosing method or class when the caret is on an unresolved reference.
+     *
+     * @param element the leaf PSI element at the caret position; may be {@code null}
+     * @return the nearest named ancestor, or {@code null} if none found within the depth limit
+     */
+    @Nullable
+    public static com.intellij.psi.PsiNamedElement findNearestNamedAncestor(@Nullable com.intellij.psi.PsiElement element) {
+        com.intellij.psi.PsiElement current = element != null ? element.getParent() : null;
+        for (int i = 0; i < MAX_NAMED_ANCESTOR_WALK && current != null; i++) {
+            if (current instanceof com.intellij.psi.PsiNamedElement named
+                && !(named instanceof com.intellij.psi.PsiFile)) return named;
+            current = current.getParent();
+        }
+        return null;
+    }
+
     private ToolUtils() {
     }
 
@@ -423,11 +453,8 @@ public final class ToolUtils {
         }
         com.intellij.psi.PsiElement elementAt = psiFile.findElementAt(offset);
         if (elementAt != null) {
-            com.intellij.psi.PsiElement current = elementAt;
-            while (current != null) {
-                if (current instanceof com.intellij.psi.PsiNameIdentifierOwner owner) return owner;
-                current = current.getParent();
-            }
+            com.intellij.psi.PsiNamedElement ancestor = findNearestNamedAncestor(elementAt);
+            if (ancestor instanceof com.intellij.psi.PsiNameIdentifierOwner owner) return owner;
         }
         return null;
     }
