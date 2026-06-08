@@ -423,8 +423,11 @@ public final class ToolUtils {
         }
         com.intellij.psi.PsiElement elementAt = psiFile.findElementAt(offset);
         if (elementAt != null) {
-            com.intellij.psi.PsiElement named = com.intellij.codeInsight.TargetElementUtil.getNamedElement(elementAt);
-            if (named instanceof com.intellij.psi.PsiNameIdentifierOwner owner) return owner;
+            com.intellij.psi.PsiElement current = elementAt;
+            while (current != null) {
+                if (current instanceof com.intellij.psi.PsiNameIdentifierOwner owner) return owner;
+                current = current.getParent();
+            }
         }
         return null;
     }
