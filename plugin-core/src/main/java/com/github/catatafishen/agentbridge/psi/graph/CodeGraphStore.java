@@ -29,6 +29,7 @@ public final class CodeGraphStore {
     private static final Logger LOG = Logger.getInstance(CodeGraphStore.class);
 
     private final Project project;
+    private final Object writeLock = new Object();
 
     @SuppressWarnings("unused") // IntelliJ service container
     public CodeGraphStore(@NotNull Project project) {
@@ -41,72 +42,92 @@ public final class CodeGraphStore {
 
     // ── Batch upsert ─────────────────────────────────────────────────────────
 
-    /** Insert-or-replace all nodes. Runs inside a single transaction. */
+    /**
+     * Insert-or-replace all nodes. Runs inside a single transaction.
+     * Synchronized to prevent concurrent threads from interfering with transaction state.
+     */
     public void upsertNodes(@NotNull List<NodeData> nodes) {
         if (nodes.isEmpty()) return;
-        Connection conn = connection();
-        if (conn == null) return;
-        String sql = """
-            INSERT OR REPLACE INTO graph_nodes
-                (id, label, kind, fqn, source_file, source_line, language, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """;
-        try {
-            conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                long now = System.currentTimeMillis();
-                for (NodeData n : nodes) {
-                    ps.setString(1, n.id);
-                    ps.setString(2, n.label);
-                    ps.setString(3, n.kind);
-                    ps.setString(4, n.fqn);
-                    ps.setString(5, n.sourceFile);
-                    if (n.sourceLine > 0) ps.setInt(6, n.sourceLine);
-                    else ps.setNull(6, java.sql.Types.INTEGER);
-                    ps.setString(7, n.language);
-                    ps.setLong(8, now);
-                    ps.addBatch();
+        synchronized (writeLock) {
+            Connection conn = connection();
+            if (conn == null) return;
+            String sql = """
+                INSERT OR REPLACE INTO graph_nodes
+                    (id, label, kind, fqn, source_file, source_line, language, indexed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+            try {
+                conn.setAutoCommit(false);
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    long now = System.currentTimeMillis();
+                    for (NodeData n : nodes) {
+                        ps.setString(1, n.id);
+                        ps.setString(2, n.label);
+                        ps.setString(3, n.kind);
+                        ps.setString(4, n.fqn);
+                        ps.setString(5, n.sourceFile);
+                        if (n.sourceLine > 0) ps.setInt(6, n.sourceLine);
+                        else ps.setNull(6, java.sql.Types.INTEGER);
+                        ps.setString(7, n.language);
+                        ps.setLong(8, now);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
                 }
-                ps.executeBatch();
+                conn.commit();
+            } catch (SQLException e) {
+                rollbackQuietly(conn);
+                LOG.error("Failed to upsert graph nodes", e);
+            } finally {
+                setAutoCommitQuietly(conn, true);
             }
-            conn.commit();
-        } catch (SQLException e) {
-            rollbackQuietly(conn);
-            LOG.error("Failed to upsert graph nodes", e);
-        } finally {
-            setAutoCommitQuietly(conn, true);
         }
     }
 
-    /** Insert edges. Existing edges for the same source file are deleted first by {@link #deleteByFile}. */
+    /**
+     * Insert edges. Existing edges for the same source file are deleted first by {@link #deleteByFile}.
+     * Synchronized to prevent concurrent threads from interfering with PRAGMA/transaction state.
+     */
     public void insertEdges(@NotNull List<EdgeData> edges) {
         if (edges.isEmpty()) return;
-        Connection conn = connection();
-        if (conn == null) return;
-        String sql = """
-            INSERT OR IGNORE INTO graph_edges (source_id, target_id, relation, source_file, source_line)
-            VALUES (?, ?, ?, ?, ?)
-            """;
-        try {
-            conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                for (EdgeData e : edges) {
-                    ps.setString(1, e.sourceId);
-                    ps.setString(2, e.targetId);
-                    ps.setString(3, e.relation);
-                    ps.setString(4, e.sourceFile);
-                    if (e.sourceLine > 0) ps.setInt(5, e.sourceLine);
-                    else ps.setNull(5, java.sql.Types.INTEGER);
-                    ps.addBatch();
+        synchronized (writeLock) {
+            Connection conn = connection();
+            if (conn == null) return;
+            String sql = """
+                INSERT OR IGNORE INTO graph_edges (source_id, target_id, relation, source_file, source_line)
+                VALUES (?, ?, ?, ?, ?)
+                """;
+            try {
+                // Disable FK enforcement — cross-file edges may reference nodes not yet indexed.
+                // Must be outside any transaction to take effect in SQLite.
+                try (Statement st = conn.createStatement()) {
+                    st.execute("PRAGMA foreign_keys = OFF");
                 }
-                ps.executeBatch();
+                conn.setAutoCommit(false);
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    for (EdgeData e : edges) {
+                        ps.setString(1, e.sourceId);
+                        ps.setString(2, e.targetId);
+                        ps.setString(3, e.relation);
+                        ps.setString(4, e.sourceFile);
+                        if (e.sourceLine > 0) ps.setInt(5, e.sourceLine);
+                        else ps.setNull(5, java.sql.Types.INTEGER);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                rollbackQuietly(conn);
+                LOG.error("Failed to insert graph edges", e);
+            } finally {
+                setAutoCommitQuietly(conn, true);
+                // Re-enable FK enforcement
+                try (Statement st = conn.createStatement()) {
+                    st.execute("PRAGMA foreign_keys = ON");
+                } catch (SQLException ignored) {
+                }
             }
-            conn.commit();
-        } catch (SQLException e) {
-            rollbackQuietly(conn);
-            LOG.error("Failed to insert graph edges", e);
-        } finally {
-            setAutoCommitQuietly(conn, true);
         }
     }
 
@@ -118,32 +139,34 @@ public final class CodeGraphStore {
      * Call before re-indexing a file to avoid stale nodes.
      */
     public void deleteByFile(@NotNull String relativePath) {
-        Connection conn = connection();
-        if (conn == null) return;
-        try {
-            conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(
-                "DELETE FROM graph_nodes WHERE source_file = ?")) {
-                ps.setString(1, relativePath);
-                ps.executeUpdate();
+        synchronized (writeLock) {
+            Connection conn = connection();
+            if (conn == null) return;
+            try {
+                conn.setAutoCommit(false);
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "DELETE FROM graph_nodes WHERE source_file = ?")) {
+                    ps.setString(1, relativePath);
+                    ps.executeUpdate();
+                }
+                // Also delete edges whose source_file matches (covers cross-file edges)
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "DELETE FROM graph_edges WHERE source_file = ?")) {
+                    ps.setString(1, relativePath);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "DELETE FROM graph_file_index WHERE path = ?")) {
+                    ps.setString(1, relativePath);
+                    ps.executeUpdate();
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                rollbackQuietly(conn);
+                LOG.error("Failed to delete graph data for file: " + relativePath, e);
+            } finally {
+                setAutoCommitQuietly(conn, true);
             }
-            // Also delete edges whose source_file matches (covers cross-file edges)
-            try (PreparedStatement ps = conn.prepareStatement(
-                "DELETE FROM graph_edges WHERE source_file = ?")) {
-                ps.setString(1, relativePath);
-                ps.executeUpdate();
-            }
-            try (PreparedStatement ps = conn.prepareStatement(
-                "DELETE FROM graph_file_index WHERE path = ?")) {
-                ps.setString(1, relativePath);
-                ps.executeUpdate();
-            }
-            conn.commit();
-        } catch (SQLException e) {
-            rollbackQuietly(conn);
-            LOG.error("Failed to delete graph data for file: " + relativePath, e);
-        } finally {
-            setAutoCommitQuietly(conn, true);
         }
     }
 
@@ -166,27 +189,31 @@ public final class CodeGraphStore {
     }
 
     public void setFileIndex(@NotNull String relativePath, @NotNull String hash, int nodes, int edges) {
-        Connection conn = connection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement("""
-            INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count)
-            VALUES (?, ?, ?, ?, ?)
-            """)) {
-            ps.setString(1, relativePath);
-            ps.setString(2, hash);
-            ps.setLong(3, System.currentTimeMillis());
-            ps.setInt(4, nodes);
-            ps.setInt(5, edges);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            LOG.error("Failed to update file index for: " + relativePath, e);
+        synchronized (writeLock) {
+            Connection conn = connection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count)
+                VALUES (?, ?, ?, ?, ?)
+                """)) {
+                ps.setString(1, relativePath);
+                ps.setString(2, hash);
+                ps.setLong(3, System.currentTimeMillis());
+                ps.setInt(4, nodes);
+                ps.setInt(5, edges);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.error("Failed to update file index for: " + relativePath, e);
+            }
         }
     }
 
     // ── Stats ─────────────────────────────────────────────────────────────────
 
     public record GraphStats(long nodeCount, long edgeCount, long fileCount, long lastIndexedAt) {
-        public boolean isEmpty() { return nodeCount == 0; }
+        public boolean isEmpty() {
+            return nodeCount == 0;
+        }
     }
 
     @NotNull
@@ -203,7 +230,10 @@ public final class CodeGraphStore {
             }
             try (ResultSet rs = st.executeQuery(
                 "SELECT COUNT(*), MAX(indexed_at) FROM graph_file_index")) {
-                if (rs.next()) { files = rs.getLong(1); lastAt = rs.getLong(2); }
+                if (rs.next()) {
+                    files = rs.getLong(1);
+                    lastAt = rs.getLong(2);
+                }
             }
             return new GraphStats(nodes, edges, files, lastAt);
         } catch (SQLException e) {
@@ -238,7 +268,9 @@ public final class CodeGraphStore {
         return rows;
     }
 
-    /** Same as {@link #queryRaw(String)} but with positional parameters. */
+    /**
+     * Same as {@link #queryRaw(String)} but with positional parameters.
+     */
     @NotNull
     public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql, Object... params) throws SQLException {
         rejectWriteSql(sql);
@@ -267,17 +299,32 @@ public final class CodeGraphStore {
 
     @Nullable
     private Connection connection() {
-        return ConversationDatabase.getInstance(project).getConnection();
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        if (!db.isReady()) {
+            try {
+                db.initialize();
+            } catch (Exception e) {
+                LOG.debug("ConversationDatabase not available yet: " + e.getMessage());
+                return null;
+            }
+        }
+        return db.getConnection();
     }
 
     private static void rollbackQuietly(@Nullable Connection conn) {
         if (conn == null) return;
-        try { conn.rollback(); } catch (SQLException ignored) {}
+        try {
+            conn.rollback();
+        } catch (SQLException ignored) {
+        }
     }
 
     private static void setAutoCommitQuietly(@Nullable Connection conn, boolean v) {
         if (conn == null) return;
-        try { conn.setAutoCommit(v); } catch (SQLException ignored) {}
+        try {
+            conn.setAutoCommit(v);
+        } catch (SQLException ignored) {
+        }
     }
 
     private static final java.util.regex.Pattern WRITE_KEYWORDS =
