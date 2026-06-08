@@ -237,7 +237,7 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     private void logAcpEvent(JsonRpcTransport.Direction direction, String event, Object data) {
-        if (!McpServerSettings.getInstance(project).isDebugLoggingEnabled()) return;
+        if (project == null || !McpServerSettings.getInstance(project).isDebugLoggingEnabled()) return;
         String arrow = direction == JsonRpcTransport.Direction.INCOMING ? "<<<" : ">>>";
         String msg = "[ACP] " + arrow;
         if (event != null && !event.isBlank()) {
@@ -571,7 +571,10 @@ public abstract class AcpClient extends AbstractClient {
         findOptionWithValues(configOptions, "mode").ifPresent(option -> {
             availableModes.clear();
             option.values().forEach(v -> availableModes.add(new AbstractClient.AgentMode(v.id(), v.label(), null)));
-            if (currentModeSlug == null && option.selectedValueId() != null) {
+            // Honor selectedValueId when the current slug is null or still the default —
+            // updateModes() may have set it to defaultModeSlug() when currentModeId was absent.
+            if ((currentModeSlug == null || currentModeSlug.equals(defaultModeSlug()))
+                    && option.selectedValueId() != null) {
                 currentModeSlug = option.selectedValueId();
             }
         });
