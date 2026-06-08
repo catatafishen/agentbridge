@@ -75,6 +75,13 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
                 icon="/icons/agentbridge.svg"
                 factoryClass="com.github.catatafishen.agentbridge.ui.ChatToolWindowFactory"/>
 
+    <!-- Code Graph sidebar — Code Impact Analysis feature -->
+    <toolWindow id="Code Graph"
+                secondary="true"
+                anchor="right"
+                icon="/icons/agentbridge.svg"
+                factoryClass="com.github.catatafishen.agentbridge.ui.graph.CodeGraphToolWindowFactory"/>
+
     <!-- Application Services -->
     <applicationService
       serviceImplementation="com.github.catatafishen.agentbridge.services.AgentBridgeService"/>
@@ -103,6 +110,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       serviceImplementation="com.github.catatafishen.agentbridge.services.AgentNudgeService"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.psi.PsiBridgeService"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.settings.McpServerSettings"/>
     <projectService

@@ -209,6 +209,7 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.debug.DebugToolFactory.create(project));
 
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.memory.MemoryToolFactory.create(project));
+        allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.graph.GraphToolFactory.create(project));
 
         // JetBrains' built-in database MCP tools, proxied in-process.
         // Requires com.intellij.mcpServer (IJ 2026.1+) + AI Assistant plugin.

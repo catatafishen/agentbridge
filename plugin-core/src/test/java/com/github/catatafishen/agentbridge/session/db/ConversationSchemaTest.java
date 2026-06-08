@@ -46,7 +46,10 @@ class ConversationSchemaTest {
             "sub_agent_events",
             "nudge_events",
             "commits",
-            "hook_executions"
+            "hook_executions",
+            "graph_nodes",
+            "graph_edges",
+            "graph_file_index"
         );
         for (String name : expected) {
             assertTrue(tables.contains(name), "Missing table: " + name + " (have " + tables + ")");
