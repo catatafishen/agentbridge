@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.tools.graph;
 
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -18,16 +19,18 @@ import java.util.List;
  */
 public final class GraphToolFactory {
 
+    private static final Logger LOG = Logger.getInstance(GraphToolFactory.class);
+
     private GraphToolFactory() {
     }
 
     public static @NotNull List<Tool> create(@NotNull Project project) {
         CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
-        if (!settings.isEnabled()) {
+        boolean enabled = settings.isEnabled();
+        LOG.info("GraphToolFactory.create(): isEnabled=" + enabled);
+        if (!enabled) {
             return List.of();
         }
-        // Tool is registered unconditionally when the feature is enabled.
-        // An empty graph returns empty results gracefully — no need to guard.
         return List.of(new QueryCodeGraphTool(project));
     }
 }
