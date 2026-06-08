@@ -53,6 +53,7 @@ final class ConversationSchema {
             if (currentVersion < 3) applyV3(stmt);
             if (currentVersion < 4) applyV4(stmt);
             if (currentVersion < 5) applyV5(stmt);
+            if (currentVersion < 6) applyV6(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -320,5 +321,52 @@ final class ConversationSchema {
      */
     private static void applyV5(@NotNull Statement stmt) throws SQLException {
         stmt.execute("ALTER TABLE tool_call_events ADD COLUMN plugin_version TEXT");
+    }
+
+    /**
+     * V6: Code Impact Analysis — PSI dependency graph stored alongside conversation history.
+     * Three tables: nodes (named PSI elements), edges (typed directed dependencies),
+     * and file_index (content hashes for incremental re-indexing).
+     */
+    private static void applyV6(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("""
+            CREATE TABLE graph_nodes (
+                id           TEXT    PRIMARY KEY,
+                label        TEXT    NOT NULL,
+                kind         TEXT    NOT NULL,
+                fqn          TEXT,
+                source_file  TEXT    NOT NULL,
+                source_line  INTEGER,
+                language     TEXT    NOT NULL,
+                indexed_at   INTEGER NOT NULL
+            )
+            """);
+        stmt.execute("CREATE INDEX idx_gn_file ON graph_nodes(source_file)");
+        stmt.execute("CREATE INDEX idx_gn_fqn  ON graph_nodes(fqn) WHERE fqn IS NOT NULL");
+        stmt.execute("CREATE INDEX idx_gn_kind ON graph_nodes(kind)");
+
+        stmt.execute("""
+            CREATE TABLE graph_edges (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id   TEXT    NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+                target_id   TEXT    NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+                relation    TEXT    NOT NULL,
+                source_file TEXT,
+                source_line INTEGER
+            )
+            """);
+        stmt.execute("CREATE INDEX idx_ge_src ON graph_edges(source_id)");
+        stmt.execute("CREATE INDEX idx_ge_tgt ON graph_edges(target_id)");
+        stmt.execute("CREATE INDEX idx_ge_rel ON graph_edges(relation)");
+
+        stmt.execute("""
+            CREATE TABLE graph_file_index (
+                path         TEXT    PRIMARY KEY,
+                content_hash TEXT    NOT NULL,
+                indexed_at   INTEGER NOT NULL,
+                node_count   INTEGER NOT NULL DEFAULT 0,
+                edge_count   INTEGER NOT NULL DEFAULT 0
+            )
+            """);
     }
 }

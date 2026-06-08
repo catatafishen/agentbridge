@@ -33,6 +33,41 @@ class PsiBridgeStartup : ProjectActivity {
         // Force-initialize ConversationDatabase at startup so statistics are available from the start
         com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project)
 
+        // Wire Code Graph auto-refresh: when settings.autoRefreshOnAgentEdit is true, any VFS
+        // change to a project source file triggers an incremental re-extraction. The indexer
+        // skips files whose content hash is unchanged, so this is cheap when nothing edited.
+        try {
+            val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
+            // BulkFileListener.TOPIC is application-scoped — subscribe via the application bus,
+            // passing the project as the parent disposable so the connection is released when
+            // the project closes.
+            ApplicationManager.getApplication().messageBus.connect(project).subscribe(
+                com.intellij.openapi.vfs.VirtualFileManager.VFS_CHANGES,
+                object : com.intellij.openapi.vfs.newvfs.BulkFileListener {
+                    override fun after(events: List<com.intellij.openapi.vfs.newvfs.events.VFileEvent>) {
+                        if (!graphSettings.isEnabled || !graphSettings.isAutoRefreshOnAgentEdit) return
+                        val touched = events.mapNotNull { it.file }
+                            .filter { it.isValid && !it.isDirectory }
+                            .distinct()
+                        if (touched.isEmpty()) return
+                        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+                            val indexer =
+                                com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer.getInstance(project)
+                            for (vf in touched) {
+                                try {
+                                    indexer.refreshFile(vf)
+                                } catch (e: Exception) {
+                                    LOG.debug("Code Graph refresh failed for ${vf.path}: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            LOG.warn("Failed to wire Code Graph auto-refresh listener", e)
+        }
+
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
         val mcpSettings = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
         if (mcpSettings.isAutoStart) {
