@@ -270,10 +270,13 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
         assertNotNull("Result must not be null", result);
         assertFalse("Expected non-error response, got: " + result,
             result.startsWith("Error:"));
-        // Result should either be "No highlights found" or contain actual highlights,
-        // but never include entries with blank descriptions
-        assertFalse("Result must not contain blank description entries",
-            result.contains("description=''") || result.contains("description=\"\""));
+        // Each highlight line has the format: "relpath:line [severity] description"
+        // A blank-description entry would match the pattern ".*:\d+ \[.*\]\s*" (nothing after [severity]).
+        // If the blank-description filter is removed, a blank highlight would appear as that pattern.
+        for (String line : result.split("\n")) {
+            assertFalse("Found highlight entry with blank description: " + line,
+                line.matches(".*:\\d+ \\[.*]\\s*"));
+        }
     }
 
     // ── GetAvailableActionsTool ───────────────────────────────────────────────
