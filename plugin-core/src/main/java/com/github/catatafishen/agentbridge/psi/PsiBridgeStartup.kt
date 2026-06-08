@@ -27,11 +27,18 @@ class PsiBridgeStartup : ProjectActivity {
         cleanupStaleExternalModules(project)
         LegacyAgentWorkCleanup.cleanupAsync(project)
 
+        // Initialize ConversationDatabase FIRST — PsiBridgeService needs it for GraphToolFactory
+        val db = com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project)
+        if (!db.isReady) {
+            try {
+                db.initialize()
+            } catch (e: Exception) {
+                LOG.warn("Failed to initialize ConversationDatabase at startup", e)
+            }
+        }
+
         // Force-initialize PsiBridgeService so tools are registered before any agent connects
         PsiBridgeService.getInstance(project)
-
-        // Force-initialize ConversationDatabase at startup so statistics are available from the start
-        com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project)
 
         // Wire Code Graph auto-refresh: when settings.autoRefreshOnAgentEdit is true, any VFS
         // change to a project source file triggers an incremental re-extraction. The indexer
@@ -66,6 +73,24 @@ class PsiBridgeStartup : ProjectActivity {
             )
         } catch (e: Exception) {
             LOG.warn("Failed to wire Code Graph auto-refresh listener", e)
+        }
+
+        // Ensure graph tool is registered if enabled + non-empty (handles edge case where
+        // PsiBridgeService init raced with DB readiness)
+        try {
+            val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
+            if (graphSettings.isEnabled) {
+                val registry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
+                if (registry.findById("query_code_graph") == null) {
+                    val tools = com.github.catatafishen.agentbridge.psi.tools.graph.GraphToolFactory.create(project)
+                    if (tools.isNotEmpty()) {
+                        registry.registerAll(tools)
+                        LOG.info("Code Graph tool registered at startup (deferred)")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LOG.debug("Code Graph startup registration check: ${e.message}")
         }
 
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
