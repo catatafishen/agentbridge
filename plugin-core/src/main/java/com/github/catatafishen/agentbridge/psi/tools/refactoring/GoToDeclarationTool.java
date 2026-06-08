@@ -5,7 +5,6 @@ import com.github.catatafishen.agentbridge.psi.tools.FqnResolver;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.codeInsight.TargetElementUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -16,6 +15,8 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.codeInsight.TargetElementUtil;
+import com.intellij.psi.PsiNameIdentifierOwner;
 import com.intellij.psi.PsiPolyVariantReference;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.ResolveResult;
@@ -247,8 +248,14 @@ public final class GoToDeclarationTool extends RefactoringTool {
             current = current.getParent();
         }
         if (elementAt != null) {
-            PsiElement named = TargetElementUtil.getNamedElement(elementAt);
-            if (named != null && named != elementAt) declarations.add(named);
+            PsiElement namedParent = elementAt;
+            while (namedParent != null) {
+                if (namedParent instanceof PsiNameIdentifierOwner && namedParent != elementAt) {
+                    declarations.add(namedParent);
+                    break;
+                }
+                namedParent = namedParent.getParent();
+            }
         }
     }
 
