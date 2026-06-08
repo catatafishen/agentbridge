@@ -1370,9 +1370,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (text.isEmpty()) return
         val label = currentModelLabel
         if (label != null) {
-            label.text = "🤖 $text"
+            label.text = "$text"
         } else {
-            val newLabel = JBLabel("🤖 $text").apply {
+            val newLabel = JBLabel("$text").apply {
                 foreground = UIUtil.getContextHelpForeground()
                 applyChatFont(-1, Font.ITALIC)
                 border = JBUI.Borders.empty(1, 0, 2, 0)

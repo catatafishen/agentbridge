@@ -65,10 +65,12 @@ public class JsonRpcTransport {
     private @Nullable Thread readerThread;
     private @Nullable Thread stderrThread;
 
+    public enum Direction {INCOMING, OUTGOING}
+
     private @Nullable BiConsumer<JsonElement, IncomingRequest> requestHandler;
     private @Nullable Consumer<IncomingNotification> notificationHandler;
     private @Nullable Consumer<String> stderrHandler;
-    private @Nullable Consumer<String> debugLogger;
+    private @Nullable BiConsumer<Direction, String> debugLogger;
 
     /**
      * An incoming JSON-RPC request from the agent.
@@ -108,10 +110,11 @@ public class JsonRpcTransport {
     }
 
     /**
-     * Set a logger callback for debug-level ACP message tracing.
-     * When set, every incoming and outgoing JSON-RPC line is passed to this consumer.
+     * Set a logger callback for debug-level message tracing.
+     * When set, every incoming and outgoing JSON-RPC line is passed to this consumer
+     * with the direction and raw message content.
      */
-    public void setDebugLogger(@Nullable Consumer<String> logger) {
+    public void setDebugLogger(@Nullable BiConsumer<Direction, String> logger) {
         this.debugLogger = logger;
     }
 
@@ -325,7 +328,7 @@ public class JsonRpcTransport {
 
     private void processLine(String line) {
         if (debugLogger != null) {
-            debugLogger.accept("<<< " + line);
+            debugLogger.accept(Direction.INCOMING, line);
         }
         try {
             dispatchMessage(line);
@@ -455,7 +458,7 @@ public class JsonRpcTransport {
             return;
         }
         if (debugLogger != null) {
-            debugLogger.accept(">>> " + json);
+            debugLogger.accept(Direction.OUTGOING, json);
         }
         writer.println(json);
         writer.flush();

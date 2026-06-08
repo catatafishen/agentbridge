@@ -5,8 +5,8 @@ import com.github.catatafishen.agentbridge.acp.protocol.InitializeResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponseDeserializer;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
-import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
+import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
@@ -21,6 +21,8 @@ import com.github.catatafishen.agentbridge.model.ContentBlockSerializer;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
@@ -29,8 +31,6 @@ import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
-import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
-import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.PathSanitizer;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
@@ -57,6 +57,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -235,6 +236,16 @@ public abstract class AcpClient extends AbstractClient {
         return s.substring(0, LOG_MAX_CHARS) + "... [truncated " + (s.length() - LOG_MAX_CHARS) + " chars]";
     }
 
+    private void logAcpEvent(JsonRpcTransport.Direction direction, String event, Object data) {
+        if (!McpServerSettings.getInstance(project).isDebugLoggingEnabled()) return;
+        String arrow = direction == JsonRpcTransport.Direction.INCOMING ? "<<<" : ">>>";
+        String msg = "[ACP] " + arrow;
+        if (event != null && !event.isBlank()) {
+            msg += " " + event + ":";
+        }
+        LOG.info(msg + " " + truncateForLog(String.valueOf(data)));
+    }
+
     @Override
     public final void start() throws ClientStartException {
         try {
@@ -244,11 +255,8 @@ public abstract class AcpClient extends AbstractClient {
             agentProcess = launchProcess(mcpPort);
             LOG.info(displayName() + " process launched, starting transport");
             transport.start(agentProcess);
-            transport.setDebugLogger(line -> {
-                if (McpServerSettings.getInstance(project).isDebugLoggingEnabled()) {
-                    LOG.info("[ACP] " + truncateForLog(line));
-                }
-            });
+            transport.setDebugLogger((dir, msg) ->
+                logAcpEvent(dir, null, msg));
             LOG.info(displayName() + " transport started, registering handlers");
             registerHandlers();
             LOG.info(displayName() + " handlers registered, initializing");
@@ -444,7 +452,7 @@ public abstract class AcpClient extends AbstractClient {
 
             CompletableFuture<JsonElement> future = transport.sendRequest("session/new", params);
             JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            LOG.debug(displayName() + ": session/new raw response: " + result);
+            logAcpEvent(JsonRpcTransport.Direction.INCOMING, "session/new response", result);
 
             NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
             logModelList("session/new", response.models());
@@ -531,13 +539,42 @@ public abstract class AcpClient extends AbstractClient {
             updateModes(response);
         }
 
-        if (response.configOptions() != null) {
+        Optional.ofNullable(response.configOptions()).ifPresent(configOptions -> {
+            extractModelsFromConfigOptions(configOptions, response);
+            extractModesFromConfigOptions(configOptions);
             updateConfigOptions(response);
-        }
+        });
 
         if (response.commands() != null) {
             updateCommands(response.commands());
         }
+    }
+
+    private Optional<NewSessionResponse.SessionConfigOption> findOptionWithValues(List<NewSessionResponse.SessionConfigOption> configOptions, String id) {
+        return configOptions.stream()
+            .filter(opt -> id.equals(opt.id()))
+            .filter(opt -> opt.values() != null && !opt.values().isEmpty())
+            .findFirst();
+    }
+
+    private void extractModelsFromConfigOptions(List<NewSessionResponse.SessionConfigOption> configOptions, NewSessionResponse response) {
+        findOptionWithValues(configOptions, "model").ifPresent(option -> {
+            availableModels.clear();
+            option.values().forEach(optionValue -> availableModels.add(new Model(optionValue.id(), optionValue.label(), null, null)));
+            if (response.currentModelId() == null && option.selectedValueId() != null) {
+                currentModelId = option.selectedValueId();
+            }
+        });
+    }
+
+    private void extractModesFromConfigOptions(List<NewSessionResponse.SessionConfigOption> configOptions) {
+        findOptionWithValues(configOptions, "mode").ifPresent(option -> {
+            availableModes.clear();
+            option.values().forEach(v -> availableModes.add(new AbstractClient.AgentMode(v.id(), v.label(), null)));
+            if (currentModeSlug == null && option.selectedValueId() != null) {
+                currentModeSlug = option.selectedValueId();
+            }
+        });
     }
 
     /**
@@ -739,14 +776,14 @@ public abstract class AcpClient extends AbstractClient {
         try {
             CompletableFuture<JsonElement> future = transport.sendRequest(method, params);
             JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            LOG.debug(displayName() + ": " + method + " response: " + result);
+            logAcpEvent(JsonRpcTransport.Direction.INCOMING, method + " response", result);
 
             // Per ACP spec, session/load response is null (history replayed via session/update).
             // Some agents (e.g. OpenCode's session/resume) return models/modes/configOptions.
             if (result != null && !result.isJsonNull()) {
                 NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
-                logModelList(method, response.models());
                 processSessionResponse(response);
+                logModelList(method, availableModels);
             }
         } finally {
             updateConsumer.set(null);
