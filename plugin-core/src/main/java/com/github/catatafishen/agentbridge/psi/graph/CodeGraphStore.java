@@ -28,6 +28,84 @@ public final class CodeGraphStore {
 
     private static final Logger LOG = Logger.getInstance(CodeGraphStore.class);
 
+    // ── SQL constants (S6203: text blocks must be outside lambda bodies) ──────
+
+    private static final String SQL_HOTSPOTS = """
+        SELECT e.target_id AS file_id, n.source_file AS path,
+               COUNT(DISTINCT e.source_id) AS dependent_count
+        FROM graph_edges e
+        JOIN graph_nodes n ON n.id = e.target_id
+        WHERE e.relation = 'uses'
+          AND n.kind = 'file'
+        GROUP BY e.target_id
+        ORDER BY dependent_count DESC
+        LIMIT ?
+        """;
+
+    private static final String SQL_EXPLORER_ROWS = """
+        SELECT fi.path,
+               COALESCE(deps.cnt, 0) AS dep_count,
+               COALESCE(depnts.cnt, 0) AS dependent_count,
+               COALESCE(commits.cnt, 0) AS commit_count
+        FROM graph_file_index fi
+        LEFT JOIN (
+            SELECT source_id, COUNT(DISTINCT target_id) AS cnt
+            FROM graph_edges WHERE relation = 'uses'
+            GROUP BY source_id
+        ) deps ON deps.source_id = 'file:' || fi.path
+        LEFT JOIN (
+            SELECT target_id, COUNT(DISTINCT source_id) AS cnt
+            FROM graph_edges WHERE relation = 'uses'
+            GROUP BY target_id
+        ) depnts ON depnts.target_id = 'file:' || fi.path
+        LEFT JOIN (
+            SELECT file_path, COUNT(*) AS cnt
+            FROM graph_commit_files
+            GROUP BY file_path
+        ) commits ON commits.file_path = fi.path
+        ORDER BY dependent_count DESC
+        LIMIT ?
+        """;
+
+    private static final String SQL_FILE_DEPENDENCIES =
+        "SELECT DISTINCT REPLACE(target_id, 'file:', '') AS dep " +
+        "FROM graph_edges WHERE source_id = ? AND relation = 'uses' ORDER BY 1";
+
+    private static final String SQL_FILE_DEPENDENTS =
+        "SELECT DISTINCT REPLACE(source_id, 'file:', '') AS dep " +
+        "FROM graph_edges WHERE target_id = ? AND relation = 'uses' ORDER BY 1";
+
+    private static final String SQL_FILE_COMMITS = """
+        SELECT gc.short_hash, gc.message, gc.author, gc.timestamp
+        FROM graph_commits gc
+        JOIN graph_commit_files gcf ON gcf.commit_hash = gc.hash
+        WHERE gcf.file_path = ?
+        ORDER BY gc.timestamp DESC
+        LIMIT 10
+        """;
+
+    private static final String SQL_RECENT_ACTIVITY = """
+        SELECT type, summary, timestamp FROM (
+            SELECT 'commit' AS type,
+                   short_hash || ' ' || message AS summary,
+                   timestamp
+            FROM graph_commits
+            UNION ALL
+            SELECT 'agent_' || CASE
+                WHEN tce.tool_name IN ('write_file', 'edit_text', 'replace_symbol_body',
+                                       'insert_after_symbol', 'insert_before_symbol') THEN 'edit'
+                ELSE 'read'
+                END AS type,
+                tce.tool_name || ' ' || COALESCE(tce.file_path, '') AS summary,
+                e.timestamp
+            FROM tool_call_events tce
+            JOIN events e ON e.id = tce.event_id
+            WHERE tce.file_path IS NOT NULL
+        )
+        ORDER BY timestamp DESC
+        LIMIT ?
+        """;
+
     private final Project project;
 
     @SuppressWarnings("unused") // IntelliJ service container
@@ -300,19 +378,8 @@ public final class CodeGraphStore {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
             return db.withConnection(conn -> {
-                String sql = """
-                    SELECT e.target_id AS file_id, n.source_file AS path,
-                           COUNT(DISTINCT e.source_id) AS dependent_count
-                    FROM graph_edges e
-                    JOIN graph_nodes n ON n.id = e.target_id
-                    WHERE e.relation = 'uses'
-                      AND n.kind = 'file'
-                    GROUP BY e.target_id
-                    ORDER BY dependent_count DESC
-                    LIMIT ?
-                    """;
                 List<HotspotEntry> result = new ArrayList<>();
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_HOTSPOTS)) {
                     ps.setInt(1, limit);
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) {
@@ -340,32 +407,8 @@ public final class CodeGraphStore {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
             return db.withConnection(conn -> {
-                String sql = """
-                    SELECT fi.path,
-                           COALESCE(deps.cnt, 0) AS dep_count,
-                           COALESCE(depnts.cnt, 0) AS dependent_count,
-                           COALESCE(commits.cnt, 0) AS commit_count
-                    FROM graph_file_index fi
-                    LEFT JOIN (
-                        SELECT source_id, COUNT(DISTINCT target_id) AS cnt
-                        FROM graph_edges WHERE relation = 'uses'
-                        GROUP BY source_id
-                    ) deps ON deps.source_id = 'file:' || fi.path
-                    LEFT JOIN (
-                        SELECT target_id, COUNT(DISTINCT source_id) AS cnt
-                        FROM graph_edges WHERE relation = 'uses'
-                        GROUP BY target_id
-                    ) depnts ON depnts.target_id = 'file:' || fi.path
-                    LEFT JOIN (
-                        SELECT file_path, COUNT(*) AS cnt
-                        FROM graph_commit_files
-                        GROUP BY file_path
-                    ) commits ON commits.file_path = fi.path
-                    ORDER BY dependent_count DESC
-                    LIMIT ?
-                    """;
                 List<ExplorerRow> result = new ArrayList<>();
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_EXPLORER_ROWS)) {
                     ps.setInt(1, limit);
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) {
@@ -399,28 +442,19 @@ public final class CodeGraphStore {
                 List<String> dependents = new ArrayList<>();
                 List<CommitSummary> commits = new ArrayList<>();
 
-                try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT REPLACE(target_id, 'file:', '') AS dep FROM graph_edges WHERE source_id = ? AND relation = 'uses'")) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_FILE_DEPENDENCIES)) {
                     ps.setString(1, fileId);
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) dependencies.add(rs.getString("dep"));
                     }
                 }
-                try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT REPLACE(source_id, 'file:', '') AS dep FROM graph_edges WHERE target_id = ? AND relation = 'uses'")) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_FILE_DEPENDENTS)) {
                     ps.setString(1, fileId);
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) dependents.add(rs.getString("dep"));
                     }
                 }
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    SELECT gc.short_hash, gc.message, gc.author, gc.timestamp
-                    FROM graph_commits gc
-                    JOIN graph_commit_files gcf ON gcf.commit_hash = gc.hash
-                    WHERE gcf.file_path = ?
-                    ORDER BY gc.timestamp DESC
-                    LIMIT 10
-                    """)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_FILE_COMMITS)) {
                     ps.setString(1, path);
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) {
@@ -464,29 +498,8 @@ public final class CodeGraphStore {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
             return db.withConnection(conn -> {
-                String sql = """
-                    SELECT type, summary, timestamp FROM (
-                        SELECT 'commit' AS type,
-                               short_hash || ' ' || message AS summary,
-                               timestamp
-                        FROM graph_commits
-                        UNION ALL
-                        SELECT 'agent_' || CASE
-                            WHEN tce.tool_name IN ('write_file', 'edit_text', 'replace_symbol_body',
-                                                   'insert_after_symbol', 'insert_before_symbol') THEN 'edit'
-                            ELSE 'read'
-                            END AS type,
-                            tce.tool_name || ' ' || COALESCE(tce.file_path, '') AS summary,
-                            e.timestamp
-                        FROM tool_call_events tce
-                        JOIN events e ON e.id = tce.event_id
-                        WHERE tce.file_path IS NOT NULL
-                    )
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                    """;
                 List<ActivityEntry> result = new ArrayList<>();
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_RECENT_ACTIVITY)) {
                     ps.setInt(1, limit);
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) {

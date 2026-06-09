@@ -72,6 +72,7 @@ class IndexableRootTypeTest {
             assertEquals(IndexableRootType.RESOURCES, IndexableRootType.fromId("resources"));
             assertEquals(IndexableRootType.TEST_RESOURCES, IndexableRootType.fromId("test_resources"));
             assertEquals(IndexableRootType.GENERATED_SOURCES, IndexableRootType.fromId("generated_sources"));
+            assertEquals(IndexableRootType.GENERATED_TEST_SOURCES, IndexableRootType.fromId("generated_test_sources"));
         }
 
         @Test
@@ -105,6 +106,7 @@ class IndexableRootTypeTest {
             assertEquals("resources", IndexableRootType.RESOURCES.id());
             assertEquals("test_resources", IndexableRootType.TEST_RESOURCES.id());
             assertEquals("generated_sources", IndexableRootType.GENERATED_SOURCES.id());
+            assertEquals("generated_test_sources", IndexableRootType.GENERATED_TEST_SOURCES.id());
         }
     }
 }

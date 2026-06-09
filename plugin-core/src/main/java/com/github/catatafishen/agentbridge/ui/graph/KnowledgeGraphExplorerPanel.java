@@ -240,7 +240,7 @@ public final class KnowledgeGraphExplorerPanel implements Disposable {
     static final class ExplorerTableModel extends AbstractTableModel {
 
         private static final String[] COLUMNS = {"File", "Deps", "Dependents", "Commits"};
-        private List<CodeGraphStore.ExplorerRow> data = List.of();
+        private transient List<CodeGraphStore.ExplorerRow> data = List.of();
 
         void setData(@NotNull List<CodeGraphStore.ExplorerRow> rows) {
             this.data = rows;
