@@ -884,10 +884,14 @@ public final class McpProtocolHandler {
     private static @Nullable String normalizeFilePath(@NotNull String raw, @Nullable String basePath) {
         if (basePath != null && raw.startsWith(basePath)) {
             String relative = raw.substring(basePath.length());
-            if (relative.startsWith("/")) relative = relative.substring(1);
+            if (relative.startsWith("/") || relative.startsWith("\\")) {
+                relative = relative.substring(1);
+            }
             return relative;
         }
-        return raw.startsWith("/") ? null : raw;
+        // Reject absolute paths that couldn't be relativized (they're outside the project)
+        if (new java.io.File(raw).isAbsolute()) return null;
+        return raw;
     }
 
     private String sessionKey(com.intellij.openapi.project.Project proj) {

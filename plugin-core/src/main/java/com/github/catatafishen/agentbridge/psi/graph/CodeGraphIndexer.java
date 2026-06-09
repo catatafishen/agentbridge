@@ -100,10 +100,10 @@ public final class CodeGraphIndexer {
         if (project.isDisposed()) return false;
         ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
 
-        Boolean inProject = ReadAction.nonBlocking(() -> idx.isInProject(vf))
+        Boolean inSource = ReadAction.nonBlocking(() -> idx.isInSource(vf))
             .expireWhen(() -> project.isDisposed() || !vf.isValid())
             .executeSynchronously();
-        if (inProject == null || !inProject) return false;
+        if (inSource == null || !inSource) return false;
 
         Boolean result = ReadAction.nonBlocking(() -> extractAndStore(vf))
             .expireWhen(() -> project.isDisposed() || !vf.isValid())

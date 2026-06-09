@@ -29,7 +29,6 @@ public final class CodeGraphStore {
     private static final Logger LOG = Logger.getInstance(CodeGraphStore.class);
 
     private final Project project;
-    private final Object writeLock = new Object();
 
     @SuppressWarnings("unused") // IntelliJ service container
     public CodeGraphStore(@NotNull Project project) {
@@ -44,19 +43,18 @@ public final class CodeGraphStore {
 
     /**
      * Insert-or-replace all nodes. Runs inside a single transaction.
-     * Synchronized to prevent concurrent threads from interfering with transaction state.
+     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
      */
     public void upsertNodes(@NotNull List<NodeData> nodes) {
         if (nodes.isEmpty()) return;
-        synchronized (writeLock) {
-            Connection conn = connection();
-            if (conn == null) return;
-            String sql = """
-                INSERT OR REPLACE INTO graph_nodes
-                    (id, label, kind, fqn, source_file, source_line, language, indexed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """;
-            try {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            db.withConnection(conn -> {
+                String sql = """
+                    INSERT OR REPLACE INTO graph_nodes
+                        (id, label, kind, fqn, source_file, source_line, language, indexed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """;
                 conn.setAutoCommit(false);
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
                     long now = System.currentTimeMillis();
@@ -73,14 +71,17 @@ public final class CodeGraphStore {
                         ps.addBatch();
                     }
                     ps.executeBatch();
+                    conn.commit();
+                } catch (SQLException e) {
+                    rollbackQuietly(conn);
+                    throw e;
+                } finally {
+                    setAutoCommitQuietly(conn, true);
                 }
-                conn.commit();
-            } catch (SQLException e) {
-                rollbackQuietly(conn);
-                LOG.error("Failed to upsert graph nodes", e);
-            } finally {
-                setAutoCommitQuietly(conn, true);
-            }
+                return null;
+            });
+        } catch (SQLException e) {
+            LOG.error("Failed to upsert graph nodes", e);
         }
     }
 
@@ -160,36 +161,41 @@ public final class CodeGraphStore {
      * Remove all nodes (and their CASCADE-deleted edges) belonging to {@code relativePath},
      * then delete the file's entry from {@code graph_file_index}.
      * Call before re-indexing a file to avoid stale nodes.
+     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
      */
     public void deleteByFile(@NotNull String relativePath) {
-        synchronized (writeLock) {
-            Connection conn = connection();
-            if (conn == null) return;
-            try {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            db.withConnection(conn -> {
                 conn.setAutoCommit(false);
-                try (PreparedStatement ps = conn.prepareStatement(
-                    "DELETE FROM graph_nodes WHERE source_file = ?")) {
-                    ps.setString(1, relativePath);
-                    ps.executeUpdate();
+                try {
+                    try (PreparedStatement ps = conn.prepareStatement(
+                        "DELETE FROM graph_nodes WHERE source_file = ?")) {
+                        ps.setString(1, relativePath);
+                        ps.executeUpdate();
+                    }
+                    // Also delete edges whose source_file matches (covers cross-file edges)
+                    try (PreparedStatement ps = conn.prepareStatement(
+                        "DELETE FROM graph_edges WHERE source_file = ?")) {
+                        ps.setString(1, relativePath);
+                        ps.executeUpdate();
+                    }
+                    try (PreparedStatement ps = conn.prepareStatement(
+                        "DELETE FROM graph_file_index WHERE path = ?")) {
+                        ps.setString(1, relativePath);
+                        ps.executeUpdate();
+                    }
+                    conn.commit();
+                } catch (SQLException e) {
+                    rollbackQuietly(conn);
+                    throw e;
+                } finally {
+                    setAutoCommitQuietly(conn, true);
                 }
-                // Also delete edges whose source_file matches (covers cross-file edges)
-                try (PreparedStatement ps = conn.prepareStatement(
-                    "DELETE FROM graph_edges WHERE source_file = ?")) {
-                    ps.setString(1, relativePath);
-                    ps.executeUpdate();
-                }
-                try (PreparedStatement ps = conn.prepareStatement(
-                    "DELETE FROM graph_file_index WHERE path = ?")) {
-                    ps.setString(1, relativePath);
-                    ps.executeUpdate();
-                }
-                conn.commit();
-            } catch (SQLException e) {
-                rollbackQuietly(conn);
-                LOG.error("Failed to delete graph data for file: " + relativePath, e);
-            } finally {
-                setAutoCommitQuietly(conn, true);
-            }
+                return null;
+            });
+        } catch (SQLException e) {
+            LOG.error("Failed to delete graph data for file: " + relativePath, e);
         }
     }
 
@@ -212,22 +218,24 @@ public final class CodeGraphStore {
     }
 
     public void setFileIndex(@NotNull String relativePath, @NotNull String hash, int nodes, int edges) {
-        synchronized (writeLock) {
-            Connection conn = connection();
-            if (conn == null) return;
-            try (PreparedStatement ps = conn.prepareStatement("""
-                INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count)
-                VALUES (?, ?, ?, ?, ?)
-                """)) {
-                ps.setString(1, relativePath);
-                ps.setString(2, hash);
-                ps.setLong(3, System.currentTimeMillis());
-                ps.setInt(4, nodes);
-                ps.setInt(5, edges);
-                ps.executeUpdate();
-            } catch (SQLException e) {
-                LOG.error("Failed to update file index for: " + relativePath, e);
-            }
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            db.withConnection(conn -> {
+                try (PreparedStatement ps = conn.prepareStatement("""
+                    INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count)
+                    VALUES (?, ?, ?, ?, ?)
+                    """)) {
+                    ps.setString(1, relativePath);
+                    ps.setString(2, hash);
+                    ps.setLong(3, System.currentTimeMillis());
+                    ps.setInt(4, nodes);
+                    ps.setInt(5, edges);
+                    ps.executeUpdate();
+                }
+                return null;
+            });
+        } catch (SQLException e) {
+            LOG.error("Failed to update file index for: " + relativePath, e);
         }
     }
 
@@ -353,18 +361,17 @@ public final class CodeGraphStore {
         }
     }
 
-    private static final java.util.regex.Pattern WRITE_KEYWORDS =
-        java.util.regex.Pattern.compile(
-            "\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|TRUNCATE|ATTACH|DETACH)\\b",
-            java.util.regex.Pattern.CASE_INSENSITIVE);
-
     private static void rejectWriteSql(@NotNull String sql) throws SQLException {
-        // Strip single-quoted string literals before checking for write keywords,
-        // so that values like 'delete' inside IN(...) clauses don't trigger a false positive.
-        String stripped = sql.replaceAll("'[^']*'", "''");
-        if (WRITE_KEYWORDS.matcher(stripped).find()) {
+        // Whitelist approach: only SELECT and WITH (CTE) statements are allowed.
+        // Strip leading whitespace and SQL comments before checking the first keyword.
+        String trimmed = sql.stripLeading().replaceAll("(?s)/\\*.*?\\*/", "").stripLeading();
+        if (trimmed.startsWith("--")) {
+            trimmed = trimmed.substring(trimmed.indexOf('\n') + 1).stripLeading();
+        }
+        String upper = trimmed.toUpperCase(java.util.Locale.ROOT);
+        if (!upper.startsWith("SELECT") && !upper.startsWith("WITH")) {
             throw new SQLException(
-                "Write statements are not allowed in query_knowledge_graph. Use SELECT only.");
+                "Only SELECT / WITH statements are allowed in query_knowledge_graph.");
         }
     }
 }
