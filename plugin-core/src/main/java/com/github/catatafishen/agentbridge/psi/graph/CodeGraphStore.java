@@ -357,10 +357,10 @@ public final class CodeGraphStore {
                         GROUP BY target_id
                     ) depnts ON depnts.target_id = 'file:' || fi.path
                     LEFT JOIN (
-                        SELECT path, COUNT(*) AS cnt
+                        SELECT file_path, COUNT(*) AS cnt
                         FROM graph_commit_files
-                        GROUP BY path
-                    ) commits ON commits.path = fi.path
+                        GROUP BY file_path
+                    ) commits ON commits.file_path = fi.path
                     ORDER BY dependent_count DESC
                     LIMIT ?
                     """;
@@ -417,7 +417,7 @@ public final class CodeGraphStore {
                     SELECT gc.short_hash, gc.message, gc.author, gc.timestamp
                     FROM graph_commits gc
                     JOIN graph_commit_files gcf ON gcf.commit_hash = gc.hash
-                    WHERE gcf.path = ?
+                    WHERE gcf.file_path = ?
                     ORDER BY gc.timestamp DESC
                     LIMIT 10
                     """)) {
