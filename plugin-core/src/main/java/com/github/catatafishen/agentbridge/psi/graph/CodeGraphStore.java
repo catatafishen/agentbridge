@@ -333,7 +333,10 @@ public final class CodeGraphStore {
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private static void rejectWriteSql(@NotNull String sql) throws SQLException {
-        if (WRITE_KEYWORDS.matcher(sql).find()) {
+        // Strip single-quoted string literals before checking for write keywords,
+        // so that values like 'delete' inside IN(...) clauses don't trigger a false positive.
+        String stripped = sql.replaceAll("'[^']*'", "''");
+        if (WRITE_KEYWORDS.matcher(stripped).find()) {
             throw new SQLException(
                 "Write statements are not allowed in query_code_graph. Use SELECT only.");
         }
