@@ -133,14 +133,11 @@ public final class CodeGraphIndexer {
         // Clear all existing data before a full rebuild so deleted files disappear.
         CodeGraphStore store = CodeGraphStore.getInstance(project);
         try {
-            store.queryRaw("SELECT COUNT(*) FROM graph_nodes"); // probe — schema present?
+            store.clearAll();
         } catch (Exception e) {
-            LOG.warn("graph_nodes table not initialized", e);
+            LOG.warn("graph tables not initialized or clear failed", e);
             return;
         }
-        // Fast path: drop and recreate via deleting by file in a loop is too slow.
-        // We use raw delete via the store's internal API by walking known files in graph_file_index.
-        // For simplicity, just re-index — INSERT OR REPLACE handles per-file overwrite.
 
         for (VirtualFile vf : files) {
             indicator.checkCanceled();

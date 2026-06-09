@@ -15,6 +15,7 @@ import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionS
 import com.github.catatafishen.agentbridge.psi.tools.editing.InsertAfterSymbolTool;
 import com.github.catatafishen.agentbridge.psi.tools.editing.InsertBeforeSymbolTool;
 import com.github.catatafishen.agentbridge.psi.tools.editing.ReplaceSymbolBodyTool;
+import com.github.catatafishen.agentbridge.psi.tools.graph.QueryCodeGraphTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.CreateScratchFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.GetActiveFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.GetOpenEditorsTool;
@@ -346,11 +347,17 @@ class ToolDefinitionContractTest {
 
     // ── Combined stream for all tools ─────────────────────────────────────────
 
+    static Stream<Tool> graphTools() {
+        return Stream.of(
+            new QueryCodeGraphTool(null)
+        );
+    }
+
     static Stream<Tool> allTools() {
         List<Stream<Tool>> streams = List.of(
             gitTools(), fileTools(), editingTools(), debugTools(), editorTools(),
             navigationTools(), projectTools(), qualityTools(), refactoringTools(),
-            terminalTools(), testingTools(), infrastructureTools()
+            terminalTools(), testingTools(), infrastructureTools(), graphTools()
         );
         return streams.stream().flatMap(s -> s);
     }

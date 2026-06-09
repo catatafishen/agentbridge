@@ -86,52 +86,74 @@ public final class CodeGraphStore {
 
     /**
      * Insert edges. Existing edges for the same source file are deleted first by {@link #deleteByFile}.
-     * Synchronized to prevent concurrent threads from interfering with PRAGMA/transaction state.
+     * Uses {@link ConversationDatabase#withConnection} for thread-safe access and
+     * disables FK constraints within the synchronized block so cross-file edges
+     * (referencing nodes not yet indexed) don't fail.
      */
     public void insertEdges(@NotNull List<EdgeData> edges) {
         if (edges.isEmpty()) return;
-        synchronized (writeLock) {
-            Connection conn = connection();
-            if (conn == null) return;
-            String sql = """
-                INSERT OR IGNORE INTO graph_edges (source_id, target_id, relation, source_file, source_line)
-                VALUES (?, ?, ?, ?, ?)
-                """;
-            try {
-                // Disable FK enforcement — cross-file edges may reference nodes not yet indexed.
-                // Must be outside any transaction to take effect in SQLite.
-                try (Statement st = conn.createStatement()) {
-                    st.execute("PRAGMA foreign_keys = OFF");
-                }
-                conn.setAutoCommit(false);
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                    for (EdgeData e : edges) {
-                        ps.setString(1, e.sourceId);
-                        ps.setString(2, e.targetId);
-                        ps.setString(3, e.relation);
-                        ps.setString(4, e.sourceFile);
-                        if (e.sourceLine > 0) ps.setInt(5, e.sourceLine);
-                        else ps.setNull(5, java.sql.Types.INTEGER);
-                        ps.addBatch();
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            db.withConnection(conn -> {
+                String sql = """
+                    INSERT OR IGNORE INTO graph_edges (source_id, target_id, relation, source_file, source_line)
+                    VALUES (?, ?, ?, ?, ?)
+                    """;
+                try {
+                    // Disable FK enforcement — cross-file edges may reference nodes not yet indexed.
+                    try (Statement st = conn.createStatement()) {
+                        st.execute("PRAGMA foreign_keys = OFF");
                     }
-                    ps.executeBatch();
+                    conn.setAutoCommit(false);
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        for (EdgeData e : edges) {
+                            ps.setString(1, e.sourceId);
+                            ps.setString(2, e.targetId);
+                            ps.setString(3, e.relation);
+                            ps.setString(4, e.sourceFile);
+                            if (e.sourceLine > 0) ps.setInt(5, e.sourceLine);
+                            else ps.setNull(5, java.sql.Types.INTEGER);
+                            ps.addBatch();
+                        }
+                        ps.executeBatch();
+                    }
+                    conn.commit();
+                } catch (SQLException e) {
+                    rollbackQuietly(conn);
+                    LOG.error("Failed to insert graph edges", e);
+                } finally {
+                    setAutoCommitQuietly(conn, true);
+                    try (Statement st = conn.createStatement()) {
+                        st.execute("PRAGMA foreign_keys = ON");
+                    } catch (SQLException ignored) {
+                    }
                 }
-                conn.commit();
-            } catch (SQLException e) {
-                rollbackQuietly(conn);
-                LOG.error("Failed to insert graph edges", e);
-            } finally {
-                setAutoCommitQuietly(conn, true);
-                // Re-enable FK enforcement
-                try (Statement st = conn.createStatement()) {
-                    st.execute("PRAGMA foreign_keys = ON");
-                } catch (SQLException ignored) {
-                }
-            }
+                return null;
+            });
+        } catch (SQLException e) {
+            LOG.error("Failed to acquire connection for edge insert", e);
         }
     }
 
     // ── Delete by file ────────────────────────────────────────────────────────
+
+    /**
+     * Deletes all graph data (nodes, edges, file index). Used before a full rebuild
+     * to ensure deleted files don't leave stale entries.
+     * Synchronized via {@link ConversationDatabase#withConnection} to prevent
+     * interference with other DB writers.
+     */
+    public void clearAll() throws SQLException {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        db.withConnection(conn -> {
+            try (Statement st = conn.createStatement()) {
+                st.execute("DELETE FROM graph_edges");
+                st.execute("DELETE FROM graph_nodes");
+                st.execute("DELETE FROM graph_file_index");
+            }
+            return null;
+        });
+    }
 
     /**
      * Remove all nodes (and their CASCADE-deleted edges) belonging to {@code relativePath},

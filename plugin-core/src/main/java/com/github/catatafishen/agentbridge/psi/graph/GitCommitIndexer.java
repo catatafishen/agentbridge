@@ -9,7 +9,6 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -48,10 +47,17 @@ public final class GitCommitIndexer {
      * Returns the number of new commits indexed.
      */
     public int indexCommits(@Nullable ProgressIndicator indicator) {
-        Connection conn = getConnection();
-        if (conn == null) return 0;
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        if (!db.isReady()) {
+            try {
+                db.initialize();
+            } catch (Exception e) {
+                LOG.debug("ConversationDatabase not available: " + e.getMessage());
+                return 0;
+            }
+        }
 
-        String lastHash = getLastIndexedCommitHash(conn);
+        String lastHash = getLastIndexedCommitHash(db);
         String gitOutput = fetchGitLog(lastHash);
         if (gitOutput == null || gitOutput.isBlank()) {
             LOG.debug("No new commits to index" + (lastHash != null ? " since " + lastHash : ""));
@@ -65,7 +71,7 @@ public final class GitCommitIndexer {
             indicator.setText2("Indexing " + records.size() + " git commits…");
         }
 
-        int indexed = insertCommits(conn, records);
+        int indexed = insertCommits(db, records);
         LOG.info("Indexed " + indexed + " new git commits");
         return indexed;
     }
@@ -82,15 +88,20 @@ public final class GitCommitIndexer {
     }
 
     @Nullable
-    private String getLastIndexedCommitHash(@NotNull Connection conn) {
-        try (var stmt = conn.prepareStatement(
-            "SELECT hash FROM graph_commits ORDER BY timestamp DESC LIMIT 1");
-             ResultSet rs = stmt.executeQuery()) {
-            if (rs.next()) return rs.getString(1);
+    private String getLastIndexedCommitHash(@NotNull ConversationDatabase db) {
+        try {
+            return db.withConnection(conn -> {
+                try (var stmt = conn.prepareStatement(
+                    "SELECT hash FROM graph_commits ORDER BY indexed_at DESC LIMIT 1");
+                     ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) return rs.getString(1);
+                }
+                return null;
+            });
         } catch (SQLException e) {
             LOG.debug("No existing commits in graph_commits: " + e.getMessage());
+            return null;
         }
-        return null;
     }
 
     /**
@@ -168,79 +179,64 @@ public final class GitCommitIndexer {
         return records;
     }
 
-    private int insertCommits(@NotNull Connection conn, @NotNull List<CommitRecord> records) {
+    /**
+     * Inserts commit records and their file changes into the database.
+     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
+     */
+    private int insertCommits(@NotNull ConversationDatabase db, @NotNull List<CommitRecord> records) {
         String branch = getCurrentBranch();
         long now = System.currentTimeMillis();
-        int count = 0;
 
         try {
-            conn.setAutoCommit(false);
-            try (PreparedStatement commitStmt = conn.prepareStatement("""
+            Integer result = db.withConnection(conn -> {
+                int count = 0;
+                conn.setAutoCommit(false);
+                try (PreparedStatement commitStmt = conn.prepareStatement("""
                     INSERT OR IGNORE INTO graph_commits
                     (hash, short_hash, message, author, author_email, timestamp, branch, indexed_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """);
-                 PreparedStatement fileStmt = conn.prepareStatement("""
-                    INSERT INTO graph_commit_files (commit_hash, file_path, change_type)
-                    VALUES (?, ?, ?)
-                    """)) {
+                     PreparedStatement fileStmt = conn.prepareStatement("""
+                         INSERT INTO graph_commit_files (commit_hash, file_path, change_type)
+                         VALUES (?, ?, ?)
+                         """)) {
 
-                for (CommitRecord record : records) {
-                    commitStmt.setString(1, record.hash);
-                    commitStmt.setString(2, record.shortHash);
-                    commitStmt.setString(3, record.message);
-                    commitStmt.setString(4, record.author);
-                    commitStmt.setString(5, record.email);
-                    commitStmt.setString(6, record.timestamp);
-                    commitStmt.setString(7, branch);
-                    commitStmt.setLong(8, now);
-                    commitStmt.addBatch();
+                    for (CommitRecord record : records) {
+                        commitStmt.setString(1, record.hash);
+                        commitStmt.setString(2, record.shortHash);
+                        commitStmt.setString(3, record.message);
+                        commitStmt.setString(4, record.author);
+                        commitStmt.setString(5, record.email);
+                        commitStmt.setString(6, record.timestamp);
+                        commitStmt.setString(7, branch);
+                        commitStmt.setLong(8, now);
+                        commitStmt.addBatch();
 
-                    for (FileChange file : record.files) {
-                        fileStmt.setString(1, record.hash);
-                        fileStmt.setString(2, file.path);
-                        fileStmt.setString(3, file.changeType);
-                        fileStmt.addBatch();
+                        for (FileChange file : record.files) {
+                            fileStmt.setString(1, record.hash);
+                            fileStmt.setString(2, file.path);
+                            fileStmt.setString(3, file.changeType);
+                            fileStmt.addBatch();
+                        }
+
+                        count++;
+                        if (count % BATCH_SIZE == 0) {
+                            commitStmt.executeBatch();
+                            fileStmt.executeBatch();
+                        }
                     }
-
-                    count++;
-                    if (count % BATCH_SIZE == 0) {
-                        commitStmt.executeBatch();
-                        fileStmt.executeBatch();
-                    }
+                    commitStmt.executeBatch();
+                    fileStmt.executeBatch();
                 }
-                commitStmt.executeBatch();
-                fileStmt.executeBatch();
-            }
-            conn.commit();
+                conn.commit();
+                conn.setAutoCommit(true);
+                return count;
+            });
+            return result != null ? result : 0;
         } catch (SQLException e) {
             LOG.warn("Failed to insert commits: " + e.getMessage());
-            try {
-                conn.rollback();
-            } catch (SQLException ignored) {
-            }
-            count = 0;
-        } finally {
-            try {
-                conn.setAutoCommit(true);
-            } catch (SQLException ignored) {
-            }
+            return 0;
         }
-        return count;
-    }
-
-    @Nullable
-    private Connection getConnection() {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        if (!db.isReady()) {
-            try {
-                db.initialize();
-            } catch (Exception e) {
-                LOG.debug("ConversationDatabase not available: " + e.getMessage());
-                return null;
-            }
-        }
-        return db.getConnection();
     }
 
     record CommitRecord(
