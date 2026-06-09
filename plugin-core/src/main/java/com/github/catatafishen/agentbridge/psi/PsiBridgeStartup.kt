@@ -48,11 +48,15 @@ class PsiBridgeStartup : ProjectActivity {
             // BulkFileListener.TOPIC is application-scoped — subscribe via the application bus,
             // passing the project as the parent disposable so the connection is released when
             // the project closes.
+            val startupTime = System.currentTimeMillis()
             ApplicationManager.getApplication().messageBus.connect(project).subscribe(
                 com.intellij.openapi.vfs.VirtualFileManager.VFS_CHANGES,
                 object : com.intellij.openapi.vfs.newvfs.BulkFileListener {
                     override fun after(events: List<com.intellij.openapi.vfs.newvfs.events.VFileEvent>) {
                         if (!graphSettings.isEnabled || !graphSettings.isAutoRefreshOnAgentEdit) return
+                        // Skip VFS events during IDE startup — thousands of events fire as IntelliJ
+                        // scans the project, and processing them all starves the EDT of write locks.
+                        if (System.currentTimeMillis() - startupTime < 10_000) return
                         val touched = events.mapNotNull { it.file }
                             .filter { it.isValid && !it.isDirectory }
                             .distinct()

@@ -263,6 +263,20 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     /**
+     * Returns the agent client only if already started and healthy.
+     * Does NOT trigger lazy start — returns {@code null} if the client is not ready.
+     * Use this from EDT-sensitive code paths that must not block.
+     */
+    @Nullable
+    public AbstractClient getClientIfReady() {
+        AbstractClient client = acpClient;
+        if (!started || client == null || !client.isHealthy()) {
+            return null;
+        }
+        return client;
+    }
+
+    /**
      * Mark a prompt as in flight. Suppresses automatic agent restart in {@link #getClient()}
      * until the matching {@link #endPrompt()} call. Must be paired in a try/finally.
      */
