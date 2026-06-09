@@ -91,55 +91,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Fetch the exact PR head commit by SHA and overlay the PR's source files
-      # from it. Fetching by SHA (not by refs/pull/N/head) is race-free: even if
-      # the PR has been force-pushed since the build job ran, we still get the
-      # commit that produced the artifact. Then we restore only source paths —
-      # build.gradle.kts, gradlew, workflow files stay at the trusted base version,
-      # so no fork code is ever executed.
+      # Detach HEAD at the PR commit so JGit blame attributes lines correctly.
+      # Fetching by SHA (not refs/pull/N/head) is race-free: even if the PR was
+      # force-pushed since the build job ran, we still get the commit that
+      # produced the artifact.
       #
-      # WHY this matters: SonarCloud's SCM-Git plugin uses `git blame` to decide
-      # which lines are "new" in the PR. If the working-tree sources don't map to
-      # any commit (e.g. when they were dropped in from a tarball), blame returns
-      # nothing → Sonar concludes "no new code" → the new-code quality gate is
-      # trivially green even when the analyzer flagged issues in fork files.
-      - name: Fetch and overlay PR source files from git
+      # IMPORTANT: must use `checkout --detach` (not `reset --soft`) so the local
+      # `master` branch ref stays at its real position. The scanner computes
+      # `git merge-base HEAD master` to determine "new code"; if master's ref
+      # were moved (as reset --soft does), merge-base = HEAD → 0 new files.
+      - name: Checkout PR commit (detached HEAD)
         env:
           HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
         run: |
           set -euo pipefail
-          # Fetch full history (no --depth=1): the later "Verify PR has SCM diff"
-          # step uses the symmetric-diff range origin/$PR_BASE_REF...$HEAD_SHA,
-          # which needs a merge-base. A shallow fetch leaves the PR head with no
-          # local parents, so the merge-base lookup fails. Full history also lets
-          # Sonar's SCM-Git plugin walk blame across the PR's commits.
           git fetch origin "$HEAD_SHA"
-
-          # Nuke target source trees before restoring so files deleted in the PR
-          # don't linger from the base checkout. `git checkout $SHA -- paths` on
-          # its own would overwrite modified/added files but leave deleted ones.
-          SOURCE_PATHS=(
-            plugin-core/src
-            plugin-core/chat-ui/src
-            plugin-core/js-tests
-            mcp-server/src
-            plugin-experimental/src
-          )
-          for path in "${SOURCE_PATHS[@]}"; do
-            rm -rf "$path"
-          done
-
-          # Restore each path individually so a path missing in the PR commit
-          # (e.g. a new module added on master that doesn't exist on the fork)
-          # doesn't fail the whole step.
-          for path in "${SOURCE_PATHS[@]}"; do
-            git checkout "$HEAD_SHA" -- "$path" 2>/dev/null || \
-              echo "::notice::Path '$path' not present in PR head $HEAD_SHA (skipped)"
-          done
+          git checkout --detach "$HEAD_SHA"
 
       # Overlay the build outputs and coverage reports from the artifact AFTER
-      # the source restore so they sit on top of the PR sources. The artifact no
-      # longer contains source files (see sonarqube-pr-build.yml).
+      # the detached checkout so they sit on top of the PR sources. The artifact
+      # only contains build classes and coverage data (no source files).
       - name: Restore analysis artifacts
         run: |
           tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz"
@@ -162,31 +133,6 @@ jobs:
           if [ "$CHANGED" -eq 0 ]; then
             echo "::warning::No source-file changes detected between PR base and head — SonarCloud will report 0 new code. This usually means SCM data is misconfigured."
           fi
-
-      # Move HEAD to the PR commit so JGit blame resolves correctly.
-      # SonarCloud's SCM-Git plugin runs `git blame` from HEAD to determine line
-      # authorship. Without this, HEAD stays at master and JGit attributes all
-      # lines to master commits → 0 lines are "new" in the PR.
-      # Using `reset --soft` keeps the working tree unchanged (master's build
-      # scripts + overlaid PR sources + build artifacts) while moving HEAD only.
-      - name: Detach HEAD at PR commit for JGit blame
-        env:
-          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
-        run: git reset --soft "$HEAD_SHA"
-
-      # Diagnostic: show git state just before scanner runs
-      - name: Verify git state for scanner
-        env:
-          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
-        run: |
-          echo "HEAD commit: $(git rev-parse HEAD)"
-          echo "Expected:    $HEAD_SHA"
-          echo "Source files present:"
-          find plugin-core/src/main/java -name "CodeGraphStore.java" -o -name "GitCommitIndexer.java" | head -5
-          echo "Build classes present:"
-          find plugin-core/build/classes -name "CodeGraphStore.class" 2>/dev/null | head -3
-          echo "Git log HEAD~3:"
-          git log --oneline -3
 
       - name: Set up JDK 21
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
@@ -262,7 +208,7 @@ jobs:
           HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
         run: |
           gradle sonar \
-            --no-daemon --info \
+            --no-daemon --quiet \
             -x test \
             -x jacocoTestReport \
             -x buildChatUi \
@@ -271,7 +217,6 @@ jobs:
             "-Dsonar.host.url=$SONAR_HOST_URL" \
             "-Dsonar.projectVersion=$SONAR_PROJECT_VERSION" \
             "-Dsonar.scm.revision=$HEAD_SHA" \
-            "-Dsonar.scm.provider=git" \
             "-Dsonar.qualitygate.wait=true" \
             "-Dsonar.qualitygate.timeout=300" \
             "-Dsonar.pullrequest.key=$PR_NUMBER" \
