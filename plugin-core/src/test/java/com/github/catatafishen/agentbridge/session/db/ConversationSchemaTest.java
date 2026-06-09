@@ -49,7 +49,9 @@ class ConversationSchemaTest {
             "hook_executions",
             "graph_nodes",
             "graph_edges",
-            "graph_file_index"
+            "graph_file_index",
+            "graph_commits",
+            "graph_commit_files"
         );
         for (String name : expected) {
             assertTrue(tables.contains(name), "Missing table: " + name + " (have " + tables + ")");

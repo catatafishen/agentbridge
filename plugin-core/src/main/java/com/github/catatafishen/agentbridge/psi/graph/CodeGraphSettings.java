@@ -11,8 +11,9 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Persistent project-level settings for the Knowledge Graph feature.
  * Knowledge Graph is <b>opt-in</b> — disabled by default. The {@code query_knowledge_graph}
- * MCP tool is only registered when {@link #isEnabled()} is {@code true} <em>and</em>
- * the graph contains at least one node ({@link com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore.GraphStats}).
+ * MCP tool is always registered (via {@code GraphToolFactory}) so it appears in settings,
+ * but is only advertised to agents when enabled (via {@code McpToolFilter}) and the graph
+ * contains data.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "CodeGraphSettings", storages = {@Storage("agentbridgeCodeGraph.xml")})

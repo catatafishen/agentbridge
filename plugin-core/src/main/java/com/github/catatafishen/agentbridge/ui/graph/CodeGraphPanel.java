@@ -32,8 +32,8 @@ import java.util.Map;
  *
  * <ul>
  *   <li><b>Enable toggle</b> — turns the feature on/off. Enabling triggers the initial
- *       index build and registers {@code query_knowledge_graph} with the {@link ToolRegistry}.
- *       Disabling unregisters the tool immediately.</li>
+ *       index build. The tool is always registered via {@link com.github.catatafishen.agentbridge.psi.tools.graph.GraphToolFactory}
+ *       but only advertised to agents when enabled (via {@code McpToolFilter}).</li>
  *   <li><b>Stats panel</b> — current node/edge/file counts and last-indexed timestamp.</li>
  *   <li><b>Rebuild button</b> — full background re-index.</li>
  *   <li><b>Export JSON button</b> — writes a node-link JSON graph to a chosen path.</li>
@@ -52,6 +52,7 @@ public final class CodeGraphPanel {
     private final JButton rebuildButton = new JButton("Rebuild");
     private final JButton exportButton = new JButton("Export JSON…");
     private final JBLabel statusLabel = new JBLabel(" ");
+    private Runnable toolChangeDisconnect;
 
     public CodeGraphPanel(@NotNull Project project) {
         this.project = project;
@@ -77,8 +78,10 @@ public final class CodeGraphPanel {
 
         // Subscribe to tool registry changes so the panel updates from "<pending>"
         // to "yes" as soon as the tool is actually registered.
-        com.github.catatafishen.agentbridge.psi.PlatformApiCompat
-            .subscribeToolsChanged(project, this::refreshStats);
+        toolChangeDisconnect = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            .subscribeToolsChanged(project, () ->
+                ApplicationManager.getApplication().invokeLater(this::refreshStats,
+                    com.intellij.openapi.application.ModalityState.nonModal()));
     }
 
     public @NotNull JComponent getComponent() {

@@ -186,6 +186,8 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.testing.ListTestsTool",
         "com.github.catatafishen.agentbridge.psi.tools.testing.RunTestsTool",
         "com.github.catatafishen.agentbridge.psi.tools.testing.GetCoverageTool",
+        // graph
+        "com.github.catatafishen.agentbridge.psi.tools.graph.QueryCodeGraphTool",
     };
 
     /**
