@@ -48,7 +48,7 @@ public final class QueryCodeGraphTool extends Tool {
 
     @Override
     public @NotNull String displayName() {
-        return "Query Code Graph";
+        return "Query Knowledge Graph";
     }
 
     @Override
@@ -104,11 +104,11 @@ public final class QueryCodeGraphTool extends Tool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         if (!CodeGraphSettings.getInstance(project).isEnabled()) {
-            return "Code Graph is disabled. Enable it in the AgentBridge → Code Graph tool window.";
+            return "Knowledge Graph is disabled. Enable it in the AgentBridge → Knowledge Graph tool window.";
         }
         CodeGraphStore.GraphStats stats = CodeGraphStore.getInstance(project).getStats();
         if (stats.isEmpty()) {
-            return "Code Graph is empty. Open the AgentBridge → Code Graph tool window and click 'Rebuild'.";
+            return "Knowledge Graph is empty. Open the AgentBridge → Knowledge Graph tool window and click 'Rebuild'.";
         }
 
         String type = optString(args, PARAM_QUERY_TYPE, "");

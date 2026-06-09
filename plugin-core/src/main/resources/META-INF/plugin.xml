@@ -75,8 +75,8 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
                 icon="/icons/agentbridge.svg"
                 factoryClass="com.github.catatafishen.agentbridge.ui.ChatToolWindowFactory"/>
 
-    <!-- Code Graph sidebar — Code Impact Analysis feature -->
-    <toolWindow id="Code Graph"
+    <!-- Knowledge Graph sidebar -->
+    <toolWindow id="Knowledge Graph"
                 secondary="true"
                 anchor="right"
                 icon="/icons/agentbridge.svg"

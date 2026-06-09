@@ -17,7 +17,7 @@ public final class ToolRegistry {
     /**
      * Fired after tools are registered or unregistered. Subscribers receive
      * a notification on the project message bus — use to refresh UI that
-     * depends on tool availability (e.g. the Code Graph panel).
+     * depends on tool availability (e.g. the Knowledge Graph panel).
      */
     @Topic.ProjectLevel
     public static final Topic<Runnable> TOOLS_CHANGED =
