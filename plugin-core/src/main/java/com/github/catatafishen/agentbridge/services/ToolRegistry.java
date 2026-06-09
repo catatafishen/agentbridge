@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -12,6 +13,15 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ToolRegistry {
+
+    /**
+     * Fired after tools are registered or unregistered. Subscribers receive
+     * a notification on the project message bus — use to refresh UI that
+     * depends on tool availability (e.g. the Code Graph panel).
+     */
+    @Topic.ProjectLevel
+    public static final Topic<Runnable> TOOLS_CHANGED =
+        Topic.create("ToolRegistry.toolsChanged", Runnable.class);
 
     // ── Category enum (static — same across all projects) ────────────────
 
@@ -46,6 +56,7 @@ public final class ToolRegistry {
 
     // ── Instance state (project-scoped) ──────────────────────────────────
 
+    private final Project project;
     private final Map<String, ToolDefinition> definitions = new ConcurrentHashMap<>();
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
@@ -55,23 +66,31 @@ public final class ToolRegistry {
 
     @SuppressWarnings("unused") // instantiated by IntelliJ service container
     public ToolRegistry(@NotNull Project project) {
-        // Tools are registered later by PsiBridgeService via registerAll()
+        this.project = project;
     }
 
     // ── Registration ─────────────────────────────────────────────────────
 
     public void register(@NotNull ToolDefinition def) {
         definitions.put(def.id(), def);
+        fireChanged();
     }
 
     public void unregister(@NotNull String id) {
         definitions.remove(id);
+        fireChanged();
     }
 
     public void registerAll(@NotNull Collection<? extends ToolDefinition> defs) {
         for (ToolDefinition def : defs) {
             definitions.put(def.id(), def);
         }
+        fireChanged();
+    }
+
+    private void fireChanged() {
+        com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            .syncPublisher(project, TOOLS_CHANGED).run();
     }
 
     // ── Lookups ──────────────────────────────────────────────────────────
