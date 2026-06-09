@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.ui.graph;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore;
-import com.github.catatafishen.agentbridge.psi.tools.graph.GraphToolFactory;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -59,6 +58,15 @@ public final class CodeGraphPanel {
         build();
         refreshFromSettings();
         refreshStats();
+
+        // Auto-refresh when the panel becomes visible (handles case where
+        // tool window is restored before PsiBridgeStartup finishes).
+        root.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
+                && root.isShowing()) {
+                refreshStats();
+            }
+        });
     }
 
     public @NotNull JComponent getComponent() {
@@ -90,8 +98,7 @@ public final class CodeGraphPanel {
                 setStatus("Building graph…");
                 CodeGraphIndexer.getInstance(project).rebuildAll(this::onIndexFinished);
             } else {
-                ToolRegistry.getInstance(project).unregister(TOOL_ID);
-                setStatus("Disabled — tool unregistered.");
+                setStatus("Disabled — tool hidden from agents.");
                 refreshStats();
             }
         });
@@ -131,24 +138,27 @@ public final class CodeGraphPanel {
 
     private void refreshStats() {
         CodeGraphStore.GraphStats s = CodeGraphStore.getInstance(project).getStats();
+        CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
+        boolean toolInRegistry = ToolRegistry.getInstance(project).findById(TOOL_ID) != null;
+        boolean advertisedToAgents = toolInRegistry && settings.isEnabled();
+
         StringBuilder sb = new StringBuilder();
         sb.append("Nodes:         ").append(s.nodeCount()).append('\n');
         sb.append("Edges:         ").append(s.edgeCount()).append('\n');
         sb.append("Files indexed: ").append(s.fileCount()).append('\n');
         sb.append("Last indexed:  ").append(formatTime(s.lastIndexedAt())).append('\n');
-        sb.append("Tool advertised: ")
-            .append(ToolRegistry.getInstance(project).findById(TOOL_ID) != null ? "yes" : "no");
+        sb.append("Tool advertised: ").append(advertisedToAgents ? "yes" : "no");
+        if (toolInRegistry && !settings.isEnabled()) {
+            sb.append(" (feature disabled)");
+        } else if (!toolInRegistry) {
+            sb.append(" (not registered — restart IDE)");
+        }
         statsArea.setText(sb.toString());
     }
 
     private void onIndexFinished() {
         refreshStats();
-        // Re-register the tool after rebuild completes.
-        ToolRegistry registry = ToolRegistry.getInstance(project);
-        registry.unregister(TOOL_ID); // idempotent — clear stale registration first
-        var tools = GraphToolFactory.create(project);
-        registry.registerAll(tools);
-        setStatus("Build finished — query_code_graph registered.");
+        setStatus("Build finished — query_code_graph ready.");
     }
 
     private void exportJson() {
