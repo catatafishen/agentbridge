@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileChooser.FileChooserFactory;
@@ -39,9 +40,9 @@ import java.util.Map;
  *   <li><b>Export JSON button</b> — writes a node-link JSON graph to a chosen path.</li>
  * </ul>
  */
-public final class CodeGraphPanel {
+public final class KnowledgeGraphPanel implements Disposable {
 
-    private static final Logger LOG = Logger.getInstance(CodeGraphPanel.class);
+    private static final Logger LOG = Logger.getInstance(KnowledgeGraphPanel.class);
     private static final String TOOL_ID = "query_knowledge_graph";
 
     private final Project project;
@@ -54,7 +55,7 @@ public final class CodeGraphPanel {
     private final JBLabel statusLabel = new JBLabel(" ");
     private Runnable toolChangeDisconnect;
 
-    public CodeGraphPanel(@NotNull Project project) {
+    public KnowledgeGraphPanel(@NotNull Project project) {
         this.project = project;
         build();
         refreshFromSettings();
@@ -86,6 +87,14 @@ public final class CodeGraphPanel {
 
     public @NotNull JComponent getComponent() {
         return root;
+    }
+
+    @Override
+    public void dispose() {
+        if (toolChangeDisconnect != null) {
+            toolChangeDisconnect.run();
+            toolChangeDisconnect = null;
+        }
     }
 
     private void build() {
