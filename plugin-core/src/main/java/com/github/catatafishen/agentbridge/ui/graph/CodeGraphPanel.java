@@ -154,11 +154,13 @@ public final class CodeGraphPanel {
         sb.append("Edges:         ").append(s.edgeCount()).append('\n');
         sb.append("Files indexed: ").append(s.fileCount()).append('\n');
         sb.append("Last indexed:  ").append(formatTime(s.lastIndexedAt())).append('\n');
-        sb.append("Tool advertised: ").append(advertisedToAgents ? "yes" : "no");
-        if (toolInRegistry && !settings.isEnabled()) {
-            sb.append(" (feature disabled)");
-        } else if (!toolInRegistry) {
-            sb.append(" (not registered — restart IDE)");
+        sb.append("Tool advertised: ");
+        if (!toolInRegistry) {
+            sb.append("<pending>");
+        } else if (advertisedToAgents) {
+            sb.append("yes");
+        } else {
+            sb.append("no (feature disabled)");
         }
         statsArea.setText(sb.toString());
     }
