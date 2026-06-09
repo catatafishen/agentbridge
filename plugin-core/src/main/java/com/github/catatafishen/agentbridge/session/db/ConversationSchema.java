@@ -397,7 +397,8 @@ final class ConversationSchema {
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 commit_hash TEXT NOT NULL REFERENCES graph_commits(hash) ON DELETE CASCADE,
                 file_path   TEXT NOT NULL,
-                change_type TEXT NOT NULL
+                change_type TEXT NOT NULL,
+                UNIQUE(commit_hash, file_path)
             )
             """);
         stmt.execute("CREATE INDEX idx_gcf_commit ON graph_commit_files(commit_hash)");

@@ -204,7 +204,7 @@ public final class GitCommitIndexer {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """);
                      PreparedStatement fileStmt = conn.prepareStatement("""
-                         INSERT INTO graph_commit_files (commit_hash, file_path, change_type)
+                         INSERT OR IGNORE INTO graph_commit_files (commit_hash, file_path, change_type)
                          VALUES (?, ?, ?)
                          """)) {
 
