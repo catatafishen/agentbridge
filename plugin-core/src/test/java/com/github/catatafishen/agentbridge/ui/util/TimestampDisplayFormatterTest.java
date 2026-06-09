@@ -71,16 +71,24 @@ class TimestampDisplayFormatterTest {
 
         @Test
         void recentEpochShowsToday() {
-            // Use current time to guarantee "Today" label
-            long now = System.currentTimeMillis();
-            String result = TimestampDisplayFormatter.formatEpochMillis(now);
+            // Use noon today to avoid midnight rollover flakiness
+            long todayNoon = java.time.LocalDate.now()
+                .atTime(12, 0)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant().toEpochMilli();
+            String result = TimestampDisplayFormatter.formatEpochMillis(todayNoon);
             assertTrue(result.startsWith("Today "), "Expected 'Today' prefix: " + result);
         }
 
         @Test
         void yesterdayEpochShowsYesterday() {
-            long yesterday = System.currentTimeMillis() - 24 * 60 * 60 * 1000L;
-            String result = TimestampDisplayFormatter.formatEpochMillis(yesterday);
+            // Use noon yesterday to avoid DST and midnight rollover flakiness
+            long yesterdayNoon = java.time.LocalDate.now()
+                .minusDays(1)
+                .atTime(12, 0)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant().toEpochMilli();
+            String result = TimestampDisplayFormatter.formatEpochMillis(yesterdayNoon);
             assertTrue(result.startsWith("Yesterday "), "Expected 'Yesterday' prefix: " + result);
         }
     }
