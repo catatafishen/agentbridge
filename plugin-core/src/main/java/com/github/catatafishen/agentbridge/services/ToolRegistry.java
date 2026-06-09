@@ -89,7 +89,11 @@ public final class ToolRegistry {
     }
 
     private void fireChanged() {
-        project.getMessageBus().syncPublisher(TOOLS_CHANGED).run();
+        // Defensive: getMessageBus() can return null in mocked/disposed projects.
+        var bus = project.getMessageBus();
+        if (bus != null) {
+            bus.syncPublisher(TOOLS_CHANGED).run();
+        }
     }
 
     // ── Lookups ──────────────────────────────────────────────────────────
