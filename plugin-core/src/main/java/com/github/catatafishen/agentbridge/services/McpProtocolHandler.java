@@ -882,16 +882,25 @@ public final class McpProtocolHandler {
     }
 
     private static @Nullable String normalizeFilePath(@NotNull String raw, @Nullable String basePath) {
-        if (basePath != null && raw.startsWith(basePath)) {
-            String relative = raw.substring(basePath.length());
-            if (relative.startsWith("/") || relative.startsWith("\\")) {
-                relative = relative.substring(1);
+        // Normalize separators to forward slashes (PSI/VFS always uses '/').
+        String normalized = raw.replace('\\', '/');
+        if (basePath != null) {
+            String normalizedBase = basePath.replace('\\', '/');
+            // Ensure boundary-safe prefix match: base must end with '/' or the char after base in raw must be '/'.
+            if (normalized.startsWith(normalizedBase)) {
+                String relative = normalized.substring(normalizedBase.length());
+                if (relative.startsWith("/")) relative = relative.substring(1);
+                return relative;
             }
-            return relative;
+            // Also handle case where basePath doesn't have trailing separator
+            String baseWithSlash = normalizedBase.endsWith("/") ? normalizedBase : normalizedBase + "/";
+            if (normalized.startsWith(baseWithSlash)) {
+                return normalized.substring(baseWithSlash.length());
+            }
         }
         // Reject absolute paths that couldn't be relativized (they're outside the project)
-        if (new java.io.File(raw).isAbsolute()) return null;
-        return raw;
+        if (new java.io.File(normalized).isAbsolute()) return null;
+        return normalized;
     }
 
     private String sessionKey(com.intellij.openapi.project.Project proj) {

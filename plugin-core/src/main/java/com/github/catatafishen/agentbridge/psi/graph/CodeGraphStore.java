@@ -203,18 +203,22 @@ public final class CodeGraphStore {
 
     @Nullable
     public String getFileHash(@NotNull String relativePath) {
-        Connection conn = connection();
-        if (conn == null) return null;
-        try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT content_hash FROM graph_file_index WHERE path = ?")) {
-            ps.setString(1, relativePath);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return rs.getString(1);
-            }
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> {
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT content_hash FROM graph_file_index WHERE path = ?")) {
+                    ps.setString(1, relativePath);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) return rs.getString(1);
+                    }
+                }
+                return null;
+            });
         } catch (SQLException e) {
             LOG.warn("Failed to read file hash for: " + relativePath, e);
+            return null;
         }
-        return null;
     }
 
     public void setFileIndex(@NotNull String relativePath, @NotNull String hash, int nodes, int edges) {
@@ -243,33 +247,36 @@ public final class CodeGraphStore {
 
     public record GraphStats(long nodeCount, long edgeCount, long fileCount, long commitCount, long lastIndexedAt) {
         public boolean isEmpty() {
-            return nodeCount == 0;
+            return nodeCount == 0 && commitCount == 0;
         }
     }
 
     @NotNull
     public GraphStats getStats() {
-        Connection conn = connection();
-        if (conn == null) return new GraphStats(0, 0, 0, 0, 0);
-        try (Statement st = conn.createStatement()) {
-            long nodes = 0, edges = 0, files = 0, commits = 0, lastAt = 0;
-            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_nodes")) {
-                if (rs.next()) nodes = rs.getLong(1);
-            }
-            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_edges")) {
-                if (rs.next()) edges = rs.getLong(1);
-            }
-            try (ResultSet rs = st.executeQuery(
-                "SELECT COUNT(*), MAX(indexed_at) FROM graph_file_index")) {
-                if (rs.next()) {
-                    files = rs.getLong(1);
-                    lastAt = rs.getLong(2);
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> {
+                long nodes = 0, edges = 0, files = 0, commits = 0, lastAt = 0;
+                try (Statement st = conn.createStatement()) {
+                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_nodes")) {
+                        if (rs.next()) nodes = rs.getLong(1);
+                    }
+                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_edges")) {
+                        if (rs.next()) edges = rs.getLong(1);
+                    }
+                    try (ResultSet rs = st.executeQuery(
+                        "SELECT COUNT(*), MAX(indexed_at) FROM graph_file_index")) {
+                        if (rs.next()) {
+                            files = rs.getLong(1);
+                            lastAt = rs.getLong(2);
+                        }
+                    }
+                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_commits")) {
+                        if (rs.next()) commits = rs.getLong(1);
+                    }
                 }
-            }
-            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_commits")) {
-                if (rs.next()) commits = rs.getLong(1);
-            }
-            return new GraphStats(nodes, edges, files, commits, lastAt);
+                return new GraphStats(nodes, edges, files, commits, lastAt);
+            });
         } catch (SQLException e) {
             LOG.warn("Failed to read graph stats", e);
             return new GraphStats(0, 0, 0, 0, 0);
@@ -280,42 +287,17 @@ public final class CodeGraphStore {
 
     /**
      * Execute a read-only SQL query and return results as a list of string-keyed maps.
-     * Any statement containing write keywords is rejected before execution.
+     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
+     * Any statement not starting with SELECT/WITH is rejected before execution.
      */
     @NotNull
     public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql) throws SQLException {
         rejectWriteSql(sql);
-        Connection conn = connection();
-        if (conn == null) throw new SQLException("Database connection unavailable");
-        List<java.util.Map<String, Object>> rows = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            int cols = rs.getMetaData().getColumnCount();
-            while (rs.next()) {
-                java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<>();
-                for (int i = 1; i <= cols; i++) {
-                    row.put(rs.getMetaData().getColumnLabel(i), rs.getObject(i));
-                }
-                rows.add(row);
-            }
-        }
-        return rows;
-    }
-
-    /**
-     * Same as {@link #queryRaw(String)} but with positional parameters.
-     */
-    @NotNull
-    public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql, Object... params) throws SQLException {
-        rejectWriteSql(sql);
-        Connection conn = connection();
-        if (conn == null) throw new SQLException("Database connection unavailable");
-        List<java.util.Map<String, Object>> rows = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            for (int i = 0; i < params.length; i++) {
-                ps.setObject(i + 1, params[i]);
-            }
-            try (ResultSet rs = ps.executeQuery()) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        return db.withConnection(conn -> {
+            List<java.util.Map<String, Object>> rows = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
                 int cols = rs.getMetaData().getColumnCount();
                 while (rs.next()) {
                     java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<>();
@@ -325,25 +307,40 @@ public final class CodeGraphStore {
                     rows.add(row);
                 }
             }
-        }
-        return rows;
+            return rows;
+        });
+    }
+
+    /**
+     * Same as {@link #queryRaw(String)} but with positional parameters.
+     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
+     */
+    @NotNull
+    public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql, Object... params) throws SQLException {
+        rejectWriteSql(sql);
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        return db.withConnection(conn -> {
+            List<java.util.Map<String, Object>> rows = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                for (int i = 0; i < params.length; i++) {
+                    ps.setObject(i + 1, params[i]);
+                }
+                try (ResultSet rs = ps.executeQuery()) {
+                    int cols = rs.getMetaData().getColumnCount();
+                    while (rs.next()) {
+                        java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<>();
+                        for (int i = 1; i <= cols; i++) {
+                            row.put(rs.getMetaData().getColumnLabel(i), rs.getObject(i));
+                        }
+                        rows.add(row);
+                    }
+                }
+            }
+            return rows;
+        });
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
-
-    @Nullable
-    private Connection connection() {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        if (!db.isReady()) {
-            try {
-                db.initialize();
-            } catch (Exception e) {
-                LOG.debug("ConversationDatabase not available yet: " + e.getMessage());
-                return null;
-            }
-        }
-        return db.getConnection();
-    }
 
     private static void rollbackQuietly(@Nullable Connection conn) {
         if (conn == null) return;
@@ -362,16 +359,32 @@ public final class CodeGraphStore {
     }
 
     private static void rejectWriteSql(@NotNull String sql) throws SQLException {
-        // Whitelist approach: only SELECT and WITH (CTE) statements are allowed.
-        // Strip leading whitespace and SQL comments before checking the first keyword.
+        // Whitelist approach: only pure SELECT statements (optionally preceded by CTEs) are allowed.
+        // Strip leading SQL comments before checking.
         String trimmed = sql.stripLeading().replaceAll("(?s)/\\*.*?\\*/", "").stripLeading();
-        if (trimmed.startsWith("--")) {
-            trimmed = trimmed.substring(trimmed.indexOf('\n') + 1).stripLeading();
+        while (trimmed.startsWith("--")) {
+            int nl = trimmed.indexOf('\n');
+            if (nl < 0) break;
+            trimmed = trimmed.substring(nl + 1).stripLeading();
         }
         String upper = trimmed.toUpperCase(java.util.Locale.ROOT);
         if (!upper.startsWith("SELECT") && !upper.startsWith("WITH")) {
             throw new SQLException(
                 "Only SELECT / WITH statements are allowed in query_knowledge_graph.");
+        }
+        // WITH ... INSERT/UPDATE/DELETE is valid in SQLite — reject DML/DDL keywords
+        // even when the statement starts with WITH.
+        if (upper.startsWith("WITH")) {
+            java.util.regex.Pattern dmlAfterCte = java.util.regex.Pattern.compile(
+                "\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|PRAGMA)\\b",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
+            // Strip string literals and CTEs' SELECT bodies are fine — just scan for DML keywords
+            // after removing single-quoted strings to avoid false positives.
+            String stripped = trimmed.replaceAll("'[^']*'", "''");
+            if (dmlAfterCte.matcher(stripped).find()) {
+                throw new SQLException(
+                    "WITH ... DML/DDL is not allowed in query_knowledge_graph. Only WITH ... SELECT is permitted.");
+            }
         }
     }
 }
