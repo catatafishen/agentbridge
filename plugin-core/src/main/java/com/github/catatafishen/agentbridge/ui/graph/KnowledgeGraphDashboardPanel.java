@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileChooser.FileChooserFactory;
 import com.intellij.openapi.fileChooser.FileSaverDescriptor;
@@ -23,6 +24,7 @@ import java.awt.*;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -31,60 +33,57 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Sidebar panel for the Knowledge Graph feature.
- *
- * <ul>
- *   <li><b>Enable toggle</b> — turns the feature on/off. Enabling triggers the initial
- *       index build. The tool is always registered via {@link com.github.catatafishen.agentbridge.psi.tools.graph.GraphToolFactory}
- *       but only advertised to agents when enabled (via {@code McpToolFilter}).</li>
- *   <li><b>Stats panel</b> — current node/edge/file counts and last-indexed timestamp.</li>
- *   <li><b>Rebuild button</b> — full background re-index.</li>
- *   <li><b>Export JSON button</b> — writes a node-link JSON graph to a chosen path.</li>
- * </ul>
+ * Dashboard tab for the Knowledge Graph tool window.
+ * Shows stat cards, hotspots ranking, and feature settings.
  */
-public final class KnowledgeGraphPanel implements Disposable {
+public final class KnowledgeGraphDashboardPanel implements Disposable {
 
-    private static final Logger LOG = Logger.getInstance(KnowledgeGraphPanel.class);
+    private static final Logger LOG = Logger.getInstance(KnowledgeGraphDashboardPanel.class);
     private static final String TOOL_ID = "query_knowledge_graph";
 
     private final Project project;
     private final JPanel root = new JPanel(new BorderLayout());
+
+    // Settings controls
     private final JCheckBox enableCheck = new JCheckBox("Enable Knowledge Graph");
     private final JCheckBox autoRefreshCheck = new JCheckBox("Refresh after agent edits");
-    private final JTextArea statsArea = new JTextArea(6, 40);
+
+    // Stat card labels
+    private final JBLabel nodesLabel = new JBLabel("0");
+    private final JBLabel edgesLabel = new JBLabel("0");
+    private final JBLabel filesLabel = new JBLabel("0");
+    private final JBLabel commitsLabel = new JBLabel("0");
+
+    // Status
+    private final JBLabel statusLabel = new JBLabel(" ");
+    private final JBLabel toolStatusLabel = new JBLabel(" ");
+
+    // Hotspots
+    private final JPanel hotspotsPanel = new JPanel(new VerticalLayout(JBUI.scale(2)));
+
+    // Buttons
     private final JButton rebuildButton = new JButton("Rebuild");
     private final JButton exportButton = new JButton("Export JSON…");
-    private final JBLabel statusLabel = new JBLabel(" ");
+
     private Runnable toolChangeDisconnect;
 
-    public KnowledgeGraphPanel(@NotNull Project project) {
+    public KnowledgeGraphDashboardPanel(@NotNull Project project) {
         this.project = project;
         build();
-        refreshFromSettings();
-        refreshStats();
+        refreshAll();
 
-        // Auto-refresh when the panel becomes visible (handles case where
-        // tool window is restored before PsiBridgeStartup finishes).
         root.addHierarchyListener(e -> {
             if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
                 && root.isShowing()) {
-                refreshStats();
+                refreshAll();
             }
         });
 
-        // Deferred refresh: tool registration happens asynchronously during startup.
-        // If the panel is already visible when constructed (restored tool window), the
-        // hierarchy listener won't fire again. Schedule a retry so the panel picks up
-        // the tool registration once PsiBridgeService finishes initializing.
-        ApplicationManager.getApplication().invokeLater(this::refreshStats,
-            com.intellij.openapi.application.ModalityState.nonModal());
+        ApplicationManager.getApplication().invokeLater(this::refreshAll, ModalityState.nonModal());
 
-        // Subscribe to tool registry changes so the panel updates from "<pending>"
-        // to "yes" as soon as the tool is actually registered.
         toolChangeDisconnect = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
             .subscribeToolsChanged(project, () ->
-                ApplicationManager.getApplication().invokeLater(this::refreshStats,
-                    com.intellij.openapi.application.ModalityState.nonModal()));
+                ApplicationManager.getApplication().invokeLater(this::refreshAll, ModalityState.nonModal()));
     }
 
     public @NotNull JComponent getComponent() {
@@ -100,18 +99,19 @@ public final class KnowledgeGraphPanel implements Disposable {
     }
 
     private void build() {
-        JPanel top = new JPanel(new VerticalLayout(JBUI.scale(6)));
-        top.setBorder(JBUI.Borders.empty(10));
+        JPanel content = new JPanel(new VerticalLayout(JBUI.scale(12)));
+        content.setBorder(JBUI.Borders.empty(12));
 
+        // Description
         JBLabel description = new JBLabel(
             "<html><body style='width:280px'>"
                 + "Persistent index of code structure, git history, and agent activity. "
                 + "Powers the <code>query_knowledge_graph</code> MCP tool."
                 + "</body></html>");
-        top.add(description);
+        content.add(description);
 
+        // Settings
         CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
-
         enableCheck.addActionListener(e -> {
             boolean on = enableCheck.isSelected();
             settings.setEnabled(on);
@@ -120,20 +120,30 @@ public final class KnowledgeGraphPanel implements Disposable {
                 CodeGraphIndexer.getInstance(project).rebuildAll(this::onIndexFinished);
             } else {
                 setStatus("Disabled — tool hidden from agents.");
-                refreshStats();
+                refreshAll();
             }
         });
-        top.add(enableCheck);
+        content.add(enableCheck);
 
         autoRefreshCheck.addActionListener(e ->
             settings.setAutoRefreshOnAgentEdit(autoRefreshCheck.isSelected()));
-        top.add(autoRefreshCheck);
+        content.add(autoRefreshCheck);
 
-        statsArea.setEditable(false);
-        statsArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(11f)));
-        statsArea.setBorder(BorderFactory.createLineBorder(JBColor.border(), 1));
-        top.add(statsArea);
+        // Stat cards
+        content.add(buildStatCardsPanel());
 
+        // Tool status
+        toolStatusLabel.setForeground(JBColor.GRAY);
+        content.add(toolStatusLabel);
+
+        // Hotspots section
+        JBLabel hotspotsTitle = new JBLabel("Top Hotspots (most depended-upon files)");
+        hotspotsTitle.setFont(hotspotsTitle.getFont().deriveFont(Font.BOLD));
+        content.add(hotspotsTitle);
+        hotspotsPanel.setBorder(JBUI.Borders.empty(4, 0));
+        content.add(hotspotsPanel);
+
+        // Action buttons
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
         rebuildButton.addActionListener(e -> {
             setStatus("Rebuilding…");
@@ -142,46 +152,124 @@ public final class KnowledgeGraphPanel implements Disposable {
         exportButton.addActionListener(e -> exportJson());
         buttons.add(rebuildButton);
         buttons.add(exportButton);
-        top.add(buttons);
+        content.add(buttons);
 
+        // Status
         statusLabel.setForeground(JBColor.GRAY);
-        top.add(statusLabel);
+        content.add(statusLabel);
 
-        root.add(new JBScrollPane(top), BorderLayout.CENTER);
-        root.setPreferredSize(new Dimension(JBUI.scale(360), JBUI.scale(500)));
+        root.add(new JBScrollPane(content), BorderLayout.CENTER);
     }
 
-    private void refreshFromSettings() {
+    private @NotNull JPanel buildStatCardsPanel() {
+        JPanel cards = new JPanel(new GridLayout(1, 4, JBUI.scale(8), 0));
+        cards.add(buildStatCard(nodesLabel, "Nodes"));
+        cards.add(buildStatCard(edgesLabel, "Edges"));
+        cards.add(buildStatCard(filesLabel, "Files"));
+        cards.add(buildStatCard(commitsLabel, "Commits"));
+        return cards;
+    }
+
+    private static @NotNull JPanel buildStatCard(@NotNull JBLabel valueLabel, @NotNull String title) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(JBColor.border(), 1),
+            JBUI.Borders.empty(8)
+        ));
+
+        valueLabel.setFont(valueLabel.getFont().deriveFont(Font.BOLD, JBUI.scaleFontSize(18f)));
+        valueLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        JBLabel titleLabel = new JBLabel(title);
+        titleLabel.setForeground(JBColor.GRAY);
+        titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        card.add(valueLabel, BorderLayout.CENTER);
+        card.add(titleLabel, BorderLayout.SOUTH);
+        return card;
+    }
+
+    private void refreshAll() {
         CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
         enableCheck.setSelected(settings.isEnabled());
         autoRefreshCheck.setSelected(settings.isAutoRefreshOnAgentEdit());
+
+        CodeGraphStore store = CodeGraphStore.getInstance(project);
+        CodeGraphStore.GraphStats stats = store.getStats();
+
+        nodesLabel.setText(formatCount(stats.nodeCount()));
+        edgesLabel.setText(formatCount(stats.edgeCount()));
+        filesLabel.setText(formatCount(stats.fileCount()));
+        commitsLabel.setText(formatCount(stats.commitCount()));
+
+        // Tool status
+        boolean toolInRegistry = ToolRegistry.getInstance(project).findById(TOOL_ID) != null;
+        boolean advertised = toolInRegistry && settings.isEnabled();
+        String lastIndexed = formatTime(stats.lastIndexedAt());
+        if (!toolInRegistry) {
+            toolStatusLabel.setText("Tool: pending registration… | Last indexed: " + lastIndexed);
+        } else if (advertised) {
+            toolStatusLabel.setText("● Active — last indexed " + lastIndexed);
+            toolStatusLabel.setForeground(new JBColor(new Color(0x2E7D32), new Color(0x81C784)));
+        } else {
+            toolStatusLabel.setText("○ Disabled — tool hidden from agents");
+            toolStatusLabel.setForeground(JBColor.GRAY);
+        }
+
+        refreshHotspots(store);
     }
 
-    private void refreshStats() {
-        CodeGraphStore.GraphStats s = CodeGraphStore.getInstance(project).getStats();
-        CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
-        boolean toolInRegistry = ToolRegistry.getInstance(project).findById(TOOL_ID) != null;
-        boolean advertisedToAgents = toolInRegistry && settings.isEnabled();
+    private void refreshHotspots(@NotNull CodeGraphStore store) {
+        List<CodeGraphStore.HotspotEntry> hotspots = store.getHotspots(7);
+        hotspotsPanel.removeAll();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Nodes:         ").append(s.nodeCount()).append('\n');
-        sb.append("Edges:         ").append(s.edgeCount()).append('\n');
-        sb.append("Files indexed: ").append(s.fileCount()).append('\n');
-        sb.append("Commits:       ").append(s.commitCount()).append('\n');
-        sb.append("Last indexed:  ").append(formatTime(s.lastIndexedAt())).append('\n');
-        sb.append("Tool advertised: ");
-        if (!toolInRegistry) {
-            sb.append("<pending>");
-        } else if (advertisedToAgents) {
-            sb.append("yes");
+        if (hotspots.isEmpty()) {
+            hotspotsPanel.add(new JBLabel("No data — rebuild to populate."));
         } else {
-            sb.append("no (feature disabled)");
+            int maxCount = hotspots.get(0).dependentCount();
+            for (CodeGraphStore.HotspotEntry entry : hotspots) {
+                hotspotsPanel.add(buildHotspotRow(entry, maxCount));
+            }
         }
-        statsArea.setText(sb.toString());
+        hotspotsPanel.revalidate();
+        hotspotsPanel.repaint();
+    }
+
+    private static @NotNull JPanel buildHotspotRow(@NotNull CodeGraphStore.HotspotEntry entry, int maxCount) {
+        JPanel row = new JPanel(new BorderLayout(JBUI.scale(8), 0));
+
+        // Bar
+        JPanel bar = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                double ratio = maxCount > 0 ? (double) entry.dependentCount() / maxCount : 0;
+                int barWidth = (int) (getWidth() * ratio);
+                g.setColor(new JBColor(new Color(0x42A5F5), new Color(0x1565C0)));
+                g.fillRect(0, 0, barWidth, getHeight());
+            }
+        };
+        bar.setPreferredSize(new Dimension(JBUI.scale(100), JBUI.scale(14)));
+        bar.setOpaque(false);
+
+        // File name (just the short name)
+        String shortName = entry.path().contains("/")
+            ? entry.path().substring(entry.path().lastIndexOf('/') + 1)
+            : entry.path();
+        JBLabel nameLabel = new JBLabel(shortName);
+        nameLabel.setToolTipText(entry.path());
+
+        JBLabel countLabel = new JBLabel("(" + entry.dependentCount() + ")");
+        countLabel.setForeground(JBColor.GRAY);
+
+        row.add(bar, BorderLayout.WEST);
+        row.add(nameLabel, BorderLayout.CENTER);
+        row.add(countLabel, BorderLayout.EAST);
+        return row;
     }
 
     private void onIndexFinished() {
-        refreshStats();
+        refreshAll();
         setStatus("Build finished — query_knowledge_graph ready.");
     }
 
@@ -206,7 +294,7 @@ public final class KnowledgeGraphPanel implements Disposable {
         });
     }
 
-    private void writeNodeLinkJson(@NotNull java.nio.file.Path path) throws IOException, SQLException {
+    private void writeNodeLinkJson(@NotNull Path path) throws IOException, SQLException {
         CodeGraphStore store = CodeGraphStore.getInstance(project);
         List<Map<String, Object>> nodes = store.queryRaw(
             "SELECT id, label, kind, fqn, source_file, source_line, language FROM graph_nodes");
@@ -218,7 +306,6 @@ public final class KnowledgeGraphPanel implements Disposable {
         com.google.gson.JsonArray linksArr = new com.google.gson.JsonArray();
         for (Map<String, Object> e : edges) {
             com.google.gson.JsonObject link = toJson(e);
-            // graphify/d3-style: rename source_id → source, target_id → target
             link.add("source", link.remove("source_id"));
             link.add("target", link.remove("target_id"));
             linksArr.add(link);
@@ -256,5 +343,11 @@ public final class KnowledgeGraphPanel implements Disposable {
         } catch (Exception e) {
             return String.valueOf(epochMs);
         }
+    }
+
+    private static @NotNull String formatCount(long count) {
+        if (count >= 1_000_000) return String.format("%.1fM", count / 1_000_000.0);
+        if (count >= 1_000) return String.format("%.1fK", count / 1_000.0);
+        return String.valueOf(count);
     }
 }
