@@ -841,9 +841,11 @@ public final class McpProtocolHandler {
             ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
         String pluginVersion = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
             .getPluginVersion(com.github.catatafishen.agentbridge.bridge.McpServerJarLocator.PLUGIN_ID);
+        String filePath = extractFilePath(data.arguments());
         service.enrichToolCallStats(new ToolCallStatsEnrichment(
             dbEventId, inputSize, outputSize, data.durationMs(),
-            data.success(), data.errorMessage(), data.category(), data.displayName(), pluginVersion));
+            data.success(), data.errorMessage(), data.category(), data.displayName(), pluginVersion,
+            filePath));
         // Only record hook stages when we have a confirmed tracker record — the FK on
         // hook_executions.tool_event_id requires the events row to already exist.
         // When callRecord is null we're falling back to a raw toolUseId that may not be
@@ -851,6 +853,41 @@ public final class McpProtocolHandler {
         if (!data.hookStages().isEmpty() && callRecord != null) {
             service.recordHookStages(dbEventId, data.hookStages());
         }
+    }
+
+    private static final List<String> FILE_PATH_KEYS = List.of("path", "file", "paths", "target", "old_str_file");
+
+    /**
+     * Extracts the primary file path from tool arguments by checking common parameter names.
+     * Returns a project-relative path, or null if no file path found.
+     */
+    private @Nullable String extractFilePath(@NotNull JsonObject args) {
+        String basePath = project.getBasePath();
+        for (String key : FILE_PATH_KEYS) {
+            if (!args.has(key)) continue;
+            com.google.gson.JsonElement el = args.get(key);
+            if (el.isJsonPrimitive()) {
+                String raw = el.getAsString();
+                if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
+            } else if (el.isJsonArray()) {
+                for (com.google.gson.JsonElement item : el.getAsJsonArray()) {
+                    if (item.isJsonPrimitive()) {
+                        String raw = item.getAsString();
+                        if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String normalizeFilePath(@NotNull String raw, @Nullable String basePath) {
+        if (basePath != null && raw.startsWith(basePath)) {
+            String relative = raw.substring(basePath.length());
+            if (relative.startsWith("/")) relative = relative.substring(1);
+            return relative;
+        }
+        return raw.startsWith("/") ? null : raw;
     }
 
     private String sessionKey(com.intellij.openapi.project.Project proj) {

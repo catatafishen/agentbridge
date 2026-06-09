@@ -195,16 +195,32 @@ public final class QueryCodeGraphTool extends Tool {
     }
 
     private @NotNull String fileHistory(@NotNull JsonObject args, int limit) throws SQLException {
-        String target = requireTarget(args);
-        String sql = """
+        String input = optString(args, PARAM_TARGET, "");
+        if (input.isEmpty()) {
+            throw new IllegalArgumentException("'target' parameter is required for this query_type");
+        }
+        // Try exact match first, then filename suffix fallback on tool_call_events
+        CodeGraphStore store = CodeGraphStore.getInstance(project);
+        List<Map<String, Object>> rows = store.queryRaw("""
             SELECT ev.timestamp AS at, t.tool_name, t.tool_kind, t.success
               FROM tool_call_events t
               JOIN events ev ON ev.id = t.event_id
              WHERE t.file_path = ?
              ORDER BY ev.timestamp DESC
              LIMIT ?
-            """;
-        return formatRows(CodeGraphStore.getInstance(project).queryRaw(sql, target, limit));
+            """, input, limit);
+        if (rows.isEmpty()) {
+            String filename = input.contains("/") ? input.substring(input.lastIndexOf('/') + 1) : input;
+            rows = store.queryRaw("""
+                SELECT ev.timestamp AS at, t.tool_name, t.tool_kind, t.success
+                  FROM tool_call_events t
+                  JOIN events ev ON ev.id = t.event_id
+                 WHERE t.file_path LIKE ?
+                 ORDER BY ev.timestamp DESC
+                 LIMIT ?
+                """, "%" + filename, limit);
+        }
+        return formatRows(rows);
     }
 
     private @NotNull String hotspots(@NotNull JsonObject args, int limit) throws SQLException {
@@ -258,13 +274,47 @@ public final class QueryCodeGraphTool extends Tool {
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private @NotNull String requireTarget(@NotNull JsonObject args) {
+    private @NotNull String requireTarget(@NotNull JsonObject args) throws SQLException {
         String t = optString(args, PARAM_TARGET, "");
         if (t.isEmpty()) {
             throw new IllegalArgumentException(
                 "'target' parameter is required for this query_type");
         }
-        return t;
+        return resolveTarget(t);
+    }
+
+    /**
+     * Resolves a target file path against the graph index.
+     * If the exact path isn't found, falls back to matching by filename suffix.
+     * This makes the tool forgiving when agents provide incorrect directory prefixes.
+     */
+    private @NotNull String resolveTarget(@NotNull String input) throws SQLException {
+        CodeGraphStore store = CodeGraphStore.getInstance(project);
+        // Try exact match first
+        List<Map<String, Object>> exact = store.queryRaw(
+            "SELECT source_file FROM graph_nodes WHERE kind = 'file' AND source_file = ? LIMIT 1",
+            input);
+        if (!exact.isEmpty()) return input;
+
+        // Fallback: match by filename (last path component)
+        String filename = input.contains("/") ? input.substring(input.lastIndexOf('/') + 1) : input;
+        List<Map<String, Object>> byName = store.queryRaw(
+            "SELECT DISTINCT source_file FROM graph_nodes WHERE kind = 'file' AND source_file LIKE ? LIMIT 10",
+            "%" + filename);
+        if (byName.isEmpty()) return input; // no match at all — return as-is, query will be empty
+        if (byName.size() == 1) {
+            return (String) byName.getFirst().get("source_file");
+        }
+        // Multiple matches — try to pick the one whose path suffix best matches the input
+        for (Map<String, Object> row : byName) {
+            String candidate = (String) row.get("source_file");
+            if (candidate.endsWith(input) || input.endsWith(candidate)) return candidate;
+        }
+        // Last resort: pick the shortest match (likely the most specific project file)
+        return byName.stream()
+            .map(r -> (String) r.get("source_file"))
+            .min(java.util.Comparator.comparingInt(String::length))
+            .orElse(input);
     }
 
     private static @NotNull String optString(@NotNull JsonObject args, @NotNull String key, @NotNull String dflt) {
