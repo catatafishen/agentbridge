@@ -125,7 +125,8 @@ public final class CodeGraphStore {
                     setAutoCommitQuietly(conn, true);
                     try (Statement st = conn.createStatement()) {
                         st.execute("PRAGMA foreign_keys = ON");
-                    } catch (SQLException ignored) {
+                    } catch (SQLException ex) {
+                        LOG.warn("Failed to re-enable foreign keys", ex);
                     }
                 }
                 return null;

@@ -80,7 +80,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
                 secondary="true"
                 anchor="right"
                 icon="/icons/agentbridge.svg"
-                factoryClass="com.github.catatafishen.agentbridge.ui.graph.CodeGraphToolWindowFactory"/>
+                factoryClass="com.github.catatafishen.agentbridge.ui.graph.KnowledgeGraphToolWindowFactory"/>
 
     <!-- Application Services -->
     <applicationService

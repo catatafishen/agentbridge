@@ -201,19 +201,21 @@ public final class GitCommitIndexer {
                          VALUES (?, ?, ?)
                          """)) {
 
-                    for (CommitRecord record : records) {
-                        commitStmt.setString(1, record.hash);
-                        commitStmt.setString(2, record.shortHash);
-                        commitStmt.setString(3, record.message);
-                        commitStmt.setString(4, record.author);
-                        commitStmt.setString(5, record.email);
-                        commitStmt.setString(6, record.timestamp);
-                        commitStmt.setString(7, branch);
-                        commitStmt.setLong(8, now);
+                    // Loop-invariant parameters — set once; they persist across addBatch() calls.
+                    commitStmt.setString(7, branch);
+                    commitStmt.setLong(8, now);
+
+                    for (CommitRecord entry : records) {
+                        commitStmt.setString(1, entry.hash);
+                        commitStmt.setString(2, entry.shortHash);
+                        commitStmt.setString(3, entry.message);
+                        commitStmt.setString(4, entry.author);
+                        commitStmt.setString(5, entry.email);
+                        commitStmt.setString(6, entry.timestamp);
                         commitStmt.addBatch();
 
-                        for (FileChange file : record.files) {
-                            fileStmt.setString(1, record.hash);
+                        for (FileChange file : entry.files) {
+                            fileStmt.setString(1, entry.hash);
                             fileStmt.setString(2, file.path);
                             fileStmt.setString(3, file.changeType);
                             fileStmt.addBatch();
@@ -227,9 +229,17 @@ public final class GitCommitIndexer {
                     }
                     commitStmt.executeBatch();
                     fileStmt.executeBatch();
+                    conn.commit();
+                } catch (SQLException e) {
+                    try {
+                        conn.rollback();
+                    } catch (SQLException rollbackEx) {
+                        LOG.warn("Rollback failed", rollbackEx);
+                    }
+                    throw e;
+                } finally {
+                    conn.setAutoCommit(true);
                 }
-                conn.commit();
-                conn.setAutoCommit(true);
                 return count;
             });
             return result != null ? result : 0;

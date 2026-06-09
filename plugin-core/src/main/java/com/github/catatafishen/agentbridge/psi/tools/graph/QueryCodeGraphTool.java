@@ -32,7 +32,7 @@ public final class QueryCodeGraphTool extends Tool {
     private static final String PARAM_SQL = "sql";
     private static final String PARAM_LIMIT = "limit";
 
-    public QueryCodeGraphTool(@NotNull Project project) {
+    public QueryCodeGraphTool(Project project) {
         super(project);
     }
 

@@ -15,7 +15,6 @@ import com.github.catatafishen.agentbridge.psi.tools.debug.session.DebugSessionS
 import com.github.catatafishen.agentbridge.psi.tools.editing.InsertAfterSymbolTool;
 import com.github.catatafishen.agentbridge.psi.tools.editing.InsertBeforeSymbolTool;
 import com.github.catatafishen.agentbridge.psi.tools.editing.ReplaceSymbolBodyTool;
-import com.github.catatafishen.agentbridge.psi.tools.graph.QueryCodeGraphTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.CreateScratchFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.GetActiveFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.editor.GetOpenEditorsTool;
@@ -57,6 +56,7 @@ import com.github.catatafishen.agentbridge.psi.tools.git.GitStashTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitStatusTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitTagTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitUnstageTool;
+import com.github.catatafishen.agentbridge.psi.tools.graph.QueryCodeGraphTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.GetNotificationsTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.HttpRequestTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.InteractWithModalTool;
