@@ -98,10 +98,11 @@ public final class CodeGraphExtractor {
             VirtualFile targetVf = resolveTargetVf(ref);
             if (targetVf == null || !idx.isInProject(targetVf)) continue;
             String targetPath = relativePath(targetVf);
-            if (targetPath.equals(relPath)) continue;
-            String targetId = "file:" + targetPath;
-            int srcLine = lineOf(file, ref.getElement());
-            edges.add(new EdgeData(fileId, targetId, "uses", relPath, srcLine));
+            if (!targetPath.equals(relPath)) {
+                String targetId = "file:" + targetPath;
+                int srcLine = lineOf(file, ref.getElement());
+                edges.add(new EdgeData(fileId, targetId, "uses", relPath, srcLine));
+            }
         }
     }
 

@@ -140,8 +140,8 @@ public final class GitCommitIndexer {
         String[] entries = output.split(RECORD_SEPARATOR);
         for (String entry : entries) {
             if (entry.isBlank()) continue;
-            CommitRecord record = parseEntry(entry);
-            if (record != null) records.add(record);
+            CommitRecord parsedCommit = parseEntry(entry);
+            if (parsedCommit != null) records.add(parsedCommit);
         }
         return records;
     }
@@ -171,17 +171,18 @@ public final class GitCommitIndexer {
         for (String line : lines) {
             if (line.isBlank()) continue;
             String[] fileParts = line.split("\t", 2);
-            if (fileParts.length < 2) continue;
-            String changeType = fileParts[0].trim();
-            String filePath = fileParts[1].trim();
-            // Handle renames: "R100\told\tnew" — take the new path
-            if (changeType.startsWith("R") && filePath.contains("\t")) {
-                filePath = filePath.split("\t")[1].trim();
-                changeType = "R";
-            } else if (changeType.length() > 1) {
-                changeType = changeType.substring(0, 1);
+            if (fileParts.length >= 2) {
+                String changeType = fileParts[0].trim();
+                String filePath = fileParts[1].trim();
+                // Handle renames: "R100\told\tnew" — take the new path
+                if (changeType.startsWith("R") && filePath.contains("\t")) {
+                    filePath = filePath.split("\t")[1].trim();
+                    changeType = "R";
+                } else if (changeType.length() > 1) {
+                    changeType = changeType.substring(0, 1);
+                }
+                files.add(new FileChange(filePath, changeType));
             }
-            files.add(new FileChange(filePath, changeType));
         }
         return files;
     }
