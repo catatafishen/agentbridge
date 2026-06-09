@@ -210,7 +210,7 @@ public final class CodeGraphStore {
 
     // ── Stats ─────────────────────────────────────────────────────────────────
 
-    public record GraphStats(long nodeCount, long edgeCount, long fileCount, long lastIndexedAt) {
+    public record GraphStats(long nodeCount, long edgeCount, long fileCount, long commitCount, long lastIndexedAt) {
         public boolean isEmpty() {
             return nodeCount == 0;
         }
@@ -219,9 +219,9 @@ public final class CodeGraphStore {
     @NotNull
     public GraphStats getStats() {
         Connection conn = connection();
-        if (conn == null) return new GraphStats(0, 0, 0, 0);
+        if (conn == null) return new GraphStats(0, 0, 0, 0, 0);
         try (Statement st = conn.createStatement()) {
-            long nodes = 0, edges = 0, files = 0, lastAt = 0;
+            long nodes = 0, edges = 0, files = 0, commits = 0, lastAt = 0;
             try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_nodes")) {
                 if (rs.next()) nodes = rs.getLong(1);
             }
@@ -235,10 +235,13 @@ public final class CodeGraphStore {
                     lastAt = rs.getLong(2);
                 }
             }
-            return new GraphStats(nodes, edges, files, lastAt);
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_commits")) {
+                if (rs.next()) commits = rs.getLong(1);
+            }
+            return new GraphStats(nodes, edges, files, commits, lastAt);
         } catch (SQLException e) {
             LOG.warn("Failed to read graph stats", e);
-            return new GraphStats(0, 0, 0, 0);
+            return new GraphStats(0, 0, 0, 0, 0);
         }
     }
 

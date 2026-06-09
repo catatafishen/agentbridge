@@ -54,6 +54,7 @@ final class ConversationSchema {
             if (currentVersion < 4) applyV4(stmt);
             if (currentVersion < 5) applyV5(stmt);
             if (currentVersion < 6) applyV6(stmt);
+            if (currentVersion < 7) applyV7(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -368,5 +369,38 @@ final class ConversationSchema {
                 edge_count   INTEGER NOT NULL DEFAULT 0
             )
             """);
+    }
+
+    /**
+     * V7: Git commit history — stores commit metadata and file-level changes.
+     * Enables "why was this file changed?" queries without running git blame in real-time.
+     */
+    private static void applyV7(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("""
+            CREATE TABLE graph_commits (
+                hash         TEXT PRIMARY KEY,
+                short_hash   TEXT NOT NULL,
+                message      TEXT NOT NULL,
+                author       TEXT NOT NULL,
+                author_email TEXT,
+                timestamp    TEXT NOT NULL,
+                branch       TEXT,
+                indexed_at   INTEGER NOT NULL
+            )
+            """);
+        stmt.execute("CREATE INDEX idx_gc_time ON graph_commits(timestamp DESC)");
+        stmt.execute("CREATE INDEX idx_gc_author ON graph_commits(author)");
+        stmt.execute("CREATE INDEX idx_gc_branch ON graph_commits(branch)");
+
+        stmt.execute("""
+            CREATE TABLE graph_commit_files (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                commit_hash TEXT NOT NULL REFERENCES graph_commits(hash) ON DELETE CASCADE,
+                file_path   TEXT NOT NULL,
+                change_type TEXT NOT NULL
+            )
+            """);
+        stmt.execute("CREATE INDEX idx_gcf_commit ON graph_commit_files(commit_hash)");
+        stmt.execute("CREATE INDEX idx_gcf_file ON graph_commit_files(file_path)");
     }
 }
