@@ -1,119 +1,27 @@
 package com.github.catatafishen.agentbridge.ui.renderers;
 
-import kotlin.Pair;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for the pure categorization logic in {@link GitStatusRenderer}.
+ * Tests for pure logic in {@link GitStatusRenderer} — specifically
+ * the {@code categorizeFiles()} method which parses git status output.
  */
 class GitStatusRendererTest {
 
-    private static final GitStatusRenderer R = GitStatusRenderer.INSTANCE;
-
     @Nested
+    @DisplayName("categorizeFiles")
     class CategorizeFiles {
 
         @Test
-        void stagedModifiedFile() {
-            var result = R.categorizeFiles(List.of("M  src/Main.java"));
-            assertEquals(1, result.getStaged().size());
-            assertEquals(new Pair<>('M', "src/Main.java"), result.getStaged().get(0));
-            assertTrue(result.getUnstaged().isEmpty());
-        }
-
-        @Test
-        void unstagedModifiedFile() {
-            var result = R.categorizeFiles(List.of(" M src/Main.java"));
-            assertTrue(result.getStaged().isEmpty());
-            assertEquals(1, result.getUnstaged().size());
-            assertEquals(new Pair<>('M', "src/Main.java"), result.getUnstaged().get(0));
-        }
-
-        @Test
-        void untrackedFile() {
-            var result = R.categorizeFiles(List.of("?? new-file.txt"));
-            assertTrue(result.getStaged().isEmpty());
-            assertTrue(result.getUnstaged().isEmpty());
-            assertEquals(List.of("new-file.txt"), result.getUntracked());
-        }
-
-        @Test
-        void conflictedFileUU() {
-            var result = R.categorizeFiles(List.of("UU conflict.java"));
-            assertEquals(List.of("conflict.java"), result.getConflicted());
-            assertTrue(result.getStaged().isEmpty());
-        }
-
-        @Test
-        void conflictedFileAA() {
-            var result = R.categorizeFiles(List.of("AA both-added.java"));
-            assertEquals(List.of("both-added.java"), result.getConflicted());
-        }
-
-        @Test
-        void conflictedFileDD() {
-            var result = R.categorizeFiles(List.of("DD both-deleted.java"));
-            assertEquals(List.of("both-deleted.java"), result.getConflicted());
-        }
-
-        @Test
-        void stagedAddedFile() {
-            var result = R.categorizeFiles(List.of("A  new.java"));
-            assertEquals(1, result.getStaged().size());
-            assertEquals(new Pair<>('A', "new.java"), result.getStaged().get(0));
-        }
-
-        @Test
-        void stagedDeletedFile() {
-            var result = R.categorizeFiles(List.of("D  old.java"));
-            assertEquals(1, result.getStaged().size());
-            assertEquals(new Pair<>('D', "old.java"), result.getStaged().get(0));
-        }
-
-        @Test
-        void bothStagedAndUnstaged() {
-            var result = R.categorizeFiles(List.of("MM both.java"));
-            assertEquals(1, result.getStaged().size());
-            assertEquals(new Pair<>('M', "both.java"), result.getStaged().get(0));
-            assertEquals(1, result.getUnstaged().size());
-            assertEquals(new Pair<>('M', "both.java"), result.getUnstaged().get(0));
-        }
-
-        @Test
-        void skipsBranchLine() {
-            var result = R.categorizeFiles(List.of("## main...origin/main", "M  file.java"));
-            assertEquals(1, result.getStaged().size());
-        }
-
-        @Test
-        void skipsBlankLines() {
-            var result = R.categorizeFiles(List.of("", "  ", "M  file.java"));
-            assertEquals(1, result.getStaged().size());
-        }
-
-        @Test
-        void multipleFiles() {
-            var result = R.categorizeFiles(List.of(
-                "## main",
-                "M  staged.java",
-                " M unstaged.java",
-                "?? untracked.java",
-                "UU conflict.java"
-            ));
-            assertEquals(1, result.getStaged().size());
-            assertEquals(1, result.getUnstaged().size());
-            assertEquals(1, result.getUntracked().size());
-            assertEquals(1, result.getConflicted().size());
-        }
-
-        @Test
-        void emptyInput() {
-            var result = R.categorizeFiles(List.of());
+        void emptyInputReturnsEmptyCategories() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of());
             assertTrue(result.getStaged().isEmpty());
             assertTrue(result.getUnstaged().isEmpty());
             assertTrue(result.getUntracked().isEmpty());
@@ -121,10 +29,160 @@ class GitStatusRendererTest {
         }
 
         @Test
-        void renamedFile() {
-            var result = R.categorizeFiles(List.of("R  old.java -> new.java"));
+        void untrackedFilesDetected() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "?? new-file.txt",
+                "?? another.kt"
+            ));
+            assertEquals(2, result.getUntracked().size());
+            assertEquals("new-file.txt", result.getUntracked().get(0));
+            assertEquals("another.kt", result.getUntracked().get(1));
+        }
+
+        @Test
+        void stagedFileDetected() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "M  src/Main.java"
+            ));
             assertEquals(1, result.getStaged().size());
-            assertEquals('R', result.getStaged().get(0).getFirst().charValue());
+            assertEquals('M', (char) result.getStaged().get(0).getFirst());
+            assertEquals("src/Main.java", result.getStaged().get(0).getSecond());
+        }
+
+        @Test
+        void unstagedModification() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                " M src/Main.java"
+            ));
+            assertEquals(1, result.getUnstaged().size());
+            assertEquals('M', (char) result.getUnstaged().get(0).getFirst());
+            assertEquals("src/Main.java", result.getUnstaged().get(0).getSecond());
+        }
+
+        @Test
+        void partiallyStaged() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "MM src/Both.java"
+            ));
+            assertEquals(1, result.getStaged().size());
+            assertEquals(1, result.getUnstaged().size());
+            assertEquals("src/Both.java", result.getStaged().get(0).getSecond());
+            assertEquals("src/Both.java", result.getUnstaged().get(0).getSecond());
+        }
+
+        @Test
+        void addedFile() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "A  new-module/File.kt"
+            ));
+            assertEquals(1, result.getStaged().size());
+            assertEquals('A', (char) result.getStaged().get(0).getFirst());
+        }
+
+        @Test
+        void deletedUnstaged() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                " D removed.txt"
+            ));
+            assertEquals(1, result.getUnstaged().size());
+            assertEquals('D', (char) result.getUnstaged().get(0).getFirst());
+        }
+
+        @Test
+        void deletedStaged() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "D  removed.txt"
+            ));
+            assertEquals(1, result.getStaged().size());
+            assertEquals('D', (char) result.getStaged().get(0).getFirst());
+        }
+
+        @Test
+        void conflictBothModified() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "UU conflicted.java"
+            ));
+            assertEquals(1, result.getConflicted().size());
+            assertEquals("conflicted.java", result.getConflicted().get(0));
+        }
+
+        @Test
+        void conflictAddedByBoth() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "AA both-added.txt"
+            ));
+            assertEquals(1, result.getConflicted().size());
+        }
+
+        @Test
+        void conflictDeletedByBoth() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "DD both-deleted.txt"
+            ));
+            assertEquals(1, result.getConflicted().size());
+        }
+
+        @Test
+        void conflictDeletedByUs() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "DU deleted-by-us.txt"
+            ));
+            assertEquals(1, result.getConflicted().size());
+        }
+
+        @Test
+        void renamedFile() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "R  old.txt -> new.txt"
+            ));
+            assertEquals(1, result.getStaged().size());
+            assertEquals('R', (char) result.getStaged().get(0).getFirst());
+        }
+
+        @Test
+        void branchHeaderIgnored() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "## main...origin/main [ahead 1]",
+                "M  file.txt"
+            ));
+            assertEquals(1, result.getStaged().size());
+            assertTrue(result.getConflicted().isEmpty());
+        }
+
+        @Test
+        void blankLinesIgnored() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "",
+                "   ",
+                "M  file.txt"
+            ));
+            assertEquals(1, result.getStaged().size());
+        }
+
+        @Test
+        void shortLinesIgnored() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "X",
+                "XY"
+            ));
+            assertTrue(result.getStaged().isEmpty());
+            assertTrue(result.getUnstaged().isEmpty());
+        }
+
+        @Test
+        void mixedStatusOutput() {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
+                "## feature...origin/feature",
+                "M  staged.txt",
+                " M unstaged.txt",
+                "?? untracked.txt",
+                "UU conflict.txt",
+                "A  added.txt"
+            ));
+            assertEquals(2, result.getStaged().size());
+            assertEquals(1, result.getUnstaged().size());
+            assertEquals(1, result.getUntracked().size());
+            assertEquals(1, result.getConflicted().size());
         }
     }
 }

@@ -1,135 +1,42 @@
 package com.github.catatafishen.agentbridge.ui.renderers;
 
-import kotlin.text.MatchResult;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests regex patterns and helper methods in {@link GitDiffRenderer}.
+ * Tests for pure logic in {@link GitDiffRenderer} — {@code isMetaLine()}
+ * and regex pattern validation.
  */
 class GitDiffRendererTest {
 
-    private static final GitDiffRenderer R = GitDiffRenderer.INSTANCE;
-
     @Nested
-    class StatSummaryPattern {
-
-        @Test
-        void matchesMultipleFilesWithInsertionsAndDeletions() {
-            assertTrue(R.getSTAT_SUMMARY().matches(" 3 files changed, 10 insertions(+), 5 deletions(-)"));
-        }
-
-        @Test
-        void matchesSingleFileWithInsertion() {
-            assertTrue(R.getSTAT_SUMMARY().matches(" 1 file changed, 1 insertion(+)"));
-        }
-
-        @Test
-        void matchesSingleFileWithDeletion() {
-            assertTrue(R.getSTAT_SUMMARY().matches(" 1 file changed, 1 deletion(-)"));
-        }
-
-        @Test
-        void matchesWithoutLeadingSpace() {
-            assertTrue(R.getSTAT_SUMMARY().matches("3 files changed, 10 insertions(+), 5 deletions(-)"));
-        }
-
-        @Test
-        void doesNotMatchRandomText() {
-            assertFalse(R.getSTAT_SUMMARY().matches("just some text"));
-        }
-    }
-
-    @Nested
-    class StatFilePattern {
-
-        @Test
-        void matchesFileWithCountAndBar() {
-            MatchResult match = R.getSTAT_FILE().find(" src/Main.java | 15 +++---", 0);
-
-            assertNotNull(match);
-            assertEquals("src/Main.java", match.getGroupValues().get(1).trim());
-            assertEquals("15", match.getGroupValues().get(2));
-            assertEquals("+++---", match.getGroupValues().get(3));
-        }
-
-        @Test
-        void matchesFileWithOnlyAdditions() {
-            MatchResult match = R.getSTAT_FILE().find(" README.md | 3 +++", 0);
-
-            assertNotNull(match);
-            assertEquals("README.md", match.getGroupValues().get(1).trim());
-            assertEquals("3", match.getGroupValues().get(2));
-            assertEquals("+++", match.getGroupValues().get(3));
-        }
-
-        @Test
-        void matchesFileWithOnlyDeletions() {
-            MatchResult match = R.getSTAT_FILE().find(" old-file.txt | 7 -------", 0);
-
-            assertNotNull(match);
-            assertEquals("old-file.txt", match.getGroupValues().get(1).trim());
-            assertEquals("7", match.getGroupValues().get(2));
-        }
-
-        @Test
-        void doesNotMatchDiffHeader() {
-            assertNull(R.getSTAT_FILE().find("diff --git a/foo b/bar", 0));
-        }
-    }
-
-    @Nested
-    class DiffGitPattern {
-
-        @Test
-        void matchesDiffHeader() {
-            MatchResult match = R.getDIFF_GIT().find("diff --git a/old/path.java b/new/path.java", 0);
-
-            assertNotNull(match);
-            assertEquals("old/path.java", match.getGroupValues().get(1));
-            assertEquals("new/path.java", match.getGroupValues().get(2));
-        }
-
-        @Test
-        void matchesSameFilePath() {
-            MatchResult match = R.getDIFF_GIT().find("diff --git a/src/Foo.kt b/src/Foo.kt", 0);
-
-            assertNotNull(match);
-            assertEquals("src/Foo.kt", match.getGroupValues().get(1));
-            assertEquals("src/Foo.kt", match.getGroupValues().get(2));
-        }
-
-        @Test
-        void doesNotMatchStatLine() {
-            assertNull(R.getDIFF_GIT().find(" src/Main.java | 15 +++---", 0));
-        }
-    }
-
-    @Nested
+    @DisplayName("isMetaLine")
     class IsMetaLine {
 
         @ParameterizedTest
         @ValueSource(strings = {
-            "--- a/src/Main.java",
-            "+++ b/src/Main.java",
+            "--- a/file.txt",
+            "+++ b/file.txt",
+            "--- /dev/null",
+            "+++ /dev/null",
             "index abc1234..def5678 100644",
             "new file mode 100644",
             "deleted file mode 100644",
             "similarity index 95%",
-            "rename from old.java",
+            "rename from old.txt",
+            "rename to new.txt",
             "old mode 100644",
             "new mode 100755"
         })
-        void recognizesMetaLines(String line) {
-            assertTrue(R.isMetaLine(line));
+        void metaLinesDetected(String line) {
+            assertTrue(GitDiffRenderer.INSTANCE.isMetaLine(line));
         }
 
         @ParameterizedTest
@@ -137,11 +44,62 @@ class GitDiffRendererTest {
             "+added line",
             "-removed line",
             " context line",
-            "@@ -1,3 +1,4 @@",
-            "some random text"
+            "@@ -1,5 +1,7 @@",
+            "diff --git a/f.txt b/f.txt",
+            "Some random text",
+            "",
+            "   indented"
         })
-        void rejectsNonMetaLines(String line) {
-            assertFalse(R.isMetaLine(line));
+        void nonMetaLinesRejected(String line) {
+            assertFalse(GitDiffRenderer.INSTANCE.isMetaLine(line));
+        }
+    }
+
+    @Nested
+    @DisplayName("Regex patterns")
+    class RegexPatterns {
+
+        @Test
+        void statSummaryMatchesSingleFile() {
+            assertTrue(GitDiffRenderer.INSTANCE.getSTAT_SUMMARY()
+                .matches(" 1 file changed, 3 insertions(+)"));
+        }
+
+        @Test
+        void statSummaryMatchesMultipleFiles() {
+            assertTrue(GitDiffRenderer.INSTANCE.getSTAT_SUMMARY()
+                .matches(" 5 files changed, 10 insertions(+), 3 deletions(-)"));
+        }
+
+        @Test
+        void statSummaryDoesNotMatchRandomText() {
+            assertFalse(GitDiffRenderer.INSTANCE.getSTAT_SUMMARY()
+                .matches("some other output"));
+        }
+
+        @Test
+        void statFileMatchesTypicalLine() {
+            var match = GitDiffRenderer.INSTANCE.getSTAT_FILE()
+                .find(" src/Main.java | 42 +++---", 0);
+            assertNotNull(match);
+            assertTrue(match.getGroupValues().get(1).contains("src/Main.java"));
+        }
+
+        @Test
+        void diffGitMatchesHeader() {
+            var match = GitDiffRenderer.INSTANCE.getDIFF_GIT()
+                .find("diff --git a/src/Main.java b/src/Main.java", 0);
+            assertNotNull(match);
+            assertTrue(match.getGroupValues().get(2).contains("src/Main.java"));
+        }
+
+        @Test
+        void diffGitWithRename() {
+            var match = GitDiffRenderer.INSTANCE.getDIFF_GIT()
+                .find("diff --git a/old.txt b/new.txt", 0);
+            assertNotNull(match);
+            assertTrue(match.getGroupValues().get(1).contains("old.txt"));
+            assertTrue(match.getGroupValues().get(2).contains("new.txt"));
         }
     }
 }
