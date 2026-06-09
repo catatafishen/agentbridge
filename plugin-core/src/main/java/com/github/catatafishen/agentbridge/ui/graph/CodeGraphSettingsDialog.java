@@ -152,6 +152,7 @@ public final class CodeGraphSettingsDialog extends DialogWrapper {
         }
 
         @Override
+        @SuppressWarnings("java:S4144") // icon is square: getIconHeight intentionally returns the same value as getIconWidth
         public int getIconHeight() {
             return SIZE;
         }

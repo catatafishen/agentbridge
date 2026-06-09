@@ -174,6 +174,7 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         String lastIndexed = formatTime(stats.lastIndexedAt());
         if (!toolInRegistry) {
             toolStatusLabel.setText("Tool: pending registration… | Last indexed: " + lastIndexed);
+            toolStatusLabel.setForeground(JBColor.GRAY);
         } else if (advertised) {
             toolStatusLabel.setText("● Active — last indexed " + lastIndexed);
             toolStatusLabel.setForeground(new JBColor(new Color(0x2E7D32), new Color(0x81C784)));

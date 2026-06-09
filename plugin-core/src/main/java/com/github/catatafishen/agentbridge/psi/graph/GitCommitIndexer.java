@@ -140,14 +140,14 @@ public final class GitCommitIndexer {
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.directory(new java.io.File(basePath));
-            pb.redirectErrorStream(false);
+            pb.redirectErrorStream(true); // merge stderr into stdout to avoid blocking
             Process process = pb.start();
             String output = new String(
                 process.getInputStream().readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8);
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                LOG.warn("git log process exited with code " + exitCode);
+                LOG.warn("git log process exited with code " + exitCode + ": " + output.trim());
                 return null;
             }
             return output;

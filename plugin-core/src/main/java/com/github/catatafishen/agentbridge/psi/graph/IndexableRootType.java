@@ -25,7 +25,9 @@ public enum IndexableRootType {
     TEST_RESOURCES("test_resources", "Test Resources",
         new JBColor(new Color(0x6A1B9A), new Color(0x9C27B0))),
     GENERATED_SOURCES("generated_sources", "Generated Sources",
-        new JBColor(new Color(0x455A64), new Color(0x78909C)));
+        new JBColor(new Color(0x455A64), new Color(0x78909C))),
+    GENERATED_TEST_SOURCES("generated_test_sources", "Generated Test Sources",
+        new JBColor(new Color(0x37474F), new Color(0x607D8B)));
 
     private final String id;
     private final String displayName;
