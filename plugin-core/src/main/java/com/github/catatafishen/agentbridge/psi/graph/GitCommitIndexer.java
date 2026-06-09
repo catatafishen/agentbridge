@@ -238,6 +238,8 @@ public final class GitCommitIndexer {
      * Inserts commit records and their file changes into the database.
      * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
      */
+    // S6909 false positive: sqlite-jdbc resets ALL params after addBatch(), so these are NOT loop-invariant.
+    @SuppressWarnings("java:S6909")
     private int insertCommits(@NotNull ConversationDatabase db, @NotNull List<CommitRecord> records) {
         String branch = getCurrentBranch();
         long now = System.currentTimeMillis();
@@ -256,10 +258,6 @@ public final class GitCommitIndexer {
                          VALUES (?, ?, ?)
                          """)) {
 
-                    // Loop-invariant parameters — set once; they persist across addBatch() calls.
-                    commitStmt.setString(7, branch);
-                    commitStmt.setLong(8, now);
-
                     for (CommitRecord entry : records) {
                         commitStmt.setString(1, entry.hash);
                         commitStmt.setString(2, entry.shortHash);
@@ -267,6 +265,9 @@ public final class GitCommitIndexer {
                         commitStmt.setString(4, entry.author);
                         commitStmt.setString(5, entry.email);
                         commitStmt.setString(6, entry.timestamp);
+                        // Must be set every iteration — sqlite-jdbc clears all params after addBatch()
+                        commitStmt.setString(7, branch);
+                        commitStmt.setLong(8, now);
                         commitStmt.addBatch();
 
                         for (FileChange file : entry.files) {
