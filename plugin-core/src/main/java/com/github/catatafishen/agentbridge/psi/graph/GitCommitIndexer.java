@@ -135,48 +135,55 @@ public final class GitCommitIndexer {
         return result;
     }
 
-    /**
-     * Parses the custom-formatted git log output into structured records.
-     */
     static List<CommitRecord> parseGitLog(@NotNull String output) {
         List<CommitRecord> records = new ArrayList<>();
         String[] entries = output.split(RECORD_SEPARATOR);
         for (String entry : entries) {
             if (entry.isBlank()) continue;
-            String[] parts = entry.split("\n", 2);
-            String header = parts[0].trim();
-            String[] fields = header.split(UNIT_SEPARATOR);
-            if (fields.length < 6) continue;
-
-            String hash = fields[0].trim();
-            String shortHash = fields[1].trim();
-            String author = fields[2].trim();
-            String email = fields[3].trim();
-            String timestamp = fields[4].trim();
-            String message = fields[5].trim();
-
-            List<FileChange> files = new ArrayList<>();
-            if (parts.length > 1) {
-                String[] lines = parts[1].split("\n");
-                for (String line : lines) {
-                    if (line.isBlank()) continue;
-                    String[] fileParts = line.split("\t", 2);
-                    if (fileParts.length < 2) continue;
-                    String changeType = fileParts[0].trim();
-                    String filePath = fileParts[1].trim();
-                    // Handle renames: "R100\told\tnew" — take the new path
-                    if (changeType.startsWith("R") && filePath.contains("\t")) {
-                        filePath = filePath.split("\t")[1].trim();
-                        changeType = "R";
-                    } else if (changeType.length() > 1) {
-                        changeType = changeType.substring(0, 1);
-                    }
-                    files.add(new FileChange(filePath, changeType));
-                }
-            }
-            records.add(new CommitRecord(hash, shortHash, author, email, timestamp, message, files));
+            CommitRecord record = parseEntry(entry);
+            if (record != null) records.add(record);
         }
         return records;
+    }
+
+    @Nullable
+    private static CommitRecord parseEntry(@NotNull String entry) {
+        String[] parts = entry.split("\n", 2);
+        String header = parts[0].trim();
+        String[] fields = header.split(UNIT_SEPARATOR);
+        if (fields.length < 6) return null;
+
+        String hash = fields[0].trim();
+        String shortHash = fields[1].trim();
+        String author = fields[2].trim();
+        String email = fields[3].trim();
+        String timestamp = fields[4].trim();
+        String message = fields[5].trim();
+
+        List<FileChange> files = parts.length > 1 ? parseFileChanges(parts[1]) : List.of();
+        return new CommitRecord(hash, shortHash, author, email, timestamp, message, files);
+    }
+
+    @NotNull
+    private static List<FileChange> parseFileChanges(@NotNull String body) {
+        List<FileChange> files = new ArrayList<>();
+        String[] lines = body.split("\n");
+        for (String line : lines) {
+            if (line.isBlank()) continue;
+            String[] fileParts = line.split("\t", 2);
+            if (fileParts.length < 2) continue;
+            String changeType = fileParts[0].trim();
+            String filePath = fileParts[1].trim();
+            // Handle renames: "R100\told\tnew" — take the new path
+            if (changeType.startsWith("R") && filePath.contains("\t")) {
+                filePath = filePath.split("\t")[1].trim();
+                changeType = "R";
+            } else if (changeType.length() > 1) {
+                changeType = changeType.substring(0, 1);
+            }
+            files.add(new FileChange(filePath, changeType));
+        }
+        return files;
     }
 
     /**

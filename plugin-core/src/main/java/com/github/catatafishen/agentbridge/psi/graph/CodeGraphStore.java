@@ -58,16 +58,15 @@ public final class CodeGraphStore {
                 conn.setAutoCommit(false);
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
                     long now = System.currentTimeMillis();
+                    ps.setLong(8, now);
                     for (NodeData n : nodes) {
                         ps.setString(1, n.id);
                         ps.setString(2, n.label);
                         ps.setString(3, n.kind);
                         ps.setString(4, n.fqn);
                         ps.setString(5, n.sourceFile);
-                        if (n.sourceLine > 0) ps.setInt(6, n.sourceLine);
-                        else ps.setNull(6, java.sql.Types.INTEGER);
+                        ps.setObject(6, n.sourceLine > 0 ? n.sourceLine : null, java.sql.Types.INTEGER);
                         ps.setString(7, n.language);
-                        ps.setLong(8, now);
                         ps.addBatch();
                     }
                     ps.executeBatch();
@@ -112,8 +111,7 @@ public final class CodeGraphStore {
                             ps.setString(2, e.targetId);
                             ps.setString(3, e.relation);
                             ps.setString(4, e.sourceFile);
-                            if (e.sourceLine > 0) ps.setInt(5, e.sourceLine);
-                            else ps.setNull(5, java.sql.Types.INTEGER);
+                            ps.setObject(5, e.sourceLine > 0 ? e.sourceLine : null, java.sql.Types.INTEGER);
                             ps.addBatch();
                         }
                         ps.executeBatch();
@@ -256,7 +254,11 @@ public final class CodeGraphStore {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
             return db.withConnection(conn -> {
-                long nodes = 0, edges = 0, files = 0, commits = 0, lastAt = 0;
+                long nodes = 0;
+                long edges = 0;
+                long files = 0;
+                long commits = 0;
+                long lastAt = 0;
                 try (Statement st = conn.createStatement()) {
                     try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_nodes")) {
                         if (rs.next()) nodes = rs.getLong(1);
@@ -336,6 +338,7 @@ public final class CodeGraphStore {
         try {
             conn.rollback();
         } catch (SQLException ignored) {
+            // Rollback failure during error handling is non-actionable — the connection is already in a bad state
         }
     }
 
@@ -344,6 +347,7 @@ public final class CodeGraphStore {
         try {
             conn.setAutoCommit(v);
         } catch (SQLException ignored) {
+            // AutoCommit reset failure is non-actionable — occurs on broken/closed connections
         }
     }
 

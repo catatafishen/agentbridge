@@ -28,6 +28,26 @@ class PsiBridgeStartup : ProjectActivity {
         LegacyAgentWorkCleanup.cleanupAsync(project)
 
         // Initialize ConversationDatabase FIRST — PsiBridgeService needs it for GraphToolFactory
+        initializeDatabase(project)
+
+        // Force-initialize PsiBridgeService so tools are registered before any agent connects
+        PsiBridgeService.getInstance(project)
+
+        wireCodeGraphAutoRefresh(project)
+        logCodeGraphStatus(project)
+        autoStartMcpServer(project)
+        autoStartWebChatServer(project)
+
+        // In Remote Dev backend mode, show the tool window so the thin client user sees it
+        // without having to manually open it via View → Tool Windows on first use.
+        if (PlatformApiCompat.isRemoteDevBackend()) {
+            ApplicationManager.getApplication().invokeLater {
+                ToolWindowManager.getInstance(project).getToolWindow("AgentBridge")?.show(null)
+            }
+        }
+    }
+
+    private fun initializeDatabase(project: Project) {
         val db = com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project)
         if (!db.isReady) {
             try {
@@ -36,33 +56,23 @@ class PsiBridgeStartup : ProjectActivity {
                 LOG.warn("Failed to initialize ConversationDatabase at startup", e)
             }
         }
+    }
 
-        // Force-initialize PsiBridgeService so tools are registered before any agent connects
-        PsiBridgeService.getInstance(project)
-
-        // Wire Code Graph auto-refresh: when settings.autoRefreshOnAgentEdit is true, any VFS
-        // change to a project source file triggers an incremental re-extraction. The indexer
-        // skips files whose content hash is unchanged, so this is cheap when nothing edited.
+    private fun wireCodeGraphAutoRefresh(project: Project) {
         try {
             val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
-            // BulkFileListener.TOPIC is application-scoped — subscribe via the application bus,
-            // passing the project as the parent disposable so the connection is released when
-            // the project closes.
             val startupTime = System.currentTimeMillis()
             ApplicationManager.getApplication().messageBus.connect(project).subscribe(
                 com.intellij.openapi.vfs.VirtualFileManager.VFS_CHANGES,
                 object : com.intellij.openapi.vfs.newvfs.BulkFileListener {
                     override fun after(events: List<com.intellij.openapi.vfs.newvfs.events.VFileEvent>) {
                         if (!graphSettings.isEnabled || !graphSettings.isAutoRefreshOnAgentEdit) return
-                        // Skip VFS events during IDE startup — thousands of events fire as IntelliJ
-                        // scans the project, and processing them all starves the EDT of write locks.
                         if (System.currentTimeMillis() - startupTime < 10_000) return
                         val touched = events.mapNotNull { it.file }
                             .filter { it.isValid && !it.isDirectory }
                             .distinct()
                         if (touched.isEmpty()) return
-                        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
-                            // TypeScript/JS PSI resolution requires a ProgressIndicator in context
+                        ApplicationManager.getApplication().executeOnPooledThread {
                             com.intellij.openapi.progress.ProgressManager.getInstance().runProcess({
                                 val indexer =
                                     com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer.getInstance(project)
@@ -85,8 +95,9 @@ class PsiBridgeStartup : ProjectActivity {
         } catch (e: Exception) {
             LOG.warn("Failed to wire Code Graph auto-refresh listener", e)
         }
+    }
 
-        // Log graph tool status (diagnostic only — factory now always registers it)
+    private fun logCodeGraphStatus(project: Project) {
         try {
             val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
             val registry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
@@ -95,8 +106,9 @@ class PsiBridgeStartup : ProjectActivity {
         } catch (e: Exception) {
             LOG.warn("Code Graph startup check failed", e)
         }
+    }
 
-        // Auto-start MCP HTTP server (required for agent CLI to access tools)
+    private fun autoStartMcpServer(project: Project) {
         val mcpSettings = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
         if (mcpSettings.isAutoStart) {
             try {
@@ -108,8 +120,9 @@ class PsiBridgeStartup : ProjectActivity {
                 LOG.error("Failed to auto-start MCP HTTP server", e)
             }
         }
+    }
 
-        // Auto-start web chat server if enabled
+    private fun autoStartWebChatServer(project: Project) {
         val webSettings = com.github.catatafishen.agentbridge.settings.ChatWebServerSettings.getInstance(project)
         if (webSettings.isEnabled) {
             try {
@@ -117,14 +130,6 @@ class PsiBridgeStartup : ProjectActivity {
                 LOG.info("Web chat server auto-started on port ${webSettings.port}")
             } catch (e: Exception) {
                 LOG.error("Failed to auto-start web chat server", e)
-            }
-        }
-
-        // In Remote Dev backend mode, show the tool window so the thin client user sees it
-        // without having to manually open it via View → Tool Windows on first use.
-        if (PlatformApiCompat.isRemoteDevBackend()) {
-            ApplicationManager.getApplication().invokeLater {
-                ToolWindowManager.getInstance(project).getToolWindow("AgentBridge")?.show(null)
             }
         }
     }

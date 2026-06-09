@@ -15,6 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,7 +30,9 @@ public final class CodeGraphExtractor {
 
     private static final Logger LOG = Logger.getInstance(CodeGraphExtractor.class);
 
-    /** Result of extracting a single file. */
+    /**
+     * Result of extracting a single file.
+     */
     public record FileExtraction(@NotNull String relativePath,
                                  @NotNull String contentHash,
                                  @NotNull List<NodeData> nodes,
@@ -42,7 +45,9 @@ public final class CodeGraphExtractor {
         this.project = project;
     }
 
-    /** Extract nodes/edges from a single PSI file. Must be called inside a read action. */
+    /**
+     * Extract nodes/edges from a single PSI file. Must be called inside a read action.
+     */
     @NotNull
     public FileExtraction extract(@NotNull PsiFile file) {
         VirtualFile vf = file.getVirtualFile();
@@ -72,45 +77,46 @@ public final class CodeGraphExtractor {
             if (name == null || name.isEmpty()) continue;
             String fqn = computeFqn(owner, name);
             String id = "sym:" + relPath + "#" + fqn;
-            if (!seenIds.add(id)) continue;
-            int line = lineOf(file, owner);
-            nodes.add(new NodeData(
-                id,
-                name,
-                kindOf(owner),
-                fqn,
-                relPath,
-                line,
-                language));
-            // contains edge — file → symbol
-            edges.add(new EdgeData(fileId, id, "contains", relPath, line));
+            if (seenIds.add(id)) {
+                int line = lineOf(file, owner);
+                nodes.add(new NodeData(id, name, kindOf(owner), fqn, relPath, line, language));
+                edges.add(new EdgeData(fileId, id, "contains", relPath, line));
+            }
         }
 
         // References: resolve anything resolvable, capture cross-file edges
+        collectCrossFileEdges(file, relPath, fileId, edges);
+
+        return new FileExtraction(relPath, hash, nodes, edges);
+    }
+
+    private void collectCrossFileEdges(@NotNull PsiFile file, @NotNull String relPath,
+                                       @NotNull String fileId, @NotNull List<EdgeData> edges) {
         ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
         Collection<PsiReference> refs = collectRefs(file);
         for (PsiReference ref : refs) {
-            PsiElement target;
-            try {
-                target = ref.resolve();
-            } catch (Exception e) {
-                continue;
-            }
-            if (target == null) continue;
-            PsiFile targetFile = target.getContainingFile();
-            if (targetFile == null) continue;
-            VirtualFile targetVf = targetFile.getVirtualFile();
-            if (targetVf == null) continue;
-            // Only edges to project files — library/JDK references would explode the graph
-            if (!idx.isInProject(targetVf)) continue;
+            VirtualFile targetVf = resolveTargetVf(ref);
+            if (targetVf == null || !idx.isInProject(targetVf)) continue;
             String targetPath = relativePath(targetVf);
-            if (targetPath.equals(relPath)) continue; // skip same-file refs
+            if (targetPath.equals(relPath)) continue;
             String targetId = "file:" + targetPath;
             int srcLine = lineOf(file, ref.getElement());
             edges.add(new EdgeData(fileId, targetId, "uses", relPath, srcLine));
         }
+    }
 
-        return new FileExtraction(relPath, hash, nodes, edges);
+    @Nullable
+    private static VirtualFile resolveTargetVf(@NotNull PsiReference ref) {
+        PsiElement target;
+        try {
+            target = ref.resolve();
+        } catch (Exception e) {
+            return null;
+        }
+        if (target == null) return null;
+        PsiFile targetFile = target.getContainingFile();
+        if (targetFile == null) return null;
+        return targetFile.getVirtualFile();
     }
 
     @NotNull
@@ -119,9 +125,7 @@ public final class CodeGraphExtractor {
         file.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
             @Override
             public void visitElement(@NotNull PsiElement element) {
-                for (PsiReference ref : element.getReferences()) {
-                    result.add(ref);
-                }
+                Collections.addAll(result, element.getReferences());
                 super.visitElement(element);
             }
         });
@@ -131,12 +135,14 @@ public final class CodeGraphExtractor {
     @NotNull
     private String relativePath(@Nullable VirtualFile vf) {
         if (vf == null) return "<unknown>";
-        VirtualFile base = project.getBaseDir();
+        String basePath = project.getBasePath();
+        VirtualFile base = basePath != null
+            ? com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(basePath) : null;
         if (base == null) return vf.getPath();
-        String basePath = base.getPath();
+        String baseStr = base.getPath();
         String full = vf.getPath();
-        if (full.startsWith(basePath + "/")) {
-            return full.substring(basePath.length() + 1);
+        if (full.startsWith(baseStr + "/")) {
+            return full.substring(baseStr.length() + 1);
         }
         return full;
     }

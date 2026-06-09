@@ -10,10 +10,7 @@ class GitCommitIndexerParseTest {
 
     @Test
     void parsesCommitWithFiles() {
-        String output = "\u001E" +
-            "abc123def456\u001Fabc123d\u001FJohn Doe\u001Fjohn@example.com\u001F2026-06-01T10:00:00+03:00\u001Ffeat: add login\n" +
-            "M\tsrc/Login.java\n" +
-            "A\tsrc/Auth.java\n";
+        String output = "\u001Eabc123def456\u001Fabc123d\u001FJohn Doe\u001Fjohn@example.com\u001F2026-06-01T10:00:00+03:00\u001Ffeat: add login\nM\tsrc/Login.java\nA\tsrc/Auth.java\n";
 
         List<GitCommitIndexer.CommitRecord> records = GitCommitIndexer.parseGitLog(output);
 
@@ -34,9 +31,7 @@ class GitCommitIndexerParseTest {
 
     @Test
     void parsesRenamedFile() {
-        String output = "\u001E" +
-            "def456\u001Fdef456\u001FJane\u001Fjane@ex.com\u001F2026-06-02T12:00:00Z\u001Frefactor: rename\n" +
-            "R100\told/File.java\tnew/File.java\n";
+        String output = "\u001Edef456\u001Fdef456\u001FJane\u001Fjane@ex.com\u001F2026-06-02T12:00:00Z\u001Frefactor: rename\nR100\told/File.java\tnew/File.java\n";
 
         List<GitCommitIndexer.CommitRecord> records = GitCommitIndexer.parseGitLog(output);
 
@@ -49,13 +44,7 @@ class GitCommitIndexerParseTest {
 
     @Test
     void parsesMultipleCommits() {
-        String output = "\u001E" +
-            "aaa\u001Faaa\u001FAlice\u001Fa@x.com\u001F2026-01-01T00:00:00Z\u001Ffirst\n" +
-            "A\tfile1.java\n" +
-            "\u001E" +
-            "bbb\u001Fbbb\u001FBob\u001Fb@x.com\u001F2026-01-02T00:00:00Z\u001Fsecond\n" +
-            "M\tfile2.java\n" +
-            "D\tfile3.java\n";
+        String output = "\u001Eaaa\u001Faaa\u001FAlice\u001Fa@x.com\u001F2026-01-01T00:00:00Z\u001Ffirst\nA\tfile1.java\n\u001Ebbb\u001Fbbb\u001FBob\u001Fb@x.com\u001F2026-01-02T00:00:00Z\u001Fsecond\nM\tfile2.java\nD\tfile3.java\n";
 
         List<GitCommitIndexer.CommitRecord> records = GitCommitIndexer.parseGitLog(output);
 

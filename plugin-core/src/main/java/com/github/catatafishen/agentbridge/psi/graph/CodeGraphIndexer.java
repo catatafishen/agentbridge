@@ -142,23 +142,27 @@ public final class CodeGraphIndexer {
         for (VirtualFile vf : files) {
             indicator.checkCanceled();
             if (!vf.isValid() || project.isDisposed()) continue;
-            try {
-                ReadAction.nonBlocking(() -> {
-                        extractAndStore(vf);
-                        return true;
-                    })
-                    .expireWhen(() -> project.isDisposed() || !vf.isValid())
-                    .executeSynchronously();
-            } catch (com.intellij.openapi.progress.ProcessCanceledException pce) {
-                throw pce;
-            } catch (Exception e) {
-                LOG.debug("Code graph extraction skipped for " + vf.getName() + ": " + e.getMessage());
-            }
+            indexSingleFile(vf);
             int n = done.incrementAndGet();
             indicator.setFraction((double) n / total);
             if (n % 25 == 0) {
                 indicator.setText2(vf.getName() + "  (" + n + "/" + total + ")");
             }
+        }
+    }
+
+    private void indexSingleFile(@NotNull VirtualFile vf) {
+        try {
+            ReadAction.nonBlocking(() -> {
+                    extractAndStore(vf);
+                    return true;
+                })
+                .expireWhen(() -> project.isDisposed() || !vf.isValid())
+                .executeSynchronously();
+        } catch (com.intellij.openapi.progress.ProcessCanceledException pce) {
+            throw pce;
+        } catch (Exception e) {
+            LOG.debug("Code graph extraction skipped for " + vf.getName() + ": " + e.getMessage());
         }
     }
 

@@ -31,6 +31,8 @@ public final class QueryCodeGraphTool extends Tool {
     private static final String PARAM_DEPTH = "depth";
     private static final String PARAM_SQL = "sql";
     private static final String PARAM_LIMIT = "limit";
+    private static final String COL_FILE_PATH = "file_path";
+    private static final String COL_SOURCE_FILE = "source_file";
 
     public QueryCodeGraphTool(Project project) {
         super(project);
@@ -298,21 +300,26 @@ public final class QueryCodeGraphTool extends Tool {
             "SELECT DISTINCT file_path FROM graph_commit_files WHERE file_path LIKE ? LIMIT 10",
             "%" + filename);
         if (byName.isEmpty()) return input;
-        if (byName.size() == 1) return (String) byName.getFirst().get("file_path");
+        if (byName.size() == 1) return (String) byName.getFirst().get(COL_FILE_PATH);
 
         for (Map<String, Object> row : byName) {
-            String candidate = (String) row.get("file_path");
+            String candidate = (String) row.get(COL_FILE_PATH);
             if (candidate.endsWith(input) || input.endsWith(candidate)) return candidate;
         }
         return byName.stream()
-            .map(r -> (String) r.get("file_path"))
+            .map(r -> (String) r.get(COL_FILE_PATH))
             .min(java.util.Comparator.comparingInt(String::length))
             .orElse(input);
     }
 
     private @NotNull String hotspots(@NotNull JsonObject args, int limit) throws SQLException {
         String path = optString(args, PARAM_PATH, "");
-        String like = path.isEmpty() ? "%" : (path.endsWith("/") ? path + "%" : path + "/%");
+        String like;
+        if (path.isEmpty()) {
+            like = "%";
+        } else {
+            like = path.endsWith("/") ? path + "%" : path + "/%";
+        }
         String sql = """
             SELECT n.source_file AS file,
                    COUNT(DISTINCT e.id) AS dependents_count,
@@ -391,16 +398,16 @@ public final class QueryCodeGraphTool extends Tool {
             "%" + filename);
         if (byName.isEmpty()) return input; // no match at all — return as-is, query will be empty
         if (byName.size() == 1) {
-            return (String) byName.getFirst().get("source_file");
+            return (String) byName.getFirst().get(COL_SOURCE_FILE);
         }
         // Multiple matches — try to pick the one whose path suffix best matches the input
         for (Map<String, Object> row : byName) {
-            String candidate = (String) row.get("source_file");
+            String candidate = (String) row.get(COL_SOURCE_FILE);
             if (candidate.endsWith(input) || input.endsWith(candidate)) return candidate;
         }
         // Last resort: pick the shortest match (likely the most specific project file)
         return byName.stream()
-            .map(r -> (String) r.get("source_file"))
+            .map(r -> (String) r.get(COL_SOURCE_FILE))
             .min(java.util.Comparator.comparingInt(String::length))
             .orElse(input);
     }
@@ -414,7 +421,7 @@ public final class QueryCodeGraphTool extends Tool {
     }
 
     private static int clamp(int v, int lo, int hi) {
-        return Math.max(lo, Math.min(hi, v));
+        return Math.clamp(v, lo, hi);
     }
 
     /**
