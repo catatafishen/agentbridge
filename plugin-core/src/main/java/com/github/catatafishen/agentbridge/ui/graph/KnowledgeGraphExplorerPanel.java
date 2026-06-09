@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
@@ -107,14 +108,12 @@ public final class KnowledgeGraphExplorerPanel implements Disposable {
         });
 
         // Split: table on top, detail below
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        splitPane.setTopComponent(new JBScrollPane(table));
+        OnePixelSplitter splitPane = new OnePixelSplitter(true, 0.6f);
+        splitPane.setFirstComponent(new JBScrollPane(table));
 
         JBScrollPane detailScroll = new JBScrollPane(detailPanel);
         detailPanel.setBorder(JBUI.Borders.empty(8));
-        splitPane.setBottomComponent(detailScroll);
-        splitPane.setDividerLocation(JBUI.scale(250));
-        splitPane.setResizeWeight(0.6);
+        splitPane.setSecondComponent(detailScroll);
 
         root.add(splitPane, BorderLayout.CENTER);
     }
