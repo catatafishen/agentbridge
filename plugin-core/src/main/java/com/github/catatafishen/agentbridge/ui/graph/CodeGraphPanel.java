@@ -32,7 +32,7 @@ import java.util.Map;
  *
  * <ul>
  *   <li><b>Enable toggle</b> — turns the feature on/off. Enabling triggers the initial
- *       index build and registers {@code query_code_graph} with the {@link ToolRegistry}.
+ *       index build and registers {@code query_knowledge_graph} with the {@link ToolRegistry}.
  *       Disabling unregisters the tool immediately.</li>
  *   <li><b>Stats panel</b> — current node/edge/file counts and last-indexed timestamp.</li>
  *   <li><b>Rebuild button</b> — full background re-index.</li>
@@ -42,7 +42,7 @@ import java.util.Map;
 public final class CodeGraphPanel {
 
     private static final Logger LOG = Logger.getInstance(CodeGraphPanel.class);
-    private static final String TOOL_ID = "query_code_graph";
+    private static final String TOOL_ID = "query_knowledge_graph";
 
     private final Project project;
     private final JPanel root = new JPanel(new BorderLayout());
@@ -92,7 +92,7 @@ public final class CodeGraphPanel {
         JBLabel description = new JBLabel(
             "<html><body style='width:280px'>"
                 + "Persistent index of code structure, git history, and agent activity. "
-                + "Powers the <code>query_code_graph</code> MCP tool."
+                + "Powers the <code>query_knowledge_graph</code> MCP tool."
                 + "</body></html>");
         top.add(description);
 
@@ -168,7 +168,7 @@ public final class CodeGraphPanel {
 
     private void onIndexFinished() {
         refreshStats();
-        setStatus("Build finished — query_code_graph ready.");
+        setStatus("Build finished — query_knowledge_graph ready.");
     }
 
     private void exportJson() {

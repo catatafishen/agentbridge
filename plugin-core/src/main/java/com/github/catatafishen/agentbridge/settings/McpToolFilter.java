@@ -86,7 +86,7 @@ public final class McpToolFilter {
         boolean graphEnabled = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project).isEnabled();
         return getConfigurableTools(project).stream()
             .filter(t -> settings.isToolEnabled(t.id()))
-            .filter(t -> graphEnabled || !"query_code_graph".equals(t.id()))
+            .filter(t -> graphEnabled || !"query_knowledge_graph".equals(t.id()))
             .toList();
     }
 
