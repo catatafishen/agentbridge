@@ -67,6 +67,13 @@ public final class CodeGraphPanel {
                 refreshStats();
             }
         });
+
+        // Deferred refresh: tool registration happens asynchronously during startup.
+        // If the panel is already visible when constructed (restored tool window), the
+        // hierarchy listener won't fire again. Schedule a retry so the panel picks up
+        // the tool registration once PsiBridgeService finishes initializing.
+        ApplicationManager.getApplication().invokeLater(this::refreshStats,
+            com.intellij.openapi.application.ModalityState.nonModal());
     }
 
     public @NotNull JComponent getComponent() {

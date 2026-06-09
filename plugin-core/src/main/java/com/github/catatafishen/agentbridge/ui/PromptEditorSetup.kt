@@ -120,7 +120,8 @@ internal class PromptEditorSetup(
     }
 
     fun checkSlashCommandAutocomplete() {
-        val client = agentManager.getClient()
+        // Use non-blocking accessor — must never trigger lazy client startup on EDT
+        val client = agentManager.getClientIfReady() ?: return
         val commandNames = client.availableCommands
         if (commandNames.isEmpty()) return
 
