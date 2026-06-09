@@ -90,8 +90,13 @@ public final class KnowledgeGraphExplorerPanel implements Disposable {
         topBar.add(searchField, BorderLayout.CENTER);
         root.add(topBar, BorderLayout.NORTH);
 
-        // Table
+        // Table — file column takes ~50% width, numeric columns share the rest
         table.setAutoCreateRowSorter(true);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+        table.getColumnModel().getColumn(0).setPreferredWidth(500);
+        table.getColumnModel().getColumn(1).setPreferredWidth(80);
+        table.getColumnModel().getColumn(2).setPreferredWidth(80);
+        table.getColumnModel().getColumn(3).setPreferredWidth(80);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

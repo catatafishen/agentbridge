@@ -233,10 +233,7 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
             default -> JBColor.GRAY;
         });
 
-        String shortSummary = entry.summary().length() > 60
-            ? entry.summary().substring(0, 57) + "…"
-            : entry.summary();
-        JBLabel summaryLabel = new JBLabel(shortSummary);
+        JBLabel summaryLabel = new JBLabel(entry.summary());
         summaryLabel.setToolTipText(entry.summary());
 
         JBLabel timeLabel = new JBLabel(formatRelativeTime(entry.timestamp()));
@@ -264,6 +261,12 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
     private static @NotNull JPanel buildHotspotRow(@NotNull CodeGraphStore.HotspotEntry entry, int maxCount) {
         JPanel row = new JPanel(new BorderLayout(JBUI.scale(8), 0));
 
+        String shortName = entry.path().contains("/")
+            ? entry.path().substring(entry.path().lastIndexOf('/') + 1)
+            : entry.path();
+        JBLabel nameLabel = new JBLabel(shortName);
+        nameLabel.setToolTipText(entry.path());
+
         JPanel bar = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -274,20 +277,14 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
                 g.fillRect(0, 0, barWidth, getHeight());
             }
         };
-        bar.setPreferredSize(new Dimension(JBUI.scale(100), JBUI.scale(14)));
+        bar.setPreferredSize(new Dimension(0, JBUI.scale(14)));
         bar.setOpaque(false);
 
-        String shortName = entry.path().contains("/")
-            ? entry.path().substring(entry.path().lastIndexOf('/') + 1)
-            : entry.path();
-        JBLabel nameLabel = new JBLabel(shortName);
-        nameLabel.setToolTipText(entry.path());
-
-        JBLabel countLabel = new JBLabel("(" + entry.dependentCount() + ")");
+        JBLabel countLabel = new JBLabel(String.valueOf(entry.dependentCount()));
         countLabel.setForeground(JBColor.GRAY);
 
-        row.add(bar, BorderLayout.WEST);
-        row.add(nameLabel, BorderLayout.CENTER);
+        row.add(nameLabel, BorderLayout.WEST);
+        row.add(bar, BorderLayout.CENTER);
         row.add(countLabel, BorderLayout.EAST);
         return row;
     }
