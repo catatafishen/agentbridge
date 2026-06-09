@@ -46,6 +46,9 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
     // Hotspots
     private final JPanel hotspotsPanel = new JPanel(new VerticalLayout(JBUI.scale(2)));
 
+    // Recent Activity
+    private final JPanel activityPanel = new JPanel(new VerticalLayout(JBUI.scale(2)));
+
     private Runnable toolChangeDisconnect;
 
     public KnowledgeGraphDashboardPanel(@NotNull Project project) {
@@ -113,6 +116,13 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         hotspotsPanel.setBorder(JBUI.Borders.empty(4, 0));
         content.add(hotspotsPanel);
 
+        // Recent Activity section
+        JBLabel activityTitle = new JBLabel("Recent Activity");
+        activityTitle.setFont(activityTitle.getFont().deriveFont(Font.BOLD));
+        content.add(activityTitle);
+        activityPanel.setBorder(JBUI.Borders.empty(4, 0));
+        content.add(activityPanel);
+
         // Status
         statusLabel.setForeground(JBColor.GRAY);
         content.add(statusLabel);
@@ -173,6 +183,7 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         }
 
         refreshHotspots(store);
+        refreshActivity(store);
     }
 
     private void refreshHotspots(@NotNull CodeGraphStore store) {
@@ -189,6 +200,65 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         }
         hotspotsPanel.revalidate();
         hotspotsPanel.repaint();
+    }
+
+    private void refreshActivity(@NotNull CodeGraphStore store) {
+        List<CodeGraphStore.ActivityEntry> activity = store.getRecentActivity(8);
+        activityPanel.removeAll();
+
+        if (activity.isEmpty()) {
+            activityPanel.add(new JBLabel("No activity yet — rebuild to index git history."));
+        } else {
+            for (CodeGraphStore.ActivityEntry entry : activity) {
+                activityPanel.add(buildActivityRow(entry));
+            }
+        }
+        activityPanel.revalidate();
+        activityPanel.repaint();
+    }
+
+    private static @NotNull JPanel buildActivityRow(@NotNull CodeGraphStore.ActivityEntry entry) {
+        JPanel row = new JPanel(new BorderLayout(JBUI.scale(6), 0));
+
+        String icon = switch (entry.type()) {
+            case "commit" -> "●";
+            case "agent_edit" -> "✎";
+            default -> "○";
+        };
+
+        JBLabel iconLabel = new JBLabel(icon);
+        iconLabel.setForeground(switch (entry.type()) {
+            case "commit" -> new JBColor(new Color(0x1565C0), new Color(0x42A5F5));
+            case "agent_edit" -> new JBColor(new Color(0x2E7D32), new Color(0x81C784));
+            default -> JBColor.GRAY;
+        });
+
+        String shortSummary = entry.summary().length() > 60
+            ? entry.summary().substring(0, 57) + "…"
+            : entry.summary();
+        JBLabel summaryLabel = new JBLabel(shortSummary);
+        summaryLabel.setToolTipText(entry.summary());
+
+        JBLabel timeLabel = new JBLabel(formatRelativeTime(entry.timestamp()));
+        timeLabel.setForeground(JBColor.GRAY);
+
+        row.add(iconLabel, BorderLayout.WEST);
+        row.add(summaryLabel, BorderLayout.CENTER);
+        row.add(timeLabel, BorderLayout.EAST);
+        return row;
+    }
+
+    private static @NotNull String formatRelativeTime(@NotNull String timestamp) {
+        try {
+            java.time.Instant instant = java.time.OffsetDateTime.parse(timestamp).toInstant();
+            long seconds = java.time.Duration.between(instant, java.time.Instant.now()).getSeconds();
+            if (seconds < 60) return seconds + "s ago";
+            if (seconds < 3600) return (seconds / 60) + "m ago";
+            if (seconds < 86400) return (seconds / 3600) + "h ago";
+            return (seconds / 86400) + "d ago";
+        } catch (Exception e) {
+            return timestamp.length() > 10 ? timestamp.substring(0, 10) : timestamp;
+        }
     }
 
     private static @NotNull JPanel buildHotspotRow(@NotNull CodeGraphStore.HotspotEntry entry, int maxCount) {
