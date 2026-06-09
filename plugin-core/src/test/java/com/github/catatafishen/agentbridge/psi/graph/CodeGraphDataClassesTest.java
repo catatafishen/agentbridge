@@ -185,18 +185,18 @@ class CodeGraphDataClassesTest {
                 new GitCommitIndexer.FileChange("src/Main.java", "M"),
                 new GitCommitIndexer.FileChange("src/Test.java", "A")
             );
-            var record = new GitCommitIndexer.CommitRecord(
+            var commitRecord = new GitCommitIndexer.CommitRecord(
                 "abc123def456", "abc123d", "Author", "a@b.com",
                 "2026-01-01T00:00:00Z", "feat: something", files
             );
 
-            assertEquals("abc123def456", record.hash());
-            assertEquals("abc123d", record.shortHash());
-            assertEquals("Author", record.author());
-            assertEquals("a@b.com", record.email());
-            assertEquals("2026-01-01T00:00:00Z", record.timestamp());
-            assertEquals("feat: something", record.message());
-            assertEquals(2, record.files().size());
+            assertEquals("abc123def456", commitRecord.hash());
+            assertEquals("abc123d", commitRecord.shortHash());
+            assertEquals("Author", commitRecord.author());
+            assertEquals("a@b.com", commitRecord.email());
+            assertEquals("2026-01-01T00:00:00Z", commitRecord.timestamp());
+            assertEquals("feat: something", commitRecord.message());
+            assertEquals(2, commitRecord.files().size());
         }
 
         @Test

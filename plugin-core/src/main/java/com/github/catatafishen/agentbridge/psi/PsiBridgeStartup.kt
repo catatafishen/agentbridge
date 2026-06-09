@@ -72,21 +72,7 @@ class PsiBridgeStartup : ProjectActivity {
                             .filter { it.isValid && !it.isDirectory }
                             .distinct()
                         if (touched.isEmpty()) return
-                        ApplicationManager.getApplication().executeOnPooledThread {
-                            com.intellij.openapi.progress.ProgressManager.getInstance().runProcess({
-                                val indexer =
-                                    com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer.getInstance(project)
-                                for (vf in touched) {
-                                    try {
-                                        indexer.refreshFile(vf)
-                                    } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        LOG.debug("Code Graph refresh failed for ${vf.path}: ${e.message}")
-                                    }
-                                }
-                            }, com.intellij.openapi.progress.EmptyProgressIndicator())
-                        }
+                        refreshCodeGraphFiles(project, touched)
                     }
                 }
             )
@@ -94,6 +80,23 @@ class PsiBridgeStartup : ProjectActivity {
             throw e
         } catch (e: Exception) {
             LOG.warn("Failed to wire Code Graph auto-refresh listener", e)
+        }
+    }
+
+    private fun refreshCodeGraphFiles(project: Project, files: List<com.intellij.openapi.vfs.VirtualFile>) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            com.intellij.openapi.progress.ProgressManager.getInstance().runProcess({
+                val indexer = com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer.getInstance(project)
+                for (vf in files) {
+                    try {
+                        indexer.refreshFile(vf)
+                    } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+                        throw e
+                    } catch (e: Exception) {
+                        LOG.debug("Code Graph refresh failed for ${vf.path}: ${e.message}")
+                    }
+                }
+            }, com.intellij.openapi.progress.EmptyProgressIndicator())
         }
     }
 

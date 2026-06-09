@@ -361,7 +361,7 @@ public final class QueryCodeGraphTool extends Tool {
         String sql = optString(args, PARAM_SQL, "");
         if (sql.isEmpty()) return "Error: 'sql' parameter is required for query_type=sql.";
         // Inject LIMIT if missing — keeps unbounded SELECTs safe
-        if (!sql.toLowerCase(Locale.ROOT).contains("limit")) {
+        if (!sql.toLowerCase(Locale.ROOT).contains(PARAM_LIMIT)) {
             sql = sql.trim().replaceAll(";+$", "") + " LIMIT " + limit;
         }
         return formatRows(CodeGraphStore.getInstance(project).queryRaw(sql));

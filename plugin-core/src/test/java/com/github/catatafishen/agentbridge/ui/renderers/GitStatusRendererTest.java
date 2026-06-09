@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.ui.renderers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
 
@@ -70,13 +72,16 @@ class GitStatusRendererTest {
             assertEquals("src/Both.java", result.getUnstaged().get(0).getSecond());
         }
 
-        @Test
-        void addedFile() {
-            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
-                "A  new-module/File.kt"
-            ));
+        @ParameterizedTest(name = "staged {1} from \"{0}\"")
+        @CsvSource({
+            "A  new-module/File.kt, A",
+            "D  removed.txt, D",
+            "R  old.txt -> new.txt, R"
+        })
+        void stagedFileTypes(String statusLine, char expectedType) {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(statusLine));
             assertEquals(1, result.getStaged().size());
-            assertEquals('A', (char) result.getStaged().get(0).getFirst());
+            assertEquals(expectedType, (char) result.getStaged().get(0).getFirst());
         }
 
         @Test
@@ -89,15 +94,6 @@ class GitStatusRendererTest {
         }
 
         @Test
-        void deletedStaged() {
-            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
-                "D  removed.txt"
-            ));
-            assertEquals(1, result.getStaged().size());
-            assertEquals('D', (char) result.getStaged().get(0).getFirst());
-        }
-
-        @Test
         void conflictBothModified() {
             var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
                 "UU conflicted.java"
@@ -106,37 +102,15 @@ class GitStatusRendererTest {
             assertEquals("conflicted.java", result.getConflicted().get(0));
         }
 
-        @Test
-        void conflictAddedByBoth() {
-            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
-                "AA both-added.txt"
-            ));
+        @ParameterizedTest(name = "conflict pattern \"{0}\"")
+        @CsvSource({
+            "AA both-added.txt",
+            "DD both-deleted.txt",
+            "DU deleted-by-us.txt"
+        })
+        void conflictPatterns(String statusLine) {
+            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(statusLine));
             assertEquals(1, result.getConflicted().size());
-        }
-
-        @Test
-        void conflictDeletedByBoth() {
-            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
-                "DD both-deleted.txt"
-            ));
-            assertEquals(1, result.getConflicted().size());
-        }
-
-        @Test
-        void conflictDeletedByUs() {
-            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
-                "DU deleted-by-us.txt"
-            ));
-            assertEquals(1, result.getConflicted().size());
-        }
-
-        @Test
-        void renamedFile() {
-            var result = GitStatusRenderer.INSTANCE.categorizeFiles(List.of(
-                "R  old.txt -> new.txt"
-            ));
-            assertEquals(1, result.getStaged().size());
-            assertEquals('R', (char) result.getStaged().get(0).getFirst());
         }
 
         @Test
