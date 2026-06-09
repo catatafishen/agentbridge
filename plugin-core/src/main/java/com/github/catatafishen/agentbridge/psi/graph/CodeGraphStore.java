@@ -455,6 +455,61 @@ public final class CodeGraphStore {
                              @NotNull List<String> dependents, @NotNull List<CommitSummary> commits) {
     }
 
+    /**
+     * Recent activity feed combining git commits and agent tool calls.
+     * Returns entries ordered by time descending, limited to the requested count.
+     */
+    @NotNull
+    public List<ActivityEntry> getRecentActivity(int limit) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> {
+                String sql = """
+                    SELECT type, summary, timestamp FROM (
+                        SELECT 'commit' AS type,
+                               short_hash || ' ' || message AS summary,
+                               timestamp
+                        FROM graph_commits
+                        UNION ALL
+                        SELECT 'agent_' || CASE
+                            WHEN tce.tool_name IN ('write_file', 'edit_text', 'replace_symbol_body',
+                                                   'insert_after_symbol', 'insert_before_symbol') THEN 'edit'
+                            ELSE 'read'
+                            END AS type,
+                            tce.tool_name || ' ' || COALESCE(tce.file_path, '') AS summary,
+                            e.timestamp
+                        FROM tool_call_events tce
+                        JOIN events e ON e.id = tce.event_id
+                        WHERE tce.file_path IS NOT NULL
+                    )
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    """;
+                List<ActivityEntry> result = new ArrayList<>();
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, limit);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            result.add(new ActivityEntry(
+                                rs.getString("type"),
+                                rs.getString("summary"),
+                                rs.getString("timestamp")
+                            ));
+                        }
+                    }
+                }
+                return result;
+            });
+        } catch (SQLException e) {
+            LOG.warn("Failed to query recent activity", e);
+            return List.of();
+        }
+    }
+
+    public record ActivityEntry(@NotNull String type, @NotNull String summary,
+                                @NotNull String timestamp) {
+    }
+
     @NotNull
     public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql) throws SQLException {
         ConversationDatabase db = ConversationDatabase.getInstance(project);

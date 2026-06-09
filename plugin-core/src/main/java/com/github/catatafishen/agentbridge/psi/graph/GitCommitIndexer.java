@@ -52,7 +52,7 @@ public final class GitCommitIndexer {
             try {
                 db.initialize();
             } catch (Exception e) {
-                LOG.debug("ConversationDatabase not available: " + e.getMessage());
+                LOG.warn("ConversationDatabase not available: " + e.getMessage());
                 return 0;
             }
         }
@@ -60,7 +60,7 @@ public final class GitCommitIndexer {
         String lastHash = getLastIndexedCommitHash(db);
         String gitOutput = fetchGitLog(lastHash);
         if (gitOutput == null || gitOutput.isBlank()) {
-            LOG.debug("No new commits to index" + (lastHash != null ? " since " + lastHash : ""));
+            LOG.info("No new commits to index" + (lastHash != null ? " since " + lastHash : ""));
             return 0;
         }
 
@@ -111,6 +111,58 @@ public final class GitCommitIndexer {
      */
     @Nullable
     private String fetchGitLog(@Nullable String sinceHash) {
+        List<String> gitArgs = buildGitLogArgs(sinceHash);
+        String result = PlatformApiCompat.runIdeGitCommand(project, gitArgs.toArray(String[]::new));
+        if (result == null) {
+            LOG.info("git4idea not available, falling back to process-based git log");
+            return fetchGitLogViaProcess(sinceHash);
+        }
+        if (result.startsWith("Error")) {
+            LOG.warn("git log failed: " + result);
+            return null;
+        }
+        return result;
+    }
+
+    /**
+     * Fallback: runs git log directly via ProcessBuilder when git4idea is not yet available.
+     * This is a read-only operation that works before GitRepositoryManager initializes.
+     */
+    @Nullable
+    private String fetchGitLogViaProcess(@Nullable String sinceHash) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return null;
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add("git");
+        cmd.addAll(buildGitLogArgs(sinceHash));
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.directory(new java.io.File(basePath));
+            pb.redirectErrorStream(false);
+            Process process = pb.start();
+            String output = new String(
+                process.getInputStream().readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                LOG.warn("git log process exited with code " + exitCode);
+                return null;
+            }
+            return output;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("git log process interrupted");
+            return null;
+        } catch (Exception e) {
+            LOG.warn("git log process failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    @NotNull
+    private List<String> buildGitLogArgs(@Nullable String sinceHash) {
         List<String> args = new ArrayList<>();
         args.add("log");
         args.add("--name-status");
@@ -127,12 +179,7 @@ public final class GitCommitIndexer {
             args.add("-n");
             args.add("1000");
         }
-        String result = PlatformApiCompat.runIdeGitCommand(project, args.toArray(String[]::new));
-        if (result != null && result.startsWith("Error")) {
-            LOG.warn("git log failed: " + result);
-            return null;
-        }
-        return result;
+        return args;
     }
 
     static List<CommitRecord> parseGitLog(@NotNull String output) {
