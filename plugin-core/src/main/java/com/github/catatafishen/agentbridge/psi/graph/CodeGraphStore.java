@@ -287,6 +287,172 @@ public final class CodeGraphStore {
 
     // ── Raw query ─────────────────────────────────────────────────────────────
 
+    // ── Dashboard & Explorer queries ──────────────────────────────────────────
+
+    /**
+     * Top files by incoming edge count (most depended-upon).
+     * Returns rows with: path, dependentCount.
+     */
+    @NotNull
+    public List<HotspotEntry> getHotspots(int limit) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> {
+                String sql = """
+                    SELECT e.target_id AS file_id, n.source_file AS path,
+                           COUNT(DISTINCT e.source_id) AS dependent_count
+                    FROM graph_edges e
+                    JOIN graph_nodes n ON n.id = e.target_id
+                    WHERE e.relation = 'uses'
+                      AND n.kind = 'file'
+                    GROUP BY e.target_id
+                    ORDER BY dependent_count DESC
+                    LIMIT ?
+                    """;
+                List<HotspotEntry> result = new ArrayList<>();
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, limit);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            result.add(new HotspotEntry(
+                                rs.getString("path"),
+                                rs.getInt("dependent_count")
+                            ));
+                        }
+                    }
+                }
+                return result;
+            });
+        } catch (SQLException e) {
+            LOG.warn("Failed to query hotspots", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * File-level data for the Explorer table: path, dependency count,
+     * dependent count, and commit count.
+     */
+    @NotNull
+    public List<ExplorerRow> getExplorerRows(int limit) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> {
+                String sql = """
+                    SELECT fi.path,
+                           COALESCE(deps.cnt, 0) AS dep_count,
+                           COALESCE(depnts.cnt, 0) AS dependent_count,
+                           COALESCE(commits.cnt, 0) AS commit_count
+                    FROM graph_file_index fi
+                    LEFT JOIN (
+                        SELECT source_id, COUNT(DISTINCT target_id) AS cnt
+                        FROM graph_edges WHERE relation = 'uses'
+                        GROUP BY source_id
+                    ) deps ON deps.source_id = 'file:' || fi.path
+                    LEFT JOIN (
+                        SELECT target_id, COUNT(DISTINCT source_id) AS cnt
+                        FROM graph_edges WHERE relation = 'uses'
+                        GROUP BY target_id
+                    ) depnts ON depnts.target_id = 'file:' || fi.path
+                    LEFT JOIN (
+                        SELECT path, COUNT(*) AS cnt
+                        FROM graph_commit_files
+                        GROUP BY path
+                    ) commits ON commits.path = fi.path
+                    ORDER BY dependent_count DESC
+                    LIMIT ?
+                    """;
+                List<ExplorerRow> result = new ArrayList<>();
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, limit);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            result.add(new ExplorerRow(
+                                rs.getString("path"),
+                                rs.getInt("dep_count"),
+                                rs.getInt("dependent_count"),
+                                rs.getInt("commit_count")
+                            ));
+                        }
+                    }
+                }
+                return result;
+            });
+        } catch (SQLException e) {
+            LOG.warn("Failed to query explorer data", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Dependencies and dependents for a specific file.
+     */
+    @NotNull
+    public FileDetail getFileDetail(@NotNull String path) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> {
+                String fileId = "file:" + path;
+                List<String> dependencies = new ArrayList<>();
+                List<String> dependents = new ArrayList<>();
+                List<CommitSummary> commits = new ArrayList<>();
+
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT REPLACE(target_id, 'file:', '') AS dep FROM graph_edges WHERE source_id = ? AND relation = 'uses'")) {
+                    ps.setString(1, fileId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) dependencies.add(rs.getString("dep"));
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT REPLACE(source_id, 'file:', '') AS dep FROM graph_edges WHERE target_id = ? AND relation = 'uses'")) {
+                    ps.setString(1, fileId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) dependents.add(rs.getString("dep"));
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement("""
+                    SELECT gc.short_hash, gc.message, gc.author, gc.timestamp
+                    FROM graph_commits gc
+                    JOIN graph_commit_files gcf ON gcf.commit_hash = gc.hash
+                    WHERE gcf.path = ?
+                    ORDER BY gc.timestamp DESC
+                    LIMIT 10
+                    """)) {
+                    ps.setString(1, path);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            commits.add(new CommitSummary(
+                                rs.getString("short_hash"),
+                                rs.getString("message"),
+                                rs.getString("author"),
+                                rs.getString("timestamp")
+                            ));
+                        }
+                    }
+                }
+                return new FileDetail(path, dependencies, dependents, commits);
+            });
+        } catch (SQLException e) {
+            LOG.warn("Failed to query file detail for " + path, e);
+            return new FileDetail(path, List.of(), List.of(), List.of());
+        }
+    }
+
+    public record HotspotEntry(@NotNull String path, int dependentCount) {
+    }
+
+    public record ExplorerRow(@NotNull String path, int depCount, int dependentCount, int commitCount) {
+    }
+
+    public record CommitSummary(@NotNull String shortHash, @NotNull String message,
+                                @NotNull String author, @NotNull String timestamp) {
+    }
+
+    public record FileDetail(@NotNull String path, @NotNull List<String> dependencies,
+                             @NotNull List<String> dependents, @NotNull List<CommitSummary> commits) {
+    }
+
     @NotNull
     public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql) throws SQLException {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
