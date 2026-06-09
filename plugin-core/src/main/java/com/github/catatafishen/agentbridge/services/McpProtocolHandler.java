@@ -857,24 +857,26 @@ public final class McpProtocolHandler {
 
     private static final List<String> FILE_PATH_KEYS = List.of("path", "file", "paths", "target", "old_str_file");
 
-    /**
-     * Extracts the primary file path from tool arguments by checking common parameter names.
-     * Returns a project-relative path, or null if no file path found.
-     */
     private @Nullable String extractFilePath(@NotNull JsonObject args) {
         String basePath = project.getBasePath();
         for (String key : FILE_PATH_KEYS) {
             if (!args.has(key)) continue;
-            com.google.gson.JsonElement el = args.get(key);
-            if (el.isJsonPrimitive()) {
-                String raw = el.getAsString();
-                if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
-            } else if (el.isJsonArray()) {
-                for (com.google.gson.JsonElement item : el.getAsJsonArray()) {
-                    if (item.isJsonPrimitive()) {
-                        String raw = item.getAsString();
-                        if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
-                    }
+            String result = extractFirstPath(args.get(key), basePath);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private static @Nullable String extractFirstPath(@NotNull com.google.gson.JsonElement el,
+                                                     @Nullable String basePath) {
+        if (el.isJsonPrimitive()) {
+            String raw = el.getAsString();
+            if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
+        } else if (el.isJsonArray()) {
+            for (com.google.gson.JsonElement item : el.getAsJsonArray()) {
+                if (item.isJsonPrimitive()) {
+                    String raw = item.getAsString();
+                    if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
                 }
             }
         }

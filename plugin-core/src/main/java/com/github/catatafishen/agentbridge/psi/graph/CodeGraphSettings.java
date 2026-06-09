@@ -26,27 +26,27 @@ public final class CodeGraphSettings implements PersistentStateComponent<CodeGra
     }
 
     public boolean isEnabled() {
-        return myState.enabled;
+        return myState.isEnabled();
     }
 
     public void setEnabled(boolean enabled) {
-        myState.enabled = enabled;
+        myState.setEnabled(enabled);
     }
 
     public boolean isAutoRefreshOnAgentEdit() {
-        return myState.autoRefreshOnAgentEdit;
+        return myState.isAutoRefreshOnAgentEdit();
     }
 
     public void setAutoRefreshOnAgentEdit(boolean v) {
-        myState.autoRefreshOnAgentEdit = v;
+        myState.setAutoRefreshOnAgentEdit(v);
     }
 
     public long getLastFullIndexAt() {
-        return myState.lastFullIndexAt;
+        return myState.getLastFullIndexAt();
     }
 
     public void setLastFullIndexAt(long v) {
-        myState.lastFullIndexAt = v;
+        myState.setLastFullIndexAt(v);
     }
 
     @Override
@@ -60,8 +60,32 @@ public final class CodeGraphSettings implements PersistentStateComponent<CodeGra
     }
 
     public static class State {
-        public boolean enabled = false;
-        public boolean autoRefreshOnAgentEdit = true;
-        public long lastFullIndexAt = 0L;
+        private boolean enabled = false;
+        private boolean autoRefreshOnAgentEdit = true;
+        private long lastFullIndexAt = 0L;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public boolean isAutoRefreshOnAgentEdit() {
+            return autoRefreshOnAgentEdit;
+        }
+
+        public void setAutoRefreshOnAgentEdit(boolean v) {
+            this.autoRefreshOnAgentEdit = v;
+        }
+
+        public long getLastFullIndexAt() {
+            return lastFullIndexAt;
+        }
+
+        public void setLastFullIndexAt(long v) {
+            this.lastFullIndexAt = v;
+        }
     }
 }

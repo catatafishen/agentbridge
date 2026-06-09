@@ -20,8 +20,10 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -204,13 +206,13 @@ public final class KnowledgeGraphPanel implements Disposable {
         });
     }
 
-    private void writeNodeLinkJson(@NotNull java.nio.file.Path path) throws Exception {
+    private void writeNodeLinkJson(@NotNull java.nio.file.Path path) throws IOException, SQLException {
         CodeGraphStore store = CodeGraphStore.getInstance(project);
         List<Map<String, Object>> nodes = store.queryRaw(
             "SELECT id, label, kind, fqn, source_file, source_line, language FROM graph_nodes");
         List<Map<String, Object>> edges = store.queryRaw(
             "SELECT source_id, target_id, relation, source_file, source_line FROM graph_edges");
-        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
         com.google.gson.JsonArray nodesArr = new com.google.gson.JsonArray();
         for (Map<String, Object> n : nodes) nodesArr.add(toJson(n));
         com.google.gson.JsonArray linksArr = new com.google.gson.JsonArray();
@@ -221,11 +223,11 @@ public final class KnowledgeGraphPanel implements Disposable {
             link.add("target", link.remove("target_id"));
             linksArr.add(link);
         }
-        root.add("nodes", nodesArr);
-        root.add("links", linksArr);
+        json.add("nodes", nodesArr);
+        json.add("links", linksArr);
         try (OutputStream out = java.nio.file.Files.newOutputStream(path)) {
             out.write(new com.google.gson.GsonBuilder().setPrettyPrinting().create()
-                .toJson(root).getBytes(StandardCharsets.UTF_8));
+                .toJson(json).getBytes(StandardCharsets.UTF_8));
         }
     }
 
