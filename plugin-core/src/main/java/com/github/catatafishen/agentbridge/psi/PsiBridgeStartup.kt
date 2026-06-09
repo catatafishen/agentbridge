@@ -90,7 +90,7 @@ class PsiBridgeStartup : ProjectActivity {
         try {
             val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
             val registry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
-            val registered = registry.findById("query_code_graph") != null
+            val registered = registry.findById("query_knowledge_graph") != null
             LOG.info("Code Graph startup: registered=$registered, enabled=${graphSettings.isEnabled}")
         } catch (e: Exception) {
             LOG.warn("Code Graph startup check failed", e)

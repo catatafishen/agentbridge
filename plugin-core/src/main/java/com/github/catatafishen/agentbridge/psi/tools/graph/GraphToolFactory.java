@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 
 /**
- * Factory for Knowledge Graph MCP tools. Always registers {@code query_code_graph}
+ * Factory for Knowledge Graph MCP tools. Always registers {@code query_knowledge_graph}
  * in the {@link com.github.catatafishen.agentbridge.services.ToolRegistry} so
  * it appears in the MCP settings UI. Whether it is <em>advertised</em> to agents
  * is controlled by {@link com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings#isEnabled()}

@@ -48,7 +48,7 @@ Open the **Code Graph** tab in the AgentBridge tool window. Toggle
 **"Enable Code Graph"**. The initial index builds in the background —
 a progress indicator and final stats appear when done.
 
-The `query_code_graph` MCP tool is only advertised to agents when the graph
+The `query_knowledge_graph` MCP tool is only advertised to agents when the graph
 is enabled and indexed. Disabling the toggle removes the tool immediately.
 
 **Rebuilding:** click **Rebuild** in the panel. Incremental updates run
@@ -57,7 +57,7 @@ automatically after agent writes — the graph stays fresh during sessions.
 **Stats display:** nodes, edges, files indexed, commits indexed, last build
 timestamp.
 
-## Query Interface — `query_code_graph`
+## Query Interface — `query_knowledge_graph`
 
 ### Parameters
 
@@ -184,7 +184,7 @@ state and are always up-to-date for single-symbol navigation.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│              query_code_graph (MCP tool)         │
+│              query_knowledge_graph (MCP tool)         │
 └───────────────────────┬─────────────────────────┘
                         │
 ┌───────────────────────▼─────────────────────────┐

@@ -18,12 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * MCP tool that joins the PSI dependency graph with agent activity history.
- *
- * <p>See {@code docs/CODE-IMPACT-ANALYSIS.md} for the supported query types and
- * return shape. Implementation dispatches on {@code query_type}: each branch
- * runs a parameterised SQL query over {@code graph_nodes}, {@code graph_edges},
- * {@code graph_file_index} and (where joined) {@code tool_call_events}.
+ * MCP tool for querying the project knowledge graph (PSI + git + agent activity).
  */
 public final class QueryCodeGraphTool extends Tool {
 
@@ -43,7 +38,7 @@ public final class QueryCodeGraphTool extends Tool {
 
     @Override
     public @NotNull String id() {
-        return "query_code_graph";
+        return "query_knowledge_graph";
     }
 
     @Override
@@ -53,16 +48,10 @@ public final class QueryCodeGraphTool extends Tool {
 
     @Override
     public @NotNull String description() {
-        return "Analyze structural code dependencies combined with agent change history. "
-            + "The graph links the PSI dependency index (imports, calls, extends, implements) "
-            + "with conversation history (which files the agent read and wrote, when) "
-            + "and git commit metadata (who changed what, when, and why). "
-            + "Use for impact analysis before refactoring, risk-ranking recent changes, "
-            + "finding affected tests, understanding file history (both agent and human changes), "
-            + "or any query that joins code structure with agent activity. "
-            + "For navigating to a specific symbol, use find_references / "
-            + "get_call_hierarchy / get_type_hierarchy — they query live PSI. "
-            + "Supports query_type: dependents_of, dependencies_of, recent_changes_impact, "
+        return "Query the project knowledge graph: PSI dependencies, git commit history, "
+            + "and agent activity joined in one store. Use for impact analysis, "
+            + "finding affected tests, and understanding file/commit history. "
+            + "query_type: dependents_of, dependencies_of, recent_changes_impact, "
             + "file_history, commit_history, hotspots, affected_tests, sql.";
     }
 
@@ -129,7 +118,7 @@ public final class QueryCodeGraphTool extends Tool {
             };
             return body + "\n\n" + formatStats(stats);
         } catch (SQLException e) {
-            LOG.warn("query_code_graph SQL error", e);
+            LOG.warn("query_knowledge_graph SQL error", e);
             return "Error: " + e.getMessage();
         }
     }

@@ -341,7 +341,7 @@ public final class CodeGraphStore {
         String stripped = sql.replaceAll("'[^']*'", "''");
         if (WRITE_KEYWORDS.matcher(stripped).find()) {
             throw new SQLException(
-                "Write statements are not allowed in query_code_graph. Use SELECT only.");
+                "Write statements are not allowed in query_knowledge_graph. Use SELECT only.");
         }
     }
 }
