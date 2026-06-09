@@ -134,7 +134,7 @@ public final class QueryCodeGraphTool extends Tool {
               UNION ALL
               SELECT e.source_file, w.hop + 1
                 FROM graph_edges e
-                JOIN graph_nodes n ON n.id = e.target_id
+                JOIN graph_nodes n ON n.id = e.target_id AND n.kind = 'file'
                 JOIN walk w ON n.source_file = w.file
                WHERE w.hop < ?
             )
@@ -154,7 +154,7 @@ public final class QueryCodeGraphTool extends Tool {
               UNION ALL
               SELECT n.source_file, w.hop + 1
                 FROM graph_edges e
-                JOIN graph_nodes n ON n.id = e.target_id
+                JOIN graph_nodes n ON n.id = e.target_id AND n.kind = 'file'
                 JOIN walk w ON e.source_file = w.file
                WHERE w.hop < ?
             )
@@ -174,7 +174,7 @@ public final class QueryCodeGraphTool extends Tool {
                    MAX(ev.timestamp) AS last_edited_at
               FROM tool_call_events t
               JOIN events ev ON ev.id = t.event_id
-              LEFT JOIN graph_nodes n ON n.source_file = t.file_path
+              LEFT JOIN graph_nodes n ON n.source_file = t.file_path AND n.kind = 'file'
               LEFT JOIN graph_edges e ON e.target_id = n.id
              WHERE ev.timestamp >= ?
                AND t.file_path IS NOT NULL
@@ -322,6 +322,7 @@ public final class QueryCodeGraphTool extends Tool {
               FROM graph_nodes n
               JOIN graph_edges e ON e.target_id = n.id
              WHERE n.source_file LIKE ?
+               AND n.kind = 'file'
              GROUP BY n.source_file
              ORDER BY dependents_count DESC
              LIMIT ?
@@ -335,7 +336,7 @@ public final class QueryCodeGraphTool extends Tool {
             SELECT DISTINCT n.source_file AS test_file
               FROM tool_call_events t
               JOIN events ev ON ev.id = t.event_id
-              JOIN graph_nodes src_n ON src_n.source_file = t.file_path
+              JOIN graph_nodes src_n ON src_n.source_file = t.file_path AND src_n.kind = 'file'
               JOIN graph_edges e ON e.target_id = src_n.id
               JOIN graph_nodes n ON n.id = e.source_id
              WHERE ev.timestamp >= ?

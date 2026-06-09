@@ -4,7 +4,7 @@ A persistent, offline database that connects three views of a codebase:
 
 | Layer         | Source                                          | What it answers                  |
 |---------------|-------------------------------------------------|----------------------------------|
-| **Structure** | PSI index (imports, calls, extends, implements) | What depends on what?            |
+| **Structure** | PSI index (file-level `uses` + `contains`) | What depends on what?            |
 | **History**   | Local git log (commits, authors, file changes)  | Who changed this and when?       |
 | **Activity**  | Agent tool call events                          | What did agents do to this file? |
 
@@ -16,10 +16,14 @@ edit today that have the most git churn and the most structural dependents?"
 
 ### Structure — PSI dependency graph
 
-Extracted from IntelliJ's PSI model using the same resolution that
-`find_references` and `get_call_hierarchy` use. Stored as a directed graph
-of nodes (classes, methods, files) and edges (imports, calls, extends,
-implements). Covers all source files in the project.
+Extracted from IntelliJ's PSI model. Stored as a directed graph
+of nodes (files, classes, methods, fields) and edges:
+- `contains` — file → symbol (a class, method, or field defined in the file)
+- `uses` — file → file (resolved reference from one source file to another)
+
+Covers all source files in the project. Symbol-level call/extends/implements
+edges are not yet indexed — use live PSI tools (`get_call_hierarchy`,
+`find_references`) for those.
 
 **Tables:** `graph_nodes`, `graph_edges`, `graph_file_index`
 
@@ -44,8 +48,8 @@ context, and timestamp.
 
 ## Enabling
 
-Open the **Code Graph** tab in the AgentBridge tool window. Toggle
-**"Enable Code Graph"**. The initial index builds in the background —
+Open the **Knowledge Graph** tab in the AgentBridge tool window. Toggle
+**"Enable Knowledge Graph"**. The initial index builds in the background —
 a progress indicator and final stats appear when done.
 
 The `query_knowledge_graph` MCP tool is only advertised to agents when the graph
@@ -151,10 +155,10 @@ Raw read-only SQL across all tables: `graph_nodes`, `graph_edges`,
 ```
 query_type: "sql"
 sql: |
-  SELECT gc.short_hash, gc.message, COUNT(gcf.id) AS files_changed
+  SELECT gc.short_hash, gc.message, COUNT(gcf.path) AS files_changed
   FROM graph_commits gc
-  JOIN graph_commit_files gcf ON gcf.commit_id = gc.id
-  GROUP BY gc.id
+  JOIN graph_commit_files gcf ON gcf.commit_hash = gc.hash
+  GROUP BY gc.hash
   ORDER BY gc.timestamp DESC
   LIMIT 10
 ```
@@ -202,7 +206,7 @@ state and are always up-to-date for single-symbol navigation.
 - **CodeGraphStore** — data access layer, schema migrations, stats queries
 - **CodeGraphIndexer** — traverses PSI, extracts dependencies, triggers git indexing
 - **GitCommitIndexer** — parses `git log` output, inserts commits incrementally
-- **CodeGraphPanel** — settings UI (enable toggle, rebuild, stats, export)
+- **KnowledgeGraphPanel** — settings UI (enable toggle, rebuild, stats, export)
 - **QueryCodeGraphTool** — MCP tool that routes query types to SQL
 
 All indexing runs in background threads. No UI freezes. No network calls.
