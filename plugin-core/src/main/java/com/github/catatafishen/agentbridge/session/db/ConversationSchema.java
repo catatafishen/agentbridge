@@ -55,6 +55,7 @@ final class ConversationSchema {
             if (currentVersion < 5) applyV5(stmt);
             if (currentVersion < 6) applyV6(stmt);
             if (currentVersion < 7) applyV7(stmt);
+            if (currentVersion < 8) applyV8(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -403,5 +404,15 @@ final class ConversationSchema {
             """);
         stmt.execute("CREATE INDEX idx_gcf_commit ON graph_commit_files(commit_hash)");
         stmt.execute("CREATE INDEX idx_gcf_file ON graph_commit_files(file_path)");
+    }
+
+    /**
+     * V8: Add root_type column to graph_file_index so files can be filtered
+     * by directory type (sources, test_sources, resources, etc.) without
+     * re-querying the IDE's ProjectFileIndex at read time.
+     */
+    private static void applyV8(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("ALTER TABLE graph_file_index ADD COLUMN root_type TEXT NOT NULL DEFAULT 'sources'");
+        stmt.execute("CREATE INDEX idx_gfi_root_type ON graph_file_index(root_type)");
     }
 }
