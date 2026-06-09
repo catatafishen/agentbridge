@@ -285,16 +285,10 @@ public final class CodeGraphStore {
 
     // ── Raw query ─────────────────────────────────────────────────────────────
 
-    /**
-     * Execute a read-only SQL query and return results as a list of string-keyed maps.
-     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
-     * Any statement not starting with SELECT/WITH is rejected before execution.
-     */
     @NotNull
     public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql) throws SQLException {
-        rejectWriteSql(sql);
         ConversationDatabase db = ConversationDatabase.getInstance(project);
-        return db.withConnection(conn -> {
+        return db.withConnection(conn -> withQueryOnly(conn, () -> {
             List<java.util.Map<String, Object>> rows = new ArrayList<>();
             try (PreparedStatement ps = conn.prepareStatement(sql);
                  ResultSet rs = ps.executeQuery()) {
@@ -308,18 +302,13 @@ public final class CodeGraphStore {
                 }
             }
             return rows;
-        });
+        }));
     }
 
-    /**
-     * Same as {@link #queryRaw(String)} but with positional parameters.
-     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
-     */
     @NotNull
     public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql, Object... params) throws SQLException {
-        rejectWriteSql(sql);
         ConversationDatabase db = ConversationDatabase.getInstance(project);
-        return db.withConnection(conn -> {
+        return db.withConnection(conn -> withQueryOnly(conn, () -> {
             List<java.util.Map<String, Object>> rows = new ArrayList<>();
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 for (int i = 0; i < params.length; i++) {
@@ -337,7 +326,7 @@ public final class CodeGraphStore {
                 }
             }
             return rows;
-        });
+        }));
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
@@ -358,33 +347,28 @@ public final class CodeGraphStore {
         }
     }
 
-    private static void rejectWriteSql(@NotNull String sql) throws SQLException {
-        // Whitelist approach: only pure SELECT statements (optionally preceded by CTEs) are allowed.
-        // Strip leading SQL comments before checking.
-        String trimmed = sql.stripLeading().replaceAll("(?s)/\\*.*?\\*/", "").stripLeading();
-        while (trimmed.startsWith("--")) {
-            int nl = trimmed.indexOf('\n');
-            if (nl < 0) break;
-            trimmed = trimmed.substring(nl + 1).stripLeading();
+    /**
+     * Executes a callback with SQLite's native {@code PRAGMA query_only = ON}, which makes the
+     * engine reject any write operation (INSERT, UPDATE, DELETE, DDL, ATTACH, etc.) at the driver
+     * level. This is safer than SQL parsing — no regex bypass risk. The pragma is always reset
+     * in the finally block since {@code withConnection} is synchronized, so no concurrent writer
+     * can observe the read-only state.
+     */
+    private static <T> T withQueryOnly(@NotNull Connection conn, @NotNull SqlCallable<T> callable) throws SQLException {
+        try (Statement pragma = conn.createStatement()) {
+            pragma.execute("PRAGMA query_only = ON");
         }
-        String upper = trimmed.toUpperCase(java.util.Locale.ROOT);
-        if (!upper.startsWith("SELECT") && !upper.startsWith("WITH")) {
-            throw new SQLException(
-                "Only SELECT / WITH statements are allowed in query_knowledge_graph.");
-        }
-        // WITH ... INSERT/UPDATE/DELETE is valid in SQLite — reject DML/DDL keywords
-        // even when the statement starts with WITH.
-        if (upper.startsWith("WITH")) {
-            java.util.regex.Pattern dmlAfterCte = java.util.regex.Pattern.compile(
-                "\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|PRAGMA)\\b",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-            // Strip string literals and CTEs' SELECT bodies are fine — just scan for DML keywords
-            // after removing single-quoted strings to avoid false positives.
-            String stripped = trimmed.replaceAll("'[^']*'", "''");
-            if (dmlAfterCte.matcher(stripped).find()) {
-                throw new SQLException(
-                    "WITH ... DML/DDL is not allowed in query_knowledge_graph. Only WITH ... SELECT is permitted.");
+        try {
+            return callable.call();
+        } finally {
+            try (Statement pragma = conn.createStatement()) {
+                pragma.execute("PRAGMA query_only = OFF");
             }
         }
+    }
+
+    @FunctionalInterface
+    private interface SqlCallable<T> {
+        T call() throws SQLException;
     }
 }
