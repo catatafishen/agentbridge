@@ -117,6 +117,8 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer"/>
     <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.graph.GitCommitIndexer"/>
+    <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.settings.McpServerSettings"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.settings.ChatWebServerSettings"/>

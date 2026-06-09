@@ -158,6 +158,7 @@ public final class CodeGraphPanel {
         sb.append("Nodes:         ").append(s.nodeCount()).append('\n');
         sb.append("Edges:         ").append(s.edgeCount()).append('\n');
         sb.append("Files indexed: ").append(s.fileCount()).append('\n');
+        sb.append("Commits:       ").append(s.commitCount()).append('\n');
         sb.append("Last indexed:  ").append(formatTime(s.lastIndexedAt())).append('\n');
         sb.append("Tool advertised: ");
         if (!toolInRegistry) {

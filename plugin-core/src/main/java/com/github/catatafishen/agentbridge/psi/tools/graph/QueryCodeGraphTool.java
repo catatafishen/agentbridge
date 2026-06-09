@@ -55,13 +55,15 @@ public final class QueryCodeGraphTool extends Tool {
     public @NotNull String description() {
         return "Analyze structural code dependencies combined with agent change history. "
             + "The graph links the PSI dependency index (imports, calls, extends, implements) "
-            + "with conversation history (which files the agent read and wrote, when). "
+            + "with conversation history (which files the agent read and wrote, when) "
+            + "and git commit metadata (who changed what, when, and why). "
             + "Use for impact analysis before refactoring, risk-ranking recent changes, "
-            + "finding affected tests, or any query that joins code structure with agent "
-            + "activity. For navigating to a specific symbol, use find_references / "
+            + "finding affected tests, understanding file history (both agent and human changes), "
+            + "or any query that joins code structure with agent activity. "
+            + "For navigating to a specific symbol, use find_references / "
             + "get_call_hierarchy / get_type_hierarchy — they query live PSI. "
             + "Supports query_type: dependents_of, dependencies_of, recent_changes_impact, "
-            + "file_history, hotspots, affected_tests, sql.";
+            + "file_history, commit_history, hotspots, affected_tests, sql.";
     }
 
     @Override
@@ -83,9 +85,9 @@ public final class QueryCodeGraphTool extends Tool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_QUERY_TYPE, TYPE_STRING,
-                "dependents_of | dependencies_of | recent_changes_impact | file_history | hotspots | affected_tests | sql"),
+                "dependents_of | dependencies_of | recent_changes_impact | file_history | commit_history | hotspots | affected_tests | sql"),
             Param.optional(PARAM_TARGET, TYPE_STRING,
-                "File path (project-relative) or fully-qualified name. Required for dependents_of, dependencies_of, file_history."),
+                "File path (project-relative) or fully-qualified name. Required for dependents_of, dependencies_of, file_history. Optional for commit_history (filters to that file)."),
             Param.optional(PARAM_PATH, TYPE_STRING,
                 "Subtree filter for hotspots. Omit for whole-project scope."),
             Param.optional(PARAM_SINCE, TYPE_STRING,
@@ -93,7 +95,7 @@ public final class QueryCodeGraphTool extends Tool {
             Param.optional(PARAM_DEPTH, TYPE_INTEGER,
                 "Traversal depth for dependents_of / dependencies_of. Default 1, max 5."),
             Param.optional(PARAM_SQL, TYPE_STRING,
-                "Raw read-only SQL. Required when query_type=sql. Tables: graph_nodes, graph_edges, graph_file_index, tool_call_events."),
+                "Raw read-only SQL. Required when query_type=sql. Tables: graph_nodes, graph_edges, graph_file_index, tool_call_events, graph_commits, graph_commit_files."),
             Param.optional(PARAM_LIMIT, TYPE_INTEGER,
                 "Max rows. Default 50, max 500.")
         );
@@ -117,12 +119,13 @@ public final class QueryCodeGraphTool extends Tool {
                 case "dependencies_of" -> dependenciesOf(args, limit);
                 case "recent_changes_impact" -> recentChangesImpact(args, limit);
                 case "file_history" -> fileHistory(args, limit);
+                case "commit_history" -> commitHistory(args, limit);
                 case "hotspots" -> hotspots(args, limit);
                 case "affected_tests" -> affectedTests(args, limit);
                 case "sql" -> rawSql(args, limit);
                 default -> "Error: unknown query_type '" + type + "'. "
                     + "Use one of: dependents_of, dependencies_of, recent_changes_impact, "
-                    + "file_history, hotspots, affected_tests, sql.";
+                    + "file_history, commit_history, hotspots, affected_tests, sql.";
             };
             return body + "\n\n" + formatStats(stats);
         } catch (SQLException e) {
@@ -199,9 +202,10 @@ public final class QueryCodeGraphTool extends Tool {
         if (input.isEmpty()) {
             throw new IllegalArgumentException("'target' parameter is required for this query_type");
         }
-        // Try exact match first, then filename suffix fallback on tool_call_events
         CodeGraphStore store = CodeGraphStore.getInstance(project);
-        List<Map<String, Object>> rows = store.queryRaw("""
+
+        // Agent tool call history
+        List<Map<String, Object>> toolRows = store.queryRaw("""
             SELECT ev.timestamp AS at, t.tool_name, t.tool_kind, t.success
               FROM tool_call_events t
               JOIN events ev ON ev.id = t.event_id
@@ -209,9 +213,9 @@ public final class QueryCodeGraphTool extends Tool {
              ORDER BY ev.timestamp DESC
              LIMIT ?
             """, input, limit);
-        if (rows.isEmpty()) {
+        if (toolRows.isEmpty()) {
             String filename = input.contains("/") ? input.substring(input.lastIndexOf('/') + 1) : input;
-            rows = store.queryRaw("""
+            toolRows = store.queryRaw("""
                 SELECT ev.timestamp AS at, t.tool_name, t.tool_kind, t.success
                   FROM tool_call_events t
                   JOIN events ev ON ev.id = t.event_id
@@ -220,7 +224,101 @@ public final class QueryCodeGraphTool extends Tool {
                  LIMIT ?
                 """, "%" + filename, limit);
         }
-        return formatRows(rows);
+
+        // Git commit history for this file
+        String resolved = resolveCommitFilePath(store, input);
+        List<Map<String, Object>> commitRows = store.queryRaw("""
+            SELECT c.short_hash, c.message, c.author, c.timestamp, f.change_type
+              FROM graph_commits c
+              JOIN graph_commit_files f ON f.commit_hash = c.hash
+             WHERE f.file_path = ?
+             ORDER BY c.timestamp DESC
+             LIMIT ?
+            """, resolved, limit);
+
+        StringBuilder sb = new StringBuilder();
+        if (!commitRows.isEmpty()) {
+            sb.append("=== Git Commits ===\n");
+            sb.append(formatRows(commitRows));
+        }
+        if (!toolRows.isEmpty()) {
+            if (!sb.isEmpty()) sb.append("\n\n");
+            sb.append("=== Agent Tool Calls ===\n");
+            sb.append(formatRows(toolRows));
+        }
+        if (sb.isEmpty()) return "No history found for: " + input;
+        return sb.toString();
+    }
+
+    private @NotNull String commitHistory(@NotNull JsonObject args, int limit) throws SQLException {
+        String target = optString(args, PARAM_TARGET, "");
+        String since = optString(args, PARAM_SINCE, "");
+        CodeGraphStore store = CodeGraphStore.getInstance(project);
+
+        if (target.isEmpty() && since.isEmpty()) {
+            // No filter — show most recent commits
+            return formatRows(store.queryRaw("""
+                SELECT c.short_hash, c.message, c.author, c.timestamp, c.branch,
+                       COUNT(f.id) AS files_changed
+                  FROM graph_commits c
+                  LEFT JOIN graph_commit_files f ON f.commit_hash = c.hash
+                 GROUP BY c.hash
+                 ORDER BY c.timestamp DESC
+                 LIMIT ?
+                """, limit));
+        }
+
+        if (!target.isEmpty()) {
+            // Show commits that touched a specific file
+            String resolved = resolveCommitFilePath(store, target);
+            return formatRows(store.queryRaw("""
+                SELECT c.short_hash, c.message, c.author, c.timestamp, f.change_type
+                  FROM graph_commits c
+                  JOIN graph_commit_files f ON f.commit_hash = c.hash
+                 WHERE f.file_path = ?
+                 ORDER BY c.timestamp DESC
+                 LIMIT ?
+                """, resolved, limit));
+        }
+
+        // Filter by time
+        String sinceIso = parseSinceIso(since);
+        return formatRows(store.queryRaw("""
+            SELECT c.short_hash, c.message, c.author, c.timestamp,
+                   COUNT(f.id) AS files_changed
+              FROM graph_commits c
+              LEFT JOIN graph_commit_files f ON f.commit_hash = c.hash
+             WHERE c.timestamp >= ?
+             GROUP BY c.hash
+             ORDER BY c.timestamp DESC
+             LIMIT ?
+            """, sinceIso, limit));
+    }
+
+    /**
+     * Resolves a target path for commit file lookups.
+     * Tries exact match in graph_commit_files, then falls back to filename suffix matching.
+     */
+    private @NotNull String resolveCommitFilePath(@NotNull CodeGraphStore store, @NotNull String input) throws SQLException {
+        List<Map<String, Object>> exact = store.queryRaw(
+            "SELECT DISTINCT file_path FROM graph_commit_files WHERE file_path = ? LIMIT 1", input);
+        if (!exact.isEmpty()) return input;
+
+        String filename = input.contains("/") ? input.substring(input.lastIndexOf('/') + 1) : input;
+        List<Map<String, Object>> byName = store.queryRaw(
+            "SELECT DISTINCT file_path FROM graph_commit_files WHERE file_path LIKE ? LIMIT 10",
+            "%" + filename);
+        if (byName.isEmpty()) return input;
+        if (byName.size() == 1) return (String) byName.getFirst().get("file_path");
+
+        for (Map<String, Object> row : byName) {
+            String candidate = (String) row.get("file_path");
+            if (candidate.endsWith(input) || input.endsWith(candidate)) return candidate;
+        }
+        return byName.stream()
+            .map(r -> (String) r.get("file_path"))
+            .min(java.util.Comparator.comparingInt(String::length))
+            .orElse(input);
     }
 
     private @NotNull String hotspots(@NotNull JsonObject args, int limit) throws SQLException {
@@ -391,6 +489,7 @@ public final class QueryCodeGraphTool extends Tool {
         m.put("nodes", stats.nodeCount());
         m.put("edges", stats.edgeCount());
         m.put("files_indexed", stats.fileCount());
+        m.put("commits_indexed", stats.commitCount());
         m.put("last_indexed_at_ms", stats.lastIndexedAt());
         return "graph_stats: " + m;
     }

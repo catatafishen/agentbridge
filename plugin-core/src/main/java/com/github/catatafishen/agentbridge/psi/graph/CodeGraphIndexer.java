@@ -72,6 +72,8 @@ public final class CodeGraphIndexer {
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
                     doFullRebuild(indicator);
+                    indicator.setText("Indexing git commits…");
+                    GitCommitIndexer.getInstance(project).indexCommits(indicator);
                 } finally {
                     indexing.set(false);
                     CodeGraphSettings.getInstance(project).setLastFullIndexAt(System.currentTimeMillis());
