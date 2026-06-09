@@ -174,6 +174,20 @@ jobs:
           HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
         run: git reset --soft "$HEAD_SHA"
 
+      # Diagnostic: show git state just before scanner runs
+      - name: Verify git state for scanner
+        env:
+          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
+        run: |
+          echo "HEAD commit: $(git rev-parse HEAD)"
+          echo "Expected:    $HEAD_SHA"
+          echo "Source files present:"
+          find plugin-core/src/main/java -name "CodeGraphStore.java" -o -name "GitCommitIndexer.java" | head -5
+          echo "Build classes present:"
+          find plugin-core/build/classes -name "CodeGraphStore.class" 2>/dev/null | head -3
+          echo "Git log HEAD~3:"
+          git log --oneline -3
+
       - name: Set up JDK 21
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
         with:
@@ -248,7 +262,7 @@ jobs:
           HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
         run: |
           gradle sonar \
-            --no-daemon --quiet \
+            --no-daemon --info \
             -x test \
             -x jacocoTestReport \
             -x buildChatUi \
@@ -257,6 +271,7 @@ jobs:
             "-Dsonar.host.url=$SONAR_HOST_URL" \
             "-Dsonar.projectVersion=$SONAR_PROJECT_VERSION" \
             "-Dsonar.scm.revision=$HEAD_SHA" \
+            "-Dsonar.scm.provider=git" \
             "-Dsonar.qualitygate.wait=true" \
             "-Dsonar.qualitygate.timeout=300" \
             "-Dsonar.pullrequest.key=$PR_NUMBER" \
