@@ -19,8 +19,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * Orchestrates {@link CodeGraphExtractor} runs across the project and persists results
@@ -98,12 +100,19 @@ public final class CodeGraphIndexer {
     public boolean refreshFile(@NotNull VirtualFile vf) {
         if (!vf.isValid() || vf.isDirectory()) return false;
         if (project.isDisposed()) return false;
-        ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
 
-        Boolean inSource = ReadAction.nonBlocking(() -> idx.isInSource(vf))
+        Set<String> allowedRootIds = CodeGraphSettings.getInstance(project)
+            .getIncludedRootTypes().stream()
+            .map(IndexableRootType::id)
+            .collect(Collectors.toSet());
+
+        Boolean allowed = ReadAction.nonBlocking(() -> {
+                ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
+                return isFileInScope(idx, vf, allowedRootIds);
+            })
             .expireWhen(() -> project.isDisposed() || !vf.isValid())
             .executeSynchronously();
-        if (inSource == null || !inSource) return false;
+        if (allowed == null || !allowed) return false;
 
         Boolean result = ReadAction.nonBlocking(() -> extractAndStore(vf))
             .expireWhen(() -> project.isDisposed() || !vf.isValid())
@@ -115,11 +124,16 @@ public final class CodeGraphIndexer {
         indicator.setIndeterminate(false);
         indicator.setText("Collecting project files…");
 
+        Set<String> allowedRootIds = CodeGraphSettings.getInstance(project)
+            .getIncludedRootTypes().stream()
+            .map(IndexableRootType::id)
+            .collect(Collectors.toSet());
+
         List<VirtualFile> files = new ArrayList<>();
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
             FileBasedIndex.getInstance().iterateIndexableFiles(vf -> {
-                if (vf.isValid() && !vf.isDirectory() && idx.isInSource(vf)) {
+                if (vf.isValid() && !vf.isDirectory() && isFileInScope(idx, vf, allowedRootIds)) {
                     files.add(vf);
                 }
                 return true;
@@ -188,6 +202,12 @@ public final class CodeGraphIndexer {
         if (extraction.contentHash().equals(existingHash)) {
             return false;
         }
+
+        ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
+        String rootType = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            .classifyFileSourceRoot(idx, vf);
+        if (rootType.isEmpty()) rootType = "sources";
+
         store.deleteByFile(extraction.relativePath());
         store.upsertNodes(extraction.nodes());
         store.insertEdges(extraction.edges());
@@ -195,7 +215,8 @@ public final class CodeGraphIndexer {
             extraction.relativePath(),
             extraction.contentHash(),
             extraction.nodes().size(),
-            extraction.edges().size());
+            extraction.edges().size(),
+            rootType);
         return true;
     }
 
@@ -210,5 +231,19 @@ public final class CodeGraphIndexer {
             indexing.set(false);
             CodeGraphSettings.getInstance(project).setLastFullIndexAt(System.currentTimeMillis());
         }
+    }
+
+    /**
+     * Checks whether a file belongs to one of the configured indexable root types.
+     * Uses {@link com.github.catatafishen.agentbridge.psi.PlatformApiCompat#classifyFileSourceRoot}
+     * to avoid direct JPS type references (daemon false-positive prevention).
+     */
+    private static boolean isFileInScope(@NotNull ProjectFileIndex idx,
+                                         @NotNull VirtualFile vf,
+                                         @NotNull Set<String> allowedRootIds) {
+        if (!idx.isInSourceContent(vf)) return false;
+        String classification = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            .classifyFileSourceRoot(idx, vf);
+        return !classification.isEmpty() && allowedRootIds.contains(classification);
     }
 }

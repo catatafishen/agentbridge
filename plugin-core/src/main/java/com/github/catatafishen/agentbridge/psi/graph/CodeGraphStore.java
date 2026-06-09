@@ -219,19 +219,21 @@ public final class CodeGraphStore {
         }
     }
 
-    public void setFileIndex(@NotNull String relativePath, @NotNull String hash, int nodes, int edges) {
+    public void setFileIndex(@NotNull String relativePath, @NotNull String hash,
+                             int nodes, int edges, @NotNull String rootType) {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
             db.withConnection(conn -> {
                 try (PreparedStatement ps = conn.prepareStatement("""
-                    INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count, root_type)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """)) {
                     ps.setString(1, relativePath);
                     ps.setString(2, hash);
                     ps.setLong(3, System.currentTimeMillis());
                     ps.setInt(4, nodes);
                     ps.setInt(5, edges);
+                    ps.setString(6, rootType);
                     ps.executeUpdate();
                 }
                 return null;

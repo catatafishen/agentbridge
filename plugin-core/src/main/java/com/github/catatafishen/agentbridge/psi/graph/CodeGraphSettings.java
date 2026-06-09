@@ -8,6 +8,9 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 /**
  * Persistent project-level settings for the Knowledge Graph feature.
  * Knowledge Graph is <b>opt-in</b> — disabled by default. The {@code query_knowledge_graph}
@@ -49,6 +52,14 @@ public final class CodeGraphSettings implements PersistentStateComponent<CodeGra
         myState.setLastFullIndexAt(v);
     }
 
+    public Set<IndexableRootType> getIncludedRootTypes() {
+        return IndexableRootType.fromIds(myState.getIncludedRootTypeIds());
+    }
+
+    public void setIncludedRootTypes(@NotNull Set<IndexableRootType> types) {
+        myState.setIncludedRootTypeIds(IndexableRootType.toIds(types));
+    }
+
     @Override
     public @NotNull State getState() {
         return myState;
@@ -63,6 +74,7 @@ public final class CodeGraphSettings implements PersistentStateComponent<CodeGra
         private boolean enabled = false;
         private boolean autoRefreshOnAgentEdit = true;
         private long lastFullIndexAt = 0L;
+        private Set<String> includedRootTypeIds = IndexableRootType.toIds(IndexableRootType.defaults());
 
         public boolean isEnabled() {
             return enabled;
@@ -86,6 +98,14 @@ public final class CodeGraphSettings implements PersistentStateComponent<CodeGra
 
         public void setLastFullIndexAt(long v) {
             this.lastFullIndexAt = v;
+        }
+
+        public Set<String> getIncludedRootTypeIds() {
+            return includedRootTypeIds;
+        }
+
+        public void setIncludedRootTypeIds(Set<String> ids) {
+            this.includedRootTypeIds = new LinkedHashSet<>(ids);
         }
     }
 }

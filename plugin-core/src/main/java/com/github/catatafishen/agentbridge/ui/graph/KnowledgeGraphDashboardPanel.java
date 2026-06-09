@@ -150,6 +150,11 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
             CodeGraphIndexer.getInstance(project).rebuildAll(this::onIndexFinished);
         });
         exportButton.addActionListener(e -> exportJson());
+
+        JButton settingsButton = new JButton("⚙ Settings…");
+        settingsButton.addActionListener(e -> openSettingsDialog());
+
+        buttons.add(settingsButton);
         buttons.add(rebuildButton);
         buttons.add(exportButton);
         content.add(buttons);
@@ -271,6 +276,13 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
     private void onIndexFinished() {
         refreshAll();
         setStatus("Build finished — query_knowledge_graph ready.");
+    }
+
+    private void openSettingsDialog() {
+        CodeGraphSettingsDialog dialog = new CodeGraphSettingsDialog(project);
+        if (dialog.showAndGet()) {
+            setStatus("Settings saved. Rebuild to apply new scope.");
+        }
     }
 
     private void exportJson() {
