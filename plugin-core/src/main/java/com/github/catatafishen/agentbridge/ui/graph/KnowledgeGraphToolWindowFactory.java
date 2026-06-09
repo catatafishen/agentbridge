@@ -9,12 +9,15 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.List;
+
 /**
  * Registers the <b>Knowledge Graph</b> sidebar tool window with multiple tabs:
  * <ul>
- *   <li><b>Dashboard</b> — stats cards, hotspots, activity feed, settings</li>
+ *   <li><b>Dashboard</b> — stats cards, hotspots, activity feed</li>
  *   <li><b>Explorer</b> — searchable table of files with dependency/commit counts</li>
  * </ul>
+ * Title bar actions: ⚙ Settings, ↻ Rebuild, ⤓ Export JSON.
  */
 public final class KnowledgeGraphToolWindowFactory implements ToolWindowFactory, DumbAware {
 
@@ -31,6 +34,12 @@ public final class KnowledgeGraphToolWindowFactory implements ToolWindowFactory,
         Content explorerContent = cf.createContent(explorer.getComponent(), "Explorer", false);
         Disposer.register(explorerContent, explorer);
         toolWindow.getContentManager().addContent(explorerContent);
+
+        toolWindow.setTitleActions(List.of(
+            new KnowledgeGraphSettingsAction(project),
+            new KnowledgeGraphRebuildAction(project, dashboard),
+            new KnowledgeGraphExportAction(project)
+        ));
     }
 
     @Override
