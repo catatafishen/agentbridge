@@ -1,17 +1,12 @@
 package com.github.catatafishen.agentbridge.ui.graph;
 
-import com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings;
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileChooser.FileChooserFactory;
-import com.intellij.openapi.fileChooser.FileSaverDescriptor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
@@ -21,32 +16,22 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.sql.SQLException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Dashboard tab for the Knowledge Graph tool window.
- * Shows stat cards, hotspots ranking, and feature settings.
+ * Shows stat cards, hotspots ranking, and status info.
+ * Settings, rebuild, and export are in the tool window title bar.
  */
 public final class KnowledgeGraphDashboardPanel implements Disposable {
 
-    private static final Logger LOG = Logger.getInstance(KnowledgeGraphDashboardPanel.class);
     private static final String TOOL_ID = "query_knowledge_graph";
 
     private final Project project;
     private final JPanel root = new JPanel(new BorderLayout());
-
-    // Settings controls
-    private final JCheckBox enableCheck = new JCheckBox("Enable Knowledge Graph");
-    private final JCheckBox autoRefreshCheck = new JCheckBox("Refresh after agent edits");
 
     // Stat card labels
     private final JBLabel nodesLabel = new JBLabel("0");
@@ -60,10 +45,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
 
     // Hotspots
     private final JPanel hotspotsPanel = new JPanel(new VerticalLayout(JBUI.scale(2)));
-
-    // Buttons
-    private final JButton rebuildButton = new JButton("Rebuild");
-    private final JButton exportButton = new JButton("Export JSON…");
 
     private Runnable toolChangeDisconnect;
 
@@ -98,6 +79,14 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         }
     }
 
+    /**
+     * Called by {@link KnowledgeGraphRebuildAction} when a rebuild finishes.
+     */
+    void onRebuildFinished() {
+        refreshAll();
+        setStatus("Build finished — query_knowledge_graph ready.");
+    }
+
     private void build() {
         JPanel content = new JPanel(new VerticalLayout(JBUI.scale(12)));
         content.setBorder(JBUI.Borders.empty(12));
@@ -109,25 +98,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
                 + "Powers the <code>query_knowledge_graph</code> MCP tool."
                 + "</body></html>");
         content.add(description);
-
-        // Settings
-        CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
-        enableCheck.addActionListener(e -> {
-            boolean on = enableCheck.isSelected();
-            settings.setEnabled(on);
-            if (on) {
-                setStatus("Building graph…");
-                CodeGraphIndexer.getInstance(project).rebuildAll(this::onIndexFinished);
-            } else {
-                setStatus("Disabled — tool hidden from agents.");
-                refreshAll();
-            }
-        });
-        content.add(enableCheck);
-
-        autoRefreshCheck.addActionListener(e ->
-            settings.setAutoRefreshOnAgentEdit(autoRefreshCheck.isSelected()));
-        content.add(autoRefreshCheck);
 
         // Stat cards
         content.add(buildStatCardsPanel());
@@ -142,22 +112,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         content.add(hotspotsTitle);
         hotspotsPanel.setBorder(JBUI.Borders.empty(4, 0));
         content.add(hotspotsPanel);
-
-        // Action buttons
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
-        rebuildButton.addActionListener(e -> {
-            setStatus("Rebuilding…");
-            CodeGraphIndexer.getInstance(project).rebuildAll(this::onIndexFinished);
-        });
-        exportButton.addActionListener(e -> exportJson());
-
-        JButton settingsButton = new JButton("⚙ Settings…");
-        settingsButton.addActionListener(e -> openSettingsDialog());
-
-        buttons.add(settingsButton);
-        buttons.add(rebuildButton);
-        buttons.add(exportButton);
-        content.add(buttons);
 
         // Status
         statusLabel.setForeground(JBColor.GRAY);
@@ -196,9 +150,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
 
     private void refreshAll() {
         CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
-        enableCheck.setSelected(settings.isEnabled());
-        autoRefreshCheck.setSelected(settings.isAutoRefreshOnAgentEdit());
-
         CodeGraphStore store = CodeGraphStore.getInstance(project);
         CodeGraphStore.GraphStats stats = store.getStats();
 
@@ -243,7 +194,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
     private static @NotNull JPanel buildHotspotRow(@NotNull CodeGraphStore.HotspotEntry entry, int maxCount) {
         JPanel row = new JPanel(new BorderLayout(JBUI.scale(8), 0));
 
-        // Bar
         JPanel bar = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -257,7 +207,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         bar.setPreferredSize(new Dimension(JBUI.scale(100), JBUI.scale(14)));
         bar.setOpaque(false);
 
-        // File name (just the short name)
         String shortName = entry.path().contains("/")
             ? entry.path().substring(entry.path().lastIndexOf('/') + 1)
             : entry.path();
@@ -271,75 +220,6 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         row.add(nameLabel, BorderLayout.CENTER);
         row.add(countLabel, BorderLayout.EAST);
         return row;
-    }
-
-    private void onIndexFinished() {
-        refreshAll();
-        setStatus("Build finished — query_knowledge_graph ready.");
-    }
-
-    private void openSettingsDialog() {
-        CodeGraphSettingsDialog dialog = new CodeGraphSettingsDialog(project);
-        if (dialog.showAndGet()) {
-            setStatus("Settings saved. Rebuild to apply new scope.");
-        }
-    }
-
-    private void exportJson() {
-        FileSaverDescriptor descriptor = new FileSaverDescriptor(
-            "Export Knowledge Graph", "Choose a destination file", "json");
-        VirtualFileWrapper target = FileChooserFactory.getInstance()
-            .createSaveFileDialog(descriptor, project)
-            .save("code-graph.json");
-        if (target == null) return;
-
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                writeNodeLinkJson(target.getFile().toPath());
-                ApplicationManager.getApplication().invokeLater(
-                    () -> setStatus("Exported to " + target.getFile().getAbsolutePath()));
-            } catch (Exception e) {
-                LOG.warn("Code graph export failed", e);
-                ApplicationManager.getApplication().invokeLater(
-                    () -> setStatus("Export failed: " + e.getMessage()));
-            }
-        });
-    }
-
-    private void writeNodeLinkJson(@NotNull Path path) throws IOException, SQLException {
-        CodeGraphStore store = CodeGraphStore.getInstance(project);
-        List<Map<String, Object>> nodes = store.queryRaw(
-            "SELECT id, label, kind, fqn, source_file, source_line, language FROM graph_nodes");
-        List<Map<String, Object>> edges = store.queryRaw(
-            "SELECT source_id, target_id, relation, source_file, source_line FROM graph_edges");
-        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-        com.google.gson.JsonArray nodesArr = new com.google.gson.JsonArray();
-        for (Map<String, Object> n : nodes) nodesArr.add(toJson(n));
-        com.google.gson.JsonArray linksArr = new com.google.gson.JsonArray();
-        for (Map<String, Object> e : edges) {
-            com.google.gson.JsonObject link = toJson(e);
-            link.add("source", link.remove("source_id"));
-            link.add("target", link.remove("target_id"));
-            linksArr.add(link);
-        }
-        json.add("nodes", nodesArr);
-        json.add("links", linksArr);
-        try (OutputStream out = java.nio.file.Files.newOutputStream(path)) {
-            out.write(new com.google.gson.GsonBuilder().setPrettyPrinting().create()
-                .toJson(json).getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
-    private static @NotNull com.google.gson.JsonObject toJson(@NotNull Map<String, Object> row) {
-        com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
-        for (Map.Entry<String, Object> e : row.entrySet()) {
-            Object v = e.getValue();
-            if (v == null) obj.add(e.getKey(), com.google.gson.JsonNull.INSTANCE);
-            else if (v instanceof Number n) obj.addProperty(e.getKey(), n);
-            else if (v instanceof Boolean b) obj.addProperty(e.getKey(), b);
-            else obj.addProperty(e.getKey(), v.toString());
-        }
-        return obj;
     }
 
     private void setStatus(@NotNull String text) {

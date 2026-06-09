@@ -20,11 +20,13 @@ import java.util.Set;
 
 /**
  * Settings dialog for the Knowledge Graph tool window.
- * Contains directory type checkboxes with IDE-standard color indicators.
+ * Contains feature toggles and directory type checkboxes with IDE-standard color indicators.
  */
 public final class CodeGraphSettingsDialog extends DialogWrapper {
 
     private final Project project;
+    private final JCheckBox enableCheck = new JCheckBox("Enable Knowledge Graph");
+    private final JCheckBox autoRefreshCheck = new JCheckBox("Auto-refresh after agent edits");
     private final Map<IndexableRootType, JCheckBox> checkBoxes = new EnumMap<>(IndexableRootType.class);
 
     public CodeGraphSettingsDialog(@NotNull Project project) {
@@ -38,7 +40,18 @@ public final class CodeGraphSettingsDialog extends DialogWrapper {
     protected @Nullable JComponent createCenterPanel() {
         JPanel panel = new JPanel(new VerticalLayout(JBUI.scale(12)));
         panel.setBorder(JBUI.Borders.empty(8, 12));
-        panel.setPreferredSize(new Dimension(JBUI.scale(380), JBUI.scale(300)));
+        panel.setPreferredSize(new Dimension(JBUI.scale(380), JBUI.scale(360)));
+
+        CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
+
+        // Feature toggles
+        enableCheck.setSelected(settings.isEnabled());
+        autoRefreshCheck.setSelected(settings.isAutoRefreshOnAgentEdit());
+        panel.add(enableCheck);
+        panel.add(autoRefreshCheck);
+
+        // Separator
+        panel.add(new JSeparator());
 
         // Section: Indexing Scope
         JBLabel scopeTitle = new JBLabel("Indexing Scope");
@@ -54,7 +67,6 @@ public final class CodeGraphSettingsDialog extends DialogWrapper {
         panel.add(scopeDesc);
 
         // Checkboxes for each root type
-        CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
         Set<IndexableRootType> current = settings.getIncludedRootTypes();
 
         JPanel checkBoxPanel = new JPanel(new VerticalLayout(JBUI.scale(6)));
@@ -89,13 +101,17 @@ public final class CodeGraphSettingsDialog extends DialogWrapper {
 
     @Override
     protected void doOKAction() {
+        CodeGraphSettings settings = CodeGraphSettings.getInstance(project);
+        settings.setEnabled(enableCheck.isSelected());
+        settings.setAutoRefreshOnAgentEdit(autoRefreshCheck.isSelected());
+
         EnumSet<IndexableRootType> selected = EnumSet.noneOf(IndexableRootType.class);
         for (Map.Entry<IndexableRootType, JCheckBox> entry : checkBoxes.entrySet()) {
             if (entry.getValue().isSelected()) {
                 selected.add(entry.getKey());
             }
         }
-        CodeGraphSettings.getInstance(project).setIncludedRootTypes(selected);
+        settings.setIncludedRootTypes(selected);
         super.doOKAction();
     }
 
