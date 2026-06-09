@@ -1816,6 +1816,22 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Subscribes a {@link Runnable} to {@link ToolRegistry#TOOLS_CHANGED} on the project
+     * message bus, and returns a {@link Runnable} that disconnects the subscription.
+     *
+     * <p><b>Why extracted:</b> {@code project.getMessageBus().connect()} cannot be resolved in the
+     * IDE daemon because the generic bounds on {@code MessageBus.connect()} differ between the dev
+     * IDE and the target SDK. The Gradle build compiles without errors.</p>
+     */
+    public static @NotNull Runnable subscribeToolsChanged(
+        @NotNull Project project,
+        @NotNull Runnable listener) {
+        var connection = project.getMessageBus().connect();
+        connection.subscribe(com.github.catatafishen.agentbridge.services.ToolRegistry.TOOLS_CHANGED, listener);
+        return connection::disconnect;
+    }
+
+    /**
      * Returns the list of installed UI themes.
      *
      * <p><b>Why extracted:</b> {@link com.intellij.ide.ui.LafManager#getInstalledThemes()} is

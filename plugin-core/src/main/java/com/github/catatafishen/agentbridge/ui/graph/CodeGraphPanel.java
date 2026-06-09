@@ -74,6 +74,11 @@ public final class CodeGraphPanel {
         // the tool registration once PsiBridgeService finishes initializing.
         ApplicationManager.getApplication().invokeLater(this::refreshStats,
             com.intellij.openapi.application.ModalityState.nonModal());
+
+        // Subscribe to tool registry changes so the panel updates from "<pending>"
+        // to "yes" as soon as the tool is actually registered.
+        com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            .subscribeToolsChanged(project, this::refreshStats);
     }
 
     public @NotNull JComponent getComponent() {
