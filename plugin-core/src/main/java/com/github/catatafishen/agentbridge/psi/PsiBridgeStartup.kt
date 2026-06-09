@@ -58,49 +58,38 @@ class PsiBridgeStartup : ProjectActivity {
                             .distinct()
                         if (touched.isEmpty()) return
                         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
-                            val indexer =
-                                com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer.getInstance(project)
-                            for (vf in touched) {
-                                try {
-                                    indexer.refreshFile(vf)
-                                } catch (e: Exception) {
-                                    LOG.debug("Code Graph refresh failed for ${vf.path}: ${e.message}")
+                            // TypeScript/JS PSI resolution requires a ProgressIndicator in context
+                            com.intellij.openapi.progress.ProgressManager.getInstance().runProcess({
+                                val indexer =
+                                    com.github.catatafishen.agentbridge.psi.graph.CodeGraphIndexer.getInstance(project)
+                                for (vf in touched) {
+                                    try {
+                                        indexer.refreshFile(vf)
+                                    } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        LOG.debug("Code Graph refresh failed for ${vf.path}: ${e.message}")
+                                    }
                                 }
-                            }
+                            }, com.intellij.openapi.progress.EmptyProgressIndicator())
                         }
                     }
                 }
             )
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             LOG.warn("Failed to wire Code Graph auto-refresh listener", e)
         }
 
-        // Ensure graph tool is registered if enabled (handles edge case where
-        // PsiBridgeService init raced with settings loading)
+        // Log graph tool status (diagnostic only — factory now always registers it)
         try {
             val graphSettings = com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings.getInstance(project)
             val registry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
-            val alreadyRegistered = registry.findById("query_code_graph") != null
-            LOG.info("Code Graph startup check: enabled=${graphSettings.isEnabled}, alreadyRegistered=$alreadyRegistered")
-
-            if (!alreadyRegistered) {
-                // Self-healing: if graph has data but settings say disabled,
-                // the settings file was likely lost during clean rebuild. Auto-enable.
-                val stats = com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore.getInstance(project).stats
-                if (!graphSettings.isEnabled && stats.nodeCount() > 0) {
-                    LOG.warn("Code Graph has ${stats.nodeCount()} nodes but isEnabled=false — auto-enabling (settings were likely lost)")
-                    graphSettings.isEnabled = true
-                }
-
-                if (graphSettings.isEnabled) {
-                    // Bypass the factory and register directly to avoid any remaining gate logic
-                    val tool = com.github.catatafishen.agentbridge.psi.tools.graph.QueryCodeGraphTool(project)
-                    registry.register(tool)
-                    LOG.info("Code Graph tool registered at startup (deferred). ID=${tool.id()}")
-                }
-            }
+            val registered = registry.findById("query_code_graph") != null
+            LOG.info("Code Graph startup: registered=$registered, enabled=${graphSettings.isEnabled}")
         } catch (e: Exception) {
-            LOG.warn("Code Graph startup registration check failed", e)
+            LOG.warn("Code Graph startup check failed", e)
         }
 
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
