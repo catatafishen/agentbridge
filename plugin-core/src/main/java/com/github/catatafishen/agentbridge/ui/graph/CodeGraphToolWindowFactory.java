@@ -9,7 +9,7 @@ import com.intellij.ui.content.ContentFactory;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Registers the <b>Code Graph</b> sidebar tool window. Hosts the
+ * Registers the <b>Knowledge Graph</b> sidebar tool window. Hosts the
  * {@link CodeGraphPanel} where users enable the feature, see graph stats,
  * trigger rebuilds, and export the graph to JSON.
  */

@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Sidebar panel for the Code Impact Analysis feature.
+ * Sidebar panel for the Knowledge Graph feature.
  *
  * <ul>
  *   <li><b>Enable toggle</b> — turns the feature on/off. Enabling triggers the initial
@@ -46,7 +46,7 @@ public final class CodeGraphPanel {
 
     private final Project project;
     private final JPanel root = new JPanel(new BorderLayout());
-    private final JCheckBox enableCheck = new JCheckBox("Enable Code Graph");
+    private final JCheckBox enableCheck = new JCheckBox("Enable Knowledge Graph");
     private final JCheckBox autoRefreshCheck = new JCheckBox("Refresh after agent edits");
     private final JTextArea statsArea = new JTextArea(6, 40);
     private final JButton rebuildButton = new JButton("Rebuild");
@@ -89,15 +89,10 @@ public final class CodeGraphPanel {
         JPanel top = new JPanel(new VerticalLayout(JBUI.scale(6)));
         top.setBorder(JBUI.Borders.empty(10));
 
-        JBLabel header = new JBLabel("Code Impact Analysis");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, header.getFont().getSize() + 2f));
-        top.add(header);
-
         JBLabel description = new JBLabel(
             "<html><body style='width:280px'>"
-                + "Joins the PSI dependency graph with agent change history. "
-                + "Powers the <code>query_code_graph</code> MCP tool. "
-                + "Read-only access — agents cannot mutate the graph."
+                + "Persistent index of code structure, git history, and agent activity. "
+                + "Powers the <code>query_code_graph</code> MCP tool."
                 + "</body></html>");
         top.add(description);
 
@@ -178,7 +173,7 @@ public final class CodeGraphPanel {
 
     private void exportJson() {
         FileSaverDescriptor descriptor = new FileSaverDescriptor(
-            "Export Code Graph", "Choose a destination file", "json");
+            "Export Knowledge Graph", "Choose a destination file", "json");
         VirtualFileWrapper target = FileChooserFactory.getInstance()
             .createSaveFileDialog(descriptor, project)
             .save("code-graph.json");

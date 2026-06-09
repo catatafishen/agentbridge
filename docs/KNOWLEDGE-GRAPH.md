@@ -2,16 +2,15 @@
 
 A persistent, offline database that connects three views of a codebase:
 
-| Layer | Source | What it answers |
-|-------|--------|-----------------|
-| **Structure** | PSI index (imports, calls, extends, implements) | What depends on what? |
-| **History** | Local git log (commits, authors, file changes) | Who changed this and when? |
-| **Activity** | Agent tool call events | What did agents do to this file? |
+| Layer         | Source                                          | What it answers                  |
+|---------------|-------------------------------------------------|----------------------------------|
+| **Structure** | PSI index (imports, calls, extends, implements) | What depends on what?            |
+| **History**   | Local git log (commits, authors, file changes)  | Who changed this and when?       |
+| **Activity**  | Agent tool call events                          | What did agents do to this file? |
 
 Each layer is indexed independently and stored in the same SQLite database.
 Queries can join across all three — for example: "which files did the agent
 edit today that have the most git churn and the most structural dependents?"
-
 
 ## Data Sources
 
@@ -43,7 +42,6 @@ context, and timestamp.
 
 **Table:** `tool_call_events`
 
-
 ## Enabling
 
 Open the **Code Graph** tab in the AgentBridge tool window. Toggle
@@ -59,20 +57,19 @@ automatically after agent writes — the graph stays fresh during sessions.
 **Stats display:** nodes, edges, files indexed, commits indexed, last build
 timestamp.
 
-
 ## Query Interface — `query_code_graph`
 
 ### Parameters
 
-| Parameter    | Type    | Required | Description |
-|---|---|---|---|
-| `query_type` | string  | yes | See query types below |
+| Parameter    | Type    | Required                       | Description                                                                     |
+|--------------|---------|--------------------------------|---------------------------------------------------------------------------------|
+| `query_type` | string  | yes                            | See query types below                                                           |
 | `target`     | string  | for dependency/history queries | File path or fully-qualified name. Filename-only is supported (suffix matching) |
-| `path`       | string  | no | Subtree filter for `hotspots` |
-| `since`      | string  | no | Time window. Accepts `"2h"`, `"1d"`, date, or ISO 8601 |
-| `depth`      | integer | no | Traversal depth (default 1, max 5) |
-| `sql`        | string  | for `sql` | Raw read-only SQL |
-| `limit`      | integer | no | Max rows (default 50, max 500) |
+| `path`       | string  | no                             | Subtree filter for `hotspots`                                                   |
+| `since`      | string  | no                             | Time window. Accepts `"2h"`, `"1d"`, date, or ISO 8601                          |
+| `depth`      | integer | no                             | Traversal depth (default 1, max 5)                                              |
+| `sql`        | string  | for `sql`                      | Raw read-only SQL                                                               |
+| `limit`      | integer | no                             | Max rows (default 50, max 500)                                                  |
 
 ### Query Types
 
@@ -162,7 +159,6 @@ sql: |
   LIMIT 10
 ```
 
-
 ## When to use vs. when not to
 
 **Use the knowledge graph for:**
@@ -183,7 +179,6 @@ sql: |
 
 The knowledge graph is a persisted snapshot. Live PSI tools query the current
 state and are always up-to-date for single-symbol navigation.
-
 
 ## Architecture
 

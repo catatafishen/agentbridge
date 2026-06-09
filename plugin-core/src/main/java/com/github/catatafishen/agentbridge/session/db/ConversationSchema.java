@@ -325,7 +325,7 @@ final class ConversationSchema {
     }
 
     /**
-     * V6: Code Impact Analysis — PSI dependency graph stored alongside conversation history.
+     * V6: Knowledge Graph — PSI dependency graph stored alongside conversation history.
      * Three tables: nodes (named PSI elements), edges (typed directed dependencies),
      * and file_index (content hashes for incremental re-indexing).
      */

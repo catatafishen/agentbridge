@@ -79,7 +79,7 @@ public final class McpToolFilter {
     /**
      * Returns tools that are enabled for the given project and settings.
      * Respects both the per-tool enable/disable toggle in MCP settings and
-     * the Code Graph feature-level toggle in {@link com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings}.
+     * the Knowledge Graph feature-level toggle in {@link com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings}.
      */
     public static List<ToolDefinition> getEnabledTools(@NotNull McpServerSettings settings,
                                                        @NotNull Project project) {
