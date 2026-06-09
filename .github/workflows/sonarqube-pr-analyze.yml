@@ -222,6 +222,13 @@ jobs:
       # Tests and JaCoCo reports are skipped because they are already in the artifact.
       # The chat-ui build is skipped because the JS coverage (lcov.info) is in the artifact.
       #
+      # sonar.scm.revision is critical: after overlaying PR sources via
+      # `git checkout $HEAD_SHA -- <paths>`, HEAD remains at master. Without
+      # this property, SonarCloud's JGit blame resolves from HEAD (master) and
+      # can't trace lines to PR commits — resulting in "0 new lines" and a
+      # trivially passing quality gate. Setting it to the PR head SHA makes
+      # blame resolve correctly from the PR's commit tree.
+      #
       # PR metadata is passed via env vars (not ${{ }} template expansion in the run
       # block) to prevent code injection — even though the values come from the GitHub
       # API, this follows the principle of least surprise for security scanners.
@@ -234,6 +241,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr-meta.outputs.number }}
           PR_HEAD_REF: ${{ steps.pr-meta.outputs.head_ref }}
           PR_BASE_REF: ${{ steps.pr-meta.outputs.base_ref }}
+          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
         run: |
           gradle sonar \
             --no-daemon --quiet \
@@ -244,6 +252,7 @@ jobs:
             "-Dsonar.organization=$SONAR_ORGANIZATION" \
             "-Dsonar.host.url=$SONAR_HOST_URL" \
             "-Dsonar.projectVersion=$SONAR_PROJECT_VERSION" \
+            "-Dsonar.scm.revision=$HEAD_SHA" \
             "-Dsonar.qualitygate.wait=true" \
             "-Dsonar.qualitygate.timeout=300" \
             "-Dsonar.pullrequest.key=$PR_NUMBER" \
