@@ -1271,6 +1271,7 @@ class ChatToolWindowContent(
         // isReservePlaceAutoPopupIcon = true restores the native >> overflow chevron when hints
         // don't fit. Do NOT set NOWRAP_STRATEGY — that disables the chevron entirely.
         shortcutHintToolbar.isReservePlaceAutoPopupIcon = true
+        shortcutHintToolbar.targetComponent = shortcutHintToolbar.component
         shortcutHintToolbar.component.isOpaque = false
         shortcutHintToolbar.component.border = JBUI.Borders.empty()
 
@@ -1634,6 +1635,7 @@ class ChatToolWindowContent(
             "AgentControls", leftGroup, false
         )
         controlsToolbar.isReservePlaceAutoPopupIcon = false
+        controlsToolbar.targetComponent = controlsToolbar.component
         controlsToolbar.component.border = JBUI.Borders.empty(8, 4, 4, 0)
         controlsToolbar.component.isOpaque = false
 

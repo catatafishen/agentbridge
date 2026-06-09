@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.graph;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
@@ -86,16 +87,26 @@ public final class CodeGraphIndexer {
     /**
      * Re-extract a single file if its content hash has changed.
      * Returns {@code true} if the file was re-indexed, {@code false} if skipped.
+     * <p>
+     * Uses non-blocking read actions so that pending write actions (e.g., file reload on EDT)
+     * can interrupt and proceed, preventing long UI freezes.
+     * May throw {@link com.intellij.openapi.progress.ProcessCanceledException} if the project
+     * is disposed or the file becomes invalid mid-operation.
      */
     public boolean refreshFile(@NotNull VirtualFile vf) {
         if (!vf.isValid() || vf.isDirectory()) return false;
+        if (project.isDisposed()) return false;
         ProjectFileIndex idx = ProjectFileIndex.getInstance(project);
-        if (!ApplicationManager.getApplication().runReadAction(
-            (com.intellij.openapi.util.Computable<Boolean>) () -> idx.isInProject(vf))) {
-            return false;
-        }
-        return ApplicationManager.getApplication().runReadAction(
-            (com.intellij.openapi.util.Computable<Boolean>) () -> extractAndStore(vf));
+
+        Boolean inProject = ReadAction.nonBlocking(() -> idx.isInProject(vf))
+            .expireWhen(() -> project.isDisposed() || !vf.isValid())
+            .executeSynchronously();
+        if (inProject == null || !inProject) return false;
+
+        Boolean result = ReadAction.nonBlocking(() -> extractAndStore(vf))
+            .expireWhen(() -> project.isDisposed() || !vf.isValid())
+            .executeSynchronously();
+        return result != null && result;
     }
 
     private void doFullRebuild(@NotNull ProgressIndicator indicator) {
@@ -131,7 +142,19 @@ public final class CodeGraphIndexer {
 
         for (VirtualFile vf : files) {
             indicator.checkCanceled();
-            ApplicationManager.getApplication().runReadAction((Runnable) () -> extractAndStore(vf));
+            if (!vf.isValid() || project.isDisposed()) continue;
+            try {
+                ReadAction.nonBlocking(() -> {
+                        extractAndStore(vf);
+                        return true;
+                    })
+                    .expireWhen(() -> project.isDisposed() || !vf.isValid())
+                    .executeSynchronously();
+            } catch (com.intellij.openapi.progress.ProcessCanceledException pce) {
+                throw pce;
+            } catch (Exception e) {
+                LOG.debug("Code graph extraction skipped for " + vf.getName() + ": " + e.getMessage());
+            }
             int n = done.incrementAndGet();
             indicator.setFraction((double) n / total);
             if (n % 25 == 0) {
@@ -140,7 +163,9 @@ public final class CodeGraphIndexer {
         }
     }
 
-    /** Returns true if a re-index actually ran, false if the file's hash was unchanged. */
+    /**
+     * Returns true if a re-index actually ran, false if the file's hash was unchanged.
+     */
     private boolean extractAndStore(@NotNull VirtualFile vf) {
         PsiFile psi = PsiManager.getInstance(project).findFile(vf);
         if (psi == null) return false;
