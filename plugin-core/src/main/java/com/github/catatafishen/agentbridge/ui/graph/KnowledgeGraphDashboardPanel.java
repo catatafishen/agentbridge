@@ -194,8 +194,20 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
             hotspotsPanel.add(new JBLabel("No data — rebuild to populate."));
         } else {
             int maxCount = hotspots.get(0).dependentCount();
+
+            // Compute max filename label width so all bars align
+            FontMetrics fm = hotspotsPanel.getFontMetrics(hotspotsPanel.getFont());
+            int maxNameWidth = 0;
             for (CodeGraphStore.HotspotEntry entry : hotspots) {
-                hotspotsPanel.add(buildHotspotRow(entry, maxCount));
+                String shortName = entry.path().contains("/")
+                    ? entry.path().substring(entry.path().lastIndexOf('/') + 1)
+                    : entry.path();
+                maxNameWidth = Math.max(maxNameWidth, fm.stringWidth(shortName));
+            }
+            int nameColumnWidth = maxNameWidth + JBUI.scale(4); // small padding
+
+            for (CodeGraphStore.HotspotEntry entry : hotspots) {
+                hotspotsPanel.add(buildHotspotRow(entry, maxCount, nameColumnWidth));
             }
         }
         hotspotsPanel.revalidate();
@@ -258,7 +270,7 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         }
     }
 
-    private static @NotNull JPanel buildHotspotRow(@NotNull CodeGraphStore.HotspotEntry entry, int maxCount) {
+    private static @NotNull JPanel buildHotspotRow(@NotNull CodeGraphStore.HotspotEntry entry, int maxCount, int nameColumnWidth) {
         JPanel row = new JPanel(new BorderLayout(JBUI.scale(8), 0));
 
         String shortName = entry.path().contains("/")
@@ -266,6 +278,7 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
             : entry.path();
         JBLabel nameLabel = new JBLabel(shortName);
         nameLabel.setToolTipText(entry.path());
+        nameLabel.setPreferredSize(new Dimension(nameColumnWidth, nameLabel.getPreferredSize().height));
 
         JPanel bar = new JPanel() {
             @Override
