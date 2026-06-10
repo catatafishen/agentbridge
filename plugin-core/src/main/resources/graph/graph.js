@@ -59,9 +59,13 @@
     });
 
     function resize() {
-        var p = canvas.parentElement;
-        canvas.width = p.clientWidth || window.innerWidth;
-        canvas.height = p.clientHeight || window.innerHeight;
+        // Use window.innerWidth/innerHeight — more reliable in embedded JCEF.
+        // Only reassign canvas.width/height when they change: setting them
+        // unconditionally clears the canvas bitmap even if the value is the same.
+        var w = window.innerWidth || 800;
+        var h = window.innerHeight || 600;
+        if (canvas.width !== w) canvas.width = w;
+        if (canvas.height !== h) canvas.height = h;
         if (!rafId) render();
     }
 
@@ -78,7 +82,7 @@
 
     window.setViewMode = function (mode) {
         viewMode = mode;
-        restartSim(100);
+        restartSim(120);
     };
 
     window.setSearch = function (q) {
@@ -155,21 +159,46 @@
             rafId = requestAnimationFrame(animLoop);
         } else {
             rafId = null;
+            fitView();
             render();
         }
+    }
+
+    /** Fits the camera so all visible nodes fill ~85% of the canvas. */
+    function fitView() {
+        var vis = nodes.filter(isVisible);
+        if (vis.length === 0) return;
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (var i = 0; i < vis.length; i++) {
+            var n = vis[i];
+            var pad = n.r + 24; // extra room for labels
+            if (n.x - pad < minX) minX = n.x - pad;
+            if (n.x + pad > maxX) maxX = n.x + pad;
+            if (n.y - pad < minY) minY = n.y - pad;
+            if (n.y + pad > maxY) maxY = n.y + pad;
+        }
+        var W = canvas.width, H = canvas.height;
+        if (W === 0 || H === 0) return;
+        var gW = maxX - minX || 1, gH = maxY - minY || 1;
+        var s = Math.min(W / gW, H / gH) * 0.85;
+        s = Math.min(s, 2.0); // don't over-zoom for tiny graphs
+        scale = s;
+        var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        tx = -cx * s;
+        ty = -cy * s;
     }
 
     function simulate() {
         var alpha = 1 - simTick / maxSim;
         var vis = nodes.filter(isVisible);
 
-        // Repulsion
+        // Repulsion (reduced to 1800 so nodes don't scatter off-screen with 60+ nodes)
         for (var i = 0; i < vis.length; i++) {
             for (var j = i + 1; j < vis.length; j++) {
                 var a = vis[i], b = vis[j];
                 var dx = b.x - a.x, dy = b.y - a.y;
                 var d2 = dx * dx + dy * dy + 50;
-                var f = (6000 / d2) * alpha;
+                var f = (1800 / d2) * alpha;
                 a.vx -= dx * f;
                 a.vy -= dy * f;
                 b.vx += dx * f;
@@ -192,10 +221,10 @@
             e.t.vy -= eny * ef;
         }
 
-        // Centering
+        // Centering (strong enough to keep nodes from drifting off-screen)
         for (var ci = 0; ci < vis.length; ci++) {
-            vis[ci].vx -= vis[ci].x * 0.012 * alpha;
-            vis[ci].vy -= vis[ci].y * 0.012 * alpha;
+            vis[ci].vx -= vis[ci].x * 0.04 * alpha;
+            vis[ci].vy -= vis[ci].y * 0.04 * alpha;
         }
 
         // Integrate + damp
