@@ -51,28 +51,12 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
     private val root = JPanel(BorderLayout())
     private val browser: JBCefBrowser?
     private var navigateQuery: JBCefJSQuery? = null
+
     @Volatile
     private var browserReady = false
 
     private val viewCombo = JComboBox(VIEW_LABELS)
     private val searchField = SearchTextField()
-
-    /**
-     * Periodic JCEF repaint timer.
-     *
-     * The graph renderer runs a `requestAnimationFrame` loop forever and the simulation
-     * never fully stops (alpha is floored at 0.15), yet JCEF's off-screen rendering pipeline
-     * still stops blitting frames to the Swing peer once it considers the page "idle" —
-     * the canvas keeps drawing into its own bitmap, but those frames never reach the screen,
-     * so the graph appears to vanish a few seconds after settling.
-     *
-     * `cefBrowser.invalidate()` forces CEF to re-render and post a new frame to the Swing
-     * component. We pulse it twice a second whenever the browser is actually showing.
-     * Same workaround used by `ChatConsolePanel` for the chat JCEF surface.
-     */
-    private val repaintTimer = javax.swing.Timer(500) {
-        if (browserReady && root.isShowing) browser?.cefBrowser?.invalidate()
-    }.apply { isRepeats = true }
 
     init {
         root.add(buildToolbar(), BorderLayout.NORTH)
@@ -163,7 +147,6 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
             b.cefBrowser.executeJavaScript(navBridge, "", 0)
         }
         browserReady = true
-        repaintTimer.start()
         ApplicationManager.getApplication().invokeLater { refresh() }
     }
 
@@ -278,7 +261,6 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
         .replace("\u2029", "\\u2029")
 
     override fun dispose() {
-        repaintTimer.stop()
         // browser and navigateQuery are registered with Disposer; nothing extra needed
     }
 }

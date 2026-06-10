@@ -34,6 +34,14 @@
     let viewMode = 'all';
     let searchStr = '';
 
+    // ── Diagnostics ────────────────────────────────────────────────────────────
+    // The graph "disappears" after the simulation settles. We don't yet know
+    // whether the canvas itself stops blitting (JCEF OSR issue) or whether
+    // render() keeps drawing but produces no visible output (coord/scale bug).
+    // These on-screen counters let the user report exactly what they see when
+    // the graph vanishes. See .agent-work/graph-disappearing-attempts.md.
+    let renderCount = 0;
+
     // ── Initialization ─────────────────────────────────────────────────────────
 
     window.addEventListener('DOMContentLoaded', function () {
@@ -152,23 +160,19 @@
     }
 
     function animLoop() {
-        // The simulation never truly stops: alpha decays from 1 down to a
-        // small floor (0.15) and stays there, so nodes always have a little
-        // residual motion. Empirically this is what keeps the graph visible
-        // in JCEF — fully static canvases get hidden once the user observes
-        // them stop moving.
-        simulate();
-        if (simTick < maxSim) simTick++;
+        // Only simulate while ticks remain; always render to keep JCEF's
+        // compositor refreshing — stopping RAF makes the canvas go blank.
+        if (simTick < maxSim) {
+            simulate();
+            simTick++;
+        }
         render();
         rafId = requestAnimationFrame(animLoop);
     }
 
 
     function simulate() {
-        // Alpha decays from 1 → 0.15 during the initial settling phase, then
-        // stays at 0.15 forever. Nodes keep gently drifting around their
-        // settled positions (kept in place by the centering force).
-        var alpha = Math.max(0.15, 1 - simTick / maxSim);
+        var alpha = Math.max(0, 1 - simTick / maxSim);
         var vis = nodes.filter(isVisible);
 
         // Repulsion (halved to 900 to keep nodes compact)
@@ -191,7 +195,7 @@
             if (!isVisible(e.s) || !isVisible(e.t)) continue;
             var edx = e.t.x - e.s.x, edy = e.t.y - e.s.y;
             var d = Math.sqrt(edx * edx + edy * edy) + 1;
-            var ideal = 60;
+            var ideal = 30;
             var ef = ((d - ideal) * 0.04) * alpha;
             var enx = edx / d, eny = edy / d;
             e.s.vx += enx * ef;
@@ -230,6 +234,7 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('No data \u2014 click Refresh to load the graph', W / 2, H / 2);
+            drawDiagnostics();
             return;
         }
 
@@ -244,6 +249,45 @@
 
         drawTooltip(W, H);
         drawLegend(W, H);
+        drawDiagnostics();
+    }
+
+    function drawDiagnostics() {
+        renderCount++;
+
+        // Stationary red square in screen coordinates — proves the canvas is
+        // still receiving frames even if nothing else is visible. If this
+        // disappears together with the graph, the JCEF OSR pipeline has
+        // stopped blitting. If it stays visible while the graph "vanishes",
+        // the issue is in node coords / scale / pan.
+        ctx.fillStyle = 'rgba(220,60,60,0.95)';
+        ctx.fillRect(4, 4, 10, 10);
+
+        // Animated cyan square — proves render() is still being called.
+        // If it freezes, the RAF loop has stopped. If it keeps moving while
+        // the rest of the graph is gone, render() is running but drawing
+        // nothing useful.
+        var phase = (renderCount % 60) / 60;
+        var ax = 4 + phase * 30;
+        ctx.fillStyle = 'rgba(80,200,220,0.95)';
+        ctx.fillRect(ax, 18, 6, 6);
+
+        // State readout — exposes node count, alpha, scale, pan offsets.
+        // If nodes=0 when graph "disappears", buildGraph wiped them. If
+        // scale is tiny or |tx|/|ty| huge, the camera moved off-screen.
+        var alpha = Math.max(0, 1 - simTick / Math.max(1, maxSim));
+        var line = 'r=' + renderCount +
+            ' tick=' + simTick + '/' + maxSim +
+            ' a=' + alpha.toFixed(3) +
+            ' n=' + nodes.length +
+            ' e=' + edges.length +
+            ' s=' + scale.toFixed(2) +
+            ' t=(' + Math.round(tx) + ',' + Math.round(ty) + ')';
+        ctx.font = '10px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        ctx.fillText(line, 20, 5);
     }
 
     function drawEdges() {
