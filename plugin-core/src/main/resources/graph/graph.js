@@ -159,7 +159,6 @@
             rafId = requestAnimationFrame(animLoop);
         } else {
             rafId = null;
-            fitView();
             render();
         }
     }
@@ -192,13 +191,13 @@
         var alpha = 1 - simTick / maxSim;
         var vis = nodes.filter(isVisible);
 
-        // Repulsion (reduced to 1800 so nodes don't scatter off-screen with 60+ nodes)
+        // Repulsion (halved to 900 to keep nodes compact)
         for (var i = 0; i < vis.length; i++) {
             for (var j = i + 1; j < vis.length; j++) {
                 var a = vis[i], b = vis[j];
                 var dx = b.x - a.x, dy = b.y - a.y;
                 var d2 = dx * dx + dy * dy + 50;
-                var f = (1800 / d2) * alpha;
+                var f = (900 / d2) * alpha;
                 a.vx -= dx * f;
                 a.vy -= dy * f;
                 b.vx += dx * f;
