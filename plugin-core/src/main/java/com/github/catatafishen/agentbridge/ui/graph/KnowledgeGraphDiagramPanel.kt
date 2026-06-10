@@ -22,10 +22,7 @@ import java.awt.BorderLayout
 import java.awt.FlowLayout
 import java.awt.event.HierarchyEvent
 import java.io.IOException
-import javax.swing.Box
-import javax.swing.JComboBox
-import javax.swing.JPanel
-import javax.swing.SwingConstants
+import javax.swing.*
 import javax.swing.event.DocumentEvent
 
 /**
@@ -57,6 +54,9 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
 
     private val viewCombo = JComboBox(VIEW_LABELS)
     private val searchField = SearchTextField()
+    private val commitsSpinner = JSpinner(SpinnerNumberModel(20, 0, 50, 1))
+    private val promptsSpinner = JSpinner(SpinnerNumberModel(15, 0, 50, 1))
+    private val depthSpinner = JSpinner(SpinnerNumberModel(1, 0, 3, 1))
 
     init {
         root.add(buildToolbar(), BorderLayout.NORTH)
@@ -121,15 +121,14 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
 
     fun getComponent() = root
 
-    /** Loads/reloads graph data from the store and pushes it to the JS renderer. */
     fun refresh() {
         if (browser == null || !browserReady) return
+        val commitLimit = commitsSpinner.value as Int
+        val promptLimit = promptsSpinner.value as Int
+        val fileDepth = depthSpinner.value as Int
         ApplicationManager.getApplication().executeOnPooledThread {
-            val viewIdx = viewCombo.selectedIndex
-            val commitLimit = if (viewIdx == 1) 0 else 20
-            val promptLimit = if (viewIdx == 1) 0 else 15
             val store = CodeGraphStore.getInstance(project)
-            val data = store.getGraphData(60, commitLimit, promptLimit)
+            val data = store.getGraphData(commitLimit, promptLimit, fileDepth)
             val json = buildJson(data)
             val escaped = escapeForJs(json)
             ApplicationManager.getApplication().invokeLater {
@@ -170,11 +169,27 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
 
     private fun buildToolbar(): JPanel {
         val bar = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(3)))
+        bar.add(JBLabel("Commits:"))
+        commitsSpinner.toolTipText = "Number of most-recent commits to include in the graph"
+        bar.add(commitsSpinner)
+        bar.add(JBLabel("Prompts:"))
+        promptsSpinner.toolTipText = "Number of most-recent prompts (turns) to include"
+        bar.add(promptsSpinner)
+        bar.add(JBLabel("Depth:"))
+        depthSpinner.toolTipText =
+            "How many hops of file→file dependencies to traverse from files touched by the loaded commits/prompts"
+        bar.add(depthSpinner)
+        bar.add(Box.createHorizontalStrut(JBUI.scale(8)))
         bar.add(JBLabel("View:"))
         bar.add(viewCombo)
         bar.add(Box.createHorizontalStrut(JBUI.scale(8)))
         searchField.toolTipText = "Search by file name — matching nodes are highlighted"
         bar.add(searchField)
+
+        val refreshOnChange = javax.swing.event.ChangeListener { refresh() }
+        commitsSpinner.addChangeListener(refreshOnChange)
+        promptsSpinner.addChangeListener(refreshOnChange)
+        depthSpinner.addChangeListener(refreshOnChange)
         return bar
     }
 
