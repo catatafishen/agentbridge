@@ -30,23 +30,6 @@ public final class CodeGraphStore {
 
     // ── SQL constants (S6203: text blocks must be outside lambda bodies) ──────
 
-    private static final String SQL_GRAPH_TOP_FILES = """
-        SELECT fi.path,
-               COALESCE(deps.cnt, 0)    AS dep_count,
-               COALESCE(depnts.cnt, 0)  AS dependent_count
-        FROM graph_file_index fi
-        LEFT JOIN (
-            SELECT source_id, COUNT(DISTINCT target_id) AS cnt
-            FROM graph_edges WHERE relation = 'uses' GROUP BY source_id
-        ) deps   ON deps.source_id   = 'file:' || fi.path
-        LEFT JOIN (
-            SELECT target_id, COUNT(DISTINCT source_id) AS cnt
-            FROM graph_edges WHERE relation = 'uses' GROUP BY target_id
-        ) depnts ON depnts.target_id = 'file:' || fi.path
-        ORDER BY (COALESCE(deps.cnt, 0) + COALESCE(depnts.cnt, 0)) DESC
-        LIMIT ?
-        """;
-
     private static final String SQL_HOTSPOTS = """
         SELECT e.target_id AS file_id, n.source_file AS path,
                COUNT(DISTINCT e.source_id) AS dependent_count
@@ -660,48 +643,30 @@ public final class CodeGraphStore {
     public record GraphData(@NotNull List<GraphDataNode> nodes, @NotNull List<GraphDataEdge> edges) {
     }
 
-    public GraphData getGraphData(int fileLimit, int commitLimit, int promptLimit) {
+    /**
+     * Loads graph data centered on prompts and commits, with files included only when reached
+     * via commit/prompt origin or bounded dependency traversal.
+     *
+     * @param commitLimit number of most-recent commits to include (0 = none)
+     * @param promptLimit number of most-recent prompts/turns to include (0 = none)
+     * @param fileDepth   how many hops of file→file dependency edges to traverse from
+     *                    files touched by the loaded commits/prompts (0 = only directly
+     *                    touched files; 1 = +direct dependencies/dependents; 2 = two hops, etc.)
+     */
+    public GraphData getGraphData(int commitLimit, int promptLimit, int fileDepth) {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
             return db.withConnection(conn -> withQueryOnly(conn, () -> {
                 List<GraphDataNode> nodes = new ArrayList<>();
                 List<GraphDataEdge> edges = new ArrayList<>();
-                java.util.Set<String> filePaths = new java.util.LinkedHashSet<>();
 
-                // ── Files ─────────────────────────────────────────────────────
-                try (PreparedStatement ps = conn.prepareStatement(SQL_GRAPH_TOP_FILES)) {
-                    ps.setInt(1, fileLimit);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            String path = rs.getString("path");
-                            filePaths.add(path);
-                            nodes.add(new GraphDataNode(
-                                "file:" + path, "file", graphFileName(path), path,
-                                rs.getInt("dep_count"), rs.getInt("dependent_count"),
-                                null, null, null, null));
-                        }
-                    }
-                }
-
-                // ── File→File edges ───────────────────────────────────────────
-                if (!filePaths.isEmpty()) {
-                    try (Statement st = conn.createStatement();
-                         ResultSet rs = st.executeQuery(
-                             "SELECT REPLACE(source_id,'file:','') AS src," +
-                                 " REPLACE(target_id,'file:','') AS tgt" +
-                                 " FROM graph_edges WHERE relation='uses'")) {
-                        while (rs.next()) {
-                            String src = rs.getString("src");
-                            String tgt = rs.getString("tgt");
-                            if (filePaths.contains(src) && filePaths.contains(tgt)) {
-                                edges.add(new GraphDataEdge("file:" + src, "file:" + tgt, "uses"));
-                            }
-                        }
-                    }
-                }
+                java.util.Set<String> commitHashes = new java.util.LinkedHashSet<>();
+                java.util.Set<String> turnIds = new java.util.LinkedHashSet<>();
+                java.util.Set<String> seedFiles = new java.util.LinkedHashSet<>();
+                // session_id → list of [turn_id, started_at] for the selected turns.
+                java.util.Map<String, java.util.List<String[]>> turnsBySession = new java.util.HashMap<>();
 
                 // ── Commits ───────────────────────────────────────────────────
-                java.util.Set<String> commitHashes = new java.util.LinkedHashSet<>();
                 if (commitLimit > 0) {
                     try (PreparedStatement ps = conn.prepareStatement(
                         "SELECT hash, short_hash, message, author, timestamp" +
@@ -719,55 +684,22 @@ public final class CodeGraphStore {
                             }
                         }
                     }
-                    // Add files touched by the selected commits so commit→file edges are
-                    // always visible even when those files are not in the top-N by PSI connectivity.
-                    // Without this, commits that only touch CI configs, build files, or docs
-                    // appear as orphan nodes (they don't accumulate import edges).
                     if (!commitHashes.isEmpty()) {
-                        String placeholders = commitHashes.stream()
-                            .map(id -> "?").collect(java.util.stream.Collectors.joining(","));
-                        String touchedFileSql =
+                        String placeholders = inPlaceholders(commitHashes.size());
+                        try (PreparedStatement ps = conn.prepareStatement(
                             "SELECT DISTINCT file_path FROM graph_commit_files" +
                                 " WHERE commit_hash IN (" + placeholders + ")" +
-                                " AND file_path IS NOT NULL LIMIT 300";
-                        try (PreparedStatement ps2 = conn.prepareStatement(touchedFileSql)) {
-                            int paramIdx = 1;
-                            for (String hash : commitHashes) ps2.setString(paramIdx++, hash);
-                            try (ResultSet rs = ps2.executeQuery()) {
-                                while (rs.next()) {
-                                    String fp = rs.getString("file_path");
-                                    if (fp != null && !filePaths.contains(fp)) {
-                                        filePaths.add(fp);
-                                        nodes.add(new GraphDataNode(
-                                            "file:" + fp, "file", graphFileName(fp), fp,
-                                            0, 0, null, null, null, null));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Commit→file edges
-                    if (!commitHashes.isEmpty() && !filePaths.isEmpty()) {
-                        try (Statement st = conn.createStatement();
-                             ResultSet rs = st.executeQuery(
-                                 "SELECT commit_hash, file_path FROM graph_commit_files LIMIT 20000")) {
-                            while (rs.next()) {
-                                String hash = rs.getString("commit_hash");
-                                String fp = rs.getString("file_path");
-                                if (commitHashes.contains(hash) && filePaths.contains(fp)) {
-                                    edges.add(new GraphDataEdge("commit:" + hash, "file:" + fp, "changed"));
-                                }
+                                " AND file_path IS NOT NULL")) {
+                            int idx = 1;
+                            for (String h : commitHashes) ps.setString(idx++, h);
+                            try (ResultSet rs = ps.executeQuery()) {
+                                while (rs.next()) seedFiles.add(rs.getString("file_path"));
                             }
                         }
                     }
                 }
 
                 // ── Prompts ───────────────────────────────────────────────────
-                java.util.Set<String> turnIds = new java.util.LinkedHashSet<>();
-                // session_id → list of [turn_id, started_at] for the selected turns.
-                // Used after edges are built to emit prev-prompt edges between
-                // consecutive turns within the same session.
-                java.util.Map<String, java.util.List<String[]>> turnsBySession = new java.util.HashMap<>();
                 if (promptLimit > 0) {
                     try (PreparedStatement ps = conn.prepareStatement(
                         "SELECT id, session_id, started_at, SUBSTR(prompt_text, 1, 150) AS preview" +
@@ -792,67 +724,168 @@ public final class CodeGraphStore {
                             }
                         }
                     }
-                    // Add files touched by the selected turns so prompt→file edges are
-                    // always visible even when those files are not in the top-N by PSI connectivity.
                     if (!turnIds.isEmpty()) {
-                        String placeholders = turnIds.stream()
-                            .map(id -> "?").collect(java.util.stream.Collectors.joining(","));
-                        String touchedFileSql =
+                        String placeholders = inPlaceholders(turnIds.size());
+                        try (PreparedStatement ps = conn.prepareStatement(
                             "SELECT DISTINCT tce.file_path FROM tool_call_events tce" +
                                 " JOIN events e ON e.id = tce.event_id" +
                                 " WHERE e.turn_id IN (" + placeholders + ")" +
-                                " AND tce.file_path IS NOT NULL LIMIT 60";
-                        try (PreparedStatement ps2 = conn.prepareStatement(touchedFileSql)) {
-                            int paramIdx = 1;
-                            for (String tid : turnIds) ps2.setString(paramIdx++, tid);
-                            try (ResultSet rs = ps2.executeQuery()) {
-                                while (rs.next()) {
-                                    String fp = rs.getString("file_path");
-                                    if (!filePaths.contains(fp)) {
-                                        filePaths.add(fp);
-                                        nodes.add(new GraphDataNode(
-                                            "file:" + fp, "file", graphFileName(fp), fp,
-                                            0, 0, null, null, null, null));
-                                    }
-                                }
+                                " AND tce.file_path IS NOT NULL")) {
+                            int idx = 1;
+                            for (String t : turnIds) ps.setString(idx++, t);
+                            try (ResultSet rs = ps.executeQuery()) {
+                                while (rs.next()) seedFiles.add(rs.getString("file_path"));
                             }
-                        }
-                    }
-                    // Prompt→file edges
-                    if (!turnIds.isEmpty() && !filePaths.isEmpty()) {
-                        try (Statement st = conn.createStatement();
-                             ResultSet rs = st.executeQuery(
-                                 "SELECT DISTINCT e.turn_id, tce.file_path" +
-                                     " FROM tool_call_events tce" +
-                                     " JOIN events e ON e.id = tce.event_id" +
-                                     " WHERE e.turn_id IS NOT NULL AND tce.file_path IS NOT NULL" +
-                                     " ORDER BY e.timestamp DESC LIMIT 5000")) {
-                            while (rs.next()) {
-                                String turnId = rs.getString("turn_id");
-                                String fp = rs.getString("file_path");
-                                if (turnIds.contains(turnId) && filePaths.contains(fp)) {
-                                    edges.add(new GraphDataEdge("turn:" + turnId, "file:" + fp, "touched"));
-                                }
-                            }
-                        }
-                    }
-                    // Prev-prompt edges: chain consecutive turns within the same session by
-                    // started_at. Earlier turn → later turn. Connects prompts that share a
-                    // session even when their tool activity didn't overlap.
-                    for (java.util.List<String[]> sessionTurns : turnsBySession.values()) {
-                        sessionTurns.sort(java.util.Comparator.comparing(a -> a[1]));
-                        for (int i = 1; i < sessionTurns.size(); i++) {
-                            edges.add(new GraphDataEdge(
-                                "turn:" + sessionTurns.get(i - 1)[0],
-                                "turn:" + sessionTurns.get(i)[0],
-                                "prev"));
                         }
                     }
                 }
 
-                // Hide orphan prompts: turns with no file activity and no session neighbours
-                // are not informative in the graph view (the user can still see them in
-                // the prompts tab). Keep orphan files/commits — those are real anomalies.
+                // ── BFS expand seedFiles by fileDepth hops via 'uses' edges (bidirectional).
+                // Cap total file nodes to keep the visualization readable and bound query cost.
+                final int FILE_NODE_CAP = 500;
+                java.util.Set<String> expandedFiles = new java.util.LinkedHashSet<>(seedFiles);
+                java.util.Set<String> frontier = new java.util.LinkedHashSet<>(seedFiles);
+                for (int hop = 0;
+                     hop < fileDepth && !frontier.isEmpty() && expandedFiles.size() < FILE_NODE_CAP;
+                     hop++) {
+                    java.util.Set<String> nextFrontier = new java.util.LinkedHashSet<>();
+                    String placeholders = inPlaceholders(frontier.size());
+                    String sql =
+                        "SELECT REPLACE(target_id,'file:','') AS dst FROM graph_edges" +
+                            " WHERE relation='uses' AND source_id IN (" + placeholders + ")" +
+                            " UNION " +
+                            "SELECT REPLACE(source_id,'file:','') AS dst FROM graph_edges" +
+                            " WHERE relation='uses' AND target_id IN (" + placeholders + ")";
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        int idx = 1;
+                        for (String p : frontier) ps.setString(idx++, "file:" + p);
+                        for (String p : frontier) ps.setString(idx++, "file:" + p);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next() && expandedFiles.size() < FILE_NODE_CAP) {
+                                String fp = rs.getString("dst");
+                                if (fp != null && expandedFiles.add(fp)) {
+                                    nextFrontier.add(fp);
+                                }
+                            }
+                        }
+                    }
+                    frontier = nextFrontier;
+                }
+
+                // ── File nodes (with dep counts) ──────────────────────────────
+                if (!expandedFiles.isEmpty()) {
+                    java.util.Map<String, int[]> counts = new java.util.HashMap<>();
+                    String placeholders = inPlaceholders(expandedFiles.size());
+                    String sql =
+                        "SELECT fi.path," +
+                            " COALESCE(deps.cnt, 0) AS dep_count," +
+                            " COALESCE(depnts.cnt, 0) AS dependent_count" +
+                            " FROM graph_file_index fi" +
+                            " LEFT JOIN (SELECT source_id, COUNT(DISTINCT target_id) AS cnt" +
+                            "   FROM graph_edges WHERE relation='uses' GROUP BY source_id) deps" +
+                            "   ON deps.source_id = 'file:' || fi.path" +
+                            " LEFT JOIN (SELECT target_id, COUNT(DISTINCT source_id) AS cnt" +
+                            "   FROM graph_edges WHERE relation='uses' GROUP BY target_id) depnts" +
+                            "   ON depnts.target_id = 'file:' || fi.path" +
+                            " WHERE fi.path IN (" + placeholders + ")";
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        int idx = 1;
+                        for (String p : expandedFiles) ps.setString(idx++, p);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                counts.put(rs.getString("path"),
+                                    new int[]{rs.getInt("dep_count"), rs.getInt("dependent_count")});
+                            }
+                        }
+                    }
+                    for (String fp : expandedFiles) {
+                        int[] c = counts.getOrDefault(fp, new int[]{0, 0});
+                        nodes.add(new GraphDataNode(
+                            "file:" + fp, "file", graphFileName(fp), fp,
+                            c[0], c[1], null, null, null, null));
+                    }
+                }
+
+                // ── Commit→file edges ─────────────────────────────────────────
+                if (!commitHashes.isEmpty() && !expandedFiles.isEmpty()) {
+                    String cPh = inPlaceholders(commitHashes.size());
+                    String fPh = inPlaceholders(expandedFiles.size());
+                    String sql = "SELECT commit_hash, file_path FROM graph_commit_files" +
+                        " WHERE commit_hash IN (" + cPh + ") AND file_path IN (" + fPh + ")";
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        int idx = 1;
+                        for (String h : commitHashes) ps.setString(idx++, h);
+                        for (String f : expandedFiles) ps.setString(idx++, f);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                edges.add(new GraphDataEdge(
+                                    "commit:" + rs.getString("commit_hash"),
+                                    "file:" + rs.getString("file_path"),
+                                    "changed"));
+                            }
+                        }
+                    }
+                }
+
+                // ── Prompt→file edges ─────────────────────────────────────────
+                if (!turnIds.isEmpty() && !expandedFiles.isEmpty()) {
+                    String tPh = inPlaceholders(turnIds.size());
+                    String fPh = inPlaceholders(expandedFiles.size());
+                    String sql = "SELECT DISTINCT e.turn_id, tce.file_path" +
+                        " FROM tool_call_events tce" +
+                        " JOIN events e ON e.id = tce.event_id" +
+                        " WHERE e.turn_id IN (" + tPh + ") AND tce.file_path IN (" + fPh + ")";
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        int idx = 1;
+                        for (String t : turnIds) ps.setString(idx++, t);
+                        for (String f : expandedFiles) ps.setString(idx++, f);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                edges.add(new GraphDataEdge(
+                                    "turn:" + rs.getString("turn_id"),
+                                    "file:" + rs.getString("file_path"),
+                                    "touched"));
+                            }
+                        }
+                    }
+                }
+
+                // ── File→file edges (within the expanded file set) ────────────
+                if (expandedFiles.size() > 1) {
+                    String fPh = inPlaceholders(expandedFiles.size());
+                    String sql =
+                        "SELECT REPLACE(source_id,'file:','') AS src," +
+                            " REPLACE(target_id,'file:','') AS tgt" +
+                            " FROM graph_edges WHERE relation='uses'" +
+                            " AND source_id IN (" + fPh + ")" +
+                            " AND target_id IN (" + fPh + ")";
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        int idx = 1;
+                        for (String p : expandedFiles) ps.setString(idx++, "file:" + p);
+                        for (String p : expandedFiles) ps.setString(idx++, "file:" + p);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                edges.add(new GraphDataEdge(
+                                    "file:" + rs.getString("src"),
+                                    "file:" + rs.getString("tgt"),
+                                    "uses"));
+                            }
+                        }
+                    }
+                }
+
+                // ── Prev-prompt edges within each session ─────────────────────
+                for (java.util.List<String[]> sessionTurns : turnsBySession.values()) {
+                    sessionTurns.sort(java.util.Comparator.comparing(a -> a[1]));
+                    for (int i = 1; i < sessionTurns.size(); i++) {
+                        edges.add(new GraphDataEdge(
+                            "turn:" + sessionTurns.get(i - 1)[0],
+                            "turn:" + sessionTurns.get(i)[0],
+                            "prev"));
+                    }
+                }
+
+                // Hide orphan prompts (turns with no file activity and no session neighbours).
                 if (!nodes.isEmpty() && !edges.isEmpty()) {
                     java.util.Set<String> connected = new java.util.HashSet<>();
                     for (GraphDataEdge e : edges) {
@@ -868,6 +901,15 @@ public final class CodeGraphStore {
             LOG.warn("Failed to query graph visualization data", e);
             return new GraphData(List.of(), List.of());
         }
+    }
+
+    private static String inPlaceholders(int n) {
+        StringBuilder sb = new StringBuilder(n * 2);
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append(',');
+            sb.append('?');
+        }
+        return sb.toString();
     }
 
     private static String graphFileName(@NotNull String path) {
