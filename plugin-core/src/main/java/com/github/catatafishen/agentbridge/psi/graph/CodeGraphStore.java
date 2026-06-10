@@ -667,8 +667,9 @@ public final class CodeGraphStore {
      * clauses while keeping the query simple.
      */
     @NotNull
-    @SuppressWarnings({"DataFlowIssue", "java:S3776"})
-    // DataFlowIssue: withConnection returns non-null; S3776: sequential query steps, no simpler decomposition
+    @SuppressWarnings({"DataFlowIssue", "java:S3776", "java:S2077"})
+    // DataFlowIssue: withConnection returns non-null; S3776: sequential query steps, no simpler decomposition;
+    // S2077: the dynamic IN clause uses only JDBC "?" placeholders — turn IDs come from our own DB, not user input
     public GraphData getGraphData(int fileLimit, int commitLimit, int promptLimit) {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
@@ -763,7 +764,33 @@ public final class CodeGraphStore {
                             }
                         }
                     }
-                    // Prompt→file edges (join events to get turn_id)
+                    // Add files touched by the selected turns so prompt→file edges are
+                    // always visible even when those files are not in the top-N by PSI connectivity.
+                    if (!turnIds.isEmpty()) {
+                        String placeholders = turnIds.stream()
+                            .map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+                        String touchedFileSql =
+                            "SELECT DISTINCT tce.file_path FROM tool_call_events tce" +
+                                " JOIN events e ON e.id = tce.event_id" +
+                                " WHERE e.turn_id IN (" + placeholders + ")" +
+                                " AND tce.file_path IS NOT NULL LIMIT 60";
+                        try (PreparedStatement ps2 = conn.prepareStatement(touchedFileSql)) {
+                            int paramIdx = 1;
+                            for (String tid : turnIds) ps2.setString(paramIdx++, tid);
+                            try (ResultSet rs = ps2.executeQuery()) {
+                                while (rs.next()) {
+                                    String fp = rs.getString("file_path");
+                                    if (!filePaths.contains(fp)) {
+                                        filePaths.add(fp);
+                                        nodes.add(new GraphDataNode(
+                                            "file:" + fp, "file", graphFileName(fp), fp,
+                                            0, 0, null, null, null, null));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Prompt→file edges
                     if (!turnIds.isEmpty() && !filePaths.isEmpty()) {
                         try (Statement st = conn.createStatement();
                              ResultSet rs = st.executeQuery(

@@ -152,40 +152,16 @@
     }
 
     function animLoop() {
-        simulate();
-        render();
-        simTick++;
+        // Only simulate while ticks remain; always render to keep JCEF's
+        // compositor refreshing — stopping RAF makes the canvas go blank.
         if (simTick < maxSim) {
-            rafId = requestAnimationFrame(animLoop);
-        } else {
-            rafId = null;
-            render();
+            simulate();
+            simTick++;
         }
+        render();
+        rafId = requestAnimationFrame(animLoop);
     }
 
-    /** Fits the camera so all visible nodes fill ~85% of the canvas. */
-    function fitView() {
-        var vis = nodes.filter(isVisible);
-        if (vis.length === 0) return;
-        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (var i = 0; i < vis.length; i++) {
-            var n = vis[i];
-            var pad = n.r + 24; // extra room for labels
-            if (n.x - pad < minX) minX = n.x - pad;
-            if (n.x + pad > maxX) maxX = n.x + pad;
-            if (n.y - pad < minY) minY = n.y - pad;
-            if (n.y + pad > maxY) maxY = n.y + pad;
-        }
-        var W = canvas.width, H = canvas.height;
-        if (W === 0 || H === 0) return;
-        var gW = maxX - minX || 1, gH = maxY - minY || 1;
-        var s = Math.min(W / gW, H / gH) * 0.85;
-        s = Math.min(s, 2.0); // don't over-zoom for tiny graphs
-        scale = s;
-        var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-        tx = -cx * s;
-        ty = -cy * s;
-    }
 
     function simulate() {
         var alpha = 1 - simTick / maxSim;
