@@ -660,16 +660,6 @@ public final class CodeGraphStore {
     public record GraphData(@NotNull List<GraphDataNode> nodes, @NotNull List<GraphDataEdge> edges) {
     }
 
-    /**
-     * Returns a mixed graph of files, commits, and prompts with their connections.
-     * Files are the top N by total connection count. Commits and prompts are the most recent.
-     * Edges are filtered in Java to only those between the selected sets, avoiding dynamic IN
-     * clauses while keeping the query simple.
-     */
-    @NotNull
-    @SuppressWarnings({"DataFlowIssue", "java:S3776", "java:S2077"})
-    // DataFlowIssue: withConnection returns non-null; S3776: sequential query steps, no simpler decomposition;
-    // S2077: the dynamic IN clause uses only JDBC "?" placeholders — turn IDs come from our own DB, not user input
     public GraphData getGraphData(int fileLimit, int commitLimit, int promptLimit) {
         ConversationDatabase db = ConversationDatabase.getInstance(project);
         try {
@@ -729,6 +719,33 @@ public final class CodeGraphStore {
                             }
                         }
                     }
+                    // Add files touched by the selected commits so commit→file edges are
+                    // always visible even when those files are not in the top-N by PSI connectivity.
+                    // Without this, commits that only touch CI configs, build files, or docs
+                    // appear as orphan nodes (they don't accumulate import edges).
+                    if (!commitHashes.isEmpty()) {
+                        String placeholders = commitHashes.stream()
+                            .map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+                        String touchedFileSql =
+                            "SELECT DISTINCT file_path FROM graph_commit_files" +
+                                " WHERE commit_hash IN (" + placeholders + ")" +
+                                " AND file_path IS NOT NULL LIMIT 300";
+                        try (PreparedStatement ps2 = conn.prepareStatement(touchedFileSql)) {
+                            int paramIdx = 1;
+                            for (String hash : commitHashes) ps2.setString(paramIdx++, hash);
+                            try (ResultSet rs = ps2.executeQuery()) {
+                                while (rs.next()) {
+                                    String fp = rs.getString("file_path");
+                                    if (fp != null && !filePaths.contains(fp)) {
+                                        filePaths.add(fp);
+                                        nodes.add(new GraphDataNode(
+                                            "file:" + fp, "file", graphFileName(fp), fp,
+                                            0, 0, null, null, null, null));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // Commit→file edges
                     if (!commitHashes.isEmpty() && !filePaths.isEmpty()) {
                         try (Statement st = conn.createStatement();
@@ -747,20 +764,31 @@ public final class CodeGraphStore {
 
                 // ── Prompts ───────────────────────────────────────────────────
                 java.util.Set<String> turnIds = new java.util.LinkedHashSet<>();
+                // session_id → list of [turn_id, started_at] for the selected turns.
+                // Used after edges are built to emit prev-prompt edges between
+                // consecutive turns within the same session.
+                java.util.Map<String, java.util.List<String[]>> turnsBySession = new java.util.HashMap<>();
                 if (promptLimit > 0) {
                     try (PreparedStatement ps = conn.prepareStatement(
-                        "SELECT id, started_at, SUBSTR(prompt_text, 1, 150) AS preview" +
+                        "SELECT id, session_id, started_at, SUBSTR(prompt_text, 1, 150) AS preview" +
                             " FROM turns ORDER BY started_at DESC LIMIT ?")) {
                         ps.setInt(1, promptLimit);
                         try (ResultSet rs = ps.executeQuery()) {
                             while (rs.next()) {
                                 String id = rs.getString("id");
+                                String sessionId = rs.getString("session_id");
+                                String startedAt = rs.getString("started_at");
                                 turnIds.add(id);
+                                if (sessionId != null && startedAt != null) {
+                                    turnsBySession
+                                        .computeIfAbsent(sessionId, k -> new ArrayList<>())
+                                        .add(new String[]{id, startedAt});
+                                }
                                 String preview = rs.getString("preview");
                                 nodes.add(new GraphDataNode(
                                     "turn:" + id, "prompt",
                                     graphTruncate(preview != null ? preview : id, 32),
-                                    null, 0, 0, null, null, rs.getString("started_at"), preview));
+                                    null, 0, 0, null, null, startedAt, preview));
                             }
                         }
                     }
@@ -808,6 +836,30 @@ public final class CodeGraphStore {
                             }
                         }
                     }
+                    // Prev-prompt edges: chain consecutive turns within the same session by
+                    // started_at. Earlier turn → later turn. Connects prompts that share a
+                    // session even when their tool activity didn't overlap.
+                    for (java.util.List<String[]> sessionTurns : turnsBySession.values()) {
+                        sessionTurns.sort(java.util.Comparator.comparing(a -> a[1]));
+                        for (int i = 1; i < sessionTurns.size(); i++) {
+                            edges.add(new GraphDataEdge(
+                                "turn:" + sessionTurns.get(i - 1)[0],
+                                "turn:" + sessionTurns.get(i)[0],
+                                "prev"));
+                        }
+                    }
+                }
+
+                // Hide orphan prompts: turns with no file activity and no session neighbours
+                // are not informative in the graph view (the user can still see them in
+                // the prompts tab). Keep orphan files/commits — those are real anomalies.
+                if (!nodes.isEmpty() && !edges.isEmpty()) {
+                    java.util.Set<String> connected = new java.util.HashSet<>();
+                    for (GraphDataEdge e : edges) {
+                        connected.add(e.source());
+                        connected.add(e.target());
+                    }
+                    nodes.removeIf(n -> "prompt".equals(n.type()) && !connected.contains(n.id()));
                 }
 
                 return new GraphData(nodes, edges);
