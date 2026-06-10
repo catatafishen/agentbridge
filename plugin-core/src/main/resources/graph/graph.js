@@ -191,7 +191,7 @@
             if (!isVisible(e.s) || !isVisible(e.t)) continue;
             var edx = e.t.x - e.s.x, edy = e.t.y - e.s.y;
             var d = Math.sqrt(edx * edx + edy * edy) + 1;
-            var ideal = 120;
+            var ideal = 60;
             var ef = ((d - ideal) * 0.04) * alpha;
             var enx = edx / d, eny = edy / d;
             e.s.vx += enx * ef;
