@@ -121,8 +121,9 @@ final class GraphVisualizationLoader {
     private static void loadCommits(@NotNull Connection conn, int limit,
                                     @NotNull List<CodeGraphStore.GraphDataNode> outNodes,
                                     @NotNull Set<String> outHashes) throws SQLException {
-        String sql = "SELECT hash, short_hash, message, author, timestamp" +
-            " FROM graph_commits ORDER BY timestamp DESC LIMIT ?";
+        String sql = "SELECT gc.hash, gc.short_hash, gc.message, gc.author, gc.timestamp," +
+            " (SELECT COUNT(*) FROM graph_commit_files cf WHERE cf.commit_hash = gc.hash) AS files_changed" +
+            " FROM graph_commits gc ORDER BY gc.timestamp DESC LIMIT ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, limit);
             try (ResultSet rs = ps.executeQuery()) {
@@ -133,7 +134,8 @@ final class GraphVisualizationLoader {
                         graphTruncate(rs.getString("message"), 30);
                     outNodes.add(new CodeGraphStore.GraphDataNode(
                         COMMIT_PREFIX + hash, "commit", label, null, 0, 0,
-                        hash, rs.getString("author"), rs.getString(COL_TIMESTAMP), null));
+                        hash, rs.getString("author"), rs.getString(COL_TIMESTAMP), null,
+                        Math.max(0L, rs.getLong("files_changed"))));
                 }
             }
         }
@@ -161,7 +163,9 @@ final class GraphVisualizationLoader {
                                     @NotNull List<CodeGraphStore.GraphDataNode> outNodes,
                                     @NotNull Set<String> outTurnIds,
                                     @NotNull Map<String, List<String[]>> outBySession) throws SQLException {
-        String sql = "SELECT id, session_id, started_at, SUBSTR(prompt_text, 1, 150) AS preview" +
+        String sql = "SELECT id, session_id, started_at," +
+            " SUBSTR(prompt_text, 1, 150) AS preview," +
+            " input_tokens, output_tokens, duration_ms" +
             " FROM turns ORDER BY started_at DESC LIMIT ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, limit);
@@ -176,13 +180,31 @@ final class GraphVisualizationLoader {
                             .add(new String[]{id, startedAt});
                     }
                     String preview = rs.getString("preview");
+                    long sizeMetric = promptSizeMetric(rs);
                     outNodes.add(new CodeGraphStore.GraphDataNode(
                         TURN_PREFIX + id, LABEL_PROMPT,
                         graphTruncate(preview != null ? preview : id, 32),
-                        null, 0, 0, null, null, startedAt, preview));
+                        null, 0, 0, null, null, startedAt, preview, sizeMetric));
                 }
             }
         }
+    }
+
+    /**
+     * Prefer total tokens for prompt size; fall back to seconds-spent for agents that don't
+     * report tokens (e.g., Copilot CLI). Both columns are nullable in {@code turns}.
+     */
+    private static long promptSizeMetric(@NotNull ResultSet rs) throws SQLException {
+        long input = rs.getLong("input_tokens");
+        boolean inputNull = rs.wasNull();
+        long output = rs.getLong("output_tokens");
+        boolean outputNull = rs.wasNull();
+        if (!inputNull || !outputNull) {
+            return Math.max(0L, (inputNull ? 0L : input) + (outputNull ? 0L : output));
+        }
+        long duration = rs.getLong("duration_ms");
+        if (rs.wasNull()) return 0L;
+        return Math.max(0L, duration / 1000L);
     }
 
     private static void loadFilesTouchedByPrompts(@NotNull Connection conn,
@@ -249,22 +271,31 @@ final class GraphVisualizationLoader {
     private static void addFileNodes(@NotNull Connection conn, @NotNull Set<String> files,
                                      @NotNull List<CodeGraphStore.GraphDataNode> outNodes) throws SQLException {
         if (files.isEmpty()) return;
-        Map<String, int[]> counts = loadFileCounts(conn, files);
+        Map<String, FileNodeStats> stats = loadFileNodeStats(conn, files);
         for (String fp : files) {
-            int[] c = counts.getOrDefault(fp, new int[]{0, 0});
+            FileNodeStats s = stats.getOrDefault(fp, FileNodeStats.EMPTY);
             outNodes.add(new CodeGraphStore.GraphDataNode(
                 FILE_PREFIX + fp, "file", graphFileName(fp), fp,
-                c[0], c[1], null, null, null, null));
+                s.depCount, s.dependentCount, null, null, null, null, s.nodeCount));
         }
     }
 
+    /**
+     * Per-file stats joined into one query: PSI symbol count (used as the file node's
+     * size metric — proxy for complexity since LOC is not stored), plus dependency-edge
+     * counts (still surfaced in tooltips even though they no longer drive node size).
+     */
+    private record FileNodeStats(int depCount, int dependentCount, long nodeCount) {
+        static final FileNodeStats EMPTY = new FileNodeStats(0, 0, 0L);
+    }
+
     @NotNull
-    private static Map<String, int[]> loadFileCounts(@NotNull Connection conn,
-                                                     @NotNull Set<String> files) throws SQLException {
-        Map<String, int[]> counts = new HashMap<>();
+    private static Map<String, FileNodeStats> loadFileNodeStats(@NotNull Connection conn,
+                                                                @NotNull Set<String> files) throws SQLException {
+        Map<String, FileNodeStats> stats = new HashMap<>();
         // Safe SQL: only inPlaceholders(N) is concatenated. All values are bound below.
         String sql =
-            "SELECT fi.path," +
+            "SELECT fi.path, fi.node_count," +
                 " COALESCE(deps.cnt, 0) AS dep_count," +
                 " COALESCE(depnts.cnt, 0) AS dependent_count" +
                 " FROM graph_file_index fi" +
@@ -280,12 +311,15 @@ final class GraphVisualizationLoader {
             for (String p : files) ps.setString(idx++, p);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    counts.put(rs.getString("path"),
-                        new int[]{rs.getInt("dep_count"), rs.getInt(COL_DEPENDENT_COUNT)});
+                    stats.put(rs.getString("path"),
+                        new FileNodeStats(
+                            rs.getInt("dep_count"),
+                            rs.getInt(COL_DEPENDENT_COUNT),
+                            Math.max(0L, rs.getLong("node_count"))));
                 }
             }
         }
-        return counts;
+        return stats;
     }
 
     private static void addCommitFileEdges(@NotNull Connection conn,

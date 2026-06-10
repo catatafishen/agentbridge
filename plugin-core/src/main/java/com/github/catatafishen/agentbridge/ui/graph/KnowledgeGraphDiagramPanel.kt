@@ -235,6 +235,7 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
         n.preview()?.let { sb.append(",\"preview\":").append(jsonStr(it)) }
         sb.append(",\"depCount\":").append(n.depCount())
         sb.append(",\"dependentCount\":").append(n.dependentCount())
+        sb.append(",\"sizeMetric\":").append(n.sizeMetric())
         sb.append('}')
     }
 
