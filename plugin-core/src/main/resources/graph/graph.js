@@ -152,19 +152,22 @@
     }
 
     function animLoop() {
-        // Only simulate while ticks remain; always render to keep JCEF's
-        // compositor refreshing — stopping RAF makes the canvas go blank.
-        if (simTick < maxSim) {
-            simulate();
-            simTick++;
-        }
+        // Always run physics + render. JCEF's off-screen compositor drops
+        // the canvas backing buffer when consecutive frames are byte-identical,
+        // so we must keep node positions micro-changing AND emit a heartbeat
+        // pixel below to ensure every frame differs from the previous one.
+        simulate();
+        if (simTick < maxSim) simTick++;
         render();
         rafId = requestAnimationFrame(animLoop);
     }
 
 
     function simulate() {
-        var alpha = 1 - simTick / maxSim;
+        // Floor at 0.01 so nodes keep micro-jittering after settling. A fully
+        // static canvas causes JCEF to drop the backing buffer; tiny residual
+        // motion keeps the compositor pumping frames.
+        var alpha = Math.max(0.01, 1 - simTick / maxSim);
         var vis = nodes.filter(isVisible);
 
         // Repulsion (halved to 900 to keep nodes compact)
@@ -215,10 +218,19 @@
 
     // ── Rendering ──────────────────────────────────────────────────────────────
 
+    var heartbeat = 0;
+
     function render() {
         if (!canvas) return;
         var W = canvas.width, H = canvas.height;
         ctx.clearRect(0, 0, W, H);
+
+        // Heartbeat: paint a 1-px varying-alpha dot at (0,0). Invisible to
+        // the user, but guarantees every frame's bitmap differs so JCEF's
+        // off-screen compositor never deduplicates and drops the canvas.
+        heartbeat = (heartbeat + 1) & 0xff;
+        ctx.fillStyle = 'rgba(0,0,0,' + (heartbeat / 100000).toFixed(6) + ')';
+        ctx.fillRect(0, 0, 1, 1);
 
         if (nodes.length === 0) {
             ctx.fillStyle = 'rgba(140,140,140,0.55)';
