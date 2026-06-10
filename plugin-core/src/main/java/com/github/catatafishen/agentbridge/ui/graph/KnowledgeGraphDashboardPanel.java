@@ -38,6 +38,8 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
     private final JBLabel edgesLabel = new JBLabel("0");
     private final JBLabel filesLabel = new JBLabel("0");
     private final JBLabel commitsLabel = new JBLabel("0");
+    private final JBLabel promptsLabel = new JBLabel("0");
+    private final JBLabel toolCallsLabel = new JBLabel("0");
 
     // Status
     private final JBLabel statusLabel = new JBLabel(" ");
@@ -131,11 +133,13 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
     }
 
     private @NotNull JPanel buildStatCardsPanel() {
-        JPanel cards = new JPanel(new GridLayout(1, 4, JBUI.scale(8), 0));
+        JPanel cards = new JPanel(new GridLayout(2, 3, JBUI.scale(8), JBUI.scale(6)));
         cards.add(buildStatCard(nodesLabel, "Nodes"));
         cards.add(buildStatCard(edgesLabel, "Edges"));
         cards.add(buildStatCard(filesLabel, "Files"));
         cards.add(buildStatCard(commitsLabel, "Commits"));
+        cards.add(buildStatCard(promptsLabel, "Prompts"));
+        cards.add(buildStatCard(toolCallsLabel, "Tool Calls"));
         return cards;
     }
 
@@ -167,6 +171,8 @@ public final class KnowledgeGraphDashboardPanel implements Disposable {
         edgesLabel.setText(formatCount(stats.edgeCount()));
         filesLabel.setText(formatCount(stats.fileCount()));
         commitsLabel.setText(formatCount(stats.commitCount()));
+        promptsLabel.setText(formatCount(stats.promptCount()));
+        toolCallsLabel.setText(formatCount(stats.toolCallCount()));
 
         // Tool status
         boolean toolInRegistry = ToolRegistry.getInstance(project).findById(TOOL_ID) != null;
