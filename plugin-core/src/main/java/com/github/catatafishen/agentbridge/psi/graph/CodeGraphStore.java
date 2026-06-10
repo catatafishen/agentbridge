@@ -1,125 +1,37 @@
 package com.github.catatafishen.agentbridge.psi.graph;
 
-import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * CRUD wrapper over the three code-graph tables in {@code conversation.db}.
- * All writes are batched for performance. Reads return plain {@link NodeData}
- * / {@link EdgeData} lists or raw {@link ResultSet} for the SQL escape hatch.
+ * Project-scoped facade over the code-graph tables in {@code conversation.db}. Provides
+ * write operations ({@link #upsertNodes}, {@link #insertEdges}, …), dashboard queries
+ * ({@link #getStats}, {@link #getHotspots}, …), graph-visualization loading
+ * ({@link #getGraphData}), and a read-only SQL escape hatch ({@link #queryRaw}).
  *
- * <p>The connection is owned by {@link ConversationDatabase}; this class
- * never closes it.
+ * <p>The class is intentionally a thin facade — the implementations live in
+ * focused package-private helpers under the same package:
+ * <ul>
+ *   <li>{@link GraphCrud} — write operations</li>
+ *   <li>{@link GraphDashboardQueries} — dashboard / explorer reads</li>
+ *   <li>{@link GraphVisualizationLoader} — graph data for the diagram panel</li>
+ *   <li>{@link GraphRawQuery} — arbitrary read-only SQL</li>
+ *   <li>{@link GraphSqlSupport}, {@link GraphColumns} — shared helpers and constants</li>
+ * </ul>
+ *
+ * <p>The DB connection is owned by
+ * {@link com.github.catatafishen.agentbridge.session.db.ConversationDatabase};
+ * this class never closes it.
  */
 @Service(Service.Level.PROJECT)
 public final class CodeGraphStore {
-
-    private static final Logger LOG = Logger.getInstance(CodeGraphStore.class);
-
-    // ── Node id prefixes and SQL column labels ───────────────────────────────
-
-    private static final String FILE_PREFIX = "file:";
-    private static final String TURN_PREFIX = "turn:";
-    private static final String COMMIT_PREFIX = "commit:";
-    private static final String COL_DEPENDENT_COUNT = "dependent_count";
-    private static final String COL_TIMESTAMP = "timestamp";
-    private static final String COL_FILE_PATH = "file_path";
-
-    // ── SQL constants (S6203: text blocks must be outside lambda bodies) ──────
-
-    private static final String SQL_HOTSPOTS = """
-        SELECT e.target_id AS file_id, n.source_file AS path,
-               COUNT(DISTINCT e.source_id) AS dependent_count
-        FROM graph_edges e
-        JOIN graph_nodes n ON n.id = e.target_id
-        WHERE e.relation = 'uses'
-          AND n.kind = 'file'
-        GROUP BY e.target_id
-        ORDER BY dependent_count DESC
-        LIMIT ?
-        """;
-
-    private static final String SQL_EXPLORER_ROWS = """
-        SELECT fi.path,
-               COALESCE(deps.cnt, 0) AS dep_count,
-               COALESCE(depnts.cnt, 0) AS dependent_count,
-               COALESCE(commits.cnt, 0) AS commit_count
-        FROM graph_file_index fi
-        LEFT JOIN (
-            SELECT source_id, COUNT(DISTINCT target_id) AS cnt
-            FROM graph_edges WHERE relation = 'uses'
-            GROUP BY source_id
-        ) deps ON deps.source_id = 'file:' || fi.path
-        LEFT JOIN (
-            SELECT target_id, COUNT(DISTINCT source_id) AS cnt
-            FROM graph_edges WHERE relation = 'uses'
-            GROUP BY target_id
-        ) depnts ON depnts.target_id = 'file:' || fi.path
-        LEFT JOIN (
-            SELECT file_path, COUNT(*) AS cnt
-            FROM graph_commit_files
-            GROUP BY file_path
-        ) commits ON commits.file_path = fi.path
-        ORDER BY dependent_count DESC
-        LIMIT ?
-        """;
-
-    private static final String SQL_FILE_DEPENDENCIES =
-        "SELECT DISTINCT REPLACE(target_id, 'file:', '') AS dep " +
-            "FROM graph_edges WHERE source_id = ? AND relation = 'uses' ORDER BY 1";
-
-    private static final String SQL_FILE_DEPENDENTS =
-        "SELECT DISTINCT REPLACE(source_id, 'file:', '') AS dep " +
-            "FROM graph_edges WHERE target_id = ? AND relation = 'uses' ORDER BY 1";
-
-    private static final String SQL_FILE_COMMITS = """
-        SELECT gc.short_hash, gc.message, gc.author, gc.timestamp
-        FROM graph_commits gc
-        JOIN graph_commit_files gcf ON gcf.commit_hash = gc.hash
-        WHERE gcf.file_path = ?
-        ORDER BY gc.timestamp DESC
-        LIMIT 10
-        """;
-
-    private static final String SQL_RECENT_ACTIVITY = """
-        SELECT type, summary, timestamp FROM (
-            SELECT 'commit' AS type,
-                   short_hash || ' ' || message AS summary,
-                   timestamp
-            FROM graph_commits
-            UNION ALL
-            SELECT 'agent_' || CASE
-                WHEN tce.tool_name IN ('write_file', 'edit_text', 'replace_symbol_body',
-                                       'insert_after_symbol', 'insert_before_symbol') THEN 'edit'
-                ELSE 'read'
-                END AS type,
-                tce.tool_name || ' ' || COALESCE(tce.file_path, '') AS summary,
-                e.timestamp
-            FROM tool_call_events tce
-            JOIN events e ON e.id = tce.event_id
-            WHERE tce.file_path IS NOT NULL
-        )
-        ORDER BY timestamp DESC
-        LIMIT ?
-        """;
 
     private final Project project;
 
@@ -128,374 +40,113 @@ public final class CodeGraphStore {
         this.project = project;
     }
 
+    @NotNull
     public static CodeGraphStore getInstance(@NotNull Project project) {
-        return project.getService(CodeGraphStore.class);
+        return PlatformApiCompat.getService(project, CodeGraphStore.class);
     }
 
-    // ── Batch upsert ─────────────────────────────────────────────────────────
+    // ── Write operations ─────────────────────────────────────────────────────
 
-    /**
-     * Insert-or-replace all nodes. Runs inside a single transaction.
-     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
-     */
+    /** Insert-or-replace all nodes in a single transaction. */
     public void upsertNodes(@NotNull List<NodeData> nodes) {
-        if (nodes.isEmpty()) return;
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            db.withConnection(conn -> {
-                String sql = """
-                    INSERT OR REPLACE INTO graph_nodes
-                        (id, label, kind, fqn, source_file, source_line, language, indexed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """;
-                conn.setAutoCommit(false);
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                    long now = System.currentTimeMillis();
-                    ps.setLong(8, now);
-                    for (NodeData n : nodes) {
-                        ps.setString(1, n.id);
-                        ps.setString(2, n.label);
-                        ps.setString(3, n.kind);
-                        ps.setString(4, n.fqn);
-                        ps.setString(5, n.sourceFile);
-                        ps.setObject(6, n.sourceLine > 0 ? n.sourceLine : null, java.sql.Types.INTEGER);
-                        ps.setString(7, n.language);
-                        ps.addBatch();
-                    }
-                    ps.executeBatch();
-                    conn.commit();
-                } catch (SQLException e) {
-                    rollbackQuietly(conn);
-                    throw e;
-                } finally {
-                    setAutoCommitQuietly(conn, true);
-                }
-                return null;
-            });
-        } catch (SQLException e) {
-            LOG.error("Failed to upsert graph nodes", e);
-        }
+        GraphCrud.upsertNodes(project, nodes);
     }
 
-    /**
-     * Insert edges. Existing edges for the same source file are deleted first by {@link #deleteByFile}.
-     * Uses {@link ConversationDatabase#withConnection} for thread-safe access and
-     * disables FK constraints within the synchronized block so cross-file edges
-     * (referencing nodes not yet indexed) don't fail.
-     */
+    /** Insert edges, skipping duplicates. Foreign-key checks are temporarily disabled
+     *  to allow cross-file edges that reference nodes not yet indexed. */
     public void insertEdges(@NotNull List<EdgeData> edges) {
-        if (edges.isEmpty()) return;
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            db.withConnection(conn -> {
-                String sql = """
-                    INSERT OR IGNORE INTO graph_edges (source_id, target_id, relation, source_file, source_line)
-                    VALUES (?, ?, ?, ?, ?)
-                    """;
-                try {
-                    // Disable FK enforcement — cross-file edges may reference nodes not yet indexed.
-                    try (Statement st = conn.createStatement()) {
-                        st.execute("PRAGMA foreign_keys = OFF");
-                    }
-                    conn.setAutoCommit(false);
-                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                        for (EdgeData e : edges) {
-                            ps.setString(1, e.sourceId);
-                            ps.setString(2, e.targetId);
-                            ps.setString(3, e.relation);
-                            ps.setString(4, e.sourceFile);
-                            ps.setObject(5, e.sourceLine > 0 ? e.sourceLine : null, java.sql.Types.INTEGER);
-                            ps.addBatch();
-                        }
-                        ps.executeBatch();
-                    }
-                    conn.commit();
-                } catch (SQLException e) {
-                    rollbackQuietly(conn);
-                    LOG.error("Failed to insert graph edges", e);
-                } finally {
-                    setAutoCommitQuietly(conn, true);
-                    try (Statement st = conn.createStatement()) {
-                        st.execute("PRAGMA foreign_keys = ON");
-                    } catch (SQLException ex) {
-                        LOG.warn("Failed to re-enable foreign keys", ex);
-                    }
-                }
-                return null;
-            });
-        } catch (SQLException e) {
-            LOG.error("Failed to acquire connection for edge insert", e);
-        }
+        GraphCrud.insertEdges(project, edges);
     }
 
-    // ── Delete by file ────────────────────────────────────────────────────────
-
-    /**
-     * Deletes all graph data (nodes, edges, file index). Used before a full rebuild
-     * to ensure deleted files don't leave stale entries.
-     * Synchronized via {@link ConversationDatabase#withConnection} to prevent
-     * interference with other DB writers.
-     */
+    /** Wipe all rows in {@code graph_nodes}, {@code graph_edges}, and {@code graph_file_index}. */
     public void clearAll() throws SQLException {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        db.withConnection(conn -> {
-            try (Statement st = conn.createStatement()) {
-                st.execute("DELETE FROM graph_edges");
-                st.execute("DELETE FROM graph_nodes");
-                st.execute("DELETE FROM graph_file_index");
-            }
-            return null;
-        });
+        GraphCrud.clearAll(project);
     }
 
-    /**
-     * Remove all nodes (and their CASCADE-deleted edges) belonging to {@code relativePath},
-     * then delete the file's entry from {@code graph_file_index}.
-     * Call before re-indexing a file to avoid stale nodes.
-     * Uses {@link ConversationDatabase#withConnection} for thread-safe access.
-     */
+    /** Delete all graph rows belonging to one source file. */
     public void deleteByFile(@NotNull String relativePath) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            db.withConnection(conn -> {
-                conn.setAutoCommit(false);
-                try {
-                    try (PreparedStatement ps = conn.prepareStatement(
-                        "DELETE FROM graph_nodes WHERE source_file = ?")) {
-                        ps.setString(1, relativePath);
-                        ps.executeUpdate();
-                    }
-                    // Also delete edges whose source_file matches (covers cross-file edges)
-                    try (PreparedStatement ps = conn.prepareStatement(
-                        "DELETE FROM graph_edges WHERE source_file = ?")) {
-                        ps.setString(1, relativePath);
-                        ps.executeUpdate();
-                    }
-                    try (PreparedStatement ps = conn.prepareStatement(
-                        "DELETE FROM graph_file_index WHERE path = ?")) {
-                        ps.setString(1, relativePath);
-                        ps.executeUpdate();
-                    }
-                    conn.commit();
-                } catch (SQLException e) {
-                    rollbackQuietly(conn);
-                    throw e;
-                } finally {
-                    setAutoCommitQuietly(conn, true);
-                }
-                return null;
-            });
-        } catch (SQLException e) {
-            LOG.error("Failed to delete graph data for file: " + relativePath, e);
-        }
+        GraphCrud.deleteByFile(project, relativePath);
     }
 
-    // ── File index ────────────────────────────────────────────────────────────
-
+    /** @return the stored content hash for a file, or {@code null} if not indexed. */
     @Nullable
     public String getFileHash(@NotNull String relativePath) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT content_hash FROM graph_file_index WHERE path = ?")) {
-                    ps.setString(1, relativePath);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) return rs.getString(1);
-                    }
-                }
-                return null;
-            });
-        } catch (SQLException e) {
-            LOG.warn("Failed to read file hash for: " + relativePath, e);
-            return null;
-        }
+        return GraphCrud.getFileHash(project, relativePath);
     }
 
+    /** Insert-or-replace the file-index row for one source file. */
     public void setFileIndex(@NotNull String relativePath, @NotNull String hash,
                              int nodes, int edges, @NotNull String rootType) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    INSERT OR REPLACE INTO graph_file_index (path, content_hash, indexed_at, node_count, edge_count, root_type)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """)) {
-                    ps.setString(1, relativePath);
-                    ps.setString(2, hash);
-                    ps.setLong(3, System.currentTimeMillis());
-                    ps.setInt(4, nodes);
-                    ps.setInt(5, edges);
-                    ps.setString(6, rootType);
-                    ps.executeUpdate();
-                }
-                return null;
-            });
-        } catch (SQLException e) {
-            LOG.error("Failed to update file index for: " + relativePath, e);
-        }
+        GraphCrud.setFileIndex(project, relativePath, hash, nodes, edges, rootType);
     }
 
-    // ── Stats ─────────────────────────────────────────────────────────────────
+    // ── Dashboard / explorer queries ─────────────────────────────────────────
+
+    @NotNull
+    public GraphStats getStats() {
+        return GraphDashboardQueries.getStats(project);
+    }
+
+    /** Top files by incoming edge count (most depended-upon). */
+    @NotNull
+    public List<HotspotEntry> getHotspots(int limit) {
+        return GraphDashboardQueries.getHotspots(project, limit);
+    }
+
+    /** File-level rows for the Explorer table. */
+    @NotNull
+    public List<ExplorerRow> getExplorerRows(int limit) {
+        return GraphDashboardQueries.getExplorerRows(project, limit);
+    }
+
+    /** Dependencies, dependents, and recent commits for one file. */
+    @NotNull
+    public FileDetail getFileDetail(@NotNull String path) {
+        return GraphDashboardQueries.getFileDetail(project, path);
+    }
+
+    /** Recent activity feed combining git commits and agent tool calls. */
+    @NotNull
+    public List<ActivityEntry> getRecentActivity(int limit) {
+        return GraphDashboardQueries.getRecentActivity(project, limit);
+    }
+
+    // ── Graph visualization ──────────────────────────────────────────────────
+
+    /**
+     * Loads graph data centred on prompts and commits, with files included only when
+     * reached via commit/prompt origin or bounded dependency traversal.
+     *
+     * @param commitLimit number of most-recent commits to include (0 = none)
+     * @param promptLimit number of most-recent prompts/turns to include (0 = none)
+     * @param fileDepth   how many hops of file→file dependency edges to traverse from
+     *                    files touched by the loaded commits/prompts (0 = only directly
+     *                    touched files; 1 = +direct dependencies/dependents; 2 = two hops, etc.)
+     */
+    @NotNull
+    public GraphData getGraphData(int commitLimit, int promptLimit, int fileDepth) {
+        return GraphVisualizationLoader.load(project, commitLimit, promptLimit, fileDepth);
+    }
+
+    // ── Raw query (read-only escape hatch) ───────────────────────────────────
+
+    /**
+     * Run an arbitrary read-only SQL query and return rows as column-name → value maps.
+     * Executed under {@code PRAGMA query_only = ON} so any write operation is rejected
+     * by SQLite at the engine level.
+     */
+    @NotNull
+    public List<Map<String, Object>> queryRaw(@NotNull String sql, @NotNull Object... params)
+        throws SQLException {
+        return GraphRawQuery.queryRaw(project, sql, params);
+    }
+
+    // ── Public DTOs (preserved for caller compatibility) ─────────────────────
 
     public record GraphStats(long nodeCount, long edgeCount, long fileCount, long commitCount,
                              long promptCount, long toolCallCount, long lastIndexedAt) {
         public boolean isEmpty() {
             return nodeCount == 0 && commitCount == 0;
-        }
-    }
-
-    @NotNull
-    public GraphStats getStats() {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn -> {
-                long nodes = 0;
-                long edges = 0;
-                long files = 0;
-                long commits = 0;
-                long prompts = 0;
-                long toolCalls = 0;
-                long lastAt = 0;
-                try (Statement st = conn.createStatement()) {
-                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_nodes")) {
-                        if (rs.next()) nodes = rs.getLong(1);
-                    }
-                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_edges")) {
-                        if (rs.next()) edges = rs.getLong(1);
-                    }
-                    try (ResultSet rs = st.executeQuery(
-                        "SELECT COUNT(*), MAX(indexed_at) FROM graph_file_index")) {
-                        if (rs.next()) {
-                            files = rs.getLong(1);
-                            lastAt = rs.getLong(2);
-                        }
-                    }
-                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_commits")) {
-                        if (rs.next()) commits = rs.getLong(1);
-                    }
-                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM turns")) {
-                        if (rs.next()) prompts = rs.getLong(1);
-                    }
-                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM tool_call_events")) {
-                        if (rs.next()) toolCalls = rs.getLong(1);
-                    }
-                }
-                return new GraphStats(nodes, edges, files, commits, prompts, toolCalls, lastAt);
-            });
-        } catch (SQLException e) {
-            LOG.warn("Failed to read graph stats", e);
-            return new GraphStats(0, 0, 0, 0, 0, 0, 0);
-        }
-    }
-
-    // ── Raw query ─────────────────────────────────────────────────────────────
-
-    // ── Dashboard & Explorer queries ──────────────────────────────────────────
-
-    /**
-     * Top files by incoming edge count (most depended-upon).
-     * Returns rows with: path, dependentCount.
-     */
-    @NotNull
-    public List<HotspotEntry> getHotspots(int limit) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn -> {
-                List<HotspotEntry> result = new ArrayList<>();
-                try (PreparedStatement ps = conn.prepareStatement(SQL_HOTSPOTS)) {
-                    ps.setInt(1, limit);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            result.add(new HotspotEntry(
-                                rs.getString("path"),
-                                rs.getInt(COL_DEPENDENT_COUNT)
-                            ));
-                        }
-                    }
-                }
-                return result;
-            });
-        } catch (SQLException e) {
-            LOG.warn("Failed to query hotspots", e);
-            return List.of();
-        }
-    }
-
-    /**
-     * File-level data for the Explorer table: path, dependency count,
-     * dependent count, and commit count.
-     */
-    @NotNull
-    public List<ExplorerRow> getExplorerRows(int limit) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn -> {
-                List<ExplorerRow> result = new ArrayList<>();
-                try (PreparedStatement ps = conn.prepareStatement(SQL_EXPLORER_ROWS)) {
-                    ps.setInt(1, limit);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            result.add(new ExplorerRow(
-                                rs.getString("path"),
-                                rs.getInt("dep_count"),
-                                rs.getInt(COL_DEPENDENT_COUNT),
-                                rs.getInt("commit_count")
-                            ));
-                        }
-                    }
-                }
-                return result;
-            });
-        } catch (SQLException e) {
-            LOG.warn("Failed to query explorer data", e);
-            return List.of();
-        }
-    }
-
-    /**
-     * Dependencies and dependents for a specific file.
-     */
-    @NotNull
-    public FileDetail getFileDetail(@NotNull String path) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn -> {
-                String fileId = FILE_PREFIX + path;
-                List<String> dependencies = new ArrayList<>();
-                List<String> dependents = new ArrayList<>();
-                List<CommitSummary> commits = new ArrayList<>();
-
-                try (PreparedStatement ps = conn.prepareStatement(SQL_FILE_DEPENDENCIES)) {
-                    ps.setString(1, fileId);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) dependencies.add(rs.getString("dep"));
-                    }
-                }
-                try (PreparedStatement ps = conn.prepareStatement(SQL_FILE_DEPENDENTS)) {
-                    ps.setString(1, fileId);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) dependents.add(rs.getString("dep"));
-                    }
-                }
-                try (PreparedStatement ps = conn.prepareStatement(SQL_FILE_COMMITS)) {
-                    ps.setString(1, path);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            commits.add(new CommitSummary(
-                                rs.getString("short_hash"),
-                                rs.getString("message"),
-                                rs.getString("author"),
-                                rs.getString(COL_TIMESTAMP)
-                            ));
-                        }
-                    }
-                }
-                return new FileDetail(path, dependencies, dependents, commits);
-            });
-        } catch (SQLException e) {
-            LOG.warn("Failed to query file detail for " + path, e);
-            return new FileDetail(path, List.of(), List.of(), List.of());
         }
     }
 
@@ -513,130 +164,9 @@ public final class CodeGraphStore {
                              @NotNull List<String> dependents, @NotNull List<CommitSummary> commits) {
     }
 
-    /**
-     * Recent activity feed combining git commits and agent tool calls.
-     * Returns entries ordered by time descending, limited to the requested count.
-     */
-    @NotNull
-    public List<ActivityEntry> getRecentActivity(int limit) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn -> {
-                List<ActivityEntry> result = new ArrayList<>();
-                try (PreparedStatement ps = conn.prepareStatement(SQL_RECENT_ACTIVITY)) {
-                    ps.setInt(1, limit);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            result.add(new ActivityEntry(
-                                rs.getString("type"),
-                                rs.getString("summary"),
-                                rs.getString(COL_TIMESTAMP)
-                            ));
-                        }
-                    }
-                }
-                return result;
-            });
-        } catch (SQLException e) {
-            LOG.warn("Failed to query recent activity", e);
-            return List.of();
-        }
-    }
-
     public record ActivityEntry(@NotNull String type, @NotNull String summary,
                                 @NotNull String timestamp) {
     }
-
-    @NotNull
-    public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql) throws SQLException {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        return db.withConnection(conn -> withQueryOnly(conn, () -> {
-            List<java.util.Map<String, Object>> rows = new ArrayList<>();
-            try (PreparedStatement ps = conn.prepareStatement(sql);
-                 ResultSet rs = ps.executeQuery()) {
-                int cols = rs.getMetaData().getColumnCount();
-                while (rs.next()) {
-                    java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<>();
-                    for (int i = 1; i <= cols; i++) {
-                        row.put(rs.getMetaData().getColumnLabel(i), rs.getObject(i));
-                    }
-                    rows.add(row);
-                }
-            }
-            return rows;
-        }));
-    }
-
-    @NotNull
-    public List<java.util.Map<String, Object>> queryRaw(@NotNull String sql, Object... params) throws SQLException {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        return db.withConnection(conn -> withQueryOnly(conn, () -> {
-            List<java.util.Map<String, Object>> rows = new ArrayList<>();
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                for (int i = 0; i < params.length; i++) {
-                    ps.setObject(i + 1, params[i]);
-                }
-                try (ResultSet rs = ps.executeQuery()) {
-                    int cols = rs.getMetaData().getColumnCount();
-                    while (rs.next()) {
-                        java.util.LinkedHashMap<String, Object> row = new java.util.LinkedHashMap<>();
-                        for (int i = 1; i <= cols; i++) {
-                            row.put(rs.getMetaData().getColumnLabel(i), rs.getObject(i));
-                        }
-                        rows.add(row);
-                    }
-                }
-            }
-            return rows;
-        }));
-    }
-
-    // ── Internal helpers ──────────────────────────────────────────────────────
-
-    private static void rollbackQuietly(@Nullable Connection conn) {
-        if (conn == null) return;
-        try {
-            conn.rollback();
-        } catch (SQLException ignored) {
-            // Rollback failure during error handling is non-actionable — the connection is already in a bad state
-        }
-    }
-
-    private static void setAutoCommitQuietly(@Nullable Connection conn, boolean v) {
-        if (conn == null) return;
-        try {
-            conn.setAutoCommit(v);
-        } catch (SQLException ignored) {
-            // AutoCommit reset failure is non-actionable — occurs on broken/closed connections
-        }
-    }
-
-    /**
-     * Executes a callback with SQLite's native {@code PRAGMA query_only = ON}, which makes the
-     * engine reject any write operation (INSERT, UPDATE, DELETE, DDL, ATTACH, etc.) at the driver
-     * level. This is safer than SQL parsing — no regex bypass risk. The pragma is always reset
-     * in the finally block since {@code withConnection} is synchronized, so no concurrent writer
-     * can observe the read-only state.
-     */
-    private static <T> T withQueryOnly(@NotNull Connection conn, @NotNull SqlCallable<T> callable) throws SQLException {
-        try (Statement pragma = conn.createStatement()) {
-            pragma.execute("PRAGMA query_only = ON");
-        }
-        try {
-            return callable.call();
-        } finally {
-            try (Statement pragma = conn.createStatement()) {
-                pragma.execute("PRAGMA query_only = OFF");
-            }
-        }
-    }
-
-    @FunctionalInterface
-    private interface SqlCallable<T> {
-        T call() throws SQLException;
-    }
-
-    // ── Graph visualization data ──────────────────────────────────────────────
 
     public record GraphDataNode(
         @NotNull String id,
@@ -656,342 +186,5 @@ public final class CodeGraphStore {
     }
 
     public record GraphData(@NotNull List<GraphDataNode> nodes, @NotNull List<GraphDataEdge> edges) {
-    }
-
-    /**
-     * Loads graph data centered on prompts and commits, with files included only when reached
-     * via commit/prompt origin or bounded dependency traversal.
-     *
-     * @param commitLimit number of most-recent commits to include (0 = none)
-     * @param promptLimit number of most-recent prompts/turns to include (0 = none)
-     * @param fileDepth   how many hops of file→file dependency edges to traverse from
-     *                    files touched by the loaded commits/prompts (0 = only directly
-     *                    touched files; 1 = +direct dependencies/dependents; 2 = two hops, etc.)
-     */
-    public GraphData getGraphData(int commitLimit, int promptLimit, int fileDepth) {
-        ConversationDatabase db = ConversationDatabase.getInstance(project);
-        try {
-            return db.withConnection(conn ->
-                withQueryOnly(conn, () -> buildGraphData(conn, commitLimit, promptLimit, fileDepth)));
-        } catch (SQLException e) {
-            LOG.warn("Failed to query graph visualization data", e);
-            return new GraphData(List.of(), List.of());
-        }
-    }
-
-    private static GraphData buildGraphData(@NotNull Connection conn,
-                                            int commitLimit, int promptLimit, int fileDepth) throws SQLException {
-        List<GraphDataNode> nodes = new ArrayList<>();
-        List<GraphDataEdge> edges = new ArrayList<>();
-
-        Set<String> commitHashes = new LinkedHashSet<>();
-        Set<String> turnIds = new LinkedHashSet<>();
-        Set<String> seedFiles = new LinkedHashSet<>();
-        // session_id → list of [turn_id, started_at] for the selected turns.
-        Map<String, List<String[]>> turnsBySession = new HashMap<>();
-
-        if (commitLimit > 0) {
-            loadCommits(conn, commitLimit, nodes, commitHashes);
-            loadFilesTouchedByCommits(conn, commitHashes, seedFiles);
-        }
-        if (promptLimit > 0) {
-            loadPrompts(conn, promptLimit, nodes, turnIds, turnsBySession);
-            loadFilesTouchedByPrompts(conn, turnIds, seedFiles);
-        }
-
-        Set<String> expandedFiles = expandFilesByDependency(conn, seedFiles, fileDepth);
-        addFileNodes(conn, expandedFiles, nodes);
-
-        addCommitFileEdges(conn, commitHashes, expandedFiles, edges);
-        addPromptFileEdges(conn, turnIds, expandedFiles, edges);
-        addFileToFileEdges(conn, expandedFiles, edges);
-        addPrevPromptEdges(turnsBySession, edges);
-
-        removeOrphanPrompts(nodes, edges);
-        return new GraphData(nodes, edges);
-    }
-
-    private static void loadCommits(Connection conn, int limit,
-                                    List<GraphDataNode> outNodes,
-                                    Set<String> outHashes) throws SQLException {
-        String sql = "SELECT hash, short_hash, message, author, timestamp" +
-            " FROM graph_commits ORDER BY timestamp DESC LIMIT ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String hash = rs.getString("hash");
-                    outHashes.add(hash);
-                    String label = rs.getString("short_hash") + " " +
-                        graphTruncate(rs.getString("message"), 30);
-                    outNodes.add(new GraphDataNode(
-                        COMMIT_PREFIX + hash, "commit", label, null, 0, 0,
-                        hash, rs.getString("author"), rs.getString(COL_TIMESTAMP), null));
-                }
-            }
-        }
-    }
-
-    private static void loadFilesTouchedByCommits(Connection conn,
-                                                  Set<String> commitHashes,
-                                                  Set<String> outFiles) throws SQLException {
-        if (commitHashes.isEmpty()) return;
-        String sql = "SELECT DISTINCT file_path FROM graph_commit_files" +
-            " WHERE commit_hash IN (" + inPlaceholders(commitHashes.size()) + ")" +
-            " AND file_path IS NOT NULL";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String h : commitHashes) ps.setString(idx++, h);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) outFiles.add(rs.getString(COL_FILE_PATH));
-            }
-        }
-    }
-
-    private static void loadPrompts(Connection conn, int limit,
-                                    List<GraphDataNode> outNodes,
-                                    Set<String> outTurnIds,
-                                    Map<String, List<String[]>> outBySession) throws SQLException {
-        String sql = "SELECT id, session_id, started_at, SUBSTR(prompt_text, 1, 150) AS preview" +
-            " FROM turns ORDER BY started_at DESC LIMIT ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String id = rs.getString("id");
-                    String sessionId = rs.getString("session_id");
-                    String startedAt = rs.getString("started_at");
-                    outTurnIds.add(id);
-                    if (sessionId != null && startedAt != null) {
-                        outBySession.computeIfAbsent(sessionId, k -> new ArrayList<>())
-                            .add(new String[]{id, startedAt});
-                    }
-                    String preview = rs.getString("preview");
-                    outNodes.add(new GraphDataNode(
-                        TURN_PREFIX + id, "prompt",
-                        graphTruncate(preview != null ? preview : id, 32),
-                        null, 0, 0, null, null, startedAt, preview));
-                }
-            }
-        }
-    }
-
-    private static void loadFilesTouchedByPrompts(Connection conn,
-                                                  Set<String> turnIds,
-                                                  Set<String> outFiles) throws SQLException {
-        if (turnIds.isEmpty()) return;
-        String sql = "SELECT DISTINCT tce.file_path FROM tool_call_events tce" +
-            " JOIN events e ON e.id = tce.event_id" +
-            " WHERE e.turn_id IN (" + inPlaceholders(turnIds.size()) + ")" +
-            " AND tce.file_path IS NOT NULL";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String t : turnIds) ps.setString(idx++, t);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) outFiles.add(rs.getString(COL_FILE_PATH));
-            }
-        }
-    }
-
-    /**
-     * Cap on file nodes during BFS expansion — keeps the visualization readable
-     * and bounds query cost on dense dependency graphs.
-     */
-    private static final int FILE_NODE_CAP = 500;
-
-    private static Set<String> expandFilesByDependency(Connection conn,
-                                                       Set<String> seedFiles,
-                                                       int fileDepth) throws SQLException {
-        Set<String> expanded = new LinkedHashSet<>(seedFiles);
-        Set<String> frontier = new LinkedHashSet<>(seedFiles);
-        for (int hop = 0;
-             hop < fileDepth && !frontier.isEmpty() && expanded.size() < FILE_NODE_CAP;
-             hop++) {
-            frontier = bfsOneHop(conn, frontier, expanded);
-        }
-        return expanded;
-    }
-
-    private static Set<String> bfsOneHop(Connection conn,
-                                         Set<String> frontier,
-                                         Set<String> expanded) throws SQLException {
-        Set<String> nextFrontier = new LinkedHashSet<>();
-        String placeholders = inPlaceholders(frontier.size());
-        String sql =
-            "SELECT REPLACE(target_id,'file:','') AS dst FROM graph_edges" +
-                " WHERE relation='uses' AND source_id IN (" + placeholders + ")" +
-                " UNION " +
-                "SELECT REPLACE(source_id,'file:','') AS dst FROM graph_edges" +
-                " WHERE relation='uses' AND target_id IN (" + placeholders + ")";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String p : frontier) ps.setString(idx++, FILE_PREFIX + p);
-            for (String p : frontier) ps.setString(idx++, FILE_PREFIX + p);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next() && expanded.size() < FILE_NODE_CAP) {
-                    String fp = rs.getString("dst");
-                    if (fp != null && expanded.add(fp)) {
-                        nextFrontier.add(fp);
-                    }
-                }
-            }
-        }
-        return nextFrontier;
-    }
-
-    private static void addFileNodes(Connection conn, Set<String> files,
-                                     List<GraphDataNode> outNodes) throws SQLException {
-        if (files.isEmpty()) return;
-        Map<String, int[]> counts = loadFileCounts(conn, files);
-        for (String fp : files) {
-            int[] c = counts.getOrDefault(fp, new int[]{0, 0});
-            outNodes.add(new GraphDataNode(
-                FILE_PREFIX + fp, "file", graphFileName(fp), fp,
-                c[0], c[1], null, null, null, null));
-        }
-    }
-
-    private static Map<String, int[]> loadFileCounts(Connection conn, Set<String> files) throws SQLException {
-        Map<String, int[]> counts = new HashMap<>();
-        String sql =
-            "SELECT fi.path," +
-                " COALESCE(deps.cnt, 0) AS dep_count," +
-                " COALESCE(depnts.cnt, 0) AS dependent_count" +
-                " FROM graph_file_index fi" +
-                " LEFT JOIN (SELECT source_id, COUNT(DISTINCT target_id) AS cnt" +
-                "   FROM graph_edges WHERE relation='uses' GROUP BY source_id) deps" +
-                "   ON deps.source_id = 'file:' || fi.path" +
-                " LEFT JOIN (SELECT target_id, COUNT(DISTINCT source_id) AS cnt" +
-                "   FROM graph_edges WHERE relation='uses' GROUP BY target_id) depnts" +
-                "   ON depnts.target_id = 'file:' || fi.path" +
-                " WHERE fi.path IN (" + inPlaceholders(files.size()) + ")";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String p : files) ps.setString(idx++, p);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    counts.put(rs.getString("path"),
-                        new int[]{rs.getInt("dep_count"), rs.getInt(COL_DEPENDENT_COUNT)});
-                }
-            }
-        }
-        return counts;
-    }
-
-    private static void addCommitFileEdges(Connection conn,
-                                           Set<String> commitHashes,
-                                           Set<String> files,
-                                           List<GraphDataEdge> outEdges) throws SQLException {
-        if (commitHashes.isEmpty() || files.isEmpty()) return;
-        String sql = "SELECT commit_hash, file_path FROM graph_commit_files" +
-            " WHERE commit_hash IN (" + inPlaceholders(commitHashes.size()) + ")" +
-            " AND file_path IN (" + inPlaceholders(files.size()) + ")";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String h : commitHashes) ps.setString(idx++, h);
-            for (String f : files) ps.setString(idx++, f);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    outEdges.add(new GraphDataEdge(
-                        COMMIT_PREFIX + rs.getString("commit_hash"),
-                        FILE_PREFIX + rs.getString(COL_FILE_PATH),
-                        "changed"));
-                }
-            }
-        }
-    }
-
-    private static void addPromptFileEdges(Connection conn,
-                                           Set<String> turnIds,
-                                           Set<String> files,
-                                           List<GraphDataEdge> outEdges) throws SQLException {
-        if (turnIds.isEmpty() || files.isEmpty()) return;
-        String sql = "SELECT DISTINCT e.turn_id, tce.file_path" +
-            " FROM tool_call_events tce" +
-            " JOIN events e ON e.id = tce.event_id" +
-            " WHERE e.turn_id IN (" + inPlaceholders(turnIds.size()) + ")" +
-            " AND tce.file_path IN (" + inPlaceholders(files.size()) + ")";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String t : turnIds) ps.setString(idx++, t);
-            for (String f : files) ps.setString(idx++, f);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    outEdges.add(new GraphDataEdge(
-                        TURN_PREFIX + rs.getString("turn_id"),
-                        FILE_PREFIX + rs.getString(COL_FILE_PATH),
-                        "touched"));
-                }
-            }
-        }
-    }
-
-    private static void addFileToFileEdges(Connection conn,
-                                           Set<String> files,
-                                           List<GraphDataEdge> outEdges) throws SQLException {
-        if (files.size() <= 1) return;
-        String placeholders = inPlaceholders(files.size());
-        String sql =
-            "SELECT REPLACE(source_id,'file:','') AS src," +
-                " REPLACE(target_id,'file:','') AS tgt" +
-                " FROM graph_edges WHERE relation='uses'" +
-                " AND source_id IN (" + placeholders + ")" +
-                " AND target_id IN (" + placeholders + ")";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int idx = 1;
-            for (String p : files) ps.setString(idx++, FILE_PREFIX + p);
-            for (String p : files) ps.setString(idx++, FILE_PREFIX + p);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    outEdges.add(new GraphDataEdge(
-                        FILE_PREFIX + rs.getString("src"),
-                        FILE_PREFIX + rs.getString("tgt"),
-                        "uses"));
-                }
-            }
-        }
-    }
-
-    private static void addPrevPromptEdges(Map<String, List<String[]>> turnsBySession,
-                                           List<GraphDataEdge> outEdges) {
-        for (List<String[]> sessionTurns : turnsBySession.values()) {
-            sessionTurns.sort(Comparator.comparing(a -> a[1]));
-            for (int i = 1; i < sessionTurns.size(); i++) {
-                outEdges.add(new GraphDataEdge(
-                    TURN_PREFIX + sessionTurns.get(i - 1)[0],
-                    TURN_PREFIX + sessionTurns.get(i)[0],
-                    "prev"));
-            }
-        }
-    }
-
-    private static void removeOrphanPrompts(List<GraphDataNode> nodes, List<GraphDataEdge> edges) {
-        if (nodes.isEmpty() || edges.isEmpty()) return;
-        Set<String> connected = new HashSet<>();
-        for (GraphDataEdge e : edges) {
-            connected.add(e.source());
-            connected.add(e.target());
-        }
-        nodes.removeIf(n -> "prompt".equals(n.type()) && !connected.contains(n.id()));
-    }
-
-    private static String inPlaceholders(int n) {
-        StringBuilder sb = new StringBuilder(n * 2);
-        for (int i = 0; i < n; i++) {
-            if (i > 0) sb.append(',');
-            sb.append('?');
-        }
-        return sb.toString();
-    }
-
-    private static String graphFileName(@NotNull String path) {
-        int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        return slash >= 0 ? path.substring(slash + 1) : path;
-    }
-
-    private static String graphTruncate(@Nullable String s, int max) {
-        if (s == null) return "";
-        s = s.replace('\n', ' ').replace('\r', ' ');
-        return s.length() <= max ? s : s.substring(0, max - 1) + "\u2026";
     }
 }
