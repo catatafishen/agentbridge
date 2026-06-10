@@ -130,7 +130,8 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
             val promptLimit = if (viewIdx == 1) 0 else 15
             val store = CodeGraphStore.getInstance(project)
             val data = store.getGraphData(60, commitLimit, promptLimit)
-            val escaped = escapeForJs(buildJson(data))
+            val json = buildJson(data)
+            val escaped = escapeForJs(json)
             ApplicationManager.getApplication().invokeLater {
                 executeJs("window.loadGraph('$escaped')")
             }

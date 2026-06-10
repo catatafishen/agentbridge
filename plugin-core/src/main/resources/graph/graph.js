@@ -12,7 +12,8 @@
         edge: {
             uses: 'rgba(140,140,140,0.45)',
             changed: 'rgba(232,148,58,0.40)',
-            touched: 'rgba(93,184,92,0.40)'
+            touched: 'rgba(93,184,92,0.40)',
+            prev: 'rgba(155,120,200,0.55)'
         },
         label: 'rgba(210,210,210,0.90)',
         dimLabel: 'rgba(150,150,150,0.25)',
@@ -33,14 +34,6 @@
 
     let viewMode = 'all';
     let searchStr = '';
-
-    // ── Diagnostics ────────────────────────────────────────────────────────────
-    // The graph "disappears" after the simulation settles. We don't yet know
-    // whether the canvas itself stops blitting (JCEF OSR issue) or whether
-    // render() keeps drawing but produces no visible output (coord/scale bug).
-    // These on-screen counters let the user report exactly what they see when
-    // the graph vanishes. See .agent-work/graph-disappearing-attempts.md.
-    let renderCount = 0;
 
     // ── Initialization ─────────────────────────────────────────────────────────
 
@@ -160,8 +153,9 @@
     }
 
     function animLoop() {
-        // Only simulate while ticks remain; always render to keep JCEF's
-        // compositor refreshing — stopping RAF makes the canvas go blank.
+        // RAF runs continuously: render() is cheap when alpha is 0 (no node
+        // movement), and keeping the loop alive avoids re-establishing it
+        // on every interaction (drag, hover, search, viewMode change).
         if (simTick < maxSim) {
             simulate();
             simTick++;
@@ -175,7 +169,7 @@
         var alpha = Math.max(0, 1 - simTick / maxSim);
         var vis = nodes.filter(isVisible);
 
-        // Repulsion (halved to 900 to keep nodes compact)
+        // Repulsion
         for (var i = 0; i < vis.length; i++) {
             for (var j = i + 1; j < vis.length; j++) {
                 var a = vis[i], b = vis[j];
@@ -195,7 +189,7 @@
             if (!isVisible(e.s) || !isVisible(e.t)) continue;
             var edx = e.t.x - e.s.x, edy = e.t.y - e.s.y;
             var d = Math.sqrt(edx * edx + edy * edy) + 1;
-            var ideal = 30;
+            var ideal = 15;
             var ef = ((d - ideal) * 0.04) * alpha;
             var enx = edx / d, eny = edy / d;
             e.s.vx += enx * ef;
@@ -210,10 +204,16 @@
             vis[ci].vy -= vis[ci].y * 0.04 * alpha;
         }
 
-        // Integrate + damp
+        // Integrate + damp.
+        // Clamp per-tick velocity to prevent runaway in dense graphs:
+        // with ~28 edges per node, summed spring forces would otherwise push
+        // nodes thousands of pixels off-screen before damping catches up.
+        var VMAX = 8;
         for (var ii = 0; ii < vis.length; ii++) {
             var n = vis[ii];
             if (n === dragNode) continue;
+            if (n.vx > VMAX) n.vx = VMAX; else if (n.vx < -VMAX) n.vx = -VMAX;
+            if (n.vy > VMAX) n.vy = VMAX; else if (n.vy < -VMAX) n.vy = -VMAX;
             n.x += n.vx;
             n.y += n.vy;
             n.vx *= 0.75;
@@ -234,7 +234,6 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('No data \u2014 click Refresh to load the graph', W / 2, H / 2);
-            drawDiagnostics();
             return;
         }
 
@@ -249,45 +248,6 @@
 
         drawTooltip(W, H);
         drawLegend(W, H);
-        drawDiagnostics();
-    }
-
-    function drawDiagnostics() {
-        renderCount++;
-
-        // Stationary red square in screen coordinates — proves the canvas is
-        // still receiving frames even if nothing else is visible. If this
-        // disappears together with the graph, the JCEF OSR pipeline has
-        // stopped blitting. If it stays visible while the graph "vanishes",
-        // the issue is in node coords / scale / pan.
-        ctx.fillStyle = 'rgba(220,60,60,0.95)';
-        ctx.fillRect(4, 4, 10, 10);
-
-        // Animated cyan square — proves render() is still being called.
-        // If it freezes, the RAF loop has stopped. If it keeps moving while
-        // the rest of the graph is gone, render() is running but drawing
-        // nothing useful.
-        var phase = (renderCount % 60) / 60;
-        var ax = 4 + phase * 30;
-        ctx.fillStyle = 'rgba(80,200,220,0.95)';
-        ctx.fillRect(ax, 18, 6, 6);
-
-        // State readout — exposes node count, alpha, scale, pan offsets.
-        // If nodes=0 when graph "disappears", buildGraph wiped them. If
-        // scale is tiny or |tx|/|ty| huge, the camera moved off-screen.
-        var alpha = Math.max(0, 1 - simTick / Math.max(1, maxSim));
-        var line = 'r=' + renderCount +
-            ' tick=' + simTick + '/' + maxSim +
-            ' a=' + alpha.toFixed(3) +
-            ' n=' + nodes.length +
-            ' e=' + edges.length +
-            ' s=' + scale.toFixed(2) +
-            ' t=(' + Math.round(tx) + ',' + Math.round(ty) + ')';
-        ctx.font = '10px monospace';
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.textBaseline = 'top';
-        ctx.textAlign = 'left';
-        ctx.fillText(line, 20, 5);
     }
 
     function drawEdges() {
