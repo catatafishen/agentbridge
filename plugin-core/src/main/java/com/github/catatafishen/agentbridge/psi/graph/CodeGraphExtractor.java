@@ -96,7 +96,7 @@ public final class CodeGraphExtractor {
         Collection<PsiReference> refs = collectRefs(file);
         for (PsiReference ref : refs) {
             VirtualFile targetVf = resolveTargetVf(ref);
-            if (targetVf == null || !idx.isInProject(targetVf)) continue;
+            if (targetVf == null || !idx.isInSourceContent(targetVf)) continue;
             String targetPath = relativePath(targetVf);
             if (!targetPath.equals(relPath)) {
                 String targetId = "file:" + targetPath;
