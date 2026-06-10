@@ -15,6 +15,7 @@ import java.util.List;
  * Registers the <b>Knowledge Graph</b> sidebar tool window with multiple tabs:
  * <ul>
  *   <li><b>Dashboard</b> — stats cards, hotspots, activity feed</li>
+ *   <li><b>Graph</b> — interactive force-directed dependency graph (JCEF)</li>
  *   <li><b>Explorer</b> — searchable table of files with dependency/commit counts</li>
  * </ul>
  * Title bar actions: ⚙ Settings, ↻ Rebuild, ⤓ Export JSON.
@@ -30,14 +31,24 @@ public final class KnowledgeGraphToolWindowFactory implements ToolWindowFactory,
         Disposer.register(dashboardContent, dashboard);
         toolWindow.getContentManager().addContent(dashboardContent);
 
+        KnowledgeGraphDiagramPanel diagram = new KnowledgeGraphDiagramPanel(project);
+        Content diagramContent = cf.createContent(diagram.getComponent(), "Graph", false);
+        Disposer.register(diagramContent, diagram);
+        toolWindow.getContentManager().addContent(diagramContent);
+
         KnowledgeGraphExplorerPanel explorer = new KnowledgeGraphExplorerPanel(project);
         Content explorerContent = cf.createContent(explorer.getComponent(), "Explorer", false);
         Disposer.register(explorerContent, explorer);
         toolWindow.getContentManager().addContent(explorerContent);
 
+        Runnable onRebuildFinished = () -> {
+            dashboard.onRebuildFinished();
+            diagram.refresh();
+        };
+
         toolWindow.setTitleActions(List.of(
             new KnowledgeGraphSettingsAction(project),
-            new KnowledgeGraphRebuildAction(project, dashboard),
+            new KnowledgeGraphRebuildAction(project, onRebuildFinished),
             new KnowledgeGraphExportAction(project)
         ));
     }

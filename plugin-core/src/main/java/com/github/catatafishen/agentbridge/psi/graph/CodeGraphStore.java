@@ -30,6 +30,23 @@ public final class CodeGraphStore {
 
     // ── SQL constants (S6203: text blocks must be outside lambda bodies) ──────
 
+    private static final String SQL_GRAPH_TOP_FILES = """
+        SELECT fi.path,
+               COALESCE(deps.cnt, 0)    AS dep_count,
+               COALESCE(depnts.cnt, 0)  AS dependent_count
+        FROM graph_file_index fi
+        LEFT JOIN (
+            SELECT source_id, COUNT(DISTINCT target_id) AS cnt
+            FROM graph_edges WHERE relation = 'uses' GROUP BY source_id
+        ) deps   ON deps.source_id   = 'file:' || fi.path
+        LEFT JOIN (
+            SELECT target_id, COUNT(DISTINCT source_id) AS cnt
+            FROM graph_edges WHERE relation = 'uses' GROUP BY target_id
+        ) depnts ON depnts.target_id = 'file:' || fi.path
+        ORDER BY (COALESCE(deps.cnt, 0) + COALESCE(depnts.cnt, 0)) DESC
+        LIMIT ?
+        """;
+
     private static final String SQL_HOTSPOTS = """
         SELECT e.target_id AS file_id, n.source_file AS path,
                COUNT(DISTINCT e.source_id) AS dependent_count
@@ -69,11 +86,11 @@ public final class CodeGraphStore {
 
     private static final String SQL_FILE_DEPENDENCIES =
         "SELECT DISTINCT REPLACE(target_id, 'file:', '') AS dep " +
-        "FROM graph_edges WHERE source_id = ? AND relation = 'uses' ORDER BY 1";
+            "FROM graph_edges WHERE source_id = ? AND relation = 'uses' ORDER BY 1";
 
     private static final String SQL_FILE_DEPENDENTS =
         "SELECT DISTINCT REPLACE(source_id, 'file:', '') AS dep " +
-        "FROM graph_edges WHERE target_id = ? AND relation = 'uses' ORDER BY 1";
+            "FROM graph_edges WHERE target_id = ? AND relation = 'uses' ORDER BY 1";
 
     private static final String SQL_FILE_COMMITS = """
         SELECT gc.short_hash, gc.message, gc.author, gc.timestamp
@@ -619,5 +636,169 @@ public final class CodeGraphStore {
     @FunctionalInterface
     private interface SqlCallable<T> {
         T call() throws SQLException;
+    }
+
+    // ── Graph visualization data ──────────────────────────────────────────────
+
+    public record GraphDataNode(
+        @NotNull String id,
+        @NotNull String type,
+        @NotNull String label,
+        @Nullable String path,
+        int depCount,
+        int dependentCount,
+        @Nullable String hash,
+        @Nullable String author,
+        @Nullable String timestamp,
+        @Nullable String preview
+    ) {
+    }
+
+    public record GraphDataEdge(@NotNull String source, @NotNull String target, @NotNull String type) {
+    }
+
+    public record GraphData(@NotNull List<GraphDataNode> nodes, @NotNull List<GraphDataEdge> edges) {
+    }
+
+    /**
+     * Returns a mixed graph of files, commits, and prompts with their connections.
+     * Files are the top N by total connection count. Commits and prompts are the most recent.
+     * Edges are filtered in Java to only those between the selected sets, avoiding dynamic IN
+     * clauses while keeping the query simple.
+     */
+    @NotNull
+    @SuppressWarnings({"DataFlowIssue", "java:S3776"})
+    // DataFlowIssue: withConnection returns non-null; S3776: sequential query steps, no simpler decomposition
+    public GraphData getGraphData(int fileLimit, int commitLimit, int promptLimit) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        try {
+            return db.withConnection(conn -> withQueryOnly(conn, () -> {
+                List<GraphDataNode> nodes = new ArrayList<>();
+                List<GraphDataEdge> edges = new ArrayList<>();
+                java.util.Set<String> filePaths = new java.util.LinkedHashSet<>();
+
+                // ── Files ─────────────────────────────────────────────────────
+                try (PreparedStatement ps = conn.prepareStatement(SQL_GRAPH_TOP_FILES)) {
+                    ps.setInt(1, fileLimit);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            String path = rs.getString("path");
+                            filePaths.add(path);
+                            nodes.add(new GraphDataNode(
+                                "file:" + path, "file", graphFileName(path), path,
+                                rs.getInt("dep_count"), rs.getInt("dependent_count"),
+                                null, null, null, null));
+                        }
+                    }
+                }
+
+                // ── File→File edges ───────────────────────────────────────────
+                if (!filePaths.isEmpty()) {
+                    try (Statement st = conn.createStatement();
+                         ResultSet rs = st.executeQuery(
+                             "SELECT REPLACE(source_id,'file:','') AS src," +
+                                 " REPLACE(target_id,'file:','') AS tgt" +
+                                 " FROM graph_edges WHERE relation='uses'")) {
+                        while (rs.next()) {
+                            String src = rs.getString("src");
+                            String tgt = rs.getString("tgt");
+                            if (filePaths.contains(src) && filePaths.contains(tgt)) {
+                                edges.add(new GraphDataEdge("file:" + src, "file:" + tgt, "uses"));
+                            }
+                        }
+                    }
+                }
+
+                // ── Commits ───────────────────────────────────────────────────
+                java.util.Set<String> commitHashes = new java.util.LinkedHashSet<>();
+                if (commitLimit > 0) {
+                    try (PreparedStatement ps = conn.prepareStatement(
+                        "SELECT hash, short_hash, message, author, timestamp" +
+                            " FROM graph_commits ORDER BY timestamp DESC LIMIT ?")) {
+                        ps.setInt(1, commitLimit);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                String hash = rs.getString("hash");
+                                commitHashes.add(hash);
+                                String label = rs.getString("short_hash") + " " +
+                                    graphTruncate(rs.getString("message"), 30);
+                                nodes.add(new GraphDataNode(
+                                    "commit:" + hash, "commit", label, null, 0, 0,
+                                    hash, rs.getString("author"), rs.getString("timestamp"), null));
+                            }
+                        }
+                    }
+                    // Commit→file edges
+                    if (!commitHashes.isEmpty() && !filePaths.isEmpty()) {
+                        try (Statement st = conn.createStatement();
+                             ResultSet rs = st.executeQuery(
+                                 "SELECT commit_hash, file_path FROM graph_commit_files LIMIT 20000")) {
+                            while (rs.next()) {
+                                String hash = rs.getString("commit_hash");
+                                String fp = rs.getString("file_path");
+                                if (commitHashes.contains(hash) && filePaths.contains(fp)) {
+                                    edges.add(new GraphDataEdge("commit:" + hash, "file:" + fp, "changed"));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Prompts ───────────────────────────────────────────────────
+                java.util.Set<String> turnIds = new java.util.LinkedHashSet<>();
+                if (promptLimit > 0) {
+                    try (PreparedStatement ps = conn.prepareStatement(
+                        "SELECT id, started_at, SUBSTR(prompt_text, 1, 150) AS preview" +
+                            " FROM turns ORDER BY started_at DESC LIMIT ?")) {
+                        ps.setInt(1, promptLimit);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                String id = rs.getString("id");
+                                turnIds.add(id);
+                                String preview = rs.getString("preview");
+                                nodes.add(new GraphDataNode(
+                                    "turn:" + id, "prompt",
+                                    graphTruncate(preview != null ? preview : id, 32),
+                                    null, 0, 0, null, null, rs.getString("started_at"), preview));
+                            }
+                        }
+                    }
+                    // Prompt→file edges (join events to get turn_id)
+                    if (!turnIds.isEmpty() && !filePaths.isEmpty()) {
+                        try (Statement st = conn.createStatement();
+                             ResultSet rs = st.executeQuery(
+                                 "SELECT DISTINCT e.turn_id, tce.file_path" +
+                                     " FROM tool_call_events tce" +
+                                     " JOIN events e ON e.id = tce.event_id" +
+                                     " WHERE e.turn_id IS NOT NULL AND tce.file_path IS NOT NULL" +
+                                     " ORDER BY e.timestamp DESC LIMIT 5000")) {
+                            while (rs.next()) {
+                                String turnId = rs.getString("turn_id");
+                                String fp = rs.getString("file_path");
+                                if (turnIds.contains(turnId) && filePaths.contains(fp)) {
+                                    edges.add(new GraphDataEdge("turn:" + turnId, "file:" + fp, "touched"));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return new GraphData(nodes, edges);
+            }));
+        } catch (SQLException e) {
+            LOG.warn("Failed to query graph visualization data", e);
+            return new GraphData(List.of(), List.of());
+        }
+    }
+
+    private static String graphFileName(@NotNull String path) {
+        int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        return slash >= 0 ? path.substring(slash + 1) : path;
+    }
+
+    private static String graphTruncate(@Nullable String s, int max) {
+        if (s == null) return "";
+        s = s.replace('\n', ' ').replace('\r', ' ');
+        return s.length() <= max ? s : s.substring(0, max - 1) + "\u2026";
     }
 }

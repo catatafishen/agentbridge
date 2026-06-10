@@ -2083,4 +2083,5 @@ public final class PlatformApiCompat {
         return com.intellij.psi.codeStyle.NameUtil.buildMatcher(pattern,
             com.intellij.psi.codeStyle.NameUtil.MatchingCaseSensitivity.NONE);
     }
+
 }
