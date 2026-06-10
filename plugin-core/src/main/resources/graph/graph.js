@@ -152,10 +152,11 @@
     }
 
     function animLoop() {
-        // Always run physics + render. JCEF's off-screen compositor drops
-        // the canvas backing buffer when consecutive frames are byte-identical,
-        // so we must keep node positions micro-changing AND emit a heartbeat
-        // pixel below to ensure every frame differs from the previous one.
+        // The simulation never truly stops: alpha decays from 1 down to a
+        // small floor (0.15) and stays there, so nodes always have a little
+        // residual motion. Empirically this is what keeps the graph visible
+        // in JCEF — fully static canvases get hidden once the user observes
+        // them stop moving.
         simulate();
         if (simTick < maxSim) simTick++;
         render();
@@ -164,10 +165,10 @@
 
 
     function simulate() {
-        // Floor at 0.01 so nodes keep micro-jittering after settling. A fully
-        // static canvas causes JCEF to drop the backing buffer; tiny residual
-        // motion keeps the compositor pumping frames.
-        var alpha = Math.max(0.01, 1 - simTick / maxSim);
+        // Alpha decays from 1 → 0.15 during the initial settling phase, then
+        // stays at 0.15 forever. Nodes keep gently drifting around their
+        // settled positions (kept in place by the centering force).
+        var alpha = Math.max(0.15, 1 - simTick / maxSim);
         var vis = nodes.filter(isVisible);
 
         // Repulsion (halved to 900 to keep nodes compact)
@@ -218,19 +219,10 @@
 
     // ── Rendering ──────────────────────────────────────────────────────────────
 
-    var heartbeat = 0;
-
     function render() {
         if (!canvas) return;
         var W = canvas.width, H = canvas.height;
         ctx.clearRect(0, 0, W, H);
-
-        // Heartbeat: paint a 1-px varying-alpha dot at (0,0). Invisible to
-        // the user, but guarantees every frame's bitmap differs so JCEF's
-        // off-screen compositor never deduplicates and drops the canvas.
-        heartbeat = (heartbeat + 1) & 0xff;
-        ctx.fillStyle = 'rgba(0,0,0,' + (heartbeat / 100000).toFixed(6) + ')';
-        ctx.fillRect(0, 0, 1, 1);
 
         if (nodes.length === 0) {
             ctx.fillStyle = 'rgba(140,140,140,0.55)';
