@@ -323,7 +323,8 @@ public final class CodeGraphStore {
 
     // ── Stats ─────────────────────────────────────────────────────────────────
 
-    public record GraphStats(long nodeCount, long edgeCount, long fileCount, long commitCount, long lastIndexedAt) {
+    public record GraphStats(long nodeCount, long edgeCount, long fileCount, long commitCount,
+                             long promptCount, long toolCallCount, long lastIndexedAt) {
         public boolean isEmpty() {
             return nodeCount == 0 && commitCount == 0;
         }
@@ -338,6 +339,8 @@ public final class CodeGraphStore {
                 long edges = 0;
                 long files = 0;
                 long commits = 0;
+                long prompts = 0;
+                long toolCalls = 0;
                 long lastAt = 0;
                 try (Statement st = conn.createStatement()) {
                     try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_nodes")) {
@@ -356,12 +359,18 @@ public final class CodeGraphStore {
                     try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM graph_commits")) {
                         if (rs.next()) commits = rs.getLong(1);
                     }
+                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM turns")) {
+                        if (rs.next()) prompts = rs.getLong(1);
+                    }
+                    try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM tool_call_events")) {
+                        if (rs.next()) toolCalls = rs.getLong(1);
+                    }
                 }
-                return new GraphStats(nodes, edges, files, commits, lastAt);
+                return new GraphStats(nodes, edges, files, commits, prompts, toolCalls, lastAt);
             });
         } catch (SQLException e) {
             LOG.warn("Failed to read graph stats", e);
-            return new GraphStats(0, 0, 0, 0, 0);
+            return new GraphStats(0, 0, 0, 0, 0, 0, 0);
         }
     }
 
