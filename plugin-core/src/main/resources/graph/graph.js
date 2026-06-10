@@ -106,15 +106,16 @@
     // ── Graph build ────────────────────────────────────────────────────────────
 
     function buildGraph(nodeData, edgeData) {
-        var total = nodeData.length || 1;
+        const total = nodeData.length || 1;
+        const scales = computeSizeScales(nodeData);
         nodes = nodeData.map(function (n, i) {
-            var angle = (i / total) * Math.PI * 2;
-            var radius = 80 + Math.random() * 140;
+            const angle = (i / total) * Math.PI * 2;
+            const radius = 80 + Math.random() * 140;
             return Object.assign({}, n, {
                 x: Math.cos(angle) * radius,
                 y: Math.sin(angle) * radius,
                 vx: 0, vy: 0,
-                r: nodeRadius(n)
+                r: nodeRadius(n, scales)
             });
         });
 
@@ -139,9 +140,41 @@
         restartSim(250);
     }
 
-    function nodeRadius(n) {
-        var connections = (n.depCount || 0) + (n.dependentCount || 0);
-        return 8 + Math.min(14, Math.sqrt(connections) * 1.8);
+    // ── Node sizing ────────────────────────────────────────────────────────────
+    //
+    // Each node has a raw `sizeMetric` whose meaning depends on type:
+    //   file   → PSI symbol count (proxy for complexity; LOC is not stored)
+    //   commit → number of files changed
+    //   prompt → tokens (input+output), or seconds spent if tokens are 0
+    //
+    // We map each TYPE's [min, max] onto a fixed pixel-radius range so that the
+    // smallest node of every type renders at MIN_R and the largest at MAX_R --
+    // sizes are relative within a type, not comparable across types. Sqrt
+    // compresses wide ranges (e.g., tokens spanning 1 to 50 000), so a single
+    // huge outlier doesn't dwarf everything else.
+
+    const MIN_R = 8;
+    const MAX_R = 22;
+    const MID_R = (MIN_R + MAX_R) / 2;
+
+    function computeSizeScales(nodeData) {
+        const scales = {};
+        nodeData.forEach(function (n) {
+            const t = n.type;
+            const v = Math.max(0, n.sizeMetric || 0);
+            const s = scales[t] || (scales[t] = {min: Infinity, max: -Infinity});
+            if (v < s.min) s.min = v;
+            if (v > s.max) s.max = v;
+        });
+        return scales;
+    }
+
+    function nodeRadius(n, scales) {
+        const s = scales[n.type];
+        if (!s || s.max <= 0 || s.min === s.max) return MID_R;
+        const v = Math.max(0, n.sizeMetric || 0);
+        const t = (Math.sqrt(v) - Math.sqrt(s.min)) / (Math.sqrt(s.max) - Math.sqrt(s.min));
+        return MIN_R + t * (MAX_R - MIN_R);
     }
 
     // ── Force simulation ───────────────────────────────────────────────────────

@@ -168,6 +168,20 @@ public final class CodeGraphStore {
                                 @NotNull String timestamp) {
     }
 
+    /**
+     * @param sizeMetric raw value used for per-type relative node sizing in the diagram:
+     *                   <ul>
+     *                     <li><b>file</b> — {@code graph_file_index.node_count} (PSI symbol count;
+     *                         a complexity proxy, since LOC is not stored)</li>
+     *                     <li><b>commit</b> — number of files changed in the commit
+     *                         (proxy for diff size, since per-commit lines added/removed are not stored)</li>
+     *                     <li><b>prompt</b> — {@code input_tokens + output_tokens} when present;
+     *                         otherwise {@code duration_ms / 1000} as a fallback for agents that
+     *                         do not report tokens (e.g., Copilot CLI)</li>
+     *                   </ul>
+     *                   Always {@code >= 0}. The renderer maps each type's [min, max] across the
+     *                   loaded graph to a fixed pixel-radius range.
+     */
     public record GraphDataNode(
         @NotNull String id,
         @NotNull String type,
@@ -178,7 +192,8 @@ public final class CodeGraphStore {
         @Nullable String hash,
         @Nullable String author,
         @Nullable String timestamp,
-        @Nullable String preview
+        @Nullable String preview,
+        long sizeMetric
     ) {
     }
 
