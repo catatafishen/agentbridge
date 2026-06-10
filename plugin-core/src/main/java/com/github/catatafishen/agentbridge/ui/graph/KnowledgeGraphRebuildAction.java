@@ -13,16 +13,16 @@ import org.jetbrains.annotations.NotNull;
 final class KnowledgeGraphRebuildAction extends AnAction {
 
     private final Project project;
-    private final KnowledgeGraphDashboardPanel dashboard;
+    private final Runnable onFinished;
 
-    KnowledgeGraphRebuildAction(@NotNull Project project, @NotNull KnowledgeGraphDashboardPanel dashboard) {
+    KnowledgeGraphRebuildAction(@NotNull Project project, @NotNull Runnable onFinished) {
         super("Rebuild", "Rebuild the knowledge graph index", AllIcons.Actions.Refresh);
         this.project = project;
-        this.dashboard = dashboard;
+        this.onFinished = onFinished;
     }
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
-        CodeGraphIndexer.getInstance(project).rebuildAll(dashboard::onRebuildFinished);
+        CodeGraphIndexer.getInstance(project).rebuildAll(onFinished);
     }
 }
