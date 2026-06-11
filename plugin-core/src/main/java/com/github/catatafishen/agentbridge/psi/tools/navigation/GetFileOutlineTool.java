@@ -62,7 +62,10 @@ public final class GetFileOutlineTool extends NavigationTool {
         return FileOutlineRenderer.INSTANCE;
     }
 
+    // Computable<> cast required for javac disambiguation between Computable and ThrowableComputable overloads.
+    // IntelliJ's type inference is more aggressive than javac and incorrectly marks it as redundant.
     @Override
+    @SuppressWarnings("RedundantCast")
     public @NotNull String execute(@NotNull JsonObject args) {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
@@ -73,10 +76,10 @@ public final class GetFileOutlineTool extends NavigationTool {
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (psiFile == null) return "Cannot parse file: " + pathStr;
+            if (psiFile == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
             Document document = FileDocumentManager.getInstance().getDocument(vf);
-            if (document == null) return "Cannot read file: " + pathStr;
+            if (document == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
             List<String> outline = collectOutlineEntries(psiFile, document);
 

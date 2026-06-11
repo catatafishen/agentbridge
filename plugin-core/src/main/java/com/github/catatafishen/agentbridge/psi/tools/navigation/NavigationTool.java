@@ -49,12 +49,13 @@ public abstract class NavigationTool extends Tool {
     protected static final String SCOPE_LIBRARIES = "libraries";
     protected static final String SCOPE_ALL = "all";
     protected static final String SCOPE_DESCRIPTION =
-        "Search scope: 'project' (default — all project sources), "
-            + "'production' (non-test code only — files in sources, resources, generated_sources roots), "
-            + "'tests' (test code only — files in test_sources, test_resources roots), "
-            + "'libraries' (only library/JDK sources — "
-            + "use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). "
-            + "Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.";
+        """
+            Search scope: 'project' (default — all project sources), \
+            'production' (non-test code only — files in sources, resources, generated_sources roots), \
+            'tests' (test code only — files in test_sources, test_resources roots), \
+            'libraries' (only library/JDK sources — \
+            use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). \
+            Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.""";
 
     protected static final String PARAM_MAX_RESULTS = "max_results";
     protected static final String PARAM_OFFSET = "offset";
@@ -283,21 +284,35 @@ public abstract class NavigationTool extends Tool {
         }
     }
 
+    protected List<String> collectOutlineEntries(PsiFile psiFile, Document document) {
+        return collectOutlineEntries(psiFile, document, null);
+    }
+
+    // Computable<> cast required: javac cannot resolve the Computable versus ThrowableComputable overloads
+    // of ApplicationManager.runReadAction without an explicit cast. IntelliJ's type
+    // inference is more aggressive than javac and incorrectly reports it as redundant.
+
     /**
      * Builds the file outline using the IDE's own {@link StructureViewModel} for the file's language.
      * This delegates to the same source as IntelliJ's Structure panel, so every language plugin
      * automatically gets correct, language-aware structural filtering without any classification
      * code in this plugin.
      * <p>
+     * {@code editor} should be supplied when the file is open in an editor — this is required for
+     * lazy-parsing IDEs like CLion Nova whose {@link StructureViewModel} only populates itself
+     * when a real editor is present. Pass {@code null} for languages that build the model eagerly.
+     * <p>
      * Falls back to a PSI walk for file types that don't register a {@code StructureViewBuilder}.
      */
-    protected List<String> collectOutlineEntries(PsiFile psiFile, Document document) {
+    @SuppressWarnings("deprecation") // StructureViewBuilder.PROVIDER deprecated but no alternative
+    protected List<String> collectOutlineEntries(PsiFile psiFile, Document document,
+                                                 @org.jetbrains.annotations.Nullable com.intellij.openapi.editor.Editor editor) {
         com.intellij.openapi.vfs.VirtualFile vf = psiFile.getVirtualFile();
         if (vf != null) {
             StructureViewBuilder svBuilder = StructureViewBuilder.PROVIDER.getStructureViewBuilder(
                 psiFile.getFileType(), vf, project);
             if (svBuilder instanceof TreeBasedStructureViewBuilder treeBuilder) {
-                StructureViewModel model = treeBuilder.createStructureViewModel(null);
+                StructureViewModel model = treeBuilder.createStructureViewModel(editor);
                 try {
                     List<String> outline = new java.util.ArrayList<>();
                     visitStructureNode(model.getRoot(), 0, document, outline);
@@ -360,13 +375,19 @@ public abstract class NavigationTool extends Tool {
         return null;
     }
 
-    private static final String[] PSI_ACCESSORS = {"getPsiElement", "getElement", "getNavigationElement"};
+    private static final String[] PSI_ACCESSORS = {
+        "getPsiElement", "getElement", "getNavigationElement",
+        // CLion Nova / Cidr adapter methods
+        "getPsi", "getSymbol", "getCppElement", "getDeclaration", "getEntityPtr", "getItem"
+    };
 
     /**
-     * PSI-walk fallback used when no {@code StructureViewBuilder} is registered for the language.
+     * PSI-walk fallback. Visits the PSI tree looking for {@link PsiNamedElement} instances, then
+     * falls back to a node-type walk for CLion Nova C/C++ files whose lazy parser does not produce
+     * {@code PsiNamedElement} instances for declarations.
      */
     private List<String> collectOutlineEntriesByPsiWalk(PsiFile psiFile, Document document) {
-        List<String> outline = new java.util.ArrayList<>();
+        List<String> outline = new ArrayList<>();
         psiFile.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
             @Override
             public void visitElement(@NotNull PsiElement element) {
@@ -376,15 +397,162 @@ public abstract class NavigationTool extends Tool {
                         String type = ToolUtils.classifyElement(element);
                         if (type != null) {
                             int line = document.getLineNumber(element.getTextOffset()) + 1;
-                            outline.add(String.format("  %s%d: %s %s",
-                                "  ".repeat(0), line, type, named.getName()));
+                            outline.add(String.format("  %d: %s %s", line, type, name));
                         }
                     }
                 }
                 super.visitElement(element);
             }
         });
+        if (!outline.isEmpty()) return outline;
+        // CLion Nova C/C++ files produce no PsiNamedElement declarations — fall back to
+        // examining raw PSI node types instead.
+        return collectOutlineEntriesByNodeType(psiFile, document);
+    }
+
+    /**
+     * Node-type walk for CLion Nova C/C++ files.
+     * <p>
+     * CLion Nova's lazy parser produces no {@link PsiNamedElement} instances for C++. It uses two
+     * distinct structures for top-level declarations:
+     * <ul>
+     *   <li><b>Type declarations</b> (class/struct/enum/union) — a single
+     *       {@code ASTWrapperPsiElement/CppKeyword:*_KEYWORD} node that wraps a
+     *       {@code DUMMY_NODE} (name) child and a {@code DUMMY_BLOCK} (body) child.
+     *       Elements without a DUMMY_BLOCK child are forward declarations and are skipped.</li>
+     *   <li><b>Function definitions</b> — the signature and body appear as consecutive siblings
+     *       at the file level: a {@code CppDummyNodeImpl/DUMMY_NODE} (signature only) immediately
+     *       followed by a {@code CppDummyBlockImpl/DUMMY_BLOCK} (body). Using-aliases and
+     *       forward declarations are also DUMMY_NODE but have no following DUMMY_BLOCK.</li>
+     * </ul>
+     * Template declarations ({@code template<class T> void foo()}) also use CLASS_KEYWORD but
+     * their extracted "name" contains {@code >} — filtered by {@link #isCppIdentifier}.
+     * <p>
+     * Only top-level declarations (direct children of the file) are collected.
+     */
+    private List<String> collectOutlineEntriesByNodeType(PsiFile psiFile, Document document) {
+        List<PsiElement> children = significantChildren(psiFile);
+        List<String> outline = new ArrayList<>();
+        for (int i = 0; i < children.size(); i++) {
+            PsiElement child = children.get(i);
+            String et = child.getNode().getElementType().toString();
+            String kind = cppKeywordKind(et);
+            if (kind != null) {
+                addTypeDeclaration(outline, child, kind, document);
+            } else if ("DUMMY_NODE".equals(et)) {
+                addFunctionDefinition(outline, child, children, i, document);
+            }
+        }
         return outline;
+    }
+
+    /**
+     * Returns direct children of {@code parent}, skipping whitespace and comments.
+     */
+    private static List<PsiElement> significantChildren(PsiElement parent) {
+        List<PsiElement> result = new ArrayList<>();
+        for (PsiElement child : parent.getChildren()) {
+            if (!(child instanceof com.intellij.psi.PsiWhiteSpace) && !(child instanceof com.intellij.psi.PsiComment)) {
+                result.add(child);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Adds a type declaration entry if {@code node} has a DUMMY_NODE name child and a DUMMY_BLOCK
+     * body child (i.e. it is a full definition, not a forward declaration).
+     */
+    private static void addTypeDeclaration(List<String> outline, PsiElement node,
+                                           String kind, Document document) {
+        String name = null;
+        boolean hasBody = false;
+        for (PsiElement gc : node.getChildren()) {
+            String gcEt = gc.getNode().getElementType().toString();
+            if ("DUMMY_NODE".equals(gcEt) && name == null) {
+                name = firstToken(gc.getText().trim());
+            } else if ("DUMMY_BLOCK".equals(gcEt)) {
+                hasBody = true;
+            }
+        }
+        if (hasBody && name != null && !name.isEmpty() && isCppIdentifier(name)) {
+            outline.add(String.format("  %d: %s %s",
+                document.getLineNumber(node.getTextOffset()) + 1, kind, name));
+        }
+    }
+
+    /**
+     * Adds a function definition entry if {@code children[i]} (a DUMMY_NODE signature) is
+     * immediately followed by a DUMMY_BLOCK body.
+     */
+    private static void addFunctionDefinition(List<String> outline, PsiElement node,
+                                              List<PsiElement> children, int i, Document document) {
+        boolean nextIsBlock = (i + 1 < children.size())
+            && "DUMMY_BLOCK".equals(children.get(i + 1).getNode().getElementType().toString());
+        if (!nextIsBlock) return;
+        String name = extractFunctionName(node.getText());
+        if (name != null) {
+            outline.add(String.format("  %d: function %s",
+                document.getLineNumber(node.getTextOffset()) + 1, name));
+        }
+    }
+
+    /**
+     * Returns the text before the first whitespace character, i.e. the first token.
+     */
+    private static String firstToken(String s) {
+        int ws = indexOfWhitespace(s);
+        return ws > 0 ? s.substring(0, ws) : s;
+    }
+
+    @org.jetbrains.annotations.Nullable
+    private static String extractFunctionName(String text) {
+        int paren = text.indexOf('(');
+        if (paren < 0) return null;
+        // Take text before '(' and find the last identifier token (handles "ReturnType ClassName::method(")
+        String prefix = text.substring(0, paren).trim();
+        int end = prefix.length();
+        int start = end;
+        while (start > 0 && (Character.isLetterOrDigit(prefix.charAt(start - 1))
+            || prefix.charAt(start - 1) == '_'
+            || prefix.charAt(start - 1) == ':')) {
+            start--;
+        }
+        String name = prefix.substring(start, end);
+        if (name.startsWith("::")) name = name.substring(2);
+        if (name.isEmpty() || name.chars().noneMatch(Character::isLetter)) return null;
+        return name;
+    }
+
+    private static int indexOfWhitespace(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (Character.isWhitespace(s.charAt(i))) return i;
+        }
+        return -1;
+    }
+
+    private static boolean isCppIdentifier(String s) {
+        if (s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!Character.isLetterOrDigit(c) && c != '_') return false;
+        }
+        return true;
+    }
+
+    /**
+     * Maps a CLion Nova C++ element-type string to a display kind, or returns {@code null} if the
+     * element type does not correspond to a type declaration keyword.
+     */
+    @org.jetbrains.annotations.Nullable
+    private static String cppKeywordKind(String elementType) {
+        return switch (elementType) {
+            case "CppKeyword:CLASS_KEYWORD" -> "class";
+            case "CppKeyword:STRUCT_KEYWORD" -> "struct";
+            case "CppKeyword:UNION_KEYWORD" -> "union";
+            case "CppKeyword:ENUM_KEYWORD" -> "enum";
+            default -> null;
+        };
     }
 
     private static String prefixModifiers(PsiModifierListOwner owner, String label) {

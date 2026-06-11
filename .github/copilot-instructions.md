@@ -207,8 +207,12 @@ being added. Confusion has a real cost in future engineering time — treat it l
 
 1. **Compilation errors** — fix immediately
 2. **Warnings** — fix all
-3. **Style issues** — fix if straightforward
-4. **Grammar** — only if requested
+3. **[INFORMATION] suggestions** — always consider; apply when the suggestion genuinely improves
+   readability (e.g., text blocks for multi-line string concatenations). Skip when the IDE's
+   suggestion would make code *less* readable (e.g., converting a single null-guard `if` into a
+   4-line switch block). Do not apply mechanically — evaluate each one on its merits.
+4. **Style issues** — fix if straightforward
+5. **Grammar** — only if requested
 
 ### Common Issues & Proper Fixes
 
