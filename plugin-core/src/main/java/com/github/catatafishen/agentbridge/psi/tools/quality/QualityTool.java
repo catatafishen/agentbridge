@@ -258,7 +258,7 @@ public abstract class QualityTool extends Tool {
         CompletableFuture<String> resultFuture) {
         Collection<VirtualFile> files = new ArrayList<>();
         if (pathStr != null && !pathStr.isEmpty()) {
-            VirtualFile vf = resolveVirtualFile(pathStr);
+            VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
             if (vf == null) {
                 resultFuture.complete("Error: File not found: " + pathStr);
                 return Collections.emptyList();
