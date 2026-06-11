@@ -21,6 +21,7 @@ dependencies {
             else -> intellijIdeaUltimate(providers.gradleProperty("intellijPlatformVersion").get())
         }
         testFramework(TestFrameworkType.Platform)
+        bundledPlugin("Git4Idea")
         if (testPlatformType == "IU") {
             bundledPlugin("com.intellij.java")
         }
