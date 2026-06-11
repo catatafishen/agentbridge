@@ -89,9 +89,15 @@ but in a separate code path that was not covered by PR #837.
 **Fix attempted (Jun 6)**: PR #814 — language-agnostic classifier (same fix as `get_file_outline`),
 but this does not help because the `PsiNamedElement` instanceof check runs before `classifyElement`
 is ever called.  
-**Fix attempted**: None that addresses the `PsiNamedElement` gap.  
-**Current status**: ❌ **Still broken for wildcard queries in CLion Nova**. Exact-name `search_symbols`
-uses IntelliJ's symbol index directly and may work; only wildcard (`*`) queries use the broken path.
+**Fix applied (Jun 11)**: PR #838 — `NavigationTool.collectSymbolsFromFile` now falls back to the
+same CLion Nova node-type walk used by `get_file_outline`. The shared helper
+`walkCppSymbolsByNodeType` (extracted from `collectOutlineEntriesByNodeType`) detects type
+declarations (class/struct/enum/union via `CppKeyword:*_KEYWORD`) and function definitions
+(`DUMMY_NODE` followed by `DUMMY_BLOCK` sibling) when the `PsiNamedElement` walk yields no results
+for a given file. Supports `type=class`, `type=struct`, `type=function` (and `type=method` as an
+alias for function). Compat test `SearchSymbolsCompatTest` updated from expected-FAIL to
+expected-PASS.  
+**Current status**: ✅ **Fixed in PR #838**. Awaiting CLion Nova verification.
 
 ---
 
@@ -483,7 +489,7 @@ being misidentified.
 | #  | Tool / Area                                                | Status              | Fixed In                                                                         |
 |----|------------------------------------------------------------|---------------------|----------------------------------------------------------------------------------|
 | 1  | `get_file_outline` empty in CLion Nova                     | ✅ Fixed             | PR #837 — PSI node-type walk fallback (classes, structs, functions)              |
-| 1b | `search_symbols` wildcard empty in CLion Nova              | ❌ Still broken      | `collectSymbolsFromFile` uses PsiNamedElement walk — not fixed by PR #837        |
+| 1b | `search_symbols` wildcard empty in CLion Nova              | ✅ Fixed             | PR #838 — `walkCppSymbolsByNodeType` fallback in `collectSymbolsFromFile`        |
 | 2  | `get_symbol_info` broken                                   | ❓ Needs re-verify   | PR #814 (merged) — shares classifier path with #1                                |
 | 3  | `go_to_declaration` broken                                 | ❓ Needs re-verify   | PR #815 (merged) — findReferenceAt + TargetElementUtil                           |
 | 4  | `get_call_hierarchy` broken                                | ❓ Needs re-verify   | PR #816 (merged) — reference fallback, same shape as #3                          |

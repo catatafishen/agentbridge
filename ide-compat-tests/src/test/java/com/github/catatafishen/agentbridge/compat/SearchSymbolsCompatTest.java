@@ -8,11 +8,11 @@ import com.google.gson.JsonObject;
  *
  * <p>Expected outcomes:</p>
  * <ul>
- *   <li>IntelliJ (IU): PASS — Java PSI produces {@code PsiNamedElement} for classes,
- *       so wildcard search finds the test class.</li>
- *   <li>CLion (CL): FAIL — CLion Nova C++ parser does not produce {@code PsiNamedElement}
- *       for C++ declarations, so wildcard search returns 0 results.
- *       This test documents bug #1b: search_symbols wildcard broken for CLion Nova C++.</li>
+ *   <li>IntelliJ (IU): PASS — Java PSI produces {@code PsiNamedElement} for classes.</li>
+ *   <li>CLion (CL): PASS — CLion Nova C++ PSI node-type fallback in
+ *       {@code NavigationTool.collectSymbolsFromFile} detects declarations via
+ *       {@code walkCppSymbolsByNodeType} when the {@code PsiNamedElement} walk yields nothing.
+ *       Fixes bug #1b.</li>
  * </ul>
  */
 public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
@@ -40,9 +40,6 @@ public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
         assertNotNull("Tool must return a non-null result", result);
         assertFalse("Tool result must not be an error", result.startsWith("Error:"));
 
-        // On IU the wildcard walk finds Widget via PsiNamedElement → passes.
-        // On CL this assertion fails because CLion Nova C++ PSI does not implement
-        // PsiNamedElement, confirming bug #1b.
         assertTrue(
             "Expected at least one 'class' symbol from wildcard search, got: " + result,
             result.contains("Widget")
