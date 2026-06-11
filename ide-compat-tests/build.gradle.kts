@@ -28,11 +28,18 @@ dependencies {
     testImplementation(project(":plugin-core"))
     testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")
     testImplementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
-    // 5.13.1 matches the junit-jupiter-engine version bundled by IntelliJ Platform 2026.1.
-    // An older junit-platform-engine JAR on the classpath causes NoSuchMethodError in
-    // JupiterTestEngine's static initializer before any engine filters can be applied.
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.13.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.1")
+}
+
+configurations.all {
+    // IntelliJ Platform bundles junit-platform-commons and junit-platform-engine at the
+    // version matching its bundled junit-jupiter-engine. Maven-resolved versions of these
+    // JARs load before IntelliJ's sandbox JARs on the classpath, causing NoSuchMethodError
+    // when Jupiter engine calls APIs added after the Maven-resolved version.
+    // Exclude them from Maven to let IntelliJ's bundled versions be the sole source.
+    exclude(group = "org.junit.platform", module = "junit-platform-commons")
+    exclude(group = "org.junit.platform", module = "junit-platform-engine")
 }
 
 intellijPlatform {
