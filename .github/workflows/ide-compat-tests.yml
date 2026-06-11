@@ -9,6 +9,7 @@ on:
       - 'gradle.properties'
       - '*.gradle*'
       - 'gradle/**'
+      - '.github/workflows/ide-compat-tests.yml'
   pull_request:
     branches: [ master ]
     paths:
@@ -17,6 +18,7 @@ on:
       - 'gradle.properties'
       - '*.gradle*'
       - 'gradle/**'
+      - '.github/workflows/ide-compat-tests.yml'
   workflow_dispatch:
 
 permissions: { }
