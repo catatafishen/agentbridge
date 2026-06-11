@@ -28,19 +28,11 @@ dependencies {
     testImplementation(project(":plugin-core"))
     testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")
     testImplementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.13.1")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.1")
-}
-
-configurations.all {
-    // IntelliJ 2026.1 bundles a junit-jupiter-engine newer than 5.13.1 that calls
-    // ReflectionUtils.isNestedClassPresent(Class, Predicate, CycleErrorHandling) — an overload
-    // added after junit-platform-commons:1.13.1. Maven-resolved commons loads before IntelliJ's
-    // sandbox JARs on the classpath and lacks this method, causing NoSuchMethodError.
-    // Exclude from Maven so IntelliJ's bundled (newer) commons is the sole source.
-    // junit-platform-engine is NOT excluded: Gradle's JUnitPlatformTestDefinitionProcessor
-    // needs ConfigurationParameters at bootstrap and IntelliJ's sandbox doesn't provide it.
-    exclude(group = "org.junit.platform", module = "junit-platform-commons")
+    // 5.13.4 matches the junit-platform-commons version bundled by IntelliJ 2026.1.
+    // IntelliJ's bundled Jupiter engine calls isNestedClassPresent(Class, Predicate, CycleErrorHandling)
+    // which was added in 1.13.4; versions below that cause NoSuchMethodError at test discovery.
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.13.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.4")
 }
 
 intellijPlatform {
