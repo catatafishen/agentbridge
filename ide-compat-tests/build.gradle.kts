@@ -33,13 +33,14 @@ dependencies {
 }
 
 configurations.all {
-    // IntelliJ Platform bundles junit-platform-commons and junit-platform-engine at the
-    // version matching its bundled junit-jupiter-engine. Maven-resolved versions of these
-    // JARs load before IntelliJ's sandbox JARs on the classpath, causing NoSuchMethodError
-    // when Jupiter engine calls APIs added after the Maven-resolved version.
-    // Exclude them from Maven to let IntelliJ's bundled versions be the sole source.
+    // IntelliJ 2026.1 bundles a junit-jupiter-engine newer than 5.13.1 that calls
+    // ReflectionUtils.isNestedClassPresent(Class, Predicate, CycleErrorHandling) — an overload
+    // added after junit-platform-commons:1.13.1. Maven-resolved commons loads before IntelliJ's
+    // sandbox JARs on the classpath and lacks this method, causing NoSuchMethodError.
+    // Exclude from Maven so IntelliJ's bundled (newer) commons is the sole source.
+    // junit-platform-engine is NOT excluded: Gradle's JUnitPlatformTestDefinitionProcessor
+    // needs ConfigurationParameters at bootstrap and IntelliJ's sandbox doesn't provide it.
     exclude(group = "org.junit.platform", module = "junit-platform-commons")
-    exclude(group = "org.junit.platform", module = "junit-platform-engine")
 }
 
 intellijPlatform {
