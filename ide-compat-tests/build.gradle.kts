@@ -28,8 +28,11 @@ dependencies {
     testImplementation(project(":plugin-core"))
     testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")
     testImplementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // Pin to 5.12.x to match the JUnit Jupiter engine bundled by IntelliJ Platform 2026.1.
+    // Without this, junit-platform-launcher resolves to 1.11.x via the vintage-engine transitive chain,
+    // which lacks EngineDiscoveryRequest.getOutputDirectoryProvider() and causes NoSuchMethodError on discovery.
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.12.0")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.12.0")
 }
 
 intellijPlatform {
