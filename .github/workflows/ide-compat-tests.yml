@@ -79,6 +79,7 @@ jobs:
         run: >
           gradle :ide-compat-tests:test
           -PtestPlatformType=${{ matrix.platformType }}
+          -x :plugin-core:buildChatUi
           --no-daemon
           --stacktrace
         env:
