@@ -18,15 +18,14 @@ import com.google.gson.JsonObject;
 public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
 
     public void testSearchSymbolsWildcardFindsSymbols() {
-        // Create a platform-appropriate fixture file with a named declaration
+        // addFileToProject (TempFS) is required — configureByText creates in-memory temp:///
+        // files that isInSourceContent() returns false for, so searchWildcard skips them.
         if ("CL".equals(PLATFORM_TYPE)) {
-            // CLion Nova C++ — bug #1b: PsiNamedElement walk returns nothing
-            myFixture.configureByText("widget.cpp",
+            myFixture.addFileToProject("widget.cpp",
                 "class Widget { int width; int height; };\n" +
                     "void render(Widget* w) {}\n");
         } else {
-            // IntelliJ IU — Java PSI, wildcard works correctly
-            myFixture.configureByText("Widget.java",
+            myFixture.addFileToProject("Widget.java",
                 "public class Widget { private int width; private int height; }\n");
         }
 
