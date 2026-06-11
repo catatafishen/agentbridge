@@ -108,6 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
 
     steps:
       - name: Download XML test results
@@ -118,20 +119,19 @@ jobs:
           merge-multiple: false
         continue-on-error: true
 
-      - name: Show downloaded artifacts
-        run: find test-results/ -type f 2>/dev/null || echo "test-results/ is empty or missing"
-
       - name: Generate compatibility matrix
         run: |
           python3 - << 'PYEOF'
           import os, glob, re, xml.etree.ElementTree as ET
 
           results = {}
+          failure_details = {}
           all_classes = set()
 
           for artifact_dir in sorted(glob.glob('test-results/test-xml-*')):
               ide = artifact_dir.split('test-xml-')[1]
               results[ide] = {}
+              failure_details[ide] = {}
               for xml_file in glob.glob(f'{artifact_dir}/**/*.xml', recursive=True):
                   try:
                       tree = ET.parse(xml_file)
@@ -145,12 +145,18 @@ jobs:
                       if not short:
                           continue
                       all_classes.add(short)
-                      has_failure = testcase.find('failure') is not None
-                      has_error = testcase.find('error') is not None
+                      failure_el = testcase.find('failure')
+                      error_el = testcase.find('error')
                       has_skipped = testcase.find('skipped') is not None
                       prev = results[ide].get(short, 'pass')
-                      if has_failure or has_error:
+                      if failure_el is not None or error_el is not None:
                           results[ide][short] = 'fail'
+                          el = failure_el if failure_el is not None else error_el
+                          msg = el.get('message', '') or ''
+                          if not msg and el.text:
+                              msg = '\n'.join(el.text.strip().splitlines()[:5])
+                          test_name = testcase.get('name', short)
+                          failure_details[ide].setdefault(short, []).append((test_name, msg[:500]))
                       elif has_skipped and prev == 'pass':
                           results[ide][short] = 'skip'
 
@@ -172,6 +178,17 @@ jobs:
               for ide in sorted(results.keys()):
                   cells = [status_map.get(results[ide].get(cls), '—') for cls in cols]
                   lines.append(f'| {ide} | ' + ' | '.join(cells) + ' |')
+
+              any_failures = any(v == 'fail' for ide_r in results.values() for v in ide_r.values())
+              if any_failures:
+                  lines.append('')
+                  lines.append('### Failures')
+                  for ide in sorted(failure_details.keys()):
+                      for short_cls in sorted(failure_details[ide].keys()):
+                          col = to_column(short_cls)
+                          for test_name, msg in failure_details[ide][short_cls]:
+                              lines.append(f'\n<details>\n<summary>❌ {ide} — {col} — {test_name}</summary>\n\n```\n{msg}\n```\n\n</details>')
+
               summary = '\n'.join(lines) + '\n'
 
           print(summary)
@@ -179,4 +196,23 @@ jobs:
           if summary_file:
               with open(summary_file, 'a') as f:
                   f.write(summary)
+          with open('/tmp/compat-matrix.md', 'w') as f:
+              f.write('<!-- compat-matrix -->\n')
+              f.write(summary)
           PYEOF
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+          COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- compat-matrix -->"))] | first | .id // empty')
+          if [ -n "$COMMENT_ID" ]; then
+            python3 -c "import json; print(json.dumps({'body': open('/tmp/compat-matrix.md').read()}))" \
+              | gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" --input -
+          else
+            gh pr comment "$PR" -R "$REPO" --body-file /tmp/compat-matrix.md
+          fi
