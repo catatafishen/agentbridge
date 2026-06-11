@@ -3,7 +3,27 @@
 **Reporter**: @vs49688  
 **Environment**: CLion 2026.1.1 (Nova C++ engine), CMake project (vsclib), Linux/NixOS  
 **Issue opened**: 2026-06-02  
-**Last updated**: 2026-06-08 (PR #822 created)
+**Last updated**: 2026-06-11 (PR #837 updated with function detection and cognitive complexity fix)
+
+---
+
+## Debug / Development Workflow
+
+Since CLion Nova PSI is only available in a real CLion instance (not reproducible in IntelliJ
+headless tests), the workflow for this issue is:
+
+1. **Make a code change** in IntelliJ IDEA.
+2. **Run the "Deploy to CLion" run configuration** — this builds the plugin ZIP and installs it
+   into the local CLion sandbox, then restarts CLion.
+3. **Poll the MCP health endpoint** until it responds and reports the new version. The version
+   string in the response matches the short git commit hash of the installed build, so you can
+   confirm the right build is running:
+   ```
+   GET http://localhost:<port>/mcp/health
+   # Wait for {"status":"ok","version":"<commit-hash>"}
+   ```
+4. **Connect to the MCP directly** and test the changed tool against real CLion Nova C++ PSI
+   (e.g., open `main.cpp` or `classdef.h` and call `get_file_outline`).
 
 ---
 
@@ -19,12 +39,12 @@
 
 ## PSI / Code Navigation Tools
 
-### 1. `get_file_outline` / `search_symbols` — empty results for C/C++
+### 1. `get_file_outline` — empty results for C/C++
 
 **Original bug (v1.171.4)**: Returns "No structural elements found" / empty results for all `.c`, `.cpp`, `.hpp`
 files.  
 **Root cause identified**: Custom keyword-matching against PSI class names; CLion Nova uses different class name
-prefixes than old OC engine.  
+prefixes than the old OC engine.  
 **Fix attempted**: PR #796 — replaced custom classification with `StructureViewBuilder`.  
 **Fix attempted (Jun 6)**: PR #814 — two new fixes targeting CLion Nova specifically:
 
@@ -35,9 +55,43 @@ prefixes than old OC engine.
    never fired for CLion Nova which uses `Cidr`/`Nova` prefixes). Now a single language-agnostic
    classifier matches structural keywords anywhere in the PSI class name.
 
-**Current status**: ❓ **Needs reporter re-verification once PR #814 ships**. Both PR #796 and the
-PR #814 fixes are educated guesses at the root cause without a CLion Nova reproducer in our test
-environment — actual confirmation requires testing in the reporter's vsclib project.
+**Fix confirmed broken (Jun 11)**: PR #814 StructureView path confirmed empty even with the
+Structure panel open — `ProtocolStructureViewBuilder` programmatic instances never populate in
+CLion Nova regardless of IDE state.
+
+**Fix applied (Jun 11)**: PR #837 — dropped the StructureView path for CLion Nova; added a direct
+PSI node-type walk (`collectOutlineEntriesByNodeType`) as the final fallback. Detects:
+
+- **Type declarations** (class, struct, enum, union): `ASTWrapperPsiElement` containing a
+  `DUMMY_NODE` name child and a `DUMMY_BLOCK` body child.
+- **Function definitions**: top-level `DUMMY_NODE` signature immediately followed by a
+  `DUMMY_BLOCK` sibling (look-ahead at the file level).
+
+Confirmed working against a real CLion Nova instance (`main.cpp`, `classdef.h` — classes,
+structs, and functions all returned correctly).
+
+**Scope note**: `collectOutlineEntriesByNodeType` is called exclusively by `GetFileOutlineTool`.
+`search_symbols` wildcard uses a separate `collectSymbolsFromFile` path (also a `PsiNamedElement`
+walk) that has the same CLion Nova blind spot and is **not** fixed by this PR — see bug #1b below.
+
+**Current status**: ✅ **Fixed in PR #837** for `get_file_outline`. Confirmed working in CLion
+Nova via direct MCP test. Pending reporter re-verification in their vsclib project.
+
+---
+
+### 1b. `search_symbols` — empty results for C/C++ wildcard queries
+
+**Original bug (v1.171.4)**: Returns empty for wildcard queries against `.c`/`.cpp`/`.hpp` files.  
+**Root cause**: `collectSymbolsFromFile` (used by wildcard `search_symbols`) walks the PSI tree
+looking for `PsiNamedElement` instances. CLion Nova's lazy C++ parser does not produce
+`PsiNamedElement` for declarations — the same root cause as the original `get_file_outline` bug,
+but in a separate code path that was not covered by PR #837.  
+**Fix attempted (Jun 6)**: PR #814 — language-agnostic classifier (same fix as `get_file_outline`),
+but this does not help because the `PsiNamedElement` instanceof check runs before `classifyElement`
+is ever called.  
+**Fix attempted**: None that addresses the `PsiNamedElement` gap.  
+**Current status**: ❌ **Still broken for wildcard queries in CLion Nova**. Exact-name `search_symbols`
+uses IntelliJ's symbol index directly and may work; only wildcard (`*`) queries use the broken path.
 
 ---
 
@@ -428,7 +482,8 @@ being misidentified.
 
 | #  | Tool / Area                                                | Status              | Fixed In                                                                         |
 |----|------------------------------------------------------------|---------------------|----------------------------------------------------------------------------------|
-| 1  | `get_file_outline` / `search_symbols` empty in CLion       | ❓ Needs re-verify   | PR #814 (merged) — adapter-aware StructureView + language-agnostic classifier    |
+| 1  | `get_file_outline` empty in CLion Nova                     | ✅ Fixed             | PR #837 — PSI node-type walk fallback (classes, structs, functions)              |
+| 1b | `search_symbols` wildcard empty in CLion Nova              | ❌ Still broken      | `collectSymbolsFromFile` uses PsiNamedElement walk — not fixed by PR #837        |
 | 2  | `get_symbol_info` broken                                   | ❓ Needs re-verify   | PR #814 (merged) — shares classifier path with #1                                |
 | 3  | `go_to_declaration` broken                                 | ❓ Needs re-verify   | PR #815 (merged) — findReferenceAt + TargetElementUtil                           |
 | 4  | `get_call_hierarchy` broken                                | ❓ Needs re-verify   | PR #816 (merged) — reference fallback, same shape as #3                          |

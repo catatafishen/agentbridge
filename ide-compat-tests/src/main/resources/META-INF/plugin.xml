@@ -1,0 +1,7 @@
+<idea-plugin>
+  <id>com.github.catatafishen.agentbridge.ide-compat-tests</id>
+  <name>AgentBridge IDE Compat Tests</name>
+  <version>0.0.1</version>
+  <description>Minimal plugin descriptor required by IntelliJ Platform Gradle Plugin for the ide-compat-tests module.
+  </description>
+</idea-plugin>
