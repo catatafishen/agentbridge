@@ -92,3 +92,88 @@ jobs:
           name: test-results-${{ matrix.ide }}
           path: ide-compat-tests/build/reports/tests/test/
           retention-days: 14
+
+      - name: Upload XML test results
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: test-xml-${{ matrix.ide }}
+          path: ide-compat-tests/build/test-results/test/
+          retention-days: 14
+
+  report:
+    name: Compatibility Matrix
+    needs: compat-tests
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download XML test results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: test-xml-*
+          path: test-results/
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Generate compatibility matrix
+        run: |
+          python3 - << 'PYEOF'
+          import os, glob, re, xml.etree.ElementTree as ET
+
+          results = {}
+          all_classes = set()
+
+          for artifact_dir in sorted(glob.glob('test-results/test-xml-*')):
+              ide = artifact_dir.split('test-xml-')[1]
+              results[ide] = {}
+              for xml_file in glob.glob(f'{artifact_dir}/**/*.xml', recursive=True):
+                  try:
+                      tree = ET.parse(xml_file)
+                      root = tree.getroot()
+                  except Exception:
+                      continue
+                  for testcase in root.iter('testcase'):
+                      classname = testcase.get('classname', '')
+                      short = classname.split('.')[-1]
+                      short = re.sub(r'CompatTest$', '', short)
+                      if not short:
+                          continue
+                      all_classes.add(short)
+                      has_failure = testcase.find('failure') is not None
+                      has_error = testcase.find('error') is not None
+                      has_skipped = testcase.find('skipped') is not None
+                      prev = results[ide].get(short, 'pass')
+                      if has_failure or has_error:
+                          results[ide][short] = 'fail'
+                      elif has_skipped and prev == 'pass':
+                          results[ide][short] = 'skip'
+
+          if not results:
+              summary = '## IDE Compatibility Matrix\n\n_No test results found._\n'
+          else:
+              def to_column(name):
+                  s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name)
+                  s = re.sub(r'([a-z\d])([A-Z])', r'\1_\2', s)
+                  return s.lower()
+
+              cols = sorted(all_classes, key=to_column)
+              col_headers = [to_column(c) for c in cols]
+              status_map = {'pass': '✅', 'fail': '❌', 'skip': '⚠️'}
+
+              lines = ['## IDE Compatibility Matrix', '']
+              lines.append('| IDE | ' + ' | '.join(col_headers) + ' |')
+              lines.append('|-----|' + '|'.join(['---'] * len(cols)) + '|')
+              for ide in sorted(results.keys()):
+                  cells = [status_map.get(results[ide].get(cls), '—') for cls in cols]
+                  lines.append(f'| {ide} | ' + ' | '.join(cells) + ' |')
+              summary = '\n'.join(lines) + '\n'
+
+          print(summary)
+          summary_file = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_file:
+              with open(summary_file, 'a') as f:
+                  f.write(summary)
+          PYEOF
