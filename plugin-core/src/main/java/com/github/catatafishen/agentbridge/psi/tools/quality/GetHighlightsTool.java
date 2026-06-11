@@ -122,7 +122,7 @@ public final class GetHighlightsTool extends QualityTool {
         // produces highlights. Without this, files edited with follow-agent mode off
         // may never get daemon analysis.
         if (pathStr != null && !pathStr.isEmpty()) {
-            VirtualFile vf = resolveVirtualFile(pathStr);
+            VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
             if (vf != null) {
                 ensureDaemonAnalyzed(vf);
             }
