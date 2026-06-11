@@ -17,6 +17,7 @@ on:
       - 'gradle.properties'
       - '*.gradle*'
       - 'gradle/**'
+  workflow_dispatch:
 
 permissions: { }
 
