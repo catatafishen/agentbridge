@@ -5,6 +5,9 @@
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="agentbridge.ide-compat-tests" options="-parameters" />
+      <module name="agentbridge.ide-compat-tests.main" options="-parameters" />
+      <module name="agentbridge.ide-compat-tests.test" options="-parameters" />
       <module name="agentbridge.integration-tests" options="-parameters" />
       <module name="agentbridge.integration-tests.main" options="-parameters" />
       <module name="agentbridge.integration-tests.test" options="-parameters" />
