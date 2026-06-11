@@ -18,6 +18,7 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
@@ -173,6 +174,11 @@ public abstract class QualityTool extends Tool {
     protected @Nullable VirtualFile resolveVirtualFileWithFallback(String pathStr) {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) vf = ToolUtils.findFileInProjectContent(project, pathStr);
+        if (vf == null) {
+            // Last resort: in-memory temp:/// VFS used by test fixtures (heavy test projects)
+            String normalized = pathStr.replace('\\', '/');
+            vf = VirtualFileManager.getInstance().findFileByUrl("temp://" + normalized);
+        }
         return vf;
     }
 
