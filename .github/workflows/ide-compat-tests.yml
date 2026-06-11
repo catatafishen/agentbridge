@@ -202,11 +202,15 @@ jobs:
           PYEOF
 
       - name: Post PR comment
-        if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PR="${{ github.event.pull_request.number }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR="${{ github.event.pull_request.number }}"
+          else
+            PR=$(gh pr list -R "${{ github.repository }}" --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
+          fi
+          [ -z "$PR" ] && echo "No associated PR, skipping comment" && exit 0
           REPO="${{ github.repository }}"
           COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR}/comments" \
             --jq '[.[] | select(.body | startswith("<!-- compat-matrix -->"))] | first | .id // empty')
