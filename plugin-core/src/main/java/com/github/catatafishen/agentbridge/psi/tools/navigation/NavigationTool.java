@@ -431,19 +431,47 @@ public abstract class NavigationTool extends Tool {
      * Only top-level declarations (direct children of the file) are collected.
      */
     private List<String> collectOutlineEntriesByNodeType(PsiFile psiFile, Document document) {
-        List<PsiElement> children = significantChildren(psiFile);
         List<String> outline = new ArrayList<>();
+        walkCppSymbolsByNodeType(psiFile, document,
+            (kind, name, line) -> outline.add(String.format("  %d: %s %s", line, kind, name)));
+        return outline;
+    }
+
+    /**
+     * Walks CLion Nova C/C++ top-level declarations by raw PSI node type and invokes
+     * {@code visitor} for each recognized symbol. Shared by {@link #collectOutlineEntriesByNodeType}
+     * (outline format) and {@link #collectSymbolsFromFile} (symbol-search format).
+     */
+    private void walkCppSymbolsByNodeType(PsiFile psiFile, Document document, CppSymbolVisitor visitor) {
+        List<PsiElement> children = significantChildren(psiFile);
         for (int i = 0; i < children.size(); i++) {
             PsiElement child = children.get(i);
             String et = child.getNode().getElementType().toString();
             String kind = cppKeywordKind(et);
             if (kind != null) {
-                addTypeDeclaration(outline, child, kind, document);
+                String name = extractTypeDeclarationName(child);
+                if (name != null) {
+                    visitor.visit(kind, name, document.getLineNumber(child.getTextOffset()) + 1);
+                }
             } else if ("DUMMY_NODE".equals(et)) {
-                addFunctionDefinition(outline, child, children, i, document);
+                boolean nextIsBlock = (i + 1 < children.size())
+                    && "DUMMY_BLOCK".equals(children.get(i + 1).getNode().getElementType().toString());
+                if (nextIsBlock) {
+                    String name = extractFunctionName(child.getText());
+                    if (name != null) {
+                        visitor.visit("function", name, document.getLineNumber(child.getTextOffset()) + 1);
+                    }
+                }
             }
         }
-        return outline;
+    }
+
+    /**
+     * Callback for {@link #walkCppSymbolsByNodeType}.
+     */
+    @FunctionalInterface
+    private interface CppSymbolVisitor {
+        void visit(String kind, String name, int line);
     }
 
     /**
@@ -460,11 +488,11 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
-     * Adds a type declaration entry if {@code node} has a DUMMY_NODE name child and a DUMMY_BLOCK
-     * body child (i.e. it is a full definition, not a forward declaration).
+     * Returns the type declaration name if {@code node} has a DUMMY_NODE name child and a
+     * DUMMY_BLOCK body child (full definition); returns {@code null} for forward declarations.
      */
-    private static void addTypeDeclaration(List<String> outline, PsiElement node,
-                                           String kind, Document document) {
+    @org.jetbrains.annotations.Nullable
+    private static String extractTypeDeclarationName(PsiElement node) {
         String name = null;
         boolean hasBody = false;
         for (PsiElement gc : node.getChildren()) {
@@ -475,26 +503,7 @@ public abstract class NavigationTool extends Tool {
                 hasBody = true;
             }
         }
-        if (hasBody && name != null && !name.isEmpty() && isCppIdentifier(name)) {
-            outline.add(String.format("  %d: %s %s",
-                document.getLineNumber(node.getTextOffset()) + 1, kind, name));
-        }
-    }
-
-    /**
-     * Adds a function definition entry if {@code children[i]} (a DUMMY_NODE signature) is
-     * immediately followed by a DUMMY_BLOCK body.
-     */
-    private static void addFunctionDefinition(List<String> outline, PsiElement node,
-                                              List<PsiElement> children, int i, Document document) {
-        boolean nextIsBlock = (i + 1 < children.size())
-            && "DUMMY_BLOCK".equals(children.get(i + 1).getNode().getElementType().toString());
-        if (!nextIsBlock) return;
-        String name = extractFunctionName(node.getText());
-        if (name != null) {
-            outline.add(String.format("  %d: function %s",
-                document.getLineNumber(node.getTextOffset()) + 1, name));
-        }
+        return (hasBody && name != null && !name.isEmpty() && isCppIdentifier(name)) ? name : null;
     }
 
     /**
@@ -579,6 +588,7 @@ public abstract class NavigationTool extends Tool {
                                           String typeFilter, String basePath,
                                           java.util.Set<String> seen, List<String> results) {
         String relPath = safeRelativize(basePath, vf.getPath());
+        int sizeBefore = results.size();
         psiFile.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
             @Override
             public void visitElement(@NotNull PsiElement element) {
@@ -598,5 +608,15 @@ public abstract class NavigationTool extends Tool {
                 super.visitElement(element);
             }
         });
+        // CLion Nova C/C++ fallback: the PsiNamedElement walk above produces nothing for C++
+        // declarations. Reuse the same node-type detection used by collectOutlineEntriesByNodeType.
+        if (results.size() == sizeBefore) {
+            walkCppSymbolsByNodeType(psiFile, doc, (kind, name, line) -> {
+                if ((kind.equals(typeFilter) || ("method".equals(typeFilter) && "function".equals(kind)))
+                    && seen.add(relPath + ":" + line) && results.size() < 200) {
+                    results.add(String.format(FORMAT_LOCATION, relPath, line, kind, name));
+                }
+            });
+        }
     }
 }
