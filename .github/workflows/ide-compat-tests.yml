@@ -118,6 +118,9 @@ jobs:
           merge-multiple: false
         continue-on-error: true
 
+      - name: Show downloaded artifacts
+        run: find test-results/ -type f 2>/dev/null || echo "test-results/ is empty or missing"
+
       - name: Generate compatibility matrix
         run: |
           python3 - << 'PYEOF'
