@@ -2,7 +2,7 @@ name: IDE Compatibility Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'test/ide-compat-matrix' ]
     paths:
       - 'ide-compat-tests/**'
       - 'plugin-core/src/main/**'
