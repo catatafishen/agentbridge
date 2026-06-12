@@ -584,6 +584,38 @@ public abstract class NavigationTool extends Tool {
         }
     }
 
+    /**
+     * Analyzes a single {@link PsiFile} for symbols of the given type, without requiring the file
+     * to be in a project source root. Uses the same two-phase analysis as
+     * {@link #collectSymbolsFromFile}: a {@link PsiNamedElement} walk (handles Java, Kotlin, and
+     * classic C++ via {@code com.intellij.cidr.lang}) followed by the CLion Nova node-type
+     * fallback for files whose lazy parser produces {@code DUMMY_NODE}/{@code DUMMY_BLOCK}
+     * structures instead of {@link PsiNamedElement} instances.
+     *
+     * <p>Intended for IDE compatibility tests: create an in-memory C++ {@link PsiFile} via
+     * {@link com.intellij.psi.PsiFileFactory#createFileFromText} using the language object from
+     * {@link com.intellij.lang.Language#findLanguageByID}, then pass it here to exercise the
+     * per-file symbol extraction without depending on FileTypeManager extension registration or
+     * a project source root.</p>
+     *
+     * @param psiFile    the file to analyse; need not have an on-disk backing file
+     * @param typeFilter symbol kind ({@code "class"}, {@code "method"}, …), or {@code null} for all
+     * @return symbol entries in {@code relPath:line [type] name} format
+     */
+    public List<String> analyzeFileSymbols(PsiFile psiFile,
+                                           @org.jetbrains.annotations.Nullable String typeFilter) {
+        return com.intellij.openapi.application.ReadAction.compute(() -> {
+            Document doc = com.intellij.psi.PsiDocumentManager.getInstance(project)
+                .getDocument(psiFile);
+            if (doc == null) return List.<String>of();
+            com.intellij.openapi.vfs.VirtualFile vf = psiFile.getViewProvider().getVirtualFile();
+            List<String> results = new ArrayList<>();
+            collectSymbolsFromFile(psiFile, doc, vf, typeFilter, null,
+                new java.util.HashSet<>(), results);
+            return results;
+        });
+    }
+
     protected void collectSymbolsFromFile(PsiFile psiFile, Document doc, com.intellij.openapi.vfs.VirtualFile vf,
                                           String typeFilter, String basePath,
                                           java.util.Set<String> seen, List<String> results) {

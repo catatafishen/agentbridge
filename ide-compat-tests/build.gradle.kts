@@ -25,6 +25,15 @@ dependencies {
         if (testPlatformType == "IU") {
             bundledPlugin("com.intellij.java")
         }
+        if (testPlatformType == "CL") {
+            // Load the classic C++ engine JAR so Language.findLanguageByID("ObjectiveC") returns
+            // non-null. This allows createInMemoryPsiFile() to create C++ PSI via PsiFileFactory
+            // without relying on FileTypeManager extension registration (which does not fire in the
+            // headless test JVM even with bundledPlugin). File-type extension registration (mapping
+            // *.cpp to CppLanguage) is NOT needed for this: PsiFileFactory.createFileFromText()
+            // takes the Language object directly.
+            bundledPlugin("com.intellij.cidr.lang")
+        }
     }
     testImplementation(project(":plugin-core"))
     testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")

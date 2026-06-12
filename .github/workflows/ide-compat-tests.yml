@@ -34,10 +34,6 @@ jobs:
   compat-tests:
     name: IDE Compat (${{ matrix.ide }})
     runs-on: ubuntu-latest
-    # CLion job is informational until bug #1b (search_symbols wildcard for CLion Nova C++) is fixed.
-    # The job will show as failed in the UI but will not block the PR.
-    continue-on-error: ${{ matrix.ide == 'CL' }}
-
     strategy:
       fail-fast: false
       matrix:
