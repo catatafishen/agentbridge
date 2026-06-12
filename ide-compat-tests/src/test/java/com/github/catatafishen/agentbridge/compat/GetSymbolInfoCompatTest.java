@@ -61,20 +61,22 @@ public class GetSymbolInfoCompatTest extends IdeCompatBaseTest {
             // CLion Nova C++ — bug #2: ASTWrapperPsiElement is not PsiNamedElement,
             // so findNamedAncestor() returns null → "No named symbol found".
             filePath = tempDir.resolve("widget.cpp");
-            Files.writeString(filePath,
-                "class Widget {\n" +
-                    "    int width;\n" +
-                    "    int height;\n" +
-                    "};\n");
+            Files.writeString(filePath, """
+                class Widget {
+                    int width;
+                    int height;
+                };
+                """);
             line = 1; // "class Widget {"
         } else {
             // IntelliJ IU — Java PSI, PsiClass is PsiNamedElement → works correctly.
             filePath = tempDir.resolve("Widget.java");
-            Files.writeString(filePath,
-                "public class Widget {\n" +
-                    "    private int width;\n" +
-                    "    private int height;\n" +
-                    "}\n");
+            Files.writeString(filePath, """
+                public class Widget {
+                    private int width;
+                    private int height;
+                }
+                """);
             line = 1; // "public class Widget {"
         }
 
