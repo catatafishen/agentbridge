@@ -122,35 +122,63 @@ jobs:
           python3 - << 'PYEOF'
           import os, glob, re, xml.etree.ElementTree as ET
 
-          # Full list of PSI-dependent tools. Each entry corresponds to a *CompatTest class
-          # (e.g. 'search_symbols' → SearchSymbolsCompatTest). Tools with no test class yet
-          # show ❓ in the matrix. Add new tools here as test classes are created.
-          # Platform-universal tools (file, git, terminal, project, memory, debug, testing,
-          # infrastructure) are omitted — they do not have IDE-specific behaviour.
-          EXPECTED_TOOLS = [
-              'search_symbols',
-              'get_file_outline',
-              'find_references',
-              'go_to_declaration',
-              'get_documentation',
-              'get_symbol_info',
-              'get_highlights',
-              'get_compilation_errors',
-              'get_problems',
-              'get_available_actions',
-              'get_type_hierarchy',
-              'get_call_hierarchy',
-              'find_implementations',
-              'find_super_methods',
-              'refactor',
-              'apply_action',
-              'apply_quickfix',
-              'format_code',
-              'optimize_imports',
-              'suppress_inspection',
-              'convert_java_to_kotlin',
-              'get_class_outline',
+          # Tool groups matching the bug-inventory sections in docs/bugs/issue-794-bug-inventory.md.
+          # Each tool name maps to a *CompatTest class (e.g. 'search_symbols' →
+          # SearchSymbolsCompatTest). Tools with no test class yet show ❓ in the matrix.
+          # Add the test class later; the row appears automatically once the first CI run picks
+          # up the new XML. Add new tools here when they are added to the plugin.
+          TOOL_GROUPS = [
+              ('PSI / Navigation', [
+                  'search_symbols',
+                  'get_file_outline',
+                  'find_references',
+                  'go_to_declaration',
+                  'get_documentation',
+                  'get_symbol_info',
+                  'get_class_outline',
+              ]),
+              ('Code Quality', [
+                  'get_highlights',
+                  'get_problems',
+                  'get_compilation_errors',
+                  'get_available_actions',
+                  'apply_action',
+                  'apply_quickfix',
+                  'format_code',
+                  'optimize_imports',
+                  'suppress_inspection',
+              ]),
+              ('Refactoring', [
+                  'get_type_hierarchy',
+                  'get_call_hierarchy',
+                  'find_implementations',
+                  'find_super_methods',
+                  'refactor',
+                  'convert_java_to_kotlin',
+              ]),
+              ('Testing', [
+                  'run_tests',
+                  'list_tests',
+                  'run_configuration',
+                  'get_coverage',
+              ]),
+              ('Debug', [
+                  'debug_session_start',
+                  'breakpoint_manage',
+                  'debug_evaluate',
+                  'debug_snapshot',
+                  'debug_inspect_frame',
+                  'debug_variable_detail',
+                  'debug_read_console',
+                  'debug_step',
+                  'debug_run_to_line',
+              ]),
+              ('Build', [
+                  'read_build_output',
+                  'reload_project_model',
+              ]),
           ]
+          EXPECTED_TOOLS = {t for _, tools in TOOL_GROUPS for t in tools}
 
           def class_to_tool(short):
               """'SearchSymbols' → 'search_symbols'"""
@@ -204,9 +232,11 @@ jobs:
               lines.append('')
               lines.append('| Tool | ' + ' | '.join(ides) + ' |')
               lines.append('|------|' + '|'.join(['---'] * len(ides)) + '|')
-              for tool in EXPECTED_TOOLS:
-                  cells = [status_map.get(results[ide].get(tool)) for ide in ides]
-                  lines.append(f'| `{tool}` | ' + ' | '.join(cells) + ' |')
+              for group, tools in TOOL_GROUPS:
+                  lines.append(f'| **{group}** | ' + ' | '.join(['&nbsp;'] * len(ides)) + ' |')
+                  for tool in tools:
+                      cells = [status_map.get(results[ide].get(tool)) for ide in ides]
+                      lines.append(f'| `{tool}` | ' + ' | '.join(cells) + ' |')
 
               any_failures = any(v == 'fail' for r in results.values() for v in r.values())
               if any_failures:
