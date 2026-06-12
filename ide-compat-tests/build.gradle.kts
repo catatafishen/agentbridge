@@ -25,6 +25,13 @@ dependencies {
         if (testPlatformType == "IU") {
             bundledPlugin("com.intellij.java")
         }
+        if (testPlatformType == "CL") {
+            // Load the classic C++ engine so .cpp files are parsed as C++ (not PLAIN_TEXT)
+            // in headless tests. CLion Nova's Radler backend is not available without a
+            // running JBP server; com.intellij.cidr.lang provides file-type registration
+            // and basic PSI parsing without requiring the backend.
+            bundledPlugin("com.intellij.cidr.lang")
+        }
     }
     testImplementation(project(":plugin-core"))
     testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")
