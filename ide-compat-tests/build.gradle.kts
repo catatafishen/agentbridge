@@ -18,6 +18,7 @@ dependencies {
     intellijPlatform {
         when (testPlatformType) {
             "CL" -> clion(providers.gradleProperty("clionPlatformVersion").get())
+            "RD" -> rider(providers.gradleProperty("riderPlatformVersion").get())
             else -> intellijIdeaUltimate(providers.gradleProperty("intellijPlatformVersion").get())
         }
         testFramework(TestFrameworkType.Platform)

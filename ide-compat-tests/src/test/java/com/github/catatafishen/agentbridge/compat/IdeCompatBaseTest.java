@@ -46,6 +46,13 @@ public abstract class IdeCompatBaseTest extends BasePlatformTestCase {
     protected static final String LANGUAGE_CPP = "ObjectiveC";
 
     /**
+     * C# — only available in Rider, and only when ReSharper is running.
+     * In headless CI (no ReSharper backend) {@link #createInMemoryPsiFile} returns {@code null}
+     * for this language ID and tests guard with {@code if (file == null) return;}.
+     */
+    protected static final String LANGUAGE_CSHARP = "C#";
+
+    /**
      * Creates an in-memory {@link PsiFile} for the given language by calling
      * {@link PsiFileFactory#createFileFromText} directly with the {@link Language} object.
      *
@@ -56,8 +63,9 @@ public abstract class IdeCompatBaseTest extends BasePlatformTestCase {
      * but does not register the {@code .cpp} extension.</p>
      *
      * <p>Returns {@code null} when the language ID is not registered (e.g. when the required
-     * language plugin is not loaded). Tests should call
-     * {@code Assume.assumeTrue("reason", result != null)} to skip gracefully rather than fail.</p>
+     * language plugin is not loaded). Tests should guard with {@code if (file == null) return;}
+     * to skip gracefully — do NOT use {@code Assume}, as IntelliJ's test runner treats
+     * {@code AssumptionViolatedException} as a failure rather than a skip.</p>
      *
      * @param filename   file name with extension (used by the parser for language hints)
      * @param languageId IntelliJ language ID — use the {@code LANGUAGE_*} constants
