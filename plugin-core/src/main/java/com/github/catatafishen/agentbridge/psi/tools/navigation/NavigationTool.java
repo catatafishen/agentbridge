@@ -612,11 +612,14 @@ public abstract class NavigationTool extends Tool {
         // declarations. Reuse the same node-type detection used by collectOutlineEntriesByNodeType.
         if (results.size() == sizeBefore) {
             walkCppSymbolsByNodeType(psiFile, doc, (kind, name, line) -> {
-                if ((kind.equals(typeFilter) || ("method".equals(typeFilter) && "function".equals(kind)))
-                    && seen.add(relPath + ":" + line) && results.size() < 200) {
+                if (kindMatchesFilter(kind, typeFilter) && seen.add(relPath + ":" + line) && results.size() < 200) {
                     results.add(String.format(FORMAT_LOCATION, relPath, line, kind, name));
                 }
             });
         }
+    }
+
+    private static boolean kindMatchesFilter(String kind, String typeFilter) {
+        return kind.equals(typeFilter) || ("method".equals(typeFilter) && "function".equals(kind));
     }
 }
