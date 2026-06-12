@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.compat;
 import com.github.catatafishen.agentbridge.psi.tools.navigation.SearchSymbolsTool;
 import com.google.gson.JsonObject;
 import com.intellij.psi.PsiFile;
-import org.junit.Assume;
 
 import java.util.List;
 
@@ -16,7 +15,7 @@ import java.util.List;
  *   <tr>
  *     <td>{@link #testSearchSymbolsWithJava}</td>
  *     <td>PASS — end-to-end via addFileToProject</td>
- *     <td>PASS — end-to-end via addFileToProject</td>
+ *     <td>SKIP — Java plugin not present in CLion</td>
  *   </tr>
  *   <tr>
  *     <td>{@link #testSearchSymbolsCppClass}</td>
@@ -38,6 +37,8 @@ public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
      * PSI read, {@code classifyElement}, and result formatting.</p>
      */
     public void testSearchSymbolsWithJava() {
+        if (createInMemoryPsiFile("Probe.java", LANGUAGE_JAVA, "class Probe {}") == null) return;
+
         // addFileToProject() is required — configureByText creates temp:/// files that
         // ProjectFileIndex.isInSourceContent() returns false for, so searchWildcard skips them.
         myFixture.addFileToProject("Widget.java", """
@@ -76,10 +77,7 @@ public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
             class Widget { int width; int height; };
             void render(Widget* w) {}
             """);
-        Assume.assumeTrue(
-            "C++ language (" + LANGUAGE_CPP + ") not available in " + PLATFORM_TYPE + " — skipping",
-            cppFile != null
-        );
+        if (cppFile == null) return;
 
         SearchSymbolsTool tool = new SearchSymbolsTool(getProject());
         List<String> results = tool.analyzeFileSymbols(cppFile, "class");
