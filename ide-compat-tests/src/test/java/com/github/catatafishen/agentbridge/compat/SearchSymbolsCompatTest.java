@@ -1,15 +1,24 @@
 package com.github.catatafishen.agentbridge.compat;
 
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.navigation.SearchSymbolsTool;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiNamedElement;
+import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.testFramework.PsiTestUtil;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 
 /**
  * IDE compatibility test for search_symbols (wildcard query).
@@ -39,9 +48,9 @@ public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
         if ("CL".equals(PLATFORM_TYPE)) {
             tempSourceDir = Files.createTempDirectory("search-symbols-compat-cpp");
             Files.writeString(tempSourceDir.resolve("widget.cpp"), """
-                class Widget { int width; int height; };
-                void render(Widget* w) {}
-                """);
+                    class Widget { int width; int height; };
+                    void render(Widget* w) {}
+                    """);
             cppSourceRootVf = LocalFileSystem.getInstance()
                 .refreshAndFindFileByPath(tempSourceDir.toString());
             assertNotNull("VFS cannot find tempSourceDir: " + tempSourceDir, cppSourceRootVf);
@@ -93,8 +102,45 @@ public class SearchSymbolsCompatTest extends IdeCompatBaseTest {
         assertNotNull("Tool must return a non-null result", result);
         assertFalse("Tool result must not be an error", result.startsWith("Error:"));
         assertTrue(
-            "Expected at least one 'class' symbol from wildcard search, got: " + result,
+            "Expected at least one 'class' symbol from wildcard search, got: " + result
+                + psiDiagForCpp(),
             result.contains("Widget")
         );
+    }
+
+    /** Appends a PSI dump for the CLion C++ file — empty string on IU. */
+    private String psiDiagForCpp() {
+        if (cppSourceRootVf == null) return "";
+        VirtualFile cppVf = cppSourceRootVf.findChild("widget.cpp");
+        if (cppVf == null) return "\n[widget.cpp not found in VFS]";
+        PsiFile psiFile = PsiManager.getInstance(getProject()).findFile(cppVf);
+        if (psiFile == null) return "\n[no PsiFile for widget.cpp]";
+
+        StringBuilder sb = new StringBuilder("\n--- PSI diagnostic (real disk) ---\n");
+        sb.append("fileType=").append(psiFile.getFileType().getName()).append('\n');
+        sb.append("psiClass=").append(psiFile.getClass().getSimpleName()).append('\n');
+        sb.append("directChildren:\n");
+        for (PsiElement child : psiFile.getChildren()) {
+            sb.append("  ").append(child.getClass().getSimpleName())
+                .append(" nodeType=").append(child.getNode().getElementType())
+                .append(" text=").append(child.getText().length() > 30
+                    ? child.getText().substring(0, 30) + "..." : child.getText())
+                .append('\n');
+        }
+        List<String> named = new ArrayList<>();
+        psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                if (element instanceof PsiNamedElement ne) {
+                    named.add(element.getClass().getSimpleName()
+                        + " name=" + ne.getName()
+                        + " classify=" + ToolUtils.classifyElement(element));
+                }
+                super.visitElement(element);
+            }
+        });
+        sb.append("namedElements (").append(named.size()).append("):\n");
+        named.forEach(n -> sb.append("  ").append(n).append('\n'));
+        return sb.toString();
     }
 }
