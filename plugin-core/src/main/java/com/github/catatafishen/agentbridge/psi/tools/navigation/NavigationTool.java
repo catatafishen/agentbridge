@@ -604,7 +604,7 @@ public abstract class NavigationTool extends Tool {
      */
     public List<String> analyzeFileSymbols(PsiFile psiFile,
                                            @org.jetbrains.annotations.Nullable String typeFilter) {
-        return com.intellij.openapi.application.ReadAction.compute(() -> {
+        return com.intellij.openapi.application.ReadAction.computeCancellable(() -> {
             Document doc = com.intellij.psi.PsiDocumentManager.getInstance(project)
                 .getDocument(psiFile);
             if (doc == null) return List.<String>of();
