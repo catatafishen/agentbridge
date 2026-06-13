@@ -21,6 +21,7 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/buildSrc" />
             <option value="$PROJECT_DIR$/ide-compat-tests" />
+            <option value="$PROJECT_DIR$/ide-integration-tests" />
             <option value="$PROJECT_DIR$/integration-tests" />
             <option value="$PROJECT_DIR$/mcp-server" />
             <option value="$PROJECT_DIR$/plugin-core" />

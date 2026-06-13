@@ -47,7 +47,14 @@ dependencies {
 val integrationTest by intellijPlatformTesting.testIdeUi.registering {
     task {
         testClassesDirs = sourceSets.test.get().output.classesDirs
-        classpath = sourceSets.test.get().runtimeClasspath
+        // testFramework(TestFrameworkType.Starter) adds Starter/driver-client JARs to the
+        // intellijPlatformTestDependencies configuration, which the plugin wires into
+        // testCompileClasspath (so compilation works) but NOT into testRuntimeClasspath.
+        // For testIdeUi tasks, the plugin does not auto-wire a classpath like it does for
+        // testIde tasks. We reference intellijPlatformTestDependencies directly here to make
+        // the Starter/driver-client JARs available at test discovery time.
+        classpath = project.configurations["intellijPlatformTestDependencies"] +
+            sourceSets.test.get().runtimeClasspath
         useJUnitPlatform()
 
         // The plugin ZIP to install into the launched IDE. Built by :plugin-core:buildPlugin
