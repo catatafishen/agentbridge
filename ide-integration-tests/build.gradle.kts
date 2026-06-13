@@ -36,11 +36,13 @@ dependencies {
         intellijIdeaUltimate(providers.gradleProperty("intellijPlatformVersion").get())
         testFramework(TestFrameworkType.Starter)
     }
-    testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
     testImplementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
     // Starter wires its dependency-injection container via Kodein.
     testImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // 5.13.4 matches what ide-starter-junit5 (brought in via testFramework(Starter)) requires.
+    // Using an older launcher causes engine/API version mismatch at test-discovery time.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.4")
 }
 
 // Dedicated task that launches a real IDE and runs the integration tests against it.
