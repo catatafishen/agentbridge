@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <!--
+    Pre-seeds McpServerSettings (see plugin-core .../settings/McpServerSettings.java) so that
+    PsiBridgeStartup.autoStartMcpServer() launches the MCP HTTP server automatically when the
+    IDE opens this fixture in CI — no UI interaction. The integration bench connects to the
+    fixed port below. staticPort=true makes a port conflict fail loudly instead of silently
+    drifting to another port the driver wouldn't know about.
+  -->
+  <component name="McpServerSettings">
+    <option name="port" value="8642"/>
+    <option name="staticPort" value="true"/>
+    <option name="autoStart" value="true"/>
+    <option name="transportMode" value="STREAMABLE_HTTP"/>
+  </component>
+</project>
