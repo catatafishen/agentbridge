@@ -20,6 +20,8 @@ import java.util.List;
  */
 public final class GetFileOutlineTool extends NavigationTool {
 
+    private static final String PARAM_TIMEOUT = "timeout";
+
     public GetFileOutlineTool(Project project) {
         super(project);
     }
@@ -53,7 +55,12 @@ public final class GetFileOutlineTool extends NavigationTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to outline")
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to outline"),
+            Param.optional("wait", TYPE_BOOLEAN,
+                "If true, retry until the language backend populates PSI (useful for CLion Nova/Radler " +
+                    "which loads asynchronously after IDE startup). Pairs with 'timeout'."),
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER,
+                "Max seconds to wait when wait=true (default: 60)")
         );
     }
 
@@ -62,15 +69,43 @@ public final class GetFileOutlineTool extends NavigationTool {
         return FileOutlineRenderer.INSTANCE;
     }
 
-    // Computable<> cast required for javac disambiguation between Computable and ThrowableComputable overloads.
-    // IntelliJ's type inference is more aggressive than javac and incorrectly marks it as redundant.
     @Override
-    @SuppressWarnings("RedundantCast")
     public @NotNull String execute(@NotNull JsonObject args) {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
 
+        boolean wait = args.has("wait") && args.get("wait").getAsBoolean();
+        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
+
+        String result = computeOutline(pathStr);
+        if (!wait || !result.startsWith("No structural elements")) return result;
+
+        // Language backends (e.g., CLion Nova/Radler) load asynchronously AFTER IntelliJ's own
+        // indexing completes, so PSI may be empty immediately after get_indexing_status reports
+        // ready. Retry until elements appear or we exhaust the timeout.
+        // The sleep-in-loop is intentional polling: there is no platform-agnostic subscription
+        // API for language-backend readiness (CLion Nova/Radler exposes this only via CLion-specific
+        // APIs not available on our compile classpath).
+        long deadline = System.currentTimeMillis() + (long) timeoutSec * 1_000;
+        do {
+            try {
+                //noinspection BusyWait
+                Thread.sleep(2_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            result = computeOutline(pathStr);
+        } while (result.startsWith("No structural elements") && System.currentTimeMillis() < deadline);
+        return result;
+    }
+
+    // The Computable<String> cast is required for javac to disambiguate between the
+    // Computable and ThrowableComputable overloads of runReadAction (see execute()).
+    // IntelliJ incorrectly reports the cast as redundant — removing it causes a javac error.
+    @SuppressWarnings("RedundantCast")
+    private @NotNull String computeOutline(@NotNull String pathStr) {
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
@@ -82,8 +117,8 @@ public final class GetFileOutlineTool extends NavigationTool {
             if (document == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
             List<String> outline = collectOutlineEntries(psiFile, document);
-
             if (outline.isEmpty()) return "No structural elements found in " + pathStr;
+
             String basePath = project.getBasePath();
             String display = basePath != null ? relativize(basePath, vf.getPath()) : pathStr;
             return "Outline of " + (display != null ? display : pathStr) + ":\n"
