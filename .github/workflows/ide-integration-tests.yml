@@ -5,9 +5,10 @@ name: IDE Integration Bench (spike)
 # drives the plugin's MCP server over HTTP. Unlike ide-compat-tests (headless), this can
 # actually exercise CLion Nova / Rider backends.
 #
-# SPIKE STATUS: manual-dispatch only and NON-GATING while we validate that the commercial
-# IDE backend starts under xvfb in CI (the make-or-break question). Once proven, this moves
-# to pull_request triggers and expands to the full IDE × tool matrix.
+# SPIKE STATUS: NON-GATING while we validate that the commercial IDE backend starts under
+# xvfb in CI (the make-or-break question). It runs on PRs that touch the bench so we get a
+# real CI result, but it is a brand-new check (not in branch protection) so it reports status
+# without blocking merge. Once proven, it expands to the full IDE × tool matrix.
 
 on:
   workflow_dispatch:
@@ -16,6 +17,13 @@ on:
         description: "CLion version for the Starter framework to download"
         required: false
         default: "2026.1"
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'ide-integration-tests/**'
+      - 'fixtures/**'
+      - 'plugin-core/src/main/**'
+      - '.github/workflows/ide-integration-tests.yml'
 
 permissions: { }
 
