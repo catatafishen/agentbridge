@@ -10,6 +10,7 @@ import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -52,6 +53,7 @@ class GetFileOutlineClionIntegrationTest {
         }
     }
 
+    @Test
     fun `get_file_outline returns C++ symbols from CLion Nova`() {
         val pluginPath = System.getProperty("path.to.build.plugin")
             ?: error("path.to.build.plugin system property is required (build :plugin-core:buildPlugin first)")
