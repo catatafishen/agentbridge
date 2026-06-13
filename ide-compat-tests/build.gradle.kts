@@ -42,8 +42,8 @@ dependencies {
     // 5.13.4 matches the junit-platform-commons version bundled by IntelliJ 2026.1.
     // IntelliJ's bundled Jupiter engine calls isNestedClassPresent(Class, Predicate, CycleErrorHandling)
     // which was added in 1.13.4; versions below that cause NoSuchMethodError at test discovery.
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.13.4")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.4")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:6.0.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
 }
 
 intellijPlatform {
