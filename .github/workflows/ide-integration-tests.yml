@@ -1,0 +1,104 @@
+name: IDE Integration Bench (spike)
+
+# High-fidelity bench: launches a REAL IDE (CLion) via the IntelliJ Platform Starter
+# framework, opens a committed fixture project so the real language backend starts, and
+# drives the plugin's MCP server over HTTP. Unlike ide-compat-tests (headless), this can
+# actually exercise CLion Nova / Rider backends.
+#
+# SPIKE STATUS: manual-dispatch only and NON-GATING while we validate that the commercial
+# IDE backend starts under xvfb in CI (the make-or-break question). Once proven, this moves
+# to pull_request triggers and expands to the full IDE × tool matrix.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clionVersion:
+        description: "CLion version for the Starter framework to download"
+        required: false
+        default: "2026.1"
+
+permissions: { }
+
+concurrency:
+  group: ide-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  integration:
+    name: IDE Integration (CL)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b  # v4.6.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244  # v4.3.1
+        with:
+          gradle-version: 'wrapper'
+          gradle-home-cache-includes: |
+            caches
+            notifications
+
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Build plugin ZIP
+        run: gradle :plugin-core:buildPlugin -x :plugin-core:buildChatUi --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+
+      - name: Resolve plugin ZIP path
+        id: zip
+        run: echo "path=$(ls -t plugin-core/build/distributions/*.zip | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Run integration bench (CLion) under xvfb
+        run: >
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24"
+          gradle :ide-integration-tests:integrationTest
+          -Ppath.to.build.plugin=${{ steps.zip.outputs.path }}
+          -PclionPlatformVersion=${{ github.event.inputs.clionVersion }}
+          --no-daemon
+          --stacktrace
+        env:
+          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: integration-test-reports
+          path: |
+            ide-integration-tests/build/reports/
+            ide-integration-tests/build/test-results/
+          retention-days: 14
+
+      - name: Upload IDE launch logs
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: ide-starter-logs
+          # Starter framework writes IDE logs + screenshots here; invaluable for diagnosing
+          # whether the backend started and why a launch failed.
+          path: |
+            ide-integration-tests/build/idea-test-system/
+            ide-integration-tests/build/system-test/
+          retention-days: 14
+          if-no-files-found: ignore
