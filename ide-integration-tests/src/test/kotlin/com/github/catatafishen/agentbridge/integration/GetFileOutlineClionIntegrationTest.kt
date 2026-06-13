@@ -110,19 +110,25 @@ class GetFileOutlineClionIntegrationTest {
         println("[integration] === Searching for log files under: $testHome ===")
         val root = testHome.toFile()
         if (!root.exists()) {
-            println("[integration] testHome does not exist: $testHome")
+            println("[integration] testHome does not exist")
             return
         }
         println("[integration] testHome contents: ${root.listFiles()?.joinToString { it.name }}")
 
-        val logFiles = root.walkTopDown().filter { it.isFile && it.name.endsWith(".log") }.toList()
-        println("[integration] Found ${logFiles.size} .log file(s): ${logFiles.map { it.relativeTo(root).path }}")
+        val allLogs = root.walkTopDown().filter { it.isFile && it.name.endsWith(".log") }.toList()
+        println("[integration] Found ${allLogs.size} .log file(s): ${allLogs.map { it.relativeTo(root).path }}")
+
+        // Prioritize the files most likely to contain plugin startup info
+        val priority = listOf("idea.log", "backend.") // idea.log is the IntelliJ frontend log
+        val sorted = allLogs.sortedWith(compareBy { f ->
+            priority.indexOfFirst { f.name.startsWith(it) }.let { if (it == -1) 99 else it }
+        })
 
         val keywords = setOf(
             "agentbridge", "mcpserver", "psibridgestartup", "autostart", "psibridgeservice",
             "conversationdatabase", "error", "fatal", "exception", "caused by"
         )
-        for (logFile in logFiles.take(3)) {
+        for (logFile in sorted.take(3)) {
             val lines = logFile.readLines()
             println("[integration] === $logFile (${lines.size} lines) ===")
             val relevant = lines.filter { line -> keywords.any { line.lowercase().contains(it) } }
