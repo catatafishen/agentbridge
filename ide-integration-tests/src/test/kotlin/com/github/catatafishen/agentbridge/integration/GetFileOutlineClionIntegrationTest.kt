@@ -109,8 +109,14 @@ class GetFileOutlineClionIntegrationTest {
                 )
                 println("[integration] get_file_outline(classdef.h) → $outline")
 
-                assertTrue(outline.contains("Widget"), "Expected class 'Widget' in C++ outline after 90s wait, got:\n$outline")
-                assertTrue(outline.contains("Point"), "Expected struct 'Point' in C++ outline after 90s wait, got:\n$outline")
+                assertTrue(
+                    outline.contains("Widget"),
+                    "Expected class 'Widget' in C++ outline after 90s wait, got:\n$outline"
+                )
+                assertTrue(
+                    outline.contains("Point"),
+                    "Expected struct 'Point' in C++ outline after 90s wait, got:\n$outline"
+                )
                 testPassed = true
             }
         } finally {
