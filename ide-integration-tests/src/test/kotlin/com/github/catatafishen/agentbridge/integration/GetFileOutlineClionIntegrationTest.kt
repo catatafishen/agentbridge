@@ -101,39 +101,35 @@ class GetFileOutlineClionIntegrationTest {
             }
         } finally {
             if (!testPassed) {
-                dumpIdeLog(context.paths.systemDir.resolve("log"))
+                dumpIdeLog(context.paths.testHome)
             }
         }
     }
 
-    /** Dumps IDE log lines relevant to the plugin on failure so CI can diagnose why MCP didn't start. */
-    private fun dumpIdeLog(logsDir: java.nio.file.Path) {
-        println("[integration] === IDE logs dir: $logsDir ===")
-        val dir = logsDir.toFile()
-        if (!dir.exists()) {
-            println("[integration] logs dir does not exist")
+    private fun dumpIdeLog(testHome: java.nio.file.Path) {
+        println("[integration] === Searching for log files under: $testHome ===")
+        val root = testHome.toFile()
+        if (!root.exists()) {
+            println("[integration] testHome does not exist: $testHome")
             return
         }
-        val logFile = dir.listFiles()?.firstOrNull { it.name.endsWith(".log") }
-        if (logFile == null) {
-            println("[integration] No .log file found in $logsDir. Files: ${dir.listFiles()?.joinToString { it.name }}")
-            return
-        }
-        println("[integration] Reading $logFile")
+        println("[integration] testHome contents: ${root.listFiles()?.joinToString { it.name }}")
+
+        val logFiles = root.walkTopDown().filter { it.isFile && it.name.endsWith(".log") }.toList()
+        println("[integration] Found ${logFiles.size} .log file(s): ${logFiles.map { it.relativeTo(root).path }}")
+
         val keywords = setOf(
             "agentbridge", "mcpserver", "psibridgestartup", "autostart", "psibridgeservice",
             "conversationdatabase", "error", "fatal", "exception", "caused by"
         )
-        val lines = logFile.readLines()
-        println("[integration] Total log lines: ${lines.size}")
-        val relevant = lines.filter { line ->
-            val lower = line.lowercase()
-            keywords.any { lower.contains(it) }
+        for (logFile in logFiles.take(3)) {
+            val lines = logFile.readLines()
+            println("[integration] === $logFile (${lines.size} lines) ===")
+            val relevant = lines.filter { line -> keywords.any { line.lowercase().contains(it) } }
+            println("[integration] --- Relevant lines (${relevant.size}) ---")
+            relevant.forEach { println("[integration] $it") }
+            println("[integration] --- Last 30 lines ---")
+            lines.takeLast(30).forEach { println("[integration] $it") }
         }
-        println("[integration] === Relevant IDE log lines (${relevant.size}) ===")
-        relevant.forEach { println("[integration] $it") }
-        // Also print last 30 lines regardless
-        println("[integration] === Last 30 IDE log lines ===")
-        lines.takeLast(30).forEach { println("[integration] $it") }
     }
 }
