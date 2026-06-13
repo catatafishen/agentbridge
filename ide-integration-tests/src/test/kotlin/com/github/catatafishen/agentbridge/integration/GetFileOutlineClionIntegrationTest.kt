@@ -101,16 +101,27 @@ class GetFileOutlineClionIntegrationTest {
                 val indexing = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
                 println("[integration] get_indexing_status → $indexing")
 
-                val outline = mcp.callTool("get_file_outline", mapOf("path" to "classdef.h"))
-                println("[integration] get_file_outline(classdef.h) →\n$outline")
+                // CLion Nova (Radler/ReSharper) is a separate backend process with its own C++
+                // analysis pipeline. IntelliJ's get_indexing_status reports "complete" when the
+                // IntelliJ-side index is ready, but Nova may still be loading and analyzing files.
+                // Retry until the outline contains real symbols or we exhaust the timeout.
+                val novaDeadlineMs = System.currentTimeMillis() + 90_000
+                var outline = ""
+                while (System.currentTimeMillis() < novaDeadlineMs) {
+                    outline = mcp.callTool("get_file_outline", mapOf("path" to "classdef.h"))
+                    println("[integration] get_file_outline(classdef.h) → $outline")
+                    if (outline.contains("Widget")) break
+                    println("[integration] Nova backend not ready yet, retrying in 5s…")
+                    Thread.sleep(5_000)
+                }
 
                 assertTrue(
                     outline.contains("Widget"),
-                    "Expected class 'Widget' in C++ outline, got:\n$outline",
+                    "Expected class 'Widget' in C++ outline after 90s, got:\n$outline",
                 )
                 assertTrue(
                     outline.contains("Point"),
-                    "Expected struct 'Point' in C++ outline, got:\n$outline",
+                    "Expected struct 'Point' in C++ outline after 90s, got:\n$outline",
                 )
                 testPassed = true
             }
