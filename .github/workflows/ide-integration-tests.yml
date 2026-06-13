@@ -114,7 +114,7 @@ jobs:
           find out/ide-tests/tests -name "idea.log" 2>/dev/null | while IFS= read -r f; do
             test_name=$(basename "$(dirname "$(dirname "$f")")")
             cp "$f" "$OUT/${test_name}-idea.log" 2>/dev/null || true
-            grep -iE "(agentbridge|mcpserver|psibridgestartup|autostart|psibridgeservice|error|exception|fatal)" "$f" \
+            grep -iE "(agentbridge|mcpserver|psibridgestartup|autostart|psibridgeservice)" "$f" \
               > "$OUT/${test_name}-plugin-excerpt.log" 2>/dev/null || true
           done
         continue-on-error: true
