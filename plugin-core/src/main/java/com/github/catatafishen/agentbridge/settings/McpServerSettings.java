@@ -5,6 +5,7 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -18,6 +19,7 @@ import java.util.Set;
 @State(name = "McpServerSettings", storages = @Storage("mcpServer.xml"))
 public final class McpServerSettings implements PersistentStateComponent<McpServerSettings.State> {
 
+    private static final Logger LOG = Logger.getInstance(McpServerSettings.class);
     public static final int DEFAULT_PORT = 8642;
 
     private State myState = new State();
@@ -84,6 +86,15 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     public TransportMode getTransportMode() {
+        // Defensive null guard: IntelliJ's XML deserializer may null out enum fields when
+        // the serialized value is absent or unrecognized (e.g., a first-launch sandbox with no
+        // prior mcpServer.xml, or a settings file written by an older plugin version).
+        // STREAMABLE_HTTP is the correct default and matches the State field initializer.
+        if (myState.transportMode == null) {
+            LOG.warn("[MCP] transportMode is null in McpServerSettings.State — defaulting to STREAMABLE_HTTP. " +
+                "Check mcpServer.xml for missing or unrecognized transportMode value.");
+            myState.transportMode = TransportMode.STREAMABLE_HTTP;
+        }
         return myState.transportMode;
     }
 
