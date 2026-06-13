@@ -55,8 +55,8 @@ class GetFileOutlineClionIntegrationTest {
 
     @Test
     fun `get_file_outline returns C++ symbols from CLion Nova`() {
-        val pluginPath = System.getProperty("path.to.build.plugin")
-            ?: error("path.to.build.plugin system property is required (build :plugin-core:buildPlugin first)")
+        val pluginPath = System.getProperty("agentbridge.plugin.zip")
+            ?: error("agentbridge.plugin.zip system property is required (build :plugin-core:buildPlugin first)")
         val fixturesDir = System.getProperty("agentbridge.fixtures.dir")
             ?: error("agentbridge.fixtures.dir system property is required")
         val clionVersion = System.getProperty("agentbridge.clion.version", "2026.1")
