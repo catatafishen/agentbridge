@@ -61,10 +61,12 @@ class GetFileOutlineClionIntegrationTest {
 
         val fixture = Path(fixturesDir).resolve("cpp-cmake")
 
-        // Create context first, then install the plugin directly on the context object.
-        // This is simpler and more reliable than the EventsBus hook approach — the plugins dir
-        // is already set up by newContext(), so we can write into it before launching the IDE.
-        val context = Starter.newContext(
+        // Create context using newTestContainer().newContext() — this fires TestContextInitializedEvent
+        // so the framework's default subscriber installs ide-integration-tests automatically.
+        // Then we install our plugin DIRECTLY on the returned context, before launching the IDE.
+        // The plugins dir is already initialized at this point; any failure here is visible as a
+        // test error rather than being silently swallowed by the EventsBus.
+        val context = Starter.newTestContainer().newContext(
             "clionGetFileOutline",
             TestCase(IdeProductProvider.CL, LocalProjectInfo(fixture)).withVersion(clionVersion),
         )
