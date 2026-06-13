@@ -43,6 +43,12 @@ dependencies {
     // 5.13.4 matches what ide-starter-junit5 (brought in via testFramework(Starter)) requires.
     // Using an older launcher causes engine/API version mismatch at test-discovery time.
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.4")
+    // ide-starter-squashed declares kotlinx-coroutines-core-jvm as a runtime dependency in
+    // its POM (the squashed JAR does NOT bundle coroutines classes), but the IntelliJ Platform
+    // Gradle Plugin substitutes the intellij.deps.kotlinx artifact with the platform-bundled
+    // version, which ends up in intellijPlatformClasspath — NOT on the testIdeUi task classpath.
+    // We must add it explicitly so CommonScope.<clinit> can load SupervisorKt at test runtime.
+    testRuntimeOnly("org.jetbrains.intellij.deps.kotlinx:kotlinx-coroutines-core-jvm:1.10.2-intellij-1")
 }
 
 // Dedicated task that launches a real IDE and runs the integration tests against it.
