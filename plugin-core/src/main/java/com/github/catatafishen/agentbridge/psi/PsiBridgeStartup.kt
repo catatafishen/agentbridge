@@ -17,7 +17,10 @@ import com.intellij.openapi.wm.ToolWindowManager
 class PsiBridgeStartup : ProjectActivity {
 
     override suspend fun execute(project: Project) {
-        if (PlatformApiCompat.isJetBrainsClient()) {
+        val isClient = PlatformApiCompat.isJetBrainsClient()
+        val prefix = System.getProperty("idea.platform.prefix", "(none)")
+        LOG.info("PsiBridgeStartup.execute: project=${project.name}, platformPrefix=$prefix, isJetBrainsClient=$isClient")
+        if (isClient) {
             LOG.info("Running in JetBrains thin client — skipping backend initialization")
             return
         }
@@ -31,7 +34,9 @@ class PsiBridgeStartup : ProjectActivity {
         initializeDatabase(project)
 
         // Force-initialize PsiBridgeService so tools are registered before any agent connects
+        LOG.info("Initializing PsiBridgeService for project: ${project.name}")
         PsiBridgeService.getInstance(project)
+        LOG.info("PsiBridgeService initialized for project: ${project.name}")
 
         wireCodeGraphAutoRefresh(project)
         logCodeGraphStatus(project)
@@ -113,6 +118,7 @@ class PsiBridgeStartup : ProjectActivity {
 
     private fun autoStartMcpServer(project: Project) {
         val mcpSettings = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
+        LOG.info("autoStartMcpServer: isAutoStart=${mcpSettings.isAutoStart}, port=${mcpSettings.port}, staticPort=${mcpSettings.isStaticPort}")
         if (mcpSettings.isAutoStart) {
             try {
                 val mcpServer =
