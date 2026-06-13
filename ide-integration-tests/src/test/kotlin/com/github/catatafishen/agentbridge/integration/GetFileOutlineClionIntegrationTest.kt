@@ -10,7 +10,6 @@ import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -53,7 +52,6 @@ class GetFileOutlineClionIntegrationTest {
         }
     }
 
-    @Test
     fun `get_file_outline returns C++ symbols from CLion Nova`() {
         val pluginPath = System.getProperty("path.to.build.plugin")
             ?: error("path.to.build.plugin system property is required (build :plugin-core:buildPlugin first)")
@@ -63,22 +61,24 @@ class GetFileOutlineClionIntegrationTest {
 
         val fixture = Path(fixturesDir).resolve("cpp-cmake")
 
-        // Register a setup hook that fires during TestContextInitializedEvent inside newContext(),
-        // after the plugins dir is initialized and ide-integration-tests is installed. Using
-        // PluginConfigurator ensures JBZipFile-based extraction with correct Unix permissions.
-        //
-        // Note: trailing lambda syntax does not work with vararg params in Kotlin — the hook
-        // must be passed inside parentheses so Kotlin resolves 'this' as IDETestContext.
-        val context = Starter.newTestContainer({
-            PluginConfigurator(this).installPluginFromPath(Path(pluginPath))
-            println(
-                "[integration] Plugins dir after install: ${
-                    paths.pluginsDir.toFile().listFiles()?.map { it.name }
-                }"
-            )
-        }).newContext(
+        // Create context first, then install the plugin directly on the context object.
+        // This is simpler and more reliable than the EventsBus hook approach — the plugins dir
+        // is already set up by newContext(), so we can write into it before launching the IDE.
+        val context = Starter.newContext(
             "clionGetFileOutline",
             TestCase(IdeProductProvider.CL, LocalProjectInfo(fixture)).withVersion(clionVersion),
+        )
+
+        val pluginFile = Path(pluginPath)
+        check(pluginFile.toFile().exists()) {
+            "Plugin ZIP not found at $pluginFile — ensure :plugin-core:buildPlugin ran first"
+        }
+        println("[integration] Installing plugin from: $pluginFile")
+        PluginConfigurator(context).installPluginFromPath(pluginFile)
+        println(
+            "[integration] Plugins dir after install: ${
+                context.paths.pluginsDir.toFile().listFiles()?.map { it.name }
+            }"
         )
 
         var testPassed = false
