@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
-import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.time.Duration.Companion.minutes
 
@@ -64,36 +63,75 @@ class GetFileOutlineClionIntegrationTest {
 
         val fixture = Path(fixturesDir).resolve("cpp-cmake")
 
-        Starter.newContext(
+        val context = Starter.newContext(
             "clionGetFileOutline",
             TestCase(IdeProductProvider.CL, LocalProjectInfo(fixture)).withVersion(clionVersion)
         ).apply {
             PluginConfigurator(this).installPluginFromPath(Path(pluginPath))
-        }.runIdeWithDriver().useDriverAndCloseIde {
-            // We drive everything over the plugin's MCP server — the same boundary an agent uses —
-            // so we deliberately do NOT depend on the Starter Driver's UI DSL here. The lambda body
-            // simply keeps the IDE alive while we issue HTTP calls.
-            // The plugin auto-started the MCP server on the fixed port (fixture .idea/mcpServer.xml).
-            val mcp = McpClient(port = 8642)
-            val version = mcp.awaitHealthy(timeout = 3.minutes)
-            println("[integration] MCP server healthy — plugin version $version")
-
-            // Gate on indexing + backend warm-up using the plugin's own tool. More reliable than
-            // guessing the Driver's wait DSL, and exercises the MCP path end-to-end.
-            val indexing = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
-            println("[integration] get_indexing_status → $indexing")
-
-            val outline = mcp.callTool("get_file_outline", mapOf("path" to "classdef.h"))
-            println("[integration] get_file_outline(classdef.h) →\n$outline")
-
-            assertTrue(
-                outline.contains("Widget"),
-                "Expected class 'Widget' in C++ outline, got:\n$outline"
-            )
-            assertTrue(
-                outline.contains("Point"),
-                "Expected struct 'Point' in C++ outline, got:\n$outline"
-            )
         }
+
+        var testPassed = false
+        try {
+            context.runIdeWithDriver().useDriverAndCloseIde {
+                // We drive everything over the plugin's MCP server — the same boundary an agent uses —
+                // so we deliberately do NOT depend on the Starter Driver's UI DSL here. The lambda body
+                // simply keeps the IDE alive while we issue HTTP calls.
+                // The plugin auto-started the MCP server on the fixed port (fixture .idea/mcpServer.xml).
+                val mcp = McpClient(port = 8642)
+                val version = mcp.awaitHealthy(timeout = 2.minutes)
+                println("[integration] MCP server healthy — plugin version $version")
+
+                // Gate on indexing + backend warm-up using the plugin's own tool. More reliable than
+                // guessing the Driver's wait DSL, and exercises the MCP path end-to-end.
+                val indexing = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
+                println("[integration] get_indexing_status → $indexing")
+
+                val outline = mcp.callTool("get_file_outline", mapOf("path" to "classdef.h"))
+                println("[integration] get_file_outline(classdef.h) →\n$outline")
+
+                assertTrue(
+                    outline.contains("Widget"),
+                    "Expected class 'Widget' in C++ outline, got:\n$outline"
+                )
+                assertTrue(
+                    outline.contains("Point"),
+                    "Expected struct 'Point' in C++ outline, got:\n$outline"
+                )
+                testPassed = true
+            }
+        } finally {
+            if (!testPassed) {
+                dumpIdeLog(context.paths.systemDir.resolve("log"))
+            }
+        }
+    }
+
+    /** Dumps IDE log lines relevant to the plugin on failure so CI can diagnose why MCP didn't start. */
+    private fun dumpIdeLog(logsDir: java.nio.file.Path) {
+        println("[integration] === IDE logs dir: $logsDir ===")
+        val dir = logsDir.toFile()
+        if (!dir.exists()) {
+            println("[integration] logs dir does not exist")
+            return
+        }
+        val logFile = dir.listFiles()?.firstOrNull { it.name.endsWith(".log") }
+        if (logFile == null) {
+            println("[integration] No .log file found in $logsDir. Files: ${dir.listFiles()?.joinToString { it.name }}")
+            return
+        }
+        println("[integration] Reading $logFile")
+        val keywords = setOf("agentbridge", "mcpserver", "psibridgestartup", "autostart", "psibridgeservice",
+            "conversationdatabase", "error", "fatal", "exception", "caused by")
+        val lines = logFile.readLines()
+        println("[integration] Total log lines: ${lines.size}")
+        val relevant = lines.filter { line ->
+            val lower = line.lowercase()
+            keywords.any { lower.contains(it) }
+        }
+        println("[integration] === Relevant IDE log lines (${relevant.size}) ===")
+        relevant.forEach { println("[integration] $it") }
+        // Also print last 30 lines regardless
+        println("[integration] === Last 30 IDE log lines ===")
+        lines.takeLast(30).forEach { println("[integration] $it") }
     }
 }
