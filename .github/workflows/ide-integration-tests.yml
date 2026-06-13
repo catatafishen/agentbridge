@@ -33,6 +33,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CLION_VERSION: ${{ github.event.inputs.clionVersion || '2026.1' }}
 
 jobs:
   integration:
@@ -96,11 +97,37 @@ jobs:
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24"
           gradle :ide-integration-tests:integrationTest
           -Ppath.to.build.plugin=${{ steps.zip.outputs.path }}
-          -PclionPlatformVersion=${{ github.event.inputs.clionVersion || '2026.1' }}
+          -PclionPlatformVersion=${{ env.CLION_VERSION }}
           --no-daemon
           --stacktrace
         env:
           GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+
+      - name: Collect IDE logs (CLion ${{ env.CLION_VERSION }})
+        if: always()
+        # The Starter framework writes IDE output under out/ide-tests/tests/<product>-<build>/<testName>/.
+        # Collect idea.log for each test run and produce a smaller plugin-specific excerpt
+        # (agentbridge/error/exception lines only) so the relevant signal is easy to find.
+        run: |
+          OUT="ide-logs-CLion-${{ env.CLION_VERSION }}"
+          mkdir -p "$OUT"
+          find out/ide-tests/tests -name "idea.log" 2>/dev/null | while IFS= read -r f; do
+            test_name=$(basename "$(dirname "$(dirname "$f")")")
+            cp "$f" "$OUT/${test_name}-idea.log" 2>/dev/null || true
+            grep -iE "(agentbridge|mcpserver|psibridgestartup|autostart|psibridgeservice|error|exception|fatal)" "$f" \
+              > "$OUT/${test_name}-plugin-excerpt.log" 2>/dev/null || true
+          done
+        continue-on-error: true
+
+      - name: Upload IDE logs (CLion ${{ env.CLION_VERSION }})
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: ide-logs-CLion-${{ env.CLION_VERSION }}
+          # Full idea.log + agentbridge-specific excerpt per test run.
+          path: ide-logs-CLion-${{ env.CLION_VERSION }}/
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Upload test reports
         if: always()
@@ -111,16 +138,4 @@ jobs:
             ide-integration-tests/build/reports/
             ide-integration-tests/build/test-results/
           retention-days: 14
-
-      - name: Upload IDE launch logs
-        if: always()
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
-        with:
-          name: ide-starter-logs
-          # Starter framework writes IDE logs + screenshots here; invaluable for diagnosing
-          # whether the backend started and why a launch failed.
-          path: |
-            ide-integration-tests/build/idea-test-system/
-            ide-integration-tests/build/system-test/
-          retention-days: 14
-          if-no-files-found: ignore
+          if-no-files-found: warn

@@ -6,6 +6,7 @@ import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.models.TestCase
+import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -62,31 +63,23 @@ class GetFileOutlineClionIntegrationTest {
 
         val fixture = Path(fixturesDir).resolve("cpp-cmake")
 
-        val context = Starter.newContext(
+        // Register a setup hook that fires during TestContextInitializedEvent inside newContext(),
+        // after the plugins dir is initialized and ide-integration-tests is installed. Using
+        // PluginConfigurator ensures JBZipFile-based extraction with correct Unix permissions.
+        //
+        // Note: trailing lambda syntax does not work with vararg params in Kotlin — the hook
+        // must be passed inside parentheses so Kotlin resolves 'this' as IDETestContext.
+        val context = Starter.newTestContainer({
+            PluginConfigurator(this).installPluginFromPath(Path(pluginPath))
+            println(
+                "[integration] Plugins dir after install: ${
+                    paths.pluginsDir.toFile().listFiles()?.map { it.name }
+                }"
+            )
+        }).newContext(
             "clionGetFileOutline",
             TestCase(IdeProductProvider.CL, LocalProjectInfo(fixture)).withVersion(clionVersion),
-        ).apply {
-            // PluginConfigurator.installPluginFromPath() silently does nothing because the
-            // plugins directory does not exist yet at .apply {} time (Starter creates it inside
-            // runIdeWithDriver() via TestContextInitializedEvent). Extract the ZIP manually so
-            // the plugin lands in the correct place before the IDE launches.
-            val pluginZip = java.io.File(pluginPath)
-            require(pluginZip.exists()) { "Plugin ZIP not found: ${pluginZip.absolutePath}" }
-            val pluginsDir = paths.testHome.resolve("plugins").toFile().also { it.mkdirs() }
-            java.util.zip.ZipInputStream(pluginZip.inputStream()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val target = java.io.File(pluginsDir, entry.name)
-                    if (entry.isDirectory) target.mkdirs()
-                    else {
-                        target.parentFile.mkdirs()
-                        target.outputStream().use { out -> zis.copyTo(out) }
-                    }
-                    entry = zis.nextEntry
-                }
-            }
-            println("[integration] Installed plugin to $pluginsDir: ${pluginsDir.listFiles()?.map { it.name }}")
-        }
+        )
 
         var testPassed = false
         try {
@@ -137,7 +130,7 @@ class GetFileOutlineClionIntegrationTest {
         println("[integration] Found ${allLogs.size} .log file(s): ${allLogs.map { it.relativeTo(root).path }}")
 
         // Prioritize the files most likely to contain plugin startup info
-        val priority = listOf("idea.log", "backend.") // idea.log is the IntelliJ frontend log
+        val priority = listOf("idea.log", "backend.")
         val sorted = allLogs.sortedWith(
             compareBy { f ->
                 priority.indexOfFirst { f.name.startsWith(it) }.let { if (it == -1) 99 else it }
