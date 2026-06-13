@@ -120,8 +120,10 @@ class GetFileOutlineClionIntegrationTest {
             return
         }
         println("[integration] Reading $logFile")
-        val keywords = setOf("agentbridge", "mcpserver", "psibridgestartup", "autostart", "psibridgeservice",
-            "conversationdatabase", "error", "fatal", "exception", "caused by")
+        val keywords = setOf(
+            "agentbridge", "mcpserver", "psibridgestartup", "autostart", "psibridgeservice",
+            "conversationdatabase", "error", "fatal", "exception", "caused by"
+        )
         val lines = logFile.readLines()
         println("[integration] Total log lines: ${lines.size}")
         val relevant = lines.filter { line ->

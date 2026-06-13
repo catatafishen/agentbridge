@@ -64,6 +64,10 @@ val integrationTest by intellijPlatformTesting.testIdeUi.registering {
         classpath = project.configurations["intellijPlatformTestDependencies"] +
             sourceSets.test.get().runtimeClasspath
         useJUnitPlatform()
+        testLogging {
+            events("passed", "failed", "standardOut", "standardError")
+            showStandardStreams = true
+        }
 
         // The plugin ZIP to install into the launched IDE. Built by :plugin-core:buildPlugin
         // and passed explicitly by CI (-Ppath.to.build.plugin=...). Fail loudly if absent
