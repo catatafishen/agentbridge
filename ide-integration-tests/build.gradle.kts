@@ -75,7 +75,9 @@ val integrationTest by intellijPlatformTesting.testIdeUi.registering {
         dependsOn(":plugin-core:buildPlugin")
         val pluginPath = providers.gradleProperty("path.to.build.plugin")
         if (pluginPath.isPresent) {
-            systemProperty("path.to.build.plugin", pluginPath.get())
+            // Resolve to an absolute path so the test JVM can locate the file regardless of its
+            // working directory. File.resolve() returns the argument unchanged if it's already absolute.
+            systemProperty("path.to.build.plugin", rootProject.rootDir.resolve(pluginPath.get()).absolutePath)
         }
 
         // Absolute path to the committed fixtures/ directory (resolved from the repo root so
