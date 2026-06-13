@@ -13,6 +13,7 @@
       <w>cdpath</w>
       <w>classname</w>
       <w>claude</w>
+      <w>conversationdatabase</w>
       <w>copilot</w>
       <w>cygpath</w>
       <w>datetime</w>
@@ -68,6 +69,8 @@
       <w>pipefail</w>
       <w>pnpx</w>
       <w>psi</w>
+      <w>psibridgeservice</w>
+      <w>psibridgestartup</w>
       <w>pwsh</w>
       <w>qname</w>
       <w>quickfix</w>

@@ -6,7 +6,6 @@ import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.models.TestCase
-import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -44,7 +43,7 @@ class GetFileOutlineClionIntegrationTest {
                         testName: String,
                         message: String,
                         details: String,
-                        linkToLogs: String?
+                        linkToLogs: String?,
                     ) {
                         fail { "$testName failed: $message\n$details" }
                     }
@@ -65,9 +64,28 @@ class GetFileOutlineClionIntegrationTest {
 
         val context = Starter.newContext(
             "clionGetFileOutline",
-            TestCase(IdeProductProvider.CL, LocalProjectInfo(fixture)).withVersion(clionVersion)
+            TestCase(IdeProductProvider.CL, LocalProjectInfo(fixture)).withVersion(clionVersion),
         ).apply {
-            PluginConfigurator(this).installPluginFromPath(Path(pluginPath))
+            // PluginConfigurator.installPluginFromPath() silently does nothing because the
+            // plugins directory does not exist yet at .apply {} time (Starter creates it inside
+            // runIdeWithDriver() via TestContextInitializedEvent). Extract the ZIP manually so
+            // the plugin lands in the correct place before the IDE launches.
+            val pluginZip = java.io.File(pluginPath)
+            require(pluginZip.exists()) { "Plugin ZIP not found: ${pluginZip.absolutePath}" }
+            val pluginsDir = paths.testHome.resolve("plugins").toFile().also { it.mkdirs() }
+            java.util.zip.ZipInputStream(pluginZip.inputStream()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val target = java.io.File(pluginsDir, entry.name)
+                    if (entry.isDirectory) target.mkdirs()
+                    else {
+                        target.parentFile.mkdirs()
+                        target.outputStream().use { out -> zis.copyTo(out) }
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+            println("[integration] Installed plugin to $pluginsDir: ${pluginsDir.listFiles()?.map { it.name }}")
         }
 
         var testPassed = false
@@ -91,11 +109,11 @@ class GetFileOutlineClionIntegrationTest {
 
                 assertTrue(
                     outline.contains("Widget"),
-                    "Expected class 'Widget' in C++ outline, got:\n$outline"
+                    "Expected class 'Widget' in C++ outline, got:\n$outline",
                 )
                 assertTrue(
                     outline.contains("Point"),
-                    "Expected struct 'Point' in C++ outline, got:\n$outline"
+                    "Expected struct 'Point' in C++ outline, got:\n$outline",
                 )
                 testPassed = true
             }
@@ -120,13 +138,15 @@ class GetFileOutlineClionIntegrationTest {
 
         // Prioritize the files most likely to contain plugin startup info
         val priority = listOf("idea.log", "backend.") // idea.log is the IntelliJ frontend log
-        val sorted = allLogs.sortedWith(compareBy { f ->
-            priority.indexOfFirst { f.name.startsWith(it) }.let { if (it == -1) 99 else it }
-        })
+        val sorted = allLogs.sortedWith(
+            compareBy { f ->
+                priority.indexOfFirst { f.name.startsWith(it) }.let { if (it == -1) 99 else it }
+            },
+        )
 
         val keywords = setOf(
             "agentbridge", "mcpserver", "psibridgestartup", "autostart", "psibridgeservice",
-            "conversationdatabase", "error", "fatal", "exception", "caused by"
+            "conversationdatabase", "error", "fatal", "exception", "caused by",
         )
         for (logFile in sorted.take(3)) {
             val lines = logFile.readLines()
