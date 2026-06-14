@@ -61,7 +61,7 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
      * Calls a tool via JSON-RPC tools/call and returns the concatenated text content.
      * Throws if the server returns a JSON-RPC error or a tool execution error.
      */
-    fun callTool(name: String, arguments: Map<String, Any>): String {
+    fun callTool(name: String, arguments: Map<String, Any>, timeout: Duration = Duration.ofSeconds(60)): String {
         val args = JsonObject()
         for ((k, v) in arguments) {
             when (v) {
@@ -83,7 +83,7 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
 
         val resp = http.send(
             HttpRequest.newBuilder(URI.create("$baseUrl/mcp"))
-                .timeout(Duration.ofSeconds(60))
+                .timeout(timeout)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(request.toString()))
                 .build(),

@@ -12,6 +12,7 @@ import com.intellij.ide.starter.runner.Starter
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
+import java.time.Duration
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import kotlin.io.path.Path
@@ -106,6 +107,7 @@ class GetFileOutlineClionIntegrationTest {
                 val outline = mcp.callTool(
                     "get_file_outline",
                     mapOf("path" to "classdef.h", "wait" to true, "timeout" to 90),
+                    timeout = Duration.ofSeconds(120),
                 )
                 println("[integration] get_file_outline(classdef.h) → $outline")
 
