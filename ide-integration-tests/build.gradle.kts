@@ -72,15 +72,22 @@ val integrationTest by intellijPlatformTesting.testIdeUi.registering {
             showStandardStreams = true
         }
 
-        // The plugin ZIP to install into the launched IDE. Built by :plugin-core:buildPlugin
-        // and passed explicitly by CI (-Ppath.to.build.plugin=...). Fail loudly if absent
-        // rather than silently launching a stock IDE with no plugin.
-        dependsOn(":plugin-core:buildPlugin")
+        // The plugin ZIP to install into the launched IDE.
         val pluginPath = providers.gradleProperty("path.to.build.plugin")
         if (pluginPath.isPresent) {
+            // CI passes a prebuilt ZIP (assembled once by the `build-plugin` job, which has the
+            // Node/npm toolchain for chat-ui). Use it directly and do NOT depend on
+            // :plugin-core:buildPlugin here — rebuilding would re-run :plugin-core:buildChatUi
+            // (npm run build), which the integration matrix jobs have no Node toolchain for.
+            //
             // NOTE: "path.to.build.plugin" is an IPGP reserved system property — IPGP overrides it
             // with the current module's plugin ZIP. We use a distinct name to avoid the collision.
             systemProperty("agentbridge.plugin.zip", rootProject.rootDir.resolve(pluginPath.get()).absolutePath)
+        } else {
+            // Local run with no explicit ZIP: build the plugin from source so the bench has
+            // something to install. Fail loudly later if the build produced nothing, rather than
+            // silently launching a stock IDE with no plugin.
+            dependsOn(":plugin-core:buildPlugin")
         }
 
         // Absolute path to the committed fixtures/ directory (resolved from the repo root so
