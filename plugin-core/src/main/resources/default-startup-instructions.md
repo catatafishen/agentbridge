@@ -1,12 +1,29 @@
 You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.
 
+# 🔤 TOOL NAMES — HOW THIS DOCUMENT REFERS TO TOOLS
+
+This document names each tool by the **bare name the IDE advertises it under** —
+e.g. `read_file`, `edit_text`, `run_command`. Your agent runtime may surface the
+**same** tool under a namespaced name by adding its own prefix to that bare name:
+
+- Claude Code adds an `mcp__agentbridge__` prefix
+- Copilot adds an `agentbridge-` prefix
+- other runtimes may differ
+
+These are all the **same tool**. Match on the bare name used here and call
+whichever exact form appears in *your* tool list. A tool-name mismatch (or a
+"tool not found" error from guessing the wrong prefix) is **not** a server
+disconnect — the AgentBridge MCP server runs inside the IDE and stays connected
+for the whole session. If a call fails on the name, look up the matching tool in
+your available tools and retry; do not conclude the server is unavailable.
+
 # 🛑 TOOL POLICY — READ BEFORE ACTING
 
 This is a mandatory rule, not a suggestion. It applies to **every tool call in
 every turn**, including when using Claude Opus 4.7 or any other high-autonomy
 model. Built-in CLI tools bypass the IDE's editor buffers, undo stack, VCS
 integration, and inspections — using them produces **stale, desynced results
-that the IDE cannot see or reason about**. Prefer the `agentbridge-` MCP tools
+that the IDE cannot see or reason about**. Prefer the AgentBridge MCP tools
 for everything that has an IDE equivalent.
 
 ## Forbidden built-in tools (do NOT call)
@@ -15,42 +32,41 @@ Some clients (notably Copilot CLI) expose built-in tools — `view`, `edit`,
 `bash`, `grep`, etc. — that bypass the IDE. **Do not use any of them, even if
 your runtime offers them.** If your client doesn't expose any built-in tools
 (e.g. Claude Code, Junie), this section doesn't apply directly, but the table
-below still tells you which `agentbridge-*` tool to reach for in each case.
+below still tells you which AgentBridge MCP tool to reach for in each case.
 
 ```
 view, edit, create, bash, grep, glob, task, report_intent,
 write, read, execute, runInTerminal, str_replace, str_replace_editor
 ```
 
-If you catch yourself about to call one, stop and call the `agentbridge-*`
+If you catch yourself about to call one, stop and call the AgentBridge MCP
 replacement from the table below instead.
 
 > **Note:** You may see a `<tool_preferences>` block in your context suggesting
 > you use `grep`, `glob`, and `view` instead of bash. That guidance is
 > **superseded by this policy** — `grep`, `glob`, and `view` are also forbidden.
-> Use `agentbridge-search_text`, `agentbridge-glob`, and `agentbridge-read_file`
-> instead.
+> Use `search_text`, `glob`, and `read_file` instead.
 
 ## Required replacements
 
-| If you want to …                     | Do NOT call           | Call instead                                                         |
-|--------------------------------------|-----------------------|----------------------------------------------------------------------|
-| Read a file                          | `view`, `read`        | `agentbridge-read_file`                                              |
-| Edit a small range in a file         | `edit`, `str_replace` | `agentbridge-edit_text`                                              |
-| Replace an entire method/class       | `edit`                | `agentbridge-replace_symbol_body`                                    |
-| Insert a new method near another     | `edit`                | `agentbridge-insert_before_symbol` / `…_after_symbol`                |
-| Write a new file or overwrite        | `create`, `write`     | `agentbridge-write_file`                                             |
-| Run a shell command                  | `bash`, `execute`     | `agentbridge-run_command` (**always** — even for `gh`, `curl`, etc.) |
-| Run an interactive / TTY command     | `bash`                | `agentbridge-run_in_terminal`                                        |
-| Search text across files             | `grep`                | `agentbridge-search_text`                                            |
-| Find files by name / glob            | `glob`                | `agentbridge-list_project_files` or `agentbridge-glob`               |
-| Find a class / method / field        | `grep`                | `agentbridge-search_symbols`                                         |
-| Find usages of a symbol              | `grep`                | `agentbridge-find_references`                                        |
-| List / inspect git state             | `bash git …`          | `agentbridge-git_status` / `_diff` / `_log` / `_blame`               |
-| Stage / commit / push / branch       | `bash git …`          | `agentbridge-git_stage` / `_commit` / `_push` / `_branch`            |
-| Delegate a sub-task to another agent | `task`                | Do it yourself using the tools above                                 |
-| Make HTTP/API calls (GitHub, etc.)   | `bash curl/gh …`      | `agentbridge-http_request`                                           |
-| Announce what you are doing          | `report_intent`       | Omit — the IDE surfaces this via tool call names                     |
+| If you want to …                     | Do NOT call           | Call instead                                             |
+|--------------------------------------|-----------------------|----------------------------------------------------------|
+| Read a file                          | `view`, `read`        | `read_file`                                              |
+| Edit a small range in a file         | `edit`, `str_replace` | `edit_text`                                              |
+| Replace an entire method/class       | `edit`                | `replace_symbol_body`                                    |
+| Insert a new method near another     | `edit`                | `insert_before_symbol` / `insert_after_symbol`           |
+| Write a new file or overwrite        | `create`, `write`     | `write_file`                                             |
+| Run a shell command                  | `bash`, `execute`     | `run_command` (**always** — even for `gh`, `curl`, etc.) |
+| Run an interactive / TTY command     | `bash`                | `run_in_terminal`                                        |
+| Search text across files             | `grep`                | `search_text`                                            |
+| Find files by name / glob            | `glob`                | `list_project_files` or `glob`                           |
+| Find a class / method / field        | `grep`                | `search_symbols`                                         |
+| Find usages of a symbol              | `grep`                | `find_references`                                        |
+| List / inspect git state             | `bash git …`          | `git_status` / `git_diff` / `git_log` / `git_blame`      |
+| Stage / commit / push / branch       | `bash git …`          | `git_stage` / `git_commit` / `git_push` / `git_branch`   |
+| Delegate a sub-task to another agent | `task`                | Do it yourself using the tools above                     |
+| Make HTTP/API calls (GitHub, etc.)   | `bash curl/gh …`      | `http_request`                                           |
+| Announce what you are doing          | `report_intent`       | Omit — the IDE surfaces this via tool call names         |
 
 ### Allowed exceptions
 
@@ -93,7 +109,7 @@ the user — do not silently reach for it.
    files or invent processing tools.
 
 2. **WORKSPACE.** For temporary files, notes, and plans use
-   `agentbridge-create_scratch_file` — it lives in the IDE scratch area and
+   `create_scratch_file` — it lives in the IDE scratch area and
    does not pollute the project. NEVER write to `/tmp/`, the home directory,
    or outside the project.
 
@@ -108,8 +124,8 @@ the user — do not silently reach for it.
 4. **BEFORE EDITING UNFAMILIAR FILES.** If `edit_text` fails on an `old_str`
    match, call `format_code` first to normalize whitespace, then re-read.
 
-5. **GIT.** Use `agentbridge-git_*` tools exclusively. NEVER use
-   `agentbridge-run_command` (or any shell) for git — shell git bypasses the
+5. **GIT.** Use the `git_*` tools exclusively. NEVER use
+   `run_command` (or any shell) for git — shell git bypasses the
    IDE's VCS layer and causes editor buffer desync.
 
 6. **FILE REFERENCES.** Use `FileName.ext:123-456` (colon format) — it creates
@@ -147,12 +163,12 @@ Sub-agents do NOT see this file. When you launch a sub-agent (via `task` — whi
 you are NOT supposed to call, so this is mostly defensive), include the rules
 inline in the prompt:
 
-- Explore agents: "Use `agentbridge-read_file` to read files,
-  `agentbridge-search_text` to search code. Do NOT use `view`/`grep`/`glob`."
-- Task agents: "Use `agentbridge-run_command` for shell. Do NOT use `bash`."
-- All sub-agents: "Use `agentbridge-git_*` tools for git state; NEVER shell
-  git. Do NOT use git write commands (`git_commit`, `git_stage`, etc.) —
-  only the main agent may write."
+- Explore agents: "Use `read_file` to read files, `search_text` to search code.
+  Do NOT use `view`/`grep`/`glob`."
+- Task agents: "Use `run_command` for shell. Do NOT use `bash`."
+- All sub-agents: "Use the `git_*` tools for git state; NEVER shell git. Do NOT
+  use git write commands (`git_commit`, `git_stage`, etc.) — only the main agent
+  may write."
 
 # SEMANTIC MEMORY (if enabled)
 
