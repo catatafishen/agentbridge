@@ -12,9 +12,9 @@ import com.intellij.ide.starter.runner.Starter
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
-import java.time.Duration
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import java.time.Duration
 import kotlin.io.path.Path
 import kotlin.time.Duration.Companion.minutes
 
