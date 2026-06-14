@@ -77,6 +77,25 @@ walk) that has the same CLion Nova blind spot and is **not** fixed by this PR �
 **Current status**: ✅ **Fixed in PR #837** for `get_file_outline`. Confirmed working in CLion
 Nova via direct MCP test. Pending reporter re-verification in their vsclib project.
 
+**Namespace gap found & fixed (Jun 14)**: The integration bench (`GetFileOutlineClionIntegrationTest`)
+kept failing on the `fixtures/cpp-cmake/classdef.h` fixture, whose `Widget`/`Point`/`Colour` symbols
+live inside `namespace vsc { ... }`. Root cause (reproduced locally against a real CLion Nova, **not**
+a timing/editor issue): the node-type walk only iterated the file's direct children, so it descended
+into the `namespace` node's body and emitted nothing. An earlier "open an editor before polling" fix
+(commit `74c41b43d`) was a false lead — proven inert because the StructureView path is dead in Nova
+regardless of editor state, and a warm Nova returns top-level symbols for unopened files. That commit
+was reverted.
+
+Inside a namespace body CLion Nova represents each declaration as a **flat `DUMMY_NODE` token stream**
+(`DUMMY_NODE[CppKeyword:CLASS_KEYWORD][IDENTIFIER]` + sibling `DUMMY_BLOCK`), not the structured
+`CppKeyword:CLASS_KEYWORD` node used at file top level — a different extraction path. The namespace
+node itself is `CppKeyword:NAMESPACE_CPP_KEYWORD` wrapping a `DUMMY_NODE` (name) + `DUMMY_BLOCK` (body).
+
+Fix: `walkCppSymbolsIn` now recurses into namespace bodies and handles the nested `DUMMY_NODE`
+declaration form (type definitions, free functions, and nested namespaces; forward declarations with
+no following `DUMMY_BLOCK` are skipped). Verified live on doxygen's `regex.h`/`config.h` and the exact
+fixture file — `namespace vsc / class Widget / struct Point / enum Colour` all returned.
+
 ---
 
 ### 1b. `search_symbols` — empty results for C/C++ wildcard queries

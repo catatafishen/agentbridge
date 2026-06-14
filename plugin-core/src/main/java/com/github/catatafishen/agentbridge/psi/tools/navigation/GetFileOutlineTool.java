@@ -5,18 +5,13 @@ import com.github.catatafishen.agentbridge.ui.renderers.FileOutlineRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileEditor.FileEditor;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -86,16 +81,6 @@ public final class GetFileOutlineTool extends NavigationTool {
         String result = computeOutline(pathStr);
         if (!wait || !result.startsWith("No structural elements")) return result;
 
-        // CLion Nova's StructureViewModel only populates when a real editor is open for the file
-        // (see NavigationTool.collectOutlineEntries Javadoc). Open it now on the EDT so that
-        // subsequent computeOutline() calls can pick up the editor and get non-empty results.
-        VirtualFile vf = ApplicationManager.getApplication().runReadAction(
-            (Computable<VirtualFile>) () -> resolveVirtualFile(pathStr));
-        if (vf != null) {
-            ApplicationManager.getApplication().invokeAndWait(
-                () -> FileEditorManager.getInstance(project).openFile(vf, false));
-        }
-
         // Language backends (e.g., CLion Nova/Radler) load asynchronously AFTER IntelliJ's own
         // indexing completes, so PSI may be empty immediately after get_indexing_status reports
         // ready. Retry until elements appear or we exhaust the timeout.
@@ -131,10 +116,7 @@ public final class GetFileOutlineTool extends NavigationTool {
             Document document = FileDocumentManager.getInstance().getDocument(vf);
             if (document == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
-            // Pass the open editor if the file is already open — required for CLion Nova's
-            // lazy StructureViewModel, which only populates when a real editor is present.
-            Editor editor = findOpenEditor(vf);
-            List<String> outline = collectOutlineEntries(psiFile, document, editor);
+            List<String> outline = collectOutlineEntries(psiFile, document);
             if (outline.isEmpty()) return "No structural elements found in " + pathStr;
 
             String basePath = project.getBasePath();
@@ -142,17 +124,5 @@ public final class GetFileOutlineTool extends NavigationTool {
             return "Outline of " + (display != null ? display : pathStr) + ":\n"
                 + String.join("\n", outline);
         });
-    }
-
-    /**
-     * Returns the first open text editor for {@code vf}, or {@code null} if the file is not open.
-     */
-    private @Nullable Editor findOpenEditor(@NotNull VirtualFile vf) {
-        for (FileEditor fe : FileEditorManager.getInstance(project).getEditors(vf)) {
-            if (fe instanceof TextEditor textEditor) {
-                return textEditor.getEditor();
-            }
-        }
-        return null;
     }
 }
