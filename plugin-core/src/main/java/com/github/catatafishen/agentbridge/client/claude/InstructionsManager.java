@@ -71,7 +71,7 @@ public final class InstructionsManager {
      * <p>When {@code sandboxEnabled} is {@code true}, an extra section is appended that
      * tells the agent it is running inside a bwrap sandbox and that native shell-based
      * tools may fail on paths outside the bind-mounted dirs — so it should prefer the
-     * {@code agentbridge-*} MCP tools which execute in the IDE host.</p>
+     * AgentBridge MCP tools which execute in the IDE host.</p>
      */
     public static void ensureInstructions(@Nullable String projectBasePath,
                                           @NotNull String relativeTargetPath,

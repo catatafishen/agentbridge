@@ -2004,7 +2004,8 @@ public abstract class AcpClient extends AbstractClient {
 
     private @Nullable JsonObject handleAutoDeniedBuiltInTool(String toolId, String toolCallId, @Nullable JsonObject params) {
         String reason = "Native tool '" + toolId + "' is blocked — use " + mcpAlternative(toolId)
-            + " instead. All agentbridge-* MCP tools are available.";
+            + " instead. All AgentBridge MCP tools remain available (call them by the name shown "
+            + "in your tool list).";
         LOG.warn(displayName() + ": auto-denying native tool '" + toolId + "'");
 
         Consumer<SessionUpdate> consumer = updateConsumer.get();
@@ -2034,17 +2035,26 @@ public abstract class AcpClient extends AbstractClient {
         // no-op by default
     }
 
+    /**
+     * Maps a built-in tool to the AgentBridge MCP tool(s) the agent should use instead.
+     *
+     * <p>Tools are named by the bare name the IDE advertises them under (e.g. {@code read_file}),
+     * not by any harness-specific prefix. Each runtime surfaces the same tool under its own
+     * namespaced form ({@code mcp__agentbridge__read_file} in Claude Code,
+     * {@code agentbridge-read_file} in Copilot/ACP); the agent should call whichever exact name
+     * appears in its own tool list.</p>
+     */
     protected String mcpAlternative(String builtInTool) {
         return switch (builtInTool) {
-            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
-            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
-            case "create" -> "agentbridge-write_file";
-            case "view" -> "agentbridge-read_file";
-            case "glob" -> "agentbridge-list_project_files";
-            case "grep" -> "agentbridge-search_text";
-            case "task" -> "agentbridge-run_command (for shell tasks)";
+            case "bash" -> "run_command or run_in_terminal";
+            case "edit" -> "edit_text or replace_symbol_body";
+            case "create" -> "write_file";
+            case "view" -> "read_file";
+            case "glob" -> "list_project_files";
+            case "grep" -> "search_text";
+            case "task" -> "run_command (for shell tasks)";
             case "report_intent" -> "(not needed — IDE tracks intent automatically)";
-            default -> "the corresponding agentbridge-* tool";
+            default -> "the corresponding AgentBridge MCP tool";
         };
     }
 

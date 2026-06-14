@@ -15,15 +15,15 @@ view, not the host. Read this section before you reach for a shell tool.
   `find` / `git` call that should "just work" can return empty output, exit
   non-zero, or report files as missing because the path is not bind-mounted
   into the sandbox. The tool isn't broken; it literally cannot see the file.
-- **The IDE host can still see everything.** The `agentbridge-*` MCP tools
+- **The IDE host can still see everything.** The AgentBridge MCP tools
   run server-side in the IDE process, which is **not** sandboxed. They have
   full read/write access to the project, can spawn unsandboxed commands via
-  `agentbridge-run_command`, and can talk to the IDE's PSI / VCS / build
+  `run_command`, and can talk to the IDE's PSI / VCS / build
   systems. Prefer them for anything filesystem-related.
 
 ## What to do
 
-1. **Use `agentbridge-*` MCP tools by default** for reads, writes, searches,
+1. **Use the AgentBridge MCP tools by default** for reads, writes, searches,
    git operations, and shell commands. They bypass the sandbox.
 2. **If a native CLI tool fails unexpectedly**, do not retry blindly — the
    path you are touching is probably not bind-mounted. Switch to the MCP

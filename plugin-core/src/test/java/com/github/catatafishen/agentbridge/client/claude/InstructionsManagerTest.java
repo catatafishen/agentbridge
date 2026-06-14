@@ -191,6 +191,42 @@ class InstructionsManagerTest {
             "3-arg overload must not include bwrap section by default");
     }
 
+    // ── harness-agnostic tool naming (issues #840 / #841) ─────────────────────
+
+    /**
+     * The shipped instructions must reference MCP tools by the bare name the IDE advertises
+     * (e.g. {@code read_file}) — never by a harness-specific full name like
+     * {@code agentbridge-read_file} (Copilot) or {@code mcp__agentbridge__read_file} (Claude Code).
+     * A baked-in prefix is correct for at most one harness and wrong for the others, which made
+     * models hit "wrong tool name" errors and then misreport the always-connected MCP server as
+     * disconnected (issues #840, #841).
+     */
+    @Test
+    void instructionsReferToToolsByBareNameNotHarnessPrefix() {
+        // sandbox=true so the bwrap section is included and checked too.
+        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "", true);
+        String content = readFile(projectRoot.resolve("CLAUDE.md"));
+
+        String[] tools = {
+            "read_file", "edit_text", "write_file", "replace_symbol_body",
+            "insert_before_symbol", "insert_after_symbol", "run_command", "run_in_terminal",
+            "search_text", "search_symbols", "find_references", "list_project_files",
+            "git_status", "git_commit", "git_stage", "git_push", "http_request",
+            "create_scratch_file",
+        };
+        for (String tool : tools) {
+            assertFalse(content.contains("agentbridge-" + tool),
+                "instructions must not use the Copilot-prefixed tool name 'agentbridge-" + tool + "'");
+            assertFalse(content.contains("mcp__agentbridge__" + tool),
+                "instructions must not use the Claude-prefixed tool name 'mcp__agentbridge__" + tool + "'");
+        }
+
+        // The bare names must still be present so the agent knows which tool to call.
+        assertTrue(content.contains("`read_file`"), "bare tool name read_file must be present");
+        assertTrue(content.contains("`run_command`"), "bare tool name run_command must be present");
+        assertTrue(content.contains("`git_status`"), "bare tool name git_status must be present");
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static String readFile(Path path) {
