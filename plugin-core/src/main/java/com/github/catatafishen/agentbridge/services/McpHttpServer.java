@@ -228,6 +228,21 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", CONTENT_TYPE);
 
+        // Close the TCP connection after every Streamable-HTTP response instead of keeping it
+        // alive for reuse. Each MCP request/response is self-contained (we never hold a server→client
+        // SSE stream open on this endpoint — GET /mcp returns 405), so there is no benefit to pooling.
+        //
+        // Why this matters: the JDK HttpServer idle-closes pooled keep-alive sockets after ~60s
+        // (sun.net.httpserver.idleInterval). On a long model "think" gap between tool calls, the
+        // client's pooled connection goes stale; its next tool-call POST reuses the dead socket and
+        // gets ECONNRESET. Because POST is not idempotent, HTTP clients (e.g., Claude Code's undici)
+        // do NOT auto-retry it, so the call fails, and the harness reports the MCP server as
+        // "disconnected" — even though the server is healthy. That spurious notice then gets baked
+        // into the resumed transcript and keeps reappearing on later turns. Sending Connection: close
+        // makes the client open a fresh connection per request, so there is never a stale socket to
+        // reset. The localhost reconnect cost is negligible. See issue #841.
+        exchange.getResponseHeaders().set("Connection", "close");
+
         if ("OPTIONS".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
