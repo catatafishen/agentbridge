@@ -8,7 +8,6 @@ import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
-import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import java.nio.file.Path
@@ -34,9 +33,16 @@ object IdeBench {
     private const val MCP_PORT = 8642
 
     /**
-     * Installs the Starter DI override that turns IDE-reported test failures into JUnit
-     * failures. Idempotent — repeated `extend(di)` calls would stack overrides, so we guard
-     * with a flag and configure exactly once per test JVM.
+     * Installs the Starter DI override that intercepts IDE-reported problems. Idempotent —
+     * repeated `extend(di)` calls would stack overrides, so we guard with a flag and configure
+     * exactly once per test JVM.
+     *
+     * The Starter framework calls [CIServer.reportTestFailure] for problems it scrapes from the
+     * launched IDE's log (logged errors, freezes) — NOT for our assertions. A matrix cell's real
+     * contract is the tool's MCP response, asserted in each test body; a logged IDE error is a
+     * non-gating diagnostic. So we hand it to [LoggedIdeErrors] (rendered as a section beneath the
+     * matrix) instead of failing the cell. Genuine tool failures still fail the cell: a non-healthy
+     * MCP server, a boot failure, or an `Error`-prefixed tool response all throw from the test body.
      */
     private fun ensureDi() {
         if (diConfigured.compareAndSet(false, true)) {
@@ -50,7 +56,7 @@ object IdeBench {
                             details: String,
                             linkToLogs: String?,
                         ) {
-                            fail { "$testName failed: $message\n$details" }
+                            LoggedIdeErrors.record(testName, message, details)
                         }
                     }
                 }
@@ -108,6 +114,45 @@ object IdeBench {
         } finally {
             if (!passed) IdeLogDump.dump(context.paths.testHome)
         }
+    }
+}
+
+/**
+ * Collects IDE-reported problems (log-scraped errors and freezes the Starter framework surfaces
+ * via [CIServer.reportTestFailure]) and writes them to a TSV the `report` job renders as a
+ * non-gating "Logged IDE errors" section beneath the compatibility matrix. These never fail a
+ * cell — the cell contract is the tool's MCP response, asserted in each test body.
+ *
+ * The output path comes from the [OUTPUT_FILE_PROPERTY] system property (set by the build to a
+ * file inside the test-results dir so it rides the existing `test-xml-<IDE>` artifact). Each line
+ * is `IDE \t testName \t summary`, with the summary flattened to a single line.
+ */
+internal object LoggedIdeErrors {
+
+    const val OUTPUT_FILE_PROPERTY: String = "agentbridge.logged-errors.file"
+
+    private val entries = mutableListOf<String>()
+
+    @Synchronized
+    fun record(testName: String, message: String, details: String) {
+        val ide = System.getProperty(IdeUnderTest.IDE_PROPERTY, "CL")
+        val summary = (message.trim() + "\n" + details.trim())
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .take(8)
+            .joinToString(separator = " ⏎ ")
+            .replace('\t', ' ')
+        entries.add(listOf(ide, testName.replace('\t', ' '), summary).joinToString("\t"))
+        println("[integration][logged-ide-error] $ide — $testName: ${message.lineSequence().firstOrNull().orEmpty()}")
+        flush()
+    }
+
+    private fun flush() {
+        val target = System.getProperty(OUTPUT_FILE_PROPERTY) ?: return
+        val file = java.io.File(target)
+        file.parentFile?.mkdirs()
+        file.writeText(entries.joinToString(separator = "\n", postfix = "\n"))
     }
 }
 

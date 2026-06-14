@@ -45,13 +45,21 @@ dependencies {
     // ideStarterJunitPlatformVersion (1.13.4) matches ide-starter-junit5 (brought in via
     // testFramework(Starter)). Using an older launcher causes engine/API version mismatch at
     // test-discovery time.
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:${providers.gradleProperty("ideStarterJunitPlatformVersion").get()}")
+    testRuntimeOnly(
+        "org.junit.platform:junit-platform-launcher:${
+            providers.gradleProperty("ideStarterJunitPlatformVersion").get()
+        }"
+    )
     // ide-starter-squashed declares kotlinx-coroutines-core-jvm as a runtime dependency in
     // its POM (the squashed JAR does NOT bundle coroutines classes), but the IntelliJ Platform
     // Gradle Plugin substitutes the intellij.deps.kotlinx artifact with the platform-bundled
     // version, which ends up in intellijPlatformClasspath — NOT on the testIdeUi task classpath.
     // We must add it explicitly so CommonScope.<clinit> can load SupervisorKt at test runtime.
-    testRuntimeOnly("org.jetbrains.intellij.deps.kotlinx:kotlinx-coroutines-core-jvm:${providers.gradleProperty("ideStarterCoroutinesVersion").get()}")
+    testRuntimeOnly(
+        "org.jetbrains.intellij.deps.kotlinx:kotlinx-coroutines-core-jvm:${
+            providers.gradleProperty("ideStarterCoroutinesVersion").get()
+        }"
+    )
 }
 
 // Dedicated task that launches a real IDE and runs the integration tests against it.
@@ -115,6 +123,16 @@ val integrationTest by intellijPlatformTesting.testIdeUi.registering {
         systemProperty(
             "agentbridge.rd.version",
             providers.gradleProperty("riderPlatformVersion").getOrElse("2026.1")
+        )
+
+        // Non-gating IDE-error log. The CIServer override (see IdeBench/LoggedIdeErrors) records
+        // Starter's log-scraped errors here instead of failing the cell; the `report` job renders
+        // them beneath the matrix. It lives under test-results/, so it rides the existing
+        // test-xml-<IDE> artifact upload — no extra CI upload/download step needed.
+        systemProperty(
+            "agentbridge.logged-errors.file",
+            layout.buildDirectory.file("test-results/integrationTest/logged-ide-errors.tsv")
+                .get().asFile.absolutePath
         )
     }
 }
