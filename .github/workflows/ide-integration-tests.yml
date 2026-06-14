@@ -319,6 +319,26 @@ jobs:
                       elif prev != 'fail':
                           results[ide][tool] = 'pass'
 
+          # Non-gating IDE errors: scraped from the IDE log by the Starter framework and written
+          # to logged-ide-errors.tsv by the bench (see LoggedIdeErrors). They ride the test-xml-<IDE>
+          # artifact. Rendered below the matrix as diagnostics — they never change a cell's status.
+          logged_errors = {}
+          for artifact_dir in sorted(glob.glob('test-results/test-xml-*')):
+              ide = artifact_dir.split('test-xml-')[1]
+              for tsv in glob.glob(f'{artifact_dir}/**/logged-ide-errors.tsv', recursive=True):
+                  try:
+                      with open(tsv, encoding='utf-8') as fh:
+                          for line in fh:
+                              line = line.rstrip('\n')
+                              if not line.strip():
+                                  continue
+                              parts = line.split('\t', 2)
+                              test_name = parts[1] if len(parts) > 1 else ''
+                              detail = parts[2] if len(parts) > 2 else ''
+                              logged_errors.setdefault(ide, []).append((test_name, detail))
+                  except Exception:
+                      continue
+
           if not results:
               summary = '## IDE Compatibility Matrix\n\n_No test results found._\n'
           else:
@@ -349,6 +369,22 @@ jobs:
                                   f'\n<details>\n<summary>❌ {ide} — {tool} — {test_name}'
                                   f'</summary>\n\n```\n{msg}\n```\n\n</details>'
                               )
+
+              if any(logged_errors.values()):
+                  lines.append('')
+                  lines.append('### Logged IDE errors (non-gating)')
+                  lines.append('')
+                  lines.append(
+                      "_Scraped from the IDE log during the run. These do **not** fail a matrix cell "
+                      "(the cell reflects the tool's MCP response) — they are listed for visibility "
+                      "while the bench matures._"
+                  )
+                  for ide in sorted(logged_errors):
+                      for test_name, detail in logged_errors[ide]:
+                          lines.append(
+                              f'\n<details>\n<summary>⚠️ {ide} — {test_name}</summary>'
+                              f'\n\n```\n{detail}\n```\n\n</details>'
+                          )
 
               summary = '\n'.join(lines) + '\n'
 
