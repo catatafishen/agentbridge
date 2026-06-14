@@ -134,23 +134,29 @@ jobs:
         run: echo "path=$(ls -t plugin-core/build/distributions/*.zip | head -1)" >> "$GITHUB_OUTPUT"
 
       - name: Run integration bench (${{ matrix.ide }}) under xvfb
+        env:
+          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+          # Route ${{ }} expansions through env (not the run: script) so zizmor's
+          # template-injection rule is satisfied — the shell reads them as plain $VARs.
+          AGENTBRIDGE_IDE: ${{ matrix.ide }}
+          PLUGIN_ZIP_PATH: ${{ steps.zip.outputs.path }}
         run: >
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24"
           gradle :ide-integration-tests:integrationTest
-          -Pagentbridge.ide=${{ matrix.ide }}
-          -Ppath.to.build.plugin=${{ steps.zip.outputs.path }}
+          -Pagentbridge.ide="$AGENTBRIDGE_IDE"
+          -Ppath.to.build.plugin="$PLUGIN_ZIP_PATH"
           --no-daemon
           --stacktrace
-        env:
-          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
       - name: Collect IDE logs (${{ matrix.ide }})
         if: always()
         # The Starter framework writes IDE output under out/ide-tests/tests/<product>-<build>/<testName>/.
         # Collect the full idea.log for each test run (we keep DEBUG-level detail — relevant while the
         # tool suite is still being built out) plus a smaller plugin-specific excerpt.
+        env:
+          IDE: ${{ matrix.ide }}
         run: |
-          OUT="ide-logs-${{ matrix.ide }}"
+          OUT="ide-logs-$IDE"
           mkdir -p "$OUT"
           find out/ide-tests/tests -name "idea.log" 2>/dev/null | while IFS= read -r f; do
             test_name=$(basename "$(dirname "$(dirname "$f")")")
@@ -359,14 +365,18 @@ jobs:
       - name: Post PR comment
         env:
           GH_TOKEN: ${{ github.token }}
+          # Route ${{ }} expansions through env so zizmor's template-injection rule is satisfied.
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PR="${{ github.event.pull_request.number }}"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            PR="$PR_NUMBER"
           else
-            PR=$(gh pr list -R "${{ github.repository }}" --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
+            PR=$(gh pr list -R "$REPO" --head "$REF_NAME" --json number --jq '.[0].number // empty')
           fi
           [ -z "$PR" ] && echo "No associated PR, skipping comment" && exit 0
-          REPO="${{ github.repository }}"
           COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR}/comments" \
             --jq '[.[] | select(.body | startswith("<!-- compat-matrix -->"))] | first | .id // empty')
           if [ -n "$COMMENT_ID" ]; then
