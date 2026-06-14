@@ -1,14 +1,16 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
-// IDE integration bench: launches a REAL IDE (CLion, Rider, …) via the IntelliJ
-// Platform Starter framework, opens a committed fixture project so the real
-// language backend (CLion Nova/Radler, Rider/ReSharper) starts, then drives the
-// plugin's MCP HTTP server over localhost and asserts on tool results.
+// IDE integration bench: launches a REAL IDE (IntelliJ IDEA, CLion, Rider) via the
+// IntelliJ Platform Starter framework, opens a committed fixture project so the real
+// language backend (IntelliJ Java, CLion Nova/Radler, Rider/ReSharper) starts, then
+// drives the plugin's MCP HTTP server over localhost and asserts on tool results.
 //
-// This is the high-fidelity counterpart to :ide-compat-tests (which runs headless
-// BasePlatformTestCase and therefore CANNOT exercise the out-of-process backends).
+// This is a high-fidelity bench: unlike a headless BasePlatformTestCase, it actually
+// exercises the out-of-process backends — the same boundary an agent (and the bug
+// reporter) hits. The per-IDE results feed the IDE Compatibility Matrix (see the
+// `report` job in .github/workflows/ide-integration-tests.yml).
 //
-// Run locally:
+// Run locally (defaults to CLion; pass -Pagentbridge.ide=IU|CL|RD to pick the product):
 //   ./gradlew :plugin-core:buildPlugin
 //   ./gradlew :ide-integration-tests:integrationTest \
 //       -Ppath.to.build.plugin=$(ls -t plugin-core/build/distributions/*.zip | head -1)
@@ -31,8 +33,8 @@ repositories {
 dependencies {
     intellijPlatform {
         // Base platform required by the Gradle plugin. The Starter framework downloads the
-        // ACTUAL product-under-test (CLion/Rider) itself at runtime via IdeProductProvider,
-        // independent of this dependency. Matches the repo convention (see ide-compat-tests).
+        // ACTUAL product-under-test (IntelliJ/CLion/Rider) itself at runtime via IdeProductProvider,
+        // independent of this dependency.
         intellijIdeaUltimate(providers.gradleProperty("intellijPlatformVersion").get())
         testFramework(TestFrameworkType.Starter)
     }
@@ -86,10 +88,25 @@ val integrationTest by intellijPlatformTesting.testIdeUi.registering {
             "agentbridge.fixtures.dir",
             rootProject.layout.projectDirectory.dir("fixtures").asFile.absolutePath
         )
-        // Product version of the IDE-under-test (overridable per CI matrix entry).
+
+        // Which product the bench launches (IU | CL | RD), one per CI matrix entry. The Starter
+        // framework downloads the matching product at runtime via IdeProductProvider — see
+        // IdeUnderTest.current(). Defaults to CL for the historical local CLion flow.
+        systemProperty("agentbridge.ide", providers.gradleProperty("agentbridge.ide").getOrElse("CL"))
+
+        // Per-IDE versions the Starter framework downloads. Each test only reads the one matching
+        // its selected product, so passing all three is harmless and keeps the matrix declarative.
         systemProperty(
-            "agentbridge.clion.version",
+            "agentbridge.iu.version",
+            providers.gradleProperty("intellijPlatformVersion").getOrElse("2026.1.3")
+        )
+        systemProperty(
+            "agentbridge.cl.version",
             providers.gradleProperty("clionPlatformVersion").getOrElse("2026.1")
+        )
+        systemProperty(
+            "agentbridge.rd.version",
+            providers.gradleProperty("riderPlatformVersion").getOrElse("2026.1")
         )
     }
 }

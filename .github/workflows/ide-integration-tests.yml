@@ -1,28 +1,23 @@
-name: IDE Integration Bench (spike)
+name: IDE Compatibility Matrix
 
-# High-fidelity bench: launches a REAL IDE (CLion) via the IntelliJ Platform Starter
-# framework, opens a committed fixture project so the real language backend starts, and
-# drives the plugin's MCP server over HTTP. Unlike ide-compat-tests (headless), this can
-# actually exercise CLion Nova / Rider backends.
+# High-fidelity compatibility bench: launches a REAL IDE (IntelliJ IDEA, CLion, Rider) via the
+# IntelliJ Platform Starter framework, opens a committed fixture project so the real language
+# backend starts (IntelliJ Java, CLion Nova/Radler, Rider/ReSharper), and drives the plugin's MCP
+# server over HTTP. Unlike the old headless ide-compat-tests, this actually exercises the
+# out-of-process backends — the same boundary an agent (and the bug reporter) hits.
 #
-# SPIKE STATUS: NON-GATING while we validate that the commercial IDE backend starts under
-# xvfb in CI (the make-or-break question). It runs on PRs that touch the bench so we get a
-# real CI result, but it is a brand-new check (not in branch protection) so it reports status
-# without blocking merge. Once proven, it expands to the full IDE × tool matrix.
+# The `report` job aggregates the per-IDE JUnit XML into the IDE Compatibility Matrix and posts it
+# as a PR comment. Tools without a *IntegrationTest class yet render as ❓ (not implemented).
 
 on:
   workflow_dispatch:
-    inputs:
-      clionVersion:
-        description: "CLion version for the Starter framework to download"
-        required: false
-        default: "2026.1"
   pull_request:
     branches: [ master ]
     paths:
       - 'ide-integration-tests/**'
       - 'fixtures/**'
       - 'plugin-core/src/main/**'
+      - 'gradle.properties'
       - '.github/workflows/ide-integration-tests.yml'
 
 permissions: { }
@@ -33,15 +28,15 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  CLION_VERSION: ${{ github.event.inputs.clionVersion || '2026.1' }}
 
 jobs:
-  integration:
-    name: IDE Integration (CL)
+  # Build the plugin ZIP once and share it with every IDE matrix entry, so the chat-ui/npm
+  # toolchain only runs a single time instead of once per IDE.
+  build-plugin:
+    name: Build plugin ZIP
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
@@ -58,9 +53,6 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      # The plugin ZIP bundles the chat UI, built by :plugin-core:buildChatUi (npm run build).
-      # Build the COMPLETE plugin so it loads cleanly in the launched IDE — a half-built plugin
-      # could fail to initialize and produce a misleading "backend never started" result.
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
@@ -80,36 +72,85 @@ jobs:
             caches
             notifications
 
-      - name: Install xvfb
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-
       - name: Build plugin ZIP
         run: gradle :plugin-core:buildPlugin --no-daemon --stacktrace
         env:
           GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
+      - name: Upload plugin ZIP
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: plugin-zip
+          path: plugin-core/build/distributions/*.zip
+          retention-days: 7
+          if-no-files-found: error
+
+  integration:
+    name: IDE Integration (${{ matrix.ide }})
+    needs: build-plugin
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ide: [ IU, CL, RD ]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b  # v4.6.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244  # v4.3.1
+        with:
+          gradle-version: 'wrapper'
+          gradle-home-cache-includes: |
+            caches
+            notifications
+
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Download plugin ZIP
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: plugin-zip
+          path: plugin-core/build/distributions/
+
       - name: Resolve plugin ZIP path
         id: zip
         run: echo "path=$(ls -t plugin-core/build/distributions/*.zip | head -1)" >> "$GITHUB_OUTPUT"
 
-      - name: Run integration bench (CLion) under xvfb
+      - name: Run integration bench (${{ matrix.ide }}) under xvfb
         run: >
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24"
           gradle :ide-integration-tests:integrationTest
+          -Pagentbridge.ide=${{ matrix.ide }}
           -Ppath.to.build.plugin=${{ steps.zip.outputs.path }}
-          -PclionPlatformVersion=${{ env.CLION_VERSION }}
           --no-daemon
           --stacktrace
         env:
           GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
-      - name: Collect IDE logs (CLion ${{ env.CLION_VERSION }})
+      - name: Collect IDE logs (${{ matrix.ide }})
         if: always()
         # The Starter framework writes IDE output under out/ide-tests/tests/<product>-<build>/<testName>/.
-        # Collect idea.log for each test run and produce a smaller plugin-specific excerpt
-        # (agentbridge/error/exception lines only) so the relevant signal is easy to find.
+        # Collect the full idea.log for each test run (we keep DEBUG-level detail — relevant while the
+        # tool suite is still being built out) plus a smaller plugin-specific excerpt.
         run: |
-          OUT="ide-logs-CLion-${{ env.CLION_VERSION }}"
+          OUT="ide-logs-${{ matrix.ide }}"
           mkdir -p "$OUT"
           find out/ide-tests/tests -name "idea.log" 2>/dev/null | while IFS= read -r f; do
             test_name=$(basename "$(dirname "$(dirname "$f")")")
@@ -119,23 +160,218 @@ jobs:
           done
         continue-on-error: true
 
-      - name: Upload IDE logs (CLion ${{ env.CLION_VERSION }})
+      - name: Upload IDE logs (${{ matrix.ide }})
         if: always()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
         with:
-          name: ide-logs-CLion-${{ env.CLION_VERSION }}
-          # Full idea.log + agentbridge-specific excerpt per test run.
-          path: ide-logs-CLion-${{ env.CLION_VERSION }}/
+          name: ide-logs-${{ matrix.ide }}
+          path: ide-logs-${{ matrix.ide }}/
           retention-days: 14
           if-no-files-found: warn
 
-      - name: Upload test reports
+      - name: Upload XML test results (${{ matrix.ide }})
         if: always()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
         with:
-          name: integration-test-reports
-          path: |
-            ide-integration-tests/build/reports/
-            ide-integration-tests/build/test-results/
+          name: test-xml-${{ matrix.ide }}
+          path: ide-integration-tests/build/test-results/integrationTest/
           retention-days: 14
           if-no-files-found: warn
+
+      - name: Upload HTML test reports (${{ matrix.ide }})
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: integration-test-reports-${{ matrix.ide }}
+          path: ide-integration-tests/build/reports/
+          retention-days: 14
+          if-no-files-found: warn
+
+  report:
+    name: Compatibility Matrix
+    needs: integration
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Download XML test results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: test-xml-*
+          path: test-results/
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Generate compatibility matrix
+        run: |
+          python3 - << 'PYEOF'
+          import os, glob, re, xml.etree.ElementTree as ET
+
+          # Tool groups matching the bug-inventory sections in docs/bugs/issue-794-bug-inventory.md.
+          # Each tool name maps to a *IntegrationTest class (e.g. 'search_symbols' →
+          # SearchSymbolsIntegrationTest). Tools with no test class yet show ❓ in the matrix; add
+          # the test class later and the row fills in automatically on the next CI run.
+          TOOL_GROUPS = [
+              ('PSI / Navigation', [
+                  'search_symbols',
+                  'get_file_outline',
+                  'find_references',
+                  'go_to_declaration',
+                  'get_documentation',
+                  'get_symbol_info',
+                  'get_class_outline',
+              ]),
+              ('Code Quality', [
+                  'get_highlights',
+                  'get_problems',
+                  'get_compilation_errors',
+                  'get_available_actions',
+                  'apply_action',
+                  'apply_quickfix',
+                  'format_code',
+                  'optimize_imports',
+                  'suppress_inspection',
+              ]),
+              ('Refactoring', [
+                  'get_type_hierarchy',
+                  'get_call_hierarchy',
+                  'find_implementations',
+                  'find_super_methods',
+                  'refactor',
+                  'convert_java_to_kotlin',
+              ]),
+              ('Testing', [
+                  'run_tests',
+                  'list_tests',
+                  'run_configuration',
+                  'get_coverage',
+              ]),
+              ('Debug', [
+                  'debug_session_start',
+                  'breakpoint_manage',
+                  'debug_evaluate',
+                  'debug_snapshot',
+                  'debug_inspect_frame',
+                  'debug_variable_detail',
+                  'debug_read_console',
+                  'debug_step',
+                  'debug_run_to_line',
+              ]),
+              ('Build', [
+                  'read_build_output',
+                  'reload_project_model',
+              ]),
+          ]
+          EXPECTED_TOOLS = {t for _, tools in TOOL_GROUPS for t in tools}
+
+          def class_to_tool(short):
+              """'SearchSymbols' → 'search_symbols'"""
+              s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', short)
+              s = re.sub(r'([a-z\d])([A-Z])', r'\1_\2', s)
+              return s.lower()
+
+          results = {}
+          failure_details = {}
+
+          for artifact_dir in sorted(glob.glob('test-results/test-xml-*')):
+              ide = artifact_dir.split('test-xml-')[1]
+              results[ide] = {}
+              failure_details[ide] = {}
+              for xml_file in glob.glob(f'{artifact_dir}/**/*.xml', recursive=True):
+                  try:
+                      tree = ET.parse(xml_file)
+                      root = tree.getroot()
+                  except Exception:
+                      continue
+                  for testcase in root.iter('testcase'):
+                      classname = testcase.get('classname', '')
+                      short = classname.split('.')[-1]
+                      if not short.endswith('IntegrationTest'):
+                          continue
+                      tool = class_to_tool(re.sub(r'IntegrationTest$', '', short))
+                      if tool not in EXPECTED_TOOLS:
+                          continue
+                      failure_el = testcase.find('failure')
+                      error_el = testcase.find('error')
+                      skipped_el = testcase.find('skipped')
+                      prev = results[ide].get(tool)
+                      if failure_el is not None or error_el is not None:
+                          results[ide][tool] = 'fail'
+                          el = failure_el if failure_el is not None else error_el
+                          msg = el.get('message', '') or ''
+                          if not msg and el.text:
+                              msg = '\n'.join(el.text.strip().splitlines()[:5])
+                          test_name = testcase.get('name', tool)
+                          failure_details[ide].setdefault(tool, []).append((test_name, msg[:500]))
+                      elif skipped_el is not None:
+                          # Skipped (e.g. tool not implemented for this IDE yet) → leave as ❓,
+                          # never overwrite a real pass/fail recorded by another test method.
+                          continue
+                      elif prev != 'fail':
+                          results[ide][tool] = 'pass'
+
+          if not results:
+              summary = '## IDE Compatibility Matrix\n\n_No test results found._\n'
+          else:
+              status_map = {'pass': '✅', 'fail': '❌', None: '❓'}
+              ides = sorted(results.keys())
+
+              lines = ['## IDE Compatibility Matrix', '']
+              lines.append('`✅` pass  `❌` fail  `❓` not implemented yet')
+              lines.append('')
+              lines.append('Generated from the real-IDE integration bench (`:ide-integration-tests`).')
+              lines.append('')
+              lines.append('| Tool | ' + ' | '.join(ides) + ' |')
+              lines.append('|------|' + '|'.join(['---'] * len(ides)) + '|')
+              for group, tools in TOOL_GROUPS:
+                  lines.append(f'| **{group}** | ' + ' | '.join(['&nbsp;'] * len(ides)) + ' |')
+                  for tool in tools:
+                      cells = [status_map.get(results[ide].get(tool)) for ide in ides]
+                      lines.append(f'| `{tool}` | ' + ' | '.join(cells) + ' |')
+
+              any_failures = any(v == 'fail' for r in results.values() for v in r.values())
+              if any_failures:
+                  lines.append('')
+                  lines.append('### Failures')
+                  for ide in ides:
+                      for tool in sorted(failure_details[ide]):
+                          for test_name, msg in failure_details[ide][tool]:
+                              lines.append(
+                                  f'\n<details>\n<summary>❌ {ide} — {tool} — {test_name}'
+                                  f'</summary>\n\n```\n{msg}\n```\n\n</details>'
+                              )
+
+              summary = '\n'.join(lines) + '\n'
+
+          print(summary)
+          summary_file = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_file:
+              with open(summary_file, 'a') as f:
+                  f.write(summary)
+          with open('/tmp/compat-matrix.md', 'w') as f:
+              f.write('<!-- compat-matrix -->\n')
+              f.write(summary)
+          PYEOF
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR="${{ github.event.pull_request.number }}"
+          else
+            PR=$(gh pr list -R "${{ github.repository }}" --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
+          fi
+          [ -z "$PR" ] && echo "No associated PR, skipping comment" && exit 0
+          REPO="${{ github.repository }}"
+          COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- compat-matrix -->"))] | first | .id // empty')
+          if [ -n "$COMMENT_ID" ]; then
+            python3 -c "import json; print(json.dumps({'body': open('/tmp/compat-matrix.md').read()}))" \
+              | gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" --input -
+          else
+            gh pr comment "$PR" -R "$REPO" --body-file /tmp/compat-matrix.md
+          fi
