@@ -36,6 +36,10 @@ import java.util.List;
  */
 public abstract class NavigationTool extends Tool {
 
+    private static final String NAMESPACE_KEYWORD_TYPE = "CppKeyword:NAMESPACE_CPP_KEYWORD";
+    private static final String DUMMY_BLOCK = "DUMMY_BLOCK";
+    private static final String DUMMY_NODE = "DUMMY_NODE";
+
     protected static final String ERROR_NO_PROJECT_PATH = "No project base path";
     protected static final String PARAM_SYMBOL = "symbol";
     protected static final String PARAM_FILE_PATTERN = "file_pattern";
@@ -428,7 +432,10 @@ public abstract class NavigationTool extends Tool {
      * Template declarations ({@code template<class T> void foo()}) also use CLASS_KEYWORD but
      * their extracted "name" contains {@code >} — filtered by {@link #isCppIdentifier}.
      * <p>
-     * Only top-level declarations (direct children of the file) are collected.
+     * Declarations nested inside {@code namespace X { ... }} are also collected by recursing into
+     * namespace bodies (see {@link #walkCppSymbolsIn}); inside a namespace CLion Nova represents
+     * each declaration as a flat {@code DUMMY_NODE} token stream rather than a structured
+     * {@code CppKeyword} node, so a different extraction path applies.
      */
     private List<String> collectOutlineEntriesByNodeType(PsiFile psiFile, Document document) {
         List<String> outline = new ArrayList<>();
@@ -443,7 +450,15 @@ public abstract class NavigationTool extends Tool {
      * (outline format) and {@link #collectSymbolsFromFile} (symbol-search format).
      */
     private void walkCppSymbolsByNodeType(PsiFile psiFile, Document document, CppSymbolVisitor visitor) {
-        List<PsiElement> children = significantChildren(psiFile);
+        walkCppSymbolsIn(significantChildren(psiFile), document, visitor);
+    }
+
+    /**
+     * Recursively walks a list of significant sibling PSI nodes, emitting recognized C/C++ symbols.
+     * Descends into namespace bodies so declarations nested in {@code namespace X { ... }} are
+     * collected, not just direct file children.
+     */
+    private void walkCppSymbolsIn(List<PsiElement> children, Document document, CppSymbolVisitor visitor) {
         for (int i = 0; i < children.size(); i++) {
             PsiElement child = children.get(i);
             String et = child.getNode().getElementType().toString();
@@ -451,19 +466,95 @@ public abstract class NavigationTool extends Tool {
             if (kind != null) {
                 String name = extractTypeDeclarationName(child);
                 if (name != null) {
-                    visitor.visit(kind, name, document.getLineNumber(child.getTextOffset()) + 1);
+                    visitor.visit(kind, name, lineOf(child, document));
                 }
-            } else if ("DUMMY_NODE".equals(et)) {
-                boolean nextIsBlock = (i + 1 < children.size())
-                    && "DUMMY_BLOCK".equals(children.get(i + 1).getNode().getElementType().toString());
-                if (nextIsBlock) {
-                    String name = extractFunctionName(child.getText());
-                    if (name != null) {
-                        visitor.visit("function", name, document.getLineNumber(child.getTextOffset()) + 1);
-                    }
-                }
+            } else if (NAMESPACE_KEYWORD_TYPE.equals(et)) {
+                visitNamespace(child, childOfType(child, DUMMY_BLOCK), document, visitor);
+            } else if (DUMMY_NODE.equals(et)) {
+                PsiElement next = (i + 1 < children.size()) ? children.get(i + 1) : null;
+                boolean nextIsBlock = next != null
+                    && DUMMY_BLOCK.equals(next.getNode().getElementType().toString());
+                visitNestedDeclaration(child, nextIsBlock ? next : null, document, visitor);
             }
         }
+    }
+
+    /**
+     * Handles a {@code DUMMY_NODE} sibling — the form CLion Nova uses for a declaration nested
+     * inside a namespace body: a flat token stream rather than the structured {@code CppKeyword}
+     * node used at file top level. Emits nested type definitions (class/struct/enum/union),
+     * recurses into nested namespaces, and recognizes free-function definitions. Forward
+     * declarations — a {@code DUMMY_NODE} with no following {@code DUMMY_BLOCK} body — are skipped.
+     *
+     * @param block the following {@code DUMMY_BLOCK} body sibling, or {@code null} if absent
+     */
+    private void visitNestedDeclaration(PsiElement node, PsiElement block,
+                                        Document document, CppSymbolVisitor visitor) {
+        String firstChildType = firstChildElementType(node);
+        if (NAMESPACE_KEYWORD_TYPE.equals(firstChildType)) {
+            visitNamespace(node, block, document, visitor);
+            return;
+        }
+        if (block == null) {
+            return;
+        }
+        String typeKind = cppKeywordKind(firstChildType);
+        if (typeKind != null) {
+            String name = firstIdentifier(node);
+            if (name != null && isCppIdentifier(name)) {
+                visitor.visit(typeKind, name, lineOf(node, document));
+            }
+        } else {
+            String name = extractFunctionName(node.getText());
+            if (name != null) {
+                visitor.visit("function", name, lineOf(node, document));
+            }
+        }
+    }
+
+    /**
+     * Emits a {@code namespace} entry (when a name is present) and recurses into its body so
+     * declarations nested in {@code namespace X { ... }} are collected.
+     *
+     * @param body the namespace's {@code DUMMY_BLOCK}, or {@code null} if absent
+     */
+    private void visitNamespace(PsiElement namespaceNode, PsiElement body,
+                                Document document, CppSymbolVisitor visitor) {
+        String name = extractTypeDeclarationName(namespaceNode);
+        if (name == null) {
+            name = firstIdentifier(namespaceNode);
+        }
+        if (name != null && isCppIdentifier(name)) {
+            visitor.visit("namespace", name, lineOf(namespaceNode, document));
+        }
+        if (body != null) {
+            walkCppSymbolsIn(significantChildren(body), document, visitor);
+        }
+    }
+
+    private static int lineOf(PsiElement element, Document document) {
+        return document.getLineNumber(element.getTextOffset()) + 1;
+    }
+
+    /**
+     * Returns the element-type string of the first significant child of {@code node}, or {@code ""}.
+     */
+    private static String firstChildElementType(PsiElement node) {
+        List<PsiElement> kids = significantChildren(node);
+        return kids.isEmpty() ? "" : kids.getFirst().getNode().getElementType().toString();
+    }
+
+    /**
+     * Returns the text of the first {@code IDENTIFIER} child of {@code node}, or {@code null}.
+     */
+    @org.jetbrains.annotations.Nullable
+    private static String firstIdentifier(PsiElement node) {
+        for (PsiElement child : significantChildren(node)) {
+            if ("IDENTIFIER".equals(child.getNode().getElementType().toString())) {
+                return child.getText();
+            }
+        }
+        return null;
     }
 
     /**
@@ -488,6 +579,20 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
+     * Returns the first direct child of {@code parent} whose element type matches {@code elementType},
+     * or {@code null} if none.
+     */
+    @org.jetbrains.annotations.Nullable
+    private static PsiElement childOfType(PsiElement parent, String elementType) {
+        for (PsiElement child : parent.getChildren()) {
+            if (elementType.equals(child.getNode().getElementType().toString())) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Returns the type declaration name if {@code node} has a DUMMY_NODE name child and a
      * DUMMY_BLOCK body child (full definition); returns {@code null} for forward declarations.
      */
@@ -497,9 +602,9 @@ public abstract class NavigationTool extends Tool {
         boolean hasBody = false;
         for (PsiElement gc : node.getChildren()) {
             String gcEt = gc.getNode().getElementType().toString();
-            if ("DUMMY_NODE".equals(gcEt) && name == null) {
+            if (DUMMY_NODE.equals(gcEt) && name == null) {
                 name = firstToken(gc.getText().trim());
-            } else if ("DUMMY_BLOCK".equals(gcEt)) {
+            } else if (DUMMY_BLOCK.equals(gcEt)) {
                 hasBody = true;
             }
         }
