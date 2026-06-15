@@ -320,31 +320,56 @@ class ClaudeClientStaticMethodsTest {
         }
     }
 
-    // ── buildKnownModels ──────────────────────────────────────────────────────
+    // ── buildStdioMcpConfigJson ───────────────────────────────────────────────
 
     @Nested
-    class BuildKnownModels {
+    class BuildStdioMcpConfigJson {
+
+        private static final List<String> COMMAND =
+            List.of("/jdk/bin/java", "-jar", "/plugins/agentbridge/lib/mcp-server.jar", "--port", "8642");
 
         @Test
-        void returnsNonEmptyList() {
-            var models = ClaudeClient.buildKnownModels();
-            assertFalse(models.isEmpty());
+        void producesStdioServerKeyedByName() {
+            String json = ClaudeClient.buildStdioMcpConfigJson(COMMAND);
+            JsonObject root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+            JsonObject server = root.getAsJsonObject("mcpServers").getAsJsonObject("agentbridge");
+
+            assertEquals("stdio", server.get("type").getAsString());
+            assertEquals("/jdk/bin/java", server.get("command").getAsString());
         }
 
         @Test
-        void allModelsHaveId() {
-            for (var model : ClaudeClient.buildKnownModels()) {
-                assertNotNull(model.id());
-                assertFalse(model.id().isEmpty());
-            }
+        void argsExcludeTheCommandAndPreserveOrder() {
+            String json = ClaudeClient.buildStdioMcpConfigJson(COMMAND);
+            JsonArray args = com.google.gson.JsonParser.parseString(json).getAsJsonObject()
+                .getAsJsonObject("mcpServers").getAsJsonObject("agentbridge").getAsJsonArray("args");
+
+            assertEquals(4, args.size());
+            assertEquals("-jar", args.get(0).getAsString());
+            assertEquals("/plugins/agentbridge/lib/mcp-server.jar", args.get(1).getAsString());
+            assertEquals("--port", args.get(2).getAsString());
+            assertEquals("8642", args.get(3).getAsString());
         }
 
         @Test
-        void allModelsHaveName() {
-            for (var model : ClaudeClient.buildKnownModels()) {
-                assertNotNull(model.name());
-                assertFalse(model.name().isEmpty());
-            }
+        void doesNotEmitHttpUrl() {
+            String json = ClaudeClient.buildStdioMcpConfigJson(COMMAND);
+            assertFalse(json.contains("\"url\""), "stdio config must not contain an http url: " + json);
+            assertFalse(json.contains("http://"), "stdio config must not contain an http url: " + json);
+        }
+
+        @Test
+        void jsonEscapesWindowsStylePaths() {
+            List<String> winCommand = List.of(
+                "C:\\Program Files\\Java\\bin\\java.exe", "-jar",
+                "C:\\plugins\\agent bridge\\mcp-server.jar", "--port", "8642");
+            String json = ClaudeClient.buildStdioMcpConfigJson(winCommand);
+
+            JsonObject server = com.google.gson.JsonParser.parseString(json).getAsJsonObject()
+                .getAsJsonObject("mcpServers").getAsJsonObject("agentbridge");
+            assertEquals("C:\\Program Files\\Java\\bin\\java.exe", server.get("command").getAsString());
+            assertEquals("C:\\plugins\\agent bridge\\mcp-server.jar",
+                server.getAsJsonArray("args").get(1).getAsString());
         }
     }
 }

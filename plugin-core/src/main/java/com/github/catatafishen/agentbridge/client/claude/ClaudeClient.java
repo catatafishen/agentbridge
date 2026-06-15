@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.client.claude;
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
+import com.github.catatafishen.agentbridge.bridge.McpStdioLaunch;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.ClientException;
@@ -1023,16 +1024,48 @@ public final class ClaudeClient extends AbstractClaudeClient {
     @Nullable
     private Path writeMcpConfigIfNeeded() throws ClientException {
         if (mcpPort <= 0) return null;
+        // Connect via the bundled stdio proxy rather than a direct HTTP URL. The Claude CLI's
+        // undici client keeps a persistent keep-alive socket between calls; that idle socket is
+        // closed by the in-IDE JDK HttpServer after ~30s, and the CLI reports the closure as an
+        // "MCP disconnected" error. The stdio proxy opens a fresh short-lived HTTP connection per
+        // message, so there is no idle socket to close — the same robust path the ACP agents use.
+        List<String> command = McpStdioLaunch.buildCommand(mcpPort);
+        if (command == null) {
+            throw new ClientException("Cannot configure agentbridge MCP server — "
+                + McpStdioLaunch.describeUnavailable(), null, true);
+        }
         try {
-            String json = "{\"mcpServers\":{\"agentbridge\":{"
-                + "\"type\":\"http\","
-                + "\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
+            String json = buildStdioMcpConfigJson(command);
             Path tmp = createPrivateMcpConfigFile();
             Files.writeString(tmp, json, StandardCharsets.UTF_8);
             return tmp;
         } catch (IOException e) {
             throw new ClientException("Could not write MCP config: " + e.getMessage(), e, true);
         }
+    }
+
+    /**
+     * Builds the Claude CLI {@code --mcp-config} JSON for the agentbridge stdio MCP server. The
+     * {@code command} list is {@code [executable, arg0, arg1, ...]} as produced by
+     * {@code McpStdioLaunch.buildCommand}. Built with Gson so filesystem paths (which may
+     * contain spaces or backslashes on Windows) are correctly JSON-escaped.
+     */
+    @NotNull
+    static String buildStdioMcpConfigJson(@NotNull List<String> command) {
+        JsonObject server = new JsonObject();
+        server.addProperty("type", "stdio");
+        server.addProperty("command", command.getFirst());
+        JsonArray args = new JsonArray();
+        for (int i = 1; i < command.size(); i++) {
+            args.add(command.get(i));
+        }
+        server.add("args", args);
+
+        JsonObject servers = new JsonObject();
+        servers.add("agentbridge", server);
+        JsonObject root = new JsonObject();
+        root.add("mcpServers", servers);
+        return root.toString();
     }
 
     private Path createPrivateMcpConfigFile() throws IOException {
