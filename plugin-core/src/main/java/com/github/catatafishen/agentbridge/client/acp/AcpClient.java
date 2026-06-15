@@ -7,7 +7,7 @@ import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponseDeseri
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
-import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
+import com.github.catatafishen.agentbridge.bridge.McpStdioLaunch;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientPromptException;
@@ -43,7 +43,6 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
@@ -574,7 +573,7 @@ public abstract class AcpClient extends AbstractClient {
             // Honor selectedValueId when the current slug is null or still the default —
             // updateModes() may have set it to defaultModeSlug() when currentModeId was absent.
             if ((currentModeSlug == null || currentModeSlug.equals(defaultModeSlug()))
-                    && option.selectedValueId() != null) {
+                && option.selectedValueId() != null) {
                 currentModeSlug = option.selectedValueId();
             }
         });
@@ -1610,81 +1609,27 @@ public abstract class AcpClient extends AbstractClient {
 
     @Nullable
     protected final JsonObject buildMcpStdioServer(String serverName, int mcpPort) {
-        String javaPath = resolveJavaBinaryPath();
-        if (javaPath == null) {
-            LOG.warn("Java binary not resolvable from java.home/JAVA_HOME — cannot build stdio MCP server config");
-            return null;
-        }
-        String jarPath = McpServerJarLocator.findMcpServerJar();
-        if (jarPath == null) {
-            LOG.warn("mcp-server.jar not found in plugin lib — cannot build stdio MCP server config");
+        List<String> command = McpStdioLaunch.buildCommand(mcpPort);
+        if (command == null) {
+            LOG.warn("Cannot build stdio MCP server config — " + McpStdioLaunch.describeUnavailable());
             return null;
         }
 
         JsonArray args = new JsonArray();
-        args.add("-jar");
-        args.add(jarPath);
-        args.add("--port");
-        args.add(String.valueOf(mcpPort));
+        for (int i = 1; i < command.size(); i++) {
+            args.add(command.get(i));
+        }
 
         JsonObject server = new JsonObject();
         server.addProperty("name", serverName);
-        server.addProperty("command", javaPath);
+        server.addProperty("command", command.getFirst());
         server.add("args", args);
         server.add("env", new JsonArray());
         return server;
     }
 
-    /**
-     * Builds a human-readable diagnostic message describing why {@link #buildMcpStdioServer}
-     * returned {@code null}. Intended for inclusion in exception messages so users see which
-     * dependency is missing instead of the generic "Java binary or mcp-server.jar not found".
-     */
     protected final @NotNull String describeMcpStdioServerFailure() {
-        StringBuilder sb = new StringBuilder();
-        String javaPath = resolveJavaBinaryPath();
-        if (javaPath == null) {
-            sb.append("Java binary not found (checked java.home=")
-                .append(System.getProperty("java.home"))
-                .append(" and JAVA_HOME=")
-                .append(System.getenv("JAVA_HOME"))
-                .append(")");
-        } else {
-            sb.append("Java binary ok at ").append(javaPath);
-        }
-        sb.append("; ");
-        String jarPath = McpServerJarLocator.findMcpServerJar();
-        if (jarPath == null) {
-            sb.append("mcp-server.jar not found in plugin lib directory (plugin may not be fully installed; try rebuilding or reinstalling)");
-        } else {
-            sb.append("mcp-server.jar ok at ").append(jarPath);
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Resolves the path to a usable {@code java} binary. Tries {@code java.home/bin/java} first
-     * (the JVM running this IDE), then falls back to {@code JAVA_HOME/bin/java}.
-     *
-     * @return absolute path to an existing java executable, or {@code null} if none found
-     */
-    private static @Nullable String resolveJavaBinaryPath() {
-        boolean isWindows = SystemInfo.isWindows;
-        String javaExe = isWindows ? "java.exe" : "java";
-
-        String javaHome = System.getProperty("java.home");
-        if (javaHome != null && !javaHome.isEmpty()) {
-            File candidate = new File(javaHome + File.separator + "bin" + File.separator + javaExe);
-            if (candidate.exists()) return candidate.getAbsolutePath();
-        }
-
-        String envJavaHome = System.getenv("JAVA_HOME");
-        if (envJavaHome != null && !envJavaHome.isEmpty()) {
-            File candidate = new File(envJavaHome + File.separator + "bin" + File.separator + javaExe);
-            if (candidate.exists()) return candidate.getAbsolutePath();
-        }
-
-        return null;
+        return McpStdioLaunch.describeUnavailable();
     }
 
     private void eagerFetchModels() {
