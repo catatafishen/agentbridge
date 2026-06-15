@@ -149,12 +149,14 @@ class InFlightMcpToolRegistryTest {
     private void assertWorkerInterruptedBy(Runnable cancelAction) throws InterruptedException {
         CountDownLatch registered = new CountDownLatch(1);
         CountDownLatch finished = new CountDownLatch(1);
+        // Released only by an interrupt — the worker blocks here until the cancel interrupts it.
+        CountDownLatch blockUntilInterrupted = new CountDownLatch(1);
         AtomicBoolean interrupted = new AtomicBoolean(false);
         Thread worker = new Thread(() -> {
             registry.registerWorker(Thread.currentThread());
             registered.countDown();
             try {
-                Thread.sleep(10_000);
+                blockUntilInterrupted.await();
             } catch (InterruptedException e) {
                 interrupted.set(true);
             } finally {
