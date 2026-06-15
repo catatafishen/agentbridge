@@ -266,7 +266,12 @@ public abstract class NavigationTool extends Tool {
         if (p.contains(ToolUtils.JAR_SEPARATOR)) return ToolUtils.JAR_URL_PREFIX + p;
         if (basePath != null) {
             String base = basePath.replace('\\', '/');
-            if (p.startsWith(base + "/")) return p.substring(base.length() + 1);
+            // Case-insensitive prefix match for Windows (avoid drive-letter casing mismatch).
+            if (p.regionMatches(true, 0, base, 0, base.length())
+                && p.length() > base.length()
+                && p.charAt(base.length()) == '/') {
+                return p.substring(base.length() + 1);
+            }
         }
         // Unknown external path: emit only the filename to avoid leaking home-dir paths
         int lastSlash = p.lastIndexOf('/');
