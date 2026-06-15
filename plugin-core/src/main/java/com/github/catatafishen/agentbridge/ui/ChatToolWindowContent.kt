@@ -2630,7 +2630,7 @@ class ChatToolWindowContent(
      * user does not lose what they typed. Restored messages keep their original FIFO order.
      */
     private fun restoreQueuedMessagesToInput() {
-        val drained = AgentNudgeService.getInstance(project).clearMessageQueue()
+        val drained: List<String> = AgentNudgeService.getInstance(project).clearMessageQueue()
         if (drained.isEmpty() && queuedTexts.isEmpty()) return
         drained.forEach { consolePanel.removeQueuedMessageByText(it) }
         queuedTexts.clear()
