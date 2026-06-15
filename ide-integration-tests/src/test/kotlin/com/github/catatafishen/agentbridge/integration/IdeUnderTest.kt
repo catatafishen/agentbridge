@@ -27,6 +27,10 @@ data class IdeUnderTest(
     val symbolQuery: String,
     /** Substring the tool result must contain for the cell to be green. */
     val expectedSymbol: String,
+    /** Project-relative file passed to `get_file_outline`; `null` = column not covered (cell skips → ❓). */
+    val outlineFile: String?,
+    /** Symbols the `get_file_outline` result must contain for the cell to be green. */
+    val expectedOutlineSymbols: List<String>,
 ) {
     companion object {
         /** System property (set by the build per CI matrix entry) selecting the product to launch. */
@@ -43,6 +47,8 @@ data class IdeUnderTest(
                     highlightsFile = "src/fixture/Widget.java",
                     symbolQuery = "Widget",
                     expectedSymbol = "Widget",
+                    outlineFile = "src/fixture/Widget.java",
+                    expectedOutlineSymbols = listOf("Widget", "area"),
                 )
 
                 "CL" -> IdeUnderTest(
@@ -53,6 +59,8 @@ data class IdeUnderTest(
                     highlightsFile = "classdef.h",
                     symbolQuery = "Widget",
                     expectedSymbol = "Widget",
+                    outlineFile = "classdef.h",
+                    expectedOutlineSymbols = listOf("Widget", "Point"),
                 )
 
                 "RD" -> IdeUnderTest(
@@ -63,6 +71,8 @@ data class IdeUnderTest(
                     highlightsFile = "Widget.cs",
                     symbolQuery = "Widget",
                     expectedSymbol = "Widget",
+                    outlineFile = null,
+                    expectedOutlineSymbols = emptyList(),
                 )
 
                 else -> error("Unknown $IDE_PROPERTY='$key' (expected IU | CL | RD)")
