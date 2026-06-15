@@ -94,7 +94,7 @@ public final class DeleteFileTool extends FileTool {
                 scheduleFileDeletion(vf, pathStr, resultFuture);
                 return null;
             } catch (Exception e) {
-                resultFuture.complete(ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage()));
+                resultFuture.complete(ToolError.of(McpErrorCode.INTERNAL_ERROR, e));
                 return null;
             }
         }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());

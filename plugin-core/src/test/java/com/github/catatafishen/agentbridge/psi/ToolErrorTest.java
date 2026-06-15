@@ -46,6 +46,35 @@ class ToolErrorTest {
     }
 
     @Nested
+    @DisplayName("ToolError.of(code, throwable)")
+    class OfThrowable {
+
+        @Test
+        @DisplayName("uses the exception message when present")
+        void usesMessage() {
+            String result = ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                new IllegalStateException("boom"));
+            assertEquals("Error [INTERNAL_ERROR]: boom", result);
+        }
+
+        @Test
+        @DisplayName("falls back to class name when getMessage() is null")
+        void fallsBackToClassName() {
+            String result = ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                new NullPointerException());
+            assertEquals("Error [INTERNAL_ERROR]: java.lang.NullPointerException", result);
+        }
+
+        @Test
+        @DisplayName("never produces a null message even for messageless exceptions")
+        void neverNullMessage() {
+            String result = ToolError.of(McpErrorCode.INTERNAL_ERROR, new RuntimeException());
+            assertTrue(result.startsWith("Error [INTERNAL_ERROR]: "));
+            assertFalse(result.endsWith("null"), "fallback must be the class name, not 'null'");
+        }
+    }
+
+    @Nested
     @DisplayName("ToolError.of(code, message, hint)")
     class OfThreeArgs {
 
