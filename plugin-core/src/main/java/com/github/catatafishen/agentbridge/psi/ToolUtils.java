@@ -215,6 +215,14 @@ public final class ToolUtils {
     public static VirtualFile resolveVirtualFile(Project project, String path) {
         String normalized = path.replace('\\', '/');
 
+        // "." and "./" mean "project root" — resolve immediately so they don't fall
+        // through to LocalFileSystem.findFileByPath which uses the JVM's CWD (which
+        // on Windows defaults to C:\Windows\System32 when launched from a shortcut).
+        if (".".equals(normalized) || "./".equals(normalized)) {
+            String basePath = project.getBasePath();
+            return basePath != null ? LocalFileSystem.getInstance().findFileByPath(basePath) : null;
+        }
+
         VirtualFile jarFile = resolveJarPath(normalized);
         if (jarFile != null) return jarFile;
 
@@ -236,6 +244,14 @@ public final class ToolUtils {
      */
     public static VirtualFile refreshAndFindVirtualFile(Project project, String path) {
         String normalized = path.replace('\\', '/');
+
+        // "." and "./" mean "project root" — resolve immediately to avoid relying on
+        // the JVM CWD (which on Windows defaults to C:\Windows\System32).
+        if (".".equals(normalized) || "./".equals(normalized)) {
+            String basePath = project.getBasePath();
+            return basePath != null
+                ? LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath) : null;
+        }
 
         VirtualFile jarFile = resolveJarPath(normalized);
         if (jarFile != null) return jarFile;
@@ -268,7 +284,11 @@ public final class ToolUtils {
             }
             if (basePath != null) {
                 String base = basePath.replace('\\', '/');
-                String relative = virtualPath.startsWith(base + "/") ? virtualPath.substring(base.length() + 1) : virtualPath;
+                // Case-insensitive prefix match for Windows (avoid drive-letter casing mismatch).
+                String relative = virtualPath.regionMatches(true, 0, base, 0, base.length())
+                    && virtualPath.length() > base.length()
+                    && virtualPath.charAt(base.length()) == '/'
+                    ? virtualPath.substring(base.length() + 1) : virtualPath;
                 String needle = normalized.startsWith("/") ? normalized.substring(1) : normalized;
                 if (relative.equals(needle)) {
                     match[0] = vf;
@@ -287,7 +307,13 @@ public final class ToolUtils {
         if (file.contains(JAR_SEPARATOR)) return JAR_URL_PREFIX + file;
         if (basePath == null) return filePath;
         String base = basePath.replace('\\', '/');
-        if (file.startsWith(base + "/")) return file.substring(base.length() + 1);
+        // On Windows, paths are case-insensitive — use regionMatches to compare without
+        // allocating a new String, and to avoid drive-letter case mismatches (e.g. C: vs c:).
+        if (file.regionMatches(true, 0, base, 0, base.length())
+            && file.length() > base.length()
+            && file.charAt(base.length()) == '/') {
+            return file.substring(base.length() + 1);
+        }
         return file;
     }
 

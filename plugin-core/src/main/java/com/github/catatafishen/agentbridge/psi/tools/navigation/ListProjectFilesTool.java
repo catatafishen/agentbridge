@@ -80,7 +80,11 @@ public final class ListProjectFilesTool extends NavigationTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        String dir = args.has(PARAM_DIRECTORY) ? args.get(PARAM_DIRECTORY).getAsString() : "";
+        String dirRaw = args.has(PARAM_DIRECTORY) ? args.get(PARAM_DIRECTORY).getAsString() : "";
+        // "." and "./" mean "project root" — resolve to empty string so no filtering
+        // is applied (shows all project files). Without this, the prefix filter
+        // relPath.startsWith(".") would never match any project-relative path.
+        String dir = (".".equals(dirRaw) || "./".equals(dirRaw)) ? "" : dirRaw;
         String pattern = args.has(PARAM_PATTERN) ? args.get(PARAM_PATTERN).getAsString() : "";
         String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
         long minSize = args.has(PARAM_MIN_SIZE) ? args.get(PARAM_MIN_SIZE).getAsLong() : -1;
