@@ -625,7 +625,7 @@ public final class McpProtocolHandler {
             // the agent sees the error result.
             McpPauseService.getInstance(project).awaitResumeIfPaused();
 
-            String errorMsg = ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
+            String errorMsg = ToolError.of(McpErrorCode.INTERNAL_ERROR, e);
             long durationMs = System.currentTimeMillis() - callStartMs;
             var failOutcome = applyFailureHook(toolName, arguments, errorMsg, durationMs, hookStages);
             String finalOutput = Objects.requireNonNullElse(failOutcome.output(), errorMsg);
@@ -926,7 +926,7 @@ public final class McpProtocolHandler {
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] permission hook failed for " + toolName, e);
             hookStages.add(new HookStageResult(STAGE_PERMISSION, STAGE_HOOK_CHAIN, OUTCOME_ERROR, 0, e.getMessage()));
-            return ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
+            return ToolError.of(McpErrorCode.INTERNAL_ERROR, e);
         }
         return null;
     }

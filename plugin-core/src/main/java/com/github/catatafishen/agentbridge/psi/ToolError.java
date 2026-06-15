@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.psi;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
+
 /**
  * Factory for structured MCP tool error messages.
  * <p>
@@ -40,6 +42,21 @@ public final class ToolError {
     @NotNull
     public static String of(@NotNull McpErrorCode code, @NotNull String message) {
         return ERROR_CODE_PREFIX + code.name() + "]: " + message;
+    }
+
+    /**
+     * Creates a structured error message from a {@link Throwable}, using the exception's
+     * message when present and falling back to its class name when {@code getMessage()} is
+     * null (common for {@link NullPointerException} and similar). This guarantees a non-null,
+     * still-informative message so the MCP error surface never crashes on a null description.
+     *
+     * @param code the error code category
+     * @param t    the exception to describe
+     * @return formatted error string: {@code Error [CODE]: message}
+     */
+    @NotNull
+    public static String of(@NotNull McpErrorCode code, @NotNull Throwable t) {
+        return of(code, Objects.requireNonNullElseGet(t.getMessage(), () -> t.getClass().getName()));
     }
 
     /**
