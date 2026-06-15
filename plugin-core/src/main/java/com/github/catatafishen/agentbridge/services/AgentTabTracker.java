@@ -27,6 +27,8 @@ import java.util.List;
 public final class AgentTabTracker implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(AgentTabTracker.class);
+    private static final String TERMINAL_TOOL_WINDOW_ID = "Terminal";
+    private static final String RUN_TOOL_WINDOW_ID = "Run";
 
     private record TabRef(String toolWindowId, String tabName) {
     }
@@ -47,6 +49,49 @@ public final class AgentTabTracker implements Disposable {
      */
     public synchronized void trackTab(@NotNull String toolWindowId, @NotNull String tabName) {
         trackedTabs.add(new TabRef(toolWindowId, tabName));
+    }
+
+    public int countOpenTerminalTabs() {
+        List<String> trackedTerminalTabNames;
+        synchronized (this) {
+            trackedTerminalTabNames = new ArrayList<>();
+            for (TabRef ref : trackedTabs) {
+                if (TERMINAL_TOOL_WINDOW_ID.equals(ref.toolWindowId())) {
+                    trackedTerminalTabNames.add(ref.tabName());
+                }
+            }
+        }
+        if (trackedTerminalTabNames.isEmpty()) return 0;
+
+        ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+        if (tw == null) return 0;
+
+        List<String> openDisplayNames = new ArrayList<>();
+        for (Content content : tw.getContentManager().getContents()) {
+            openDisplayNames.add(content.getDisplayName());
+        }
+        return countMatchingTerminalTabs(trackedTerminalTabNames, openDisplayNames);
+    }
+
+    /**
+     * Counts how many of the currently open tab display names correspond to a tracked agent
+     * terminal tab. A display name matches if it contains a tracked tab name (the IDE may append
+     * suffixes such as {@code " (1)"} for duplicate titles). Each open tab is counted at most once.
+     *
+     * <p>Pure predicate — no I/O, no IntelliJ API dependency.</p>
+     */
+    static int countMatchingTerminalTabs(List<String> trackedTerminalTabNames, List<String> openDisplayNames) {
+        int count = 0;
+        for (String displayName : openDisplayNames) {
+            if (displayName == null) continue;
+            for (String tabName : trackedTerminalTabNames) {
+                if (displayName.contains(tabName)) {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
     }
 
     /**
@@ -90,10 +135,10 @@ public final class AgentTabTracker implements Disposable {
      */
     static boolean shouldSkipClose(String toolWindowId, boolean closeRunningTerminals,
                                    boolean isProcessActive) {
-        if ("Terminal".equals(toolWindowId) && !closeRunningTerminals) {
+        if (TERMINAL_TOOL_WINDOW_ID.equals(toolWindowId) && !closeRunningTerminals) {
             return true;
         }
-        return "Run".equals(toolWindowId) && isProcessActive;
+        return RUN_TOOL_WINDOW_ID.equals(toolWindowId) && isProcessActive;
     }
 
     private void closeTab(TabRef ref, boolean closeRunningTerminals) {
