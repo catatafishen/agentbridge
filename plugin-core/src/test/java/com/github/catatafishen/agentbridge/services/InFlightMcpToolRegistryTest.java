@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -85,6 +87,88 @@ class InFlightMcpToolRegistryTest {
 
         assertTrue(late.isDone(), "Future registered after cancelAll must be immediately completed");
         assertCancelledWith(late, "agent stopped");
+    }
+
+    @Test
+    void cancelInFlight_completesRegisteredFutures_withCancellationException() {
+        CompletableFuture<String> a = new CompletableFuture<>();
+        registry.register("a", a);
+
+        registry.cancelInFlight("stopped by user");
+
+        assertCancelledWith(a, "stopped by user");
+    }
+
+    @Test
+    void cancelInFlight_doesNotLatchClosed_soLaterRegistrationsProceed() {
+        registry.cancelInFlight("stopped by user");
+
+        // Unlike cancelAll, a transient turn-cancel must NOT auto-cancel a later registration —
+        // the next prompt's tool calls have to work without a reconnect.
+        CompletableFuture<String> later = new CompletableFuture<>();
+        registry.register("later", later);
+
+        assertFalse(later.isDone(), "cancelInFlight must not latch the registry closed");
+    }
+
+    @Test
+    void cancelInFlight_emptyRegistry_doesNotThrow() {
+        assertDoesNotThrow(() -> registry.cancelInFlight("test"));
+    }
+
+    @Test
+    void cancelInFlight_interruptsRegisteredWorker() throws Exception {
+        assertWorkerInterruptedBy(() -> registry.cancelInFlight("stopped by user"));
+    }
+
+    @Test
+    void cancelAll_interruptsRegisteredWorker() throws Exception {
+        assertWorkerInterruptedBy(() -> registry.cancelAll("agent stopped"));
+    }
+
+    @Test
+    void registerWorker_afterCancelAll_immediatelyInterrupts() {
+        registry.cancelAll("agent stopped");
+        registry.registerWorker(Thread.currentThread());
+        // Thread.interrupted() also clears the flag so it does not leak into other tests.
+        assertTrue(Thread.interrupted(), "worker registered after cancelAll must be interrupted");
+    }
+
+    @Test
+    void registerWorker_afterCancelInFlight_doesNotInterrupt() {
+        registry.cancelInFlight("stopped by user");
+        registry.registerWorker(Thread.currentThread());
+        assertFalse(Thread.interrupted(),
+            "cancelInFlight must not latch — a worker registered afterward runs normally");
+    }
+
+    /**
+     * Spawns a worker that registers itself and blocks, then runs {@code cancelAction} and
+     * asserts the worker was interrupted and unblocked.
+     */
+    private void assertWorkerInterruptedBy(Runnable cancelAction) throws InterruptedException {
+        CountDownLatch registered = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(1);
+        AtomicBoolean interrupted = new AtomicBoolean(false);
+        Thread worker = new Thread(() -> {
+            registry.registerWorker(Thread.currentThread());
+            registered.countDown();
+            try {
+                Thread.sleep(10_000);
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            } finally {
+                registry.unregisterWorker(Thread.currentThread());
+                finished.countDown();
+            }
+        }, "test-tool-worker");
+        worker.start();
+        assertTrue(registered.await(2, TimeUnit.SECONDS), "worker did not register in time");
+
+        cancelAction.run();
+
+        assertTrue(finished.await(2, TimeUnit.SECONDS), "worker did not unblock after cancel");
+        assertTrue(interrupted.get(), "registered worker thread must be interrupted by the cancel");
     }
 
     private static void assertCancelledWith(CompletableFuture<String> future, String expectedReason) {

@@ -676,14 +676,28 @@ public final class McpProtocolHandler {
         PsiBridgeService bridge = PsiBridgeService.getInstance(project);
         AtomicReference<Thread> workerThread = new AtomicReference<>();
         long startMs = System.currentTimeMillis();
+        InFlightMcpToolRegistry registry = InFlightMcpToolRegistry.getInstance(project);
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
-            workerThread.set(Thread.currentThread());
+            Thread worker = Thread.currentThread();
+            workerThread.set(worker);
             McpCallContext.setCurrent(sessionKey);
+            // Register the worker so a user Stop (PromptOrchestrator.stop → cancelInFlight)
+            // can interrupt it — this is what terminates blocking tools such as run_command,
+            // whose worker is parked in RunPanelExecutor waiting on the child process.
+            registry.registerWorker(worker);
             try {
                 return bridge.callTool(toolName, arguments, toolUseId, originalArguments);
             } finally {
+                registry.unregisterWorker(worker);
                 McpCallContext.clear();
                 workerThread.set(null);
+                // Clear any interrupt that arrived as cancellation so it does not leak onto the
+                // next task scheduled on this reused pool thread. A genuine cancellation has
+                // already surfaced (the blocking call threw InterruptedException); a late
+                // interrupt that the tool never observed is meaningless once it has returned.
+                if (Thread.interrupted()) {
+                    LOG.debug("[MCP] cleared a stale cancellation interrupt on worker for " + toolName);
+                }
             }
         });
 

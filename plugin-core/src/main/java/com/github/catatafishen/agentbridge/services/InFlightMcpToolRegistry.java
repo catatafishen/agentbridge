@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +35,15 @@ public final class InFlightMcpToolRegistry {
     private static final Logger LOG = Logger.getInstance(InFlightMcpToolRegistry.class);
 
     private final Map<String, CompletableFuture<String>> inFlight = new ConcurrentHashMap<>();
+    /**
+     * Currently-executing tool worker threads (the pooled threads on which
+     * {@code McpProtocolHandler.callToolWithTimeout} runs each tool's {@code execute()}).
+     * A user Stop interrupts these threads to terminate blocking tools such as
+     * {@code run_command}, whose worker is parked in {@code RunPanelExecutor.execute}
+     * waiting on the child process. Distinct from {@link #inFlight}, which only tracks
+     * tools that block on an externally completed future (e.g. {@code prompt_user}).
+     */
+    private final Set<Thread> workers = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
     private volatile String cancelReason = "agent stopped";
 
@@ -75,18 +85,50 @@ public final class InFlightMcpToolRegistry {
     }
 
     /**
-     * Complete every registered future exceptionally with a {@link CancellationException}
-     * so blocked tool threads return immediately. Idempotent. After this returns, any
-     * future {@link #register} call is also immediately cancelled.
+     * Register the worker thread currently executing a tool's {@code execute()} so a later
+     * cancellation can interrupt it. The caller MUST call {@link #unregisterWorker(Thread)}
+     * in a {@code finally} block.
      *
-     * @param reason human-readable reason (logged; tools may surface it via their own
-     *               error message)
+     * <p>If {@link #cancelAll(String)} has already latched the registry closed (agent
+     * shutdown), the thread is interrupted immediately so a late-arriving tool unwinds at once.
      */
-    public void cancelAll(@NotNull String reason) {
-        cancelReason = reason;
-        // Set the flag first so any concurrent register() picks it up.
-        cancelled.set(true);
-        if (inFlight.isEmpty()) return;
+    public void registerWorker(@NotNull Thread worker) {
+        workers.add(worker);
+        if (cancelled.get()) {
+            worker.interrupt();
+            workers.remove(worker);
+        }
+    }
+
+    public void unregisterWorker(@NotNull Thread worker) {
+        workers.remove(worker);
+    }
+
+    /**
+     * Transient cancel for a user-initiated Stop of the current turn: cancels every blocked
+     * future and interrupts every executing tool worker thread, but does NOT latch the
+     * registry closed. Tool calls registered after this returns proceed normally, so the
+     * next prompt works without a reconnect.
+     *
+     * <p>Use this for the Stop button. Use {@link #cancelAll(String)} only when the agent is
+     * actually going away (disconnect / crash), where later registrations must also fail.
+     *
+     * @param reason human-readable reason (logged; tools may surface it via their own error)
+     */
+    public void cancelInFlight(@NotNull String reason) {
+        int futures = drainFutures(reason);
+        int interrupted = interruptWorkers();
+        if (futures > 0 || interrupted > 0) {
+            LOG.info("InFlightMcpToolRegistry: cancelInFlight cancelled " + futures
+                + " future(s) and interrupted " + interrupted + " worker(s) — " + reason);
+        }
+    }
+
+    /**
+     * Completes every registered future exceptionally and clears the map. Returns the count.
+     */
+    private int drainFutures(@NotNull String reason) {
+        if (inFlight.isEmpty()) return 0;
         int count = inFlight.size();
         // Snapshot keys to avoid CME if a tool's completion handler re-enters unregister().
         for (Map.Entry<String, CompletableFuture<String>> entry : Map.copyOf(inFlight).entrySet()) {
@@ -96,6 +138,43 @@ public final class InFlightMcpToolRegistry {
             }
         }
         inFlight.clear();
-        LOG.info("InFlightMcpToolRegistry: cancelled " + count + " in-flight tool(s) — " + reason);
+        return count;
+    }
+
+    /**
+     * Interrupts every registered worker thread and clears the set. Returns the count.
+     */
+    private int interruptWorkers() {
+        if (workers.isEmpty()) return 0;
+        int count = 0;
+        for (Thread worker : Set.copyOf(workers)) {
+            worker.interrupt();
+            count++;
+        }
+        workers.clear();
+        return count;
+    }
+
+    /**
+     * Complete every registered future exceptionally with a {@link CancellationException}
+     * and interrupt every executing worker thread so blocked tools return immediately.
+     * Idempotent. After this returns, any future {@link #register} or {@link #registerWorker}
+     * call is also immediately cancelled — use this only on agent shutdown / crash, where
+     * late registrations must fail too. For a user Stop of the current turn, use
+     * {@link #cancelInFlight(String)} which does not latch the registry closed.
+     *
+     * @param reason human-readable reason (logged; tools may surface it via their own
+     *               error message)
+     */
+    public void cancelAll(@NotNull String reason) {
+        cancelReason = reason;
+        // Set the flag first so any concurrent register()/registerWorker() picks it up.
+        cancelled.set(true);
+        int futures = drainFutures(reason);
+        int interrupted = interruptWorkers();
+        if (futures > 0 || interrupted > 0) {
+            LOG.info("InFlightMcpToolRegistry: cancelled " + futures + " in-flight tool(s) and interrupted "
+                + interrupted + " worker(s) — " + reason);
+        }
     }
 }

@@ -175,6 +175,15 @@ class PromptOrchestrator(
                 // Best-effort cancellation
             }
         }
+        // Interrupt any in-flight MCP tool executions (e.g. a run_command child process or a
+        // prompt_user waiter) so they terminate immediately instead of running to completion
+        // after the turn is cancelled. Transient cancel: it does not latch the registry closed,
+        // so the next prompt's tool calls still work.
+        try {
+            InFlightMcpToolRegistry.getInstance(project).cancelInFlight("stopped by user")
+        } catch (_: Exception) {
+            // Best-effort
+        }
         currentPromptThread?.interrupt()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry("Stopped by user")
