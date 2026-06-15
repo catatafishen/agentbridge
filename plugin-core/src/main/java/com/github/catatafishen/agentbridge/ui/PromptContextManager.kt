@@ -262,7 +262,10 @@ class PromptContextManager(
                 if (collectInlineContextItems().any { it.path == path }) return
 
                 val lineCount = try {
-                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)?.lineCount ?: 0
+                    ApplicationManager.getApplication().runReadAction<Int> {
+                        com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)?.lineCount
+                            ?: 0
+                    }
                 } catch (_: Exception) {
                     0
                 }
