@@ -1381,8 +1381,7 @@ class ChatToolWindowContent(
     private fun onSendStopClicked() {
         val rawText = promptTextArea.text.trim()
         if (isSending) {
-            promptOrchestrator.stop()
-            setSendingState(false)
+            stopAgent()
             return
         }
         if (rawText.isEmpty()) {
@@ -1747,8 +1746,7 @@ class ChatToolWindowContent(
 
         override fun actionPerformed(e: AnActionEvent) {
             if (isSending) {
-                promptOrchestrator.stop()
-                setSendingState(false)
+                stopAgent()
             } else {
                 val inputEvent = e.inputEvent ?: return
                 val component = inputEvent.source as? Component ?: return
@@ -2577,8 +2575,7 @@ class ChatToolWindowContent(
         ws.setOnStop {
             ApplicationManager.getApplication().invokeLater {
                 if (isSending) {
-                    promptOrchestrator.stop()
-                    setSendingState(false)
+                    stopAgent()
                 }
             }
         }
@@ -2609,6 +2606,28 @@ class ChatToolWindowContent(
         consolePanel.showQueuedMessage(id, rawText)
         AgentNudgeService.getInstance(project).enqueueMessage(rawText)
         queuedTexts.addLast(rawText)
+        refreshShortcutHints()
+    }
+
+    /**
+     * Centralised handling of a user Stop. Cancels the turn (agent + in-flight tool calls via
+     * [PromptOrchestrator.stop]), resets the sending state, and clears any queued follow-up
+     * messages so they are not left stuck — the queue is otherwise only drained on a successful
+     * turn completion, so a message queued during a turn that is then stopped would hang forever
+     * (issue #845). Must be called on the EDT.
+     */
+    private fun stopAgent() {
+        promptOrchestrator.stop()
+        setSendingState(false)
+        clearQueuedMessagesOnStop()
+    }
+
+    /** Removes all queued follow-up messages from the service queue, the recall stack, and the UI. */
+    private fun clearQueuedMessagesOnStop() {
+        val drained = AgentNudgeService.getInstance(project).clearMessageQueue()
+        if (drained.isEmpty() && queuedTexts.isEmpty()) return
+        drained.forEach { consolePanel.removeQueuedMessageByText(it) }
+        queuedTexts.clear()
         refreshShortcutHints()
     }
 

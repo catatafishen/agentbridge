@@ -141,6 +141,14 @@ public final class RunPanelExecutor {
         } catch (TimeoutException e) {
             processHandler.destroyProcess();
             return new RunResult(-1, output.toString(), true);
+        } catch (InterruptedException e) {
+            // The worker thread was interrupted — typically because the user pressed Stop
+            // (PromptOrchestrator.stop → InFlightMcpToolRegistry.cancelInFlight). Kill the
+            // child process so it does not outlive the cancelled tool call, restore the
+            // interrupt flag, and propagate so the MCP layer returns a cancellation result.
+            processHandler.destroyProcess();
+            Thread.currentThread().interrupt();
+            throw e;
         }
     }
 

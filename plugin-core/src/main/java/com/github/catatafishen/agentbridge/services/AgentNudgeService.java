@@ -219,6 +219,22 @@ public final class AgentNudgeService {
         return messageQueue.poll();
     }
 
+    /**
+     * Drains and discards every queued message. Called when the user presses Stop: the
+     * queue is otherwise only drained on a successful turn completion, so without this a
+     * message queued during a turn that is then stopped would remain stuck forever.
+     *
+     * @return the removed messages, in queue order (for the caller to clear from its UI)
+     */
+    @NotNull
+    public List<String> clearMessageQueue() {
+        List<String> drained = new ArrayList<>();
+        for (String msg = messageQueue.poll(); msg != null; msg = messageQueue.poll()) {
+            drained.add(msg);
+        }
+        return drained;
+    }
+
     // ─── Static utilities ────────────────────────────────────────────────────
 
     /**
