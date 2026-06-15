@@ -2611,24 +2611,48 @@ class ChatToolWindowContent(
 
     /**
      * Centralised handling of a user Stop. Cancels the turn (agent + in-flight tool calls via
-     * [PromptOrchestrator.stop]), resets the sending state, and clears any queued follow-up
-     * messages so they are not left stuck — the queue is otherwise only drained on a successful
-     * turn completion, so a message queued during a turn that is then stopped would hang forever
-     * (issue #845). Must be called on the EDT.
+     * [PromptOrchestrator.stop]), resets the sending state, restores any queued follow-up
+     * messages back into the input box (the queue is otherwise only drained on a successful
+     * turn completion, so a message queued during a turn that is then stopped would hang
+     * forever — issue #845), and informs the user about any terminal tabs the agent left
+     * running. Must be called on the EDT.
      */
     private fun stopAgent() {
         promptOrchestrator.stop()
         setSendingState(false)
-        clearQueuedMessagesOnStop()
+        restoreQueuedMessagesToInput()
+        notifyLeftoverTerminals()
     }
 
-    /** Removes all queued follow-up messages from the service queue, the recall stack, and the UI. */
-    private fun clearQueuedMessagesOnStop() {
+    /**
+     * Drains all queued follow-up messages from the service queue, the recall stack, and the UI,
+     * then restores their text into the input box (prepended ahead of any current draft) so the
+     * user does not lose what they typed. Restored messages keep their original FIFO order.
+     */
+    private fun restoreQueuedMessagesToInput() {
         val drained = AgentNudgeService.getInstance(project).clearMessageQueue()
         if (drained.isEmpty() && queuedTexts.isEmpty()) return
         drained.forEach { consolePanel.removeQueuedMessageByText(it) }
         queuedTexts.clear()
+        if (drained.isNotEmpty()) {
+            val restored = drained.joinToString("\n\n")
+            val current = promptTextArea.text
+            promptTextArea.text = if (current.isEmpty()) restored else "$restored\n\n$current"
+            promptTextArea.requestFocusInWindow()
+        }
         refreshShortcutHints()
+    }
+
+    /**
+     * Shows an info banner if the agent left terminal tabs open. Stop deliberately does not kill
+     * fire-and-forget `run_in_terminal` commands (they may be long-running tasks the user wants to
+     * keep), so this surfaces a non-intrusive reminder that those terminals are still alive.
+     */
+    private fun notifyLeftoverTerminals() {
+        val openTabs = AgentTabTracker.getInstance(project).countOpenTerminalTabs()
+        if (openTabs <= 0) return
+        val noun = if (openTabs == 1) "terminal tab" else "terminal tabs"
+        statusBanner?.showInfo("$openTabs $noun left running — Stop does not close terminals.")
     }
 
     private fun onForceStopAndSend() {
