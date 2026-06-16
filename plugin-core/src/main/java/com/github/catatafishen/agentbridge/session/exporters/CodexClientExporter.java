@@ -183,7 +183,10 @@ public final class CodexClientExporter {
             }
             case EntryData.ToolCall toolCall -> {
                 String callId = UUID.randomUUID().toString();
-                String toolName = ExportUtils.normalizeToolNameForCodex(toolCall.getTitle());
+                // Use the canonical tool name (not the display title) so the restored rollout
+                // exposes the same agentbridge_<tool> names the model recognizes; titles are
+                // sometimes custom chip/run-config labels that are not valid tool names.
+                String toolName = ExportUtils.normalizeToolNameForCodex(ExportUtils.canonicalToolName(toolCall));
 
                 JsonObject callItem = new JsonObject();
                 callItem.addProperty(F_TYPE, "function_call");

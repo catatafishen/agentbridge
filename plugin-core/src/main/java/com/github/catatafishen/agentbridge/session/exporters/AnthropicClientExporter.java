@@ -36,15 +36,28 @@ public final class AnthropicClientExporter {
     public static void exportToFile(
         @NotNull List<EntryData> entries,
         @NotNull Path targetPath) throws IOException {
-        exportToFile(entries, targetPath, 0);
+        exportToFile(entries, targetPath, 0, ExportUtils.CLAUDE_MCP_PREFIX);
     }
 
     public static void exportToFile(
         @NotNull List<EntryData> entries,
         @NotNull Path targetPath,
         int maxTotalChars) throws IOException {
+        exportToFile(entries, targetPath, maxTotalChars, ExportUtils.CLAUDE_MCP_PREFIX);
+    }
 
-        List<AnthropicMessage> anthropicMessages = toAnthropicMessages(entries);
+    /**
+     * @param mcpPrefix the target client's MCP namespace prefix applied to AgentBridge tool
+     *                  names (e.g. {@link ExportUtils#CLAUDE_MCP_PREFIX} for Claude,
+     *                  {@link ExportUtils#ACP_MCP_PREFIX} for generic ACP clients)
+     */
+    public static void exportToFile(
+        @NotNull List<EntryData> entries,
+        @NotNull Path targetPath,
+        int maxTotalChars,
+        @NotNull String mcpPrefix) throws IOException {
+
+        List<AnthropicMessage> anthropicMessages = toAnthropicMessages(entries, mcpPrefix);
 
         trimToSizeBudget(anthropicMessages, maxTotalChars);
 
@@ -62,7 +75,15 @@ public final class AnthropicClientExporter {
     }
 
     static List<AnthropicMessage> toAnthropicMessages(@NotNull List<EntryData> entries) {
-        var builder = new MessageListBuilder();
+        return toAnthropicMessages(entries, ExportUtils.CLAUDE_MCP_PREFIX);
+    }
+
+    /**
+     * @param mcpPrefix the target client's MCP namespace prefix applied to AgentBridge tool
+     *                  names so the restored transcript matches the names the client exposes
+     */
+    static List<AnthropicMessage> toAnthropicMessages(@NotNull List<EntryData> entries, @NotNull String mcpPrefix) {
+        var builder = new MessageListBuilder(mcpPrefix);
         for (EntryData entry : entries) {
             switch (entry) {
                 case EntryData.Prompt prompt -> builder.handlePrompt(prompt);
@@ -153,11 +174,16 @@ public final class AnthropicClientExporter {
      */
     private static class MessageListBuilder {
         final List<AnthropicMessage> messages = new ArrayList<>();
+        final String mcpPrefix;
         List<JsonObject> assistantBlocks = new ArrayList<>();
         List<JsonObject> toolResults = new ArrayList<>();
         boolean seenToolUse = false;
         long currentTimestamp = 0;
         String currentModel = "";
+
+        MessageListBuilder(@NotNull String mcpPrefix) {
+            this.mcpPrefix = mcpPrefix;
+        }
 
         void handlePrompt(@NotNull EntryData.Prompt prompt) {
             flushPending();
@@ -189,7 +215,7 @@ public final class AnthropicClientExporter {
             updateModel(toolCall.getModel());
 
             String toolCallId = UUID.randomUUID().toString();
-            String toolName = ExportUtils.sanitizeToolName(toolCall.getTitle());
+            String toolName = ExportUtils.exportMcpToolName(toolCall, mcpPrefix);
             String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
             String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
 
