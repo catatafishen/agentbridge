@@ -114,3 +114,5 @@ external-debug/
 .agentbridge/*
 # But version-control the hook configs and scripts (project policy)
 !.agentbridge/hooks/
+
+fixtures/dotnet/obj/

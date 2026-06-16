@@ -1388,6 +1388,11 @@ class ChatToolWindowContent(
             showEmptyPromptWarning()
             return
         }
+        // Intercept built-in slash commands locally (e.g. /session-restart, /session-clear)
+        if (rawText.startsWith("/") && executeBuiltInSlashCommand(rawText)) {
+            promptTextArea.text = ""
+            return
+        }
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
         // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
@@ -2680,6 +2685,9 @@ class ChatToolWindowContent(
         val trimmed = prompt.trim()
         if (trimmed.isEmpty()) return
 
+        // Intercept built-in slash commands locally (e.g. /session-restart, /session-clear)
+        if (trimmed.startsWith("/") && executeBuiltInSlashCommand(trimmed)) return
+
         // Intercept Kiro slash commands
         val client = agentManager.getClient()
         if (client is KiroClient && trimmed.startsWith("/")) {
@@ -2753,6 +2761,24 @@ class ChatToolWindowContent(
     fun resetSessionKeepingHistory() {
         resetSessionState()
         updateSessionInfo()
+    }
+
+    /**
+     * Execute a built-in slash command that should be handled locally rather than sent to the agent.
+     * @return true if the command was handled (caller should return early)
+     */
+    private fun executeBuiltInSlashCommand(command: String): Boolean {
+        return when {
+            command.equals("/session-restart", ignoreCase = true) -> {
+                resetSessionKeepingHistory()
+                true
+            }
+            command.equals("/session-clear", ignoreCase = true) -> {
+                resetSession()
+                true
+            }
+            else -> false
+        }
     }
 
     private fun notifyIfUnfocused(toolCallCount: Int) {
