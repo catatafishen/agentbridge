@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.client.SlashCommandInfo
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -59,31 +60,42 @@ class PromptEditorSetupTest {
     @Nested
     inner class FilterSlashCommandsTest {
 
-        private val commands = listOf("/help", "/new", "/history", "/clear")
+        private val commands = listOf(
+            SlashCommandInfo("/help", "Show available commands"),
+            SlashCommandInfo("/new", "Start a new conversation"),
+            SlashCommandInfo("/history", "Show conversation history"),
+            SlashCommandInfo("/clear", "Clear the chat")
+        )
 
         @Test
         fun `matches prefix case-insensitive`() {
-            assertEquals(listOf("/help", "/history"), PromptEditorLogic.filterSlashCommands("/h", commands))
+            assertEquals(
+                listOf(SlashCommandInfo("/help", "Show available commands"), SlashCommandInfo("/history", "Show conversation history")),
+                PromptEditorLogic.filterSlashCommands("/h", commands)
+            )
         }
 
         @Test
         fun `exact match returns command`() {
-            assertEquals(listOf("/help"), PromptEditorLogic.filterSlashCommands("/help", commands))
+            assertEquals(
+                listOf(SlashCommandInfo("/help", "Show available commands")),
+                PromptEditorLogic.filterSlashCommands("/help", commands)
+            )
         }
 
         @Test
         fun `no slash prefix returns empty`() {
-            assertEquals(emptyList<String>(), PromptEditorLogic.filterSlashCommands("help", commands))
+            assertEquals(emptyList<SlashCommandInfo>(), PromptEditorLogic.filterSlashCommands("help", commands))
         }
 
         @Test
         fun `contains newline returns empty`() {
-            assertEquals(emptyList<String>(), PromptEditorLogic.filterSlashCommands("/h\nsomething", commands))
+            assertEquals(emptyList<SlashCommandInfo>(), PromptEditorLogic.filterSlashCommands("/h\nsomething", commands))
         }
 
         @Test
         fun `no matches returns empty`() {
-            assertEquals(emptyList<String>(), PromptEditorLogic.filterSlashCommands("/xyz", commands))
+            assertEquals(emptyList<SlashCommandInfo>(), PromptEditorLogic.filterSlashCommands("/xyz", commands))
         }
 
         @Test
@@ -93,7 +105,7 @@ class PromptEditorSetupTest {
 
         @Test
         fun `empty command list returns empty`() {
-            assertEquals(emptyList<String>(), PromptEditorLogic.filterSlashCommands("/h", emptyList()))
+            assertEquals(emptyList<SlashCommandInfo>(), PromptEditorLogic.filterSlashCommands("/h", emptyList()))
         }
     }
 
