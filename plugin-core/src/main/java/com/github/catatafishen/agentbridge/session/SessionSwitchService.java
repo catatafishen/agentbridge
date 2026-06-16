@@ -317,8 +317,11 @@ public final class SessionSwitchService implements Disposable {
                 buildAcpSessionJson(newSessionId, basePath, System.currentTimeMillis()),
                 StandardCharsets.UTF_8);
 
-            // Write messages.jsonl via AnthropicMessageExporter
-            AnthropicClientExporter.exportToFile(entries, sessionDir.resolve("messages.jsonl"), maxTotalChars);
+            // Write messages.jsonl via AnthropicMessageExporter. Generic ACP clients (Junie)
+            // namespace AgentBridge tools as agentbridge-<tool>, so restored tool_use names
+            // must carry that prefix or the model emits bare names the client rejects.
+            AnthropicClientExporter.exportToFile(
+                entries, sessionDir.resolve("messages.jsonl"), maxTotalChars, ExportUtils.ACP_MCP_PREFIX);
 
             // Set resumeSessionId so AcpClient sends it on the next session/new
             new GenericSettings(toProfileId, project).setResumeSessionId(newSessionId);

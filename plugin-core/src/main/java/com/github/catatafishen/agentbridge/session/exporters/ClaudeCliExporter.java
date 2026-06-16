@@ -70,7 +70,8 @@ public final class ClaudeCliExporter {
         @NotNull String sessionId,
         @NotNull String cwd) throws IOException {
 
-        List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(entries);
+        List<AnthropicMessage> anthropicMessages =
+            AnthropicClientExporter.toAnthropicMessages(entries, ExportUtils.CLAUDE_MCP_PREFIX);
         int originalCount = anthropicMessages.size();
         AnthropicClientExporter.trimToSizeBudget(anthropicMessages, MAX_EXPORT_CHARS);
         if (anthropicMessages.size() < originalCount) {

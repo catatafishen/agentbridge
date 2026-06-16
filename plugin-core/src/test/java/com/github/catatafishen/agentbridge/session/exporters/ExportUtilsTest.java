@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.session.exporters;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -225,5 +226,77 @@ class ExportUtilsTest {
         // Only the first prefix is stripped
         assertEquals("agentbridge_agentbridge-read_file",
             ExportUtils.normalizeToolNameForCodex("agentbridge-agentbridge-read_file"));
+    }
+
+    // ── canonicalToolName ─────────────────────────────────────────────────────
+
+    @Test
+    void canonicalPrefersPluginToolOverTitle() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setPluginTool("read_file");
+        assertEquals("read_file", ExportUtils.canonicalToolName(tc));
+    }
+
+    @Test
+    void canonicalStripsKnownPrefixFromPluginTool() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setPluginTool("agentbridge-read_file");
+        assertEquals("read_file", ExportUtils.canonicalToolName(tc));
+    }
+
+    @Test
+    void canonicalFallsBackToAcpName() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setAcpName("read_file");
+        assertEquals("read_file", ExportUtils.canonicalToolName(tc));
+    }
+
+    @Test
+    void canonicalFallsBackToStrippedTitle() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("mcp__agentbridge__read_file");
+        assertEquals("read_file", ExportUtils.canonicalToolName(tc));
+    }
+
+    // ── isAgentBridgeTool ─────────────────────────────────────────────────────
+
+    @Test
+    void isAgentBridgeTrueWhenPluginToolSet() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setPluginTool("read_file");
+        assertTrue(ExportUtils.isAgentBridgeTool(tc));
+    }
+
+    @Test
+    void isAgentBridgeTrueForKnownPrefixTitle() {
+        assertTrue(ExportUtils.isAgentBridgeTool(new EntryData.ToolCall("@agentbridge/read_file")));
+    }
+
+    @Test
+    void isAgentBridgeFalseForNativeTool() {
+        assertFalse(ExportUtils.isAgentBridgeTool(new EntryData.ToolCall("Bash")));
+    }
+
+    // ── exportMcpToolName ─────────────────────────────────────────────────────
+
+    @Test
+    void exportPrefixesAgentBridgeToolWithClaudePrefix() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setPluginTool("read_file");
+        assertEquals("mcp__agentbridge__read_file",
+            ExportUtils.exportMcpToolName(tc, ExportUtils.CLAUDE_MCP_PREFIX));
+    }
+
+    @Test
+    void exportReprefixesToolRecordedUnderAnotherClient() {
+        // A tool recorded under Copilot's dash prefix is re-namespaced for Claude.
+        EntryData.ToolCall tc = new EntryData.ToolCall("agentbridge-read_file");
+        assertEquals("mcp__agentbridge__read_file",
+            ExportUtils.exportMcpToolName(tc, ExportUtils.CLAUDE_MCP_PREFIX));
+    }
+
+    @Test
+    void exportLeavesNativeToolUnprefixed() {
+        assertEquals("Bash",
+            ExportUtils.exportMcpToolName(new EntryData.ToolCall("Bash"), ExportUtils.CLAUDE_MCP_PREFIX));
     }
 }

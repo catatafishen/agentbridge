@@ -70,7 +70,7 @@ class AnthropicClientExporterTest {
         assertEquals(3, messages.size());
 
         assertEquals("assistant", messages.get(1).role());
-        JsonObject toolUse = messages.get(1).contentBlocks().get(0);
+        JsonObject toolUse = messages.get(1).contentBlocks().getFirst();
         assertEquals("tool_use", toolUse.get("type").getAsString());
         assertTrue(toolUse.has("id"), "tool_use block must have an id");
         assertEquals("read_file", toolUse.get("name").getAsString());
@@ -85,17 +85,61 @@ class AnthropicClientExporterTest {
     // ── 5. toolCallSanitizesToolName ─────────────────────────────────────────
 
     @Test
-    void toolCallSanitizesToolName() {
-        // The exporter must pipe the title through ExportUtils.sanitizeToolName
+    void toolCallPrefixesAgentBridgeToolForClaude() {
+        // An AgentBridge MCP tool (title carries a known prefix) must be re-namespaced with the
+        // Claude prefix so the restored transcript matches the names Claude Code exposes.
         EntryData.ToolCall tc = new EntryData.ToolCall("agentbridge-read_file");
 
         List<AnthropicMessage> messages = AnthropicClientExporter.toAnthropicMessages(
             List.of(new EntryData.Prompt("go"), tc));
 
-        JsonObject toolUse = messages.get(1).contentBlocks().get(0);
-        String expected = ExportUtils.sanitizeToolName("agentbridge-read_file");
-        assertEquals(expected, toolUse.get("name").getAsString(),
-            "Tool name in tool_use block must match ExportUtils.sanitizeToolName output");
+        JsonObject toolUse = messages.get(1).contentBlocks().getFirst();
+        assertEquals("mcp__agentbridge__read_file", toolUse.get("name").getAsString(),
+            "AgentBridge tool must export as mcp__agentbridge__<canonical> for Claude");
+    }
+
+    @Test
+    void toolCallUsesCanonicalNameNotDisplayTitle() {
+        // Regression: the exporter must use the recorded tool NAME (pluginTool), not the
+        // human-readable display title. Exporting the title primed the model to emit invalid
+        // names that Claude Code rejected with "No such tool available".
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setPluginTool("read_file");
+
+        List<AnthropicMessage> messages = AnthropicClientExporter.toAnthropicMessages(
+            List.of(new EntryData.Prompt("go"), tc));
+
+        JsonObject toolUse = messages.get(1).contentBlocks().getFirst();
+        assertEquals("mcp__agentbridge__read_file", toolUse.get("name").getAsString(),
+            "Exported name must derive from pluginTool, not the display title 'Read File'");
+    }
+
+    @Test
+    void toolCallAppliesExplicitAcpPrefix() {
+        // Generic ACP clients (Junie) namespace AgentBridge tools as agentbridge-<tool>.
+        EntryData.ToolCall tc = new EntryData.ToolCall("Read File");
+        tc.setPluginTool("read_file");
+
+        List<AnthropicMessage> messages = AnthropicClientExporter.toAnthropicMessages(
+            List.of(new EntryData.Prompt("go"), tc), ExportUtils.ACP_MCP_PREFIX);
+
+        JsonObject toolUse = messages.get(1).contentBlocks().getFirst();
+        assertEquals("agentbridge-read_file", toolUse.get("name").getAsString(),
+            "Explicit ACP prefix must namespace the tool as agentbridge-<canonical>");
+    }
+
+    @Test
+    void toolCallLeavesNativeToolUnprefixed() {
+        // A native tool of the source agent (no pluginTool, no MCP-prefixed title) must NOT
+        // be re-namespaced — the target agent exposes it under its own native name.
+        EntryData.ToolCall tc = new EntryData.ToolCall("Bash");
+
+        List<AnthropicMessage> messages = AnthropicClientExporter.toAnthropicMessages(
+            List.of(new EntryData.Prompt("go"), tc));
+
+        JsonObject toolUse = messages.get(1).contentBlocks().getFirst();
+        assertEquals("Bash", toolUse.get("name").getAsString(),
+            "Native tools must not receive the AgentBridge MCP prefix");
     }
 
     // ── 6. toolCallParsesJsonArguments ───────────────────────────────────────
