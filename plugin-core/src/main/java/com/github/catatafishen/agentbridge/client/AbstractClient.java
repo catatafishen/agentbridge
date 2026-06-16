@@ -179,6 +179,15 @@ public abstract class AbstractClient {
         return List.of();
     }
 
+    /**
+     * Available slash commands with descriptions (populated from session/new and available_commands_update).
+     * Returns command info objects with name and optional description for display in the autocomplete popup.
+     * Override in subclasses that preserve descriptions from the wire protocol.
+     */
+    public List<SlashCommandInfo> getAvailableCommandDetails() {
+        return List.of();
+    }
+
     // ─── Agents (custom agent definitions, e.g. intellij-default/intellij-explore) ──
 
     /**

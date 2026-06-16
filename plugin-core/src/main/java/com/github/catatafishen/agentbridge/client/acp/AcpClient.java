@@ -13,6 +13,7 @@ import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientPromptException;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.client.ClientStartException;
+import com.github.catatafishen.agentbridge.client.SlashCommandInfo;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
@@ -144,6 +145,7 @@ public abstract class AcpClient extends AbstractClient {
     private final List<Model> availableModels = new ArrayList<>();
     private final List<AbstractClient.AgentMode> availableModes = new ArrayList<>();
     private final List<String> availableCommandNames = new ArrayList<>();
+    private final List<NewSessionResponse.AvailableCommand> availableCommandDetails = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
@@ -616,9 +618,11 @@ public abstract class AcpClient extends AbstractClient {
 
     private void updateCommands(List<NewSessionResponse.AvailableCommand> commands) {
         List<String> names = new ArrayList<>();
+        availableCommandDetails.clear();
         for (NewSessionResponse.AvailableCommand cmd : commands) {
             if (cmd.name() != null && !cmd.name().isBlank()) {
                 names.add(cmd.name());
+                availableCommandDetails.add(cmd);
             }
         }
         updateCommandNames(names);
@@ -1104,6 +1108,19 @@ public abstract class AcpClient extends AbstractClient {
     public final List<String> getAvailableCommands() {
         // Defensive snapshot — see getAvailableModels() for rationale.
         return List.copyOf(availableCommandNames);
+    }
+
+    @Override
+    public List<SlashCommandInfo> getAvailableCommandDetails() {
+        List<SlashCommandInfo> result = new ArrayList<>();
+        for (NewSessionResponse.AvailableCommand cmd : availableCommandDetails) {
+            String name = cmd.name();
+            if (name == null || name.isBlank()) continue;
+            if (!name.startsWith("/")) name = "/" + name;
+            String desc = cmd.description();
+            result.add(new SlashCommandInfo(name, desc != null ? desc : ""));
+        }
+        return result;
     }
 
     @Override

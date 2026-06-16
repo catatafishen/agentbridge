@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.client.SlashCommandInfo
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentNudgeService
 import com.intellij.icons.AllIcons
@@ -9,10 +10,16 @@ import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.EditorTextField
+import com.intellij.ui.components.JBList
+import java.awt.Component
+import java.awt.Dimension
 import java.awt.Image
 import java.awt.KeyboardFocusManager
 import java.awt.Toolkit
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
 import javax.swing.JComponent
+import javax.swing.JList
 import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.SwingUtilities
@@ -122,10 +129,14 @@ internal class PromptEditorSetup(
     fun checkSlashCommandAutocomplete() {
         // Use non-blocking accessor — must never trigger lazy client startup on EDT
         val client = agentManager.getClientIfReady() ?: return
-        val commandNames = client.availableCommands
-        if (commandNames.isEmpty()) return
+        val commands = mutableListOf(
+            SlashCommandInfo("/session-restart", "Restart the current session (keep history)"),
+            SlashCommandInfo("/session-clear", "Clear the current session and start fresh")
+        )
+        commands.addAll(client.availableCommandDetails)
+        if (commands.isEmpty()) return
 
-        val matches = PromptEditorLogic.filterSlashCommands(promptTextArea.text, commandNames)
+        val matches = PromptEditorLogic.filterSlashCommands(promptTextArea.text, commands)
 
         if (matches.isEmpty()) {
             autocompletePopup?.cancel()
@@ -135,16 +146,72 @@ internal class PromptEditorSetup(
         showAutocompletePopup(matches)
     }
 
-    private fun showAutocompletePopup(commands: List<String>) {
+    private fun showAutocompletePopup(commands: List<SlashCommandInfo>) {
         autocompletePopup?.cancel()
 
-        autocompletePopup = JBPopupFactory.getInstance()
-            .createPopupChooserBuilder(commands)
-            .setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
-            .setItemChosenCallback { selected -> promptTextArea.text = selected.toString() }
+        val list = object : JBList<SlashCommandInfo>(commands) {
+            override fun getPreferredSize(): Dimension {
+                val size = super.getPreferredSize()
+                val maxWidth = (promptTextArea.width * 0.9).toInt().coerceAtLeast(300)
+                return Dimension(size.width.coerceAtMost(maxWidth), size.height)
+            }
+        }.apply {
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            cellRenderer = object : javax.swing.DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(
+                    list: JList<*>?,
+                    value: Any?,
+                    index: Int,
+                    isSelected: Boolean,
+                    cellHasFocus: Boolean
+                ): Component {
+                    val cmd = value as? SlashCommandInfo ?: return this
+                    val display = if (cmd.description.isNotEmpty()) {
+                        "${cmd.name}  —  ${cmd.description}"
+                    } else cmd.name
+                    super.getListCellRendererComponent(list, display, index, isSelected, cellHasFocus)
+                    return this
+                }
+            }
+            addKeyListener(object : KeyAdapter() {
+                override fun keyPressed(e: KeyEvent) {
+                    if (e.keyCode != KeyEvent.VK_BACK_SPACE) return
+                    autocompletePopup?.cancel()
+                    autocompletePopup = null
+                    val editor = promptTextArea.editor ?: return
+                    val caret = editor.caretModel.offset
+                    // Find the last non-slash character and delete the slash prefix
+                    val text = editor.document.text
+                    val slashIdx = text.lastIndexOf('/', (caret - 1).coerceAtMost(text.length - 1))
+                    if (slashIdx >= 0) {
+                        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                            editor.document.deleteString(slashIdx, slashIdx + 1)
+                            editor.caretModel.moveToOffset(slashIdx.coerceAtMost(editor.document.textLength))
+                        }
+                    }
+                }
+            })
+        }
+
+        val popup = JBPopupFactory.getInstance()
+            .createComponentPopupBuilder(list, list)
+            .setTitle("Commands")
+            .setResizable(false)
+            .setMovable(false)
+            .setCancelOnClickOutside(true)
+            .setCancelKeyEnabled(true)
             .createPopup()
 
-        autocompletePopup?.showInBestPositionFor(promptTextArea.editor ?: return)
+        list.addListSelectionListener { e ->
+            if (!e.valueIsAdjusting) {
+                val selected = list.selectedValue ?: return@addListSelectionListener
+                popup.cancel()
+                promptTextArea.text = selected.name
+            }
+        }
+
+        autocompletePopup = popup
+        popup.showInBestPositionFor(promptTextArea.editor ?: return)
     }
 
     private fun registerEnterSend(contentComponent: JComponent) {
