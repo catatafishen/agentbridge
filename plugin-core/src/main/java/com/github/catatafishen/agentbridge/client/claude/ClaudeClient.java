@@ -163,6 +163,15 @@ public final class ClaudeClient extends AbstractClaudeClient {
      */
     private final List<String> availableSlashCommands = new CopyOnWriteArrayList<>();
 
+    /**
+     * The plugin session ID of the active Claude conversation, or {@code null} when none is
+     * active. Returned by {@link #getActiveSessionId()} so {@code PromptOrchestrator.stop()}
+     * can locate the running turn and cancel it. Without this, the inherited default returned
+     * {@code null} and Stop never reached {@link #cancelSession(String)} — the turn ran to
+     * completion and the Stop button was a no-op for Claude CLI.
+     */
+    private volatile String currentSessionId;
+
     private String resolvedBinaryPath;
 
     public ClaudeClient(@NotNull AgentProfile profile,
@@ -212,6 +221,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
     @Override
     public void stop() {
         started = false;
+        currentSessionId = null;
         activeProcesses.values().forEach(Process::destroyForcibly);
         activeProcesses.clear();
         cliSessionIds.clear();
@@ -263,15 +273,35 @@ public final class ClaudeClient extends AbstractClaudeClient {
         }
 
         LOG.info("Created ClaudeCLI session: " + sessionId);
+        currentSessionId = sessionId;
         return sessionId;
+    }
+
+    @Override
+    public @Nullable String getActiveSessionId() {
+        return currentSessionId;
+    }
+
+    @Override
+    public void dropCurrentSession() {
+        currentSessionId = null;
     }
 
     @Override
     public void cancelSession(@NotNull String sessionId) {
         AtomicBoolean flag = sessionCancelled.get(sessionId);
         if (flag != null) flag.set(true);
-        Process proc = activeProcesses.remove(sessionId);
-        if (proc != null) proc.destroyForcibly();
+        // Forcibly terminate every live subprocess, not just the one for `sessionId`. The
+        // Claude CLI drives a single conversation, so any additional live process is an
+        // orphaned turn (e.g., one dispatched concurrently before Stop was pressed). Killing
+        // all of them guarantees Stop halts the agent — guarding the bug where a second
+        // `claude` process kept running to end_turn after the user pressed Stop.
+        activeProcesses.forEach((id, proc) -> {
+            AtomicBoolean f = sessionCancelled.get(id);
+            if (f != null) f.set(true);
+            if (proc != null) proc.destroyForcibly();
+        });
+        activeProcesses.clear();
     }
 
     // ── Session options ──────────────────────────────────────────────────────
