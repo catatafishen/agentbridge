@@ -163,15 +163,6 @@ public final class ClaudeClient extends AbstractClaudeClient {
      */
     private final List<String> availableSlashCommands = new CopyOnWriteArrayList<>();
 
-    /**
-     * The plugin session ID of the active Claude conversation, or {@code null} when none is
-     * active. Returned by {@link #getActiveSessionId()} so {@code PromptOrchestrator.stop()}
-     * can locate the running turn and cancel it. Without this, the inherited default returned
-     * {@code null} and Stop never reached {@link #cancelSession(String)} — the turn ran to
-     * completion and the Stop button was a no-op for Claude CLI.
-     */
-    private volatile String currentSessionId;
-
     private String resolvedBinaryPath;
 
     public ClaudeClient(@NotNull AgentProfile profile,
@@ -221,7 +212,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
     @Override
     public void stop() {
         started = false;
-        currentSessionId = null;
+        setCurrentSession(null);
         activeProcesses.values().forEach(Process::destroyForcibly);
         activeProcesses.clear();
         cliSessionIds.clear();
@@ -273,18 +264,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
         }
 
         LOG.info("Created ClaudeCLI session: " + sessionId);
-        currentSessionId = sessionId;
+        setCurrentSession(sessionId);
         return sessionId;
-    }
-
-    @Override
-    public @Nullable String getActiveSessionId() {
-        return currentSessionId;
-    }
-
-    @Override
-    public void dropCurrentSession() {
-        currentSessionId = null;
     }
 
     @Override
