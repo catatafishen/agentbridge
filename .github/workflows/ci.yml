@@ -87,7 +87,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60  # v6.1.1
         with:
           gradle-version: 'wrapper'
           cache-disabled: true
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload MCP server coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           files: mcp-server/build/reports/jacoco/test/jacocoTestReport.xml
           flags: mcp-server
@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload plugin-experimental coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           files: plugin-experimental/build/reports/jacoco/test/jacocoTestReport.xml
           flags: plugin-experimental
@@ -162,7 +162,7 @@ jobs:
         working-directory: plugin-core/js-tests
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60  # v6.1.1
         with:
           gradle-version: 'wrapper'
           cache-disabled: true
@@ -183,7 +183,7 @@ jobs:
 
       - name: Upload chat-ui coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           files: plugin-core/js-tests/coverage/lcov.info
           flags: chat-ui
@@ -194,7 +194,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           files: plugin-core/build/reports/jacoco/test/jacocoTestReport.xml
           flags: plugin-core
