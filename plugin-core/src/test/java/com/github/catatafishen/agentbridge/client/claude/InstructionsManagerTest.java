@@ -221,10 +221,13 @@ class InstructionsManagerTest {
                 "instructions must not use the Claude-prefixed tool name 'mcp__agentbridge__" + tool + "'");
         }
 
-        // The bare names must still be present so the agent knows which tool to call.
-        assertTrue(content.contains("`read_file`"), "bare tool name read_file must be present");
+        // At least some bare tool names must still be present, so the agent knows which tool to
+        // call (and so the prefix check above is not vacuous). The startup instructions were
+        // slimmed to rely on native tool filtering, so only the tools the guidance still mentions
+        // are asserted here — not every tool in the prefix list above.
         assertTrue(content.contains("`run_command`"), "bare tool name run_command must be present");
-        assertTrue(content.contains("`git_status`"), "bare tool name git_status must be present");
+        assertTrue(content.contains("`create_scratch_file`"), "bare tool name create_scratch_file must be present");
+        assertTrue(content.contains("`build_project`"), "bare tool name build_project must be present");
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
