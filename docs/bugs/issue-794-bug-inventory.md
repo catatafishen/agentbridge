@@ -3,7 +3,7 @@
 **Reporter**: @vs49688  
 **Environment**: CLion 2026.1.1 (Nova C++ engine), CMake project (vsclib), Linux/NixOS  
 **Issue opened**: 2026-06-02  
-**Last updated**: 2026-06-11 (PR #837 updated with function detection and cognitive complexity fix)
+**Last updated**: 2026-06-17 (`get_symbol_info` fixed and verified live against CLion Nova)
 
 ---
 
@@ -126,7 +126,25 @@ expected-PASS.
 **Fix attempted**: PR #796 — same fix as above.  
 **Fix attempted (Jun 6)**: PR #814 — same fixes as bug #1; `get_symbol_info` shares the same
 PSI-classification path so the language-agnostic classifier should benefit both.  
-**Current status**: ❓ **Needs reporter re-verification once PR #814 ships.**
+**Root cause confirmed (Jun 17)**: PR #814's classifier fix never helped here — `get_symbol_info`
+doesn't call `ToolUtils.classifyElement` at all. Its own `findNamedAncestor` walks PSI ancestors
+looking for a `PsiNamedElement`, the exact same root cause as the original `get_file_outline` /
+`search_symbols` bugs (#1 / #1b): CLion Nova's lazy C++ parser produces no `PsiNamedElement` for
+declarations. Reproduced live against a real CLion Nova instance (doxygen's `src/anchor.h:25`,
+`class AnchorGenerator`) — confirmed broken before the fix below.  
+**Fix applied (Jun 17)**: Added `NavigationTool.findEnclosingCppDeclaration` — walks up from the
+element at the requested offset looking for the same CLion Nova node shapes `get_file_outline` /
+`search_symbols` already recognize (a type declaration's single CppKeyword-wrapped node; a
+function's `DUMMY_NODE`+sibling-`DUMMY_BLOCK` pair; and, mirroring `visitNestedDeclaration`, the
+flat `DUMMY_NODE` token-stream form used for declarations nested inside a namespace body).
+`GetSymbolInfoTool` falls back to it when the ordinary `PsiNamedElement` walk finds nothing.
+Verified live against a real CLion Nova instance: `class`/`struct`/`enum`/`namespace` at both file
+top level (doxygen `src/anchor.h`) and namespace-nested (this repo's `fixtures/cpp-cmake/classdef.h`
+— `vsc::Widget`, `vsc::Point`, `vsc::Colour`, and the `vsc` namespace itself) and a free function
+(doxygen `src/util.cpp:161`) all now resolve correctly. IntelliJ Java unaffected (still resolves via
+the original `PsiNamedElement` walk).  
+**Current status**: ✅ **Fixed and verified live in CLion Nova.** Added to the IDE compatibility
+bench as `GetSymbolInfoIntegrationTest` (`get_symbol_info` × {IU, CL}).
 
 ---
 
@@ -509,7 +527,7 @@ being misidentified.
 |----|------------------------------------------------------------|---------------------|----------------------------------------------------------------------------------|
 | 1  | `get_file_outline` empty in CLion Nova                     | ✅ Fixed             | PR #837 — PSI node-type walk fallback (classes, structs, functions)              |
 | 1b | `search_symbols` wildcard empty in CLion Nova              | ✅ Fixed             | PR #838 — `walkCppSymbolsByNodeType` fallback in `collectSymbolsFromFile`        |
-| 2  | `get_symbol_info` broken                                   | ❓ Needs re-verify   | PR #814 (merged) — shares classifier path with #1                                |
+| 2  | `get_symbol_info` broken                                   | ✅ Fixed             | `NavigationTool.findEnclosingCppDeclaration` node-type-walk fallback (Jun 17)    |
 | 3  | `go_to_declaration` broken                                 | ❓ Needs re-verify   | PR #815 (merged) — findReferenceAt + TargetElementUtil                           |
 | 4  | `get_call_hierarchy` broken                                | ❓ Needs re-verify   | PR #816 (merged) — reference fallback, same shape as #3                          |
 | 5  | `find_implementations` broken                              | ❓ Needs re-verify   | PR #817 (merged) — shared `ToolUtils.resolveNamedElement`, same shape as #3/#4   |

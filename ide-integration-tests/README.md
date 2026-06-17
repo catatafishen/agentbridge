@@ -22,7 +22,7 @@ bug reporter) hits.
    server automatically when the IDE opens — no UI interaction.
 
    | IDE  | Product               | Fixture            | Language |
-      |------|-----------------------|--------------------|----------|
+         |------|-----------------------|--------------------|----------|
    | `IU` | IntelliJ IDEA Ultimate | `fixtures/java-app` | Java     |
    | `CL` | CLion (Nova/Radler)   | `fixtures/cpp-cmake` | C++      |
    | `RD` | Rider (ReSharper)     | `fixtures/dotnet`   | C#       |
@@ -44,6 +44,8 @@ real backend answers the tool call:
 - `GetHighlightsIntegrationTest` — `get_highlights` returns a non-error response on the open file.
 - `GetFileOutlineIntegrationTest` — `get_file_outline` returns the namespaced C++ symbols
   (CLion only for now; skips on IU/RD, which render as ❓ in the matrix).
+- `GetSymbolInfoIntegrationTest` — `get_symbol_info` resolves the `Widget` class declaration
+  (IU/CL only for now; skips on RD, which renders as ❓ in the matrix).
 
 A failed assertion ⇒ ❌ cell (a real backend gap, e.g. the CLion Nova / Rider blind spots in
 issue #794). A skipped test ⇒ ❓ (not implemented for that IDE yet).

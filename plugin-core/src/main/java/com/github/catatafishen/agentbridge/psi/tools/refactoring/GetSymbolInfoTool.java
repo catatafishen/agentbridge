@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.navigation.NavigationTool;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
@@ -107,13 +108,21 @@ public final class GetSymbolInfoTool extends RefactoringTool {
 
                 PsiElement element = psiFile.findElementAt(offset);
                 PsiNamedElement named = findNamedAncestor(element);
-                if (named == null) {
-                    int snippetEnd = Math.min(lineEnd, lineStart + 120);
-                    String snippet = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, snippetEnd)).trim();
-                    return "No named symbol found at " + filePath + ":" + line + ". Line content: " + snippet;
+                if (named != null) {
+                    return describeElement(named.getName(), named.getClass().getSimpleName(), named);
                 }
 
-                return describeElement(named);
+                // CLion Nova's lazy C++ parser produces no PsiNamedElement for declarations, so
+                // the walk above finds nothing for C/C++ files. Fall back to the node-type-based
+                // lookup shared with get_file_outline / search_symbols (issue #794).
+                NavigationTool.CppDeclaration cppDecl = NavigationTool.findEnclosingCppDeclaration(element);
+                if (cppDecl != null) {
+                    return describeElement(cppDecl.name(), cppDecl.kind(), cppDecl.node());
+                }
+
+                int snippetEnd = Math.min(lineEnd, lineStart + 120);
+                String snippet = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, snippetEnd)).trim();
+                return "No named symbol found at " + filePath + ":" + line + ". Line content: " + snippet;
             } catch (Exception e) {
                 LOG.warn("get_symbol_info error", e);
                 return "Error: " + e.getMessage();
@@ -142,10 +151,10 @@ public final class GetSymbolInfoTool extends RefactoringTool {
         return null;
     }
 
-    private String describeElement(@NotNull PsiNamedElement element) {
+    private String describeElement(@NotNull String name, @NotNull String type, @NotNull PsiElement element) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Symbol: ").append(element.getName()).append('\n');
-        sb.append("Type: ").append(element.getClass().getSimpleName()).append('\n');
+        sb.append("Symbol: ").append(name).append('\n');
+        sb.append("Type: ").append(type).append('\n');
 
         // Location (file + line)
         var containingFile = element.getContainingFile();
