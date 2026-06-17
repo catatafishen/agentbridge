@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.navigation;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.cpp.CppNovaPsiSupport;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.ide.structureView.StructureViewBuilder;
@@ -35,11 +36,6 @@ import java.util.List;
  * and helpers for symbol search and code exploration.
  */
 public abstract class NavigationTool extends Tool {
-
-    private static final String NAMESPACE_KEYWORD_TYPE = "CppKeyword:NAMESPACE_CPP_KEYWORD";
-    private static final String DUMMY_BLOCK = "DUMMY_BLOCK";
-    private static final String DUMMY_NODE = "DUMMY_NODE";
-    private static final String KIND_NAMESPACE = "namespace";
 
     protected static final String ERROR_NO_PROJECT_PATH = "No project base path";
     protected static final String PARAM_SYMBOL = "symbol";
@@ -421,349 +417,16 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
-     * Node-type walk for CLion Nova C/C++ files.
-     * <p>
-     * CLion Nova's lazy parser produces no {@link PsiNamedElement} instances for C++. It uses two
-     * distinct structures for top-level declarations:
-     * <ul>
-     *   <li><b>Type declarations</b> (class/struct/enum/union) — a single
-     *       {@code ASTWrapperPsiElement/CppKeyword:*_KEYWORD} node that wraps a
-     *       {@code DUMMY_NODE} (name) child and a {@code DUMMY_BLOCK} (body) child.
-     *       Elements without a DUMMY_BLOCK child are forward declarations and are skipped.</li>
-     *   <li><b>Function definitions</b> — the signature and body appear as consecutive siblings
-     *       at the file level: a {@code CppDummyNodeImpl/DUMMY_NODE} (signature only) immediately
-     *       followed by a {@code CppDummyBlockImpl/DUMMY_BLOCK} (body). Using-aliases and
-     *       forward declarations are also DUMMY_NODE but have no following DUMMY_BLOCK.</li>
-     * </ul>
-     * Template declarations ({@code template<class T> void foo()}) also use CLASS_KEYWORD but
-     * their extracted "name" contains {@code >} — filtered by {@link #isCppIdentifier}.
-     * <p>
-     * Declarations nested inside {@code namespace X { ... }} are also collected by recursing into
-     * namespace bodies (see {@link #walkCppSymbolsIn}); inside a namespace CLion Nova represents
-     * each declaration as a flat {@code DUMMY_NODE} token stream rather than a structured
-     * {@code CppKeyword} node, so a different extraction path applies.
+     * Node-type fallback for CLion Nova C/C++ files, whose lazy parser produces no
+     * {@link PsiNamedElement} declarations. Delegates to {@link CppNovaPsiSupport}, the single
+     * home for CLion Nova C/C++ node-shape knowledge (shared with {@code search_symbols} and
+     * {@code get_symbol_info}).
      */
     private List<String> collectOutlineEntriesByNodeType(PsiFile psiFile, Document document) {
         List<String> outline = new ArrayList<>();
-        walkCppSymbolsByNodeType(psiFile, document,
+        CppNovaPsiSupport.walkSymbols(psiFile, document,
             (kind, name, line) -> outline.add(String.format("  %d: %s %s", line, kind, name)));
         return outline;
-    }
-
-    /**
-     * Walks CLion Nova C/C++ top-level declarations by raw PSI node type and invokes
-     * {@code visitor} for each recognized symbol. Shared by {@link #collectOutlineEntriesByNodeType}
-     * (outline format) and {@link #collectSymbolsFromFile} (symbol-search format).
-     */
-    private void walkCppSymbolsByNodeType(PsiFile psiFile, Document document, CppSymbolVisitor visitor) {
-        walkCppSymbolsIn(significantChildren(psiFile), document, visitor);
-    }
-
-    /**
-     * Recursively walks a list of significant sibling PSI nodes, emitting recognized C/C++ symbols.
-     * Descends into namespace bodies so declarations nested in {@code namespace X { ... }} are
-     * collected, not just direct file children.
-     */
-    private void walkCppSymbolsIn(List<PsiElement> children, Document document, CppSymbolVisitor visitor) {
-        for (int i = 0; i < children.size(); i++) {
-            PsiElement child = children.get(i);
-            String et = child.getNode().getElementType().toString();
-            String kind = cppKeywordKind(et);
-            if (kind != null) {
-                String name = extractTypeDeclarationName(child);
-                if (name != null) {
-                    visitor.visit(kind, name, lineOf(child, document));
-                }
-            } else if (NAMESPACE_KEYWORD_TYPE.equals(et)) {
-                visitNamespace(child, childOfType(child, DUMMY_BLOCK), document, visitor);
-            } else if (DUMMY_NODE.equals(et)) {
-                PsiElement next = (i + 1 < children.size()) ? children.get(i + 1) : null;
-                boolean nextIsBlock = next != null
-                    && DUMMY_BLOCK.equals(next.getNode().getElementType().toString());
-                visitNestedDeclaration(child, nextIsBlock ? next : null, document, visitor);
-            }
-        }
-    }
-
-    /**
-     * Handles a {@code DUMMY_NODE} sibling — the form CLion Nova uses for a declaration nested
-     * inside a namespace body: a flat token stream rather than the structured {@code CppKeyword}
-     * node used at file top level. Emits nested type definitions (class/struct/enum/union),
-     * recurses into nested namespaces, and recognizes free-function definitions. Forward
-     * declarations — a {@code DUMMY_NODE} with no following {@code DUMMY_BLOCK} body — are skipped.
-     *
-     * @param block the following {@code DUMMY_BLOCK} body sibling, or {@code null} if absent
-     */
-    private void visitNestedDeclaration(PsiElement node, PsiElement block,
-                                        Document document, CppSymbolVisitor visitor) {
-        String firstChildType = firstChildElementType(node);
-        if (NAMESPACE_KEYWORD_TYPE.equals(firstChildType)) {
-            visitNamespace(node, block, document, visitor);
-            return;
-        }
-        if (block == null) {
-            return;
-        }
-        String typeKind = cppKeywordKind(firstChildType);
-        if (typeKind != null) {
-            String name = firstIdentifier(node);
-            if (name != null && isCppIdentifier(name)) {
-                visitor.visit(typeKind, name, lineOf(node, document));
-            }
-        } else {
-            String name = extractFunctionName(node.getText());
-            if (name != null) {
-                visitor.visit(ToolUtils.ELEMENT_TYPE_FUNCTION, name, lineOf(node, document));
-            }
-        }
-    }
-
-    /**
-     * Emits a {@code namespace} entry (when a name is present) and recurses into its body so
-     * declarations nested in {@code namespace X { ... }} are collected.
-     *
-     * @param body the namespace's {@code DUMMY_BLOCK}, or {@code null} if absent
-     */
-    private void visitNamespace(PsiElement namespaceNode, PsiElement body,
-                                Document document, CppSymbolVisitor visitor) {
-        String name = extractTypeDeclarationName(namespaceNode);
-        if (name == null) {
-            name = firstIdentifier(namespaceNode);
-        }
-        if (name != null && isCppIdentifier(name)) {
-            visitor.visit(KIND_NAMESPACE, name, lineOf(namespaceNode, document));
-        }
-        if (body != null) {
-            walkCppSymbolsIn(significantChildren(body), document, visitor);
-        }
-    }
-
-    private static int lineOf(PsiElement element, Document document) {
-        return document.getLineNumber(element.getTextOffset()) + 1;
-    }
-
-    /**
-     * Returns the element-type string of the first significant child of {@code node}, or {@code ""}.
-     */
-    private static String firstChildElementType(PsiElement node) {
-        List<PsiElement> kids = significantChildren(node);
-        return kids.isEmpty() ? "" : kids.getFirst().getNode().getElementType().toString();
-    }
-
-    /**
-     * Returns the text of the first {@code IDENTIFIER} child of {@code node}, or {@code null}.
-     */
-    @org.jetbrains.annotations.Nullable
-    private static String firstIdentifier(PsiElement node) {
-        for (PsiElement child : significantChildren(node)) {
-            if ("IDENTIFIER".equals(child.getNode().getElementType().toString())) {
-                return child.getText();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Callback for {@link #walkCppSymbolsByNodeType}.
-     */
-    @FunctionalInterface
-    private interface CppSymbolVisitor {
-        void visit(String kind, String name, int line);
-    }
-
-    /**
-     * A CLion Nova C/C++ declaration (type, function, or namespace) located by
-     * {@link #findEnclosingCppDeclaration}.
-     */
-    public record CppDeclaration(String kind, String name, PsiElement node) {
-    }
-
-    /**
-     * Resolves the CLion Nova C/C++ declaration whose PSI node encloses {@code elementAt}, by
-     * walking up its ancestors looking for the same node shapes {@link #walkCppSymbolsByNodeType}
-     * recognizes (type declarations, function signatures, namespaces).
-     * <p>
-     * Used by {@code GetSymbolInfoTool} as a fallback when the ordinary {@link PsiNamedElement}
-     * ancestor walk finds nothing — CLion Nova's lazy C++ parser produces no
-     * {@code PsiNamedElement} for declarations, the same root cause as the {@code get_file_outline}
-     * / {@code search_symbols} CLion Nova bugs (issue #794). Unlike the node-type walk used for
-     * outline/search (which only enumerates a file's top-level and namespace-nested declarations),
-     * this walks upward from a specific offset, so it also matches a cursor positioned anywhere
-     * inside a type declaration's body (name and body share one CppKeyword-wrapped node) — but not
-     * inside a function body, since a function's DUMMY_BLOCK body is a sibling of its DUMMY_NODE
-     * signature, not a descendant.
-     *
-     * @return the enclosing declaration, or {@code null} if none of the recognized node shapes
-     * encloses {@code elementAt}
-     */
-    @org.jetbrains.annotations.Nullable
-    public static CppDeclaration findEnclosingCppDeclaration(@org.jetbrains.annotations.Nullable PsiElement elementAt) {
-        for (PsiElement current = elementAt; current != null && !(current instanceof PsiFile);
-             current = current.getParent()) {
-            CppDeclaration declaration = classifyCppDeclarationNode(current);
-            if (declaration != null) return declaration;
-        }
-        return null;
-    }
-
-    /**
-     * Classifies a single PSI node as a CLion Nova C/C++ declaration, or returns {@code null} if
-     * {@code node} is not one of the recognized shapes. Split out of
-     * {@link #findEnclosingCppDeclaration} to keep cognitive complexity down.
-     */
-    @org.jetbrains.annotations.Nullable
-    private static CppDeclaration classifyCppDeclarationNode(PsiElement node) {
-        String elementType = node.getNode() != null ? node.getNode().getElementType().toString() : "";
-        String kind = cppKeywordKind(elementType);
-        if (kind != null) {
-            String name = extractTypeDeclarationName(node);
-            return name != null ? new CppDeclaration(kind, name, node) : null;
-        }
-        if (NAMESPACE_KEYWORD_TYPE.equals(elementType)) {
-            String name = extractTypeDeclarationName(node);
-            if (name == null) name = firstIdentifier(node);
-            return (name != null && isCppIdentifier(name)) ? new CppDeclaration(KIND_NAMESPACE, name, node) : null;
-        }
-        if (DUMMY_NODE.equals(elementType)) {
-            return classifyCppDummyNode(node);
-        }
-        return null;
-    }
-
-    /**
-     * Handles the {@code DUMMY_NODE} case for {@link #classifyCppDeclarationNode}. A top-level or
-     * namespace-nested function definition is a {@code DUMMY_NODE} signature immediately followed
-     * by a sibling {@code DUMMY_BLOCK} body. A namespace-nested type declaration or nested
-     * namespace uses the same DUMMY_NODE+DUMMY_BLOCK sibling shape but with a flat token-stream
-     * body instead of the structured {@code CppKeyword} node used at file top level — mirrors
-     * {@link #visitNestedDeclaration}.
-     */
-    @org.jetbrains.annotations.Nullable
-    private static CppDeclaration classifyCppDummyNode(PsiElement node) {
-        PsiElement parent = node.getParent();
-        if (parent == null) return null;
-        List<PsiElement> siblings = significantChildren(parent);
-        int idx = siblings.indexOf(node);
-        PsiElement next = (idx >= 0 && idx + 1 < siblings.size()) ? siblings.get(idx + 1) : null;
-        boolean hasBlock = next != null && DUMMY_BLOCK.equals(next.getNode().getElementType().toString());
-
-        String firstChildType = firstChildElementType(node);
-        if (NAMESPACE_KEYWORD_TYPE.equals(firstChildType)) {
-            String name = firstIdentifier(node);
-            return (name != null && isCppIdentifier(name)) ? new CppDeclaration(KIND_NAMESPACE, name, node) : null;
-        }
-        if (!hasBlock) return null;
-        String typeKind = cppKeywordKind(firstChildType);
-        if (typeKind != null) {
-            String name = firstIdentifier(node);
-            return (name != null && isCppIdentifier(name)) ? new CppDeclaration(typeKind, name, node) : null;
-        }
-        String name = extractFunctionName(node.getText());
-        return name != null ? new CppDeclaration(ToolUtils.ELEMENT_TYPE_FUNCTION, name, node) : null;
-    }
-
-    /**
-     * Returns direct children of {@code parent}, skipping whitespace and comments.
-     */
-    private static List<PsiElement> significantChildren(PsiElement parent) {
-        List<PsiElement> result = new ArrayList<>();
-        for (PsiElement child : parent.getChildren()) {
-            if (!(child instanceof com.intellij.psi.PsiWhiteSpace) && !(child instanceof com.intellij.psi.PsiComment)) {
-                result.add(child);
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Returns the first direct child of {@code parent} whose element type matches {@code elementType},
-     * or {@code null} if none.
-     */
-    @org.jetbrains.annotations.Nullable
-    private static PsiElement childOfType(PsiElement parent, String elementType) {
-        for (PsiElement child : parent.getChildren()) {
-            if (elementType.equals(child.getNode().getElementType().toString())) {
-                return child;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Returns the type declaration name if {@code node} has a DUMMY_NODE name child and a
-     * DUMMY_BLOCK body child (full definition); returns {@code null} for forward declarations.
-     */
-    @org.jetbrains.annotations.Nullable
-    private static String extractTypeDeclarationName(PsiElement node) {
-        String name = null;
-        boolean hasBody = false;
-        for (PsiElement gc : node.getChildren()) {
-            String gcEt = gc.getNode().getElementType().toString();
-            if (DUMMY_NODE.equals(gcEt) && name == null) {
-                name = firstToken(gc.getText().trim());
-            } else if (DUMMY_BLOCK.equals(gcEt)) {
-                hasBody = true;
-            }
-        }
-        return (hasBody && name != null && !name.isEmpty() && isCppIdentifier(name)) ? name : null;
-    }
-
-    /**
-     * Returns the text before the first whitespace character, i.e. the first token.
-     */
-    private static String firstToken(String s) {
-        int ws = indexOfWhitespace(s);
-        return ws > 0 ? s.substring(0, ws) : s;
-    }
-
-    @org.jetbrains.annotations.Nullable
-    private static String extractFunctionName(String text) {
-        int paren = text.indexOf('(');
-        if (paren < 0) return null;
-        // Take text before '(' and find the last identifier token (handles "ReturnType ClassName::method(")
-        String prefix = text.substring(0, paren).trim();
-        int end = prefix.length();
-        int start = end;
-        while (start > 0 && (Character.isLetterOrDigit(prefix.charAt(start - 1))
-            || prefix.charAt(start - 1) == '_'
-            || prefix.charAt(start - 1) == ':')) {
-            start--;
-        }
-        String name = prefix.substring(start, end);
-        if (name.startsWith("::")) name = name.substring(2);
-        if (name.isEmpty() || name.chars().noneMatch(Character::isLetter)) return null;
-        return name;
-    }
-
-    private static int indexOfWhitespace(String s) {
-        for (int i = 0; i < s.length(); i++) {
-            if (Character.isWhitespace(s.charAt(i))) return i;
-        }
-        return -1;
-    }
-
-    private static boolean isCppIdentifier(String s) {
-        if (s.isEmpty()) return false;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (!Character.isLetterOrDigit(c) && c != '_') return false;
-        }
-        return true;
-    }
-
-    /**
-     * Maps a CLion Nova C++ element-type string to a display kind, or returns {@code null} if the
-     * element type does not correspond to a type declaration keyword.
-     */
-    @org.jetbrains.annotations.Nullable
-    private static String cppKeywordKind(String elementType) {
-        return switch (elementType) {
-            case "CppKeyword:CLASS_KEYWORD" -> "class";
-            case "CppKeyword:STRUCT_KEYWORD" -> "struct";
-            case "CppKeyword:UNION_KEYWORD" -> "union";
-            case "CppKeyword:ENUM_KEYWORD" -> "enum";
-            default -> null;
-        };
     }
 
     private static String prefixModifiers(PsiModifierListOwner owner, String label) {
@@ -845,7 +508,7 @@ public abstract class NavigationTool extends Tool {
         // CLion Nova C/C++ fallback: the PsiNamedElement walk above produces nothing for C++
         // declarations. Reuse the same node-type detection used by collectOutlineEntriesByNodeType.
         if (results.size() == sizeBefore) {
-            walkCppSymbolsByNodeType(psiFile, doc, (kind, name, line) -> {
+            CppNovaPsiSupport.walkSymbols(psiFile, doc, (kind, name, line) -> {
                 if (kindMatchesFilter(kind, typeFilter) && seen.add(relPath + ":" + line) && results.size() < 200) {
                     results.add(String.format(FORMAT_LOCATION, relPath, line, kind, name));
                 }

@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
-import com.github.catatafishen.agentbridge.psi.tools.navigation.NavigationTool;
+import com.github.catatafishen.agentbridge.psi.cpp.CppNovaPsiSupport;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
@@ -115,7 +115,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
                 // CLion Nova's lazy C++ parser produces no PsiNamedElement for declarations, so
                 // the walk above finds nothing for C/C++ files. Fall back to the node-type-based
                 // lookup shared with get_file_outline / search_symbols (issue #794).
-                NavigationTool.CppDeclaration cppDecl = NavigationTool.findEnclosingCppDeclaration(element);
+                CppNovaPsiSupport.CppDeclaration cppDecl = CppNovaPsiSupport.findEnclosingDeclaration(element);
                 if (cppDecl != null) {
                     return describeElement(cppDecl.name(), cppDecl.kind(), cppDecl.node());
                 }
