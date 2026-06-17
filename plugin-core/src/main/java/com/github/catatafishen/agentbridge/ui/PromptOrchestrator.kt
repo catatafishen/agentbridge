@@ -153,6 +153,14 @@ class PromptOrchestrator(
         // Clear any stale interrupt flag left by a previous stop() call so it doesn't fire
         // immediately on the first blocking operation in the new turn.
         Thread.interrupted()
+        // Re-open the in-flight registry in case a previous agent's stop() latched it closed via
+        // cancelAll (e.g. when switching clients or sessions). Without this, every tool call in the
+        // new turn would have its worker interrupted immediately, failing even read-only tools.
+        try {
+            InFlightMcpToolRegistry.getInstance(project).reopen()
+        } catch (_: Exception) {
+            // Best-effort
+        }
         currentPromptThread = Thread.currentThread()
         try {
             executePrompt(prompt, contextItems, selectedModelId)

@@ -177,4 +177,26 @@ public final class InFlightMcpToolRegistry {
                 + interrupted + " worker(s) — " + reason);
         }
     }
+
+    /**
+     * Re-opens the registry after a {@link #cancelAll(String)} latch, allowing subsequent
+     * {@link #register} and {@link #registerWorker} calls to proceed normally again.
+     *
+     * <p><b>Why this exists:</b> {@link #cancelAll(String)} latches {@code cancelled=true} when an
+     * agent client stops (see {@code AcpClient.stop}). Because this is a <em>project-level</em>
+     * service shared across all agent clients and sessions, switching clients or sessions — which
+     * stops the outgoing client and therefore fires {@code cancelAll} — would otherwise leave the
+     * latch permanently closed. Every tool call on the new session would then have its worker
+     * interrupted immediately at {@link #registerWorker}, failing even read-only tools with
+     * "Tool execution interrupted" until the IDE is restarted. Calling this at the start of each
+     * new turn clears the latch so the new session's tools run normally.
+     *
+     * <p>Idempotent and safe to call when the registry is already open.
+     */
+    public void reopen() {
+        if (cancelled.compareAndSet(true, false)) {
+            cancelReason = "agent stopped";
+            LOG.info("InFlightMcpToolRegistry: re-opened after a prior cancelAll latch");
+        }
+    }
 }
