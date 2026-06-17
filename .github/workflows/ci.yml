@@ -218,6 +218,17 @@ jobs:
                           print((fail.get('message') or '') + chr(10) + (fail.text or '')[:3000])
           "
 
+      - name: Upload plugin test results
+        # Consumed by the report-test-failures job to post a sticky PR comment.
+        # if: always() so the XML rides along even when the test task fails.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: plugin-core-test-xml
+          path: plugin-core/build/test-results/test/*.xml
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload plugin-core artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -225,6 +236,126 @@ jobs:
           path: plugin-core/build/distributions/*.zip
           if-no-files-found: error
           retention-days: 7
+
+  # Posts (or refreshes) a sticky PR comment naming the failing unit tests, so a red
+  # "Build & Test" run can be triaged from the PR without opening the job log. Mirrors the
+  # IDE Compatibility Matrix report job: isolated pull-requests:write permission, sticky
+  # comment keyed by an HTML marker. Non-gating — the `ci` aggregator does not depend on it.
+  report-test-failures:
+    name: Unit Test Report
+    needs: [ build-and-test ]
+    # Runs whenever the test job actually executed (not when it was skipped on an unrelated
+    # PR), so it can post failures on a red run and clear a stale comment on a green one.
+    if: always() && needs.build-and-test.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Download plugin test results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: plugin-core-test-xml
+          path: test-results/
+        continue-on-error: true
+
+      - name: Summarize unit test failures
+        run: |
+          python3 - << 'PYEOF'
+          import glob, os, xml.etree.ElementTree as ET
+
+          MARKER = '<!-- unit-test-failures -->'
+          xml_files = glob.glob('test-results/**/*.xml', recursive=True)
+
+          failures = []
+          for path in xml_files:
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception:
+                  continue
+              for tc in root.iter('testcase'):
+                  for tag in ('failure', 'error'):
+                      el = tc.find(tag)
+                      if el is None:
+                          continue
+                      name = (tc.get('classname', '') + '.' + tc.get('name', '')).strip('.')
+                      msg = (el.get('message') or '').strip()
+                      if not msg and el.text:
+                          msg = '\n'.join(el.text.strip().splitlines()[:8])
+                      failures.append((name, msg[:1500]))
+
+          # Three states drive the comment step:
+          #   fail   — XML present with failing testcases  -> upsert the comment
+          #   pass   — XML present, zero failing testcases  -> resolve an existing comment
+          #   nodata — no XML at all (e.g. compile error)   -> do nothing
+          if not xml_files:
+              state = 'nodata'
+          elif failures:
+              state = 'fail'
+          else:
+              state = 'pass'
+
+          lines = [MARKER]
+          if state == 'fail':
+              lines.append(f'## \u274c Unit test failures ({len(failures)})')
+              lines.append('')
+              lines.append('`gradle :plugin-core:test` reported failing test(s). '
+                           'Full logs are in the **Build & Test** job.')
+              lines.append('')
+              for name, msg in failures:
+                  body = msg if msg else '(no message)'
+                  lines.append(f'<details>\n<summary>\u274c <code>{name}</code></summary>\n\n'
+                               f'```\n{body}\n```\n\n</details>')
+          elif state == 'pass':
+              lines.append('## \u2705 Unit tests passing')
+              lines.append('')
+              lines.append('All `plugin-core` unit tests passed on the latest run.')
+
+          with open('/tmp/unit-test-comment.md', 'w', encoding='utf-8') as f:
+              f.write('\n'.join(lines) + '\n')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+              f.write(f'COMMENT_STATE={state}\n')
+          print(f'state={state}, failures={len(failures)}, xml_files={len(xml_files)}')
+          PYEOF
+
+      - name: Upsert / resolve PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Route ${{ }} expansions through env so zizmor's template-injection rule is satisfied.
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # nodata -> the job failed before any test ran (e.g. compile error); nothing to report.
+          if [ "$COMMENT_STATE" = "nodata" ]; then
+            echo "No test XML — skipping comment."
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            PR="$PR_NUMBER"
+          else
+            PR=$(gh pr list -R "$REPO" --head "$REF_NAME" --json number --jq '.[0].number // empty')
+          fi
+          [ -z "$PR" ] && echo "No associated PR, skipping comment" && exit 0
+          COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- unit-test-failures -->"))] | first | .id // empty')
+          # On a green run, only refresh an existing comment — never create a new one.
+          if [ "$COMMENT_STATE" = "pass" ] && [ -z "$COMMENT_ID" ]; then
+            echo "Tests passing and no prior failure comment — nothing to do."
+            exit 0
+          fi
+          if [ -n "$COMMENT_ID" ]; then
+            python3 -c "import json; print(json.dumps({'body': open('/tmp/unit-test-comment.md').read()}))" \
+              | gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" --input -
+          else
+            gh pr comment "$PR" -R "$REPO" --body-file /tmp/unit-test-comment.md
+          fi
 
   # Aggregator: always runs so branch protection has a stable, unconditional
   # check to require. Upstream jobs may be skipped on PRs that don't touch
