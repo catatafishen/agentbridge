@@ -961,7 +961,7 @@ class AcpClientTest {
         void returnsNullWhenSessionAlreadyCreated() throws Exception {
             TestableAcpClient client = new TestableAcpClient();
             client.setHealthy(true);
-            Field field = AcpClient.class.getDeclaredField("currentSessionId");
+            Field field = AbstractClient.class.getDeclaredField("currentSessionId");
             field.setAccessible(true);
             field.set(client, "existing-session");
 
