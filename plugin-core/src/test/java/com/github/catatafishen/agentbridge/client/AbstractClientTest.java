@@ -61,6 +61,7 @@ class AbstractClientTest {
 
         @Override
         public String createSession(String cwd) {
+            setCurrentSession("test-session-1");
             return "test-session-1";
         }
 
@@ -173,6 +174,41 @@ class AbstractClientTest {
         @Test
         void checkAuthenticationReturnsErrorWhenNotConnected() {
             assertEquals("Agent not started", client.checkAuthentication());
+        }
+    }
+
+    // Session tracking (centralized in AbstractClient — guards the "Stop does nothing" trap)
+
+    @Nested
+    class SessionTracking {
+        @Test
+        void activeSessionIdNullBeforeAnySession() {
+            assertNull(client.getActiveSessionId(),
+                "A fresh client must report no active session so callers don't act on a stale id");
+        }
+
+        @Test
+        void createSessionMakesActiveSessionIdNonNull() {
+            String id = client.createSession(null);
+            assertEquals(id, client.getActiveSessionId(),
+                "getActiveSessionId() must reflect the created session — this is what "
+                    + "PromptOrchestrator.stop() reads to locate and cancel the running turn. "
+                    + "Defaulting to null here is the bug that broke Stop for Claude and Codex.");
+        }
+
+        @Test
+        void dropCurrentSessionClearsActiveSessionId() {
+            client.createSession(null);
+            client.dropCurrentSession();
+            assertNull(client.getActiveSessionId());
+        }
+
+        @Test
+        void setCurrentSessionRoundTrips() {
+            client.setCurrentSession("abc");
+            assertEquals("abc", client.getActiveSessionId());
+            client.setCurrentSession(null);
+            assertNull(client.getActiveSessionId());
         }
     }
 

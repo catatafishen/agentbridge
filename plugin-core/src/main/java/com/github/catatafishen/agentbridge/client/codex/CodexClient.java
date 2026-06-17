@@ -271,6 +271,7 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
     @Override
     public void stop() {
         transport.shutdown();
+        setCurrentSession(null);
         CompletableFuture<String> turn = activeTurnResult.get();
         if (turn != null) turn.completeExceptionally(new ClientException("Client stopped", null, false));
         activeTurnResult.set(null);
@@ -306,6 +307,7 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
         String sessionId = UUID.randomUUID().toString();
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
         if (cwd != null) sessionCwd.put(sessionId, cwd);
+        setCurrentSession(sessionId);
         return sessionId;
     }
 

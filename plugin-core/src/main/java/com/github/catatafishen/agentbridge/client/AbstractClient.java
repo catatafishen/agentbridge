@@ -120,11 +120,13 @@ public abstract class AbstractClient {
      * flow instead of hitting the early-return "reuse" path.
      * </p>
      * <p>
-     * The default implementation is a no-op; subclasses with a cached session ID
-     * should override this method.
+     * The default implementation clears {@link #currentSessionId}. Subclasses that need to drop
+     * additional persisted state (e.g. a stored resume/thread ID) should override this and call
+     * {@code super.dropCurrentSession()}.
      * </p>
      */
     public void dropCurrentSession() {
+        currentSessionId = null;
     }
 
     // ─── Prompts ─────────────────────────────────────
@@ -259,14 +261,36 @@ public abstract class AbstractClient {
     }
 
     /**
+     * The ID of the currently active session/conversation, or {@code null} when none is active.
+     * <p>
+     * Tracked centrally here — rather than re-declared in every subclass — so that {@link
+     * #getActiveSessionId()} works for all clients uniformly. This closes a recurring trap: when
+     * the lookup defaulted to {@code null} and each subclass had to remember to override it, any
+     * client that forgot (e.g. ClaudeClient, CodexClient) made {@code PromptOrchestrator.stop()}
+     * read {@code null} and skip {@link #cancelSession(String)} — so the Stop button silently did
+     * nothing and the turn ran to completion. Subclasses record their session via {@link
+     * #setCurrentSession(String)} when they create or adopt one.
+     */
+    protected volatile String currentSessionId;
+
+    /**
+     * Records the active session/conversation ID. Subclasses call this from {@code createSession}
+     * (or when adopting a loaded/eager session) so {@link #getActiveSessionId()} can return it and
+     * Stop can locate the running turn.
+     */
+    protected void setCurrentSession(@Nullable String sessionId) {
+        this.currentSessionId = sessionId;
+    }
+
+    /**
      * Returns the ID of the currently active session if one exists (e.g. from eager creation at
      * startup), without creating a new one. Returns {@code null} if no session has been created yet.
      * <p>
      * Use this to apply changes (e.g. model selection) to an already-created session before the
-     * first prompt is sent. Default: {@code null}.
+     * first prompt is sent.
      */
     public @Nullable String getActiveSessionId() {
-        return null;
+        return currentSessionId;
     }
 
     /**
