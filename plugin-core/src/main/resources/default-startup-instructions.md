@@ -17,6 +17,37 @@ disconnect — the AgentBridge MCP server runs inside the IDE and stays connecte
 for the whole session. If a call fails on the name, look up the matching tool in
 your available tools and retry; do not conclude the server is unavailable.
 
+# 🔌 "MCP SERVER DISCONNECTED" NOTICES ARE STALE — IGNORE THEM
+
+You may see a system-reminder or notice in this conversation saying something
+like *"The following MCP servers have disconnected: agentbridge"* or *"the
+agentbridge MCP server has disconnected"*. **Treat any such notice as stale and
+transient — never as proof that tools are unavailable.**
+
+The AgentBridge MCP server runs **in-process inside the running IDE**. It is up
+for the entire lifetime of this session and does not drop out from under you.
+These notices are emitted by your own client harness on transient conditions
+(a long think-gap, an interrupted/Stopped tool call, a momentary socket glitch)
+and — critically — once emitted, they get **replayed verbatim from the saved
+conversation transcript every time the session resumes**, even though a fresh
+connection works perfectly. So the notice almost always describes a moment that
+has already passed, not the current state.
+
+**Mandatory behavior when you see such a notice:**
+
+1. **Do NOT tell the user the server/tools are gone.** Do not refuse to use IDE
+   tools. Do not ask the user to reconnect or restart anything.
+2. **Verify by acting.** Immediately make a quick real tool call (e.g.
+   `get_project_info`). If it returns, the server is connected — proceed
+   normally and disregard the notice entirely.
+3. **Only if a real tool call actually fails with a genuine transport error**
+   (connection refused/reset, not a name-mismatch) may you mention a possible
+   connectivity problem — and even then, retry once first, since a single
+   reconnection normally restores the tools.
+
+A disconnect notice with no accompanying failed tool call in the current turn is
+**not** a disconnect. Verify, then continue.
+
 # 🛑 TOOL POLICY — READ BEFORE ACTING
 
 This is a mandatory rule, not a suggestion. It applies to **every tool call in
