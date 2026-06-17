@@ -135,6 +135,39 @@ class InFlightMcpToolRegistryTest {
     }
 
     @Test
+    void reopen_afterCancelAll_allowsLaterFutureToProceed() {
+        registry.cancelAll("agent stopped");
+        registry.reopen();
+
+        CompletableFuture<String> later = new CompletableFuture<>();
+        registry.register("later", later);
+
+        assertFalse(later.isDone(),
+            "After reopen, a future registered for a new turn must not be auto-cancelled");
+    }
+
+    @Test
+    void reopen_afterCancelAll_allowsLaterWorkerToRunUninterrupted() {
+        registry.cancelAll("agent stopped");
+        registry.reopen();
+
+        registry.registerWorker(Thread.currentThread());
+
+        assertFalse(Thread.interrupted(),
+            "After reopen, a worker registered for a new turn must not be interrupted");
+    }
+
+    @Test
+    void reopen_whenAlreadyOpen_isNoOp() {
+        assertDoesNotThrow(registry::reopen);
+
+        CompletableFuture<String> later = new CompletableFuture<>();
+        registry.register("later", later);
+
+        assertFalse(later.isDone(), "reopen on an already-open registry must not affect registrations");
+    }
+
+    @Test
     void registerWorker_afterCancelInFlight_doesNotInterrupt() {
         registry.cancelInFlight("stopped by user");
         registry.registerWorker(Thread.currentThread());
