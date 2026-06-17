@@ -31,6 +31,12 @@ data class IdeUnderTest(
     val outlineFile: String?,
     /** Symbols the `get_file_outline` result must contain for the cell to be green. */
     val expectedOutlineSymbols: List<String>,
+    /** Project-relative file passed to `get_symbol_info`; `null` = column not covered (cell skips → ❓). */
+    val symbolInfoFile: String?,
+    /** 1-based line passed to `get_symbol_info`, pointing at a declaration (e.g. a class). */
+    val symbolInfoLine: Int,
+    /** Substring the `get_symbol_info` result must contain for the cell to be green. */
+    val expectedSymbolInfoName: String,
 ) {
     companion object {
         /** System property (set by the build per CI matrix entry) selecting the product to launch. */
@@ -49,6 +55,9 @@ data class IdeUnderTest(
                     expectedSymbol = "Widget",
                     outlineFile = "src/fixture/Widget.java",
                     expectedOutlineSymbols = listOf("Widget", "area"),
+                    symbolInfoFile = "src/fixture/Widget.java",
+                    symbolInfoLine = 7,
+                    expectedSymbolInfoName = "Widget",
                 )
 
                 "CL" -> IdeUnderTest(
@@ -61,6 +70,9 @@ data class IdeUnderTest(
                     expectedSymbol = "Widget",
                     outlineFile = "classdef.h",
                     expectedOutlineSymbols = listOf("Widget", "Point"),
+                    symbolInfoFile = "classdef.h",
+                    symbolInfoLine = 12,
+                    expectedSymbolInfoName = "Widget",
                 )
 
                 "RD" -> IdeUnderTest(
@@ -73,6 +85,9 @@ data class IdeUnderTest(
                     expectedSymbol = "Widget",
                     outlineFile = null,
                     expectedOutlineSymbols = emptyList(),
+                    symbolInfoFile = null,
+                    symbolInfoLine = 0,
+                    expectedSymbolInfoName = "",
                 )
 
                 else -> error("Unknown $IDE_PROPERTY='$key' (expected IU | CL | RD)")
