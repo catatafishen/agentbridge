@@ -14,7 +14,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -317,6 +316,51 @@ class ClaudeClientStaticMethodsTest {
             assertTrue(result.contains("\"media_type\":\"image/png\""));
             assertTrue(result.contains("\"data\":\"base64data\""));
             assertTrue(result.contains("describe this"));
+        }
+    }
+
+    // ── buildToolRestrictionArgs ──────────────────────────────────────────────
+
+    @Nested
+    class BuildToolRestrictionArgs {
+
+        @Test
+        void returnsEmptyWhenNotExcluding() {
+            assertTrue(ClaudeClient.buildToolRestrictionArgs(false).isEmpty());
+        }
+
+        @Test
+        void usesDisallowedToolsDenylistNotAllowlist() {
+            List<String> args = ClaudeClient.buildToolRestrictionArgs(true);
+
+            assertEquals(2, args.size());
+            assertEquals("--disallowedTools", args.getFirst());
+            assertFalse(args.contains("--tools"),
+                "Must use --disallowedTools denylist, not --tools allowlist: " + args);
+        }
+
+        @Test
+        void disallowsIdeBypassingBuiltIns() {
+            String denylist = ClaudeClient.buildToolRestrictionArgs(true).get(1);
+
+            assertTrue(denylist.contains("Bash"), "Expected Bash in denylist: " + denylist);
+            assertTrue(denylist.contains("Edit"), "Expected Edit in denylist: " + denylist);
+            assertTrue(denylist.contains("Write"), "Expected Write in denylist: " + denylist);
+            assertTrue(denylist.contains("Read"), "Expected Read in denylist: " + denylist);
+            assertTrue(denylist.contains("Glob"), "Expected Glob in denylist: " + denylist);
+            assertTrue(denylist.contains("Grep"), "Expected Grep in denylist: " + denylist);
+        }
+
+        @Test
+        void keepsWebAndMcpToolsAvailable() {
+            String denylist = ClaudeClient.buildToolRestrictionArgs(true).get(1);
+
+            assertFalse(denylist.contains("WebFetch"),
+                "WebFetch must stay available (no MCP equivalent): " + denylist);
+            assertFalse(denylist.contains("WebSearch"),
+                "WebSearch must stay available (no MCP equivalent): " + denylist);
+            assertFalse(denylist.contains("mcp"),
+                "MCP tools must never be in the denylist: " + denylist);
         }
     }
 
