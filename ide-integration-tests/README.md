@@ -20,7 +20,7 @@ bug reporter) hits.
    `Widget` type, so the backend engages on a real project model.
 
    | IDE  | Product                | Fixture opened          | Language |
-         |------|------------------------|-------------------------|----------|
+            |------|------------------------|-------------------------|----------|
    | `IU` | IntelliJ IDEA Ultimate | `fixtures/java-app`     | Java     |
    | `CL` | CLion (Nova/Radler)    | `fixtures/cpp-cmake`    | C++      |
    | `RD` | Rider (ReSharper)      | `fixtures/dotnet/dotnet.sln` | C#  |
@@ -65,6 +65,12 @@ real backend answers the tool call:
 - `GetProblemsIntegrationTest` — `get_problems` returns a non-error response on the open file.
 - `GetCompilationErrorsIntegrationTest` — `get_compilation_errors` returns a non-error response
   on the open file.
+- `FindImplementationsIntegrationTest` — `find_implementations` resolves a type by position
+  (IU/CL only for now; skips on RD).
+- `GetTypeHierarchyIntegrationTest` — `get_type_hierarchy` resolves subtypes by position
+  (IU/CL only for now; skips on RD).
+- `GetCallHierarchyIntegrationTest` — `get_call_hierarchy` resolves callers by position
+  (IU/CL only for now; skips on RD).
 
 Matrix cell states (`.github/workflows/ide-integration-tests.yml` builds the legend):
 

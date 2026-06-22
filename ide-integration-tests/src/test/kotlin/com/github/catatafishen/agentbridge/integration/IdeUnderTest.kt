@@ -72,6 +72,28 @@ data class IdeUnderTest(
      * green-cell assertion substring.
      */
     val navigationSymbol: String,
+    /**
+     * Project-relative file passed to the refactoring type-resolution cells
+     * (`find_implementations`, `get_type_hierarchy`), pointing at a place where [expectedSymbol]
+     * resolves to a class/interface. For Java this is the class declaration; for CLion Nova —
+     * whose lazy C++ parser produces no `PsiNameIdentifierOwner` for a declaration token — it must
+     * point at a *usage* of the type, so `ToolUtils.resolveNamedElement` resolves it through the
+     * reference path (the same path that makes `go_to_declaration`/`find_references` green).
+     * `null` = these cells are not covered for this IDE and skip → ❓.
+     */
+    val typeHierarchyFile: String?,
+    /** 1-based line in [typeHierarchyFile] where [expectedSymbol] resolves to a class/interface. */
+    val typeHierarchyLine: Int,
+    /**
+     * Project-relative file passed to `get_call_hierarchy`, pointing at [callHierarchySymbol] as
+     * a declaration (Java) or a call site (CLion Nova, via the reference fallback). `null` = the
+     * call-hierarchy cell is not covered for this IDE and skips → ❓.
+     */
+    val callHierarchyFile: String?,
+    /** 1-based line in [callHierarchyFile] where [callHierarchySymbol] is declared or called. */
+    val callHierarchyLine: Int,
+    /** Method/function name resolved by `get_call_hierarchy`; doubles as the green-cell substring. */
+    val callHierarchySymbol: String,
 ) {
     companion object {
         /** System property (set by the build per CI matrix entry) selecting the product to launch. */
@@ -97,6 +119,11 @@ data class IdeUnderTest(
                     navigationUsageFile = "src/fixture/Widget.java",
                     navigationUsageLine = 12,
                     navigationSymbol = "width",
+                    typeHierarchyFile = "src/fixture/Widget.java",
+                    typeHierarchyLine = 7,
+                    callHierarchyFile = "src/fixture/Widget.java",
+                    callHierarchyLine = 11,
+                    callHierarchySymbol = "area",
                 )
 
                 "CL" -> IdeUnderTest(
@@ -116,6 +143,11 @@ data class IdeUnderTest(
                     navigationUsageFile = "main.cpp",
                     navigationUsageLine = 12,
                     navigationSymbol = "Widget",
+                    typeHierarchyFile = "main.cpp",
+                    typeHierarchyLine = 12,
+                    callHierarchyFile = "main.cpp",
+                    callHierarchyLine = 15,
+                    callHierarchySymbol = "area",
                 )
 
                 "RD" -> IdeUnderTest(
@@ -136,6 +168,11 @@ data class IdeUnderTest(
                     navigationUsageFile = null,
                     navigationUsageLine = 0,
                     navigationSymbol = "",
+                    typeHierarchyFile = null,
+                    typeHierarchyLine = 0,
+                    callHierarchyFile = null,
+                    callHierarchyLine = 0,
+                    callHierarchySymbol = "",
                 )
 
                 else -> error("Unknown $IDE_PROPERTY='$key' (expected IU | CL | RD)")
