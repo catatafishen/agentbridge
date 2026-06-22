@@ -16,17 +16,24 @@ import java.time.Duration
  * green result is the tool's "no subtypes" message — a non-error response that still names the
  * symbol. A red cell means subtype resolution no longer works against the real backend.
  *
- * <p>CLion Nova and Rider have no {@code typeHierarchyFile}, so the cell skips ({@code assumeTrue})
- * and renders as not-implemented (❓). On Nova this is a confirmed limitation: {@code
- * DefinitionsScopedSearch} has no C++ query executor on the lazy frontend and {@code
- * resolveNamedElement} returns {@code null} for C++ declarations — see
- * {@code docs/bugs/issue-794-bug-inventory.md} (#6).
+ * <p>CLion Nova is a confirmed limitation: {@code refactoringNavSupported=false} makes the cell
+ * skip with a {@code disabled}-flavoured assumption, so the matrix renders it 🚫 (unavailable) —
+ * {@code DefinitionsScopedSearch} has no C++ query executor on the lazy frontend and {@code
+ * resolveNamedElement} returns {@code null} for C++ declarations (see
+ * {@code docs/bugs/issue-794-bug-inventory.md} #6). Rider has no {@code typeHierarchyFile}, so its
+ * cell skips → ❓ (not benched yet).
  */
 class GetTypeHierarchyIntegrationTest {
 
     @Test
     fun `get_type_hierarchy resolves subtypes by position`() {
         val ide = IdeUnderTest.current()
+        assumeTrue(
+            ide.refactoringNavSupported,
+            "get_type_hierarchy is disabled on ${ide.key}: resolveNamedElement finds no " +
+                "PsiNameIdentifierOwner and DefinitionsScopedSearch has no frontend query executor " +
+                "on CLion Nova — see issue-794 inventory #6",
+        )
         val file = ide.typeHierarchyFile
         assumeTrue(file != null, "get_type_hierarchy not benched for ${ide.key} (see issue-794 inventory #6)")
         requireNotNull(file)

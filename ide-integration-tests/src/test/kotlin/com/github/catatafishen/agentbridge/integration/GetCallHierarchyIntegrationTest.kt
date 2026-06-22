@@ -15,16 +15,24 @@ import java.time.Duration
  * IU the coordinate is the method *declaration* ({@code Widget.java:11}). A red cell means caller
  * resolution no longer works against the real backend.
  *
- * <p>CLion Nova and Rider have no {@code callHierarchyFile}, so the cell skips ({@code assumeTrue})
- * and renders as not-implemented (❓). On Nova this is a confirmed limitation: {@code ReferencesSearch}
- * has no C++ query executor on the lazy frontend and {@code resolveNamedElement} returns {@code null}
- * for C++ declarations — see {@code docs/bugs/issue-794-bug-inventory.md} (#4).
+ * <p>CLion Nova is a confirmed limitation: {@code refactoringNavSupported=false} makes the cell
+ * skip with a {@code disabled}-flavoured assumption, so the matrix renders it 🚫 (unavailable) —
+ * {@code ReferencesSearch} has no C++ query executor on the lazy frontend and {@code
+ * resolveNamedElement} returns {@code null} for C++ declarations (see
+ * {@code docs/bugs/issue-794-bug-inventory.md} #4). Rider has no {@code callHierarchyFile}, so its
+ * cell skips → ❓ (not benched yet).
  */
 class GetCallHierarchyIntegrationTest {
 
     @Test
     fun `get_call_hierarchy resolves callers by position`() {
         val ide = IdeUnderTest.current()
+        assumeTrue(
+            ide.refactoringNavSupported,
+            "get_call_hierarchy is disabled on ${ide.key}: resolveNamedElement finds no " +
+                "PsiNameIdentifierOwner and ReferencesSearch has no frontend query executor " +
+                "on CLion Nova — see issue-794 inventory #4",
+        )
         val file = ide.callHierarchyFile
         assumeTrue(file != null, "get_call_hierarchy not benched for ${ide.key} (see issue-794 inventory #4)")
         requireNotNull(file)

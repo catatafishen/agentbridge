@@ -45,6 +45,19 @@ data class IdeUnderTest(
      */
     val searchSymbolsSupported: Boolean = true,
     /**
+     * Whether the refactoring-navigation tools (`find_implementations`, `get_type_hierarchy`,
+     * `get_call_hierarchy`) work for this IDE; false = those cells skip with a `disabled`-flavoured
+     * assumption so the matrix renders 🚫 (unavailable), not ❓ (no test yet).
+     * <p>
+     * False for CLion Nova: these tools resolve a symbol via `ToolUtils.resolveNamedElement`, which
+     * requires a `PsiNameIdentifierOwner` that Nova's lazy C++ frontend never produces, and their
+     * downstream searches (`DefinitionsScopedSearch`, `ReferencesSearch`) have no C++ query executor
+     * on the Nova frontend (the semantic index lives in the Radler backend). Bench-confirmed broken
+     * in CI — see `docs/bugs/issue-794-bug-inventory.md` (#4/#5/#6). Distinct from a column that is
+     * simply not benched yet (RD), which leaves the cell ❓ via the `null` coordinate skip.
+     */
+    val refactoringNavSupported: Boolean = true,
+    /**
      * How long to wait for the plugin's MCP server to report healthy after the IDE launches.
      * Rider launches a frontend plus a separate ReSharperHost (.NET) backend, and the project's
      * `postStartupActivity` — which starts the MCP server — only fires once that backend has
@@ -78,7 +91,8 @@ data class IdeUnderTest(
      * resolves to a class/interface (for Java, the class declaration). `null` = these cells are
      * not covered for this IDE and skip → ❓.
      *
-     * CLion Nova is intentionally `null` here: these tools rely on semantic search executors
+     * CLion Nova does not gate on this field: it is skipped earlier via [refactoringNavSupported]
+     * `= false` (renders 🚫), because these tools rely on semantic search executors
      * (`DefinitionsScopedSearch`) that Nova's lazy frontend PSI does not register, and
      * `ToolUtils.resolveNamedElement` returns `null` for C++ declarations (no
      * `PsiNameIdentifierOwner`). Bench-confirmed broken on real Nova in CI — see
@@ -91,9 +105,10 @@ data class IdeUnderTest(
      * Project-relative file passed to `get_call_hierarchy`, pointing at [callHierarchySymbol] as a
      * declaration (Java). `null` = the call-hierarchy cell is not covered for this IDE and skips → ❓.
      *
-     * CLion Nova is intentionally `null` here: `get_call_hierarchy` relies on `ReferencesSearch`,
-     * which has no C++ query executor on Nova's frontend, and resolution fails for the same reason
-     * as [typeHierarchyFile]. Bench-confirmed broken on real Nova in CI — see
+     * CLion Nova does not gate on this field: it is skipped earlier via [refactoringNavSupported]
+     * `= false` (renders 🚫), because `get_call_hierarchy` relies on `ReferencesSearch`, which has
+     * no C++ query executor on Nova's frontend, and resolution fails for the same reason as
+     * [typeHierarchyFile]. Bench-confirmed broken on real Nova in CI — see
      * `docs/bugs/issue-794-bug-inventory.md` (#4).
      */
     val callHierarchyFile: String?,
@@ -143,6 +158,7 @@ data class IdeUnderTest(
                     expectedSymbol = "Widget",
                     outlineFile = "classdef.h",
                     expectedOutlineSymbols = listOf("Widget", "Point"),
+                    refactoringNavSupported = false,
                     bootTimeout = 2.minutes,
                     symbolInfoFile = "classdef.h",
                     symbolInfoLine = 12,
@@ -154,7 +170,9 @@ data class IdeUnderTest(
                     // semantic search executors (DefinitionsScopedSearch / ReferencesSearch) that
                     // Nova's lazy frontend PSI does not register, and resolveNamedElement returns
                     // null for C++ declarations (no PsiNameIdentifierOwner). Bench-confirmed in CI;
-                    // tracked in docs/bugs/issue-794-bug-inventory.md (#4/#5/#6). Cells skip → ❓.
+                    // tracked in docs/bugs/issue-794-bug-inventory.md (#4/#5/#6). The
+                    // refactoringNavSupported=false flag above makes these cells render 🚫
+                    // (unavailable) via a disabled-flavoured skip; the coords below stay null.
                     typeHierarchyFile = null,
                     typeHierarchyLine = 0,
                     callHierarchyFile = null,

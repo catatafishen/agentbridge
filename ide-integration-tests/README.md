@@ -66,12 +66,13 @@ real backend answers the tool call:
 - `GetCompilationErrorsIntegrationTest` — `get_compilation_errors` returns a non-error response
   on the open file.
 - `FindImplementationsIntegrationTest` — `find_implementations` resolves a type by position
-  (IU only; skips on CL/RD — CLion Nova lacks the C++ `DefinitionsScopedSearch` executor, see
-  `docs/bugs/issue-794-bug-inventory.md` #5).
+  (IU only; CL renders 🚫 — CLion Nova lacks the C++ `DefinitionsScopedSearch` executor and
+  `PsiNameIdentifierOwner` resolution, see `docs/bugs/issue-794-bug-inventory.md` #5; RD ❓).
 - `GetTypeHierarchyIntegrationTest` — `get_type_hierarchy` resolves subtypes by position
-  (IU only; skips on CL/RD — same CLion Nova search-executor gap, see inventory #6).
+  (IU only; CL renders 🚫 — same CLion Nova search-executor gap, see inventory #6; RD ❓).
 - `GetCallHierarchyIntegrationTest` — `get_call_hierarchy` resolves callers by position
-  (IU only; skips on CL/RD — CLion Nova lacks the C++ `ReferencesSearch` executor, see inventory #4).
+  (IU only; CL renders 🚫 — CLion Nova lacks the C++ `ReferencesSearch` executor, see inventory #4;
+  RD ❓).
 
 Matrix cell states (`.github/workflows/ide-integration-tests.yml` builds the legend):
 
@@ -79,7 +80,7 @@ Matrix cell states (`.github/workflows/ide-integration-tests.yml` builds the leg
 |--------|-------------|----------------------------------------------------------------------------|
 | ✅      | pass        | the real backend answered the tool call                                    |
 | ❌      | fail        | a real backend gap (e.g. the CLion Nova / Rider blind spots in issue #794) |
-| 🚫     | unavailable | the tool is intentionally disabled for that IDE (`RIDER_DISABLED_TOOLS`)   |
+| 🚫     | unavailable | the tool is known not to work on that IDE — intentionally disabled (`RIDER_DISABLED_TOOLS`) or a confirmed backend limitation (e.g. the CLion Nova refactoring-nav gap, issue #794 #4/#5/#6) |
 | ❓      | no test yet | no test method covers that (tool, IDE) cell                                |
 
 A skipped test that reports a `disabled`-flavoured assumption maps to 🚫; any other skip stays ❓.
@@ -190,7 +191,9 @@ Not every tool works on every IDE. Rider's C#/F#/VB PSI lives in the ReSharper b
 IntelliJ frontend, so PSI-classifying tools like `search_symbols` fail on its coarse stubs. Such
 tools are listed in `PsiBridgeService.RIDER_DISABLED_TOOLS` (and the README's disabled-tools
 table) and the matrix cell skips → 🚫. Mark unsupported tools with a per-IDE flag in `IdeUnderTest`
-(e.g. `searchSymbolsSupported`) and `assumeTrue`-guard the test, rather than letting it fail red.
+(e.g. `searchSymbolsSupported`, or `refactoringNavSupported=false` for the CLion Nova
+refactoring-nav gap) and `assumeTrue`-guard the test **with a `disabled`-flavoured message** so the
+report renders 🚫, rather than letting it fail red or skip silently to ❓.
 
 ### 6. Wiring checklist
 
