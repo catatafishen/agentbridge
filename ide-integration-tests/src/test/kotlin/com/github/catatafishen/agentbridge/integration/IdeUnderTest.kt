@@ -58,6 +58,20 @@ data class IdeUnderTest(
     val symbolInfoLine: Int,
     /** Substring the `get_symbol_info` result must contain for the cell to be green. */
     val expectedSymbolInfoName: String,
+    /**
+     * Project-relative file containing a *usage* of [navigationSymbol], passed to
+     * `go_to_declaration` (and the file the symbol is searched from). `null` = the navigation
+     * cells (`go_to_declaration`, `find_references`) are not covered for this IDE and skip → ❓.
+     */
+    val navigationUsageFile: String?,
+    /** 1-based line in [navigationUsageFile] where [navigationSymbol] appears as a usage. */
+    val navigationUsageLine: Int,
+    /**
+     * Symbol resolved by the navigation cells. Both its declaration snippet (`go_to_declaration`)
+     * and its reference lines (`find_references`) contain this string, so it doubles as the
+     * green-cell assertion substring.
+     */
+    val navigationSymbol: String,
 ) {
     companion object {
         /** System property (set by the build per CI matrix entry) selecting the product to launch. */
@@ -80,6 +94,9 @@ data class IdeUnderTest(
                     symbolInfoFile = "src/fixture/Widget.java",
                     symbolInfoLine = 7,
                     expectedSymbolInfoName = "Widget",
+                    navigationUsageFile = "src/fixture/Widget.java",
+                    navigationUsageLine = 12,
+                    navigationSymbol = "width",
                 )
 
                 "CL" -> IdeUnderTest(
@@ -96,6 +113,9 @@ data class IdeUnderTest(
                     symbolInfoFile = "classdef.h",
                     symbolInfoLine = 12,
                     expectedSymbolInfoName = "Widget",
+                    navigationUsageFile = "main.cpp",
+                    navigationUsageLine = 12,
+                    navigationSymbol = "Widget",
                 )
 
                 "RD" -> IdeUnderTest(
@@ -113,6 +133,9 @@ data class IdeUnderTest(
                     symbolInfoFile = null,
                     symbolInfoLine = 0,
                     expectedSymbolInfoName = "",
+                    navigationUsageFile = null,
+                    navigationUsageLine = 0,
+                    navigationSymbol = "",
                 )
 
                 else -> error("Unknown $IDE_PROPERTY='$key' (expected IU | CL | RD)")
