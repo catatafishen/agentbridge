@@ -7,17 +7,18 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 
 /**
- * Matrix row: {@code get_call_hierarchy} × {IU, CL}.
+ * Matrix row: {@code get_call_hierarchy} × {IU}.
  *
  * Points the tool at {@code callHierarchySymbol} — a method/function — and asserts the result is
  * not an error and names the symbol. This is the bench guard for issue #794 bug #4. Resolution uses
- * the shared {@code ToolUtils.resolveNamedElement} (declaration-first, then reference fallback). On
- * IU the coordinate is the method *declaration* ({@code Widget.java:11}); on CLion Nova — whose lazy
- * C++ parser exposes no {@code PsiNameIdentifierOwner} on a declaration token — it is a *call site*
- * ({@code main.cpp:15}, {@code w.area()}) so resolution succeeds through the reference fallback and
- * {@code ReferencesSearch} reports that caller. A red cell means caller resolution no longer works
- * against the real backend. RD has no {@code callHierarchyFile} yet, so the cell skips
- * ({@code assumeTrue}) and renders as not-implemented (❓).
+ * the shared {@code ToolUtils.resolveNamedElement} (declaration-first, then reference fallback); on
+ * IU the coordinate is the method *declaration* ({@code Widget.java:11}). A red cell means caller
+ * resolution no longer works against the real backend.
+ *
+ * <p>CLion Nova and Rider have no {@code callHierarchyFile}, so the cell skips ({@code assumeTrue})
+ * and renders as not-implemented (❓). On Nova this is a confirmed limitation: {@code ReferencesSearch}
+ * has no C++ query executor on the lazy frontend and {@code resolveNamedElement} returns {@code null}
+ * for C++ declarations — see {@code docs/bugs/issue-794-bug-inventory.md} (#4).
  */
 class GetCallHierarchyIntegrationTest {
 
@@ -25,7 +26,7 @@ class GetCallHierarchyIntegrationTest {
     fun `get_call_hierarchy resolves callers by position`() {
         val ide = IdeUnderTest.current()
         val file = ide.callHierarchyFile
-        assumeTrue(file != null, "get_call_hierarchy bench not implemented for ${ide.key}")
+        assumeTrue(file != null, "get_call_hierarchy not benched for ${ide.key} (see issue-794 inventory #4)")
         requireNotNull(file)
 
         IdeBench.run("getCallHierarchy") { _, mcp ->

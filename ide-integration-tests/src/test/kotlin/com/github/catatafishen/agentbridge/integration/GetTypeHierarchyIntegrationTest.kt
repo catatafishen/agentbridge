@@ -7,19 +7,20 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 
 /**
- * Matrix row: {@code get_type_hierarchy} × {IU, CL}.
+ * Matrix row: {@code get_type_hierarchy} × {IU}.
  *
- * Asks for {@code direction=subtypes} at a place where {@code expectedSymbol} resolves to a
- * class/interface ({@code typeHierarchyFile}:{@code typeHierarchyLine}). The subtypes direction is
- * the language-agnostic path ({@code DefinitionsScopedSearch} via the shared
- * {@code ToolUtils.resolveNamedElement}), so a single coordinate covers both Java (IU) and C++
- * (CL). This is the bench guard for issue #794 bug #6. For CLion Nova — whose lazy C++ parser
- * exposes no {@code PsiNameIdentifierOwner} on a declaration token — the coordinate points at a
- * *usage* ({@code main.cpp:12}) so resolution succeeds through the reference fallback. The fixture
- * {@code Widget} has no subtypes, so the green result is the tool's "no subtypes" message — a
- * non-error response that still names the symbol. A red cell means subtype resolution no longer
- * works against the real backend. RD has no {@code typeHierarchyFile} yet, so the cell skips
- * ({@code assumeTrue}) and renders as not-implemented (❓).
+ * Asks for {@code direction=subtypes} at the class/interface declaration
+ * ({@code typeHierarchyFile}:{@code typeHierarchyLine}). The subtypes direction goes through the
+ * platform-level {@code DefinitionsScopedSearch} path (shared {@code ToolUtils.resolveNamedElement}).
+ * This is the bench guard for issue #794 bug #6. The fixture {@code Widget} has no subtypes, so the
+ * green result is the tool's "no subtypes" message — a non-error response that still names the
+ * symbol. A red cell means subtype resolution no longer works against the real backend.
+ *
+ * <p>CLion Nova and Rider have no {@code typeHierarchyFile}, so the cell skips ({@code assumeTrue})
+ * and renders as not-implemented (❓). On Nova this is a confirmed limitation: {@code
+ * DefinitionsScopedSearch} has no C++ query executor on the lazy frontend and {@code
+ * resolveNamedElement} returns {@code null} for C++ declarations — see
+ * {@code docs/bugs/issue-794-bug-inventory.md} (#6).
  */
 class GetTypeHierarchyIntegrationTest {
 
@@ -27,7 +28,7 @@ class GetTypeHierarchyIntegrationTest {
     fun `get_type_hierarchy resolves subtypes by position`() {
         val ide = IdeUnderTest.current()
         val file = ide.typeHierarchyFile
-        assumeTrue(file != null, "get_type_hierarchy bench not implemented for ${ide.key}")
+        assumeTrue(file != null, "get_type_hierarchy not benched for ${ide.key} (see issue-794 inventory #6)")
         requireNotNull(file)
 
         IdeBench.run("getTypeHierarchy") { _, mcp ->
