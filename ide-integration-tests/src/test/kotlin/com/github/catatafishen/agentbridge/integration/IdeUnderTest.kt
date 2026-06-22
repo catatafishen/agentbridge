@@ -75,19 +75,26 @@ data class IdeUnderTest(
     /**
      * Project-relative file passed to the refactoring type-resolution cells
      * (`find_implementations`, `get_type_hierarchy`), pointing at a place where [expectedSymbol]
-     * resolves to a class/interface. For Java this is the class declaration; for CLion Nova —
-     * whose lazy C++ parser produces no `PsiNameIdentifierOwner` for a declaration token — it must
-     * point at a *usage* of the type, so `ToolUtils.resolveNamedElement` resolves it through the
-     * reference path (the same path that makes `go_to_declaration`/`find_references` green).
-     * `null` = these cells are not covered for this IDE and skip → ❓.
+     * resolves to a class/interface (for Java, the class declaration). `null` = these cells are
+     * not covered for this IDE and skip → ❓.
+     *
+     * CLion Nova is intentionally `null` here: these tools rely on semantic search executors
+     * (`DefinitionsScopedSearch`) that Nova's lazy frontend PSI does not register, and
+     * `ToolUtils.resolveNamedElement` returns `null` for C++ declarations (no
+     * `PsiNameIdentifierOwner`). Bench-confirmed broken on real Nova in CI — see
+     * `docs/bugs/issue-794-bug-inventory.md` (#5/#6).
      */
     val typeHierarchyFile: String?,
     /** 1-based line in [typeHierarchyFile] where [expectedSymbol] resolves to a class/interface. */
     val typeHierarchyLine: Int,
     /**
-     * Project-relative file passed to `get_call_hierarchy`, pointing at [callHierarchySymbol] as
-     * a declaration (Java) or a call site (CLion Nova, via the reference fallback). `null` = the
-     * call-hierarchy cell is not covered for this IDE and skips → ❓.
+     * Project-relative file passed to `get_call_hierarchy`, pointing at [callHierarchySymbol] as a
+     * declaration (Java). `null` = the call-hierarchy cell is not covered for this IDE and skips → ❓.
+     *
+     * CLion Nova is intentionally `null` here: `get_call_hierarchy` relies on `ReferencesSearch`,
+     * which has no C++ query executor on Nova's frontend, and resolution fails for the same reason
+     * as [typeHierarchyFile]. Bench-confirmed broken on real Nova in CI — see
+     * `docs/bugs/issue-794-bug-inventory.md` (#4).
      */
     val callHierarchyFile: String?,
     /** 1-based line in [callHierarchyFile] where [callHierarchySymbol] is declared or called. */
@@ -143,11 +150,16 @@ data class IdeUnderTest(
                     navigationUsageFile = "main.cpp",
                     navigationUsageLine = 12,
                     navigationSymbol = "Widget",
-                    typeHierarchyFile = "main.cpp",
-                    typeHierarchyLine = 12,
-                    callHierarchyFile = "main.cpp",
-                    callHierarchyLine = 15,
-                    callHierarchySymbol = "area",
+                    // Refactoring-navigation cells are NOT benched on CLion Nova: these tools need
+                    // semantic search executors (DefinitionsScopedSearch / ReferencesSearch) that
+                    // Nova's lazy frontend PSI does not register, and resolveNamedElement returns
+                    // null for C++ declarations (no PsiNameIdentifierOwner). Bench-confirmed in CI;
+                    // tracked in docs/bugs/issue-794-bug-inventory.md (#4/#5/#6). Cells skip → ❓.
+                    typeHierarchyFile = null,
+                    typeHierarchyLine = 0,
+                    callHierarchyFile = null,
+                    callHierarchyLine = 0,
+                    callHierarchySymbol = "",
                 )
 
                 "RD" -> IdeUnderTest(

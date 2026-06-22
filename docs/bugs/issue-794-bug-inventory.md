@@ -3,8 +3,10 @@
 **Reporter**: @vs49688  
 **Environment**: CLion 2026.1.1 (Nova C++ engine), CMake project (vsclib), Linux/NixOS  
 **Issue opened**: 2026-06-02  
-**Last updated**: 2026-06-22 (IDE bench expanded: `go_to_declaration`, `find_references`,
-`get_documentation`, `get_problems`, `get_compilation_errors` now covered for {IU, CL})
+**Last updated**: 2026-06-23 (IDE bench expanded to the refactoring-navigation tools
+`find_implementations`, `get_type_hierarchy`, `get_call_hierarchy`: **bench-confirmed broken on
+CLion Nova** — see #4/#5/#6 — so they are benched on IU only; the earlier headless-only "fixed"
+verdicts were corrected)
 
 ---
 
@@ -184,7 +186,15 @@ approach: scan whole-identifier occurrences of the symbol on the line, `TargetEl
 fallback. The resolved target must be a `PsiNameIdentifierOwner` for `ReferencesSearch` to find
 its callers.
 
-**Current status**: ✅ **Fixed and merged in PR #816** (Jun 6). Needs reporter re-verification.
+**Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** PR #816's reference
+fallback resolves nothing on real Nova: `ToolUtils.resolveNamedElement` requires a
+`PsiNameIdentifierOwner`, which Nova's lazy C++ frontend PSI never produces for a declaration or a
+usage, so resolution returns `null` → "Could not find symbol". Even with resolution fixed,
+`ReferencesSearch` has no C++ query executor on the Nova frontend (the semantic index lives in the
+Radler backend), so callers cannot be found. The earlier "fixed" verdict was headless-only and did
+not exercise the real backend. The IDE bench (PR #874) therefore covers this cell on **IU only**;
+CL skips (❓). A real fix needs a Nova-frontend resolution + search path and must be iterated
+against a real CLion.
 
 ---
 
@@ -202,7 +212,12 @@ shared `ToolUtils.resolveNamedElement` (declaration-first → reference-fallback
 `firstNamedTarget` + `TargetElementUtil.getNamedElement`). `CallHierarchySupport` refactored to
 delegate to the shared helper; `TypeHierarchySupport.findSubtypes` adopts it. Language-agnostic.
 
-**Current status**: ❓ **Needs reporter re-verification once PR #817 ships.**
+**Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** The shared
+`ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner`, which Nova's lazy C++ frontend
+never produces (for declarations or usages), so `find_implementations` returns "Symbol not found"
+on real Nova. Even with resolution fixed, `DefinitionsScopedSearch` has no C++ query executor on
+the Nova frontend, so subtypes/implementations cannot be searched. The IDE bench (PR #874) covers
+this cell on **IU only** (where `Widget` correctly reports "no subtypes"); CL skips (❓).
 
 ---
 
@@ -222,8 +237,14 @@ walk up to 10 levels with cycle detection. `direction=both` now returns subtypes
 programmatically; `direction=supertypes` returns programmatic results. Clear "not available"
 error only when no helper is loadable at all (pure non-Java IDE without Java plugin).
 
-**Current status**: ✅ **Fixed and merged** (PR #819, Jun 7). Now returns programmatic results
-for all directions (`supertypes`, `subtypes`, `both`) in both Java and non-Java IDEs.
+**Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** The `direction=both`
+guard fix (PR #818/#819) is real, but the underlying *symbol resolution* still fails on Nova: the
+shared `ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner` that Nova's lazy C++
+frontend never produces, so `get_type_hierarchy` returns "Symbol not found" on real Nova before any
+direction logic runs. `DefinitionsScopedSearch` (subtypes) also has no C++ query executor on the
+frontend. Programmatic supertypes/subtypes work on **Java (IU)** — the IDE bench (PR #874) covers
+the subtypes cell on IU only; CL skips (❓). The previous "✅ Fixed" verdict reflected headless Java
+tests, not real Nova.
 
 ---
 
@@ -240,8 +261,12 @@ available" error only in pure non-Java IDEs without the Java plugin. **No manual
 (autonomous agents can't press Ctrl+U). Same PR also fixes the equivalent Ctrl+H hint left over
 from PR #818 in `get_type_hierarchy`.
 
-**Current status**: ✅ **Fixed and merged** (PR #819, Jun 7). Now returns programmatic results
-(or clear "not available" error) instead of rejecting non-Java files outright.
+**Current status**: ⚠️ **Java-verified only; unverified on CLion Nova.** PR #819 returns
+programmatic results on **Java (IU)**, but the same Nova resolution gap as #4/#5/#6 applies — the
+enclosing-declaration walk relies on `PsiNameIdentifierOwner`, which Nova's lazy C++ frontend never
+produces, and `FindSuperElementsHelper` needs a resolved element. Not yet covered by the IDE bench
+(no honest green is possible until Nova resolution works). The "✅ Fixed" verdict reflected headless
+Java tests, not real Nova.
 
 ---
 
@@ -549,10 +574,10 @@ being misidentified.
 | 1b | `search_symbols` wildcard empty in CLion Nova              | ✅ Fixed             | PR #838 — `walkCppSymbolsByNodeType` fallback in `collectSymbolsFromFile`        |
 | 2  | `get_symbol_info` broken                                   | ✅ Fixed             | `NavigationTool.findEnclosingCppDeclaration` node-type-walk fallback (Jun 17)    |
 | 3  | `go_to_declaration` broken                                 | ❓ Needs re-verify   | PR #815 (merged) — findReferenceAt + TargetElementUtil                           |
-| 4  | `get_call_hierarchy` broken                                | ❓ Needs re-verify   | PR #816 (merged) — reference fallback, same shape as #3                          |
-| 5  | `find_implementations` broken                              | ❓ Needs re-verify   | PR #817 (merged) — shared `ToolUtils.resolveNamedElement`, same shape as #3/#4   |
-| 6  | `get_type_hierarchy` broken                                | ✅ Fixed             | PR #819 (merged) — programmatic subtypes + supertypes for all directions         |
-| 7  | `find_super_methods` Java-only guard                       | ✅ Fixed             | PR #819 (merged) — programmatic results for non-Java via FindSuperElementsHelper |
+| 4  | `get_call_hierarchy` broken                                | ❌ Broken on Nova    | Bench-confirmed (PR #874): no Nova `PsiNameIdentifierOwner` + no C++ `ReferencesSearch` executor   |
+| 5  | `find_implementations` broken                              | ❌ Broken on Nova    | Bench-confirmed (PR #874): no Nova resolution + no C++ `DefinitionsScopedSearch` executor          |
+| 6  | `get_type_hierarchy` broken                                | ❌ Broken on Nova    | Bench-confirmed (PR #874): Java path works (IU); Nova resolution still fails. Was headless-only "✅" |
+| 7  | `find_super_methods` Java-only guard                       | ⚠️ Java-verified only | PR #819 works on IU; unverified on Nova (same resolution gap), not yet benched                    |
 | 8  | `get_documentation` broken for C/C++ FQNs                  | ❓ Needs re-verify   | PR #820 (merged) — position-based + FQN-based resolution, language-agnostic      |
 | 9  | `get_available_actions` empty                              | ❓ Needs re-verify   | PR #821 — ProcessCanceledException fix + diagnostic counts + fallback resolution |
 | 10 | `find_references` noise/false positives                    | ⚠️ Partial          | Known limitation                                                                 |

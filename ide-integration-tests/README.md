@@ -66,11 +66,12 @@ real backend answers the tool call:
 - `GetCompilationErrorsIntegrationTest` — `get_compilation_errors` returns a non-error response
   on the open file.
 - `FindImplementationsIntegrationTest` — `find_implementations` resolves a type by position
-  (IU/CL only for now; skips on RD).
+  (IU only; skips on CL/RD — CLion Nova lacks the C++ `DefinitionsScopedSearch` executor, see
+  `docs/bugs/issue-794-bug-inventory.md` #5).
 - `GetTypeHierarchyIntegrationTest` — `get_type_hierarchy` resolves subtypes by position
-  (IU/CL only for now; skips on RD).
+  (IU only; skips on CL/RD — same CLion Nova search-executor gap, see inventory #6).
 - `GetCallHierarchyIntegrationTest` — `get_call_hierarchy` resolves callers by position
-  (IU/CL only for now; skips on RD).
+  (IU only; skips on CL/RD — CLion Nova lacks the C++ `ReferencesSearch` executor, see inventory #4).
 
 Matrix cell states (`.github/workflows/ide-integration-tests.yml` builds the legend):
 
