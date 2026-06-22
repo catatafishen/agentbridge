@@ -12,7 +12,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -217,93 +216,6 @@ class CopilotClientTest {
         assertNull(invokeParseToolCallArguments(params));
     }
 
-    // ── buildReprimand (private instance) ──────────────────────────────
-
-    @Test
-    void buildReprimand_readKind() throws Exception {
-        String result = invokeBuildReprimand("read");
-        assertTrue(result.contains("read_file"), "read kind should list read_file as equivalent");
-        assertTrue(result.contains("list_project_files"), "read kind should list list_project_files");
-        assertTrue(result.startsWith("[System notice] ⚠️"), "message should start with consequence framing");
-    }
-
-    @Test
-    void buildReprimand_executeKind() throws Exception {
-        String result = invokeBuildReprimand("execute");
-        assertTrue(result.contains("run_command"), "execute kind should list run_command");
-        assertTrue(result.contains("run_in_terminal"), "execute kind should list run_in_terminal");
-        assertTrue(result.startsWith("[System notice] ⚠️"), "message should start with consequence framing");
-    }
-
-    @Test
-    void buildReprimand_executeKindListsEquivalents() throws Exception {
-        String result = invokeBuildReprimand("execute");
-        assertTrue(result.contains("run_command"), "execute kind should list run_command equivalent");
-    }
-
-    @Test
-    void buildReprimand_escalatesAfterSecondBypass() throws Exception {
-        CopilotClient client = allocateClient();
-        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
-        m.setAccessible(true);
-
-        String first = (String) m.invoke(client, "read");
-        assertFalse(first.contains("bypass #"), "first call should not escalate");
-
-        String second = (String) m.invoke(client, "edit");
-        assertTrue(second.contains("bypass #2"), "second call should escalate with count");
-        assertTrue(second.contains("ALL file reads/writes/commands MUST go through AgentBridge"),
-            "escalation should include hard constraint");
-    }
-
-    // ── shouldReprimand (private static) ────────────────────────────────
-
-    @Test
-    void shouldReprimand_webFetchByName_isSuppressed() throws Exception {
-        assertFalse(invokeShouldReprimand("web_fetch"));
-        assertFalse(invokeShouldReprimand("web_search"));
-    }
-
-    @Test
-    void shouldReprimand_webFetchDescription_isSuppressed() throws Exception {
-        // Copilot CLI sends "Fetching <url>" as the ACP title for web_fetch calls.
-        assertFalse(invokeShouldReprimand("Fetching https://www.jetbrains.com/help/idea/mcp-server.html"));
-        assertFalse(invokeShouldReprimand("Fetching www.example.com/page"));
-        assertFalse(invokeShouldReprimand("Fetch https://api.example.com/data"));
-        assertFalse(invokeShouldReprimand("Some URL https://example.com result"));
-    }
-
-    @Test
-    void shouldReprimand_sqlToolByName_isSuppressed() throws Exception {
-        assertFalse(invokeShouldReprimand("sql"));
-    }
-
-    @Test
-    void shouldReprimand_sqlToolDescription_isSuppressed() throws Exception {
-        // Copilot CLI sends the sql tool's description parameter as the ACP title.
-        assertFalse(invokeShouldReprimand("Query ready todos"));
-        assertFalse(invokeShouldReprimand("Insert auth todos"));
-        assertFalse(invokeShouldReprimand("select * from todos"));
-    }
-
-    @Test
-    void shouldReprimand_metaTools_areSuppressed() throws Exception {
-        assertFalse(invokeShouldReprimand("report_intent"));
-        assertFalse(invokeShouldReprimand("skill"));
-        assertFalse(invokeShouldReprimand("task_complete"));
-    }
-
-    @Test
-    void shouldReprimand_bashAndDuplicates_areReprimanded() throws Exception {
-        assertTrue(invokeShouldReprimand("bash"));
-        assertTrue(invokeShouldReprimand("view"));
-        assertTrue(invokeShouldReprimand("grep"));
-        assertTrue(invokeShouldReprimand("glob"));
-        // bash-with-description that has no URL or SQL pattern
-        assertTrue(invokeShouldReprimand("TypeScript compile check"));
-        assertTrue(invokeShouldReprimand("Read PsiBridgeService constructor"));
-    }
-
     // ── copilotHome (package-private static) ────────────────────────────
 
     @Test
@@ -342,18 +254,6 @@ class CopilotClientTest {
         Method m = CopilotClient.class.getDeclaredMethod("parseToolCallArguments", JsonObject.class);
         m.setAccessible(true);
         return (JsonObject) m.invoke(allocateClient(), params);
-    }
-
-    private static String invokeBuildReprimand(String kind) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(allocateClient(), kind);
-    }
-
-    private static boolean invokeShouldReprimand(String toolId) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("shouldReprimand", String.class);
-        m.setAccessible(true);
-        return (boolean) m.invoke(null, toolId);
     }
 
     @Nested

@@ -180,41 +180,6 @@ class ChatInputConfigurable(private val project: Project) :
                 )
         }
         separator()
-        row("Reprimand nudges:") {
-            comboBox(ChatInputSettings.ReprimandNudgeMode.entries.toList())
-                .comment(
-                    "Controls auto-sent nudges that correct the agent when it calls a built-in tool " +
-                        "instead of the MCP equivalent. " +
-                        "\"Send silently\" injects the correction without showing a bubble in the chat."
-                )
-                .applyToComponent {
-                    // UNCHECKED_CAST: ComboBoxWithWidePopup's E! platform type requires an explicit
-                    // cast; the renderer is correct at runtime.
-                    @Suppress("UNCHECKED_CAST")
-                    renderer =
-                        object : com.intellij.ui.SimpleListCellRenderer<ChatInputSettings.ReprimandNudgeMode>() {
-                            override fun customize(
-                                list: javax.swing.JList<out ChatInputSettings.ReprimandNudgeMode>,
-                                value: ChatInputSettings.ReprimandNudgeMode?,
-                                index: Int,
-                                selected: Boolean,
-                                hasFocus: Boolean
-                            ) {
-                                text = when (value) {
-                                    ChatInputSettings.ReprimandNudgeMode.ENABLED -> "Enabled"
-                                    ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> "Send silently"
-                                    ChatInputSettings.ReprimandNudgeMode.DISABLED -> "Disabled"
-                                    null -> "Enabled"
-                                }
-                            }
-                        } as javax.swing.ListCellRenderer<in ChatInputSettings.ReprimandNudgeMode>
-                }
-                .bindItem(
-                    { s.reprimandNudgeMode },
-                    { s.reprimandNudgeMode = it ?: ChatInputSettings.ReprimandNudgeMode.ENABLED }
-                )
-        }
-        separator()
         row {
             checkBox("Auto-pause when typing")
                 .comment(
