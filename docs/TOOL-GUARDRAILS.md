@@ -93,34 +93,20 @@ agent-specific context.
 
 **Implementation:** `CopilotClient.buildDefaultAgentDefinition()` and variants
 
-### Layer 4: Reprimand nudges
+### Layer 4: --excluded-tools CLI flag
 
-**What:** When the agent uses a native built-in tool despite the instructions,
-the plugin detects it in real-time and injects a corrective nudge into the next
-MCP tool result: `[User nudge]: You used native bash tools. Use Agentbridge MCP
-tools instead — native tools bypass the plugin's identity hooks, follow-agent
-visibility, and IDE buffer sync.`
-
-**Why:** Instructions are not always followed — models sometimes fall back to
-familiar patterns, especially under complex multi-step reasoning. The nudge
-provides immediate, contextual feedback that steers the agent back on track.
-
-**Configuration:** Settings → AgentBridge → Agent Settings → "Reprimand nudge
-mode": Disabled / Send silently / Enabled (with cancel bubble).
-
-**Implementation:** `CopilotClient.buildReprimand()`, `AgentNudgeService`,
-`PsiBridgeService` (injection point)
-
-### Layer 5: --excluded-tools CLI flag
-
-**What:** The plugin passes `--excluded-tools view,edit,create,bash,grep,glob,...`
+**What:** The plugin passes `--excluded-tools view,edit,create,bash,glob,grep`
 when launching the Copilot CLI.
 
 **Why:** This is the intended upstream mechanism for hiding built-in tools.
+Excluded tools never appear in the agent's tool list, so the agent cannot call
+them at all — this is the most reliable layer.
 
-**Status:** Currently broken in Copilot CLI's ACP mode (upstream bug #556).
-When fixed, this will be the most reliable layer since it prevents the tools
-from appearing in the agent's tool list entirely.
+**Status:** Working. Copilot CLI now honors `--excluded-tools` / `--available-tools`
+in ACP mode (upstream bug #556 is fixed). Because overlapping built-in tools are
+excluded outright, there is no longer any need for a runtime "reprimand" that
+detected and corrected native-tool usage after the fact — that mechanism has been
+removed.
 
 **Implementation:** `CopilotClient.buildCommand()`
 
@@ -132,7 +118,7 @@ from appearing in the agent's tool list entirely.
 Agent CLI startup
   │
   ├─ Layer 1: PATH sanitized → CLI can't detect git/gh/curl on system
-  ├─ Layer 5: --excluded-tools → built-in tools hidden (when bug #556 is fixed)
+  ├─ Layer 4: --excluded-tools → built-in tools hidden from the agent's tool list
   │
   ▼
 Agent session starts
@@ -144,7 +130,7 @@ Agent session starts
 Agent makes tool calls
   │
   ├─ Uses MCP tool → ✓ hooks fire, follow-agent works, buffers sync
-  └─ Uses native tool → Layer 4: reprimand nudge injected into next MCP result
+  └─ Built-in tools were excluded at launch → not offered, can't be called
 ```
 
 No single layer is sufficient on its own. Each addresses a different failure mode:
@@ -152,9 +138,8 @@ No single layer is sufficient on its own. Each addresses a different failure mod
 | Failure mode                                  | Addressed by        |
 |-----------------------------------------------|---------------------|
 | CLI detects system tools and advertises them   | Layer 1 (PATH)      |
-| CLI exposes built-in tools (bash, grep, etc.)  | Layer 5 (--excluded) |
+| CLI exposes built-in tools (bash, grep, etc.)  | Layer 4 (--excluded) |
 | Agent ignores tool list and uses what it knows | Layers 2+3 (instructions) |
-| Agent ignores instructions under pressure      | Layer 4 (nudges)    |
 
 ---
 
@@ -168,6 +153,5 @@ When adding support for a new agent CLI:
    or uses `session/message` for instruction injection.
 3. **Agent definitions:** Write agent definition files that include the
    "no direct CLI access" framing.
-4. **Reprimand nudges:** Ensure `processUpdate()` detects native tool usage
-   and calls `AgentNudgeService.addNudge()`.
-5. **--excluded-tools:** Add the flag to `buildCommand()` if the CLI supports it.
+4. **--excluded-tools:** Add the flag to `buildCommand()` if the CLI supports it,
+   so overlapping built-in tools are excluded from the agent's tool list entirely.

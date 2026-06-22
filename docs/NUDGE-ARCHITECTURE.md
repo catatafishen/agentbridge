@@ -1,8 +1,8 @@
 # Agent Nudge Architecture
 
 Nudges are short-lived instructions injected into the next MCP tool result to steer the agent's
-behaviour mid-turn — either because the user explicitly typed one, or because the system detected
-undesirable tool usage and wants to reprimand the agent.
+behaviour mid-turn — either because the user explicitly typed one, or because the user declined or
+reverted an agent edit and the plugin wants to tell the agent what happened.
 
 ---
 
@@ -11,11 +11,17 @@ undesirable tool usage and wants to reprimand the agent.
 | Component               | Role                                                                                                                                                                |
 |-------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `AgentNudgeService`     | **Single source of truth.** Owns the pending nudge queue, IDs, coalescing, injection gating, and listener dispatch.                                                 |
-| `ChatToolWindowContent` | **UI subscriber.** Registers an `AgentNudgeService.Listener` to manage the cancel-bubble and history entry. Holds only display-layer references (`activeBubbleId`). |
-| `CopilotClient`         | **Reprimand producer.** Detects native tool usage in `processUpdate()`, registers a pending reprimand keyed by `toolCallId`, and only emits the `NATIVE_TOOL_REPRIMAND` nudge when the matching `ToolCallUpdate` reports `COMPLETED`. Failed and auto-denied tool calls discard the pending reprimand — the agent already saw the error, so a follow-up "[User nudge]" is redundant. Mode is gated by `ReprimandNudgeMode`. |
+| `ChatToolWindowContent` | **UI subscriber + producer.** Registers an `AgentNudgeService.Listener` to manage the cancel-bubble and history entry, and submits HUMAN nudges the user types. Holds only display-layer references (`activeBubbleId`). |
 | `AgentEditSession`      | **Revert nudge producer.** Fires a HUMAN nudge when the user declines or reverts an agent edit.                                                                     |
 | `PsiBridgeService`      | **Consumer / injector.** Calls `consumePendingNudges()` when returning each MCP tool result, appending the merged text as `[User nudge]: …`.                        |
-| `ReprimandNudgeMode`    | **Setting.** `DISABLED` / `SEND_SILENTLY` / `ENABLED` — checked by `CopilotClient` before calling `addNudge`.                                                       |
+
+> **Note on reprimands.** Earlier versions had `CopilotClient` produce a "native tool reprimand"
+> nudge whenever the agent called a built-in tool (`bash`, `grep`, `read`…) instead of the MCP
+> equivalent. That mechanism has been **removed**: Copilot CLI now honors `--excluded-tools` /
+> `--available-tools` in ACP mode, so overlapping built-in tools are excluded outright and the
+> agent can no longer call them. The `NATIVE_TOOL_REPRIMAND` and `TOOL_ABUSE_REPRIMAND` values
+> survive in the `NudgeSource` enum only so previously persisted conversations still deserialize —
+> nothing produces them anymore.
 
 ---
 
@@ -29,9 +35,9 @@ NudgeEntry
   showBubble boolean     whether the UI should show a cancel bubble
 ```
 
-HUMAN nudges **accumulate** (all are kept). Each REPRIMAND type **coalesces within its own type**
-— a new `NATIVE_TOOL_REPRIMAND` replaces any existing one, and a new `TOOL_ABUSE_REPRIMAND`
-replaces any existing `TOOL_ABUSE_REPRIMAND`, but the two types do not interfere with each other.
+`HUMAN` is the only source produced at runtime. The two `*_REPRIMAND` values are **legacy** —
+retained for deserializing older persisted conversations (see the note above). HUMAN nudges
+**accumulate** (all are kept).
 
 ---
 
@@ -40,7 +46,6 @@ replaces any existing `TOOL_ABUSE_REPRIMAND`, but the two types do not interfere
 ```mermaid
 graph TD
     subgraph Producers
-        CC[CopilotClient<br/>processUpdate]
         AES[AgentEditSession<br/>revert nudge]
         UI[ChatToolWindowContent<br/>submitNudge]
     end
@@ -60,7 +65,6 @@ graph TD
         HIST[Nudge History Entry]
     end
 
-    CC -- " addNudge(NATIVE_TOOL_REPRIMAND, showBubble) " --> Q
     AES -- " addNudge(HUMAN, showBubble=true) " --> Q
     UI -- " addNudge(HUMAN, showBubble=true) " --> Q
     Q -- onNudgeAdded --> BUB
@@ -75,43 +79,10 @@ graph TD
 
 ---
 
-## REPRIMAND nudge lifecycle
-
-Triggered when the agent calls a native tool (bash, grep, read…) instead of the MCP equivalent.
-The reprimand message explains three categories of harm: bypassed identity hooks, lost follow-agent
-visibility, and broken IDE buffer sync.
-
-```mermaid
-sequenceDiagram
-    participant Agent
-    participant CC as CopilotClient
-    participant NS as AgentNudgeService
-    participant Chat as ChatToolWindowContent
-    participant PBS as PsiBridgeService
-    Agent ->> CC: ACP update (built-in tool call)
-    CC ->> CC: shouldAutoDenyBuiltInTool()?
-    alt DISABLED mode
-        CC -->> NS: (no addNudge call)
-    else SEND_SILENTLY
-        CC ->> NS: addNudge(text, REPRIMAND, showBubble=false)
-        NS -->> Chat: onNudgeAdded (showBubble=false → no bubble)
-    else ENABLED mode
-        CC ->> NS: addNudge(text, REPRIMAND, showBubble=true)
-        NS -->> Chat: onNudgeAdded → show cancel bubble
-    end
-
-    Agent ->> PBS: MCP tool call (any agentbridge-* tool)
-    PBS ->> NS: consumePendingNudges()
-    NS -->> PBS: merged text
-    PBS ->> Agent: tool result + [User nudge]: …
-    NS -->> Chat: onNudgesInjected → resolve bubble, add history entry
-```
-
----
-
 ## HUMAN nudge lifecycle
 
-User types an instruction in the nudge input box and submits it.
+User types an instruction in the nudge input box and submits it (or `AgentEditSession` submits one
+on the user's behalf when an edit is reverted).
 
 ```mermaid
 sequenceDiagram
@@ -141,14 +112,12 @@ sequenceDiagram
 
 | Source                  | Behaviour on new `addNudge`                                                    |
 |-------------------------|--------------------------------------------------------------------------------|
-| `NATIVE_TOOL_REPRIMAND` | Replaces any existing `NATIVE_TOOL_REPRIMAND` silently. No `onNudgeCancelled`. |
-| `TOOL_ABUSE_REPRIMAND`  | Replaces any existing `TOOL_ABUSE_REPRIMAND` silently. No `onNudgeCancelled`.  |
-| `HUMAN`                 | All HUMAN nudges kept; merged human-first when consumed.                       |
+| `HUMAN`                 | All HUMAN nudges kept; merged when consumed.                                    |
+| `NATIVE_TOOL_REPRIMAND` | *(legacy, not produced)* Replaces any existing one of the same source.          |
+| `TOOL_ABUSE_REPRIMAND`  | *(legacy, not produced)* Replaces any existing one of the same source.          |
 
-The two reprimand types coalesce **independently** — a new `NATIVE_TOOL_REPRIMAND` will not
-remove a pending `TOOL_ABUSE_REPRIMAND` and vice versa.
-
-Mixed queue consumed text order: `[HUMAN text]\n\n[REPRIMAND text(s)]`.
+The coalescing logic still handles the legacy reprimand sources independently, but no producer
+emits them, so in practice only HUMAN nudges flow through the queue.
 
 ---
 
@@ -164,7 +133,7 @@ main agent resumes (`setNudgesHeld(false)`).
 
 `CopilotClient.beforeSendPrompt()` calls `clearHumanNudges()` before each turn is sent.
 This silently drops any HUMAN nudges that were pending but not delivered (e.g. user submitted a
-nudge but no tool call happened to inject it). Reprimands survive into the next turn.
+nudge but no tool call happened to inject it).
 
 `restoreUnhandledNudgeIfNeeded()` in `ChatToolWindowContent` uses the locally-tracked
 `pendingHumanText` to restore the user's undelivered text back to the input box — so the user
@@ -176,8 +145,7 @@ doesn't lose their manually-typed instruction.
 
 1. **All nudge state lives in `AgentNudgeService`.** The UI holds only `activeBubbleId` (a
    display-layer reference, not the nudge itself).
-2. **Callers decide `showBubble` and source** before calling `addNudge`. The service has no
-   knowledge of `ReprimandNudgeMode`.
+2. **Callers decide `showBubble` and source** before calling `addNudge`.
 3. **Listener callbacks fire synchronously** on the calling thread. UI listeners wrap in
    `ApplicationManager.getApplication().invokeLater(…)`.
 4. **`clearHumanNudges()` fires no events.** It is a silent purge — not a cancellation.

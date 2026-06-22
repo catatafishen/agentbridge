@@ -2,19 +2,16 @@ package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.acp.protocol.InitializeResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
-import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
-import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
-import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -26,11 +23,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -43,10 +38,9 @@ import java.util.concurrent.TimeoutException;
  * MCP: HTTP via {@code mcpServers} in {@code session/new} + merged into {@code ~/.copilot/mcp-config.json}
  * Agents: three custom agents written to {@code ~/.copilot/agents/} at launch
  * <p>
- * <b>Tool filtering note:</b> {@code --excluded-tools} and {@code --available-tools} are currently
- * ignored in ACP mode (bug #556). The flags are passed anyway so they take effect once the bug is
- * fixed upstream. Built-in tools are auto-approved but tracked; a corrective "reprimand" is
- * prepended to the next user message to redirect the model toward MCP alternatives.
+ * <b>Tool filtering note:</b> {@code --excluded-tools} and {@code --available-tools} are honored
+ * by Copilot CLI in ACP mode, so built-in tools that overlap with our MCP tools are excluded
+ * outright and never offered to the model.
  */
 public final class CopilotClient extends AcpClient {
 
@@ -108,9 +102,6 @@ public final class CopilotClient extends AcpClient {
     /**
      * Copilot CLI built-in tools to exclude via {@code --excluded-tools}.
      * These overlap with (or duplicate) our agentbridge MCP tools and would confuse the model.
-     * <p>
-     * NOTE: {@code --excluded-tools} is currently ignored in ACP mode (bug #556). The flag is
-     * passed anyway so it takes effect once the bug is fixed upstream.
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
         "view,edit,create,bash,glob,grep";
@@ -123,22 +114,6 @@ public final class CopilotClient extends AcpClient {
         "view", "edit", "create", "bash", "glob", "grep", "task", "report_intent",
         "web_fetch", "web_search", "task_complete", "sql", "skill"
     );
-
-    /**
-     * Per-turn counter of native tool bypass events. Used by {@link #buildReprimand}
-     * to escalate wording when the agent repeatedly ignores the nudge within the same turn.
-     * Reset to zero at the start of each new turn by {@link #beforeSendPrompt}.
-     */
-    private final java.util.concurrent.atomic.AtomicInteger nativeToolBypassCount =
-        new java.util.concurrent.atomic.AtomicInteger();
-
-    /**
-     * Compiled pattern for extracting absolute Unix file paths from tool argument strings.
-     * Matches sequences starting with {@code /} that are not URL double-slashes ({@code //})
-     * and are not preceded by alphanumeric or identifier characters.
-     */
-    private static final java.util.regex.Pattern ABS_PATH_PATTERN =
-        java.util.regex.Pattern.compile("(?<!\\w)/(?!/)([^\\s\"'<>|;{}()\\\\]+)");
 
     // ─── Lifecycle ───────────────────────────────────
 
@@ -609,257 +584,14 @@ public final class CopilotClient extends AcpClient {
         return result;
     }
 
-    // ─── Built-in tool reprimand ─────────────────────────────────────────────
-
-    /**
-     * Pending reprimands captured at tool-call start, keyed by {@code toolCallId}. The reprimand
-     * is only delivered to {@link AgentNudgeService} when the matching {@link SessionUpdate.ToolCallUpdate}
-     * arrives with {@link SessionUpdate.ToolCallStatus#COMPLETED}. Calls that {@code FAILED} or were
-     * auto-denied by the plugin discard their pending reprimand — the agent already received an
-     * error result, so a behavioural correction nudge on top is redundant noise.
-     * <p>
-     * The map is bounded in practice by the number of in-flight built-in tool calls per turn,
-     * which is small; entries are removed on terminal status. Cleared on turn start to drop any
-     * stragglers from a prior turn that never received a terminal update.
-     */
-    private final ConcurrentHashMap<String, PendingReprimand> pendingReprimands =
-        new ConcurrentHashMap<>();
-
-    private record PendingReprimand(String kind, boolean showBubble) {
-    }
-
-    @Override
-    protected SessionUpdate processUpdate(SessionUpdate update) {
-        if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
-            // Skip kind=OTHER — these are meta-tools (report_intent, sql, skill) or
-            // third-party MCP tools the user explicitly configured. No reprimand needed.
-            if (toolCall.kind() == SessionUpdate.ToolKind.OTHER) return update;
-
-            // Skip reprimands during history replay — historical tool calls are outside the
-            // agent's current context, so reprimanding would be confusing and spurious.
-            if (isRestoringHistory()) return update;
-
-            maybeRegisterReprimandForBuiltinTool(toolCall);
-        } else if (update instanceof SessionUpdate.ToolCallUpdate toolCallUpdate) {
-            handleToolCallTerminalUpdate(toolCallUpdate);
-        }
-        return update;
-    }
-
-    /**
-     * Captures the reprimand parameters at tool-call start without firing the nudge. The nudge
-     * is only added to {@link AgentNudgeService} on successful completion — see
-     * {@link #handleToolCallTerminalUpdate}.
-     */
-    private void maybeRegisterReprimandForBuiltinTool(SessionUpdate.ToolCall toolCall) {
-        String title = toolCall.title();
-        boolean isBuiltIn = !isMcpToolTitle(title)
-            && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
-            || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX)));
-        if (isBuiltIn && shouldReprimand(title) && touchesProjectFiles(toolCall)) {
-            ChatInputSettings.ReprimandNudgeMode mode = ChatInputSettings.getInstance().getReprimandNudgeMode();
-            if (mode != ChatInputSettings.ReprimandNudgeMode.DISABLED) {
-                boolean showBubble = mode == ChatInputSettings.ReprimandNudgeMode.ENABLED;
-                String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
-                pendingReprimands.put(toolCall.toolCallId(), new PendingReprimand(kind, showBubble));
-            }
-        }
-    }
-
-    /**
-     * Emits the deferred reprimand on {@link SessionUpdate.ToolCallStatus#COMPLETED} and discards
-     * it on {@link SessionUpdate.ToolCallStatus#FAILED} or when the call was auto-denied. Failed
-     * and auto-denied calls don't need a reprimand: the agent already saw the failure result and
-     * adding a "[User nudge]" on top is duplicate negative signal that escalates the bypass
-     * counter spuriously.
-     * <p>
-     * Non-terminal updates ({@link SessionUpdate.ToolCallStatus#PENDING} /
-     * {@link SessionUpdate.ToolCallStatus#IN_PROGRESS}) stream while a tool runs and are ignored
-     * here — the pending entry must survive them so the eventual terminal update can consume it.
-     */
-    private void handleToolCallTerminalUpdate(SessionUpdate.ToolCallUpdate update) {
-        boolean terminal = update.autoDenied()
-            || update.status() == SessionUpdate.ToolCallStatus.COMPLETED
-            || update.status() == SessionUpdate.ToolCallStatus.FAILED;
-        if (!terminal) return;
-        PendingReprimand pending = pendingReprimands.remove(update.toolCallId());
-        if (pending == null) return;
-        if (update.autoDenied() || update.status() == SessionUpdate.ToolCallStatus.FAILED) {
-            return;
-        }
-        AgentNudgeService.getInstance(project).addNudge(
-            buildReprimand(pending.kind()), NudgeSource.NATIVE_TOOL_REPRIMAND, pending.showBubble());
-    }
-
     /**
      * Clears the human nudge slot at turn start so user input from the previous turn
-     * doesn't leak into the new prompt. Also resets the per-turn bypass counter so
-     * escalation wording starts fresh each turn.
-     * <p>
-     * The reprimand slot is intentionally left intact: if the model ended a turn after
-     * a built-in tool was denied (without calling any MCP tool to consume the reprimand),
-     * the reprimand must survive to be delivered in the first MCP call of the next turn.
+     * doesn't leak into the new prompt.
      */
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
         AgentNudgeService.getInstance(project).clearHumanNudges();
-        nativeToolBypassCount.set(0);
-        // Drop any stragglers from a previous turn whose terminal status update never arrived
-        // (e.g. agent process restart mid-turn). Without this, a stale entry could fire as a
-        // reprimand against an unrelated tool call in the new turn if IDs were ever reused.
-        pendingReprimands.clear();
         return request;
-    }
-
-    /**
-     * Returns {@code true} when the tool call likely operates on files within the project
-     * directory — triggering a reprimand is appropriate. Returns {@code false} when all
-     * detectable absolute paths are outside the project (e.g. {@code /tmp/}, system logs,
-     * external build output) — no reprimand needed in that case.
-     *
-     * <p>Falls back to {@code true} (conservative: reprimand) when:
-     * <ul>
-     *   <li>The project base path is unavailable</li>
-     *   <li>No absolute paths are found in the arguments (relative paths likely resolve to project root)</li>
-     * </ul>
-     */
-    private boolean touchesProjectFiles(SessionUpdate.ToolCall toolCall) {
-        String projectDir = project.getBasePath();
-        if (projectDir == null) return true;
-
-        // ACP locations — pre-parsed file paths provided by the CLI
-        List<String> locations = toolCall.filePaths();
-        if (!locations.isEmpty()) {
-            return locations.stream().anyMatch(p -> p.startsWith(projectDir));
-        }
-
-        // Fall back to scanning raw arguments for absolute Unix paths
-        String args = toolCall.arguments();
-        if (args == null || args.isBlank()) return true;
-
-        List<String> absPaths = extractAbsolutePaths(args);
-        if (absPaths.isEmpty()) return true; // no absolute paths → assume project-relative
-
-        return absPaths.stream().anyMatch(p -> p.startsWith(projectDir));
-    }
-
-    /**
-     * Extracts all absolute Unix path tokens from a raw argument string.
-     * Matches {@code /...} sequences that are not URL double-slashes and are not
-     * preceded by identifier characters.
-     */
-    private static List<String> extractAbsolutePaths(String text) {
-        java.util.regex.Matcher m = ABS_PATH_PATTERN.matcher(text);
-        List<String> paths = new ArrayList<>();
-        while (m.find()) {
-            paths.add(m.group());
-        }
-        return paths;
-    }
-
-    /**
-     * Builds a consequence-first reprimand with kind-specific AgentBridge equivalents.
-     *
-     * <p>The message leads with the damage (desync) so the agent treats it as urgent,
-     * includes 3-5 actionable tool names for the specific kind, and escalates wording
-     * when the same session triggers repeated bypasses.
-     */
-    private String buildReprimand(String kind) {
-        int count = nativeToolBypassCount.incrementAndGet();
-        String equivalents = equivalentsForKind(kind);
-        String consequence = consequenceForKind(kind);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("[System notice] ⚠️ ").append(consequence);
-        sb.append(" Use AgentBridge instead: ").append(equivalents).append(".");
-
-        if (count >= 2) {
-            sb.append(" This is bypass #").append(count).append(" this session.")
-                .append(" ALL file reads/writes/commands MUST go through AgentBridge MCP tools.");
-        }
-
-        return sb.toString();
-    }
-
-    /**
-     * Returns a consequence-first description for the given tool kind, explaining
-     * what went wrong by using a built-in tool of that kind.
-     */
-    private static String consequenceForKind(String kind) {
-        return switch (kind) {
-            case "read" ->
-                "File read outside IDE buffer — the agent is now working with stale disk content, not what the editor shows.";
-            case "edit" ->
-                "File written outside IDE buffer — the editor is now out of sync and unsaved edits may be lost.";
-            case "delete" ->
-                "File deleted outside IDE — the editor may still show the deleted file and VCS state is stale.";
-            case "move" ->
-                "File moved outside IDE — references and imports are not updated, and the editor shows the old location.";
-            case "search" -> "Search ran outside IDE index — results miss unsaved edits and lack semantic context.";
-            case "execute" ->
-                "Command ran outside IDE — bypassed audit hooks, bot identity injection, and follow-agent visibility.";
-            default -> "Built-in tool bypassed IDE buffer sync and hooks — editor state is now desynchronized.";
-        };
-    }
-
-    /**
-     * Returns a short comma-separated list of AgentBridge MCP tool names
-     * the agent should use instead, grouped by tool kind.
-     */
-    private static String equivalentsForKind(String kind) {
-        return switch (kind) {
-            case "read" -> "read_file, list_project_files, list_directory_tree";
-            case "edit" -> "write_file, edit_text, replace_symbol_body";
-            case "delete" -> "delete_file";
-            case "move" -> "move_file";
-            case "search" -> "search_text, search_symbols, find_file, find_references";
-            case "execute" -> "run_command, run_in_terminal, git_* tools";
-            default -> "read_file, write_file, edit_text, search_text, run_command";
-        };
-    }
-
-    /**
-     * Returns {@code false} for built-in tools that have no meaningful MCP alternative —
-     * e.g. meta-tools ({@code report_intent}, {@code skill}, {@code task_complete}), direct
-     * SQL queries ({@code sql}), and web fetch ({@code web_fetch}, {@code web_search}).
-     * <p>
-     * Copilot CLI sends the tool's {@code description} parameter as the ACP title for all
-     * built-in tools (not just bash). That means web_fetch("Fetching https://...") and
-     * sql("Query todos") both arrive as space-containing strings indistinguishable from bash
-     * descriptions. We detect them here by content patterns to avoid spurious reprimands.
-     */
-    private static boolean shouldReprimand(String toolId) {
-        String lower = toolId.toLowerCase();
-        if (WEB_TOOLS.contains(lower)) return false;
-        return switch (lower) {
-            case "report_intent", "skill", "sql", "task_complete" -> false;
-            default -> !isWebFetchDescription(lower) && !isSqlToolDescription(lower);
-        };
-    }
-
-    /**
-     * Detects descriptions that originate from a {@code web_fetch} call.
-     * Copilot CLI sends the URL or a "Fetching <url>" summary as the ACP title.
-     */
-    private static boolean isWebFetchDescription(String lower) {
-        return lower.startsWith("fetching ")
-            || lower.startsWith("fetch ")
-            || lower.contains("http://")
-            || lower.contains("https://")
-            || lower.contains("www.");
-    }
-
-    /**
-     * Detects descriptions that originate from a {@code sql} tool call.
-     * Copilot CLI sends the sql tool's {@code description} parameter as the ACP title
-     * (e.g. "Query ready todos", "Insert auth todos"). SQL-specific verbs at the start
-     * of the description are a reliable discriminator — bash descriptions rarely start
-     * with SELECT, INSERT, or QUERY.
-     */
-    private static boolean isSqlToolDescription(String lower) {
-        return lower.startsWith("select ")
-            || lower.startsWith("insert ")
-            || lower.startsWith("query ");
     }
 
     /**
@@ -871,8 +603,8 @@ public final class CopilotClient extends AcpClient {
      * This makes auto-deny counterproductive: the agent can't recover and use the correct
      * MCP tool within the same turn.
      * <p>
-     * With auto-deny off, disallowed built-in tools are auto-approved instead, and the
-     * reprimand nudge mechanism injects corrective guidance into the next MCP tool response.
+     * With auto-deny off, any built-in tool the CLI still offers is auto-approved instead of
+     * ending the turn.
      * <p>
      * Re-enable when Copilot CLI fixes in-turn recovery after ACP tool denial.
      * Tracked: https://github.com/NousResearch/hermes-agent/issues/17284
