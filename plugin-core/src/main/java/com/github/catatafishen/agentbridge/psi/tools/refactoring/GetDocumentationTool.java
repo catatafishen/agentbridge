@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.cpp.CppNovaPsiSupport;
 import com.github.catatafishen.agentbridge.psi.tools.FqnResolver;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
@@ -106,15 +107,25 @@ public final class GetDocumentationTool extends RefactoringTool {
                         com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
                     if (doc == null || line < 1 || line > doc.getLineCount())
                         return ToolUtils.ERROR_PREFIX + "Line out of range: " + line;
-                    ToolUtils.LineContext ctx = new ToolUtils.LineContext(
-                        psiFile, doc.getLineStartOffset(line - 1), doc.getLineEndOffset(line - 1));
+                    int lineStart = doc.getLineStartOffset(line - 1);
+                    int lineEnd = doc.getLineEndOffset(line - 1);
+                    ToolUtils.LineContext ctx = new ToolUtils.LineContext(psiFile, lineStart, lineEnd);
                     String shortName = FqnResolver.shortNameOf(symbol);
                     com.intellij.psi.PsiNameIdentifierOwner element =
                         ToolUtils.resolveNamedElement(ctx, shortName);
-                    if (element == null)
-                        return ToolUtils.ERROR_PREFIX + "No symbol '" + shortName
-                            + "' found at " + filePath + ":" + line;
-                    return generateDocumentation(element, symbol);
+                    if (element != null) return generateDocumentation(element, symbol);
+
+                    // CLion Nova's lazy C++ parser produces no PsiNameIdentifierOwner for
+                    // declarations, so resolveNamedElement finds nothing for C/C++. Fall back to the
+                    // node-type-based lookup shared with get_symbol_info / get_file_outline /
+                    // search_symbols (issue #794).
+                    int offset = firstNonWhitespaceOffset(doc, lineStart, lineEnd);
+                    CppNovaPsiSupport.CppDeclaration cppDecl =
+                        CppNovaPsiSupport.findEnclosingDeclaration(psiFile.findElementAt(offset));
+                    if (cppDecl != null) return generateDocumentation(cppDecl.node(), symbol);
+
+                    return ToolUtils.ERROR_PREFIX + "No symbol '" + shortName
+                        + "' found at " + filePath + ":" + line;
                 } catch (Exception e) {
                     LOG.warn("get_documentation (position) error", e);
                     return ToolUtils.ERROR_PREFIX + e.getMessage();
@@ -140,6 +151,13 @@ public final class GetDocumentationTool extends RefactoringTool {
                 return ToolUtils.ERROR_PREFIX + e.getMessage();
             }
         });
+    }
+
+    private static int firstNonWhitespaceOffset(com.intellij.openapi.editor.Document doc, int lineStart, int lineEnd) {
+        String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
+        int col = 0;
+        while (col < lineText.length() && Character.isWhitespace(lineText.charAt(col))) col++;
+        return Math.min(lineStart + col, doc.getTextLength() - 1);
     }
 
     private String generateDocumentation(PsiElement element, String symbol) {
