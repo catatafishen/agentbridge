@@ -264,9 +264,14 @@ returns a clear error message guiding users to supply file+line parameters.
   given)
 - `ToolUtils.findFileInProjectContent()` added as a fallback that iterates the project's VFS index (handles `temp:///`
   in-memory test files and files not yet synced to LocalFileSystem)
-  **Current status**: ✅ **Merged in PR #820.** Now covered by the IDE bench as
-  `GetDocumentationIntegrationTest` (`get_documentation` × {IU, CL}) — resolves the symbol by
-  file+line against the real CLion Nova backend, replacing the in-memory-only verification.
+  **Current status**: ✅ **Fixed.** The file+line path (PR #820, `ToolUtils.resolveNamedElement`)
+  works for languages that expose a `PsiNameIdentifierOwner` for declarations, but the IDE bench
+  (`GetDocumentationIntegrationTest` × CL) proved it still failed on **CLion Nova C++**: its lazy
+  parser produces no `PsiNameIdentifierOwner`, so `resolveNamedElement` returned null and the tool
+  reported "No symbol 'Widget' found". Fixed by giving `GetDocumentationTool`'s position path the
+  same node-type-based fallback `get_symbol_info` already uses — when `resolveNamedElement` finds
+  nothing, fall back to `CppNovaPsiSupport.findEnclosingDeclaration` (issue #794's shared C++ blind
+  spot). Now covered for {IU, CL} by the bench against the real CLion Nova backend.
 
 ---
 
