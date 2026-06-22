@@ -197,6 +197,7 @@ class ToolsConfigurable(private val project: Project) :
         topStack.add(buildCounterRow())
         topStack.add(buildLimitHint())
         buildRiderInfoPanelIfNeeded()?.let { topStack.add(it) }
+        buildClionInfoPanelIfNeeded()?.let { topStack.add(it) }
         topStack.add(buildButtonRow())
         topStack.add(buildFilterRow())
         topStack.add(buildQuickPermissionsRow())
@@ -1032,6 +1033,28 @@ class ToolsConfigurable(private val project: Project) :
                     BrowserUtil.browse(e.url.toExternalForm())
                 }
             }
+        }
+    }
+
+    private fun buildClionInfoPanelIfNeeded(): JComponent? {
+        if (!PlatformApiCompat.isPluginInstalled("com.intellij.modules.clion")) return null
+        return buildClionInfoPanel()
+    }
+
+    private fun buildClionInfoPanel(): JComponent {
+        val disabledList = PsiBridgeService.getClionDisabledToolIds().joinToString(", ")
+        return JEditorPane(
+            "text/html",
+            "<html><body><b>⚠ CLion:</b> The following tools are unavailable for C/C++. The Nova " +
+                "frontend has no semantic resolution or subtype/caller search for these — that index " +
+                "lives in the clangd/Radler backend: <br><i>$disabledList</i></body></html>"
+        ).apply {
+            isEditable = false
+            isOpaque = false
+            foreground = UIUtil.getContextHelpForeground()
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(4, 0, 8, 0)
+            maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
         }
     }
 }
