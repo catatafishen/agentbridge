@@ -243,8 +243,26 @@ shared `ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner` that 
 frontend never produces, so `get_type_hierarchy` returns "Symbol not found" on real Nova before any
 direction logic runs. `DefinitionsScopedSearch` (subtypes) also has no C++ query executor on the
 frontend. Programmatic supertypes/subtypes work on **Java (IU)** — the IDE bench (PR #874) covers
-the subtypes cell on IU only; CL skips (❓). The previous "✅ Fixed" verdict reflected headless Java
+the subtypes cell on IU only; CL renders 🚫. The previous "✅ Fixed" verdict reflected headless Java
 tests, not real Nova.
+
+> **Live-CLion verification (2026-06-22, doxygen project, Nova C++).** Probed the running plugin's
+> MCP server directly against real C++ code to settle this empirically:
+> - `get_symbol_info` at `src/classdef.h:103` **resolves** `class ClassDef` (via the Nova node-walk
+>   in `NavigationTool.findEnclosingCppDeclaration`) — so a Nova resolution primitive *does* exist.
+> - `find_implementations` / `get_type_hierarchy` at the **same** position both return
+>   `Error: Symbol 'ClassDef' not found` — they use `ToolUtils.resolveNamedElement` (needs a
+>   `PsiNameIdentifierOwner`), not the Nova primitive, so resolution fails.
+> - `find_references(ClassDef)` returns 102 hits, but they are the **word-search fallback**
+>   (`PsiSearchHelper.processElementsWithWord`) — the result list includes header-comment line 1 and
+>   bare `{`/`}` lines, not semantic references. This proves Nova's frontend has **no working
+>   semantic search**: `ReferencesSearch` / `DefinitionsScopedSearch` have no C++ query executor.
+>
+> **Conclusion.** Fixing resolution alone (adding the Nova primitive as a fallback) is **not enough**
+> and would be *dishonest*: `ClassDef` genuinely has subtypes (`ClassDefImpl`, `ClassDefMutable`),
+> but `DefinitionsScopedSearch` would return empty → a false "no implementations". An honest fix
+> requires routing hierarchy/reference queries to the C++ semantic backend (clangd/Radler), which is
+> a real feature, not a frontend fallback. Until then these three tools are correctly 🚫 on CLion.
 
 ---
 
