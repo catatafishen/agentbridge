@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.integration
 
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.models.IdeInfo
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * One column of the IDE × MCP-tool compatibility matrix: which product to launch and the
@@ -31,6 +33,25 @@ data class IdeUnderTest(
     val outlineFile: String?,
     /** Symbols the `get_file_outline` result must contain for the cell to be green. */
     val expectedOutlineSymbols: List<String>,
+    /**
+     * Whether {@code search_symbols} is implemented for this IDE; false = cell skips.
+     * <p>
+     * Rider's C#/F#/VB PSI lives in the ReSharper backend, not the IntelliJ frontend.
+     * {@code classifyElement()} fails on Rider's coarse PSI stubs, so {@code search_symbols}
+     * is listed in the Rider-disabled tools table in README.md and guarded by
+     * {@code PsiBridgeService.RIDER_DISABLED_TOOLS}. The matrix cell skips with
+     * {@code assumeTrue} — same pattern as {@code outlineFile} / {@code symbolInfoFile} —
+     * and renders as not-implemented in the report.
+     */
+    val searchSymbolsSupported: Boolean = true,
+    /**
+     * How long to wait for the plugin's MCP server to report healthy after the IDE launches.
+     * Rider launches a frontend plus a separate ReSharperHost (.NET) backend, and the project's
+     * `postStartupActivity` — which starts the MCP server — only fires once that backend has
+     * booted and loaded the solution. In CI that cold-start runs well past the 2-minute budget
+     * that suffices for IntelliJ/CLion, so Rider gets a longer window.
+     */
+    val bootTimeout: Duration,
     /** Project-relative file passed to `get_symbol_info`; `null` = column not covered (cell skips → ❓). */
     val symbolInfoFile: String?,
     /** 1-based line passed to `get_symbol_info`, pointing at a declaration (e.g. a class). */
@@ -55,6 +76,7 @@ data class IdeUnderTest(
                     expectedSymbol = "Widget",
                     outlineFile = "src/fixture/Widget.java",
                     expectedOutlineSymbols = listOf("Widget", "area"),
+                    bootTimeout = 2.minutes,
                     symbolInfoFile = "src/fixture/Widget.java",
                     symbolInfoLine = 7,
                     expectedSymbolInfoName = "Widget",
@@ -70,6 +92,7 @@ data class IdeUnderTest(
                     expectedSymbol = "Widget",
                     outlineFile = "classdef.h",
                     expectedOutlineSymbols = listOf("Widget", "Point"),
+                    bootTimeout = 2.minutes,
                     symbolInfoFile = "classdef.h",
                     symbolInfoLine = 12,
                     expectedSymbolInfoName = "Widget",
@@ -79,12 +102,14 @@ data class IdeUnderTest(
                     key = "RD",
                     product = IdeProductProvider.RD,
                     version = System.getProperty("agentbridge.rd.version", "2026.1"),
-                    fixture = "dotnet",
+                    fixture = "dotnet/dotnet.sln",
                     highlightsFile = "Widget.cs",
                     symbolQuery = "Widget",
                     expectedSymbol = "Widget",
                     outlineFile = null,
                     expectedOutlineSymbols = emptyList(),
+                    searchSymbolsSupported = false,
+                    bootTimeout = 10.minutes,
                     symbolInfoFile = null,
                     symbolInfoLine = 0,
                     expectedSymbolInfoName = "",

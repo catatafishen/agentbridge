@@ -59,7 +59,8 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
 
     /**
      * Calls a tool via JSON-RPC tools/call and returns the concatenated text content.
-     * Throws if the server returns a JSON-RPC error or a tool execution error.
+     * Throws on HTTP/transport errors only. JSON-RPC errors are returned as plain strings
+     * so the test assertion message includes the actual MCP error instead of a stack trace.
      */
     fun callTool(name: String, arguments: Map<String, Any>, timeout: Duration = Duration.ofSeconds(60)): String {
         val args = JsonObject()
@@ -93,10 +94,10 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
 
         val json = JsonParser.parseString(resp.body()).asJsonObject
         if (json.has("error")) {
-            throw AssertionError("tools/call $name → JSON-RPC error: ${json.get("error")}")
+            return "Error: tools/call $name → JSON-RPC error: ${json.get("error")}"
         }
         val result = json.getAsJsonObject("result")
-            ?: throw AssertionError("tools/call $name → no result in response: ${resp.body()}")
+            ?: return "Error: tools/call $name → no result in response: ${resp.body()}"
 
         val sb = StringBuilder()
         result.getAsJsonArray("content")?.forEach { item ->

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.integration
 
+import com.github.catatafishen.agentbridge.integration.LoggedIdeErrors.OUTPUT_FILE_PROPERTY
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
@@ -13,7 +14,6 @@ import org.kodein.di.bindSingleton
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.Path
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * Shared harness for the IDE × MCP-tool integration matrix.
@@ -86,6 +86,113 @@ object IdeBench {
             TestCase(ide.product, LocalProjectInfo(fixture)).withVersion(ide.version),
         )
 
+        // Rider needs extra configuration the other IDEs don't, applied before launch. Without it
+        // the bench times out: a modal trust dialog blocks the EDT for the whole run, and the MCP
+        // server never auto-starts. This block (see the bench README for the full rationale):
+        //   1. migrate.config — clears the Starter's intellij.first.ide.session=true so Rider
+        //      skips the first-run onboarding wizard that pops the trust dialog.
+        //   2. -Didea.trust.all.projects=true — the only reliable trust-dialog bypass under xvfb
+        //      (a real X display, so the headless bypass never fires); see the detailed comment below.
+        //   3. wizard-suppression option files — belt-and-suspenders against the startup wizard.
+        //   4. mcpServer.xml at Rider's project-config path — makes the plugin auto-start the MCP
+        //      server (Rider reads project config from a different location than IU/CL; see below).
+        if (ide.key == "RD") {
+            val testsRoot = Path.of("out/ide-tests/tests")
+            val rdDir = testsRoot.toFile()
+                .listFiles { f -> f.isDirectory && f.name.startsWith("RD-") }
+                ?.firstOrNull()
+            val configDir = if (rdDir != null) {
+                rdDir.toPath().resolve(contextName).resolve("config")
+            } else {
+                testsRoot.resolve("RD-261.22158.335").resolve(contextName).resolve("config")
+            }
+            configDir.toFile().mkdirs()
+            println("[integration] RD: configDir=$configDir, exists=${configDir.toFile().exists()}")
+
+            // Override the Starter's "intellij.first.ide.session=true" that triggers
+            // Rider's onboarding wizard (and thus the trust dialog).
+            java.io.File(configDir.toFile(), "migrate.config").writeText(
+                "merge-configs\nset-properties intellij.first.ide.session false\n"
+            )
+            println("[integration] RD: wrote migrate.config with first.ide.session=false")
+
+            val optionsDir = configDir.resolve("options")
+            optionsDir.toFile().mkdirs()
+
+            // Root cause (confirmed by decompiling Rider + the platform): opening the solution
+            // calls TrustedSolutionManager.isTrusted, which pops a modal trust dialog on the EDT
+            // and blocks the entire 10-minute run. Its private l(solutionDirectory) returns early
+            // (no dialog) when TrustedProjects.isTrustedCheckDisabled() is true:
+            //
+            //   if (Boolean.getBoolean("idea.trust.all.projects")) return true
+            //   else return isHeadlessMode && Boolean.parseBoolean(
+            //                                   getProperty("idea.trust.headless.disabled","true"))
+            //
+            // The bench runs under xvfb (a REAL X display), so isHeadlessMode is false and the
+            // default headless bypass never fires — which is why every prior attempt at writing
+            // trust config files (trustedSolutions.xml, Trusted.Paths) failed to suppress the
+            // dialog. Setting -Didea.trust.all.projects=true short-circuits the check regardless
+            // of display mode, config-file load order, or path normalization. Use the Starter's
+            // VMOptions.addSystemProperty (NOT com.intellij.diagnostic.VMOptions, which edits the
+            // wrong JVM's options file and corrupted launches in an earlier attempt).
+            context.applyVMOptionsPatch {
+                addSystemProperty("idea.trust.all.projects", true)
+            }
+            println("[integration] RD: set -Didea.trust.all.projects=true via VM options")
+
+            // Approach 1A: suppress IdeStartupWizard via ide.general.xml
+            java.io.File(optionsDir.toFile(), "ide.general.xml").writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<application>
+  <component name="WelcomeScreenComponent">
+    <option name="isStartupWizardCompleted" value="true" />
+  </component>
+</application>"""
+            )
+            println("[integration] RD: wrote ide.general.xml (WelcomeScreenComponent.isStartupWizardCompleted=true)")
+
+            // Approach 1B: suppress IdeStartupWizard via ideStartupWizardSettings.xml
+            java.io.File(optionsDir.toFile(), "ideStartupWizardSettings.xml").writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<application>
+  <component name="IdeStartupWizardSettings">
+    <option name="myIsEnabled" value="false" />
+  </component>
+</application>"""
+            )
+            println("[integration] RD: wrote ideStartupWizardSettings.xml (myIsEnabled=false)")
+
+            // McpServerSettings is a PROJECT-level @State(@Storage("mcpServer.xml")) component
+            // (plugin-core .../settings/McpServerSettings.java); PsiBridgeStartup.autoStartMcpServer()
+            // only launches the MCP HTTP server when its autoStart flag is true. IntelliJ IDEA and
+            // CLion read project component config from <project>/.idea/, so the java-app and cpp-cmake
+            // fixtures commit .idea/mcpServer.xml there. Rider, however, stores a .sln solution's
+            // project component config under <solutionDir>/.idea/.idea.<SolutionName>/.idea/ (alongside
+            // vcs.xml, encodings.xml, indexLayout.xml) and ignores the IntelliJ-style .idea/mcpServer.xml.
+            // That nested dir is .gitignored (Rider regenerates it locally), so it cannot be a committed
+            // fixture file — without the setting, autoStart defaults to false on Rider and the server
+            // never starts, so the bench times out (confirmed run 27939904788:
+            // "autoStartMcpServer: isAutoStart=false"). Pre-seed it at the path Rider actually reads.
+            val solutionName = fixture.fileName.toString().removeSuffix(".sln")
+            val riderProjectConfigDir = fixture.parent
+                .resolve(".idea").resolve(".idea.$solutionName").resolve(".idea")
+            riderProjectConfigDir.toFile().mkdirs()
+            java.io.File(riderProjectConfigDir.toFile(), "mcpServer.xml").writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="McpServerSettings">
+    <option name="port" value="$MCP_PORT"/>
+    <option name="staticPort" value="true"/>
+    <option name="autoStart" value="true"/>
+    <option name="transportMode" value="STREAMABLE_HTTP"/>
+  </component>
+</project>"""
+            )
+            println("[integration] RD: wrote mcpServer.xml (autoStart=true) at $riderProjectConfigDir")
+
+            println("[integration] RD: all suppression configs written at $configDir")
+        }
+
         val pluginFile = Path(pluginPath)
         check(pluginFile.toFile().exists()) {
             "Plugin ZIP not found at $pluginFile — ensure :plugin-core:buildPlugin ran first"
@@ -100,7 +207,7 @@ object IdeBench {
                 // (and the bug reporter) uses — so we deliberately do NOT depend on the Driver UI
                 // DSL. The lambda body just keeps the IDE alive while we issue HTTP calls.
                 val mcp = McpClient(port = MCP_PORT)
-                val version = mcp.awaitHealthy(timeout = 2.minutes)
+                val version = mcp.awaitHealthy(timeout = ide.bootTimeout)
                 println("[integration] ${ide.key}: MCP healthy — plugin version $version")
 
                 // Gate on indexing + backend warm-up via the plugin's own tool: more reliable than
@@ -166,28 +273,70 @@ internal object IdeLogDump {
     )
 
     fun dump(testHome: Path) {
-        println("[integration] === Searching for log files under: $testHome ===")
         val root = testHome.toFile()
+        val header = "[integration] === IdeLogDump: testHome=$testHome, exists=${root.exists()} ==="
+        println(header)
+        System.err.println(header)
         if (!root.exists()) {
             println("[integration] testHome does not exist")
+            System.err.println("[integration] testHome does not exist")
             return
         }
-        println("[integration] testHome contents: ${root.listFiles()?.joinToString { it.name }}")
 
-        val allLogs = root.walkTopDown().filter { it.isFile && it.name.endsWith(".log") }.toList()
-        println("[integration] Found ${allLogs.size} .log file(s): ${allLogs.map { it.relativeTo(root).path }}")
+        // Copy thread dumps to build dir so CI artifact upload picks them up
+        val threadDumpDir = root.toPath().resolve("log/monitoring-thread-dumps-ide")
+        val artifactDir = java.nio.file.Paths.get(
+            System.getProperty("agentbridge.logged-errors.file", "")
+        ).parent?.resolve("thread-dumps")
+        if (artifactDir != null) {
+            artifactDir.toFile().mkdirs()
+            threadDumpDir.toFile().listFiles()?.forEach { td ->
+                try {
+                    java.nio.file.Files.copy(td.toPath(), artifactDir.resolve(td.name))
+                } catch (_: Exception) {
+                }
+            }
+        }
 
+        // List ALL files under testHome
+        val allFiles = root.walkTopDown().filter { it.isFile }.toList()
+        val fileList = "[integration] All testHome files (${allFiles.size}):\n" +
+            allFiles.joinToString("\n") { "  ${it.relativeTo(root).path} (${it.length()}B)" }
+        println(fileList)
+        System.err.println(fileList)
+
+        // Dump thread dumps — print paths + first dump's content
+        val threadDumps = allFiles.filter {
+            it.parentFile?.name == "monitoring-thread-dumps-ide" || it.parentFile?.name == "threadDumps"
+        }.sortedBy { it.name }
+        if (threadDumps.isNotEmpty()) {
+            val tdPaths = "[integration] === Thread dumps (${threadDumps.size}):\n" +
+                threadDumps.joinToString("\n") { "  ${it.absolutePath}" }
+            println(tdPaths)
+            System.err.println(tdPaths)
+            // Print first thread dump content (200 lines) to stderr
+            val first = threadDumps.first()
+            val lines = first.readLines()
+            val tdContent = "[integration] === ${first.name} (${lines.size} lines, first 200) ===\n" +
+                lines.take(200).joinToString("\n")
+            println(tdContent)
+            System.err.println(tdContent)
+        }
+
+        // Dump log files with keyword filtering
+        val allLogs = allFiles.filter { it.name.endsWith(".log") }
         val sorted = allLogs.sortedWith(
             compareBy { f -> PRIORITY.indexOfFirst { f.name.startsWith(it) }.let { if (it == -1) 99 else it } },
         )
         for (logFile in sorted.take(3)) {
             val lines = logFile.readLines()
-            println("[integration] === $logFile (${lines.size} lines) ===")
             val relevant = lines.filter { line -> KEYWORDS.any { line.lowercase().contains(it) } }
-            println("[integration] --- Relevant lines (${relevant.size}) ---")
-            relevant.forEach { println("[integration] $it") }
-            println("[integration] --- Last 30 lines ---")
-            lines.takeLast(30).forEach { println("[integration] $it") }
+            val logOutput = "[integration] === ${logFile.name} (${lines.size} lines, ${relevant.size} relevant) ===\n" +
+                relevant.joinToString("\n") + "\n" +
+                "[integration] --- Last 30 lines ---\n" +
+                lines.takeLast(30).joinToString("\n")
+            println(logOutput)
+            System.err.println(logOutput)
         }
     }
 }

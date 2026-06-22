@@ -1,30 +1,40 @@
 package com.github.catatafishen.agentbridge.integration
 
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
 
 /**
- * Matrix row: {@code search_symbols} × {IU, CL, RD}.
+ * Matrix row: {@code search_symbols} × {IU, CL}.
  *
- * Launches the IDE selected by {@code agentbridge.ide}, opens its fixture, and asserts an exact
- * {@code search_symbols} query for the fixture's {@code Widget} type returns it. A red cell means
- * the real backend's symbol index/PSI does not expose the type to the tool (e.g., the CLion Nova /
- * Rider blind spots tracked in issue #794) — that is real compatibility data, not a harness bug.
+ * Rider is excluded: its C#/F#/VB PSI lives in the ReSharper backend, not the IntelliJ
+ * frontend, so {@code classifyElement()} fails on Rider's coarse PSI stubs.
+ * {@code search_symbols} is listed in the Rider-disabled tools table in README.md and
+ * guarded by {@code PsiBridgeService.RIDER_DISABLED_TOOLS}. The cell skips via
+ * {@code assumeTrue} and renders as not-implemented in the matrix.
  */
 class SearchSymbolsIntegrationTest {
 
     @Test
-    fun `search_symbols finds a class symbol`() = IdeBench.run("searchSymbols") { ide, mcp ->
-        val result = mcp.callTool(
-            "search_symbols",
-            mapOf("query" to ide.symbolQuery, "type" to "class"),
-            timeout = Duration.ofSeconds(120),
+    fun `search_symbols finds a class symbol`() {
+        val ide = IdeUnderTest.current()
+        assumeTrue(
+            ide.searchSymbolsSupported, "search_symbols disabled for ${ide.key}: " +
+                "C# PSI lives in the ReSharper backend (RIDER_DISABLED_TOOLS in PsiBridgeService)"
         )
-        println("[integration] ${ide.key}: search_symbols(${ide.symbolQuery}) → $result")
-        assertTrue(
-            result.contains(ide.expectedSymbol),
-            "Expected '${ide.expectedSymbol}' from search_symbols on ${ide.key}, got:\n$result",
-        )
+
+        IdeBench.run("searchSymbols") { ide, mcp ->
+            val result = mcp.callTool(
+                "search_symbols",
+                mapOf("query" to ide.symbolQuery, "type" to "class"),
+                timeout = Duration.ofSeconds(120),
+            )
+            println("[integration] ${ide.key}: search_symbols(${ide.symbolQuery}) → $result")
+            assertTrue(
+                result.contains(ide.expectedSymbol),
+                "Expected '${ide.expectedSymbol}' from search_symbols on ${ide.key}, got:\n$result",
+            )
+        }
     }
 }
