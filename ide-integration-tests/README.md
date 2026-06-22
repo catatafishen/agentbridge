@@ -20,7 +20,7 @@ bug reporter) hits.
    `Widget` type, so the backend engages on a real project model.
 
    | IDE  | Product                | Fixture opened          | Language |
-      |------|------------------------|-------------------------|----------|
+         |------|------------------------|-------------------------|----------|
    | `IU` | IntelliJ IDEA Ultimate | `fixtures/java-app`     | Java     |
    | `CL` | CLion (Nova/Radler)    | `fixtures/cpp-cmake`    | C++      |
    | `RD` | Rider (ReSharper)      | `fixtures/dotnet/dotnet.sln` | C#  |
@@ -56,6 +56,15 @@ real backend answers the tool call:
   (CLion only for now; skips on IU/RD, which render as ❓ in the matrix).
 - `GetSymbolInfoIntegrationTest` — `get_symbol_info` resolves the `Widget` class declaration
   (IU/CL only for now; skips on RD, which renders as ❓ in the matrix).
+- `GoToDeclarationIntegrationTest` — `go_to_declaration` resolves a declaration from a usage site
+  (IU/CL only for now; skips on RD).
+- `FindReferencesIntegrationTest` — `find_references` finds usages of the navigation symbol
+  (IU/CL only for now; skips on RD).
+- `GetDocumentationIntegrationTest` — `get_documentation` resolves a symbol by file+line
+  (IU/CL only for now; skips on RD).
+- `GetProblemsIntegrationTest` — `get_problems` returns a non-error response on the open file.
+- `GetCompilationErrorsIntegrationTest` — `get_compilation_errors` returns a non-error response
+  on the open file.
 
 Matrix cell states (`.github/workflows/ide-integration-tests.yml` builds the legend):
 

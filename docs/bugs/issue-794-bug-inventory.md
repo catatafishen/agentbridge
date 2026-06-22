@@ -3,7 +3,8 @@
 **Reporter**: @vs49688  
 **Environment**: CLion 2026.1.1 (Nova C++ engine), CMake project (vsclib), Linux/NixOS  
 **Issue opened**: 2026-06-02  
-**Last updated**: 2026-06-17 (`get_symbol_info` fixed and verified live against CLion Nova)
+**Last updated**: 2026-06-22 (IDE bench expanded: `go_to_declaration`, `find_references`,
+`get_documentation`, `get_problems`, `get_compilation_errors` now covered for {IU, CL})
 
 ---
 
@@ -165,7 +166,9 @@ delegates to the IDE's language-agnostic infrastructure:
 3. `TargetElementUtil.getNamedElement` for the "go-to-declaration-on-a-declaration" case.
    Uses `TargetElementUtil.adjustOffset` so whitespace/punctuation no longer breaks lookup.
 
-**Current status**: ❓ **Needs reporter re-verification once PR #815 ships.**
+**Current status**: ✅ **Merged in PR #815.** Now covered by the IDE bench as
+`GoToDeclarationIntegrationTest` (`go_to_declaration` × {IU, CL}) — resolves a declaration from a
+usage site against the real CLion Nova backend, replacing the manual reporter re-verification.
 
 ---
 
@@ -261,8 +264,9 @@ returns a clear error message guiding users to supply file+line parameters.
   given)
 - `ToolUtils.findFileInProjectContent()` added as a fallback that iterates the project's VFS index (handles `temp:///`
   in-memory test files and files not yet synced to LocalFileSystem)
-  **Current status**: ❓ **Needs reporter re-verification once PR #820 ships.** Fix untested in an
-  actual CLion/C++ project — only verified via in-memory Java fixture tests.
+  **Current status**: ✅ **Merged in PR #820.** Now covered by the IDE bench as
+  `GetDocumentationIntegrationTest` (`get_documentation` × {IU, CL}) — resolves the symbol by
+  file+line against the real CLion Nova backend, replacing the in-memory-only verification.
 
 ---
 
@@ -377,8 +381,19 @@ vsclib_tests' on '<default>'". No output captured via `read_run_output`.
 ### 15. `run_tests` — hardcodes Gradle, fails for CLion test frameworks
 
 **Bug (v1.171.4)**: Returns "Gradle run configuration type not available". Fails for Catch2, Google Test, Doctest.  
-**Fix attempted**: None.  
-**Current status**: ❌ **Still broken** (confirmed in bot's Jun 5 update). Never fixed for CLion.
+**Root cause (Jun 22)**: `RunTestsTool.execute` tries, in order, `tryRunTestConfig` (existing
+JUnit/test-named run configs), `tryRunViaConfigurationContext` (PSI-element → `ConfigurationContext`),
+and `tryRunJUnitNatively`, then falls through to a **Gradle-only** `runTestsViaGradleConfig`. The
+`ConfigurationContext` path is the only language-agnostic one, but it depends on
+`resolveTestPsiElement`, which requires the target to resolve to a `PsiNamedElement` classified as
+a class — exactly the CLion Nova C++ blind spot from bugs #1/#1b/#2. So for a C++ target every path
+fails and the Gradle fallback emits the misleading "Gradle run configuration type not available"
+error. The fix must make the fallback framework-agnostic (CTest/Catch2/GoogleTest run-config
+production from a file/location context) rather than Gradle-only.  
+**Fix attempted**: None yet — fix branch pending; a `RunTestsIntegrationTest` cell (Testing group)
+will confirm the ❌ empirically and guard the fix.  
+**Current status**: ❌ **Still broken** (confirmed in bot's Jun 5 update). Root cause identified
+Jun 22; never fixed for CLion.
 
 ---
 
