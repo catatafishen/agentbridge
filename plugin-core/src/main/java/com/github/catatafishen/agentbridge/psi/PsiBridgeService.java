@@ -108,11 +108,35 @@ public final class PsiBridgeService implements Disposable {
     );
 
     /**
+     * Tools disabled in CLion because they depend on semantic resolution and search that
+     * the C++ Nova frontend does not provide. {@code ToolUtils.resolveNamedElement} requires
+     * a {@link com.intellij.psi.PsiNameIdentifierOwner}, which Nova never produces for C++, and
+     * the downstream subtype/caller searches have no C++ frontend executor — the C++ semantic
+     * index lives in the clangd/Radler backend, not the IntelliJ platform. These tools either
+     * fail to resolve the symbol or silently return empty (a false "no results"), so they are
+     * removed to avoid presenting agents with broken tools. Verified empirically against a live
+     * CLion Nova instance (see docs/bugs/issue-794-bug-inventory.md, "Live-CLion verification").
+     */
+    private static final Set<String> CLION_DISABLED_TOOLS = Set.of(
+        "find_implementations", // resolveNamedElement requires PsiNameIdentifierOwner (absent on Nova)
+        "get_type_hierarchy",   // DefinitionsScopedSearch has no C++ frontend executor
+        "get_call_hierarchy"    // ReferencesSearch returns word-search fallback, not semantic callers
+    );
+
+    /**
      * Returns the IDs of tools that are disabled in Rider without resharper-mcp,
      * sorted alphabetically for consistent display order.
      */
     public static List<String> getRiderDisabledToolIds() {
         return RIDER_DISABLED_TOOLS.stream().sorted().toList();
+    }
+
+    /**
+     * Returns the IDs of tools that are disabled in CLion (C++ Nova frontend),
+     * sorted alphabetically for consistent display order.
+     */
+    public static List<String> getClionDisabledToolIds() {
+        return CLION_DISABLED_TOOLS.stream().sorted().toList();
     }
 
     private final Map<String, ReentrantLock> toolLocks = new ConcurrentHashMap<>();
@@ -193,6 +217,7 @@ public final class PsiBridgeService implements Disposable {
         // Register OO-style individual tool classes
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
         boolean isRider = PlatformApiCompat.isPluginInstalled("com.intellij.modules.rider");
+        boolean isClion = PlatformApiCompat.isPluginInstalled("com.intellij.modules.clion");
         boolean hasKotlin = PlatformApiCompat.isPluginInstalled("org.jetbrains.kotlin");
         var allTools = new java.util.ArrayList<com.github.catatafishen.agentbridge.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.git.GitToolFactory.create(project));
@@ -232,6 +257,14 @@ public final class PsiBridgeService implements Disposable {
                 remaining.remove(proxyTool.id());
             }
             allTools.removeIf(tool -> remaining.contains(tool.id()));
+        }
+
+        // CLion's C/C++ semantic model lives in the clangd/Radler backend, not the IntelliJ
+        // frontend. The Nova PSI never produces the PsiNameIdentifierOwner that symbol resolution
+        // requires, and subtype/caller search has no C++ frontend executor — so these tools fail
+        // to resolve or silently return empty. Disable them to avoid presenting broken tools.
+        if (isClion) {
+            allTools.removeIf(tool -> CLION_DISABLED_TOOLS.contains(tool.id()));
         }
 
         registry.registerAll(allTools);
