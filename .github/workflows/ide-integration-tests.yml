@@ -313,8 +313,11 @@ jobs:
                           test_name = testcase.get('name', tool)
                           failure_details[ide].setdefault(tool, []).append((test_name, msg[:500]))
                       elif skipped_el is not None:
-                          # Skipped (e.g. tool not implemented for this IDE yet) → leave as ❓,
-                          # never overwrite a real pass/fail recorded by another test method.
+                          msg = skipped_el.get('message', '') or ''
+                          if 'disabled' in msg.lower():
+                              results[ide][tool] = 'unavailable'
+                          # "not implemented" and other skips → leave as 'missing' (❓),
+                          # never overwrite a real pass/fail record.
                           continue
                       elif prev != 'fail':
                           results[ide][tool] = 'pass'
@@ -342,11 +345,11 @@ jobs:
           if not results:
               summary = '## IDE Compatibility Matrix\n\n_No test results found._\n'
           else:
-              status_map = {'pass': '✅', 'fail': '❌', None: '❓'}
+              status_map = {'pass': '✅', 'fail': '❌', 'unavailable': '🚫', None: '❓'}
               ides = sorted(results.keys())
 
               lines = ['## IDE Compatibility Matrix', '']
-              lines.append('`✅` pass  `❌` fail  `❓` not implemented yet')
+              lines.append('`✅` pass  `❌` fail  `🚫` unavailable  `❓` no test yet')
               lines.append('')
               lines.append('Generated from the real-IDE integration bench (`:ide-integration-tests`).')
               lines.append('')

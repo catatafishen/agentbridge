@@ -93,9 +93,12 @@ val integrationTest by intellijPlatformTesting.testIdeUi.registering {
             systemProperty("agentbridge.plugin.zip", rootProject.rootDir.resolve(pluginPath.get()).absolutePath)
         } else {
             // Local run with no explicit ZIP: build the plugin from source so the bench has
-            // something to install. Fail loudly later if the build produced nothing, rather than
-            // silently launching a stock IDE with no plugin.
+            // something to install. Resolve the built ZIP path and set the system property so
+            // IdeBench.run can find it without a CLI flag.
             dependsOn(":plugin-core:buildPlugin")
+            val builtZip = rootProject.layout.projectDirectory
+                .file("plugin-core/build/distributions/agentbridge-${rootProject.version}.zip")
+            systemProperty("agentbridge.plugin.zip", builtZip.asFile.absolutePath)
         }
 
         // Absolute path to the committed fixtures/ directory (resolved from the repo root so
