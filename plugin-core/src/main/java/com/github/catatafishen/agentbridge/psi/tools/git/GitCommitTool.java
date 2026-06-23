@@ -41,9 +41,9 @@ public final class GitCommitTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Commit staged changes with a message. By default stages ALL changes first "
-            + "(modified, deleted, and new untracked files) — equivalent to 'git add -A && git commit'. "
-            + "Set all: false to commit only what is already staged. "
+        return "Commit staged changes with a message. "
+            + "By default commits only already-staged changes. "
+            + "Set all: true to stage all changes first (equivalent to 'git add -A && git commit'). "
             + "Returns the commit result with the list of committed files, branch, tracking status, "
             + "ahead/behind counts, total commits on the branch, and remaining uncommitted changes.";
     }
@@ -64,7 +64,7 @@ public final class GitCommitTool extends GitTool {
             Param.required(PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"),
             Param.optional(PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"),
             Param.optional(PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"),
-            Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing. Default: true. Set false to commit only already-staged changes."),
+            Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing (equivalent to 'git add -A && git commit'). Default: false — commits only already-staged changes."),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
@@ -310,10 +310,10 @@ public final class GitCommitTool extends GitTool {
     }
 
     /**
-     * Resolves the "all" parameter: defaults to true (stage everything) unless explicitly set to false.
+     * Resolves the "all" parameter: defaults to false (commit only staged changes) unless explicitly set to true.
      */
     static boolean resolveCommitAll(JsonObject args) {
-        return !args.has("all") || args.get("all").getAsBoolean();
+        return args.has("all") && args.get("all").getAsBoolean();
     }
 
     @Override

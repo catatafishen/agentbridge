@@ -58,9 +58,9 @@ class GitCommitToolStaticMethodsTest {
     class ResolveCommitAll {
 
         @Test
-        @DisplayName("defaults to true when 'all' param is absent")
+        @DisplayName("defaults to false when 'all' param is absent")
         void defaultsToTrue() {
-            assertTrue(GitCommitTool.resolveCommitAll(new JsonObject()));
+            assertFalse(GitCommitTool.resolveCommitAll(new JsonObject()));
         }
 
         @Test
@@ -85,6 +85,7 @@ class GitCommitToolStaticMethodsTest {
             JsonObject args = new JsonObject();
             args.addProperty("message", "test commit");
             args.addProperty("amend", true);
+            args.addProperty("all", true);
             assertTrue(GitCommitTool.resolveCommitAll(args));
         }
     }
