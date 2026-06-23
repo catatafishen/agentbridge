@@ -15,6 +15,7 @@ import java.util.List;
 public final class GitResetTool extends GitTool {
 
     private static final String PARAM_COMMIT = "commit";
+    private static final String PARAM_REF = "ref";
     private static final String PARAM_MODE = "mode";
     private static final String MODE_MIXED = "mixed";
 
@@ -34,9 +35,10 @@ public final class GitResetTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Reset HEAD to a specific commit. Modes: 'soft' keeps changes staged, "
+        return "Reset HEAD to a specific commit or ref. Modes: 'soft' keeps changes staged, "
             + "'mixed' (default) unstages changes, 'hard' discards all changes. "
-            + "Can also reset a specific file path (unstages it).";
+            + "Can also reset a specific file path (unstages it). "
+            + "Target commit or ref (e.g. HEAD~1, <sha>).";
     }
 
     @Override
@@ -57,7 +59,8 @@ public final class GitResetTool extends GitTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit (default: HEAD)"),
+            Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit or ref (e.g. HEAD~1, <sha>). Default: HEAD"),
+            Param.optional(PARAM_REF, TYPE_STRING, "Alias for 'commit' — target commit or ref (e.g. HEAD~1, <sha>)"),
             Param.optional(PARAM_MODE, TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
             Param.optional("path", TYPE_STRING, "Reset a specific file path (unstages it)"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
@@ -124,7 +127,7 @@ public final class GitResetTool extends GitTool {
     }
 
     private void addFilePathResetArgs(List<String> cmdArgs, JsonObject args) {
-        String commit = args.has(PARAM_COMMIT) ? args.get(PARAM_COMMIT).getAsString() : null;
+        String commit = getCommitRef(args);
         if (commit != null && !commit.isEmpty()) {
             cmdArgs.add(commit);
         }
@@ -139,8 +142,23 @@ public final class GitResetTool extends GitTool {
             case "hard" -> cmdArgs.add("--hard");
             default -> cmdArgs.add("--" + MODE_MIXED);
         }
-        if (args.has(PARAM_COMMIT) && !args.get(PARAM_COMMIT).getAsString().isEmpty()) {
-            cmdArgs.add(args.get(PARAM_COMMIT).getAsString());
+        String commit = getCommitRef(args);
+        if (commit != null && !commit.isEmpty()) {
+            cmdArgs.add(commit);
         }
+    }
+
+    /**
+     * Returns the target commit/ref from args, checking {@code commit} first then {@code ref}.
+     * Returns {@code null} if neither is present.
+     */
+    private String getCommitRef(JsonObject args) {
+        if (args.has(PARAM_COMMIT) && !args.get(PARAM_COMMIT).getAsString().isEmpty()) {
+            return args.get(PARAM_COMMIT).getAsString();
+        }
+        if (args.has(PARAM_REF) && !args.get(PARAM_REF).getAsString().isEmpty()) {
+            return args.get(PARAM_REF).getAsString();
+        }
+        return null;
     }
 }
