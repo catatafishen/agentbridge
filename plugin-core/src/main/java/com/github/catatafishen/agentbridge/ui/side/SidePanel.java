@@ -1,8 +1,13 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.PromptDbService;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpServerConfig;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
@@ -19,6 +24,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -197,20 +203,44 @@ public final class SidePanel extends JPanel implements Disposable {
             ? Path.of(project.getBasePath(), ".agentbridge", "hooks")
             : null;
 
-        JPanel bottomPanel = new JPanel(new BorderLayout());
+        CustomServersPanel customServersPanel = new CustomServersPanel(project);
+        Disposer.register(this, customServersPanel);
+
+        JPanel hooksSection = new JPanel(new BorderLayout());
         JBLabel hooksLabel = new JBLabel("Hooks");
         hooksLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD, 11f));
         hooksLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-        bottomPanel.add(hooksLabel, BorderLayout.NORTH);
-
+        hooksSection.add(hooksLabel, BorderLayout.NORTH);
         if (hooksDir != null) {
             ProjectFilesPanel hooksPanel = new ProjectFilesPanel(project, hooksDir);
-            bottomPanel.add(hooksPanel, BorderLayout.CENTER);
+            hooksSection.add(hooksPanel, BorderLayout.CENTER);
         }
+        JPanel serversSection = new JPanel(new BorderLayout());
+        JPanel serversHeader = new JPanel(new BorderLayout());
+        JBLabel serversLabel = new JBLabel("Custom servers");
+        serversLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD, 11f));
+        serversLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 4));
+        JButton settingsButton = new JButton(AllIcons.General.GearPlain);
+        settingsButton.setToolTipText("Configure MCP servers");
+        settingsButton.setBorderPainted(false);
+        settingsButton.setContentAreaFilled(false);
+        settingsButton.setFocusable(false);
+        settingsButton.addActionListener(e ->
+            com.intellij.openapi.options.ShowSettingsUtil.getInstance()
+                .showSettingsDialog(project, "com.github.catatafishen.agentbridge.mcp.customServers"));
+        serversHeader.add(serversLabel, BorderLayout.CENTER);
+        serversHeader.add(settingsButton, BorderLayout.EAST);
+        serversHeader.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 8));
+        serversSection.add(serversHeader, BorderLayout.NORTH);
+        serversSection.add(customServersPanel, BorderLayout.CENTER);
+
+        OnePixelSplitter bottomSplitter = new OnePixelSplitter(true, 0.6f);
+        bottomSplitter.setFirstComponent(hooksSection);
+        bottomSplitter.setSecondComponent(serversSection);
 
         OnePixelSplitter splitter = new OnePixelSplitter(true, 0.65f);
         splitter.setFirstComponent(toolCallsPanel);
-        splitter.setSecondComponent(bottomPanel);
+        splitter.setSecondComponent(bottomSplitter);
 
         JPanel tab = new JPanel(new BorderLayout());
         tab.add(splitter, BorderLayout.CENTER);
@@ -381,6 +411,131 @@ public final class SidePanel extends JPanel implements Disposable {
             } finally {
                 g2.dispose();
             }
+        }
+    }
+
+    private static final class CustomServersPanel extends JPanel implements Disposable {
+        private static final Color DOT_GREEN = new Color(0x4CAF50);
+        private static final Color DOT_YELLOW = new Color(0xFFC107);
+        private static final Color DOT_RED = new Color(0xF44336);
+        private static final Color DOT_GRAY = new Color(0x9E9E9E);
+
+        private final transient Project project;
+        private final transient CustomMcpRegistrar registrar;
+        private final transient CustomMcpSettings settings;
+        private final CustomMcpRegistrar.ServerStateListener stateListener;
+        private final java.util.List<JLabel> dotLabels = new java.util.ArrayList<>();
+        private final java.util.List<JCheckBox> toggles = new java.util.ArrayList<>();
+        private final java.util.List<String> serverIds = new java.util.ArrayList<>();
+
+        private CustomServersPanel(@NotNull Project project) {
+            this.project = project;
+            this.registrar = CustomMcpRegistrar.getInstance(project);
+            this.settings = CustomMcpSettings.getInstance(project);
+            this.stateListener = new CustomMcpRegistrar.ServerStateListener() {
+                @Override
+                public void stateChanged(@NotNull String serverId, @NotNull CustomMcpRegistrar.ServerState state) {
+                    ApplicationManager.getApplication().invokeLater(() -> updateRow(serverId, state));
+                }
+
+                @Override
+                public void structureChanged() {
+                    ApplicationManager.getApplication().invokeLater(CustomServersPanel.this::refresh);
+                }
+            };
+            setOpaque(false);
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+            registrar.addStateListener(stateListener);
+            refresh();
+        }
+
+        @Override
+        public void dispose() {
+            registrar.removeStateListener(stateListener);
+        }
+
+        void refresh() {
+            removeAll();
+            dotLabels.clear();
+            toggles.clear();
+            serverIds.clear();
+
+            List<CustomMcpServerConfig> servers = settings.getServers();
+            var snapshot = registrar.getStateSnapshot();
+
+            for (CustomMcpServerConfig server : servers) {
+                var state = snapshot.getOrDefault(
+                    server.getId(),
+                    new CustomMcpRegistrar.ServerState(server.isEnabled(), CustomMcpRegistrar.ServerStatus.UNKNOWN, "Unknown")
+                );
+
+                JLabel dotLabel = new JLabel("\u25CF");
+                dotLabel.setForeground(dotColorFor(state.status()));
+                dotLabel.setFont(JBUI.Fonts.smallFont());
+
+                JBLabel nameLabel = new JBLabel(server.getName() + "  [" + server.getType() + "]");
+                nameLabel.setFont(JBUI.Fonts.smallFont());
+
+                JCheckBox toggle = new JCheckBox("", state.enabled());
+                toggle.setOpaque(false);
+                toggle.addActionListener(e -> onToggleChanged(server, toggle.isSelected()));
+
+                JPanel row = new JPanel(new BorderLayout());
+                row.setOpaque(false);
+                row.setBorder(JBUI.Borders.empty(1, 8, 1, 4));
+
+                JPanel left = new JPanel(new BorderLayout(4, 0));
+                left.setOpaque(false);
+                left.add(dotLabel, BorderLayout.WEST);
+                left.add(nameLabel, BorderLayout.CENTER);
+                row.add(left, BorderLayout.CENTER);
+                row.add(toggle, BorderLayout.EAST);
+                add(row);
+
+                dotLabels.add(dotLabel);
+                toggles.add(toggle);
+                serverIds.add(server.getId());
+            }
+
+            if (servers.isEmpty()) {
+                JBLabel label = new JBLabel("No custom MCP servers configured.");
+                label.setFont(JBUI.Fonts.smallFont());
+                label.setForeground(UIUtil.getContextHelpForeground());
+                label.setBorder(JBUI.Borders.empty(4, 8));
+                add(label);
+            }
+
+            revalidate();
+            repaint();
+        }
+
+        private void updateRow(@NotNull String serverId, @NotNull CustomMcpRegistrar.ServerState state) {
+            int idx = serverIds.indexOf(serverId);
+            if (idx >= 0 && idx < dotLabels.size() && idx < toggles.size()) {
+                dotLabels.get(idx).setForeground(dotColorFor(state.status()));
+                toggles.get(idx).setSelected(state.enabled());
+                return;
+            }
+            refresh();
+        }
+
+        private void onToggleChanged(@NotNull CustomMcpServerConfig server, boolean enabled) {
+            if (!settings.applyCurrentState(server.getId(), enabled)) {
+                return;
+            }
+            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                registrar.syncRegistrations();
+                registrar.checkAllStatuses();
+            });
+        }
+
+        private static Color dotColorFor(CustomMcpRegistrar.ServerStatus status) {
+            return switch (status) {
+                case CONNECTED -> DOT_GREEN;
+                case LOADING -> DOT_YELLOW;
+                case ERROR -> DOT_RED;
+                case DISABLED, UNKNOWN -> DOT_GRAY;
+            };
         }
     }
 }

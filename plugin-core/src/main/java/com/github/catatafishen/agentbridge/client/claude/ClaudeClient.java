@@ -6,6 +6,8 @@ import com.github.catatafishen.agentbridge.bridge.McpStdioLaunch;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.ClientException;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
@@ -251,9 +253,12 @@ public final class ClaudeClient extends AbstractClaudeClient {
         String sessionId = UUID.randomUUID().toString();
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
 
-        // Seed cliSessionIds from any pending session-switch export so that buildCommand
-        // can add --resume on the very first prompt of this session.
         if (project != null) {
+            CustomMcpSettings.getInstance(project).resetCurrentStatesToDefault();
+            CustomMcpRegistrar.getInstance(project).syncRegistrations();
+
+            // Seed cliSessionIds from any pending session-switch export so that buildCommand
+            // can add --resume on the very first prompt of this session.
             PropertiesComponent props = PropertiesComponent.getInstance(project);
             String resumeId = props.getValue(PROP_CLI_RESUME_SESSION_ID);
 

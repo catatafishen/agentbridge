@@ -6,6 +6,8 @@ import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientException;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
@@ -304,6 +306,8 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
 
     @Override
     public @NotNull String createSession(@Nullable String cwd) {
+        CustomMcpSettings.getInstance(project).resetCurrentStatesToDefault();
+        CustomMcpRegistrar.getInstance(project).syncRegistrations();
         String sessionId = UUID.randomUUID().toString();
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
         if (cwd != null) sessionCwd.put(sessionId, cwd);

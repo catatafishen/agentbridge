@@ -19,6 +19,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -41,7 +42,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     private static final int CONNECT_TIMEOUT_MS = 5_000;
     private static final int READ_TIMEOUT_MS = 60_000;
     private static final int CLOSE_TIMEOUT_MS = 2_000;
-    private static final String PROTOCOL_VERSION = "2025-11-25";
+    private static final String PROTOCOL_VERSION = "2025-03-26";
     private static final String DATA_PREFIX = "data:";
     private static final String KEY_PROTOCOL_VERSION = "protocolVersion";
     private static final String KEY_TOOLS = "tools";
@@ -52,6 +53,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     static final String SESSION_HEADER = "Mcp-Session-Id";
 
     private final String url;
+    private final Map<String, String> headers;
     private final AtomicInteger requestId = new AtomicInteger(1);
 
     /**
@@ -70,7 +72,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     private final ReentrantLock reinitLock = new ReentrantLock();
 
     public CustomMcpClient(@NotNull String url) {
-        this(url, null);
+        this(url, null, Map.of());
     }
 
     /**
@@ -78,10 +80,12 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
      *
      * @param url         the MCP server endpoint
      * @param bearerToken initial OAuth bearer token, or {@code null} for unauthenticated servers
+     * @param headers     initial headers
      */
-    public CustomMcpClient(@NotNull String url, @Nullable String bearerToken) {
+    public CustomMcpClient(@NotNull String url, @Nullable String bearerToken, @NotNull Map<String, String> headers) {
         this.url = url;
         this.bearerToken = bearerToken;
+        this.headers = headers;
     }
 
     /**
@@ -205,6 +209,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
                 conn.setRequestMethod("DELETE");
                 conn.setConnectTimeout(CLOSE_TIMEOUT_MS);
                 conn.setReadTimeout(CLOSE_TIMEOUT_MS);
+                applyCustomHeaders(conn);
                 conn.setRequestProperty(SESSION_HEADER, sid);
                 conn.getResponseCode();
             } finally {
@@ -269,6 +274,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Accept", "application/json, text/event-stream");
+            applyCustomHeaders(conn);
 
             String token = bearerToken;
             if (token != null) {
@@ -315,9 +321,27 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
                 responseBody = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             }
 
-            return JsonParser.parseString(stripSseEnvelope(responseBody)).getAsJsonObject();
+            if (status >= 400) {
+                String snippet = responseBody.length() > 200 ? responseBody.substring(0, 200) + "..." : responseBody;
+                throw new IOException("HTTP " + status + ": " + snippet);
+            }
+
+            try {
+                return JsonParser.parseString(stripSseEnvelope(responseBody)).getAsJsonObject();
+            } catch (Exception e) {
+                throw new IOException("Unexpected response (not valid JSON): " +
+                    responseBody.substring(0, Math.min(responseBody.length(), 200)), e);
+            }
         } finally {
             conn.disconnect();
+        }
+    }
+
+    private void applyCustomHeaders(@NotNull HttpURLConnection conn) {
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            String name = entry.getKey();
+            if (name == null || name.isBlank()) continue;
+            conn.setRequestProperty(name, entry.getValue() != null ? entry.getValue() : "");
         }
     }
 
@@ -411,7 +435,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
      * Extracts concatenated text from an MCP {@code content} array.
      */
     @NotNull
-    private static String extractTextContent(@NotNull JsonObject result) {
+    static String extractTextContent(@NotNull JsonObject result) {
         if (!result.has("content")) return "";
         JsonArray content = result.getAsJsonArray("content");
         StringBuilder sb = new StringBuilder();
@@ -429,7 +453,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
      * Extracts the error message from a JSON-RPC error response.
      */
     @NotNull
-    private static String errorMessage(@NotNull JsonObject response) {
+    static String errorMessage(@NotNull JsonObject response) {
         if (response.has(KEY_ERROR) && response.get(KEY_ERROR).isJsonObject()) {
             JsonObject err = response.getAsJsonObject(KEY_ERROR);
             return err.has("message") ? err.get("message").getAsString() : err.toString();
@@ -444,14 +468,19 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     @NotNull
     private static String stripSseEnvelope(@NotNull String body) {
         String trimmed = body.trim();
-        if (!trimmed.startsWith(DATA_PREFIX)) return body;
+        StringBuilder data = new StringBuilder();
+        boolean sawData = false;
         for (String line : trimmed.split("\n")) {
             String stripped = line.trim();
             if (stripped.startsWith(DATA_PREFIX)) {
                 String json = stripped.substring(DATA_PREFIX.length()).trim();
-                if (!json.isEmpty()) return json;
+                if (!json.isEmpty()) {
+                    if (!data.isEmpty()) data.append('\n');
+                    data.append(json);
+                    sawData = true;
+                }
             }
         }
-        return body;
+        return sawData ? data.toString() : body;
     }
 }

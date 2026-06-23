@@ -30,9 +30,11 @@ class FileNavigator(private val project: Project) {
      * Negative results are also cached to avoid repeated background submissions.
      */
     private val commitCache = ConcurrentHashMap<String, Boolean>()
+    private val fileNameCache = ConcurrentHashMap<String, String>()
 
     /** SHAs currently being checked in the background — prevents duplicate submissions. */
     private val pendingChecks: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val pendingFileLookups: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     fun handleFileLink(href: String) {
         if (href.startsWith("http://") || href.startsWith("https://")) {
@@ -239,14 +241,31 @@ class FileNavigator(private val project: Project) {
         return if (rel.exists()) rel.absolutePath else null
     }
 
-    private fun findProjectFileByName(name: String): String? = try {
-        var result: String? = null
-        ApplicationManager.getApplication().runReadAction {
-            val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
-            if (files.size == 1) result = files.first().path
+    private fun findProjectFileByName(name: String): String? {
+        fileNameCache[name]?.let { return it }
+        if (pendingFileLookups.add(name)) {
+            AppExecutorUtil.getAppExecutorService().submit {
+                try {
+                    if (!project.isDisposed) {
+                        val result = try {
+                            var resolved: String? = null
+                            ApplicationManager.getApplication().runReadAction {
+                                val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
+                                if (files.size == 1) resolved = files.first().path
+                            }
+                            resolved
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (result != null) {
+                            fileNameCache[name] = result
+                        }
+                    }
+                } finally {
+                    pendingFileLookups.remove(name)
+                }
+            }
         }
-        result
-    } catch (_: Exception) {
-        null
+        return null
     }
 }
