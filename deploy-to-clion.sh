@@ -11,7 +11,6 @@
 set -euo pipefail
 
 CLION_BINARY="$HOME/.local/share/JetBrains/Toolbox/apps/clion/bin/clion"
-CLION_PLUGIN_PARENT="$HOME/.local/share/JetBrains/CLion2026.1"
 CLION_PROJECT="$HOME/CLionProjects/doxygen"
 DIST_DIR="plugin-core/build/distributions"
 MCP_HEALTH="http://127.0.0.1:8643/health"
@@ -47,7 +46,6 @@ if [[ -z "$PLUGIN_DIR_NAME" ]]; then
     echo "❌ Could not detect plugin directory name in ZIP"
     exit 1
 fi
-INSTALL_DIR="$CLION_PLUGIN_PARENT/$PLUGIN_DIR_NAME"
 
 # ── Step 4: Kill CLion ───────────────────────────────────────────────────────
 if [[ "$SKIP_RESTART" == "false" ]]; then
@@ -59,16 +57,27 @@ if [[ "$SKIP_RESTART" == "false" ]]; then
     sleep 1
 fi
 
-# ── Step 5: Deploy ───────────────────────────────────────────────────────────
-echo "🗑  Removing old plugin: $INSTALL_DIR"
-rm -rf "$INSTALL_DIR"
-echo "📂 Extracting to $CLION_PLUGIN_PARENT..."
-unzip -q "$LATEST_ZIP" -d "$CLION_PLUGIN_PARENT"
-if [[ ! -d "$INSTALL_DIR" ]]; then
-    echo "❌ Extraction failed — $INSTALL_DIR not found"
+# ── Step 5: Deploy to all CLion* version dirs ────────────────────────────────
+BASE="$HOME/.local/share/JetBrains"
+count=0
+while IFS= read -r clion_dir; do
+    [[ -d "$clion_dir" ]] || continue
+    install_dir="$clion_dir/$PLUGIN_DIR_NAME"
+    echo "  📂 → $(basename "$clion_dir")"
+    rm -rf "$install_dir"
+    unzip -q "$LATEST_ZIP" -d "$clion_dir"
+    if [[ -d "$install_dir" ]]; then
+        count=$((count + 1))
+    else
+        echo "  ❌ Extraction failed for $clion_dir"
+    fi
+done < <(ls -dt "$BASE"/CLion* 2>/dev/null)
+
+if [[ $count -eq 0 ]]; then
+    echo "❌ No CLion* directories found under $BASE"
     exit 1
 fi
-echo "✅ Plugin deployed"
+echo "✅ Plugin deployed to $count CLion instance(s)"
 
 # ── Step 6: Restart CLion and wait for MCP ───────────────────────────────────
 if [[ "$SKIP_RESTART" == "true" ]]; then
