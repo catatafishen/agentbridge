@@ -59,8 +59,7 @@ public final class GitResetTool extends GitTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit or ref (e.g. HEAD~1, <sha>). Default: HEAD"),
-            Param.optional(PARAM_REF, TYPE_STRING, "Alias for 'commit' — target commit or ref (e.g. HEAD~1, <sha>)"),
+            Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit or ref (e.g. HEAD~1, <sha>). Parameter name: 'commit'. Also accepts 'ref' as an alias."),
             Param.optional(PARAM_MODE, TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
             Param.optional("path", TYPE_STRING, "Reset a specific file path (unstages it)"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
