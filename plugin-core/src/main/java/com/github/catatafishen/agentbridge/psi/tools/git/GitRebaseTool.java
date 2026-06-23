@@ -494,13 +494,69 @@ public final class GitRebaseTool extends GitTool {
             // Also check repo state in case the error message format changed
             String conflictInfo = detectRebaseConflicts(root);
             if (conflictInfo != null) return conflictInfo;
-            return errorResult;
+            // No conventional conflict markers and no unmerged entries —
+            // this is the "unmerged paths" false-positive scenario (issue #873).
+            String statusOutput = runGitInQuiet(root, "status", "--porcelain");
+            return diagnoseContinueRebaseFailure(errorResult, statusOutput);
         }
         // There are conflicts — return a clean message with guidance
         String conflictInfo = detectRebaseConflicts(root);
         if (conflictInfo != null) return conflictInfo;
         // Fallback: append guidance to raw output
         return errorResult + CONFLICT_GUIDANCE;
+    }
+
+    /**
+     * Diagnoses a {@code git rebase --continue} failure where the index has no unresolved
+     * conflicts. Distinguishes between the empty-commit scenario and a dirty working tree.
+     *
+     * <p>This method is package-private and static so it can be unit-tested without a live
+     * git repository.
+     *
+     * @param errorResult  the raw error string returned by {@code git rebase --continue}
+     * @param statusOutput the output of {@code git status --porcelain}, or {@code null} if
+     *                     the command failed
+     * @return an actionable error message
+     */
+    static @NotNull String diagnoseContinueRebaseFailure(
+        @NotNull String errorResult, @Nullable String statusOutput) {
+
+        // Empty-commit scenario: the conflict was resolved to match the rebase base,
+        // so the staged diff is empty. Git rejects the continue with "nothing to commit"
+        // or "No changes" in its error output.
+        if (errorResult.contains("nothing to commit") || errorResult.contains("No changes")) {
+            return "Error: git rebase --continue failed because the resolved conflict "
+                + "produces an empty commit (identical to its parent). "
+                + "Use git_rebase(skip: true) to skip this commit and continue the rebase.";
+        }
+
+        // Dirty working tree: unstaged tracked-file changes can confuse git or the wrapper.
+        // Porcelain format: XY PATH — X is index status, Y is working-tree status.
+        // Unstaged changes have a space in the index column (X=' ') and a non-space Y.
+        if (statusOutput != null && !statusOutput.isBlank()) {
+            List<String> dirtyFiles = statusOutput.lines()
+                .filter(line -> line.length() >= 2
+                    && line.charAt(0) == ' '
+                    && line.charAt(1) != ' ')
+                .map(line -> line.substring(3).trim())
+                .filter(name -> !name.isBlank())
+                .toList();
+
+            if (!dirtyFiles.isEmpty()) {
+                String fileList = String.join(", ", dirtyFiles);
+                return "Error: git rebase --continue failed — index has no unresolved conflicts "
+                    + "but git reported unmerged paths. "
+                    + "Working tree has unstaged changes in: " + fileList + ". "
+                    + "Try: if this is an 'empty commit' scenario, use git_rebase(skip: true) "
+                    + "to skip it. Otherwise stash or discard unstaged changes before retrying "
+                    + "continue_rebase.";
+            }
+        }
+
+        // Generic contradiction: clean index, clean working tree, yet rebase --continue failed.
+        return "Error: git rebase --continue failed with 'unmerged paths' but git_conflicts "
+            + "shows no conflicts. The conflict may have resolved to an empty commit "
+            + "(identical to parent). Try git_rebase(skip: true) to skip it.";
     }
 
     // ── Programmatic rebase editor ────────────────────────────
