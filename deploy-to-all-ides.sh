@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 #
-# Build the plugin once, then deploy the freshly built ZIP to every local IDE
-# by delegating to the per-IDE scripts (deploy-to-ide.sh / -clion.sh / -rider.sh).
+# Build the plugin once, deploy the freshly built ZIP to every versioned
+# IDE data directory found on this machine, then restart each IDE.
 #
-# The build runs a single time here; each per-IDE script is invoked with
-# --skip-build so they reuse the same ZIP. CLion and Rider are separate
-# processes that restart themselves. The main IntelliJ (the IDE this script is
-# usually launched from) is deployed last and then restarted via a detached
-# relauncher that survives the IDE being killed.
+# Scans ~/.local/share/JetBrains/IntelliJIdea* and CLion* for versioned user
+# data dirs. Rider is deployed to its fixed Toolbox apps plugins path.
+# The main IntelliJ (the host IDE) is restarted last via a detached relauncher
+# that survives the IDE being killed.
 #
 # Usage:
 #   ./deploy-to-all-ides.sh                # build once + deploy + restart all IDEs
@@ -20,14 +19,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 PROJECT_DIR="$SCRIPT_DIR"
 
+DIST_DIR="plugin-core/build/distributions"
+BASE="$HOME/.local/share/JetBrains"
+
+CLION_BINARY="$HOME/.local/share/JetBrains/Toolbox/apps/clion/bin/clion"
+CLION_PROJECT="$HOME/CLionProjects/doxygen"
+
+RIDER_BINARY="$HOME/.local/share/JetBrains/Toolbox/scripts/rider"
+RIDER_PLUGIN_PARENT="$HOME/.local/share/JetBrains/Toolbox/apps/rider/plugins"
+RIDER_PROJECT="$PROJECT_DIR/fixtures/dotnet"
+
 SKIP_BUILD=false
 SKIP_RESTART=false
 DIAGNOSE_RESTART=false
-EXTRA_ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --skip-build)       SKIP_BUILD=true ;;
-        --skip-restart)     SKIP_RESTART=true; EXTRA_ARGS+=("--skip-restart") ;;
+        --skip-restart)     SKIP_RESTART=true ;;
         --diagnose-restart) DIAGNOSE_RESTART=true ;;
     esac
 done
@@ -44,59 +52,23 @@ MAIN_IDE_HOME="$(ps -eo args 2>/dev/null | awk '
     }')"
 MAIN_IDE_PID=""
 if [[ -n "$MAIN_IDE_HOME" ]]; then
-    MAIN_IDE_PID="$(ps -eo pid,args 2>/dev/null | awk -v bin="$MAIN_IDE_HOME/bin/idea" '
-        $2 == bin { print $1; exit }')"
+    MAIN_IDE_PID="$(ps -eo pid,args 2>/dev/null | awk -v bin="$MAIN_IDE_HOME/bin/idea" \
+        '$2 == bin { print $1; exit }')"
 fi
 
-# Non-destructive probe: prove home/PID detection and detached-survival work in
-# the caller's shell context WITHOUT killing IntelliJ. Run from the IDE terminal:
-#   ./deploy-to-all-ides.sh --diagnose-restart
-if [[ "$DIAGNOSE_RESTART" == "true" ]]; then
-    log="/tmp/intellij-deploy-restart.log"
-    {
-        echo "===== DIAGNOSE $(date '+%F %T') ====="
-        echo "MAIN_IDE_HOME='$MAIN_IDE_HOME'"
-        echo "MAIN_IDE_PID='$MAIN_IDE_PID'"
-        echo "launcher exists: $([[ -x "$MAIN_IDE_HOME/bin/idea" ]] && echo yes || echo NO)"
-        echo "PID alive: $([[ -n "$MAIN_IDE_PID" ]] && kill -0 "$MAIN_IDE_PID" 2>/dev/null && echo yes || echo NO)"
-        echo "PROJECT_DIR='$PROJECT_DIR'"
-        echo "parent shell pid: $$  ppid: $PPID"
-    } >"$log" 2>&1
-    setsid bash -c "
-        sleep 3
-        echo \"[detached \$(date '+%T')] SURVIVED parent exit; my pid=\$\$ ppid=\$PPID\" >>'$log'
-    " </dev/null >/dev/null 2>&1 &
-    disown || true
-    echo "🔎 Diagnose scheduled. Wait ~5s, then ask the agent to read $log"
-    exit 0
-fi
+# ── Functions ─────────────────────────────────────────────────────────────────
 
-# ── Build once ───────────────────────────────────────────────────────────────
-if [[ "$SKIP_BUILD" == "false" ]]; then
-    echo "🔨 Building plugin ZIP (once)..."
-    ./gradlew :plugin-core:buildPlugin -x buildSearchableOptions --quiet
-    echo "✅ Build done"
-fi
-
-# ── Deploy to each IDE, reusing the ZIP ──────────────────────────────────────
-FAILURES=()
-
-run_deploy() {
-    local name="$1"; shift
-    local script="$1"; shift
-    if [[ ! -x "$script" ]]; then
-        echo "⚠️  Skipping $name — $script not found or not executable"
-        return
-    fi
-    echo ""
-    echo "════════════════════════════════════════════════════════════"
-    echo "▶ Deploying to $name"
-    echo "════════════════════════════════════════════════════════════"
-    if "$script" --skip-build "${EXTRA_ARGS[@]}"; then
-        echo "✅ $name done"
+# Deploy LATEST_ZIP into a given parent dir (removes old version first).
+deploy_to_dir() {
+    local parent="$1"
+    local install_dir="$parent/$PLUGIN_DIR_NAME"
+    rm -rf "$install_dir"
+    unzip -q "$LATEST_ZIP" -d "$parent"
+    if [[ -d "$install_dir" ]]; then
+        return 0
     else
-        echo "❌ $name failed (continuing with the others)"
-        FAILURES+=("$name")
+        echo "    ❌ extraction failed for $parent"
+        return 1
     fi
 }
 
@@ -148,25 +120,122 @@ restart_main_ide() {
     disown || true
 }
 
-# Restart CLion and Rider first (separate processes) so their deploys finish
-# before we kill the host IntelliJ.
-run_deploy "CLion" "./deploy-to-clion.sh"
-run_deploy "Rider" "./deploy-to-rider.sh"
+# ── Diagnose mode ────────────────────────────────────────────────────────────
+# Non-destructive probe: prove home/PID detection and detached-survival work in
+# the caller's shell context WITHOUT killing IntelliJ. Run from the IDE terminal:
+#   ./deploy-to-all-ides.sh --diagnose-restart
+if [[ "$DIAGNOSE_RESTART" == "true" ]]; then
+    log="/tmp/intellij-deploy-restart.log"
+    {
+        echo "===== DIAGNOSE $(date '+%F %T') ====="
+        echo "MAIN_IDE_HOME='$MAIN_IDE_HOME'"
+        echo "MAIN_IDE_PID='$MAIN_IDE_PID'"
+        echo "launcher exists: $([[ -x "$MAIN_IDE_HOME/bin/idea" ]] && echo yes || echo NO)"
+        echo "PID alive: $([[ -n "$MAIN_IDE_PID" ]] && kill -0 "$MAIN_IDE_PID" 2>/dev/null && echo yes || echo NO)"
+        echo "PROJECT_DIR='$PROJECT_DIR'"
+        echo "parent shell pid: $$  ppid: $PPID"
+    } >"$log" 2>&1
+    setsid bash -c "
+        sleep 3
+        echo \"[detached \$(date '+%T')] SURVIVED parent exit; my pid=\$\$ ppid=\$PPID\" >>'$log'
+    " </dev/null >/dev/null 2>&1 &
+    disown || true
+    echo "🔎 Diagnose scheduled. Wait ~5s, then ask the agent to read $log"
+    exit 0
+fi
 
-# Main IntelliJ last: deploy without restart, then self-restart detached.
-run_deploy "Main IntelliJ" "./deploy-to-ide.sh"
+# ── Build once ───────────────────────────────────────────────────────────────
+if [[ "$SKIP_BUILD" == "false" ]]; then
+    echo "🔨 Building plugin ZIP (once)..."
+    ./gradlew :plugin-core:buildPlugin -x buildSearchableOptions --quiet
+    echo "✅ Build done"
+fi
+
+# ── Locate ZIP and detect plugin directory name ───────────────────────────────
+LATEST_ZIP=$(ls -t "$DIST_DIR"/*.zip 2>/dev/null | head -1)
+if [[ -z "$LATEST_ZIP" ]]; then
+    echo "❌ No ZIP found in $DIST_DIR"
+    exit 1
+fi
+echo "📦 ZIP: $(basename "$LATEST_ZIP")"
+
+PLUGIN_DIR_NAME=$(unzip -l "$LATEST_ZIP" | awk 'NR>3 && $NF ~ /\/$/ { split($NF,a,"/"); print a[1]; exit }')
+if [[ -z "$PLUGIN_DIR_NAME" ]]; then
+    echo "❌ Could not detect plugin directory name from ZIP"
+    exit 1
+fi
+
+# ── Deploy to every versioned IDE data dir ────────────────────────────────────
+# Each IntelliJIdea* and CLion* dir under ~/.local/share/JetBrains is a per-version
+# user data directory that holds its own plugins/ folder.
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "▶ Deploying to all versioned IDE dirs"
+echo "════════════════════════════════════════════════════════════"
+
+FAILURES=()
+deploy_count=0
+
+while IFS= read -r ide_dir; do
+    [[ -d "$ide_dir" ]] || continue
+    echo "  → $(basename "$ide_dir")"
+    if deploy_to_dir "$ide_dir"; then
+        deploy_count=$((deploy_count + 1))
+    else
+        FAILURES+=("$(basename "$ide_dir")")
+    fi
+done < <(ls -dt "$BASE"/IntelliJIdea* "$BASE"/CLion* 2>/dev/null)
+
+# Rider stores plugins in the Toolbox apps dir, not a versioned user data dir.
+if [[ -d "$RIDER_PLUGIN_PARENT" ]]; then
+    echo "  → rider (Toolbox apps)"
+    if deploy_to_dir "$RIDER_PLUGIN_PARENT"; then
+        deploy_count=$((deploy_count + 1))
+    else
+        FAILURES+=("rider (Toolbox apps)")
+    fi
+fi
+
+if [[ $deploy_count -eq 0 ]]; then
+    echo "❌ No IDE directories found — nothing deployed"
+    exit 1
+fi
+echo "✅ Deployed to $deploy_count location(s)"
+
+# ── Restart IDEs ─────────────────────────────────────────────────────────────
+if [[ "$SKIP_RESTART" == "false" ]]; then
+
+    if [[ -x "$CLION_BINARY" ]]; then
+        echo ""
+        echo "🛑 Restarting CLion..."
+        pkill -f "JetBrains/Toolbox/apps/clion" 2>/dev/null || true
+        sleep 2
+        pkill -9 -f "JetBrains/Toolbox/apps/clion" 2>/dev/null || true
+        sleep 1
+        echo "🚀 Starting CLion..."
+        nohup "$CLION_BINARY" "$CLION_PROJECT" > /tmp/clion-deploy-restart.log 2>&1 &
+        echo "✅ CLion restarting (log: /tmp/clion-deploy-restart.log)"
+    fi
+
+    if [[ -x "$RIDER_BINARY" ]]; then
+        echo ""
+        echo "🛑 Restarting Rider..."
+        pkill -f "JetBrains/Toolbox/apps/rider" 2>/dev/null || true
+        sleep 2
+        pkill -9 -f "JetBrains/Toolbox/apps/rider" 2>/dev/null || true
+        sleep 1
+        echo "🚀 Starting Rider..."
+        nohup "$RIDER_BINARY" "$RIDER_PROJECT" > /tmp/rider-deploy-restart.log 2>&1 &
+        echo "✅ Rider restarting (log: /tmp/rider-deploy-restart.log)"
+    fi
+
+    restart_main_ide
+fi
 
 echo ""
 if [[ ${#FAILURES[@]} -eq 0 ]]; then
     echo "🏁 All IDE deployments succeeded."
 else
     echo "🏁 Done with failures: ${FAILURES[*]}"
-fi
-
-if [[ "$SKIP_RESTART" == "false" ]]; then
-    restart_main_ide
-fi
-
-if [[ ${#FAILURES[@]} -ne 0 ]]; then
     exit 1
 fi
