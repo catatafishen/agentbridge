@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.custommcp;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -98,6 +99,29 @@ class CustomMcpRegistrarTest {
             Set<String> result = CustomMcpRegistrar.collectActiveServerIds(servers);
             assertEquals(1, result.size());
             assertTrue(result.contains("a"));
+        }
+
+        @Test
+        void stdioServerWithCommand_included() {
+            CustomMcpServerConfig s = new CustomMcpServerConfig();
+            s.setId("s1");
+            s.setName("stdio-server");
+            s.setType("stdio");
+            s.setCommand("npx");
+            s.setEnabled(true);
+            List<CustomMcpServerConfig> servers = List.of(s);
+            assertEquals(Set.of("s1"), CustomMcpRegistrar.collectActiveServerIds(servers));
+        }
+
+        @Test
+        void stdioServerBlankCommand_excluded() {
+            CustomMcpServerConfig s = new CustomMcpServerConfig();
+            s.setId("s1");
+            s.setName("stdio-server");
+            s.setType("stdio");
+            s.setEnabled(true);
+            List<CustomMcpServerConfig> servers = List.of(s);
+            assertTrue(CustomMcpRegistrar.collectActiveServerIds(servers).isEmpty());
         }
     }
 
@@ -298,6 +322,21 @@ class CustomMcpRegistrarTest {
             assertFalse(desired.contains("b"));
             Set<String> toRemove = CustomMcpRegistrar.computeServersToRemove(current, desired);
             assertEquals(Set.of("b"), toRemove);
+        }
+
+        @Test
+        void stdioServerAddedToActive() {
+            Set<String> current = Set.of("a");
+            CustomMcpServerConfig s = new CustomMcpServerConfig();
+            s.setId("b");
+            s.setType("stdio");
+            s.setCommand("npx");
+            s.setEnabled(true);
+            List<CustomMcpServerConfig> servers = List.of(
+                server("a", "http://a/mcp", true), s
+            );
+            Set<String> desired = CustomMcpRegistrar.collectActiveServerIds(servers);
+            assertEquals(Set.of("a", "b"), desired);
         }
     }
 }

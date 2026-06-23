@@ -14,6 +14,8 @@ import com.github.catatafishen.agentbridge.client.ClientPromptException;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.client.ClientStartException;
 import com.github.catatafishen.agentbridge.client.SlashCommandInfo;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
@@ -1048,7 +1050,8 @@ public abstract class AcpClient extends AbstractClient {
      * Override to perform per-session setup, e.g. restarting a poisoned process.
      */
     protected void beforeCreateSession(String cwd) throws ClientStartException {
-        // default: no-op
+        CustomMcpSettings.getInstance(project).resetCurrentStatesToDefault();
+        CustomMcpRegistrar.getInstance(project).syncRegistrations();
     }
 
     /**
