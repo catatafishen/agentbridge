@@ -279,6 +279,90 @@ class GitRebaseToolTest {
     }
 
     @Nested
+    class DiagnoseContinueRebaseFailure {
+
+        @Test
+        void emptyCommitViaNothingToCommit() {
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: nothing to commit", null);
+            assertTrue(result.contains("empty commit"), "should mention empty commit");
+            assertTrue(result.contains("skip: true"), "should suggest skip");
+            assertFalse(result.contains("unstaged"), "should not mention unstaged files");
+        }
+
+        @Test
+        void emptyCommitViaNoChanges() {
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: No changes — did you forget to use 'git add'?", null);
+            assertTrue(result.contains("empty commit"));
+            assertTrue(result.contains("skip: true"));
+        }
+
+        @Test
+        void dirtyWorkingTreeListsFiles() {
+            // Porcelain output: ' M' means unstaged modification
+            String porcelain = " M src/Foo.java\n M src/Bar.java\n";
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: You must edit all merge conflicts and then\nmark them as resolved",
+                porcelain);
+            assertTrue(result.contains("unstaged changes"), "should mention unstaged changes");
+            assertTrue(result.contains("src/Foo.java"), "should list Foo.java");
+            assertTrue(result.contains("src/Bar.java"), "should list Bar.java");
+            assertTrue(result.contains("skip: true"), "should suggest skip");
+            assertTrue(result.contains("stash"), "should suggest stash");
+        }
+
+        @Test
+        void dirtyWorkingTreeWithDeletedFile() {
+            // ' D' means unstaged deletion
+            String porcelain = " D old-file.txt\n";
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: unmerged paths", porcelain);
+            assertTrue(result.contains("old-file.txt"));
+            assertTrue(result.contains("unstaged changes"));
+        }
+
+        @Test
+        void stagedOnlyFileDoesNotTriggerDirtyWarning() {
+            // 'M ' means staged modification (index changed, working tree clean) — NOT dirty
+            String porcelain = "M  staged-file.java\n";
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: unmerged paths", porcelain);
+            // Should fall through to the generic contradiction message
+            assertFalse(result.contains("unstaged changes"), "staged-only should not trigger dirty warning");
+            assertTrue(result.contains("skip: true"), "generic message should suggest skip");
+        }
+
+        @Test
+        void cleanWorkingTreeGenericMessage() {
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: unmerged paths", "");
+            assertFalse(result.contains("unstaged changes"));
+            assertTrue(result.contains("git_conflicts"), "should reference git_conflicts tool");
+            assertTrue(result.contains("skip: true"), "should suggest skip");
+        }
+
+        @Test
+        void nullStatusOutputGenericMessage() {
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: unmerged paths", null);
+            assertFalse(result.contains("unstaged changes"));
+            assertTrue(result.contains("skip: true"));
+        }
+
+        @Test
+        void emptyCommitTakesPrecedenceOverDirtyWorkingTree() {
+            // Even if there are unstaged files, "nothing to commit" error should be primary signal
+            String porcelain = " M src/Foo.java\n";
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: nothing to commit, working tree clean", porcelain);
+            assertTrue(result.contains("empty commit"), "empty-commit check should have priority");
+            assertTrue(result.contains("skip: true"));
+            assertFalse(result.contains("unstaged changes"), "empty-commit branch should not list dirty files");
+        }
+    }
+
+    @Nested
     class BuildPlainRebaseArgs {
 
         @Test
