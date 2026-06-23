@@ -299,6 +299,15 @@ class GitRebaseToolTest {
         }
 
         @Test
+        void emptyCommitViaNoChangesLowercase() {
+            // Git may emit lowercase on some platforms/versions
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "error: no changes to commit", null);
+            assertTrue(result.contains("empty commit"), "should handle lowercase 'no changes'");
+            assertTrue(result.contains("skip: true"));
+        }
+
+        @Test
         void dirtyWorkingTreeListsFiles() {
             // Porcelain output: ' M' means unstaged modification
             String porcelain = " M src/Foo.java\n M src/Bar.java\n";
@@ -320,6 +329,18 @@ class GitRebaseToolTest {
                 "Error: unmerged paths", porcelain);
             assertTrue(result.contains("old-file.txt"));
             assertTrue(result.contains("unstaged changes"));
+        }
+
+        @Test
+        void dirtyWorkingTreeWithStagedAndUnstagedChanges() {
+            // 'MM' means staged modification + unstaged modification — should be included
+            String porcelain = "MM src/Both.java\nAM src/NewFile.java\n";
+            String result = GitRebaseTool.diagnoseContinueRebaseFailure(
+                "Error: You must edit all merge conflicts and then\nmark them as resolved",
+                porcelain);
+            assertTrue(result.contains("unstaged changes"), "should mention unstaged changes");
+            assertTrue(result.contains("src/Both.java"), "MM file should be listed");
+            assertTrue(result.contains("src/NewFile.java"), "AM file should be listed");
         }
 
         @Test
