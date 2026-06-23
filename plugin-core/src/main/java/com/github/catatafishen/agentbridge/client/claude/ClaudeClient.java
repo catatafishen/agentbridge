@@ -110,8 +110,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
      */
     static final List<String> DISABLED_BUILT_IN_TOOLS = List.of(
         "Bash", "BashOutput", "KillBash",
-        "Edit", "MultiEdit", "Write", "Read", "NotebookEdit",
-        "Glob", "Grep", "Task", "TodoWrite", "SlashCommand");
+        "Edit", "Write", "Read", "NotebookEdit",
+        "Glob", "Grep", "Task", "TodoWrite");
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
