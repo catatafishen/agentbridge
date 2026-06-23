@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deploy plugin to the main IDE.
+# Deploy plugin to all local IntelliJ IDEA instances.
 #
 # Usage:
 #   ./deploy-to-ide.sh          # build + deploy
@@ -16,33 +16,32 @@ detect_zip_root_dir() {
     unzip -l "$zip" | awk 'NR>3 && $NF ~ /\/$/ { split($NF,a,"/"); print a[1]; exit }'
 }
 
-# Auto-detect IntelliJ install dir for the plugin
-detect_install_dir() {
-    local plugin_dir_name="$1"
+# Deploy the ZIP to every IntelliJIdea* version dir under ~/.local/share/JetBrains.
+# Each versioned dir holds per-version user data (plugins, config, etc.).
+deploy_to_all_intellij_dirs() {
+    local zip="$1"
+    local plugin_dir_name="$2"
     local base="$HOME/.local/share/JetBrains"
+    local count=0
 
-    # 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/<plugin>
-    local ide_dir
-    ide_dir=$(ls -dt "$base"/IntelliJIdea* 2>/dev/null | head -1)
-    if [[ -n "$ide_dir" && -d "$ide_dir/$plugin_dir_name" ]]; then
-        echo "$ide_dir/$plugin_dir_name"
-        return
-    fi
+    while IFS= read -r ide_dir; do
+        [[ -d "$ide_dir" ]] || continue
+        local install_dir="$ide_dir/$plugin_dir_name"
+        echo "  📂 → $(basename "$ide_dir")"
+        rm -rf "$install_dir"
+        unzip -q "$zip" -d "$ide_dir"
+        if [[ -d "$install_dir" ]]; then
+            count=$((count + 1))
+        else
+            echo "  ❌ Extraction failed for $ide_dir"
+        fi
+    done < <(ls -dt "$base"/IntelliJIdea* 2>/dev/null)
 
-    # 2. Toolbox app-level: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/<plugin>
-    local dir
-    dir=$(find "$base/Toolbox/apps" -maxdepth 3 -name "plugins" -type d 2>/dev/null | while read -r d; do
-        [[ -d "$d/$plugin_dir_name" ]] && echo "$d/$plugin_dir_name" && break
-    done)
-    if [[ -n "$dir" ]]; then
-        echo "$dir"
-        return
+    if [[ $count -eq 0 ]]; then
+        echo "❌ No IntelliJIdea* directories found under $base"
+        exit 1
     fi
-
-    # 3. Fallback: newest IntelliJIdea dir (create target)
-    if [[ -n "$ide_dir" ]]; then
-        echo "$ide_dir/$plugin_dir_name"
-    fi
+    echo "✅ Plugin deployed to $count IntelliJ instance(s)"
 }
 
 # Step 1: Build (unless --skip-build)
@@ -66,23 +65,6 @@ if [[ -z "$PLUGIN_DIR_NAME" ]]; then
     exit 1
 fi
 
-# Step 4: Deploy files to plugin install directory
-INSTALL_DIR=$(detect_install_dir "$PLUGIN_DIR_NAME")
-if [[ -z "$INSTALL_DIR" ]]; then
-    echo "❌ Could not find plugin install directory"
-    exit 1
-fi
-echo "📂 Target: $INSTALL_DIR"
-
-echo "🗑  Removing old version..."
-rm -rf "$INSTALL_DIR"
-
-echo "📂 Extracting..."
-unzip -q "$LATEST_ZIP" -d "$(dirname "$INSTALL_DIR")"
-
-if [[ ! -d "$INSTALL_DIR" ]]; then
-    echo "❌ Extraction failed"
-    exit 1
-fi
-echo "✅ Plugin deployed"
+# Step 4: Deploy to all IntelliJ version instances
+deploy_to_all_intellij_dirs "$LATEST_ZIP" "$PLUGIN_DIR_NAME"
 echo "⚠️  Restart IntelliJ to apply the new version."
