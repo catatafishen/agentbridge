@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -233,6 +232,12 @@ public final class OpenCodeClient extends AcpClient {
     @Override
     protected boolean supportsAuthenticate() {
         return false;
+    }
+
+    @Override
+    public @Nullable java.nio.file.Path getSessionDirectory() {
+        java.io.File dir = com.github.catatafishen.agentbridge.session.exporters.ExportUtils.sessionsDir(project);
+        return dir.isDirectory() ? dir.toPath() : null;
     }
 
     @Override
