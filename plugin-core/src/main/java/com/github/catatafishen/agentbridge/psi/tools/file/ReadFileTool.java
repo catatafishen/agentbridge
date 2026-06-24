@@ -10,6 +10,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -73,6 +74,10 @@ public class ReadFileTool extends FileTool {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
+
+        String lineParamError = validateLineParams(args);
+        if (lineParamError != null) return lineParamError;
+
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : -1;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : -1;
 
@@ -104,6 +109,23 @@ public class ReadFileTool extends FileTool {
             HIGHLIGHT_READ, agentLabel(project) + " is reading");
         FileAccessTracker.recordRead(project, pathStr);
         return result;
+    }
+
+    private @Nullable String validateLineParams(@NotNull JsonObject args) {
+        for (String param : new String[]{PARAM_START_LINE, PARAM_END_LINE}) {
+            if (!args.has(param)) continue;
+            if (args.get(param).isJsonNull())
+                return "Error: " + param + " must not be null";
+            int value;
+            try {
+                value = args.get(param).getAsInt();
+            } catch (Exception e) {
+                return "Error: " + param + " must be an integer, got: " + args.get(param);
+            }
+            if (value <= 0)
+                return "Error: " + param + " must be a positive integer (1-based), got: " + value;
+        }
+        return null;
     }
 
     private String readFileContent(VirtualFile vf) {

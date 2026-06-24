@@ -167,6 +167,62 @@ public class ReadFileToolTest extends BasePlatformTestCase {
         assertTrue(result.contains("2: y"));
     }
 
+    public void testNullStartLineReturnsError() {
+        VirtualFile vf = createTestFile("nullstart.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.add("start_line", com.google.gson.JsonNull.INSTANCE);
+
+        String result = tool.execute(args);
+        assertTrue("Expected error for null start_line, got: " + result,
+            result.startsWith("Error:") && result.contains("start_line"));
+    }
+
+    public void testZeroStartLineReturnsError() {
+        VirtualFile vf = createTestFile("zerostart.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("start_line", 0);
+
+        String result = tool.execute(args);
+        assertTrue("Expected error for start_line=0, got: " + result,
+            result.startsWith("Error:") && result.contains("start_line"));
+    }
+
+    public void testNegativeStartLineReturnsError() {
+        VirtualFile vf = createTestFile("negstart.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("start_line", -1);
+
+        String result = tool.execute(args);
+        assertTrue("Expected error for start_line=-1, got: " + result,
+            result.startsWith("Error:") && result.contains("start_line"));
+    }
+
+    public void testNullEndLineReturnsError() {
+        VirtualFile vf = createTestFile("nullend.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("start_line", 1);
+        args.add("end_line", com.google.gson.JsonNull.INSTANCE);
+
+        String result = tool.execute(args);
+        assertTrue("Expected error for null end_line, got: " + result,
+            result.startsWith("Error:") && result.contains("end_line"));
+    }
+
+    public void testZeroEndLineReturnsError() {
+        VirtualFile vf = createTestFile("zeroend.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("end_line", 0);
+
+        String result = tool.execute(args);
+        assertTrue("Expected error for end_line=0, got: " + result,
+            result.startsWith("Error:") && result.contains("end_line"));
+    }
+
     public void testLargeFileTruncation() {
         StringBuilder sb = new StringBuilder();
         for (int i = 1; i <= 2500; i++) {
