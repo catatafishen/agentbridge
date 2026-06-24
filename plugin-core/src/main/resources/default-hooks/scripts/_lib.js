@@ -53,15 +53,16 @@ function writeTargets(cmd) {
 
     // sed -i / sed --in-place : the file argument is the last token of the sed segment.
     cmd.split(/[|;&]/).forEach(function (seg) {
-        if (/\bsed\b/.test(seg) && /(\s-i|--in-place)/.test(seg)) {
+        if (/\bsed\b/i.test(seg) && /(\s-i|--in-place)/i.test(seg)) {
             var toks = seg.trim().split(/\s+/);
             var last = toks[toks.length - 1];
             if (looksLikePath(last)) targets.push(stripQuotes(last));
         }
     });
 
-    // Output redirection: > file or >> file (ignores numbered fds like 2>).
-    var redir = /(?:^|[^0-9>])>>?\s*("?[^\s|;&>]+"?)/g;
+    // Output redirection that writes a file: > / >> / 1> / 1>> (stdout). Numbered fds other
+    // than stdout (e.g. 2> for stderr) are intentionally ignored.
+    var redir = /(?:^|[^0-9>&])1?>>?\s*("?[^\s|;&<>]+"?)/g;
     var m;
     while ((m = redir.exec(cmd)) !== null) {
         if (looksLikePath(m[1])) targets.push(stripQuotes(m[1]));
@@ -69,9 +70,9 @@ function writeTargets(cmd) {
 
     // tee [-a] file...
     cmd.split(/[|;&]/).forEach(function (seg) {
-        if (/\btee\b/.test(seg)) {
-            seg.replace(/^[\s\S]*\btee\b/, '').trim().split(/\s+/).forEach(function (tok) {
-                if (tok !== '-a' && looksLikePath(tok)) targets.push(stripQuotes(tok));
+        if (/\btee\b/i.test(seg)) {
+            seg.replace(/^[\s\S]*\btee\b/i, '').trim().split(/\s+/).forEach(function (tok) {
+                if (tok.toLowerCase() !== '-a' && looksLikePath(tok)) targets.push(stripQuotes(tok));
             });
         }
     });

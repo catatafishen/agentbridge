@@ -1,10 +1,7 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.sun.net.httpserver.HttpExchange;
@@ -75,15 +72,7 @@ public final class HookQueryHandler extends AbstractHookHandler {
             return result.toString();
         }
 
-        String classification = ApplicationManager.getApplication().runReadAction(
-            (com.intellij.openapi.util.Computable<String>) () -> {
-                ProjectFileIndex index = ProjectFileIndex.getInstance(project);
-                if (index.isExcluded(vf)) return "excluded";
-                String sourceClass = PlatformApiCompat.classifyFileSourceRoot(index, vf);
-                if (!sourceClass.isEmpty()) return sourceClass;
-                if (index.getContentRootForFile(vf) != null) return "content";
-                return "";
-            });
+        String classification = SourceRootClassifier.classify(project, vf);
 
         result.addProperty("classification", classification);
         result.addProperty("inContentRoot", !classification.isEmpty() && !"excluded".equals(classification));

@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.services.hooks;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
 
@@ -61,10 +60,7 @@ public enum HookCapability {
         return null;
     }
 
-    /**
-     * An immutable empty capability set — the default (strict-sandbox) grant.
-     */
     public static @NotNull Set<HookCapability> none() {
-        return EnumSet.noneOf(HookCapability.class);
+        return Set.of();
     }
 }
