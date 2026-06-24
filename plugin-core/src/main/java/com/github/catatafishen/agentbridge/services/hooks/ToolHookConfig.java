@@ -103,6 +103,13 @@ public record ToolHookConfig(
         }
         if (entry.async()) obj.addProperty("async", true);
         if (entry.showInRunPanel()) obj.addProperty("showInRunPanel", true);
+        if (!entry.capabilities().isEmpty()) {
+            JsonArray caps = new JsonArray();
+            entry.capabilities().stream()
+                .sorted()
+                .forEach(c -> caps.add(c.jsonValue()));
+            obj.add("capabilities", caps);
+        }
         if (!entry.env().isEmpty()) {
             JsonObject envObj = new JsonObject();
             entry.env().forEach(envObj::addProperty);

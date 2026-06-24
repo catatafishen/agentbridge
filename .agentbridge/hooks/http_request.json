@@ -1,9 +1,10 @@
 {
   "pre": [
     {
-      "script": "scripts/enforce-http-bot-identity.sh",
+      "script": "scripts/enforce-http-bot-identity.js",
       "failSilently": false,
-      "timeout": 5
+      "timeout": 15,
+      "capabilities": ["filesystem", "subprocess"]
     }
   ]
 }

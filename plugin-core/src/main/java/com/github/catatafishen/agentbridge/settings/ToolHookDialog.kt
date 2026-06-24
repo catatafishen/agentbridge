@@ -297,7 +297,7 @@ class ToolHookDialog(
         section.entries.add(
             HookEntryConfig(
                 script, timeoutSpinner.value as Int, failSilently, asyncBox.isSelected,
-                emptyMap(), prepend, append, false
+                emptyMap(), prepend, append, false, emptySet()
             )
         )
         rebuildEntryRows(section, panel)

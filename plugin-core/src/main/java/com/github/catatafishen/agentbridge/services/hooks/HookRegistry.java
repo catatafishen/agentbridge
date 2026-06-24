@@ -19,9 +19,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -40,6 +42,7 @@ public final class HookRegistry {
     private static final Logger LOG = Logger.getInstance(HookRegistry.class);
     private static final String HOOKS_DIR_NAME = "hooks";
     private static final String JSON_EXT = ".json";
+    private static final String JSON_KEY_CAPABILITIES = "capabilities";
     private static final long RELOAD_INTERVAL_MS = 2000;
 
     private final Project project;
@@ -217,9 +220,31 @@ public final class HookRegistry {
         String appendString = (trigger != HookTrigger.PERMISSION && obj.has("appendString"))
             ? obj.get("appendString").getAsString() : null;
         boolean showInRunPanel = obj.has("showInRunPanel") && obj.get("showInRunPanel").getAsBoolean();
+        Set<HookCapability> capabilities = parseCapabilities(obj);
 
         return new HookEntryConfig(script, timeout, failSilently, async, Map.copyOf(env),
-            prependString, appendString, showInRunPanel);
+            prependString, appendString, showInRunPanel, capabilities);
+    }
+
+    /**
+     * Parses the optional {@code "capabilities"} array (e.g. {@code ["filesystem","subprocess"]}).
+     * Unknown tokens are skipped with a warning so a typo never silently grants nothing dangerous.
+     */
+    private static @NotNull Set<HookCapability> parseCapabilities(@NotNull JsonObject obj) {
+        if (!obj.has(JSON_KEY_CAPABILITIES) || !obj.get(JSON_KEY_CAPABILITIES).isJsonArray()) {
+            return HookCapability.none();
+        }
+        EnumSet<HookCapability> caps = EnumSet.noneOf(HookCapability.class);
+        for (JsonElement elem : obj.getAsJsonArray(JSON_KEY_CAPABILITIES)) {
+            if (!elem.isJsonPrimitive()) continue;
+            HookCapability cap = HookCapability.fromJson(elem.getAsString());
+            if (cap != null) {
+                caps.add(cap);
+            } else {
+                LOG.warn("Unknown hook capability '" + elem.getAsString() + "' ignored");
+            }
+        }
+        return caps;
     }
 
     /**

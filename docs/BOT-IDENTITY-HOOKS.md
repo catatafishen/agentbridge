@@ -13,8 +13,23 @@ These hooks live in `.agentbridge/hooks/` alongside the plugin's own hook config
 | Hook script | Trigger | Effect |
 |-------------|---------|--------|
 | `enforce-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Intercepts `gh pr create`, `gh issue create`, `gh api` write calls, etc. and injects `GH_TOKEN=<bot token>` |
-| `enforce-http-bot-identity.sh` | `http_request` pre-hook | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>` |
-| `enforce-commit-author.sh` | `git_commit` pre-hook | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
+| `enforce-http-bot-identity.js` | `http_request` pre-hook | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>` |
+| `enforce-commit-author.js` | `git_commit` pre-hook | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
+
+All three hooks are **embedded JavaScript** that runs in-process on the plugin's Rhino engine —
+no shell, PowerShell, or Node runtime is required, so a single `.js` file works identically on
+every OS and JetBrains IDE. Each declares the host capabilities it needs in its JSON config via a
+`"capabilities"` array (see [MCP-TOOL-HOOKS.md](MCP-TOOL-HOOKS.md#capabilities)):
+
+- `enforce-gh-bot-identity.js` and `enforce-http-bot-identity.js` declare
+  `["filesystem", "subprocess"]` — *filesystem* to read `~/.agentbridge/bot-token`, *subprocess*
+  to mint a GitHub App token via `generate-github-app-token.sh`.
+- `enforce-commit-author.js` declares no capabilities — it only reads the connected agent name and
+  rewrites the `author` argument, both of which are core host APIs.
+
+`generate-github-app-token.sh` remains a POSIX shell helper (it needs `openssl` RS256 signing and
+`curl`); the embedded hooks invoke it through their *subprocess* capability when no static token is
+configured.
 
 Token resolution (all three hooks try these in order):
 
@@ -100,7 +115,7 @@ Simpler setup, no GitHub App required. The token is static (doesn't expire unles
    chmod 600 ~/.agentbridge/bot-token
    ```
 
-The `enforce-gh-bot-identity.js` and `enforce-http-bot-identity.sh` hooks will pick it up
+The `enforce-gh-bot-identity.js` and `enforce-http-bot-identity.js` hooks will pick it up
 automatically. Note: PAT actions are attributed to your personal account, not a bot.
 
 ---

@@ -30,7 +30,11 @@ class JsHookEngineTest {
     private static final String RESOURCE_DIR = "/default-hooks/scripts/";
 
     private static HookEntryConfig entry() {
-        return new HookEntryConfig("scripts/hook.js", 10, true, false, Map.of(), null, null, false);
+        return entry(HookCapability.none());
+    }
+
+    private static HookEntryConfig entry(java.util.Set<HookCapability> capabilities) {
+        return new HookEntryConfig("scripts/hook.js", 10, true, false, Map.of(), null, null, false, capabilities);
     }
 
     private static Project mockProject(Path baseDir) {
@@ -194,7 +198,7 @@ class JsHookEngineTest {
     void infiniteLoopTimesOut(@TempDir Path dir) throws IOException {
         Path script = dir.resolve("loop.js");
         Files.writeString(script, "while (true) {}");
-        HookEntryConfig oneSecond = new HookEntryConfig("scripts/loop.js", 1, true, false, Map.of(), null, null, false);
+        HookEntryConfig oneSecond = new HookEntryConfig("scripts/loop.js", 1, true, false, Map.of(), null, null, false, HookCapability.none());
         IOException ex = assertThrows(IOException.class,
             () -> JsHookEngine.evaluate(mockProject(dir), script, oneSecond, command("run_command", "noop")));
         assertTrue(ex.getMessage().contains("timed out"), ex.getMessage());
@@ -219,5 +223,70 @@ class JsHookEngineTest {
         Path script = dir.resolve("hook.sh");
         Files.writeString(script, "echo hi\n");
         assertFalse(JsHookEngine.isEmbeddedJsHook(script));
+    }
+
+    // ---- capabilities ----
+
+    private static String runInline(Path dir, String source, HookEntryConfig entry) throws IOException {
+        Path path = dir.resolve("inline.js");
+        Files.writeString(path, source);
+        return JsHookEngine.evaluate(mockProject(dir), path, entry, command("run_command", "noop"));
+    }
+
+    @Test
+    void filesystemReadDeniedWithoutCapability(@TempDir Path dir) {
+        IOException ex = assertThrows(IOException.class,
+            () -> runInline(dir, "Hook.readFile('x.txt');", entry()));
+        assertTrue(ex.getMessage().contains("filesystem"), ex.getMessage());
+    }
+
+    @Test
+    void filesystemRoundTripWithCapability(@TempDir Path dir) throws IOException {
+        String json = runInline(dir,
+            "Hook.writeFile('out.txt', 'hello world');\n"
+                + "Hook.append(Hook.readFile('out.txt'));",
+            entry(java.util.Set.of(HookCapability.FILESYSTEM)));
+        assertTrue(json.contains("hello world"), json);
+        assertTrue(Files.exists(dir.resolve("out.txt")));
+    }
+
+    @Test
+    void filesystemListAndDeleteWithCapability(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("a.txt"), "1");
+        Files.createDirectories(dir.resolve("sub"));
+        String json = runInline(dir,
+            "var names = JSON.parse(Hook.listDir('.'));\n"
+                + "Hook.append('count=' + names.length + ' exists=' + Hook.exists('a.txt')"
+                + " + ' dir=' + Hook.isDirectory('sub') + ' del=' + Hook.deletePath('a.txt'));",
+            entry(java.util.Set.of(HookCapability.FILESYSTEM)));
+        assertTrue(json.contains("exists=true"), json);
+        assertTrue(json.contains("dir=true"), json);
+        assertTrue(json.contains("del=true"), json);
+        assertFalse(Files.exists(dir.resolve("a.txt")));
+    }
+
+    @Test
+    void subprocessDeniedWithoutCapability(@TempDir Path dir) {
+        IOException ex = assertThrows(IOException.class,
+            () -> runInline(dir, "Hook.exec(JSON.stringify(['echo','hi']));", entry()));
+        assertTrue(ex.getMessage().contains("subprocess"), ex.getMessage());
+    }
+
+    @Test
+    void setArgumentAccumulatesIntoOneResult(@TempDir Path dir) throws IOException {
+        String json = runInline(dir,
+            "Hook.setArgument('author', 'Bot <bot@example.com>');\n"
+                + "Hook.setArgument('message', 'msg');",
+            entry());
+        assertTrue(json.contains("\"arguments\""), json);
+        assertTrue(json.contains("\"author\":\"Bot <bot@example.com>\""), json);
+        assertTrue(json.contains("\"message\":\"msg\""), json);
+    }
+
+    @Test
+    void setCommandIsShorthandForSetArgument(@TempDir Path dir) throws IOException {
+        String json = runInline(dir, "Hook.setCommand('echo patched');", entry());
+        assertTrue(json.contains("\"arguments\""), json);
+        assertTrue(json.contains("\"command\":\"echo patched\""), json);
     }
 }
