@@ -63,6 +63,11 @@ dependencies {
     // JSON processing (Gson)
     implementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
 
+    // Embedded JavaScript engine (Mozilla Rhino) for running hook scripts in-process.
+    // Lets bundled hooks ship as a single cross-platform .js file instead of paired .sh/.ps1
+    // scripts, with no dependency on an external shell, PowerShell, or Node runtime.
+    implementation("org.mozilla:rhino:${providers.gradleProperty("rhinoVersion").get()}")
+
     // QR code generation (ZXing)
     implementation("com.google.zxing:core:${providers.gradleProperty("zxingVersion").get()}")
     implementation("com.google.zxing:javase:${providers.gradleProperty("zxingVersion").get()}")
@@ -309,7 +314,6 @@ val generateHookHashes by tasks.registering {
     outputs.file(outputFile)
 
     doLast {
-        val scriptExt = if (System.getProperty("os.name", "").lowercase().contains("windows")) ".ps1" else ".sh"
         val digest = MessageDigest.getInstance("SHA-256")
 
         fun sha256(bytes: ByteArray): String {
@@ -361,9 +365,9 @@ val generateHookHashes by tasks.registering {
 
         // Hash the generated JSON configs (keep in sync with DefaultHookProvisioner.buildJsonConfigs)
         val jsonContent = mapOf(
-            "run_command.json" to """{"permission":[{"script":"scripts/run-command-abuse$scriptExt","rejectOnFailure":true,"timeout":10}]}""",
-            "run_in_terminal.json" to """{"permission":[{"script":"scripts/run-in-terminal-abort$scriptExt","rejectOnFailure":true,"timeout":10}],"success":[{"script":"scripts/run-in-terminal-reprimand$scriptExt","timeout":10,"failSilently":true}]}""",
-            "write_file.json" to """{"success":[{"script":"scripts/check-stale-naming$scriptExt","timeout":10,"failSilently":true}]}"""
+            "run_command.json" to """{"permission":[{"script":"scripts/run-command-abuse.js","rejectOnFailure":true,"timeout":10}],"success":[{"script":"scripts/command-reprimand.js","timeout":10,"failSilently":true}]}""",
+            "run_in_terminal.json" to """{"permission":[{"script":"scripts/run-in-terminal-abort.js","rejectOnFailure":true,"timeout":10}],"success":[{"script":"scripts/command-reprimand.js","timeout":10,"failSilently":true}]}""",
+            "write_file.json" to """{"success":[{"script":"scripts/check-stale-naming.js","timeout":10,"failSilently":true}]}"""
         )
         for (name in jsonConfigNames) {
             val content = jsonContent[name] ?: throw GradleException("Unknown JSON config: $name")

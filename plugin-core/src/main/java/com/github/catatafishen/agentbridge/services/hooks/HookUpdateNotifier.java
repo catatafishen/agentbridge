@@ -34,7 +34,7 @@ public final class HookUpdateNotifier {
     /**
      * A hook file whose on-disk content differs from the last bundled version.
      *
-     * @param relativePath   path relative to the hooks directory (e.g. {@code scripts/run-command-abuse.sh})
+     * @param relativePath   path relative to the hooks directory (e.g. {@code scripts/run-command-abuse.js})
      * @param bundledContent UTF-8 text content of the bundled version (script resource or generated JSON)
      * @param diskPath       absolute path of the file on disk
      * @param newHash        SHA-256 of {@code bundledContent}

@@ -129,7 +129,7 @@ public final class HookHashRegistry {
      * previous plugin releases. A match means the file was never edited by the user — it's
      * safe to overwrite even if the plugin skipped a version.
      *
-     * @param filename    relative filename (e.g. {@code scripts/run-command-abuse.sh})
+     * @param filename    relative filename (e.g. {@code scripts/run-command-abuse.js})
      * @param diskHash    SHA-256 of the file currently on disk
      * @param bundledData map returned by {@link #loadBundledHashes()}
      */
@@ -242,7 +242,7 @@ public final class HookHashRegistry {
      * Computes the status of a single hook file by comparing its disk hash against the
      * stored and bundled hashes.
      *
-     * @param filename      relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.sh})
+     * @param filename      relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.js})
      * @param hooksDir      resolved hooks directory for the project
      * @param storedHashes  map loaded from {@link #load(Path)} (.provision-hashes)
      * @param bundledHashes map loaded from {@link #loadBundledHashes()} (bundled-hashes.properties)

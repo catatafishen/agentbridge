@@ -25,8 +25,6 @@ import java.util.Objects;
 public final class HookPipeline {
 
     private static final Logger LOG = Logger.getInstance(HookPipeline.class);
-    private static final String ARG_COMMAND = "command";
-    private static final String ARG_CONTENT = "content";
 
     private HookPipeline() {
     }
@@ -86,16 +84,6 @@ public final class HookPipeline {
                                                                @NotNull String toolName,
                                                                @NotNull JsonObject arguments)
         throws HookExecutor.HookExecutionException {
-
-        // Built-in Java checks run first — platform-independent, no shell required.
-        String builtInDenial = switch (toolName) {
-            case "run_command" -> BuiltInPermissionHooks.checkRunCommand(getStringArg(arguments, ARG_COMMAND));
-            case "run_in_terminal" -> BuiltInPermissionHooks.checkRunInTerminal(getStringArg(arguments, ARG_COMMAND));
-            default -> null;
-        };
-        if (builtInDenial != null) {
-            return new PermissionResult.Denied(builtInDenial);
-        }
 
         List<HookEntryConfig> entries = HookRegistry.getInstance(project)
             .findEntries(toolName, HookTrigger.PERMISSION);
@@ -183,7 +171,6 @@ public final class HookPipeline {
 
         String currentOutput = output;
         boolean isError = false;
-        boolean scriptModifiedOutput = false;
 
         if (!entries.isEmpty()) {
             ToolHookConfig config = Objects.requireNonNull(
@@ -202,19 +189,8 @@ public final class HookPipeline {
                     if (mod.stateOverride() != null) {
                         isError = !mod.stateOverride();
                     }
-                    scriptModifiedOutput = true;
                 }
                 currentOutput = applyEntryTextModifiers(entry, currentOutput);
-            }
-        }
-
-        // Run built-in Java success hooks only if no script produced output.
-        // This ensures Windows users (where scripts may be absent) still receive nudges,
-        // while Unix users with working scripts don't see duplicate annotations.
-        if (!scriptModifiedOutput) {
-            String builtInAppend = getBuiltInSuccessAnnotation(toolName, arguments, currentOutput);
-            if (builtInAppend != null) {
-                currentOutput = currentOutput + builtInAppend;
             }
         }
 
@@ -284,7 +260,7 @@ public final class HookPipeline {
     }
 
     static @Nullable String applyOutputText(@NotNull HookResult.OutputModification mod,
-                                               @Nullable String original) {
+                                            @Nullable String original) {
         if (mod.isReplacement()) {
             return mod.replacedOutput();
         }
@@ -293,18 +269,6 @@ public final class HookPipeline {
             return base + mod.appendedText();
         }
         return original;
-    }
-
-    static @Nullable String getBuiltInSuccessAnnotation(@NotNull String toolName,
-                                                        @NotNull JsonObject arguments,
-                                                        @Nullable String output) {
-        return switch (toolName) {
-            case "run_in_terminal" -> BuiltInSuccessHooks.terminalReprimand(
-                getStringArg(arguments, ARG_COMMAND), false);
-            case "write_file" -> BuiltInSuccessHooks.staleNamingCheck(
-                output, getStringArg(arguments, ARG_CONTENT));
-            default -> null;
-        };
     }
 
     static @Nullable String getStringArg(@NotNull JsonObject arguments, @NotNull String key) {
