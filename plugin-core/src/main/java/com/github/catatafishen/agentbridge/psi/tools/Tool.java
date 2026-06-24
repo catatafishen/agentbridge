@@ -42,7 +42,24 @@ public abstract class Tool implements ToolDefinition {
     @Override
     public @Nullable String execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
         this.argumentsHash = argumentsHash;
+        String validationError = validateRequiredParams(args);
+        if (validationError != null) return validationError;
         return execute(args);
+    }
+
+    private @Nullable String validateRequiredParams(@NotNull JsonObject args) {
+        com.google.gson.JsonArray required = inputSchema().getAsJsonArray(KEY_REQUIRED);
+        if (required == null || required.isEmpty()) return null;
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        for (com.google.gson.JsonElement el : required) {
+            String key = el.getAsString();
+            com.google.gson.JsonElement value = args.get(key);
+            if (value == null || value.isJsonNull()) missing.add(key);
+        }
+        if (missing.isEmpty()) return null;
+        return "Error: missing required parameter(s): " + missing
+            + ". Received keys: " + args.keySet()
+            + ". Check the tool schema and retry with all required parameters.";
     }
 
     // category() is inherited from ToolDefinition — subclasses must implement it
