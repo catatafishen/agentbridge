@@ -243,6 +243,26 @@ class FileNavigator(private val project: Project) {
 
     private fun findProjectFileByName(name: String): String? {
         fileNameCache[name]?.let { return it }
+        if (project.isDisposed) return null
+
+        // Synchronous attempt: use a ReadAction to query the index immediately.
+        // This ensures filename-only references (e.g. "Foo.java:12") resolve on the first render.
+        try {
+            var resolved: String? = null
+            ApplicationManager.getApplication().runReadAction {
+                val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
+                if (files.size == 1) resolved = files.first().path
+            }
+            if (resolved != null) {
+                fileNameCache[name] = resolved
+                return resolved
+            }
+            return null
+        } catch (_: Exception) {
+            // Index not ready (e.g., during startup indexing) — fall through to background task
+        }
+
+        // Background warm-up: retry once indexing is complete so later renders resolve correctly
         if (pendingFileLookups.add(name)) {
             AppExecutorUtil.getAppExecutorService().submit {
                 try {
@@ -250,7 +270,9 @@ class FileNavigator(private val project: Project) {
                         val result = try {
                             var resolved: String? = null
                             ApplicationManager.getApplication().runReadAction {
-                                val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
+                                val files =
+                                    FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project))
+                                        .toList()
                                 if (files.size == 1) resolved = files.first().path
                             }
                             resolved

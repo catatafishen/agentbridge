@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.custommcp;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -40,11 +39,15 @@ public final class CustomMcpServerConfig {
     private boolean enabled = true;
     private boolean defaultEnabled = true;
 
-    /** Required for IntelliJ XML serialization. */
+    /**
+     * Required for IntelliJ XML serialization.
+     */
     public CustomMcpServerConfig() {
     }
 
-    /** Backward-compatible constructor for HTTP-type servers. */
+    /**
+     * Backward-compatible constructor for HTTP-type servers.
+     */
     public CustomMcpServerConfig(String id, String name, String url, String instructions, boolean enabled) {
         this.id = id;
         this.name = name;
@@ -53,7 +56,9 @@ public final class CustomMcpServerConfig {
         this.enabled = enabled;
     }
 
-    /** Full constructor. */
+    /**
+     * Full constructor.
+     */
     public CustomMcpServerConfig(
         String id, String name, String type, String url, String command,
         List<String> args, List<McpEnvVar> environment, List<McpHeader> headers,
@@ -96,6 +101,10 @@ public final class CustomMcpServerConfig {
     }
 
     public void setType(String type) {
+        if (type == null) {
+            this.type = TYPE_HTTP;
+            return;
+        }
         this.type = switch (type) {
             case TYPE_STDIO -> TYPE_STDIO;
             case TYPE_SSE -> TYPE_SSE;
@@ -208,7 +217,9 @@ public final class CustomMcpServerConfig {
         return map;
     }
 
-    /** Returns environment as a mutable map for process building. */
+    /**
+     * Returns environment as a mutable map for process building.
+     */
     @NotNull
     public Map<String, String> getEnvironmentMap() {
         if (environment.isEmpty()) return Collections.emptyMap();
@@ -292,12 +303,16 @@ public final class CustomMcpServerConfig {
         this.defaultEnabled = defaultEnabled;
     }
 
-    /** Returns true if this is a stdio-type server. */
+    /**
+     * Returns true if this is a stdio-type server.
+     */
     public boolean isStdio() {
         return TYPE_STDIO.equals(type);
     }
 
-    /** Returns true if this is an HTTP-type server. */
+    /**
+     * Returns true if this is an HTTP-type server.
+     */
     public boolean isHttp() {
         return !isStdio();
     }

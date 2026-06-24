@@ -464,23 +464,21 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     /**
      * Strips the {@code data: } SSE envelope if present.
      * Some MCP servers return {@code data: {...}\n\n} even for single non-streaming responses.
+     * Returns the content of the first non-empty {@code data:} line, or the original body
+     * if no such line is found.
      */
     @NotNull
     private static String stripSseEnvelope(@NotNull String body) {
         String trimmed = body.trim();
-        StringBuilder data = new StringBuilder();
-        boolean sawData = false;
         for (String line : trimmed.split("\n")) {
             String stripped = line.trim();
             if (stripped.startsWith(DATA_PREFIX)) {
                 String json = stripped.substring(DATA_PREFIX.length()).trim();
                 if (!json.isEmpty()) {
-                    if (!data.isEmpty()) data.append('\n');
-                    data.append(json);
-                    sawData = true;
+                    return json;
                 }
             }
         }
-        return sawData ? data.toString() : body;
+        return body;
     }
 }

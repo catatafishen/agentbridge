@@ -415,10 +415,10 @@ public final class SidePanel extends JPanel implements Disposable {
     }
 
     private static final class CustomServersPanel extends JPanel implements Disposable {
-        private static final Color DOT_GREEN = new Color(0x4CAF50);
-        private static final Color DOT_YELLOW = new Color(0xFFC107);
-        private static final Color DOT_RED = new Color(0xF44336);
-        private static final Color DOT_GRAY = new Color(0x9E9E9E);
+        private static final JBColor DOT_GREEN = new JBColor(new Color(0x4CAF50), new Color(0x6AAB73));
+        private static final JBColor DOT_YELLOW = new JBColor(new Color(0xFFC107), new Color(0xE3B341));
+        private static final JBColor DOT_RED = new JBColor(new Color(0xF44336), new Color(0xF28B82));
+        private static final JBColor DOT_GRAY = new JBColor(new Color(0x9E9E9E), new Color(0x6B6B6B));
 
         private final transient Project project;
         private final transient CustomMcpRegistrar registrar;
