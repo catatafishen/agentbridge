@@ -1,14 +1,14 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
-import com.github.catatafishen.agentbridge.services.PromptDbService;
 import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
 import com.github.catatafishen.agentbridge.custommcp.CustomMcpServerConfig;
 import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
+import com.github.catatafishen.agentbridge.services.PromptDbService;
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.icons.AllIcons;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.JBColor;
@@ -22,7 +22,13 @@ import org.jetbrains.annotations.Nullable;
 import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -415,10 +421,10 @@ public final class SidePanel extends JPanel implements Disposable {
     }
 
     private static final class CustomServersPanel extends JPanel implements Disposable {
-        private static final JBColor DOT_GREEN = new JBColor(new Color(0x4CAF50), new Color(0x6AAB73));
-        private static final JBColor DOT_YELLOW = new JBColor(new Color(0xFFC107), new Color(0xE3B341));
-        private static final JBColor DOT_RED = new JBColor(new Color(0xF44336), new Color(0xF28B82));
-        private static final JBColor DOT_GRAY = new JBColor(new Color(0x9E9E9E), new Color(0x6B6B6B));
+        private static final JBColor DOT_GREEN = JBColor.GREEN;
+        private static final JBColor DOT_YELLOW = JBColor.YELLOW;
+        private static final JBColor DOT_RED = JBColor.RED;
+        private static final JBColor DOT_GRAY = JBColor.GRAY;
 
         private final transient Project project;
         private final transient CustomMcpRegistrar registrar;
