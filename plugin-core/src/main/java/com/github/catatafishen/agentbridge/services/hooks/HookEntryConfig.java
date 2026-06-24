@@ -4,6 +4,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Configuration for one entry within a trigger array of a per-tool hook file.
@@ -16,27 +17,30 @@ import java.util.Map;
  * <p>Maps to one object in a trigger array (e.g. one entry in the {@code "success"} array):
  * <pre>{@code
  * {
- *   "script": "scripts/remind-bot-identity.sh",   // optional
+ *   "script": "scripts/remind-bot-identity.js",   // optional
  *   "prependString": "Context note",               // optional; not for permission hooks
  *   "appendString": "Footer note",                 // optional; not for permission hooks
  *   "timeout": 10,
  *   "failSilently": true,
  *   "async": false,
+ *   "capabilities": ["filesystem"],                // optional; opt-in host access for .js hooks
  *   "env": { "LOG_LEVEL": "INFO" }
  * }
  * }</pre>
  *
- * @param script        path to script file (relative to hooks directory), or null for text-only entries
- * @param timeout       max execution time in seconds before force-kill (default 10, only for script entries)
- * @param failSilently  if true, script errors are silently ignored; if false, they propagate.
- *                      Permission hooks use {@code rejectOnFailure} in JSON which maps to
- *                      {@code failSilently = !rejectOnFailure}.
- * @param async         if true, the script is fire-and-forget. Only meaningful for success/failure hooks.
- * @param env           extra environment variables merged into the script process
- * @param prependString optional static text prepended to tool output (null for permission hooks)
- * @param appendString  optional static text appended to tool output (null for permission hooks)
+ * @param script         path to script file (relative to hooks directory), or null for text-only entries
+ * @param timeout        max execution time in seconds before force-kill (default 10, only for script entries)
+ * @param failSilently   if true, script errors are silently ignored; if false, they propagate.
+ *                       Permission hooks use {@code rejectOnFailure} in JSON which maps to
+ *                       {@code failSilently = !rejectOnFailure}.
+ * @param async          if true, the script is fire-and-forget. Only meaningful for success/failure hooks.
+ * @param env            extra environment variables merged into the script process
+ * @param prependString  optional static text prepended to tool output (null for permission hooks)
+ * @param appendString   optional static text appended to tool output (null for permission hooks)
  * @param showInRunPanel if true and the entry is not async, the script process is shown in the
  *                       IDE Run panel instead of running silently in the background
+ * @param capabilities   opt-in host capabilities granted to an embedded {@code .js} hook
+ *                       (filesystem, subprocess); empty by default for the strict sandbox
  */
 public record HookEntryConfig(
     @Nullable String script,
@@ -46,13 +50,15 @@ public record HookEntryConfig(
     @NotNull Map<String, String> env,
     @Nullable String prependString,
     @Nullable String appendString,
-    boolean showInRunPanel
+    boolean showInRunPanel,
+    @NotNull Set<HookCapability> capabilities
 ) {
 
     private static final int DEFAULT_TIMEOUT = 10;
 
     public HookEntryConfig {
         if (timeout <= 0) timeout = DEFAULT_TIMEOUT;
+        capabilities = Set.copyOf(capabilities);
         boolean hasScript = script != null && !script.isBlank();
         boolean hasPrepend = prependString != null && !prependString.isEmpty();
         boolean hasAppend = appendString != null && !appendString.isEmpty();

@@ -1,16 +1,17 @@
 {
   "success": [
     {
-      "script": "scripts/pr-creation-tip.sh",
+      "script": "scripts/pr-creation-tip.js",
       "timeout": 10,
       "failSilently": true,
       "async": false
     },
     {
-      "script": "scripts/pr-description-reminder.sh",
-      "timeout": 10,
+      "script": "scripts/pr-description-reminder.js",
+      "timeout": 15,
       "failSilently": true,
-      "async": false
+      "async": false,
+      "capabilities": ["subprocess"]
     }
   ]
 }

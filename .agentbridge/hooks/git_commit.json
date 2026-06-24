@@ -1,20 +1,20 @@
 {
   "pre": [
     {
-      "script": "scripts/enforce-commit-author.sh",
+      "script": "scripts/enforce-commit-author.js",
       "failSilently": false,
       "timeout": 5
     }
   ],
   "success": [
     {
-      "script": "scripts/bot-identity-reminder.sh",
+      "script": "scripts/bot-identity-reminder.js",
       "timeout": 10,
       "failSilently": true,
       "async": false
     },
     {
-      "script": "scripts/commit-message-quality-reminder.sh",
+      "script": "scripts/commit-message-quality-reminder.js",
       "timeout": 5,
       "failSilently": true,
       "async": false

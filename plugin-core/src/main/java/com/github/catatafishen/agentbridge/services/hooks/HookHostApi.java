@@ -1,7 +1,14 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.services.McpHttpServer;
+import com.github.catatafishen.agentbridge.services.ProcessStreamUtils;
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -12,10 +19,19 @@ import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /**
  * Host object exposed to hook {@code .js} scripts as the global {@code Hook}.
@@ -29,18 +45,32 @@ import java.util.Map;
  * <p>Every {@code public} method is callable from JavaScript. Only strings, booleans and
  * {@code void} cross the boundary — no IntelliJ objects are ever handed to the sandboxed script.
  * The script records at most one outcome; the last recording call wins.
+ *
+ * <p><b>Capabilities.</b> Filesystem ({@code readFile}, {@code writeFile}, {@code deletePath},
+ * {@code listDir}, {@code exists}, {@code isDirectory}) and subprocess ({@code exec}) access is
+ * gated by the hook's declared {@link HookCapability} set. A script that calls one of these
+ * without the matching capability in its JSON config gets a clear error instead of silent access.
  */
 public final class HookHostApi {
 
     private static final Logger LOG = Logger.getInstance(HookHostApi.class);
+    private static final int MAX_PROCESS_OUTPUT_CHARS = 16_000;
 
     private final Project project;
     private final HookPayload payload;
+    private final Set<HookCapability> capabilities;
+    private final int timeoutSeconds;
+    private @Nullable JsonObject pendingArguments;
     private @Nullable String resultJson;
 
-    HookHostApi(@NotNull Project project, @NotNull HookPayload payload) {
+    HookHostApi(@NotNull Project project,
+                @NotNull HookPayload payload,
+                @NotNull Set<HookCapability> capabilities,
+                int timeoutSeconds) {
         this.project = project;
         this.payload = payload;
+        this.capabilities = capabilities;
+        this.timeoutSeconds = timeoutSeconds;
     }
 
     // ------------------------------------------------------------------
@@ -84,6 +114,54 @@ public final class HookHostApi {
     public @NotNull String projectDir() {
         String base = project.getBasePath();
         return base != null ? base : "";
+    }
+
+    /**
+     * The display name of the agent connected over MCP (e.g. {@code "Copilot"}), or {@code null}
+     * when no agent is connected. Lets identity hooks attribute commits/PRs to the live agent
+     * instead of a hardcoded name.
+     */
+    public @Nullable String agentName() {
+        try {
+            McpHttpServer server = McpHttpServer.getInstance(project);
+            return server != null ? server.getConnectedAgentName() : null;
+        } catch (Exception e) {
+            LOG.warn("Failed to resolve connected agent name for hook", e);
+            return null;
+        }
+    }
+
+    /**
+     * Returns the value of an environment variable visible to the IDE process, or {@code null}.
+     * Useful for hooks that read user-provided secrets (e.g. {@code AGENTBRIDGE_BOT_TOKEN}).
+     */
+    public @Nullable String env(@NotNull String name) {
+        return System.getenv(name);
+    }
+
+    /**
+     * The current user's home directory (forward-slash separated), or empty if unknown.
+     */
+    public @NotNull String homeDir() {
+        String home = System.getProperty("user.home");
+        return home != null ? home.replace('\\', '/') : "";
+    }
+
+    /**
+     * The hooks directory for this project (forward-slash separated), or empty if unknown. Lets a
+     * hook locate sibling scripts it shells out to (e.g. a token-minting helper).
+     */
+    public @NotNull String hooksDir() {
+        try {
+            return AgentBridgeStorageSettings.getInstance()
+                .getProjectStorageDir(project)
+                .resolve("hooks")
+                .toString()
+                .replace('\\', '/');
+        } catch (Exception e) {
+            LOG.warn("Failed to resolve hooks directory for hook", e);
+            return "";
+        }
     }
 
     // ------------------------------------------------------------------
@@ -138,15 +216,141 @@ public final class HookHostApi {
     }
 
     private @NotNull String toAbsolute(@NotNull String path) {
-        Path p = Paths.get(path);
-        Path resolved;
-        if (p.isAbsolute()) {
-            resolved = p.normalize();
-        } else {
-            String base = project.getBasePath();
-            resolved = base != null ? Paths.get(base).resolve(p).normalize() : p.normalize();
+        return resolveFsPath(path).toString().replace('\\', '/');
+    }
+
+    // ------------------------------------------------------------------
+    // Filesystem capability ("filesystem")
+    // ------------------------------------------------------------------
+
+    /**
+     * Reads a UTF-8 file and returns its content, or {@code null} if it does not exist.
+     * Requires the {@code filesystem} capability.
+     */
+    public @Nullable String readFile(@NotNull String path) {
+        require(HookCapability.FILESYSTEM, "readFile");
+        Path p = resolveFsPath(path);
+        try {
+            return Files.isRegularFile(p) ? Files.readString(p, StandardCharsets.UTF_8) : null;
+        } catch (IOException e) {
+            throw new HookApiException("Hook.readFile failed for '" + path + "': " + e.getMessage());
         }
-        return resolved.toString().replace('\\', '/');
+    }
+
+    /**
+     * Writes (creating parent directories as needed) UTF-8 {@code content} to {@code path}.
+     * Requires the {@code filesystem} capability.
+     */
+    public void writeFile(@NotNull String path, @NotNull String content) {
+        require(HookCapability.FILESYSTEM, "writeFile");
+        Path p = resolveFsPath(path);
+        try {
+            Path parent = p.getParent();
+            if (parent != null) Files.createDirectories(parent);
+            Files.writeString(p, content, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new HookApiException("Hook.writeFile failed for '" + path + "': " + e.getMessage());
+        }
+    }
+
+    /**
+     * Recursively deletes {@code path}. Returns true if nothing remains afterwards.
+     * Requires the {@code filesystem} capability.
+     */
+    public boolean deletePath(@NotNull String path) {
+        require(HookCapability.FILESYSTEM, "deletePath");
+        Path p = resolveFsPath(path);
+        if (!Files.exists(p)) return false;
+        try (Stream<Path> walk = Files.walk(p)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(child -> {
+                try {
+                    Files.deleteIfExists(child);
+                } catch (IOException e) {
+                    LOG.warn("Hook.deletePath could not delete " + child + ": " + e.getMessage());
+                }
+            });
+        } catch (IOException e) {
+            throw new HookApiException("Hook.deletePath failed for '" + path + "': " + e.getMessage());
+        }
+        return !Files.exists(p);
+    }
+
+    /**
+     * Returns true if {@code path} exists. Requires the {@code filesystem} capability.
+     */
+    public boolean exists(@NotNull String path) {
+        require(HookCapability.FILESYSTEM, "exists");
+        return Files.exists(resolveFsPath(path));
+    }
+
+    /**
+     * Returns true if {@code path} is a directory. Requires the {@code filesystem} capability.
+     */
+    public boolean isDirectory(@NotNull String path) {
+        require(HookCapability.FILESYSTEM, "isDirectory");
+        return Files.isDirectory(resolveFsPath(path));
+    }
+
+    /**
+     * Lists the immediate child names of a directory as a JSON array string (empty array if the
+     * path is not a directory). Requires the {@code filesystem} capability.
+     */
+    public @NotNull String listDir(@NotNull String path) {
+        require(HookCapability.FILESYSTEM, "listDir");
+        Path p = resolveFsPath(path);
+        JsonArray arr = new JsonArray();
+        if (Files.isDirectory(p)) {
+            try (Stream<Path> children = Files.list(p)) {
+                children.forEach(child -> arr.add(child.getFileName().toString()));
+            } catch (IOException e) {
+                throw new HookApiException("Hook.listDir failed for '" + path + "': " + e.getMessage());
+            }
+        }
+        return arr.toString();
+    }
+
+    // ------------------------------------------------------------------
+    // Subprocess capability ("subprocess")
+    // ------------------------------------------------------------------
+
+    /**
+     * Runs an external command and returns a JSON string {@code {"exitCode":N,"stdout":"...",
+     * "stderr":"..."}}. The command is passed as a JSON array of strings (program + arguments),
+     * e.g. {@code Hook.exec(JSON.stringify(["gh","pr","view","main"]))}. Runs in the project
+     * directory and is killed after the hook's configured timeout. Requires the {@code subprocess}
+     * capability.
+     */
+    public @NotNull String exec(@NotNull String commandJsonArray) {
+        require(HookCapability.SUBPROCESS, "exec");
+        List<String> command = parseStringArray(commandJsonArray);
+        if (command.isEmpty()) {
+            throw new HookApiException("Hook.exec requires a non-empty JSON array of [program, ...args]");
+        }
+        try {
+            GeneralCommandLine cmd = new GeneralCommandLine(command);
+            String base = project.getBasePath();
+            if (base != null) cmd.setWorkDirectory(base);
+
+            Process process = cmd.createProcess();
+            CompletableFuture<String> out = ProcessStreamUtils.readAsync(process.getInputStream(), MAX_PROCESS_OUTPUT_CHARS);
+            CompletableFuture<String> err = ProcessStreamUtils.readAsync(process.getErrorStream(), MAX_PROCESS_OUTPUT_CHARS);
+
+            boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new HookApiException("Hook.exec timed out after " + timeoutSeconds + "s: " + command.getFirst());
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("exitCode", process.exitValue());
+            result.addProperty("stdout", ProcessStreamUtils.await(out, "stdout"));
+            result.addProperty("stderr", ProcessStreamUtils.await(err, "stderr"));
+            return result.toString();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new HookApiException("Hook.exec interrupted: " + e.getMessage());
+        } catch (com.intellij.execution.ExecutionException | IOException e) {
+            throw new HookApiException("Hook.exec failed: " + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -182,14 +386,23 @@ public final class HookHostApi {
     }
 
     /**
-     * Rewrites the {@code command} argument before the tool runs (pre hooks).
+     * Rewrites a single tool argument before the tool runs (pre hooks). Multiple calls accumulate
+     * into one modified-arguments result, so a hook can override several arguments in sequence.
+     */
+    public void setArgument(@NotNull String name, @NotNull String value) {
+        if (pendingArguments == null) pendingArguments = new JsonObject();
+        pendingArguments.addProperty(name, value);
+        JsonObject o = new JsonObject();
+        o.add("arguments", pendingArguments);
+        resultJson = o.toString();
+    }
+
+    /**
+     * Rewrites the {@code command} argument before the tool runs (pre hooks). Shorthand for
+     * {@code setArgument("command", command)}.
      */
     public void setCommand(@NotNull String command) {
-        JsonObject args = new JsonObject();
-        args.addProperty("command", command);
-        JsonObject o = new JsonObject();
-        o.add("arguments", args);
-        resultJson = o.toString();
+        setArgument("command", command);
     }
 
     /**
@@ -206,5 +419,49 @@ public final class HookHostApi {
     @Nullable
     String resultJson() {
         return resultJson;
+    }
+
+    // ------------------------------------------------------------------
+    // Internals
+    // ------------------------------------------------------------------
+
+    private void require(@NotNull HookCapability capability, @NotNull String method) {
+        if (!capabilities.contains(capability)) {
+            throw new HookApiException("Hook." + method + " requires the '" + capability.jsonValue()
+                + "' capability — add \"capabilities\": [\"" + capability.jsonValue()
+                + "\"] to this hook's JSON config entry.");
+        }
+    }
+
+    private @NotNull List<String> parseStringArray(@NotNull String json) {
+        List<String> list = new ArrayList<>();
+        try {
+            JsonElement parsed = JsonParser.parseString(json);
+            if (parsed.isJsonArray()) {
+                for (JsonElement el : parsed.getAsJsonArray()) {
+                    if (el.isJsonPrimitive()) list.add(el.getAsString());
+                }
+            }
+        } catch (RuntimeException e) {
+            throw new HookApiException("Hook.exec expected a JSON array of strings: " + e.getMessage());
+        }
+        return list;
+    }
+
+    private @NotNull Path resolveFsPath(@NotNull String path) {
+        Path p = Paths.get(path);
+        if (p.isAbsolute()) return p.normalize();
+        String base = project.getBasePath();
+        return base != null ? Paths.get(base).resolve(p).normalize() : p.normalize();
+    }
+
+    /**
+     * Unchecked exception thrown for capability denials and host-side I/O failures; surfaces to the
+     * script as a Rhino error and is reported by {@link JsHookEngine} with this message.
+     */
+    static final class HookApiException extends RuntimeException {
+        HookApiException(@NotNull String message) {
+            super(message);
+        }
     }
 }

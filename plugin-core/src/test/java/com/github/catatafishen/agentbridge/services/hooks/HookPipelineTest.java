@@ -51,14 +51,14 @@ class HookPipelineTest {
 
         @Test
         void emptyPrependAndAppendReturnOriginal() {
-            var entry = new HookEntryConfig("script.sh", 10, false, false, Map.of(), "", "", false);
+            var entry = new HookEntryConfig("script.sh", 10, false, false, Map.of(), "", "", false, HookCapability.none());
             String result = HookPipeline.applyEntryTextModifiers(entry, "original");
             assertEquals("original", result);
         }
 
         @Test
         void nullPrependAndAppendReturnOriginal() {
-            var entry = new HookEntryConfig("script.sh", 10, false, false, Map.of(), null, null, false);
+            var entry = new HookEntryConfig("script.sh", 10, false, false, Map.of(), null, null, false, HookCapability.none());
             String result = HookPipeline.applyEntryTextModifiers(entry, "original");
             assertEquals("original", result);
         }
@@ -188,7 +188,7 @@ class HookPipelineTest {
         return new HookEntryConfig(
             needsScript ? "placeholder.sh" : null,
             10, false, false, Map.of(),
-            prepend, append, false
+            prepend, append, false, HookCapability.none()
         );
     }
 }

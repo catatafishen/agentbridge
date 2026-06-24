@@ -571,6 +571,50 @@ Java. `Runtime`, `ProcessBuilder`, `System`, `Class`, and reflection are hidden,
 escape to the host. Java `String`/`Boolean`/`Number` values are surfaced as plain JS values. A
 per-call instruction-count deadline (the entry's `timeout`) aborts runaway scripts.
 
+### Additional host accessors
+
+Beyond the table above, the `Hook` global also exposes:
+
+| Call | Description |
+|------|-------------|
+| `Hook.setArgument(name, value)` | Rewrite any tool argument before the tool runs (pre hooks). Multiple calls accumulate into one modified-arguments result. `setCommand` is shorthand for `setArgument("command", …)`. |
+| `Hook.agentName()` | Display name of the connected MCP agent (e.g. `"Copilot"`), or `null` when no agent is connected. |
+| `Hook.env(name)` | Value of an environment variable visible to the IDE process, or `null`. |
+| `Hook.homeDir()` | The current user's home directory (forward slashes), or `""`. |
+| `Hook.hooksDir()` | This project's hooks directory (forward slashes) — lets a hook locate sibling scripts it shells out to. |
+
+### Capabilities
+
+By default an embedded hook can read the tool payload and the project model, record a decision,
+and read environment/agent metadata — but it **cannot** touch the filesystem or spawn processes.
+Those powers are opt-in: a hook must declare them in its JSON config via a `"capabilities"` array.
+Calling a gated method without the matching capability throws an error that names the missing
+capability.
+
+| Capability | Unlocks | Methods |
+|------------|---------|---------|
+| `filesystem` | Read, write, delete files and list directories | `Hook.readFile(path)`, `Hook.writeFile(path, content)`, `Hook.deletePath(path)`, `Hook.exists(path)`, `Hook.isDirectory(path)`, `Hook.listDir(path)` (returns a JSON array string) |
+| `subprocess` | Run an external command | `Hook.exec(jsonArrayString)` — pass the command as a JSON array string, e.g. `Hook.exec(JSON.stringify(['gh','pr','view','main']))`; returns `{"exitCode","stdout","stderr"}` as a JSON string, and is killed after the hook's timeout |
+
+Declare them per hook entry:
+
+```json
+{
+  "pre": [
+    {
+      "script": "scripts/enforce-gh-bot-identity.js",
+      "timeout": 15,
+      "capabilities": ["filesystem", "subprocess"]
+    }
+  ]
+}
+```
+
+> **Capabilities are auditability wiring, not a hard security boundary.** They make a hook's
+> intent explicit and keep least-privilege the default, but a hook author can always grant a
+> capability to their own config. They are not a sandbox against a hook you should not have
+> installed in the first place.
+
 ### Shared helpers (`_lib.js`)
 
 If a `_lib.js` file sits next to the hook script, it is evaluated first in the same scope —

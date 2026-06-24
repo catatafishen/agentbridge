@@ -57,7 +57,7 @@ public final class JsHookEngine {
                                            @NotNull HookEntryConfig entry,
                                            @NotNull HookPayload payload) throws IOException {
         String source = stripShebang(readSource(scriptPath));
-        HookHostApi host = new HookHostApi(project, payload);
+        HookHostApi host = new HookHostApi(project, payload, entry.capabilities(), entry.timeout());
 
         Context cx = FACTORY.enterContext();
         try {

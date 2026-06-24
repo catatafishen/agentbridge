@@ -1,1 +1,9 @@
-{"success":[{"script":"scripts/check-stale-naming.sh","timeout":10,"failSilently":true}]}
+{
+  "success": [
+    {
+      "script": "scripts/check-stale-naming.js",
+      "timeout": 10,
+      "failSilently": true
+    }
+  ]
+}
