@@ -12,7 +12,6 @@ import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -108,12 +107,9 @@ public final class HookHostApi {
         return payload.error();
     }
 
-    /**
-     * Absolute path of the project base directory (forward-slash separated), or empty if unknown.
-     */
     public @NotNull String projectDir() {
         String base = project.getBasePath();
-        return base != null ? base : "";
+        return base != null ? base.replace('\\', '/') : "";
     }
 
     /**
@@ -168,25 +164,11 @@ public final class HookHostApi {
     // Source-root awareness (resolved from the IntelliJ project model)
     // ------------------------------------------------------------------
 
-    /**
-     * Classifies a path using the IntelliJ project model. Returns one of
-     * {@code "sources"}, {@code "test_sources"}, {@code "resources"}, {@code "test_resources"},
-     * {@code "generated_sources"}, {@code "generated_test_sources"}, {@code "excluded"},
-     * {@code "content"}, or {@code ""} when the path is outside all content roots or not found.
-     * Relative paths are resolved against the project directory.
-     */
     public @NotNull String classify(@NotNull String path) {
         String abs = toAbsolute(path);
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(abs);
         if (vf == null) return "";
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
-            ProjectFileIndex index = ProjectFileIndex.getInstance(project);
-            if (index.isExcluded(vf)) return "excluded";
-            String sourceClass = PlatformApiCompat.classifyFileSourceRoot(index, vf);
-            if (!sourceClass.isEmpty()) return sourceClass;
-            if (index.getContentRootForFile(vf) != null) return "content";
-            return "";
-        });
+        return SourceRootClassifier.classify(project, vf);
     }
 
     /**

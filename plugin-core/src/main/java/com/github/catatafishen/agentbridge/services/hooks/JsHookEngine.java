@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.mozilla.javascript.ClassShutter;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ContextFactory;
 import org.mozilla.javascript.RhinoException;
@@ -35,10 +35,15 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class JsHookEngine {
 
-    private static final Logger LOG = Logger.getInstance(JsHookEngine.class);
     private static final String LIB_FILE = "_lib.js";
     private static final Object DEADLINE_KEY = new Object();
     private static final int INSTRUCTION_OBSERVER_THRESHOLD = 10_000;
+
+    /**
+     * Makes only {@link HookHostApi} visible to scripts; every other Java class (Runtime,
+     * ProcessBuilder, Class, reflection) is hidden, blocking sandbox escapes via LiveConnect.
+     */
+    private static final ClassShutter CLASS_SHUTTER = HookHostApi.class.getName()::equals;
 
     private static final ContextFactory FACTORY = new HookContextFactory();
     private static final ConcurrentHashMap<Path, CachedSource> SOURCE_CACHE = new ConcurrentHashMap<>();
@@ -61,7 +66,7 @@ public final class JsHookEngine {
 
         Context cx = FACTORY.enterContext();
         try {
-            cx.setClassShutter(HookClassShutter.INSTANCE);
+            cx.setClassShutter(CLASS_SHUTTER);
             Scriptable scope = cx.initStandardObjects();
             ScriptableObject.putProperty(scope, "Hook", Context.javaToJS(host, scope));
 
@@ -126,20 +131,6 @@ public final class JsHookEngine {
     }
 
     private record CachedSource(long mtime, String source) {
-    }
-
-    /**
-     * Makes only {@link HookHostApi} visible to scripts; everything else (Runtime, ProcessBuilder,
-     * Class, reflection) is hidden, blocking sandbox escapes via LiveConnect.
-     */
-    private static final class HookClassShutter implements org.mozilla.javascript.ClassShutter {
-        static final HookClassShutter INSTANCE = new HookClassShutter();
-        private static final String ALLOWED = HookHostApi.class.getName();
-
-        @Override
-        public boolean visibleToScripts(String fullClassName) {
-            return ALLOWED.equals(fullClassName);
-        }
     }
 
     /**

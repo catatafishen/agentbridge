@@ -56,16 +56,16 @@ public final class DefaultHookProvisioner {
      */
     public static void provisionDefaults(@NotNull Project project) {
         Path hooksDir = resolveHooksDir(project);
-        List<String> scriptEntries = requireManifest();
-        if (scriptEntries == null) return;
+        List<String> manifestEntries = requireManifest();
+        if (manifestEntries == null) return;
 
         if (!HookHashRegistry.exists(hooksDir)) {
             // Old install: no hash history, can't detect user edits — wipe and start fresh.
-            wipeThenProvision(hooksDir, scriptEntries);
+            wipeThenProvision(hooksDir, manifestEntries);
             return;
         }
 
-        provisionWithHashCheck(project, hooksDir, scriptEntries);
+        provisionWithHashCheck(project, hooksDir, manifestEntries);
     }
 
     /**
@@ -78,10 +78,10 @@ public final class DefaultHookProvisioner {
         Path hooksDir = resolveHooksDir(project);
         LOG.info("Restoring default hooks to " + hooksDir);
 
-        List<String> scriptEntries = requireManifest();
-        if (scriptEntries == null) return false;
+        List<String> manifestEntries = requireManifest();
+        if (manifestEntries == null) return false;
 
-        return wipeThenProvision(hooksDir, scriptEntries);
+        return wipeThenProvision(hooksDir, manifestEntries);
     }
 
     private static @Nullable List<String> requireManifest() {
@@ -93,14 +93,14 @@ public final class DefaultHookProvisioner {
         return entries;
     }
 
-    private static boolean wipeThenProvision(@NotNull Path hooksDir, @NotNull List<String> scriptEntries) {
-        deleteScriptEntries(hooksDir, scriptEntries);
+    private static boolean wipeThenProvision(@NotNull Path hooksDir, @NotNull List<String> manifestEntries) {
+        deleteScriptEntries(hooksDir, manifestEntries);
         ensureScriptsDir(hooksDir);
 
         Map<String, String> newHashes = new HashMap<>();
         boolean allOk = true;
 
-        for (String entry : scriptEntries) {
+        for (String entry : manifestEntries) {
             String hash = copyAndHash(entry, hooksDir);
             if (hash != null) {
                 newHashes.put(entry, hash);
@@ -109,17 +109,10 @@ public final class DefaultHookProvisioner {
             }
         }
 
-        for (Map.Entry<String, String> jsonEntry : buildJsonConfigs().entrySet()) {
-            String filename = jsonEntry.getKey();
-            String content = jsonEntry.getValue();
-            writeJsonConfig(hooksDir, filename, content);
-            newHashes.put(filename, HookHashRegistry.computeStringHash(content));
-        }
-
         HookHashRegistry.save(hooksDir, newHashes);
 
         if (allOk) {
-            LOG.info("Provisioned " + (scriptEntries.size() + 3) + " hook files to " + hooksDir);
+            LOG.info("Provisioned " + manifestEntries.size() + " hook files to " + hooksDir);
         }
         return allOk;
     }
@@ -130,7 +123,7 @@ public final class DefaultHookProvisioner {
      */
     private static void provisionWithHashCheck(@NotNull Project project,
                                                @NotNull Path hooksDir,
-                                               @NotNull List<String> scriptEntries) {
+                                               @NotNull List<String> manifestEntries) {
         Map<String, String> storedHashes = HookHashRegistry.load(hooksDir);
         Map<String, String> bundledHashes = HookHashRegistry.loadBundledHashes();
         Map<String, String> updatedHashes = new HashMap<>(storedHashes);
@@ -138,12 +131,8 @@ public final class DefaultHookProvisioner {
 
         ensureScriptsDir(hooksDir);
 
-        for (String entry : scriptEntries) {
+        for (String entry : manifestEntries) {
             processScriptEntry(entry, hooksDir, storedHashes, bundledHashes, updatedHashes, conflicts);
-        }
-
-        for (Map.Entry<String, String> jsonEntry : buildJsonConfigs().entrySet()) {
-            processJsonConfig(jsonEntry.getKey(), jsonEntry.getValue(), hooksDir, storedHashes, bundledHashes, updatedHashes, conflicts);
         }
 
         HookHashRegistry.save(hooksDir, updatedHashes);
@@ -195,64 +184,6 @@ public final class DefaultHookProvisioner {
         if (hash != null) return hash;
         String content = readBundledResourceAsString(RESOURCE_BASE + entry);
         return content != null ? HookHashRegistry.computeStringHash(content) : null;
-    }
-
-    private static void processJsonConfig(@NotNull String filename,
-                                          @NotNull String content,
-                                          @NotNull Path hooksDir,
-                                          @NotNull Map<String, String> storedHashes,
-                                          @NotNull Map<String, String> bundledHashes,
-                                          @NotNull Map<String, String> updatedHashes,
-                                          @NotNull List<HookUpdateNotifier.Conflict> conflicts) {
-        String bundledHash = bundledHashes.getOrDefault(filename, HookHashRegistry.computeStringHash(content));
-        String storedHash = storedHashes.get(filename);
-        Path diskPath = hooksDir.resolve(filename);
-        String diskHash = HookHashRegistry.computeFileHash(diskPath);
-
-        if (diskHash == null) {
-            writeJsonConfig(hooksDir, filename, content);
-            updatedHashes.put(filename, bundledHash);
-        } else if (diskHash.equals(storedHash) || HookHashRegistry.isOfficialHash(filename, diskHash, bundledHashes)) {
-            if (!bundledHash.equals(diskHash)) {
-                writeJsonConfig(hooksDir, filename, content);
-                updatedHashes.put(filename, bundledHash);
-            }
-        } else if (!bundledHash.equals(storedHash)) {
-            conflicts.add(new HookUpdateNotifier.Conflict(filename, content, diskPath, bundledHash));
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // JSON config generation
-    // -------------------------------------------------------------------------
-
-    /**
-     * Returns the generated JSON configs keyed by filename.
-     */
-    static @NotNull Map<String, String> buildJsonConfigs() {
-        Map<String, String> configs = new HashMap<>();
-        configs.put("run_command.json",
-            "{\"permission\":[{\"script\":\"scripts/run-command-abuse.js\",\"rejectOnFailure\":true,\"timeout\":10}],"
-                + "\"success\":[{\"script\":\"scripts/command-reprimand.js\",\"timeout\":10,\"failSilently\":true}]}");
-        configs.put("run_in_terminal.json",
-            "{\"permission\":[{\"script\":\"scripts/run-in-terminal-abort.js\",\"rejectOnFailure\":true,\"timeout\":10}],"
-                + "\"success\":[{\"script\":\"scripts/command-reprimand.js\",\"timeout\":10,\"failSilently\":true}]}");
-        configs.put("write_file.json",
-            "{\"success\":[{\"script\":\"scripts/check-stale-naming.js\",\"timeout\":10,\"failSilently\":true}]}");
-        return configs;
-    }
-
-    private static void writeJsonConfig(@NotNull Path hooksDir,
-                                        @NotNull String filename,
-                                        @NotNull String content) {
-        Path target = hooksDir.resolve(filename);
-        try {
-            Files.writeString(target, content, StandardCharsets.UTF_8,
-                java.nio.file.StandardOpenOption.CREATE,
-                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException e) {
-            LOG.warn("Failed to write hook config: " + filename, e);
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -314,8 +245,8 @@ public final class DefaultHookProvisioner {
      * Custom scripts placed alongside the managed ones (e.g. project-specific bot-identity
      * hooks) are intentionally preserved — they are outside the provisioner's scope.
      */
-    private static void deleteScriptEntries(@NotNull Path hooksDir, @NotNull List<String> scriptEntries) {
-        for (String entry : scriptEntries) {
+    private static void deleteScriptEntries(@NotNull Path hooksDir, @NotNull List<String> manifestEntries) {
+        for (String entry : manifestEntries) {
             Path file = hooksDir.resolve(entry);
             try {
                 Files.deleteIfExists(file);
@@ -358,8 +289,8 @@ public final class DefaultHookProvisioner {
     /**
      * Reverts a single hook file to its bundled default and updates the stored hash.
      *
-     * <p>Works for both scripts (read from classpath resources) and generated JSON configs.
-     * After reverting, the file will be recognized as official on the next startup.
+     * <p>Works for both scripts and JSON config files (all read from bundled classpath
+     * resources). After reverting, the file will be recognized as official on the next startup.
      *
      * @param project  the current project (used to resolve the hooks directory)
      * @param filename relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.js})
@@ -368,9 +299,6 @@ public final class DefaultHookProvisioner {
     public static boolean revertFile(@NotNull Project project, @NotNull String filename) {
         Path hooksDir = resolveHooksDir(project);
         String content = readBundledResourceAsString(RESOURCE_BASE + filename);
-        if (content == null) {
-            content = buildJsonConfigs().get(filename);
-        }
         if (content == null) {
             LOG.warn("Cannot revert: no bundled content found for " + filename);
             return false;

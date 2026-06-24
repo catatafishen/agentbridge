@@ -1,0 +1,16 @@
+{
+  "permission": [
+    {
+      "script": "scripts/run-command-abuse.js",
+      "rejectOnFailure": true,
+      "timeout": 10
+    }
+  ],
+  "success": [
+    {
+      "script": "scripts/command-reprimand.js",
+      "timeout": 10,
+      "failSilently": true
+    }
+  ]
+}

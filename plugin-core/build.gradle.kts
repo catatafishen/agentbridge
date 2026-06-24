@@ -306,7 +306,6 @@ val generateHookHashes by tasks.registering {
 
     val manifestFile = file("src/main/resources/default-hooks/manifest.txt")
     val scriptsDir = file("src/main/resources/default-hooks")
-    val jsonConfigNames = listOf("run_command.json", "run_in_terminal.json", "write_file.json")
     val outputFile = file("src/main/resources/default-hooks/bundled-hashes.properties")
 
     inputs.file(manifestFile)
@@ -354,24 +353,13 @@ val generateHookHashes by tasks.registering {
             historyHashes[name] = history
         }
 
-        // Hash all script files from the manifest
+        // Hash all files listed in the manifest (scripts and JSON config examples)
         for (entry in entries) {
             val file = File(scriptsDir, entry)
             if (!file.exists()) {
                 throw GradleException("Default hook resource missing from manifest: $entry (expected at ${file.absolutePath})")
             }
             recordHash(entry, sha256(file.readBytes()))
-        }
-
-        // Hash the generated JSON configs (keep in sync with DefaultHookProvisioner.buildJsonConfigs)
-        val jsonContent = mapOf(
-            "run_command.json" to """{"permission":[{"script":"scripts/run-command-abuse.js","rejectOnFailure":true,"timeout":10}],"success":[{"script":"scripts/command-reprimand.js","timeout":10,"failSilently":true}]}""",
-            "run_in_terminal.json" to """{"permission":[{"script":"scripts/run-in-terminal-abort.js","rejectOnFailure":true,"timeout":10}],"success":[{"script":"scripts/command-reprimand.js","timeout":10,"failSilently":true}]}""",
-            "write_file.json" to """{"success":[{"script":"scripts/check-stale-naming.js","timeout":10,"failSilently":true}]}"""
-        )
-        for (name in jsonConfigNames) {
-            val content = jsonContent[name] ?: throw GradleException("Unknown JSON config: $name")
-            recordHash(name, sha256(content.toByteArray(Charsets.UTF_8)))
         }
 
         // Write properties: current=<hash> and optional history=<h1,h2,...>
