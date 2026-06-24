@@ -82,32 +82,42 @@ jobs:
           # but SonarCloud resolves relative to plugin-core/ module root.
           sed -i 's|^SF:\.\./|SF:|' plugin-core/js-tests/coverage/lcov.info
           npm run build --prefix plugin-core/chat-ui
+          # --continue: run every module's tests even if an earlier one fails, so the
+          # JUnit XML reports are complete and the analyze workflow can list every
+          # failed test name in its PR comment instead of stopping at the first failure.
           gradle :mcp-server:test :mcp-server:jacocoTestReport \
             :plugin-experimental:test :plugin-experimental:jacocoTestReport \
             :plugin-core:test :plugin-core:jacocoTestReport \
-            --no-daemon --quiet --build-cache
+            --no-daemon --quiet --build-cache --continue
 
       - name: Package analysis artifacts
+        # Runs even when tests failed (if: always) so the JUnit XML reports reach the
+        # privileged analyze workflow, which posts the failed-test names as a PR comment.
         # Sources are NOT included — sonarqube-pr-analyze.yml restores them
         # directly from the PR commit via `git checkout` so that
         # SCM blame works and SonarCloud can identify "new code". Including
         # sources here would just be overwritten and break SCM resolution.
         # Coverage outputs that live inside source trees (js-tests/coverage)
         # are still included so the analyze job picks them up after the
-        # source restore.
+        # source restore. Each path is added only when it exists so a compile
+        # failure (no classes) still produces a usable artifact.
+        if: ${{ !cancelled() }}
         run: |
+          ARTIFACT_PATHS=()
+          for p in \
+            plugin-core/build/reports/jacoco plugin-core/build/classes plugin-core/build/test-results \
+            plugin-core/js-tests/coverage \
+            mcp-server/build/reports/jacoco mcp-server/build/classes mcp-server/build/test-results \
+            plugin-experimental/build/reports/jacoco plugin-experimental/build/classes plugin-experimental/build/test-results; do
+            [ -e "$p" ] && ARTIFACT_PATHS+=("$p")
+          done
           tar -czf sonar-artifacts.tar.gz \
             --exclude='*/node_modules' \
             --exclude='*/lcov-report' \
-            plugin-core/build/reports/jacoco \
-            plugin-core/build/classes \
-            plugin-core/js-tests/coverage \
-            mcp-server/build/reports/jacoco \
-            mcp-server/build/classes \
-            plugin-experimental/build/reports/jacoco \
-            plugin-experimental/build/classes
+            "${ARTIFACT_PATHS[@]}"
 
       - name: Upload analysis artifacts
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: sonar-analysis-artifacts
