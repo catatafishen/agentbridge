@@ -135,8 +135,8 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
     }
 
     /**
-     * Sends an MCP {@code notifications/initialized} notification and waits for
-     * the process to exit. Then closes streams.
+     * Closes the stdin, stdout, and stderr streams, then destroys the subprocess.
+     * Waits up to 2 seconds for the process to exit before forcibly destroying it.
      */
     @Override
     public void close() {
@@ -172,7 +172,7 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
     }
 
     @NotNull
-    private JsonObject sendRequestInternal(
+    private synchronized JsonObject sendRequestInternal(
         @NotNull String method,
         @NotNull JsonObject params,
         int timeoutMs

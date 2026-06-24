@@ -1,43 +1,47 @@
 <component name="InspectionProjectProfileManager">
   <profile version="1.0">
-    <option name="myName" value="Project Default" />
+    <option name="myName" value="Project Default"/>
     <inspection_tool class="Annotator" enabled="true" level="ERROR" enabled_by_default="true">
-      <scope name="Markdown Files" level="INFORMATION" enabled="false" />
+      <scope name="Markdown Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
     <inspection_tool class="CssInvalidHtmlTagReference" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false" />
+      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
     <inspection_tool class="CssNonIntegerLengthInPixels" enabled="true" level="WEAK WARNING" enabled_by_default="true">
-      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false" />
+      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
     <inspection_tool class="CssUnusedSymbol" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false" />
+      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
     <inspection_tool class="ES6ConvertVarToLetConst" enabled="true" level="WEAK WARNING" enabled_by_default="true">
-      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false" />
+      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
-    <inspection_tool class="HttpUrlsUsage" enabled="false" level="WEAK WARNING" enabled_by_default="false" />
+    <inspection_tool class="HttpUrlsUsage" enabled="false" level="WEAK WARNING" enabled_by_default="false"/>
     <inspection_tool class="JSIncompatibleTypesComparison" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false" />
+      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
     <inspection_tool class="JSValidateTypes" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false" />
+      <scope name="Generated Chat Web Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
     <inspection_tool class="JsonStandardCompliance" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Markdown Files" level="INFORMATION" enabled="false" />
+      <scope name="Markdown Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
-    <inspection_tool class="MarkdownIncorrectTableFormatting" enabled="false" level="WEAK WARNING" enabled_by_default="false" />
-    <inspection_tool class="MarkdownIncorrectlyNumberedListItem" enabled="true" level="WEAK WARNING" enabled_by_default="true">
-      <scope name="Markdown Files" level="INFORMATION" enabled="false" />
+    <inspection_tool class="MarkdownIncorrectTableFormatting" enabled="false" level="WEAK WARNING"
+                     enabled_by_default="false"/>
+    <inspection_tool class="MarkdownIncorrectlyNumberedListItem" enabled="true" level="WEAK WARNING"
+                     enabled_by_default="true">
+      <scope name="Markdown Files" level="INFORMATION" enabled="false"/>
     </inspection_tool>
-    <inspection_tool class="MultiplatformPreviewAnnotationInFunctionWithParameters" enabled="true" level="ERROR" enabled_by_default="true">
-      <option name="composableFile" value="true" />
-      <option name="previewFile" value="true" />
+    <inspection_tool class="MultiplatformPreviewAnnotationInFunctionWithParameters" enabled="true" level="ERROR"
+                     enabled_by_default="true">
+      <option name="composableFile" value="true"/>
+      <option name="previewFile" value="true"/>
     </inspection_tool>
-    <inspection_tool class="MultiplatformPreviewMultipleParameterProviders" enabled="true" level="ERROR" enabled_by_default="true">
-      <option name="composableFile" value="true" />
-      <option name="previewFile" value="true" />
+    <inspection_tool class="MultiplatformPreviewMultipleParameterProviders" enabled="true" level="ERROR"
+                     enabled_by_default="true">
+      <option name="composableFile" value="true"/>
+      <option name="previewFile" value="true"/>
     </inspection_tool>
-    <inspection_tool class="UseJBColor" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="UseJBColor" enabled="true" level="WARNING" enabled_by_default="true"/>
   </profile>
 </component>
