@@ -229,3 +229,68 @@ jobs:
           echo "::warning::SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
           echo "::warning::Disable it in SonarCloud: Project Settings > Analysis Method > Automatic Analysis to use CI coverage and projectVersion."
           echo "::warning::Skipping CI-based SonarQube analysis because SonarCloud would reject it while Automatic Analysis is enabled."
+
+  # Privileged failed-test reporter. Runs only when the unprivileged build workflow
+  # FAILED on a PR, downloads the JUnit XML it bundled into the artifact, and posts
+  # (or updates) a PR comment listing every failed test so reviewers don't have to
+  # scan the raw build log. It only READS the artifact XML — fork code never runs —
+  # and sends the comment body to the API as JSON, so crafted test names can't inject.
+  report-failed-tests:
+    name: Report failed tests
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'failure'
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read  # required to download artifacts from the triggering workflow run
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      # Resolve the PR from the build's head SHA via the GitHub API (trusted source),
+      # not from the untrusted artifact.
+      - name: Find associated PR
+        id: pr-meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          PR_JSON=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" --jq 'first // empty')
+          if [ -z "$PR_JSON" ]; then
+            echo "::notice::No PR found for SHA $HEAD_SHA — skipping failed-test comment"
+            echo "number=" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download analysis artifacts
+        if: steps.pr-meta.outputs.number != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: sonar-analysis-artifacts
+          path: ${{ runner.temp }}/sonar-artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Extract test results
+        if: steps.pr-meta.outputs.number != ''
+        run: tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz"
+
+      - name: Post failed-test comment
+        if: steps.pr-meta.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr-meta.outputs.number }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: python3 .github/scripts/report_failed_tests.py
