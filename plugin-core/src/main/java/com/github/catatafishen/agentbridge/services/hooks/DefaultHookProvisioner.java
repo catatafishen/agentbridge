@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.services.hooks;
 import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -33,24 +32,15 @@ import java.util.Map;
  *       everything from scratch, then record hashes for all files written.</li>
  * </ul>
  *
- * <p><b>Script variants:</b>
- * <ul>
- *   <li>{@code scripts/*.sh} — POSIX shell, used on Unix/Mac.</li>
- *   <li>{@code scripts/*.ps1} — PowerShell, used on Windows.</li>
- * </ul>
- * Both variants are always provisioned so users can read/reference either format.
- * The active JSON configs reference the platform-appropriate extension ({@link #SCRIPT_EXT}).</p>
+ * <p><b>Hook scripts</b> are JavaScript ({@code scripts/*.js}) executed in-process via the
+ * embedded Rhino engine ({@link JsHookEngine}), so a single file runs on every OS and JetBrains
+ * IDE — no paired {@code .sh}/{@code .ps1} variants and no external shell, PowerShell, or Node.</p>
  */
 public final class DefaultHookProvisioner {
 
     private static final Logger LOG = Logger.getInstance(DefaultHookProvisioner.class);
     private static final String RESOURCE_BASE = "/default-hooks/";
     private static final String MANIFEST_RESOURCE = RESOURCE_BASE + "manifest.txt";
-
-    /**
-     * Script extension for the current platform.
-     */
-    static final String SCRIPT_EXT = SystemInfo.isWindows ? ".ps1" : ".sh";
 
     private DefaultHookProvisioner() {
     }
@@ -238,17 +228,17 @@ public final class DefaultHookProvisioner {
 
     /**
      * Returns the generated JSON configs keyed by filename.
-     * Extension is platform-specific ({@link #SCRIPT_EXT}).
      */
     static @NotNull Map<String, String> buildJsonConfigs() {
         Map<String, String> configs = new HashMap<>();
         configs.put("run_command.json",
-            "{\"permission\":[{\"script\":\"scripts/run-command-abuse" + SCRIPT_EXT + "\",\"rejectOnFailure\":true,\"timeout\":10}]}");
+            "{\"permission\":[{\"script\":\"scripts/run-command-abuse.js\",\"rejectOnFailure\":true,\"timeout\":10}],"
+                + "\"success\":[{\"script\":\"scripts/command-reprimand.js\",\"timeout\":10,\"failSilently\":true}]}");
         configs.put("run_in_terminal.json",
-            "{\"permission\":[{\"script\":\"scripts/run-in-terminal-abort" + SCRIPT_EXT + "\",\"rejectOnFailure\":true,\"timeout\":10}],"
-                + "\"success\":[{\"script\":\"scripts/run-in-terminal-reprimand" + SCRIPT_EXT + "\",\"timeout\":10,\"failSilently\":true}]}");
+            "{\"permission\":[{\"script\":\"scripts/run-in-terminal-abort.js\",\"rejectOnFailure\":true,\"timeout\":10}],"
+                + "\"success\":[{\"script\":\"scripts/command-reprimand.js\",\"timeout\":10,\"failSilently\":true}]}");
         configs.put("write_file.json",
-            "{\"success\":[{\"script\":\"scripts/check-stale-naming" + SCRIPT_EXT + "\",\"timeout\":10,\"failSilently\":true}]}");
+            "{\"success\":[{\"script\":\"scripts/check-stale-naming.js\",\"timeout\":10,\"failSilently\":true}]}");
         return configs;
     }
 
@@ -294,9 +284,6 @@ public final class DefaultHookProvisioner {
             Files.writeString(targetPath, content, StandardCharsets.UTF_8,
                 java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-            if (entry.endsWith(".sh") && !targetPath.toFile().setExecutable(true)) {
-                LOG.warn("Failed to set executable permission on: " + entry);
-            }
             return HookHashRegistry.computeStringHash(content);
         } catch (IOException e) {
             LOG.warn("Failed to write hook file: " + entry, e);
@@ -375,7 +362,7 @@ public final class DefaultHookProvisioner {
      * After reverting, the file will be recognized as official on the next startup.
      *
      * @param project  the current project (used to resolve the hooks directory)
-     * @param filename relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.sh})
+     * @param filename relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.js})
      * @return true if the file was successfully reverted
      */
     public static boolean revertFile(@NotNull Project project, @NotNull String filename) {

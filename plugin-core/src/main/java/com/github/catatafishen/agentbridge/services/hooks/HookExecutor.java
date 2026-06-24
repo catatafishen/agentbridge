@@ -104,6 +104,12 @@ public final class HookExecutor {
                                              @NotNull HookPayload payload,
                                              @NotNull ToolHookConfig config,
                                              @NotNull Map<String, String> projectEnv) throws IOException {
+        // Embedded JavaScript hooks run in-process via Rhino — no subprocess, no shell, fully
+        // cross-platform. The engine returns the same stdout-JSON the subprocess protocol uses.
+        if (JsHookEngine.isEmbeddedJsHook(scriptPath)) {
+            return JsHookEngine.evaluate(project, scriptPath, entry, payload);
+        }
+
         List<String> command = buildCommand(scriptPath, project);
         GeneralCommandLine cmd = new GeneralCommandLine(command);
         cmd.setWorkDirectory(scriptPath.getParent().toFile());

@@ -3,14 +3,11 @@ package com.github.catatafishen.agentbridge.services.hooks;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HookPipelineTest {
 
@@ -179,33 +176,6 @@ class HookPipelineTest {
             var args = new JsonObject();
             args.addProperty("key", true);
             assertEquals("true", HookPipeline.getStringArg(args, "key"));
-        }
-    }
-
-    @Nested
-    class GetBuiltInSuccessAnnotation {
-
-        @Test
-        void unknownToolReturnsNull() {
-            var args = new JsonObject();
-            assertNull(HookPipeline.getBuiltInSuccessAnnotation("some_unknown_tool", args, "output"));
-        }
-
-        @ParameterizedTest(name = "tool ''{0}'' with empty args returns null or annotation")
-        @ValueSource(strings = {"read_file", "search_text", "git_status"})
-        void otherToolsReturnNull(String toolName) {
-            var args = new JsonObject();
-            assertNull(HookPipeline.getBuiltInSuccessAnnotation(toolName, args, "output"));
-        }
-
-        @Test
-        void runInTerminalDelegatesToBuiltInHooks() {
-            var args = new JsonObject();
-            args.addProperty("command", "echo hello");
-            // Should not throw — delegates to BuiltInSuccessHooks.terminalReprimand
-            String result = HookPipeline.getBuiltInSuccessAnnotation("run_in_terminal", args, null);
-            // Result can be null if the command is not a reprimandable one
-            assertTrue(result == null || !result.isEmpty());
         }
     }
 

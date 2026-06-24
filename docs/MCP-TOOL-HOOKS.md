@@ -1,13 +1,15 @@
 # MCP Tool Hooks
 
 MCP Tool Hooks let you intercept every tool call an AI agent makes — before execution, after
-success, or after failure — and run shell scripts that can modify arguments, transform output,
-change error state, or deny execution entirely.
+success, or after failure — and run hook scripts that can modify arguments, transform output,
+change error state, or deny execution entirely. Hooks can be **shell scripts** (run as a
+subprocess) or **in-process JavaScript** (run on the embedded Rhino engine — no shell, PowerShell,
+or Node required, so a single `.js` file works identically on every OS and JetBrains IDE).
 
 This creates a **closed feedback loop** between the agent and your project's policies: hook scripts
-receive structured JSON on stdin, make decisions, and write JSON to stdout. The MCP server reads
-that response and uses it to shape what the agent perceives. The agent never sees the hook — it
-only sees the final result.
+receive structured JSON on stdin (shell) or a `Hook` global object (JavaScript), make decisions,
+and report them back. The MCP server uses the result to shape what the agent perceives. The agent
+never sees the hook — it only sees the final result.
 
 ## Quick Start
 
@@ -29,10 +31,14 @@ The hooks directory lives inside your project's AgentBridge storage directory
        ├── git_commit.json        ← hooks for the git_commit tool
        ├── run_command.json        ← hooks for the run_command tool
        └── scripts/
-           ├── _lib.sh             ← shared POSIX shell library
-           ├── enforce-author.sh   ← shared script
-           └── enforce-gh-bot.sh
+           ├── _lib.js             ← shared JavaScript helpers (bundled hooks)
+           ├── run-command-abuse.js  ← embedded JS hook (runs on Rhino)
+           ├── _lib.sh             ← shared POSIX shell library (for shell hooks)
+           └── enforce-author.sh   ← shell hook (runs as a subprocess)
    ```
+
+The bundled default hooks are JavaScript (`.js`) and run in-process; you can add your own hooks
+as either embedded JavaScript or shell scripts.
 
 2. **Create a hook config** — one JSON file per MCP tool, named `<tool-id>.json`:
 
@@ -83,10 +89,28 @@ Each file is named after the MCP tool it applies to: `<tool-id>.json`.
 
 ```json
 {
-  "permission": [{ "script": "scripts/check-policy.sh" }],
-  "pre":        [{ "script": "scripts/sanitize-args.sh" }],
-  "success":    [{ "script": "scripts/post-tips.sh", "async": true }],
-  "failure":    [{ "script": "scripts/retry-build.sh", "timeout": 120 }],
+  "permission": [
+    {
+      "script": "scripts/check-policy.sh"
+    }
+  ],
+  "pre": [
+    {
+      "script": "scripts/sanitize-args.sh"
+    }
+  ],
+  "success": [
+    {
+      "script": "scripts/post-tips.sh",
+      "async": true
+    }
+  ],
+  "failure": [
+    {
+      "script": "scripts/retry-build.sh",
+      "timeout": 120
+    }
+  ],
   "prependString": "IMPORTANT: Follow project conventions.",
   "appendString": "\n\nRemember: run tests before committing."
 }
@@ -168,7 +192,9 @@ Runs before the tool executes. All entries must allow; any deny stops the chain.
 ```json
 {
   "toolName": "git_push",
-  "arguments": { "branch": "main" },
+  "arguments": {
+    "branch": "main"
+  },
   "argumentsJson": "{\"branch\":\"main\"}",
   "projectName": "my-project",
   "timestamp": "2025-05-03T12:00:00Z"
@@ -178,11 +204,16 @@ Runs before the tool executes. All entries must allow; any deny stops the chain.
 **Output (stdout):**
 
 ```json
-{"decision": "allow"}
+{
+  "decision": "allow"
+}
 ```
 
 ```json
-{"decision": "deny", "reason": "Cannot push to protected branch 'main'"}
+{
+  "decision": "deny",
+  "reason": "Cannot push to protected branch 'main'"
+}
 ```
 
 ### `pre` — Modify Arguments or Block
@@ -192,11 +223,18 @@ Runs after permission, before the tool executes. Can modify arguments or block w
 **Output:**
 
 ```json
-{"arguments": {"message": "feat: updated message", "all": true}}
+{
+  "arguments": {
+    "message": "feat: updated message",
+    "all": true
+  }
+}
 ```
 
 ```json
-{"error": "Commit message does not follow conventional commits"}
+{
+  "error": "Commit message does not follow conventional commits"
+}
 ```
 
 **Merge semantics:** When modifying arguments, return only the fields you want to change.
@@ -220,11 +258,15 @@ Runs after the tool succeeds. Can replace output, append to it, or change the er
 **Output:**
 
 ```json
-{"output": "Committed abc1234. Remember to create a PR."}
+{
+  "output": "Committed abc1234. Remember to create a PR."
+}
 ```
 
 ```json
-{"append": "\nTip: run tests before pushing."}
+{
+  "append": "\nTip: run tests before pushing."
+}
 ```
 
 ### `failure` — Transform or Recover from Errors
@@ -235,11 +277,16 @@ to a success**.
 **Output:**
 
 ```json
-{"output": "Build succeeded after clean rebuild", "state": "success"}
+{
+  "output": "Build succeeded after clean rebuild",
+  "state": "success"
+}
 ```
 
 ```json
-{"append": "\nSuggestion: try ./gradlew clean first"}
+{
+  "append": "\nSuggestion: try ./gradlew clean first"
+}
 ```
 
 ## State Override
@@ -267,8 +314,12 @@ Multiple entries per trigger run sequentially. Each entry receives the **current
 ```json
 {
   "success": [
-    { "script": "scripts/add-review-link.sh" },
-    { "script": "scripts/append-tips.sh" }
+    {
+      "script": "scripts/add-review-link.sh"
+    },
+    {
+      "script": "scripts/append-tips.sh"
+    }
   ]
 }
 ```
@@ -284,27 +335,27 @@ executor. These are available to every hook script without configuration.
 
 #### Project Context
 
-| Variable                      | Description                                            | Example                        |
-|-------------------------------|--------------------------------------------------------|--------------------------------|
-| `AGENTBRIDGE_PROJECT_DIR`     | Absolute path to the project root                      | `/home/user/my-project`        |
+| Variable                      | Description                                            | Example                                    |
+|-------------------------------|--------------------------------------------------------|--------------------------------------------|
+| `AGENTBRIDGE_PROJECT_DIR`     | Absolute path to the project root                      | `/home/user/my-project`                    |
 | `AGENTBRIDGE_HOOKS_DIR`       | Absolute path to the hooks directory                   | `/home/user/my-project/.agentbridge/hooks` |
-| `AGENTBRIDGE_MCP_PORT`        | HTTP port of the running MCP server                    | `8580`                         |
-| `AGENTBRIDGE_AGENT_NAME`      | Name of the connected agent (from MCP initialize)      | `Claude Code`, `github-copilot` |
-| `AGENTBRIDGE_SOURCE_ROOTS`    | Newline-separated list of source root directories      | `/home/user/my-project/src/main/java` |
-| `AGENTBRIDGE_TEST_ROOTS`      | Newline-separated list of test source directories      | `/home/user/my-project/src/test/java` |
-| `AGENTBRIDGE_GENERATED_ROOTS` | Newline-separated list of generated source directories | `/home/user/my-project/build/generated` |
+| `AGENTBRIDGE_MCP_PORT`        | HTTP port of the running MCP server                    | `8580`                                     |
+| `AGENTBRIDGE_AGENT_NAME`      | Name of the connected agent (from MCP initialize)      | `Claude Code`, `github-copilot`            |
+| `AGENTBRIDGE_SOURCE_ROOTS`    | Newline-separated list of source root directories      | `/home/user/my-project/src/main/java`      |
+| `AGENTBRIDGE_TEST_ROOTS`      | Newline-separated list of test source directories      | `/home/user/my-project/src/test/java`      |
+| `AGENTBRIDGE_GENERATED_ROOTS` | Newline-separated list of generated source directories | `/home/user/my-project/build/generated`    |
 | `AGENTBRIDGE_RESOURCE_ROOTS`  | Newline-separated list of resource directories         | `/home/user/my-project/src/main/resources` |
-| `AGENTBRIDGE_EXCLUDED_DIRS`   | Newline-separated list of excluded directories         | `/home/user/my-project/build`  |
+| `AGENTBRIDGE_EXCLUDED_DIRS`   | Newline-separated list of excluded directories         | `/home/user/my-project/build`              |
 
 #### Tool Arguments
 
 Every top-level string or primitive argument is also injected as `HOOK_ARG_<key>`:
 
-| Variable              | Source                           | Example            |
-|-----------------------|----------------------------------|--------------------|
-| `HOOK_ARG_command`    | `arguments.command`              | `npm run build`    |
-| `HOOK_ARG_path`       | `arguments.path`                 | `src/Main.java`    |
-| `HOOK_ARG_message`    | `arguments.message`              | `feat: add hooks`  |
+| Variable           | Source              | Example           |
+|--------------------|---------------------|-------------------|
+| `HOOK_ARG_command` | `arguments.command` | `npm run build`   |
+| `HOOK_ARG_path`    | `arguments.path`    | `src/Main.java`   |
+| `HOOK_ARG_message` | `arguments.message` | `feat: add hooks` |
 
 This lets scripts access arguments directly from env vars without JSON parsing:
 
@@ -324,10 +375,15 @@ Additional env vars can be set per-entry via the `env` field in the hook config:
 
 ```json
 {
-  "pre": [{
-    "script": "scripts/enforce-author.sh",
-    "env": { "BOT_NAME": "my-bot", "BOT_EMAIL": "bot@example.com" }
-  }]
+  "pre": [
+    {
+      "script": "scripts/enforce-author.sh",
+      "env": {
+        "BOT_NAME": "my-bot",
+        "BOT_EMAIL": "bot@example.com"
+      }
+    }
+  ]
 }
 ```
 
@@ -381,12 +437,12 @@ result=$(hook_query '{"action":"classify_path","path":"/home/user/project/src/Ma
 # → {"path":"/home/user/project/src/Main.java","inProject":true,"classification":"sources","inContentRoot":true}
 ```
 
-| Response field    | Type    | Description                                                       |
-|-------------------|---------|-------------------------------------------------------------------|
-| `path`            | string  | The requested path                                                |
-| `inProject`       | boolean | Whether the path is under the project base directory              |
-| `classification`  | string  | One of: `sources`, `test_sources`, `resources`, `generated_sources`, `excluded`, `content`, or `""` |
-| `inContentRoot`   | boolean | Whether the file is inside a content root (and not excluded)      |
+| Response field   | Type    | Description                                                                                         |
+|------------------|---------|-----------------------------------------------------------------------------------------------------|
+| `path`           | string  | The requested path                                                                                  |
+| `inProject`      | boolean | Whether the path is under the project base directory                                                |
+| `classification` | string  | One of: `sources`, `test_sources`, `resources`, `generated_sources`, `excluded`, `content`, or `""` |
+| `inContentRoot`  | boolean | Whether the file is inside a content root (and not excluded)                                        |
 
 ### `POST /hooks/tool` — Call Read-Only MCP Tools
 
@@ -400,39 +456,52 @@ rejected with an error.
 **Request:**
 
 ```json
-{"tool": "search_text", "arguments": {"query": "deprecated", "file_pattern": "*.java"}}
+{
+  "tool": "search_text",
+  "arguments": {
+    "query": "deprecated",
+    "file_pattern": "*.java"
+  }
+}
 ```
 
 **Response (success):**
 
 ```json
-{"result": "5 matches:\nsrc/Foo.java:12: ...", "error": false, "truncated": false}
+{
+  "result": "5 matches:\nsrc/Foo.java:12: ...",
+  "error": false,
+  "truncated": false
+}
 ```
 
 **Response (error):**
 
 ```json
-{"error": true, "message": "Tool 'write_file' is not allowed from hooks. Only read-only and search tools are available."}
+{
+  "error": true,
+  "message": "Tool 'write_file' is not allowed from hooks. Only read-only and search tools are available."
+}
 ```
 
 **Available tool categories** (non-exhaustive):
 
-| Tool                    | Kind   | Description                                    |
-|-------------------------|--------|------------------------------------------------|
-| `search_text`           | SEARCH | Search for text patterns across project files  |
-| `search_symbols`        | SEARCH | Search for classes, methods, fields by name    |
-| `find_references`       | SEARCH | Find all usages of a symbol                    |
-| `read_file`             | READ   | Read file content                              |
-| `get_file_outline`      | READ   | Get structure of a file (classes, methods)      |
-| `list_project_files`    | READ   | List files with optional pattern filtering     |
-| `list_directory_tree`   | READ   | Tree-formatted directory listing               |
-| `find_file`             | READ   | Find files by name pattern                     |
-| `get_project_info`      | READ   | Project name, SDK, modules                     |
-| `git_status`            | READ   | Working tree status and branch info            |
-| `git_diff`              | READ   | Show changes as diff                           |
-| `git_log`               | READ   | Commit history                                 |
-| `get_compilation_errors` | READ  | Check for compilation errors                   |
-| `get_highlights`        | READ   | Get editor highlights (errors, warnings)       |
+| Tool                     | Kind   | Description                                   |
+|--------------------------|--------|-----------------------------------------------|
+| `search_text`            | SEARCH | Search for text patterns across project files |
+| `search_symbols`         | SEARCH | Search for classes, methods, fields by name   |
+| `find_references`        | SEARCH | Find all usages of a symbol                   |
+| `read_file`              | READ   | Read file content                             |
+| `get_file_outline`       | READ   | Get structure of a file (classes, methods)    |
+| `list_project_files`     | READ   | List files with optional pattern filtering    |
+| `list_directory_tree`    | READ   | Tree-formatted directory listing              |
+| `find_file`              | READ   | Find files by name pattern                    |
+| `get_project_info`       | READ   | Project name, SDK, modules                    |
+| `git_status`             | READ   | Working tree status and branch info           |
+| `git_diff`               | READ   | Show changes as diff                          |
+| `git_log`                | READ   | Commit history                                |
+| `get_compilation_errors` | READ   | Check for compilation errors                  |
+| `get_highlights`         | READ   | Get editor highlights (errors, warnings)      |
 
 **Shell helper:**
 
@@ -447,6 +516,67 @@ result=$(hook_tool "get_compilation_errors" '{}')
 result=$(hook_tool "read_file" '{"path":"src/Main.java"}')
 ```
 
+## Embedded JavaScript Hooks (`Hook` API)
+
+A hook script ending in `.js` (without a `#!/usr/bin/env node` shebang) runs **in-process** on the
+embedded Mozilla Rhino engine instead of spawning a subprocess. This is how all bundled default
+hooks are written: a single `.js` file behaves identically on every OS and JetBrains IDE, with no
+shell, PowerShell, or Node runtime to install.
+
+Instead of reading JSON from stdin and writing JSON to stdout, an embedded JS hook talks to the
+IDE through a global `Hook` object and records its decision by calling a method on it. The engine
+converts that decision into the same result the subprocess protocol produces, so both kinds of
+hook are configured and chained identically.
+
+```js
+// run_command permission hook: block git, allow everything else.
+(function () {
+    var cmd = Hook.arg('command');           // a tool-call argument, or null
+    if (cmd && /(^|[\s;&|])git(\s|$)/.test(cmd.toLowerCase())) {
+        Hook.deny('Use the dedicated git_* tools instead.');
+    }
+})();
+```
+
+### `Hook` object reference
+
+| Method                      | Purpose                                                                                                                                                                                |
+|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Hook.arg(name)`            | String tool-call argument, or `null` if absent/non-primitive.                                                                                                                          |
+| `Hook.tool()`               | The MCP tool name (e.g. `"run_command"`).                                                                                                                                              |
+| `Hook.output()`             | Tool output (success/failure hooks), or `null` for pre-execution hooks.                                                                                                                |
+| `Hook.isError()`            | Whether the tool reported an error.                                                                                                                                                    |
+| `Hook.projectDir()`         | Absolute project base directory (forward slashes), or `""`.                                                                                                                            |
+| `Hook.classify(path)`       | Project-model classification: `"sources"`, `"test_sources"`, `"resources"`, `"test_resources"`, `"generated_sources"`, `"generated_test_sources"`, `"excluded"`, `"content"`, or `""`. |
+| `Hook.isSourceOrTest(path)` | `true` if the path is inside a production or test **source** root (matches not-yet-existing files too).                                                                                |
+| `Hook.deny(reason)`         | Deny the tool call (permission hooks).                                                                                                                                                 |
+| `Hook.append(text)`         | Append text to the tool output (success/failure hooks).                                                                                                                                |
+| `Hook.error(message)`       | Block execution with an error (pre hooks).                                                                                                                                             |
+| `Hook.setCommand(command)`  | Rewrite the `command` argument before the tool runs (pre hooks).                                                                                                                       |
+| `Hook.log(message)`         | Write a diagnostic line to the IDE log.                                                                                                                                                |
+
+The script records at most one outcome; the last recording call wins. Recording nothing means
+"allow / no change".
+
+### Source-aware decisions, in-process
+
+Unlike shell hooks — which read source roots from environment variables or call the
+`POST /hooks/query` HTTP bridge — embedded JS hooks resolve the IntelliJ project model directly
+via `Hook.classify()` / `Hook.isSourceOrTest()`. No env parsing, no HTTP round-trip.
+
+### Sandbox
+
+Embedded hooks run interpreted with a class allowlist: only the `Hook` object is reachable from
+Java. `Runtime`, `ProcessBuilder`, `System`, `Class`, and reflection are hidden, so a hook cannot
+escape to the host. Java `String`/`Boolean`/`Number` values are surfaced as plain JS values. A
+per-call instruction-count deadline (the entry's `timeout`) aborts runaway scripts.
+
+### Shared helpers (`_lib.js`)
+
+If a `_lib.js` file sits next to the hook script, it is evaluated first in the same scope —
+mirroring the `. _lib.sh` sourcing pattern — so hooks can share helper functions. The bundled
+hooks use it for command classification and message builders.
+
 ## POSIX Shell Library (`_lib.sh`)
 
 AgentBridge ships a shared POSIX shell library that provides helpers for all common hook
@@ -459,40 +589,40 @@ operations. Source it at the top of every hook script:
 
 ### Payload Helpers
 
-| Function               | Description                                         |
-|------------------------|-----------------------------------------------------|
-| `hook_read_payload`    | Reads and caches stdin JSON payload                 |
-| `hook_get <field>`     | Extract a top-level string from the cached payload  |
+| Function               | Description                                                |
+|------------------------|------------------------------------------------------------|
+| `hook_read_payload`    | Reads and caches stdin JSON payload                        |
+| `hook_get <field>`     | Extract a top-level string from the cached payload         |
 | `hook_get_arg <field>` | Extract `arguments.<field>` (prefers `HOOK_ARG_*` env var) |
 
 ### Response Helpers
 
-| Function                     | Description                                |
-|------------------------------|--------------------------------------------|
-| `hook_json_deny <reason>`    | Emit deny decision (PERMISSION hooks)      |
-| `hook_json_error <msg>`      | Emit blocking error (PRE hooks)            |
-| `hook_json_append <text>`    | Emit append modifier (SUCCESS/FAILURE)     |
-| `hook_json_args <json>`      | Emit modified arguments (PRE hooks, merge) |
+| Function                  | Description                                |
+|---------------------------|--------------------------------------------|
+| `hook_json_deny <reason>` | Emit deny decision (PERMISSION hooks)      |
+| `hook_json_error <msg>`   | Emit blocking error (PRE hooks)            |
+| `hook_json_append <text>` | Emit append modifier (SUCCESS/FAILURE)     |
+| `hook_json_args <json>`   | Emit modified arguments (PRE hooks, merge) |
 
 ### Path Helpers
 
-| Function                        | Description                                    |
-|---------------------------------|------------------------------------------------|
-| `hook_is_in_project <path>`     | Check if path is under `AGENTBRIDGE_PROJECT_DIR` |
+| Function                        | Description                                           |
+|---------------------------------|-------------------------------------------------------|
+| `hook_is_in_project <path>`     | Check if path is under `AGENTBRIDGE_PROJECT_DIR`      |
 | `hook_is_in_source_root <path>` | Check if path is under any `AGENTBRIDGE_SOURCE_ROOTS` |
 
 ### IDE API Helpers
 
-| Function                     | Description                                      |
-|------------------------------|--------------------------------------------------|
-| `hook_query <json>`          | Query `/hooks/query` endpoint (classify paths)   |
-| `hook_tool <id> [args_json]` | Call a read-only MCP tool via `/hooks/tool`       |
+| Function                     | Description                                    |
+|------------------------------|------------------------------------------------|
+| `hook_query <json>`          | Query `/hooks/query` endpoint (classify paths) |
+| `hook_tool <id> [args_json]` | Call a read-only MCP tool via `/hooks/tool`    |
 
 ### Utility Helpers
 
-| Function                   | Description                                     |
-|----------------------------|-------------------------------------------------|
-| `hook_escape_json <text>`  | Escape text for safe JSON embedding             |
+| Function                  | Description                         |
+|---------------------------|-------------------------------------|
+| `hook_escape_json <text>` | Escape text for safe JSON embedding |
 
 ### Example: Full Hook Script
 
@@ -537,11 +667,13 @@ agent is actually connected (Copilot, Claude Code, etc.) rather than a hardcoded
 
 ```json
 {
-  "pre": [{
-    "script": "scripts/enforce-commit-author.sh",
-    "failSilently": false,
-    "timeout": 5
-  }]
+  "pre": [
+    {
+      "script": "scripts/enforce-commit-author.sh",
+      "failSilently": false,
+      "timeout": 5
+    }
+  ]
 }
 ```
 
@@ -552,11 +684,13 @@ arguments. The agent never knows the author was changed.
 
 ```json
 {
-  "pre": [{
-    "script": "scripts/enforce-gh-bot-identity.sh",
-    "failSilently": false,
-    "timeout": 5
-  }]
+  "pre": [
+    {
+      "script": "scripts/enforce-gh-bot-identity.sh",
+      "failSilently": false,
+      "timeout": 5
+    }
+  ]
 }
 ```
 
@@ -692,8 +826,8 @@ configured separately in your project's hooks directory.
 ### Automatic Provisioning
 
 On first project open, if the hooks directory has no `.json` configs, the plugin copies all
-bundled defaults (JSON configs + shell scripts) to `<storage-dir>/hooks/`. After that, the
-files are yours to customize.
+bundled defaults (JSON configs + the embedded `.js` hook scripts) to `<storage-dir>/hooks/`. After
+that, the files are yours to customize.
 
 ### Restore Defaults
 
@@ -705,23 +839,24 @@ This overwrites all existing hook configs and scripts with the bundled originals
 
 ## Comparison with GitHub Copilot Hooks
 
-| Capability                     | Copilot Hooks | AgentBridge Hooks |
-|--------------------------------|---------------|-------------------|
-| Pre-tool deny                  | ✅             | ✅                 |
-| Pre-tool argument modification | ❌             | ✅                 |
-| Post-tool output modification  | ❌             | ✅                 |
-| Post-tool output append        | ❌             | ✅                 |
-| Static prepend/append text     | ❌             | ✅                 |
-| Error state override           | ❌             | ✅                 |
-| Hook chaining                  | ❌             | ✅                 |
-| Per-tool configuration         | ✅             | ✅                 |
-| Async (fire-and-forget) mode   | ✅             | ✅                 |
-| JSON stdin/stdout protocol     | ❌             | ✅                 |
-| Hot-reload without restart     | ❌             | ✅                 |
-| Read-only tool access from hooks | ❌           | ✅                 |
-| IDE project model queries      | ❌             | ✅                 |
-| Environment variable injection | ❌             | ✅                 |
-| POSIX shell library            | ❌             | ✅                 |
-| Connected agent identity       | ❌             | ✅                 |
-| Built-in defaults with restore | ❌             | ✅                 |
-| Hooks outside of tool calls    | ✅             | ❌                 |
+| Capability                       | Copilot Hooks | AgentBridge Hooks |
+|----------------------------------|---------------|-------------------|
+| Pre-tool deny                    | ✅             | ✅                 |
+| Pre-tool argument modification   | ❌             | ✅                 |
+| Post-tool output modification    | ❌             | ✅                 |
+| Post-tool output append          | ❌             | ✅                 |
+| Static prepend/append text       | ❌             | ✅                 |
+| Error state override             | ❌             | ✅                 |
+| Hook chaining                    | ❌             | ✅                 |
+| Per-tool configuration           | ✅             | ✅                 |
+| Async (fire-and-forget) mode     | ✅             | ✅                 |
+| JSON stdin/stdout protocol       | ❌             | ✅                 |
+| Hot-reload without restart       | ❌             | ✅                 |
+| Read-only tool access from hooks | ❌             | ✅                 |
+| IDE project model queries        | ❌             | ✅                 |
+| Environment variable injection   | ❌             | ✅                 |
+| POSIX shell library              | ❌             | ✅                 |
+| Embedded JS engine (no shell)    | ❌             | ✅                 |
+| Connected agent identity         | ❌             | ✅                 |
+| Built-in defaults with restore   | ❌             | ✅                 |
+| Hooks outside of tool calls      | ✅             | ❌                 |
