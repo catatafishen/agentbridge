@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.CodeChangeTracker;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.services.PermissionTemplateUtil;
 import com.github.catatafishen.agentbridge.ui.renderers.WriteFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
@@ -113,14 +114,25 @@ public class WriteFileTool extends FileTool {
     }
 
     /**
+     * Whether this tool may fall back to the currently active editor when no path is given.
+     * False for write_file (full-content rewrites without an explicit path are risky).
+     * Overridden to true in EditTextTool.
+     */
+    protected boolean allowActiveFileFallback() {
+        return false;
+    }
+
+    /**
      * Resolves the target file path from args, trying "path", then "file" (alias), then
-     * falling back to the currently active editor file.  Returns null if no file is active.
+     * (when {@link #allowActiveFileFallback()} is true) the currently active editor file.
+     * Returns null if resolution fails.
      */
     private String resolvePathParam(@NotNull JsonObject args) {
         if (args.has("path") && !args.get("path").isJsonNull())
             return args.get("path").getAsString();
         if (args.has("file") && !args.get("file").isJsonNull())
             return args.get("file").getAsString();
+        if (!allowActiveFileFallback()) return null;
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
@@ -139,6 +151,16 @@ public class WriteFileTool extends FileTool {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    @Override
+    public String resolvePermissionQuestion(JsonObject args) {
+        JsonObject enriched = args != null ? args.deepCopy() : new JsonObject();
+        if (!enriched.has("path") && enriched.has("file") && !enriched.get("file").isJsonNull()) {
+            enriched.addProperty("path", enriched.get("file").getAsString());
+        }
+        return PermissionTemplateUtil.stripPlaceholders(
+            PermissionTemplateUtil.substituteArgs(permissionTemplate(), enriched));
     }
 
     @Override

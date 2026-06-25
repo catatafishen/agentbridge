@@ -238,4 +238,30 @@ public class EditTextToolTest extends BasePlatformTestCase {
         String actual = Files.readString(Path.of(vf.getPath()));
         assertEquals("Goodbye", actual);
     }
+
+    /**
+     * Passing {@code file} instead of {@code path} must behave identically to using {@code path}.
+     * The response must start with "Edited:".
+     */
+    public void testFileAliasWorksLikePath() throws Exception {
+        VirtualFile vf = createTestFile("alias.txt", "hello world");
+
+        String result = executeSync(
+            args("file", vf.getPath(), "old_str", "hello", "new_str", "goodbye"));
+
+        assertTrue("Expected 'Edited:' when using 'file' alias, got: " + result,
+            result.startsWith("Edited:"));
+    }
+
+    /**
+     * When the {@code file} alias is used the edit must actually be written to disk.
+     */
+    public void testFileAliasUpdatesContent() throws Exception {
+        VirtualFile vf = createTestFile("alias-content.txt", "The quick brown fox");
+
+        executeSync(args("file", vf.getPath(), "old_str", "quick brown", "new_str", "slow red"));
+
+        String actual = Files.readString(Path.of(vf.getPath()));
+        assertEquals("The slow red fox", actual);
+    }
 }

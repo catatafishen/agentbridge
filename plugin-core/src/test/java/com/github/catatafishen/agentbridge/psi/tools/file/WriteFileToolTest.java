@@ -242,4 +242,19 @@ public class WriteFileToolTest extends BasePlatformTestCase {
         String actual = Files.readString(Path.of(vf.getPath()));
         assertEquals(multiline, actual);
     }
+
+    /**
+     * Passing {@code file} instead of {@code path} must behave identically to using {@code path}.
+     * The response must start with "Written:".
+     */
+    public void testFileAliasWorksLikePath() throws Exception {
+        VirtualFile vf = createTestFile("alias.txt", "original");
+
+        String result = executeSync(args("file", vf.getPath(), "content", "replaced"));
+
+        assertTrue("Expected 'Written:' when using 'file' alias, got: " + result,
+            result.startsWith("Written:"));
+        String actual = Files.readString(Path.of(vf.getPath()));
+        assertEquals("replaced", actual);
+    }
 }

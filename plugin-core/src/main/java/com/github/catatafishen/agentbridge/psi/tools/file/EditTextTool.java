@@ -1,8 +1,10 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.services.PermissionTemplateUtil;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Surgical find-and-replace edit within a file.
@@ -35,6 +37,25 @@ public final class EditTextTool extends WriteFileTool {
     @Override
     public @NotNull String permissionTemplate() {
         return "Edit {path}";
+    }
+
+    @Override
+    protected boolean allowActiveFileFallback() {
+        return true;
+    }
+
+    @Override
+    public @Nullable String resolvePermissionQuestion(@Nullable JsonObject args) {
+        JsonObject enriched = args != null ? args.deepCopy() : new JsonObject();
+        if (!enriched.has("path") || enriched.get("path").isJsonNull()) {
+            if (enriched.has("file") && !enriched.get("file").isJsonNull()) {
+                enriched.addProperty("path", enriched.get("file").getAsString());
+            } else {
+                enriched.addProperty("path", "(active file)");
+            }
+        }
+        return PermissionTemplateUtil.stripPlaceholders(
+            PermissionTemplateUtil.substituteArgs(permissionTemplate(), enriched));
     }
 
     @Override
