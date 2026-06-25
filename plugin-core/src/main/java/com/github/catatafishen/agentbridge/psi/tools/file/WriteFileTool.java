@@ -11,6 +11,7 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -94,7 +95,7 @@ public class WriteFileTool extends FileTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to write or create"),
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to write or create. Also accepts 'file' as an alias for this parameter."),
             Param.required(PARAM_CONTENT, TYPE_STRING, "Full file content to write (replaces entire file). Creates the file if it doesn't exist"),
             Param.optional(PARAM_AUTO_FORMAT, TYPE_BOOLEAN,
                 "Auto-format code AND optimize imports after writing (default: true). "
@@ -111,11 +112,40 @@ public class WriteFileTool extends FileTool {
         return WriteFileRenderer.INSTANCE;
     }
 
+    /**
+     * Resolves the target file path from args, trying "path", then "file" (alias), then
+     * falling back to the currently active editor file.  Returns null if no file is active.
+     */
+    private String resolvePathParam(@NotNull JsonObject args) {
+        if (args.has("path") && !args.get("path").isJsonNull())
+            return args.get("path").getAsString();
+        if (args.has("file") && !args.get("file").isJsonNull())
+            return args.get("file").getAsString();
+        CompletableFuture<String> future = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
+            if (editor == null) {
+                future.complete(null);
+                return;
+            }
+            VirtualFile vf = FileDocumentManager.getInstance().getFile(editor.getDocument());
+            future.complete(vf != null ? vf.getPath() : null);
+        });
+        try {
+            return future.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("path") || args.get("path").isJsonNull())
+        String pathStr = resolvePathParam(args);
+        if (pathStr == null)
             return ToolUtils.ERROR_PATH_REQUIRED;
-        String pathStr = args.get("path").getAsString();
         String guardError = guardExternalWrite(pathStr);
         if (guardError != null) return guardError;
         boolean autoFormat = resolveAutoFormat(args);
