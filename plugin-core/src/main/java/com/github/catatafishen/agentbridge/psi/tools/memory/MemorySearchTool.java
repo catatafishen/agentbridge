@@ -23,6 +23,7 @@ import java.util.List;
 public final class MemorySearchTool extends Tool {
 
     private static final String PARAM_MEMORY_TYPE = "memory_type";
+    private static final String PARAM_MAX_RESULTS = "max_results";
     private static final String PARAM_LIMIT = "limit";
     private static final String PARAM_STATE = "state";
 
@@ -71,7 +72,7 @@ public final class MemorySearchTool extends Tool {
             Param.optional("room", TYPE_STRING, "Filter by room (topic category)"),
             Param.optional(PARAM_MEMORY_TYPE, TYPE_STRING, "Filter by type: context, decision, problem, solution"),
             Param.optional(PARAM_STATE, TYPE_STRING, "Filter by verification state: verified, unverified, stale"),
-            Param.optional("max_results", TYPE_INTEGER, "Max results to return (default: 10)")
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Max results to return (default: 10)")
         );
     }
 
@@ -82,9 +83,14 @@ public final class MemorySearchTool extends Tool {
         String room = args.has("room") ? args.get("room").getAsString() : null;
         String memoryType = args.has(PARAM_MEMORY_TYPE) ? args.get(PARAM_MEMORY_TYPE).getAsString() : null;
         String stateFilter = args.has(PARAM_STATE) ? args.get(PARAM_STATE).getAsString() : null;
-        int limit = args.has("max_results") ? args.get("max_results").getAsInt()
-                  : args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt()
-                  : 10;
+        int limit;
+        if (args.has(PARAM_MAX_RESULTS)) {
+            limit = args.get(PARAM_MAX_RESULTS).getAsInt();
+        } else if (args.has(PARAM_LIMIT)) {
+            limit = args.get(PARAM_LIMIT).getAsInt();
+        } else {
+            limit = 10;
+        }
 
         MemoryService memoryService = MemoryService.getInstance(project);
         MemoryStore store = memoryService.getStore();

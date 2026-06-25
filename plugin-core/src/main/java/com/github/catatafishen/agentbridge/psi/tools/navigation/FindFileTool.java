@@ -23,6 +23,8 @@ import java.util.regex.Pattern;
 
 public final class FindFileTool extends NavigationTool {
 
+    private static final String PARAM_QUERY = "query";
+    private static final String PARAM_MAX_RESULTS = "max_results";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 500;
 
@@ -68,17 +70,17 @@ public final class FindFileTool extends NavigationTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("query", TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
+            Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
             Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
-            Param.optional("max_results", TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        if (!args.has("query") || args.get("query").isJsonNull())
+        if (!args.has(PARAM_QUERY) || args.get(PARAM_QUERY).isJsonNull())
             return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
-        String query = args.get("query").getAsString().trim();
+        String query = args.get(PARAM_QUERY).getAsString().trim();
         if (query.isEmpty())
             return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
         final String finalQuery = query;
@@ -94,8 +96,8 @@ public final class FindFileTool extends NavigationTool {
     }
 
     private int readLimit(JsonObject args) {
-        if (args.has("max_results") && !args.get("max_results").isJsonNull())
-            return Math.clamp(args.get("max_results").getAsInt(), 1, MAX_LIMIT);
+        if (args.has(PARAM_MAX_RESULTS) && !args.get(PARAM_MAX_RESULTS).isJsonNull())
+            return Math.clamp(args.get(PARAM_MAX_RESULTS).getAsInt(), 1, MAX_LIMIT);
         return DEFAULT_LIMIT;
     }
 

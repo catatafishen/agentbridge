@@ -36,7 +36,6 @@ public abstract class EditingTool extends Tool {
     private static final Logger LOG = Logger.getInstance(EditingTool.class);
 
     protected static final String PARAM_PATH = "path";
-    private static final String PARAM_FILE_ALIAS = "file";
     protected static final String PARAM_SYMBOL = "symbol";
     protected static final String PARAM_LINE = "line";
     protected static final String ERROR_CANNOT_OPEN_DOC = "Cannot open document: ";

@@ -168,16 +168,6 @@ public final class KiroClient extends AcpClient {
         }
     }
 
-    /**
-     * Kiro sends agent_thought_chunk updates asynchronously — they can arrive after
-     * session/prompt returns. Delegate to the base post-turn mode which keeps the consumer
-     * alive and adds a 2-minute auto-clear safety net.
-     */
-    @Override
-    protected void afterPromptComplete() {
-        super.afterPromptComplete();
-    }
-
     @Override
     public String displayName() {
         return "Kiro";

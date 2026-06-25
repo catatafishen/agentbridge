@@ -90,12 +90,24 @@ public final class FindImplementationsTool extends RefactoringTool {
         if (filePath != null && line > 0) {
             final String fp = filePath;
             final int ln = line;
-            String result = ApplicationManager.getApplication().runReadAction(
-                (Computable<String>) () ->
-                    com.github.catatafishen.agentbridge.psi.TypeHierarchySupport
-                        .findSubtypes(project, fp, ln, symbolName)
-            );
-            return ToolUtils.truncateOutput(result);
+            // Retry on ServiceNotReadyException: in some IDEs (e.g. IU), DefinitionsScopedSearch
+            // executors may access services that initialise lazily after project.isInitialized()
+            // but before all post-startup activities complete. A brief wait and retry resolves it.
+            com.intellij.ide.startup.ServiceNotReadyException lastErr = null;
+            for (int attempt = 0; attempt < 3; attempt++) {
+                try {
+                    String result = ApplicationManager.getApplication().runReadAction(
+                        (Computable<String>) () ->
+                            com.github.catatafishen.agentbridge.psi.TypeHierarchySupport
+                                .findSubtypes(project, fp, ln, symbolName)
+                    );
+                    return ToolUtils.truncateOutput(result);
+                } catch (com.intellij.ide.startup.ServiceNotReadyException e) {
+                    lastErr = e;
+                    Thread.sleep(2000);
+                }
+            }
+            throw lastErr;
         }
 
         // Java path: symbol-only lookup via JavaPsiFacade
