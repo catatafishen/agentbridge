@@ -30,7 +30,7 @@ class GoToDeclarationIntegrationTest {
             val result = mcp.callTool(
                 "go_to_declaration",
                 mapOf(
-                    "file" to usageFile,
+                    "path" to usageFile,
                     "line" to ide.navigationUsageLine,
                     "symbol" to ide.navigationSymbol,
                 ),

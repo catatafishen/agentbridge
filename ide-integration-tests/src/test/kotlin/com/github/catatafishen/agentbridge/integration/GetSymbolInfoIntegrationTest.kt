@@ -28,7 +28,7 @@ class GetSymbolInfoIntegrationTest {
         IdeBench.run("getSymbolInfo") { _, mcp ->
             val result = mcp.callTool(
                 "get_symbol_info",
-                mapOf("file" to symbolInfoFile, "line" to ide.symbolInfoLine),
+                mapOf("path" to symbolInfoFile, "line" to ide.symbolInfoLine),
                 timeout = Duration.ofSeconds(120),
             )
             println("[integration] ${ide.key}: get_symbol_info($symbolInfoFile:${ide.symbolInfoLine}) → $result")

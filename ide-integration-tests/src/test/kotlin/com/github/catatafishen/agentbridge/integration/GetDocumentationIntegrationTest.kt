@@ -32,7 +32,7 @@ class GetDocumentationIntegrationTest {
                 "get_documentation",
                 mapOf(
                     "symbol" to ide.expectedSymbolInfoName,
-                    "file" to docFile,
+                    "path" to docFile,
                     "line" to ide.symbolInfoLine,
                 ),
                 timeout = Duration.ofSeconds(120),

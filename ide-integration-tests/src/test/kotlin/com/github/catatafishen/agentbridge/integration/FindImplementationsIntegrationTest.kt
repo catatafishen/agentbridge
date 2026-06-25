@@ -45,7 +45,7 @@ class FindImplementationsIntegrationTest {
                 "find_implementations",
                 mapOf(
                     "symbol" to ide.expectedSymbol,
-                    "file" to file,
+                    "path" to file,
                     "line" to ide.typeHierarchyLine,
                 ),
                 timeout = Duration.ofSeconds(120),
