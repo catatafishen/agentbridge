@@ -81,7 +81,7 @@ public final class GetDocumentationTool extends RefactoringTool {
 
         // Validate: file and line must be provided together.
         if (args.has(PARAM_PATH) != args.has(PARAM_LINE)) {
-            return ToolUtils.ERROR_PREFIX + "'file' and 'line' must be provided together";
+            return ToolUtils.ERROR_PREFIX + "'path' and 'line' must be provided together";
         }
 
         // Position-based path: language-agnostic, same approach as go_to_declaration / find_implementations.

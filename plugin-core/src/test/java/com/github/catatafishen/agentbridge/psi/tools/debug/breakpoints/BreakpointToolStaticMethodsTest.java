@@ -186,7 +186,7 @@ class BreakpointToolStaticMethodsTest {
             String result = invokeBuildResolveError(args, 5);
             assertTrue(result.contains("Specify"), "Should provide guidance");
             assertTrue(result.contains("index"), "Should mention 'index' option");
-            assertTrue(result.contains("file"), "Should mention 'file' option");
+            assertTrue(result.contains("path"), "Should mention 'path' option");
         }
 
         @Test

@@ -297,8 +297,8 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
         assertNotNull("Result must not be null", result);
         assertTrue("Expected validation error for missing file+line, got: " + result,
             result.startsWith("Error:"));
-        assertTrue("Expected 'file' mentioned in error message, got: " + result,
-            result.contains("file"));
+        assertTrue("Expected 'path' mentioned in error message, got: " + result,
+            result.contains("path"));
     }
 
     /**
