@@ -21,7 +21,7 @@ import java.util.List;
 public final class ListProjectFilesTool extends NavigationTool {
 
     private static final String PARAM_DIRECTORY = "directory";
-    private static final String PARAM_PATTERN = "pattern";
+    private static final String PARAM_FILE_PATTERN = "file_pattern";
     private static final String PARAM_MIN_SIZE = "min_size";
     private static final String PARAM_MAX_SIZE = "max_size";
     private static final String PARAM_MODIFIED_AFTER = "modified_after";
@@ -47,7 +47,7 @@ public final class ListProjectFilesTool extends NavigationTool {
             List files in a project directory. All parameters are optional — call with no \
             arguments to list all project files. This is the recommended first step when \
             exploring an unfamiliar project, as it reveals the actual languages and structure \
-            before filtering. Use 'pattern' only once you already know the file types present.""";
+            before filtering. Use 'file_pattern' only once you already know the file types present.""";
     }
 
     @Override
@@ -64,7 +64,7 @@ public final class ListProjectFilesTool extends NavigationTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(PARAM_DIRECTORY, TYPE_STRING, "Optional subdirectory to list (relative to project root)", ""),
-            Param.optional(PARAM_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt'). Omit when exploring an unfamiliar project — guessing a pattern for the wrong language returns nothing", ""),
+            Param.optional(PARAM_FILE_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt'). Omit when exploring an unfamiliar project — guessing a pattern for the wrong language returns nothing", ""),
             Param.optional("sort", TYPE_STRING, "Sort order: 'name' (default, alphabetical), 'size' (largest first), 'modified' (most recently modified first)", ""),
             Param.optional(PARAM_MIN_SIZE, TYPE_INTEGER, "Only include files at least this many bytes", ""),
             Param.optional(PARAM_MAX_SIZE, TYPE_INTEGER, "Only include files at most this many bytes", ""),
@@ -85,7 +85,13 @@ public final class ListProjectFilesTool extends NavigationTool {
         // is applied (shows all project files). Without this, the prefix filter
         // relPath.startsWith(".") would never match any project-relative path.
         String dir = (".".equals(dirRaw) || "./".equals(dirRaw)) ? "" : dirRaw;
-        String pattern = args.has(PARAM_PATTERN) ? args.get(PARAM_PATTERN).getAsString() : "";
+        final String pattern;
+        if (args.has(PARAM_FILE_PATTERN) && !args.get(PARAM_FILE_PATTERN).isJsonNull())
+            pattern = args.get(PARAM_FILE_PATTERN).getAsString();
+        else if (args.has("pattern") && !args.get("pattern").isJsonNull())
+            pattern = args.get("pattern").getAsString();
+        else
+            pattern = "";
         String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
         long minSize = args.has(PARAM_MIN_SIZE) ? args.get(PARAM_MIN_SIZE).getAsLong() : -1;
         long maxSize = args.has(PARAM_MAX_SIZE) ? args.get(PARAM_MAX_SIZE).getAsLong() : -1;

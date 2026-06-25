@@ -85,7 +85,7 @@ public final class GetHighlightsTool extends QualityTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional("path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""),
-            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"),
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"),
             Param.optional(PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)"),
             Param.optional(PARAM_START_LINE, TYPE_INTEGER, "Only return highlights on or after this line (1-based, inclusive). If end_line is omitted, includes all lines from start_line onwards."),
             Param.optional(PARAM_END_LINE, TYPE_INTEGER, "Only return highlights on or before this line (1-based, inclusive). Used with start_line. Defaults to no upper bound when start_line is set.")
@@ -95,7 +95,9 @@ public final class GetHighlightsTool extends QualityTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
-        int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
+        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt()
+                  : args.has("limit") ? args.get("limit").getAsInt()
+                  : 100;
         boolean includeUnindexed = args.has(PARAM_INCLUDE_UNINDEXED) && args.get(PARAM_INCLUDE_UNINDEXED).getAsBoolean();
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : 0;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : 0;

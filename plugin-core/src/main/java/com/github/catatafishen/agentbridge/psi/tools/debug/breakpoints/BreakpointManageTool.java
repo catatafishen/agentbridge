@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 public final class BreakpointManageTool extends DebugTool {
 
     private static final String PARAM_ACTION = "action";
-    private static final String PARAM_FILE = "file";
+    private static final String PARAM_PATH = "path";
     private static final String PARAM_LINE = "line";
     private static final String PARAM_INDEX = "index";
     private static final String PARAM_CONDITION = "condition";
@@ -60,15 +60,15 @@ public final class BreakpointManageTool extends DebugTool {
         return """
             Add, remove, or update breakpoints. Use 'action' to select the operation:
 
-            action=add   — Add a line breakpoint. Requires 'file' and 'line'. Optional: \
+            action=add   — Add a line breakpoint. Requires 'path' and 'line'. Optional: \
             'condition', 'log_expression', 'enabled' (default true), 'suspend' (default true). \
             Set suspend=false with log_expression for a tracepoint.
 
             action=remove — Remove a breakpoint. Identify by 'index' (from breakpoint_list) \
-            OR by 'file'+'line'. Set 'remove_all: true' to clear all breakpoints at once.
+            OR by 'path'+'line'. Set 'remove_all: true' to clear all breakpoints at once.
 
             action=update — Enable/disable or change condition/log on an existing breakpoint. \
-            Identify by 'index' OR by 'file'+'line'. Pass 'condition' or 'log_expression' as \
+            Identify by 'index' OR by 'path'+'line'. Pass 'condition' or 'log_expression' as \
             empty string to clear them.
 
             action=add_exception — Add a breakpoint that fires when an exception class is \
@@ -94,7 +94,7 @@ public final class BreakpointManageTool extends DebugTool {
             Param.required(PARAM_ACTION, TYPE_STRING,
                 "Operation: 'add', 'remove', 'update', or 'add_exception'"),
             // add / update shared params
-            Param.optional(PARAM_FILE, TYPE_STRING,
+            Param.optional(PARAM_PATH, TYPE_STRING,
                 "File path (absolute or project-relative). Required for add; used as identifier for remove/update."),
             Param.optional(PARAM_LINE, TYPE_INTEGER,
                 "Line number (1-based). Required for add; used as identifier for remove/update."),
@@ -135,10 +135,10 @@ public final class BreakpointManageTool extends DebugTool {
 
     @NotNull
     private String executeAdd(@NotNull JsonObject args) throws Exception {
-        if (!args.has(PARAM_FILE) || !args.has(PARAM_LINE)) {
-            return "Error: action=add requires 'file' and 'line'.";
+        if (readPathParam(args) == null || !args.has(PARAM_LINE)) {
+            return "Error: action=add requires 'path' and 'line'.";
         }
-        String path = args.get(PARAM_FILE).getAsString();
+        String path = readPathParam(args);
         int lineZeroBased = args.get(PARAM_LINE).getAsInt() - 1;
         String condition = args.has(PARAM_CONDITION) ? args.get(PARAM_CONDITION).getAsString() : null;
         String logExpr = args.has(PARAM_LOG_EXPRESSION) ? args.get(PARAM_LOG_EXPRESSION).getAsString() : null;
@@ -312,8 +312,9 @@ public final class BreakpointManageTool extends DebugTool {
 
     @Nullable
     private XBreakpoint<?> resolveByFileLine(@NotNull JsonObject args, @NotNull XBreakpointManager mgr) {
-        if (!args.has(PARAM_FILE) || !args.has(PARAM_LINE)) return null;
-        VirtualFile vf = resolveVirtualFile(args.get(PARAM_FILE).getAsString());
+        String path = readPathParam(args);
+        if (path == null || !args.has(PARAM_LINE)) return null;
+        VirtualFile vf = resolveVirtualFile(path);
         if (vf == null) return null;
         int line = args.get(PARAM_LINE).getAsInt() - 1;
         return ApplicationManager.getApplication().runReadAction((Computable<XLineBreakpoint<?>>) () -> {
@@ -370,11 +371,12 @@ public final class BreakpointManageTool extends DebugTool {
             return "Error: Breakpoint index " + args.get(PARAM_INDEX).getAsInt()
                 + " out of range (1-" + total + "). Run breakpoint_list to see current breakpoints.";
         }
-        if (args.has(PARAM_FILE)) {
-            return "Error: No breakpoint found at " + args.get(PARAM_FILE).getAsString()
+        String path = readPathParam(args);
+        if (path != null) {
+            return "Error: No breakpoint found at " + path
                 + (args.has(PARAM_LINE) ? ":" + args.get(PARAM_LINE).getAsInt() : "") + ".";
         }
-        return "Error: Specify 'index' or 'file'+'line' to identify the breakpoint for action=" + action + ".";
+        return "Error: Specify 'index' or 'path'+'line' to identify the breakpoint for action=" + action + ".";
     }
 
     private static void applyUpdates(@NotNull XBreakpoint<?> bp, @NotNull JsonObject args) {

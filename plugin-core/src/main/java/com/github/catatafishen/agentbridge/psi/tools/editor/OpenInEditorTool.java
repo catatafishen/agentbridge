@@ -61,7 +61,7 @@ public final class OpenInEditorTool extends EditorTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the file to open"),
+            Param.required("path", TYPE_STRING, "Path to the file to open"),
             Param.optional("line", TYPE_INTEGER, "Optional: line number to navigate to after opening"),
             Param.optional(PARAM_FOCUS, TYPE_BOOLEAN, "Optional: if true (default), the editor gets focus. Set to false to open without stealing focus")
         );
@@ -74,8 +74,8 @@ public final class OpenInEditorTool extends EditorTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("file")) {
-            return "Error: 'file' parameter is required";
+        if (readPathParam(args) == null) {
+            return "Error: 'path' parameter is required";
         }
         OpenRequest request = OpenRequest.from(args,
             ToolLayerSettings.getInstance(project).getFollowAgentFiles());
@@ -128,7 +128,7 @@ public final class OpenInEditorTool extends EditorTool {
         static OpenRequest from(@NotNull JsonObject args, boolean followAgentFiles) {
             boolean requestedFocus = !args.has(PARAM_FOCUS) || args.get(PARAM_FOCUS).getAsBoolean();
             return new OpenRequest(
-                args.get("file").getAsString(),
+                readPathParam(args),
                 args.has("line") ? args.get("line").getAsInt() : -1,
                 requestedFocus && followAgentFiles
             );

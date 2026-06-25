@@ -73,7 +73,7 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
             Param.optional(PARAM_DIRECTION, TYPE_STRING,
                 "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both. "
                     + "Non-Java IDEs require 'file' and 'line' for all directions."),
-            Param.optional("file", TYPE_STRING,
+            Param.optional("path", TYPE_STRING,
                 "File path where the symbol is defined. Required for non-Java languages"),
             Param.optional("line", TYPE_INTEGER,
                 "Line number where the symbol is defined. Required for non-Java languages")
@@ -90,7 +90,7 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
         if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String direction = args.has(PARAM_DIRECTION) ? args.get(PARAM_DIRECTION).getAsString() : "both";
-        String filePath = args.has("file") ? args.get("file").getAsString() : null;
+        String filePath = readPathParam(args);
         int line = args.has("line") ? args.get("line").getAsInt() : 0;
 
         if (!isValidDirection(direction)) {

@@ -68,7 +68,7 @@ public final class GetAvailableActionsTool extends QualityTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the file"),
+            Param.required("path", TYPE_STRING, "Path to the file"),
             Param.required("line", TYPE_INTEGER, "Line number (1-based)"),
             Param.optional(PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
                 + "Auto-detects the column and returns intention actions at that symbol. "
@@ -81,10 +81,10 @@ public final class GetAvailableActionsTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("file") || !args.has("line")) {
-            return "Error: 'file' and 'line' parameters are required";
+        if (readPathParam(args) == null || !args.has("line")) {
+            return "Error: 'path' and 'line' parameters are required";
         }
-        String pathStr = args.get("file").getAsString();
+        String pathStr = readPathParam(args);
         int targetLine = args.get("line").getAsInt();
         String symbol = args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null;
         Integer targetCol = args.has(PARAM_COLUMN) ? args.get(PARAM_COLUMN).getAsInt() : null;

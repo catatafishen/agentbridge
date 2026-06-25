@@ -43,7 +43,7 @@ public abstract class QualityTool extends Tool {
         "{\"error\": \"IDE is still initializing. Please wait a moment and try again.\"}";
     protected static final String FORMAT_LOCATION = "%s:%d [%s] %s";
     protected static final String FORMAT_LINES_SUFFIX = " lines)";
-    protected static final String PARAM_LIMIT = "limit";
+    protected static final String PARAM_MAX_RESULTS = "max_results";
     protected static final String PARAM_INSPECTION_ID = "inspection_id";
     protected static final String PARAM_SCOPE = "scope";
     protected static final String PARAM_OFFSET = "offset";

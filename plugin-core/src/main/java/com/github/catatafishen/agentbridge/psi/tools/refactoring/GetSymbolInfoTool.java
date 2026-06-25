@@ -25,7 +25,7 @@ import org.jetbrains.annotations.Nullable;
 public final class GetSymbolInfoTool extends RefactoringTool {
 
     private static final Logger LOG = Logger.getInstance(GetSymbolInfoTool.class);
-    private static final String PARAM_FILE = "file";
+    private static final String PARAM_PATH = "path";
     private static final String PARAM_LINE = "line";
     private static final String PARAM_COLUMN = "column";
 
@@ -68,7 +68,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_FILE, TYPE_STRING, "File path (absolute or project-relative)"),
+            Param.required(PARAM_PATH, TYPE_STRING, "File path (absolute or project-relative)"),
             Param.required(PARAM_LINE, TYPE_INTEGER, "1-based line number"),
             Param.optional(PARAM_COLUMN, TYPE_INTEGER, "1-based column number (optional, defaults to first non-whitespace on the line)")
         );
@@ -81,7 +81,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        String filePath = args.get(PARAM_FILE).getAsString();
+        String filePath = readPathParam(args);
         int line = args.get(PARAM_LINE).getAsInt();
 
         VirtualFile vf = resolveVirtualFile(filePath);

@@ -86,7 +86,7 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the file"),
+            Param.required("path", TYPE_STRING, "Path to the file"),
             Param.required("line", TYPE_INTEGER, "Line number (1-based)"),
             Param.required(PARAM_ACTION_NAME, TYPE_STRING, "Exact action name from get_highlights / get_available_actions output"),
             Param.optional(PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
@@ -130,8 +130,8 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
                                                @NotNull PopupHandler handler,
                                                boolean isReplay)
         throws InterruptedException, ExecutionException, TimeoutException {
-        if (!args.has("file") || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
-            return "Error: 'file', 'line', and 'action_name' parameters are required";
+        if (readPathParam(args) == null || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
+            return "Error: 'path', 'line', and 'action_name' parameters are required";
         }
         ActionRequest request = ActionRequest.from(args, handler, isReplay);
 
@@ -184,7 +184,7 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
                                  @NotNull PopupHandler handler, boolean isReplay) {
         static ActionRequest from(@NotNull JsonObject args, @NotNull PopupHandler handler, boolean isReplay) {
             return new ActionRequest(
-                args.get("file").getAsString(),
+                readPathParam(args),
                 args.get("line").getAsInt(),
                 args.get(PARAM_ACTION_NAME).getAsString(),
                 args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null,
