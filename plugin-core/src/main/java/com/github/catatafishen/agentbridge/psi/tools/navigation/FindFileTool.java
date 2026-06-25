@@ -23,7 +23,6 @@ import java.util.regex.Pattern;
 
 public final class FindFileTool extends NavigationTool {
 
-    private static final String PARAM_LIMIT = "limit";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 500;
 
@@ -97,8 +96,6 @@ public final class FindFileTool extends NavigationTool {
     private int readLimit(JsonObject args) {
         if (args.has("max_results") && !args.get("max_results").isJsonNull())
             return Math.clamp(args.get("max_results").getAsInt(), 1, MAX_LIMIT);
-        if (args.has(PARAM_LIMIT) && !args.get(PARAM_LIMIT).isJsonNull())
-            return Math.clamp(args.get(PARAM_LIMIT).getAsInt(), 1, MAX_LIMIT);
         return DEFAULT_LIMIT;
     }
 

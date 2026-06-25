@@ -7,7 +7,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 public class FindFileToolTest extends BasePlatformTestCase {
 
     private static final String QUERY = "query";
-    private static final String LIMIT = "limit";
+    private static final String LIMIT = "max_results";
     private static final String SCOPE = "scope";
     private FindFileTool tool;
 
