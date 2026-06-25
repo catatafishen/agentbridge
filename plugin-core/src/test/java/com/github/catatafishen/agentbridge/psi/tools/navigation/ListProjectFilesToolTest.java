@@ -94,7 +94,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
         myFixture.addFileToProject("Pattern.txt", "some text");
         myFixture.addFileToProject("Pattern.xml", "<root/>");
 
-        String result = tool.execute(args("pattern", "*.java"));
+        String result = tool.execute(args("file_pattern", "*.java"));
 
         assertTrue("Expected Pattern.java in result, got: " + result,
             result.contains("Pattern.java"));
@@ -122,7 +122,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
 
         JsonObject a = new JsonObject();
         a.addProperty("min_size", 100);
-        a.addProperty("pattern", "*.java");
+        a.addProperty("file_pattern", "*.java");
         String result = tool.execute(a);
 
         if (result.contains("files:")) {
@@ -167,7 +167,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
         myFixture.addFileToProject("Apple.java", "class Apple {}");
         myFixture.addFileToProject("Mango.java", "class Mango {}");
 
-        String result = tool.execute(args("sort", "name", "pattern", "*.java"));
+        String result = tool.execute(args("sort", "name", "file_pattern", "*.java"));
 
         assertTrue("Expected Apple.java in result, got: " + result, result.contains("Apple.java"));
         assertTrue("Expected Mango.java in result, got: " + result, result.contains("Mango.java"));
@@ -191,7 +191,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
     public void testListWithNoMatchingPattern() {
         myFixture.addFileToProject("SomeFile.java", "class SomeFile {}");
 
-        String result = tool.execute(args("pattern", "*.frobnicator"));
+        String result = tool.execute(args("file_pattern", "*.frobnicator"));
 
         assertEquals("Expected 'No files found' for non-matching pattern, got: " + result,
             "No files found", result);
@@ -231,7 +231,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
         large.repeat("aaaaaaaaaaaaaaaaaaa\n", 100);
         myFixture.addFileToProject("SizeLarge.txt", large.toString());
 
-        String result = tool.execute(args("pattern", "*.txt", "sort", "size"));
+        String result = tool.execute(args("file_pattern", "*.txt", "sort", "size"));
 
         assertTrue("Expected SizeSmall.txt in result, got: " + result,
             result.contains("SizeSmall.txt"));
@@ -254,7 +254,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
     public void testResultFormatIncludesMetadataBrackets() {
         myFixture.addFileToProject("MetaCheck.java", "public class MetaCheck {}");
 
-        String result = tool.execute(args("pattern", "MetaCheck.java"));
+        String result = tool.execute(args("file_pattern", "MetaCheck.java"));
 
         if (result.contains("files:")) {
             assertTrue("Result should contain metadata opening bracket '[', got: " + result,

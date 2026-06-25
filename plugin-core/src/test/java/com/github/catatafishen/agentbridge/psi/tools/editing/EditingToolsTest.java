@@ -158,7 +158,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "ReplaceSuccess"));
 
         String result = executeSync(replaceSymbolBodyTool, args(
-            "file", path,
+            "path", path,
             "symbol", "hello",
             "new_body", """
                     public String hello() {
@@ -190,7 +190,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "ReplaceNotFound"));
 
         String result = executeSync(replaceSymbolBodyTool, args(
-            "file", path,
+            "path", path,
             "symbol", "nonExistentMethod_XYZ_Replace",
             "new_body", "public void nonExistentMethod_XYZ_Replace() {}\n"
         ));
@@ -211,7 +211,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "ReplaceMissingSymbol"));
 
         JsonObject a = new JsonObject();
-        a.addProperty("file", path);
+        a.addProperty("path", path);
         a.addProperty("new_body", "public void foo() {}\n");
         // "symbol" intentionally omitted
 
@@ -232,7 +232,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "InsertAfterSuccess"));
 
         String result = executeSync(insertAfterSymbolTool, args(
-            "file", path,
+            "path", path,
             "symbol", "hello",
             "content", """
                     public String goodbye() {
@@ -262,7 +262,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "InsertAfterNotFound"));
 
         String result = executeSync(insertAfterSymbolTool, args(
-            "file", path,
+            "path", path,
             "symbol", "nonExistentSymbol_ABC_After",
             "content", "    public void extra() {}\n"
         ));
@@ -285,7 +285,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "InsertBeforeSuccess"));
 
         String result = executeSync(insertBeforeSymbolTool, args(
-            "file", path,
+            "path", path,
             "symbol", "hello",
             "content", "    // inserted comment\n"
         ));
@@ -311,7 +311,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
             String.format(SIMPLE_CLASS_TEMPLATE, "InsertBeforeNotFound"));
 
         String result = executeSync(insertBeforeSymbolTool, args(
-            "file", path,
+            "path", path,
             "symbol", "nonExistentSymbol_DEF_Before",
             "content", "    // comment\n"
         ));

@@ -235,7 +235,7 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
             String result = nonJavaTool.execute(args(
                 "symbol", "Mid_7421",
                 "direction", "both",
-                "file", vf.getPath(),
+                "path", vf.getPath(),
                 "line", "2"
             ));
 
@@ -282,7 +282,7 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
             String result = nonJavaTool.execute(args(
                 "symbol", "SuperProbe",
                 "direction", "supertypes",
-                "file", vf.getPath(),
+                "path", vf.getPath(),
                 "line", "3"
             ));
 
@@ -323,7 +323,7 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
 
         assertNotNull("Result must not be null", result);
         assertTrue("Expected error, got: " + result, result.startsWith("Error:"));
-        assertTrue("Error must ask for 'file' and 'line', got: " + result,
-            result.contains("file") && result.contains("line"));
+        assertTrue("Error must ask for 'path' and 'line', got: " + result,
+            result.contains("path") && result.contains("line"));
     }
 }
