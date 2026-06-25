@@ -69,7 +69,7 @@ public final class FindFileTool extends NavigationTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
+            Param.required("path", TYPE_STRING, "File name to find. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
             Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
             Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
         );
@@ -78,13 +78,13 @@ public final class FindFileTool extends NavigationTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         String query = null;
-        if (args.has(PARAM_QUERY) && !args.get(PARAM_QUERY).isJsonNull()) {
-            query = args.get(PARAM_QUERY).getAsString().trim();
-        } else if (args.has("path") && !args.get("path").isJsonNull()) {
+        if (args.has("path") && !args.get("path").isJsonNull()) {
             query = args.get("path").getAsString().trim();
+        } else if (args.has(PARAM_QUERY) && !args.get(PARAM_QUERY).isJsonNull()) {
+            query = args.get(PARAM_QUERY).getAsString().trim();
         }
         if (query == null || query.isEmpty()) {
-            return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
+            return ToolUtils.ERROR_PREFIX + "'path' parameter is required";
         }
         int limit = readLimit(args);
         String scopeName = readScopeParam(args);
