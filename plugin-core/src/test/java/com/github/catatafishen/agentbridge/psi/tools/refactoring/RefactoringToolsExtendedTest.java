@@ -249,7 +249,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         // Asking for 'Ani' on line 2 must NOT match 'Ani' inside 'Animal' — no declaration
         // named 'Ani' exists anywhere, so the tool must report "not found".
         String result = findImplementationsTool.execute(
-            args("file", vf.getPath(), "line", "2", "symbol", "Ani"));
+            args("path", vf.getPath(), "line", "2", "symbol", "Ani"));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Substring match should NOT resolve to Animal, got: " + result,
@@ -313,7 +313,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
 
         // Line 3 contains the USAGE `target()` inside callerOne — old code would fail here.
         String result = getCallHierarchyTool.execute(
-            args("file", vf.getPath(), "line", "3", "symbol", "target"));
+            args("path", vf.getPath(), "line", "3", "symbol", "target"));
 
         // The bug is "Could not find symbol at file:line" — the new fallback path resolves
         // the call's reference to the declaration, so we must NOT see that error message.
@@ -342,7 +342,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         // Asking for 'bar' on line 3 must NOT match 'bar' inside 'foobar' — there is no
         // declaration named 'bar', so the tool should report "Could not find".
         String result = getCallHierarchyTool.execute(
-            args("file", vf.getPath(), "line", "3", "symbol", "bar"));
+            args("path", vf.getPath(), "line", "3", "symbol", "bar"));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Substring match should NOT resolve to foobar, got: " + result,
@@ -406,7 +406,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
 
         // Line 3 contains the usage `this.bar()` — resolve 'bar' to its declaration on line 2.
         String result = goToDeclarationTool.execute(
-            args("file", vf.getPath(), "line", "3", "symbol", "bar"));
+            args("path", vf.getPath(), "line", "3", "symbol", "bar"));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Resolution should succeed for 'bar' usage, got: " + result,
@@ -416,13 +416,6 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             result.contains("Could not resolve"));
     }
 
-    /**
-     * Regression test for review feedback on PR #815: a raw {@code indexOf(symbolName)} would
-     * locate {@code bar} inside {@code foobar()} and (mis)resolve it as a usage. The fix
-     * enforces an identifier-boundary check, so requesting symbol {@code "bar"} on a line that
-     * only contains {@code foobar} must fall through with "Could not resolve" rather than
-     * navigating to {@code foobar}'s declaration.
-     */
     public void testGoToDeclarationRejectsSubstringMatch() throws Exception {
         VirtualFile vf = createTestFile("Sub.java", String.join("\n",
             "public class Sub {",
@@ -433,7 +426,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
 
         // Asking for 'bar' on line 3 must NOT match the 'bar' substring inside 'foobar'.
         String result = goToDeclarationTool.execute(
-            args("file", vf.getPath(), "line", "3", "symbol", "bar"));
+            args("path", vf.getPath(), "line", "3", "symbol", "bar"));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Substring match should NOT resolve to foobar(), got: " + result,
@@ -454,7 +447,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             ""));
 
         String result = goToDeclarationTool.execute(
-            args("file", vf.getPath(), "line", "2", "symbol", "greet"));
+            args("path", vf.getPath(), "line", "2", "symbol", "greet"));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Resolution should succeed for declaration-itself case, got: " + result,
@@ -472,7 +465,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
      */
     public void testGetSymbolInfoMissingFile() throws Exception {
         // Empty path → resolveVirtualFile("") → null → ERROR_PREFIX + ERROR_FILE_NOT_FOUND
-        String result = getSymbolInfoTool.execute(args("file", "", "line", "1"));
+        String result = getSymbolInfoTool.execute(args("path", "", "line", "1"));
         assertNotNull("Result must not be null", result);
         assertTrue("Expected 'Error: File not found' for empty file path, got: " + result,
             result.startsWith(ToolUtils.ERROR_PREFIX));
@@ -485,7 +478,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
      */
     public void testGetSymbolInfoMissingLine() {
         JsonObject a = new JsonObject();
-        a.addProperty("file", "/nonexistent/path/GetSymbolInfoMissingLine.java");
+        a.addProperty("path", "/nonexistent/path/GetSymbolInfoMissingLine.java");
         // "line" intentionally omitted — tool will NPE on args.get("line").getAsInt()
 
         try {
