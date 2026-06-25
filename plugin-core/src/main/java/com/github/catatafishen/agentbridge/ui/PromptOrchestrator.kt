@@ -45,6 +45,12 @@ data class PromptOrchestratorCallbacks(
      * of a turn so the UI layer can drop it from its recall stack.
      */
     val onQueuedMessageConsumed: (text: String) -> Unit,
+    /**
+     * Called when the first ACP message arrives after the parent turn has ended,
+     * indicating a background sub-agent is still running. The UI should re-enable
+     * the Stop button and show an info notice.
+     */
+    val onPostTurnBackgroundDetected: () -> Unit,
 )
 
 /** Stored banner message to re-display at the start of the next prompt turn. */
@@ -162,6 +168,9 @@ class PromptOrchestrator(
             // Best-effort
         }
         currentPromptThread = Thread.currentThread()
+        // Register a one-shot callback so the client notifies us if ACP messages arrive
+        // after this turn ends (background sub-agent still running).
+        agentManager.client.setFirstPostTurnCallback { callbacks.onPostTurnBackgroundDetected() }
         try {
             executePrompt(prompt, contextItems, selectedModelId)
         } finally {
@@ -195,6 +204,23 @@ class PromptOrchestrator(
         currentPromptThread?.interrupt()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry("Stopped by user")
+    }
+
+    /**
+     * Cancels background work running after a completed turn (post-turn background agent).
+     * Sends session/cancel to the agent and clears the post-turn consumer.
+     * Does NOT interrupt the current prompt thread (there is none — the turn already ended).
+     */
+    fun stopPostTurnBackground() {
+        val sessionId = currentSessionId
+        if (sessionId != null) {
+            try {
+                agentManager.client.cancelSession(sessionId)
+            } catch (_: Exception) {
+                // Best-effort
+            }
+        }
+        agentManager.client.clearPostTurnState()
     }
 
     private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
