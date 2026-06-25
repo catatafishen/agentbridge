@@ -102,14 +102,14 @@ class ToolSchemaBuilderTest {
     @Test
     @DisplayName("optional param with default value includes 'default' in its property")
     void optionalParamWithDefault() {
-        // GetCoverageTool has 'file' as Param.optional(..., "") — a concrete default value
+        // GetCoverageTool has 'path' as Param.optional(..., "") — a concrete default value
         var tool = new com.github.catatafishen.agentbridge.psi.tools.testing.GetCoverageTool(null);
         JsonObject schema = schemaFor(tool);
         JsonObject props = schema.getAsJsonObject("properties");
-        assertTrue(props.has("file"), "'file' must be in properties");
-        JsonObject fileProp = props.getAsJsonObject("file");
+        assertTrue(props.has("path"), "'path' must be in properties");
+        JsonObject fileProp = props.getAsJsonObject("path");
         assertTrue(fileProp.has("default"),
-            "'file' optional param with default must include 'default' field");
+            "'path' optional param with default must include 'default' field");
     }
 
     // ── addArrayItems ────────────────────────────────────────────────────────

@@ -205,8 +205,8 @@ public class EditorToolsTest extends BasePlatformTestCase {
         String result = executeSync(openInEditorTool, new JsonObject());
 
         assertNotNull("Result must not be null", result);
-        assertEquals("Expected 'file' param error, got: " + result,
-            "Error: 'file' parameter is required", result);
+        assertEquals("Expected 'path' param error, got: " + result,
+            "Error: 'path' parameter is required", result);
     }
 
     /**

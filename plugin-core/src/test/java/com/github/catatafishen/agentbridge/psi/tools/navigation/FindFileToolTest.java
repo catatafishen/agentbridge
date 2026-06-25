@@ -86,7 +86,7 @@ public class FindFileToolTest extends BasePlatformTestCase {
         assertTrue("Expected error prefix, got: " + result,
             result.startsWith(ToolUtils.ERROR_PREFIX));
         assertTrue("Expected blank query message, got: " + result,
-            result.contains("Query cannot be empty"));
+            result.contains("'query' parameter is required"));
     }
 
     public void testNoMatchesReturnsMessage() {

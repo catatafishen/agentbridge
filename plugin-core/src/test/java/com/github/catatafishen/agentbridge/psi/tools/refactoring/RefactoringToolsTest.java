@@ -135,7 +135,7 @@ public class RefactoringToolsTest extends BasePlatformTestCase {
         // symbol uses C++-style :: to verify that shortNameOf extracts "DocProbe" correctly.
         String result = getDocumentationTool.execute(args(
             "symbol", "demo::DocProbe",
-            "file", file.getVirtualFile().getPath(),
+            "path", file.getVirtualFile().getPath(),
             "line", "3"));
 
         assertFalse("Position-based path must not error, got: " + result,

@@ -67,7 +67,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
         assertTrue("Expected error prefix, got: " + result,
             result.startsWith(ToolUtils.ERROR_PREFIX));
         assertTrue("Expected required params message, got: " + result,
-            result.contains("'file' and 'line' parameters are required"));
+            result.contains("'path' and 'line' parameters are required"));
     }
 
     public void testNonJavaResolvesMethodFromParameterPosition() {
