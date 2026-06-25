@@ -921,7 +921,6 @@ public final class PsiBridgeService implements Disposable {
     @Nullable
     static String extractFilePath(JsonObject arguments) {
         if (arguments.has("path")) return arguments.get("path").getAsString();
-        if (arguments.has("file")) return arguments.get("file").getAsString();
         return null;
     }
 

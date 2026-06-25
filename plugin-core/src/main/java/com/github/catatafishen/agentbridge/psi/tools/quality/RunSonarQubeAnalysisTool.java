@@ -51,9 +51,7 @@ public final class RunSonarQubeAnalysisTool extends QualityTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         String scope = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "all";
-        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt()
-                  : args.has("limit") ? args.get("limit").getAsInt()
-                  : 100;
+        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
 
         SonarQubeIntegration sonar = new SonarQubeIntegration(project);

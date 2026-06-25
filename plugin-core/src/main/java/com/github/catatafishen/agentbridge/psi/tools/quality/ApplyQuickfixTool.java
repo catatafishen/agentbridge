@@ -69,7 +69,7 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the file containing the problem"),
+            Param.required("path", TYPE_STRING, "Path to the file containing the problem"),
             Param.required("line", TYPE_INTEGER, "Line number where the problem is located"),
             Param.required(PARAM_INSPECTION_ID, TYPE_STRING, "The inspection ID from run_inspections output (e.g., 'unused')"),
             Param.optional(PARAM_FIX_INDEX, TYPE_INTEGER, "Which fix to apply if multiple are available (default: 0)")
@@ -99,8 +99,8 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
     private @NotNull String executeWithHandler(@NotNull JsonObject args,
                                                @NotNull PopupHandler handler,
                                                boolean isReplay) throws InterruptedException, ExecutionException, TimeoutException {
-        if (!args.has("file") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
-            return "Error: 'file', 'line', and '" + PARAM_INSPECTION_ID + "' parameters are required";
+        if (!args.has("path") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
+            return "Error: 'path', 'line', and '" + PARAM_INSPECTION_ID + "' parameters are required";
         }
         QuickfixRequest request = QuickfixRequest.from(args, handler, isReplay);
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
@@ -212,7 +212,7 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
                                    @NotNull PopupHandler handler, boolean isReplay) {
         static QuickfixRequest from(@NotNull JsonObject args, @NotNull PopupHandler handler, boolean isReplay) {
             return new QuickfixRequest(
-                args.get("file").getAsString(),
+                args.get("path").getAsString(),
                 args.get("line").getAsInt(),
                 args.get(PARAM_INSPECTION_ID).getAsString(),
                 args.has(PARAM_FIX_INDEX) ? args.get(PARAM_FIX_INDEX).getAsInt() : 0,

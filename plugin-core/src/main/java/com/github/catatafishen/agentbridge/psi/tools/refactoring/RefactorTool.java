@@ -71,7 +71,7 @@ public final class RefactorTool extends RefactoringTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_OPERATION, TYPE_STRING, "Refactoring type: 'rename' or 'safe_delete'"),
-            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
             Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"),
             Param.optional("line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"),
             Param.optional(PARAM_NEW_NAME, TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'")
@@ -85,11 +85,11 @@ public final class RefactorTool extends RefactoringTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has(PARAM_OPERATION) || !args.has("file") || !args.has(PARAM_SYMBOL)) {
-            return "Error: 'operation', 'file', and 'symbol' parameters are required";
+        if (!args.has(PARAM_OPERATION) || !args.has("path") || !args.has(PARAM_SYMBOL)) {
+            return "Error: 'operation', 'path', and 'symbol' parameters are required";
         }
         String operation = args.get(PARAM_OPERATION).getAsString();
-        String pathStr = args.get("file").getAsString();
+        String pathStr = args.get("path").getAsString();
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         int targetLine = args.has("line") ? args.get("line").getAsInt() : -1;
         String newName = args.has(PARAM_NEW_NAME) ? args.get(PARAM_NEW_NAME).getAsString() : null;

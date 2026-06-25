@@ -76,7 +76,7 @@ public final class GetActionOptionsTool extends QualityTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the file"),
+            Param.required("path", TYPE_STRING, "Path to the file"),
             Param.required("line", TYPE_INTEGER, "Line number (1-based)"),
             Param.required(PARAM_ACTION_NAME, TYPE_STRING, "Exact action name from get_available_actions output"),
             Param.optional(PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
@@ -92,10 +92,10 @@ public final class GetActionOptionsTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("file") || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
-            return "Error: 'file', 'line', and 'action_name' parameters are required";
+        if (!args.has("path") || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
+            return "Error: 'path', 'line', and 'action_name' parameters are required";
         }
-        String pathStr = args.get("file").getAsString();
+        String pathStr = args.get("path").getAsString();
         int targetLine = args.get("line").getAsInt();
         String actionName = args.get(PARAM_ACTION_NAME).getAsString();
         String symbol = args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null;

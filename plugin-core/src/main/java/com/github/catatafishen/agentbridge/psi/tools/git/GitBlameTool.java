@@ -71,9 +71,7 @@ public final class GitBlameTool extends GitTool {
         int lineStart = -1;
         int lineEnd = -1;
         if (args.has(PARAM_START_LINE)) lineStart = args.get(PARAM_START_LINE).getAsInt();
-        else if (args.has("line_start")) lineStart = args.get("line_start").getAsInt();
         if (args.has(PARAM_END_LINE)) lineEnd = args.get(PARAM_END_LINE).getAsInt();
-        else if (args.has("line_end")) lineEnd = args.get("line_end").getAsInt();
 
         if (lineStart > 0 && lineEnd > 0) {
             cmdArgs.add("-L");
