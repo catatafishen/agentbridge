@@ -160,7 +160,8 @@ public abstract class AcpClient extends AbstractClient {
     private final AtomicReference<Runnable> firstPostTurnCallback = new AtomicReference<>();
 
     /** Auto-clear future — cancels the post-turn consumer after 120s of silence. */
-    private volatile java.util.concurrent.ScheduledFuture<?> postTurnClearFuture;
+    private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>> postTurnClearFuture =
+        new java.util.concurrent.atomic.AtomicReference<>();
 
     /**
      * Conversation history replayed by the agent during {@code session/load}.
@@ -986,8 +987,8 @@ public abstract class AcpClient extends AbstractClient {
      */
     protected void afterPromptComplete() {
         postTurnActive = true;
-        postTurnClearFuture = AppExecutorUtil.getAppScheduledExecutorService()
-            .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS);
+        postTurnClearFuture.set(AppExecutorUtil.getAppScheduledExecutorService()
+            .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS));
     }
 
     /**
@@ -999,10 +1000,9 @@ public abstract class AcpClient extends AbstractClient {
     public void clearPostTurnState() {
         postTurnActive = false;
         firstPostTurnCallback.set(null);
-        java.util.concurrent.ScheduledFuture<?> f = postTurnClearFuture;
+        java.util.concurrent.ScheduledFuture<?> f = postTurnClearFuture.getAndSet(null);
         if (f != null) {
             f.cancel(false);
-            postTurnClearFuture = null;
         }
         updateConsumer.set(null);
     }
