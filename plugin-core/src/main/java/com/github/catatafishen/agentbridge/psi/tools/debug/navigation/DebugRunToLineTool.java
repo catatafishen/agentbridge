@@ -48,7 +48,7 @@ public final class DebugRunToLineTool extends DebugTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "File path (absolute or project-relative)"),
+            Param.required("path", TYPE_STRING, "File path (absolute or project-relative)"),
             Param.required("line", TYPE_INTEGER, "Target line number (1-based)")
         );
     }
@@ -56,7 +56,7 @@ public final class DebugRunToLineTool extends DebugTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         XDebugSession session = requirePausedSession();
-        String path = args.get("file").getAsString();
+        String path = readPathParam(args);
         int lineZeroBased = args.get("line").getAsInt() - 1;
 
         VirtualFile file = refreshAndFindVirtualFile(path);

@@ -51,7 +51,7 @@ public final class GetCoverageTool extends TestingTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.optional("file", TYPE_STRING, "Optional file or class name to filter coverage results", "")
+            Param.optional("path", TYPE_STRING, "Optional file or class name to filter coverage results", "")
         );
     }
 
@@ -62,7 +62,7 @@ public final class GetCoverageTool extends TestingTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        String file = args.has("file") ? args.get("file").getAsString() : "";
+        String file = readPathParam(args) != null ? readPathParam(args) : "";
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 

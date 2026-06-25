@@ -35,7 +35,8 @@ public abstract class EditingTool extends Tool {
 
     private static final Logger LOG = Logger.getInstance(EditingTool.class);
 
-    protected static final String PARAM_FILE = "file";
+    protected static final String PARAM_PATH = "path";
+    private static final String PARAM_FILE_ALIAS = "file";
     protected static final String PARAM_SYMBOL = "symbol";
     protected static final String PARAM_LINE = "line";
     protected static final String ERROR_CANNOT_OPEN_DOC = "Cannot open document: ";
@@ -96,7 +97,7 @@ public abstract class EditingTool extends Tool {
     }
 
     protected static @Nullable String validateArgs(JsonObject args, String contentParam) {
-        if (!args.has(PARAM_FILE) || args.get(PARAM_FILE).isJsonNull())
+        if (readPathParam(args) == null)
             return ToolUtils.ERROR_PATH_REQUIRED;
         if (!args.has(PARAM_SYMBOL) || args.get(PARAM_SYMBOL).isJsonNull())
             return "Missing required parameter: symbol";

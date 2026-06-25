@@ -53,13 +53,13 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
 
     @Override
     public @NotNull String permissionTemplate() {
-        return "Replace {symbol} in {file}";
+        return "Replace {symbol} in {path}";
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
             Param.required("symbol", TYPE_STRING, "Name of the symbol to replace (method, class, function, or field)"),
             Param.required(PARAM_NEW_BODY, TYPE_STRING, "The complete new definition to replace the symbol with"),
             Param.optional("line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name")
@@ -76,7 +76,8 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
         String error = validateArgs(args, PARAM_NEW_BODY);
         if (error != null) return error;
 
-        String pathStr = args.get(PARAM_FILE).getAsString();
+        String pathStr = readPathParam(args);
+        if (pathStr == null) return ToolUtils.ERROR_PATH_REQUIRED;
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String newBody = args.get(PARAM_NEW_BODY).getAsString();
         Integer lineHint = args.has(PARAM_LINE) ? args.get(PARAM_LINE).getAsInt() : null;

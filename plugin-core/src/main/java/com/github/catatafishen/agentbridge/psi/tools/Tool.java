@@ -184,6 +184,19 @@ public abstract class Tool implements ToolDefinition {
         schema.getAsJsonObject(KEY_PROPERTIES).add(name, prop);
     }
 
+    /**
+     * Reads the file path from args. Checks "path" first, then "file" as a silent backward-compat alias.
+     * Returns null if neither key is present or both are null.
+     */
+    @Nullable
+    protected static String readPathParam(@NotNull JsonObject args) {
+        if (args.has("path") && !args.get("path").isJsonNull())
+            return args.get("path").getAsString();
+        if (args.has("file") && !args.get("file").isJsonNull())
+            return args.get("file").getAsString();
+        return null;
+    }
+
     protected VirtualFile resolveVirtualFile(String path) {
         return ToolUtils.resolveVirtualFile(project, path);
     }

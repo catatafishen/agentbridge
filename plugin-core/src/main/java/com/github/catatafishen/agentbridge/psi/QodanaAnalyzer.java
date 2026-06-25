@@ -44,7 +44,9 @@ public final class QodanaAnalyzer {
     }
 
     public String runQodana(JsonObject args) throws ExecutionException, InterruptedException, TimeoutException {
-        int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
+        int limit = args.has("max_results") ? args.get("max_results").getAsInt()
+                  : args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt()
+                  : 100;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 

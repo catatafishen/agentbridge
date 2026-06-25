@@ -62,7 +62,7 @@ public final class GetCallHierarchyTool extends RefactoringTool {
             Param.required(PARAM_SYMBOL, TYPE_STRING, "Function, method, or named element to find callers for. "
                 + "Can be a simple name (requires file+line) or a fully-qualified name "
                 + "(e.g. 'com.example.MyClass.myMethod') to resolve without file+line"),
-            Param.optional("file", TYPE_STRING, "Path to the file containing the definition. "
+            Param.optional("path", TYPE_STRING, "Path to the file containing the definition. "
                 + "Optional when 'symbol' is a fully-qualified name"),
             Param.optional("line", TYPE_INTEGER, "Line number where the definition is located. "
                 + "Optional when 'symbol' is a fully-qualified name"),
@@ -82,7 +82,7 @@ public final class GetCallHierarchyTool extends RefactoringTool {
             return "Error: 'symbol' parameter is required";
         }
         String elementName = args.get(PARAM_SYMBOL).getAsString();
-        String filePath = args.has("file") ? args.get("file").getAsString() : null;
+        String filePath = readPathParam(args);
         int line = args.has("line") ? args.get("line").getAsInt() : -1;
         int depth = args.has(PARAM_DEPTH) ? Math.min(args.get(PARAM_DEPTH).getAsInt(), 5) : 1;
         if (depth < 1) depth = 1;

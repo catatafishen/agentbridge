@@ -89,7 +89,7 @@ public final class RunInspectionsTool extends QualityTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(PARAM_SCOPE, TYPE_STRING, "Optional: file or directory path to inspect. Examples: 'src/main/java/com/example/MyClass.java' or 'src/main/java/com/example'"),
-            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Page size (default: 100). Maximum problems per response"),
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Page size (default: 100). Maximum problems per response"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of problems to skip (default: 0). Use for pagination"),
             Param.optional(PARAM_MIN_SEVERITY, TYPE_STRING, "Minimum severity filter. Options: ERROR, WARNING, WEAK_WARNING, INFO. Default: all severities included. Only set this if the user explicitly asks to filter by severity.")
         );
@@ -97,7 +97,9 @@ public final class RunInspectionsTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
+        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt()
+                  : args.has("limit") ? args.get("limit").getAsInt()
+                  : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         String minSeverity = args.has(PARAM_MIN_SEVERITY) ? args.get(PARAM_MIN_SEVERITY).getAsString() : null;
         String scopePath = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : null;
