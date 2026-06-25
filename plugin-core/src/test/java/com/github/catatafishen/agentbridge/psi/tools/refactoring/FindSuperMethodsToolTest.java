@@ -33,7 +33,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
             """);
 
         String result = tool.execute(args(
-            "file", implementation.getVirtualFile().getPath(),
+            "path", implementation.getVirtualFile().getPath(),
             "line", "4",
             "column", "25"));
 
@@ -54,7 +54,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
             """);
 
         String result = tool.execute(args(
-            "file", standalone.getVirtualFile().getPath(),
+            "path", standalone.getVirtualFile().getPath(),
             "line", "3",
             "column", "25"));
 
@@ -95,7 +95,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
 
         FindSuperMethodsTool nonJavaTool = new FindSuperMethodsTool(getProject(), false);
         String result = nonJavaTool.execute(args(
-            "file", impl.getVirtualFile().getPath(),
+            "path", impl.getVirtualFile().getPath(),
             "line", "4",
             // Column 32 lands on the parameter `id`, NOT the method name.
             "column", "32"));
@@ -131,7 +131,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
 
         FindSuperMethodsTool nonJavaTool = new FindSuperMethodsTool(getProject(), false);
         String result = nonJavaTool.execute(args(
-            "file", impl.getVirtualFile().getPath(),
+            "path", impl.getVirtualFile().getPath(),
             "line", "4",
             // Column 19 lands on the method name 'load' itself, not the parameter.
             "column", "19"));
@@ -160,7 +160,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
 
         FindSuperMethodsTool nonJavaTool = new FindSuperMethodsTool(getProject(), false);
         String result = nonJavaTool.execute(args(
-            "file", file.getVirtualFile().getPath(),
+            "path", file.getVirtualFile().getPath(),
             "line", "3",
             // Column 17 lands on the method name 'localOnly' itself.
             "column", "17"));
@@ -188,7 +188,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
                 """);
 
         String result = nonJavaTool.execute(args(
-            "file", file.getVirtualFile().getPath(),
+            "path", file.getVirtualFile().getPath(),
             "line", "2"));
 
         assertTrue("Expected error prefix, got: " + result,
@@ -208,7 +208,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
             """);
 
         String result = tool.execute(args(
-            "file", file.getVirtualFile().getPath(),
+            "path", file.getVirtualFile().getPath(),
             "line", "99"));
 
         assertTrue("Expected error prefix, got: " + result,
@@ -226,7 +226,7 @@ public class FindSuperMethodsToolTest extends BasePlatformTestCase {
             """);
 
         String result = tool.execute(args(
-            "file", file.getVirtualFile().getPath(),
+            "path", file.getVirtualFile().getPath(),
             "line", "1"));
 
         assertTrue("Expected error prefix, got: " + result,

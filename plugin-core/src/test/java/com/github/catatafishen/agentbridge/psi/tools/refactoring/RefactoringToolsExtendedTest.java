@@ -286,7 +286,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
      */
     public void testGetCallHierarchyMissingLine() throws Exception {
         String result = getCallHierarchyTool.execute(
-            args("symbol", "doSomething", "file", "/some/path/MyClass.java"));
+            args("symbol", "doSomething", "path", "/some/path/MyClass.java"));
         assertNotNull("Result must not be null", result);
         assertTrue("Expected error for missing line with simple name, got: " + result,
             result.startsWith("Error:") && result.contains("line"));
@@ -368,7 +368,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
      * the "symbol required" error since symbol is the only truly required parameter.
      */
     public void testGoToDeclarationMissingSymbol() throws Exception {
-        String result = goToDeclarationTool.execute(args("file", "/some/path/MyClass.java"));
+        String result = goToDeclarationTool.execute(args("path", "/some/path/MyClass.java"));
         assertNotNull("Result must not be null", result);
         assertTrue("Expected validation error for missing symbol, got: " + result,
             result.startsWith("Error:") && result.contains("symbol"));
@@ -380,7 +380,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
      */
     public void testGoToDeclarationMissingLine() throws Exception {
         String result = goToDeclarationTool.execute(
-            args("file", "/some/path/MyClass.java", "symbol", "MyClass"));
+            args("path", "/some/path/MyClass.java", "symbol", "MyClass"));
         assertNotNull("Result must not be null", result);
         assertTrue("Expected validation error for missing line with simple name, got: " + result,
             result.startsWith("Error:") && result.contains("line"));

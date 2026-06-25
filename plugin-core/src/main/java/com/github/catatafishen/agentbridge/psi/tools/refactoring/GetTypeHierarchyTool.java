@@ -117,13 +117,13 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
         // (FindSuperElementsHelper). No manual-action suggestions — autonomous agents cannot
         // press hotkeys, so emit either real results or a clear "not available" error.
         if (filePath == null || line <= 0) {
-            return "Error: Provide 'file' and 'line' parameters to locate the symbol in non-Java projects.";
+            return "Error: Provide 'path' and 'line' parameters to locate the symbol in non-Java projects.";
         }
 
         return switch (direction) {
             case "supertypes" -> runSupertypesSearch(filePath, line, symbolName);
             case "both" -> runBothDirections(filePath, line, symbolName);
-            default -> "Error: Provide 'file' and 'line' parameters to locate the symbol in non-Java projects.";
+            default -> "Error: Provide 'path' and 'line' parameters to locate the symbol in non-Java projects.";
         };
     }
 

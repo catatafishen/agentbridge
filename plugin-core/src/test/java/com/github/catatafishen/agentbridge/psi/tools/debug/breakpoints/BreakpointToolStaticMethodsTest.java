@@ -162,7 +162,7 @@ class BreakpointToolStaticMethodsTest {
         @DisplayName("error with file only shows file path")
         void errorWithFileOnly() throws Exception {
             JsonObject args = new JsonObject();
-            args.addProperty("file", "src/Main.java");
+            args.addProperty("path", "src/Main.java");
             String result = invokeBuildResolveError(args, 5);
             assertTrue(result.contains("src/Main.java"), "Should contain file path");
             assertTrue(result.contains("No breakpoint found"), "Should say no breakpoint found");
@@ -172,7 +172,7 @@ class BreakpointToolStaticMethodsTest {
         @DisplayName("error with file and line shows both")
         void errorWithFileAndLine() throws Exception {
             JsonObject args = new JsonObject();
-            args.addProperty("file", "src/Main.java");
+            args.addProperty("path", "src/Main.java");
             args.addProperty("line", 42);
             String result = invokeBuildResolveError(args, 5);
             assertTrue(result.contains("src/Main.java"), "Should contain file path");
@@ -194,7 +194,7 @@ class BreakpointToolStaticMethodsTest {
         void indexTakesPrecedence() throws Exception {
             JsonObject args = new JsonObject();
             args.addProperty("index", 99);
-            args.addProperty("file", "src/Main.java");
+            args.addProperty("path", "src/Main.java");
             String result = invokeBuildResolveError(args, 3);
             assertTrue(result.contains("99"), "Should use the index branch");
             assertTrue(result.contains("breakpoint_list"), "Should suggest breakpoint_list");

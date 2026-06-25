@@ -335,7 +335,7 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
 
         // No symbol/column → quick-fixes only path → pooled thread + runReadAction → safe from EDT
         String result = getAvailableActionsTool.execute(args(
-            "file", vf.getPath(),
+            "path", vf.getPath(),
             "line", "1"
         ));
         assertNotNull("Result must not be null", result);
@@ -360,7 +360,7 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
 
         // Blank symbol — should be treated the same as no symbol (col format, not "symbol: ''")
         String result = executeSync(() -> getAvailableActionsTool.execute(args(
-            "file", vf.getPath(),
+            "path", vf.getPath(),
             "line", "1",
             "symbol", "   ")));
         assertNotNull("Result must not be null", result);
@@ -392,7 +392,7 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
 
         // No symbol → quick-fixes path → pooled thread + runReadAction → safe from EDT
         String result = getAvailableActionsTool.execute(args(
-            "file", tempPath,
+            "path", tempPath,
             "line", "1"));
         assertNotNull("Result must not be null", result);
         assertFalse("resolveVirtualFileWithFallback must find the temp:/// file, got: " + result,
@@ -411,7 +411,7 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
         String tempPath = psiFile.getVirtualFile().getPath();
 
         String result = executeSync(() -> getAvailableActionsTool.execute(args(
-            "file", tempPath,
+            "path", tempPath,
             "line", "1",
             "symbol", "VfsProbeSymbol")));
         assertNotNull("Result must not be null", result);
@@ -492,7 +492,7 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
      */
     public void testApplyActionNonExistentFile() throws Exception {
         String result = executeSync(() -> applyActionTool.execute(args(
-            "file", "/nonexistent/path/DoesNotExist.java",
+            "path", "/nonexistent/path/DoesNotExist.java",
             "line", "1",
             "action_name", "Some Action")));
         assertNotNull("Result must not be null", result);
@@ -509,7 +509,7 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
             "package com.example;\npublic class ApplyActionLineCheck {}\n");
 
         String result = executeSync(() -> applyActionTool.execute(args(
-            "file", vf.getPath(),
+            "path", vf.getPath(),
             "line", "9999",
             "action_name", "Some Action")));
         assertNotNull("Result must not be null", result);

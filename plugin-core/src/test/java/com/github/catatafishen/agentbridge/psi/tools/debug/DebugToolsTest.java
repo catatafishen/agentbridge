@@ -194,7 +194,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
     public void testAddBreakpointAbsoluteFileNotFoundReturnsError() throws Exception {
         String result = breakpointManageTool.execute(args(
             "action", "add",
-            "file", "/nonexistent/path/to/NonexistentSource.java",
+            "path", "/nonexistent/path/to/NonexistentSource.java",
             "line", "10"
         ));
         assertNotNull("execute() must not return null", result);
@@ -211,7 +211,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
     public void testAddBreakpointProjectRelativeFileNotFoundReturnsError() throws Exception {
         String result = breakpointManageTool.execute(args(
             "action", "add",
-            "file", "src/main/java/com/example/NoSuchClass.java",
+            "path", "src/main/java/com/example/NoSuchClass.java",
             "line", "1"
         ));
         assertNotNull("execute() must not return null", result);
@@ -232,7 +232,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
 
         breakpointManageTool.execute(args(
             "action", "add",
-            "file", "/does/not/exist/Phantom.java",
+            "path", "/does/not/exist/Phantom.java",
             "line", "5"
         ));
 
@@ -301,7 +301,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
     public void testRemoveBreakpointByFileLineNoneExistReturnsError() throws Exception {
         String result = breakpointManageTool.execute(args(
             "action", "remove",
-            "file", "/nonexistent/src/Missing.java",
+            "path", "/nonexistent/src/Missing.java",
             "line", "5"
         ));
         assertNotNull("execute() must not return null", result);
@@ -316,7 +316,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
      * produces a meaningful error rather than throwing a NullPointerException.
      */
     public void testRemoveBreakpointFileOnlyNoLineReturnsError() throws Exception {
-        String result = breakpointManageTool.execute(args("action", "remove", "file", "/some/path/File.java"));
+        String result = breakpointManageTool.execute(args("action", "remove", "path", "/some/path/File.java"));
         assertNotNull("execute() must not return null", result);
         assertFalse("Result must not be blank", result.isBlank());
         assertTrue("Expected error or 'no breakpoint found' message, got: " + result,
@@ -359,7 +359,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
     public void testUpdateBreakpointByFileLineNoneExistReturnsError() throws Exception {
         String result = breakpointManageTool.execute(args(
             "action", "update",
-            "file", "/nonexistent/path/Absent.java",
+            "path", "/nonexistent/path/Absent.java",
             "line", "20"
         ));
         assertNotNull("execute() must not return null", result);
@@ -749,7 +749,7 @@ public class DebugToolsTest extends BasePlatformTestCase {
     public void testDebugRunToLineNoSessionThrowsIllegalStateException() throws Exception {
         try {
             debugRunToLineTool.execute(args(
-                "file", "/nonexistent/File.java",
+                "path", "/nonexistent/File.java",
                 "line", "10"
             ));
             fail("Expected IllegalStateException when no active debug session is present");

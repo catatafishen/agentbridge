@@ -218,7 +218,7 @@ public class EditorToolsTest extends BasePlatformTestCase {
     public void testOpenInEditorNonExistentPath() throws Exception {
         String nonExistentPath = "/nonexistent/totally/fake/path/XyzMissingFile.java";
 
-        String result = executeSync(openInEditorTool, args("file", nonExistentPath));
+        String result = executeSync(openInEditorTool, args("path", nonExistentPath));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Expected error prefix 'Error: ', got: " + result,
