@@ -74,6 +74,20 @@ public final class MacroToolHandler implements ToolDefinition {
     }
 
     @Override
+    public @NotNull JsonObject inputSchema() {
+        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        root.addProperty("type", "object");
+        com.google.gson.JsonObject props = new com.google.gson.JsonObject();
+        com.google.gson.JsonObject pathProp = new com.google.gson.JsonObject();
+        pathProp.addProperty("type", "string");
+        pathProp.addProperty("description", "Optional file path to open in the editor before running the macro");
+        props.add("path", pathProp);
+        root.add("properties", props);
+        root.add("required", new com.google.gson.JsonArray());
+        return root;
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         ActionMacro macro = findMacro();
         if (macro == null) {
@@ -90,8 +104,8 @@ public final class MacroToolHandler implements ToolDefinition {
         }
 
         // Optionally open a target file first
-        if (args.has("file")) {
-            String fileResult = openFile(args.get("file").getAsString());
+        if (args.has("path")) {
+            String fileResult = openFile(args.get("path").getAsString());
             if (fileResult != null) {
                 return fileResult;
             }
