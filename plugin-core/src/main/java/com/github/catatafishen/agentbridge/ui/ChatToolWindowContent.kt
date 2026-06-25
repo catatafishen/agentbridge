@@ -146,6 +146,10 @@ class ChatToolWindowContent(
     @Volatile
     private var isSending = false
 
+    /** True when the agent sent turn-complete but ACP messages are still arriving (background work). */
+    @Volatile
+    private var isBackgroundAgentRunning = false
+
     @Volatile
     private var activeBubbleId: String? = null
 
@@ -1207,6 +1211,7 @@ class ChatToolWindowContent(
             if (lastMatchingIndex >= 0) queuedTexts.removeAt(lastMatchingIndex)
             ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
         },
+        onPostTurnBackgroundDetected = { setBackgroundAgentRunning(true) },
     )
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
@@ -1567,6 +1572,10 @@ class ChatToolWindowContent(
 
     private fun setSendingState(sending: Boolean) {
         isSending = sending
+        if (sending) {
+            // New turn starting — clear any lingering background-agent state
+            isBackgroundAgentRunning = false
+        }
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
             // Clear typing-pause state so a stale bubble doesn't linger after the turn ends,
@@ -1583,6 +1592,19 @@ class ChatToolWindowContent(
             innerInputToolbar.updateActionsAsync()
             refreshShortcutHints()
             updateProcessingTimer(sending)
+        }
+    }
+
+    private fun setBackgroundAgentRunning(active: Boolean) {
+        isBackgroundAgentRunning = active
+        if (active) {
+            consolePanel.addInfoEntry(
+                "⚠ Agent signalled turn-complete but is still sending messages " +
+                    "(background sub-agent in progress). Press Stop to cancel, or wait for it to finish."
+            )
+        }
+        ApplicationManager.getApplication().invokeLater {
+            controlsToolbar.updateActionsAsync()
         }
     }
 
@@ -1737,7 +1759,7 @@ class ChatToolWindowContent(
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
-            if (isSending) {
+            if (isSending || isBackgroundAgentRunning) {
                 e.presentation.icon = AllIcons.Actions.Suspend
                 e.presentation.text = "Stop"
                 e.presentation.description = "Stop the agent"
@@ -1750,7 +1772,7 @@ class ChatToolWindowContent(
         }
 
         override fun actionPerformed(e: AnActionEvent) {
-            if (isSending) {
+            if (isSending || isBackgroundAgentRunning) {
                 stopAgent()
             } else {
                 val inputEvent = e.inputEvent ?: return
@@ -2623,7 +2645,13 @@ class ChatToolWindowContent(
      * running. Must be called on the EDT.
      */
     private fun stopAgent() {
-        promptOrchestrator.stop()
+        if (isSending) {
+            promptOrchestrator.stop()
+        }
+        if (isBackgroundAgentRunning) {
+            promptOrchestrator.stopPostTurnBackground()
+            isBackgroundAgentRunning = false
+        }
         setSendingState(false)
         restoreQueuedMessagesToInput()
         notifyLeftoverTerminals()

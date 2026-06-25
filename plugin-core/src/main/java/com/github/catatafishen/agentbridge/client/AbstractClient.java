@@ -381,6 +381,25 @@ public abstract class AbstractClient {
         // no-op by default
     }
 
+    /**
+     * Registers a one-shot callback that fires the first time an ACP message arrives
+     * after the parent turn has ended (post-turn background mode).
+     * Default: no-op for non-ACP clients.
+     */
+    public void setFirstPostTurnCallback(@Nullable Runnable callback) {
+        // no-op by default
+    }
+
+    /**
+     * Clears post-turn state immediately: stops routing post-turn messages, cancels the
+     * auto-clear timer, and nulls the update consumer.
+     * Called when the user stops a background agent, or at the start of the next turn.
+     * Default: no-op for non-ACP clients.
+     */
+    public void clearPostTurnState() {
+        // no-op by default
+    }
+
     // ─── Project files configuration ─────────────────
 
     /**

@@ -146,6 +146,22 @@ public abstract class AcpClient extends AbstractClient {
     private @Nullable String currentAgentSlug = null;
     private final List<AbstractClient.AgentConfigOption> availableConfigOptions = new CopyOnWriteArrayList<>();
     private final AtomicReference<Consumer<SessionUpdate>> updateConsumer = new AtomicReference<>();
+
+    /**
+     * True after a turn has completed but ACP messages are still arriving (background sub-agent).
+     * Cleared when the next turn starts or {@link #clearPostTurnState()} is called.
+     */
+    protected volatile boolean postTurnActive = false;
+
+    /**
+     * One-shot callback fired the first time an ACP message arrives after the turn has ended.
+     * Cleared after firing. Used to notify the UI that background work is in progress.
+     */
+    private final AtomicReference<Runnable> firstPostTurnCallback = new AtomicReference<>();
+
+    /** Auto-clear future — cancels the post-turn consumer after 120s of silence. */
+    private volatile java.util.concurrent.ScheduledFuture<?> postTurnClearFuture;
+
     /**
      * Conversation history replayed by the agent during {@code session/load}.
      * Non-null and non-empty when the agent successfully restored a session with
@@ -921,6 +937,8 @@ public abstract class AcpClient extends AbstractClient {
         try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
+            // Reset post-turn state from the previous turn before starting a new one.
+            clearPostTurnState();
             updateConsumer.set(onUpdate);
             PromptRequest effectiveRequest = beforeSendPrompt(request);
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
@@ -962,11 +980,41 @@ public abstract class AcpClient extends AbstractClient {
 
     /**
      * Called in the finally block after {@code sendPrompt} completes (success or failure).
-     * Default: clears {@code updateConsumer}. Override to retain it (e.g. Kiro sends
-     * thought chunks asynchronously after the prompt response).
+     * Enters post-turn mode: the consumer stays alive to route background sub-agent messages.
+     * Auto-clears after 120 seconds of silence.
+     * Override to adjust timeout or suppress post-turn mode entirely.
      */
     protected void afterPromptComplete() {
+        postTurnActive = true;
+        postTurnClearFuture = AppExecutorUtil.getAppScheduledExecutorService()
+            .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Clears post-turn state immediately: stops routing post-turn messages, cancels the
+     * auto-clear timer, and nulls the update consumer. Called when the user stops a
+     * background agent, or at the start of the next turn.
+     */
+    @Override
+    public void clearPostTurnState() {
+        postTurnActive = false;
+        firstPostTurnCallback.set(null);
+        java.util.concurrent.ScheduledFuture<?> f = postTurnClearFuture;
+        if (f != null) {
+            f.cancel(false);
+            postTurnClearFuture = null;
+        }
         updateConsumer.set(null);
+    }
+
+    /**
+     * Registers a one-shot callback that fires the first time an ACP message arrives
+     * after the parent turn has ended (post-turn background mode). Cleared automatically
+     * after firing or at the start of the next turn.
+     */
+    @Override
+    public void setFirstPostTurnCallback(@Nullable Runnable callback) {
+        firstPostTurnCallback.set(callback);
     }
 
     /**
@@ -1714,7 +1762,11 @@ public abstract class AcpClient extends AbstractClient {
             LOG.debug("Session update received but no consumer registered");
             return;
         }
-
+        // Fire the one-shot post-turn callback on the first message that arrives after turn end.
+        if (postTurnActive) {
+            Runnable cb = firstPostTurnCallback.getAndSet(null);
+            if (cb != null) cb.run();
+        }
         if (update != null) {
             update = processUpdate(update);
             if (update != null) {
