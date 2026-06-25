@@ -413,21 +413,6 @@ class PsiBridgeServiceStaticMethodsTest {
         }
 
         @Test
-        void returnsFileKeyValue() {
-            JsonObject args = new JsonObject();
-            args.addProperty("file", "/src/Util.java");
-            assertEquals("/src/Util.java", PsiBridgeService.extractFilePath(args));
-        }
-
-        @Test
-        void pathTakesPriorityOverFile() {
-            JsonObject args = new JsonObject();
-            args.addProperty("path", "/from-path.java");
-            args.addProperty("file", "/from-file.java");
-            assertEquals("/from-path.java", PsiBridgeService.extractFilePath(args));
-        }
-
-        @Test
         void returnsNullWhenNeitherKeyPresent() {
             JsonObject args = new JsonObject();
             args.addProperty("command", "ls -la");

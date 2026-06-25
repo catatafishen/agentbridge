@@ -302,14 +302,14 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
     }
 
     /**
-     * Providing {@code file} but omitting {@code line} must return the validation error
-     * "Error: 'file' and 'line' parameters are required". This check is synchronous.
+     * Providing {@code path} but omitting {@code line} must return the validation error
+     * "Error: 'path', 'line', and 'action_name' parameters are required". This check is synchronous.
      */
     public void testGetAvailableActionsMissingLine() throws Exception {
         VirtualFile vf = createTestFile("NoLineAvailActions.java", "public class NoLineAvailActions {}\n");
 
         JsonObject a = new JsonObject();
-        a.addProperty("file", vf.getPath());
+        a.addProperty("path", vf.getPath());
         // "line" intentionally omitted
 
         String result = getAvailableActionsTool.execute(a);
