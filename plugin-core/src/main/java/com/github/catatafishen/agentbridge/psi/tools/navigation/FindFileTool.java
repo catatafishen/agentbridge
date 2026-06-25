@@ -69,21 +69,24 @@ public final class FindFileTool extends NavigationTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
+            Param.required("query", TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
             Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
-            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
+            Param.optional("max_results", TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        if (!args.has(PARAM_QUERY) || args.get(PARAM_QUERY).isJsonNull()) {
+        String query = null;
+        if (args.has("query") && !args.get("query").isJsonNull()) {
+            query = args.get("query").getAsString().trim();
+        } else if (args.has("path") && !args.get("path").isJsonNull()) {
+            query = args.get("path").getAsString().trim();
+        }
+        if (query == null || query.isEmpty()) {
             return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
         }
-        String query = args.get(PARAM_QUERY).getAsString().trim();
-        if (query.isEmpty()) {
-            return ToolUtils.ERROR_PREFIX + "Query cannot be empty";
-        }
+        final String finalQuery = query;
         int limit = readLimit(args);
         String scopeName = readScopeParam(args);
         // NonBlockingReadAction: iterating the filename index can hold the read lock for a long time
@@ -91,16 +94,16 @@ public final class FindFileTool extends NavigationTool {
         // analysis) for the entire duration and cause "IDE not responding" freezes.
         // executeSynchronously() yields to write actions when they need to run, then restarts the
         // search (computeMatches creates fresh collections, so restart is safe).
-        return ReadAction.nonBlocking(() -> computeMatches(query, scopeName, limit))
+        return ReadAction.nonBlocking(() -> computeMatches(finalQuery, scopeName, limit))
             .executeSynchronously();
     }
 
     private int readLimit(JsonObject args) {
-        if (!args.has(PARAM_LIMIT) || args.get(PARAM_LIMIT).isJsonNull()) {
-            return DEFAULT_LIMIT;
-        }
-        int requested = args.get(PARAM_LIMIT).getAsInt();
-        return Math.clamp(requested, 1, MAX_LIMIT);
+        if (args.has("max_results") && !args.get("max_results").isJsonNull())
+            return Math.clamp(args.get("max_results").getAsInt(), 1, MAX_LIMIT);
+        if (args.has(PARAM_LIMIT) && !args.get(PARAM_LIMIT).isJsonNull())
+            return Math.clamp(args.get(PARAM_LIMIT).getAsInt(), 1, MAX_LIMIT);
+        return DEFAULT_LIMIT;
     }
 
     private String computeMatches(String query, String scopeName, int limit) {

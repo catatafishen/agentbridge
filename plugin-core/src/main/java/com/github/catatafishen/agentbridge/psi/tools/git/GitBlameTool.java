@@ -11,8 +11,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitBlameTool extends GitTool {
 
-    private static final String PARAM_LINE_START = "line_start";
-    private static final String PARAM_LINE_END = "line_end";
+    private static final String PARAM_START_LINE = "start_line";
+    private static final String PARAM_END_LINE = "end_line";
 
     public GitBlameTool(Project project) {
         super(project);
@@ -31,7 +31,7 @@ public final class GitBlameTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Show per-line authorship for a file. Returns commit hash, author, and date for each line. " +
-            "Use line_start/line_end to blame a specific range. Use get_file_history for commit-level history.";
+            "Use start_line/end_line to blame a specific range. Use get_file_history for commit-level history.";
     }
 
     @Override
@@ -48,8 +48,8 @@ public final class GitBlameTool extends GitTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("path", TYPE_STRING, "File path to blame"),
-            Param.optional(PARAM_LINE_START, TYPE_INTEGER, "Start line number for partial blame"),
-            Param.optional(PARAM_LINE_END, TYPE_INTEGER, "End line number for partial blame"),
+            Param.optional(PARAM_START_LINE, TYPE_INTEGER, "Start line number for partial blame"),
+            Param.optional(PARAM_END_LINE, TYPE_INTEGER, "End line number for partial blame"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
@@ -68,9 +68,14 @@ public final class GitBlameTool extends GitTool {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("blame");
 
-        if (args.has(PARAM_LINE_START) && args.has(PARAM_LINE_END)) {
-            int lineStart = args.get(PARAM_LINE_START).getAsInt();
-            int lineEnd = args.get(PARAM_LINE_END).getAsInt();
+        int lineStart = -1;
+        int lineEnd = -1;
+        if (args.has(PARAM_START_LINE)) lineStart = args.get(PARAM_START_LINE).getAsInt();
+        else if (args.has("line_start")) lineStart = args.get("line_start").getAsInt();
+        if (args.has(PARAM_END_LINE)) lineEnd = args.get(PARAM_END_LINE).getAsInt();
+        else if (args.has("line_end")) lineEnd = args.get("line_end").getAsInt();
+
+        if (lineStart > 0 && lineEnd > 0) {
             cmdArgs.add("-L");
             cmdArgs.add(lineStart + "," + lineEnd);
         }

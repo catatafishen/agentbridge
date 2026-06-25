@@ -29,7 +29,7 @@ import java.util.List;
 
 public final class FindSuperMethodsTool extends RefactoringTool {
 
-    private static final String PARAM_FILE = "file";
+    private static final String PARAM_PATH = "path";
     private static final String PARAM_LINE = "line";
     private static final String PARAM_COLUMN = "column";
 
@@ -53,7 +53,7 @@ public final class FindSuperMethodsTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_FILE, TYPE_STRING, "File path containing the overriding method"),
+            Param.required(PARAM_PATH, TYPE_STRING, "File path containing the overriding method"),
             Param.required(PARAM_LINE, TYPE_INTEGER, "1-based line number inside the method declaration or body"),
             Param.optional(PARAM_COLUMN, TYPE_INTEGER, "1-based column number. Defaults to the first non-whitespace character on the line", 1)
         );
@@ -92,11 +92,11 @@ public final class FindSuperMethodsTool extends RefactoringTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        if (!args.has(PARAM_FILE) || !args.has(PARAM_LINE)) {
-            return ToolUtils.ERROR_PREFIX + "'file' and 'line' parameters are required";
+        if (readPathParam(args) == null || !args.has(PARAM_LINE)) {
+            return ToolUtils.ERROR_PREFIX + "'path' and 'line' parameters are required";
         }
 
-        String filePath = args.get(PARAM_FILE).getAsString();
+        String filePath = readPathParam(args);
         int line = args.get(PARAM_LINE).getAsInt();
         int column = args.has(PARAM_COLUMN) ? args.get(PARAM_COLUMN).getAsInt() : 1;
         VirtualFile vf = resolveVirtualFile(filePath);

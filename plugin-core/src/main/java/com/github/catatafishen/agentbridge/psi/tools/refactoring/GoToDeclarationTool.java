@@ -75,7 +75,7 @@ public final class GoToDeclarationTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.optional("file", TYPE_STRING, "Path to the file containing the symbol usage. "
+            Param.optional("path", TYPE_STRING, "Path to the file containing the symbol usage. "
                 + "Optional when 'symbol' is a fully-qualified name (e.g. 'com.example.MyClass')"),
             Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to look up. "
                 + "Can be a simple name (requires file+line) or a fully-qualified name "
@@ -96,7 +96,7 @@ public final class GoToDeclarationTool extends RefactoringTool {
             return "Error: 'symbol' parameter is required";
         }
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
-        String pathStr = args.has("file") ? args.get("file").getAsString() : null;
+        String pathStr = readPathParam(args);
         int targetLine = args.has("line") ? args.get("line").getAsInt() : -1;
 
         // FQN mode: resolve directly by fully-qualified name

@@ -16,7 +16,7 @@ public final class GetDocumentationTool extends RefactoringTool {
 
     private static final Logger LOG = Logger.getInstance(GetDocumentationTool.class);
     private static final String PARAM_SYMBOL = "symbol";
-    private static final String PARAM_FILE = "file";
+    private static final String PARAM_PATH = "path";
     private static final String PARAM_LINE = "line";
 
     public GetDocumentationTool(Project project) {
@@ -60,7 +60,7 @@ public final class GetDocumentationTool extends RefactoringTool {
             Param.required(PARAM_SYMBOL, TYPE_STRING,
                 "Fully qualified symbol name (e.g. java.util.List, com.google.gson.Gson.fromJson). " +
                     "For non-Java symbols, provide 'file' and 'line' for language-agnostic resolution."),
-            Param.optional(PARAM_FILE, TYPE_STRING,
+            Param.optional(PARAM_PATH, TYPE_STRING,
                 "File path (absolute or project-relative). When provided together with 'line', " +
                     "resolves the symbol by position instead of FQN — works for any language (C/C++, Python, Go, etc.)."),
             Param.optional(PARAM_LINE, TYPE_INTEGER,
@@ -80,15 +80,15 @@ public final class GetDocumentationTool extends RefactoringTool {
             return "Error: 'symbol' parameter required (e.g. java.util.List, com.google.gson.Gson.fromJson)";
 
         // Validate: file and line must be provided together.
-        if (args.has(PARAM_FILE) != args.has(PARAM_LINE)) {
+        if (args.has(PARAM_PATH) != args.has(PARAM_LINE)) {
             return ToolUtils.ERROR_PREFIX + "'file' and 'line' must be provided together";
         }
 
         // Position-based path: language-agnostic, same approach as go_to_declaration / find_implementations.
         // The IDE's reference resolution handles C/C++, Python, Go, and every other language
         // without any knowledge of language-specific FQN separators (:: vs . vs /).
-        if (args.has(PARAM_FILE) && args.has(PARAM_LINE)) {
-            String filePath = args.get(PARAM_FILE).getAsString();
+        if (args.has(PARAM_PATH) && args.has(PARAM_LINE)) {
+            String filePath = args.get(PARAM_PATH).getAsString();
             int line = args.get(PARAM_LINE).getAsInt();
             // Resolve the VirtualFile before entering the read action — consistent with
             // all other tools (FindSuperMethodsTool, GoToDeclarationTool, etc.) that call

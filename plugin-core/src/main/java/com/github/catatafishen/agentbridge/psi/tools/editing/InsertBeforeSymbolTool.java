@@ -53,13 +53,13 @@ public final class InsertBeforeSymbolTool extends EditingTool {
 
     @Override
     public @NotNull String permissionTemplate() {
-        return "Insert before {symbol} in {file}";
+        return "Insert before {symbol} in {path}";
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
             Param.required("symbol", TYPE_STRING, "Name of the symbol to insert before"),
             Param.required(PARAM_CONTENT, TYPE_STRING, "The content to insert before the symbol"),
             Param.optional("line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name")
@@ -76,7 +76,8 @@ public final class InsertBeforeSymbolTool extends EditingTool {
         String error = validateArgs(args, PARAM_CONTENT);
         if (error != null) return error;
 
-        String pathStr = args.get(PARAM_FILE).getAsString();
+        String pathStr = readPathParam(args);
+        if (pathStr == null) return ToolUtils.ERROR_PATH_REQUIRED;
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String content = args.get(PARAM_CONTENT).getAsString();
         Integer lineHint = args.has(PARAM_LINE) ? args.get(PARAM_LINE).getAsInt() : null;

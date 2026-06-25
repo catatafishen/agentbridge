@@ -60,7 +60,7 @@ public final class ShowDiffTool extends EditorTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the first file"),
+            Param.required("path", TYPE_STRING, "Path to the first file"),
             Param.optional(PARAM_FILE2, TYPE_STRING, "Optional: path to second file for two-file comparison"),
             Param.optional(PARAM_CONTENT, TYPE_STRING, "Optional: proposed new content to diff against the current file"),
             Param.optional(PARAM_TITLE, TYPE_STRING, "Optional: title for the diff viewer tab")
@@ -74,10 +74,10 @@ public final class ShowDiffTool extends EditorTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("file")) {
-            return "Error: 'file' parameter is required";
+        if (readPathParam(args) == null) {
+            return "Error: 'path' parameter is required";
         }
-        String pathStr = args.get("file").getAsString();
+        String pathStr = readPathParam(args);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 

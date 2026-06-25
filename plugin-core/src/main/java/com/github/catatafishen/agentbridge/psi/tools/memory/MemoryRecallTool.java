@@ -66,7 +66,7 @@ public final class MemoryRecallTool extends Tool {
         return schema(
             Param.required("room", TYPE_STRING, "Room to recall from (e.g. 'codebase', 'debugging', 'workflow', 'technical', 'decisions', 'preferences')"),
             Param.optional(PARAM_QUERY, TYPE_STRING, "Optional search query within the room"),
-            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Max results (default: 5)")
+            Param.optional("max_results", TYPE_INTEGER, "Max results (default: 5)")
         );
     }
 
@@ -74,7 +74,9 @@ public final class MemoryRecallTool extends Tool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String room = args.get("room").getAsString();
         String queryText = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : null;
-        int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 5;
+        int limit = args.has("max_results") ? args.get("max_results").getAsInt()
+                  : args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt()
+                  : 5;
 
         MemoryService memoryService = MemoryService.getInstance(project);
         MemoryStore store = memoryService.getStore();

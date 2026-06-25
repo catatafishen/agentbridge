@@ -69,7 +69,7 @@ public final class FindImplementationsTool extends RefactoringTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_SYMBOL, TYPE_STRING, "Class, interface, or method name to find implementations for"),
-            Param.optional("file", TYPE_STRING, "File path for method context. Required for non-Java languages; also required when searching for method overrides"),
+            Param.optional("path", TYPE_STRING, "File path for method context. Required for non-Java languages; also required when searching for method overrides"),
             Param.optional("line", TYPE_INTEGER, "Line number to disambiguate the method. Required for non-Java languages; also required when searching for method overrides")
         );
     }
@@ -83,7 +83,7 @@ public final class FindImplementationsTool extends RefactoringTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
-        String filePath = args.has("file") ? args.get("file").getAsString() : null;
+        String filePath = readPathParam(args);
         int line = args.has("line") ? args.get("line").getAsInt() : 0;
 
         // Platform path: file+line provided — works for all languages
