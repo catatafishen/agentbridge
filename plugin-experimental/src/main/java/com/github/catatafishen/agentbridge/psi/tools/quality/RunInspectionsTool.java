@@ -97,9 +97,7 @@ public final class RunInspectionsTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt()
-                  : args.has("limit") ? args.get("limit").getAsInt()
-                  : 100;
+        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         String minSeverity = args.has(PARAM_MIN_SEVERITY) ? args.get(PARAM_MIN_SEVERITY).getAsString() : null;
         String scopePath = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : null;

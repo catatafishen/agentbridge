@@ -95,9 +95,7 @@ public final class GetHighlightsTool extends QualityTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
-        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt()
-                  : args.has("limit") ? args.get("limit").getAsInt()
-                  : 100;
+        int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
         boolean includeUnindexed = args.has(PARAM_INCLUDE_UNINDEXED) && args.get(PARAM_INCLUDE_UNINDEXED).getAsBoolean();
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : 0;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : 0;

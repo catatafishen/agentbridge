@@ -86,12 +86,9 @@ public final class ListProjectFilesTool extends NavigationTool {
         // relPath.startsWith(".") would never match any project-relative path.
         String dir = (".".equals(dirRaw) || "./".equals(dirRaw)) ? "" : dirRaw;
         final String pattern;
-        if (args.has(PARAM_FILE_PATTERN) && !args.get(PARAM_FILE_PATTERN).isJsonNull())
-            pattern = args.get(PARAM_FILE_PATTERN).getAsString();
-        else if (args.has("pattern") && !args.get("pattern").isJsonNull())
-            pattern = args.get("pattern").getAsString();
-        else
-            pattern = "";
+        pattern = (args.has(PARAM_FILE_PATTERN) && !args.get(PARAM_FILE_PATTERN).isJsonNull())
+            ? args.get(PARAM_FILE_PATTERN).getAsString()
+            : "";
         String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
         long minSize = args.has(PARAM_MIN_SIZE) ? args.get(PARAM_MIN_SIZE).getAsLong() : -1;
         long maxSize = args.has(PARAM_MAX_SIZE) ? args.get(PARAM_MAX_SIZE).getAsLong() : -1;

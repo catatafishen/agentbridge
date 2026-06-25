@@ -48,11 +48,7 @@ public final class EditTextTool extends WriteFileTool {
     public @Nullable String resolvePermissionQuestion(@Nullable JsonObject args) {
         JsonObject enriched = args != null ? args.deepCopy() : new JsonObject();
         if (!enriched.has("path") || enriched.get("path").isJsonNull()) {
-            if (enriched.has("file") && !enriched.get("file").isJsonNull()) {
-                enriched.addProperty("path", enriched.get("file").getAsString());
-            } else {
-                enriched.addProperty("path", "(active file)");
-            }
+            enriched.addProperty("path", "(active file)");
         }
         return PermissionTemplateUtil.stripPlaceholders(
             PermissionTemplateUtil.substituteArgs(permissionTemplate(), enriched));

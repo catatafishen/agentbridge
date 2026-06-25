@@ -77,15 +77,11 @@ public final class FindFileTool extends NavigationTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        String query = null;
-        if (args.has("query") && !args.get("query").isJsonNull()) {
-            query = args.get("query").getAsString().trim();
-        } else if (args.has("path") && !args.get("path").isJsonNull()) {
-            query = args.get("path").getAsString().trim();
-        }
-        if (query == null || query.isEmpty()) {
+        if (!args.has("query") || args.get("query").isJsonNull())
             return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
-        }
+        String query = args.get("query").getAsString().trim();
+        if (query.isEmpty())
+            return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
         final String finalQuery = query;
         int limit = readLimit(args);
         String scopeName = readScopeParam(args);
