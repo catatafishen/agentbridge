@@ -69,7 +69,7 @@ public final class FindFileTool extends NavigationTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns. Also accepts 'path' as an alias for this parameter."),
+            Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
             Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
             Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
         );

@@ -61,8 +61,7 @@ public final class EditTextTool extends WriteFileTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.optional("path", TYPE_STRING, "Path to the file to edit (absolute or project-relative). "
-                + "Also accepts 'file' as an alias. If omitted, edits the currently active file in the IDE editor."),
+            Param.optional("path", TYPE_STRING, "Path to the file to edit (absolute or project-relative). If omitted, edits the currently active file in the IDE editor."),
             Param.required("old_str", TYPE_STRING, "Exact string to find and replace. Must match exactly one location in the file"),
             Param.required("new_str", TYPE_STRING, "Replacement string"),
             Param.optional("replace_all", TYPE_BOOLEAN,
