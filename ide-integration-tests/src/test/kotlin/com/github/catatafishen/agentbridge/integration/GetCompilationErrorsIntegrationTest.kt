@@ -19,7 +19,7 @@ class GetCompilationErrorsIntegrationTest {
     fun `get_compilation_errors returns a non-error response`() =
         IdeBench.run("getCompilationErrors") { ide, mcp ->
             // Errors are read from cached daemon analysis, which only runs for open files.
-            mcp.callTool("open_in_editor", mapOf("file" to ide.highlightsFile))
+            mcp.callTool("open_in_editor", mapOf("path" to ide.highlightsFile))
             val result = mcp.callTool(
                 "get_compilation_errors",
                 mapOf("path" to ide.highlightsFile),

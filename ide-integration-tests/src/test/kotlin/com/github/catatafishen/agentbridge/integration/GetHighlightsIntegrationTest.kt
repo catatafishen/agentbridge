@@ -17,7 +17,7 @@ class GetHighlightsIntegrationTest {
     @Test
     fun `get_highlights returns a non-error response`() = IdeBench.run("getHighlights") { ide, mcp ->
         // Highlights are only cached for open files, so open the fixture file first.
-        mcp.callTool("open_in_editor", mapOf("file" to ide.highlightsFile))
+        mcp.callTool("open_in_editor", mapOf("path" to ide.highlightsFile))
         val result = mcp.callTool(
             "get_highlights",
             mapOf("path" to ide.highlightsFile),

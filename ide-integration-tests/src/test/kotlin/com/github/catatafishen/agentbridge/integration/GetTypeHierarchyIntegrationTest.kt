@@ -44,7 +44,7 @@ class GetTypeHierarchyIntegrationTest {
                 mapOf(
                     "symbol" to ide.expectedSymbol,
                     "direction" to "subtypes",
-                    "file" to file,
+                    "path" to file,
                     "line" to ide.typeHierarchyLine,
                 ),
                 timeout = Duration.ofSeconds(120),

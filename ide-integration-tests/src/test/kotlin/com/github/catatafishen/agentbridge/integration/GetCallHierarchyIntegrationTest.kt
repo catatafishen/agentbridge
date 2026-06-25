@@ -42,7 +42,7 @@ class GetCallHierarchyIntegrationTest {
                 "get_call_hierarchy",
                 mapOf(
                     "symbol" to ide.callHierarchySymbol,
-                    "file" to file,
+                    "path" to file,
                     "line" to ide.callHierarchyLine,
                 ),
                 timeout = Duration.ofSeconds(120),
