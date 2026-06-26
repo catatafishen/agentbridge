@@ -78,8 +78,8 @@ public class ReadFileTool extends FileTool {
         String lineParamError = validateLineParams(args);
         if (lineParamError != null) return lineParamError;
 
-        int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : -1;
-        int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : -1;
+        int startLine = resolveLineParam(args, PARAM_START_LINE);
+        int endLine = resolveLineParam(args, PARAM_END_LINE);
 
         // Use a separate container to capture the actual line range for highlighting
         int[] effectiveRange = new int[]{startLine, endLine};
@@ -113,19 +113,23 @@ public class ReadFileTool extends FileTool {
 
     private @Nullable String validateLineParams(@NotNull JsonObject args) {
         for (String param : new String[]{PARAM_START_LINE, PARAM_END_LINE}) {
-            if (!args.has(param)) continue;
-            if (args.get(param).isJsonNull())
-                return "Error: " + param + " must not be null";
+            if (!args.has(param) || args.get(param).isJsonNull()) continue;
             int value;
             try {
                 value = args.get(param).getAsInt();
             } catch (Exception e) {
-                return "Error: " + param + " must be an integer, got: " + args.get(param);
+                return ToolUtils.ERROR_PREFIX + param + " must be an integer, got: " + args.get(param);
             }
-            if (value <= 0)
-                return "Error: " + param + " must be a positive integer (1-based), got: " + value;
+            if (value < 0)
+                return ToolUtils.ERROR_PREFIX + param + " must be >= 0, got: " + value;
         }
         return null;
+    }
+
+    private static int resolveLineParam(@NotNull JsonObject args, String param) {
+        if (!args.has(param) || args.get(param).isJsonNull()) return -1;
+        int v = args.get(param).getAsInt();
+        return v > 0 ? v : -1;
     }
 
     private String readFileContent(VirtualFile vf) {
