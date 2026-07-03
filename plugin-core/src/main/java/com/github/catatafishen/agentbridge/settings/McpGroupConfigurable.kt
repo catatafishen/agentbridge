@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.services.McpHttpServer
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -126,19 +126,15 @@ class McpGroupConfigurable(private val project: Project) :
         button.text = "Restarting..."
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val serverClass = Class.forName(
-                    "com.github.catatafishen.idemcpserver.McpHttpServer"
-                )
-                val server = PlatformApiCompat.getServiceByRawClass(project, serverClass)
+                val server = McpHttpServer.getInstance(project)
                 if (server == null) {
-                    val msg =
-                        "MCP HTTP Server service not found. Is the IDE MCP Server plugin installed?"
+                    val msg = "MCP server service not found."
                     LOG.warn(msg); showRestartError(button, msg); return@executeOnPooledThread
                 }
-                serverClass.getMethod("stop").invoke(server)
+                server.stop()
                 AppExecutorUtil.getAppScheduledExecutorService().schedule({
                     try {
-                        serverClass.getMethod("start").invoke(server)
+                        server.start()
                         LOG.info("MCP server restarted via settings")
                     } catch (ex: Exception) {
                         LOG.error("Failed to start MCP server after restart", ex)
@@ -147,10 +143,6 @@ class McpGroupConfigurable(private val project: Project) :
                     }
                     ApplicationManager.getApplication().invokeLater { resetRestartButton(button) }
                 }, 500, TimeUnit.MILLISECONDS)
-            } catch (_: ClassNotFoundException) {
-                val msg = "MCP HTTP Server plugin is not installed. " +
-                    "Install the 'IDE MCP Server' plugin to use the HTTP server."
-                LOG.info(msg); showRestartError(button, msg)
             } catch (ex: Exception) {
                 LOG.error("Failed to restart MCP server", ex)
                 showRestartError(button, "Failed to restart: ${ex.message}")
