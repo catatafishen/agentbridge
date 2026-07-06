@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.debug.navigation;
 
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.debug.DebugTool;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -57,6 +58,7 @@ public final class DebugRunToLineTool extends DebugTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         XDebugSession session = requirePausedSession();
         String path = readPathParam(args);
+        if (path == null) return ToolUtils.ERROR_PATH_REQUIRED;
         int lineZeroBased = args.get("line").getAsInt() - 1;
 
         VirtualFile file = refreshAndFindVirtualFile(path);

@@ -82,6 +82,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String filePath = readPathParam(args);
+        if (filePath == null) return ToolUtils.ERROR_PATH_REQUIRED;
         int line = args.get(PARAM_LINE).getAsInt();
 
         VirtualFile vf = resolveVirtualFile(filePath);
