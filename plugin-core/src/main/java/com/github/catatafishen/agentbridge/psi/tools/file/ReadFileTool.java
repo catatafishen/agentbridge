@@ -69,46 +69,113 @@ public class ReadFileTool extends FileTool {
         return ReadFileRenderer.INSTANCE;
     }
 
-    @Override
-    public @NotNull String execute(@NotNull JsonObject args) {
+    private String validateInput(@NotNull JsonObject args) {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
-        String pathStr = args.get("path").getAsString();
-
         String lineParamError = validateLineParams(args);
         if (lineParamError != null) return lineParamError;
+        return null;
+    }
 
-        int startLine = resolveLineParam(args, PARAM_START_LINE);
-        int endLine = resolveLineParam(args, PARAM_END_LINE);
+    private record FileReadResult(String error, String text, int startLine, int endLine) {
+        static FileReadResult error(String message) {
+            return new FileReadResult(message, null, 0, 0);
+        }
+    }
 
-        // Use a separate container to capture the actual line range for highlighting
-        int[] effectiveRange = new int[]{startLine, endLine};
+    private int getLineParam(@NotNull JsonObject args, String paramName, int defaultValue) {
+        if (!args.has(paramName)) {
+            return defaultValue;
+        }
+        if (args.get(paramName).isJsonNull()) {
+            return defaultValue;
+        }
+        return args.get(paramName).getAsInt();
+    }
 
-        String result = ReadAction.nonBlocking(() -> {
-            VirtualFile vf = resolveVirtualFile(pathStr);
-            if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+    @Override
+    public @NotNull String execute(@NotNull JsonObject args) {
+        String inputError = validateInput(args);
+        if (inputError != null) {
+            return inputError;
+        }
+        String pathStr = args.get("path").getAsString();
+        // A numbered range read requires BOTH bounds. A missing/0/null bound (start or end)
+        // falls back to a full-file read from the top — 0 and null are treated as "unset".
+        int startLine = getLineParam(args, PARAM_START_LINE, 0);
+        int endLine = getLineParam(args, PARAM_END_LINE, 0);
+        boolean rangeMode = startLine > 0 && endLine > 0;
 
-            String content = readFileContent(vf);
-            if (content.startsWith("Error")) return content;
+        FileReadResult result = ReadAction.nonBlocking(
+            () -> buildResult(pathStr, startLine, endLine, rangeMode)
+        ).executeSynchronously();
 
-            if (startLine > 0 || endLine > 0) {
-                return extractLineRange(content, startLine, endLine);
-            }
-
-            // If no range specified, we highlight the whole file (or the read portion)
-            // Splitting by \n to count lines accurately
-            String[] lines = content.split("\n", -1);
-            effectiveRange[0] = 1;
-            effectiveRange[1] = Math.min(lines.length, MAX_READ_LINES);
-
-            String hint = getDirectoryMarkingHint(vf);
-            return applyReadHintAndTruncate(content, hint);
-        }).executeSynchronously();
-
-        followFileIfEnabled(project, pathStr, effectiveRange[0], effectiveRange[1],
+        if (result.error() != null) {
+            return result.error();
+        }
+        followFileIfEnabled(project, pathStr, result.startLine(), result.endLine(),
             HIGHLIGHT_READ, agentLabel(project) + " is reading");
         FileAccessTracker.recordRead(project, pathStr);
-        return result;
+        return result.text();
+    }
+
+    private FileReadResult buildResult(String pathStr, int startLine, int endLine, boolean rangeMode) {
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) return FileReadResult.error(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+        String content;
+        try {
+            content = readFileContent(vf);
+        } catch (IOException e) {
+            return FileReadResult.error("Error reading file: " + e.getMessage());
+        }
+        String[] lines = content.split("\n", -1);
+        return rangeMode
+            ? buildRangeResult(lines, startLine, endLine)
+            : buildFullResult(content, lines, getDirectoryMarkingHint(vf));
+    }
+
+    /**
+     * Numbered slice [startLine, endLine] (1-based inclusive), capped at {@link #MAX_READ_LINES}.
+     * No line-total header — this is a targeted range read.
+     */
+    private FileReadResult buildRangeResult(String[] lines, int startLine, int endLine) {
+        int from = Math.min(startLine - 1, lines.length);
+        int to = Math.min(endLine, lines.length);
+        if (to < from) to = from;
+        StringBuilder sb = new StringBuilder();
+        if (to - from > MAX_READ_LINES) {
+            to = from + MAX_READ_LINES;
+            sb.append(overflowNotice());
+        }
+        for (int i = from; i < to; i++) {
+            sb.append(i + 1).append(": ").append(lines[i]).append("\n");
+        }
+        return new FileReadResult(null, sb.toString(), from + 1, to);
+    }
+
+    /**
+     * Full-file read: {@code [N lines total]} header, optional directory hint, then raw content
+     * truncated to the first {@link #MAX_READ_LINES} lines.
+     */
+    private FileReadResult buildFullResult(String content, String[] lines, String hint) {
+        int totalLines = lines.length;
+        StringBuilder sb = new StringBuilder();
+        sb.append("[").append(totalLines).append(" lines total]\n");
+        if (hint != null && !hint.isEmpty()) {
+            sb.append(hint);
+        }
+        if (totalLines > MAX_READ_LINES) {
+            sb.append(overflowNotice());
+            sb.append(String.join("\n", Arrays.copyOf(lines, MAX_READ_LINES)));
+        } else {
+            sb.append(content);
+        }
+        return new FileReadResult(null, sb.toString(), 1, Math.min(totalLines, MAX_READ_LINES));
+    }
+
+    private static String overflowNotice() {
+        return "[Selection too long! Result truncated to maximum " + MAX_READ_LINES
+            + " lines. Use start_line/end_line to read specific sections.]\n";
     }
 
     private @Nullable String validateLineParams(@NotNull JsonObject args) {
@@ -126,76 +193,28 @@ public class ReadFileTool extends FileTool {
         return null;
     }
 
-    private static int resolveLineParam(@NotNull JsonObject args, String param) {
-        if (!args.has(param) || args.get(param).isJsonNull()) return -1;
-        int v = args.get(param).getAsInt();
-        return v > 0 ? v : -1;
-    }
-
-    private String readFileContent(VirtualFile vf) {
+    private String readFileContent(VirtualFile vf) throws IOException {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc != null) {
             return doc.getText();
         }
-        try {
-            return new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return "Error reading file: " + e.getMessage();
-        }
+        return new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
     }
 
     private String getDirectoryMarkingHint(VirtualFile vf) {
         var fileIndex = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project);
         if (fileIndex.isExcluded(vf)) {
-            return "[excluded – this is a build output/generated file; prefer editing the source instead]";
+            return "[excluded – this is a build output/generated file; prefer editing the source instead]\n";
         }
         if (fileIndex.isInGeneratedSources(vf)) {
-            return "[generated – this file is auto-generated; prefer editing the source instead]";
+            return "[generated – this file is auto-generated; prefer editing the source instead]\n";
         }
         if (fileIndex.isInTestSourceContent(vf)) {
-            return "[test]";
+            return "[test]\n";
         }
         if (fileIndex.isInSourceContent(vf)) {
-            return "[source]";
+            return "[source]\n";
         }
-        return null;
-    }
-
-    @SuppressWarnings({"javabugs:S6416"}) // Math.min guarantees end <= lines.length, no IAE possible
-    static String applyReadHintAndTruncate(String content, String hint) {
-        String[] lines = content.split("\n", -1);
-        int totalLines = lines.length;
-        StringBuilder sb = new StringBuilder();
-
-        if (totalLines > 0) {
-            sb.append("[").append(totalLines).append(" lines total]\n");
-        }
-
-        if (hint != null && !hint.isEmpty()) {
-            sb.append(hint).append("\n");
-        }
-
-        if (totalLines > MAX_READ_LINES) {
-            int end = Math.min(MAX_READ_LINES, lines.length);
-            String truncated = String.join("\n", Arrays.copyOf(lines, end));
-            sb.append("[Showing first ").append(MAX_READ_LINES)
-                .append(" lines. Use start_line/end_line to read specific sections.]\n");
-            sb.append(truncated);
-        } else {
-            sb.append(content);
-        }
-
-        return sb.toString();
-    }
-
-    static String extractLineRange(String content, int startLine, int endLine) {
-        String[] lines = content.split("\n", -1);
-        int from = Math.max(0, (startLine > 0 ? startLine - 1 : 0));
-        int to = Math.min(lines.length, (endLine > 0 ? endLine : lines.length));
-        StringBuilder sb = new StringBuilder();
-        for (int i = from; i < to; i++) {
-            sb.append(i + 1).append(": ").append(lines[i]).append("\n");
-        }
-        return sb.toString();
+        return "";
     }
 }
