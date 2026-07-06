@@ -334,8 +334,8 @@ class ChatToolWindowContent(
         setupTitleBarActions()
         wireUpWebServerCallbacks()
 
-        connectPanel = AcpConnectPanel(project) { profileId, customCommand ->
-            connectToAgent(profileId, customCommand)
+        connectPanel = AcpConnectPanel(project) { profileId, customCommand, freshSession ->
+            connectToAgent(profileId, customCommand, freshSession)
         }
         mainPanel.add(connectPanel, CARD_CONNECT)
 
@@ -369,7 +369,7 @@ class ChatToolWindowContent(
         (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.setTabActions(SidePanelToggleAction())
     }
 
-    private fun buildAndShowChatPanel() {
+    private fun buildAndShowChatPanel(freshSession: Boolean = false) {
         val addSeparatorNow = {
             val ts = java.time.Instant.now().toString()
             consolePanel.setCurrentAgent(
@@ -394,6 +394,11 @@ class ChatToolWindowContent(
             chatSessionInitialized = true
             persistenceManager.restoreConversation(onComplete = addSeparatorNow)
         } else {
+            // On reconnect: if the user explicitly chose "None" (fresh session), clear any
+            // messages left from the previous connection so the chat window matches the agent context.
+            if (freshSession) {
+                consolePanel.clear()
+            }
             addSeparatorNow()
         }
         cardLayout.show(mainPanel, CARD_CHAT)
@@ -409,8 +414,12 @@ class ChatToolWindowContent(
      * Called from AcpConnectPanel when the user clicks Connect.
      * Keeps showing the connect panel spinner until session is fully established,
      * then switches to the chat view.
+     *
+     * @param freshSession true when the user selected "None" (no session to resume) — causes
+     *                     the chat panel to be cleared if it already contains messages from a
+     *                     previous connection.
      */
-    private fun connectToAgent(profileId: String, customCommand: String?) {
+    private fun connectToAgent(profileId: String, customCommand: String?, freshSession: Boolean = false) {
         if (customCommand != null) {
             agentManager.setCustomAcpCommand(customCommand)
         }
@@ -426,7 +435,7 @@ class ChatToolWindowContent(
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
         modelSelector.loadModelsAsync(
             onSuccess = { models ->
-                buildAndShowChatPanel()
+                buildAndShowChatPanel(freshSession)
                 modelSelector.restoreModelSelection(models)
                 statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
             },

@@ -404,7 +404,48 @@ class ConversationServiceTest {
         assertTrue(sessions.isEmpty(), "no sessions should be created for empty entry list");
     }
 
-    // ── runAfterPendingSave ───────────────────────────────────────────────
+    // ── loadRecentEntries ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("loadRecentEntries returns null when no session-id file exists")
+    void loadRecentEntries_nullWhenNoSessionIdFile() {
+        ConversationService service = newService();
+        // No file, no entries — must return null (empty chat on startup).
+        assertNull(service.loadRecentEntries(tempDir.toString()));
+    }
+
+    @Test
+    @DisplayName("loadRecentEntries returns null after resetCurrentSessionId even when DB has entries")
+    void loadRecentEntries_nullAfterReset() {
+        ConversationService service = newService();
+        service.appendEntries(tempDir.toString(),
+            List.of(new EntryData.Prompt("Hello", "2024-01-01T00:00:00Z", null, "p1", "p1")));
+        assertTrue(currentSessionIdFile().toFile().exists(), "prerequisite: session-id file must exist");
+
+        service.resetCurrentSessionId(tempDir.toString());
+
+        // Even though DB still has entries for the old session, loadRecentEntries must return null
+        // because the session-id file was deleted (user chose SessionChoice.None → fresh start).
+        assertNull(service.loadRecentEntries(tempDir.toString()),
+            "loadRecentEntries should return null when session-id file is absent, regardless of DB content");
+    }
+
+    @Test
+    @DisplayName("loadRecentEntries returns entries for the current session")
+    void loadRecentEntries_returnsEntriesForCurrentSession() {
+        ConversationService service = newService();
+        service.appendEntries(tempDir.toString(),
+            List.of(new EntryData.Prompt("Hello", "2024-01-01T00:00:00Z", null, "p1", "p1")));
+        assertTrue(currentSessionIdFile().toFile().exists(),
+            "prerequisite: appendEntries must have created the session-id file");
+
+        ConversationService.RecentEntriesResult result = service.loadRecentEntries(tempDir.toString());
+
+        assertNotNull(result);
+        assertFalse(result.entries().isEmpty());
+    }
+
+
 
     @Test
     @DisplayName("runAfterPendingSave runs action immediately when no save is pending")
