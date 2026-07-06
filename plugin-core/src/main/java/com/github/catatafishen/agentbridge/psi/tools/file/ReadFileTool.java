@@ -59,8 +59,11 @@ public class ReadFileTool extends FileTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to read"),
-            Param.optional(PARAM_START_LINE, TYPE_INTEGER, "Optional: first line to read (1-based, inclusive)"),
-            Param.optional(PARAM_END_LINE, TYPE_INTEGER, "Optional: last line to read (1-based, inclusive). Use with start_line to read a range")
+            Param.optional(PARAM_START_LINE, TYPE_INTEGER,
+                "Optional: first line to read (1-based, inclusive). 0, null, or empty means start of file."),
+            Param.optional(PARAM_END_LINE, TYPE_INTEGER,
+                "Optional: last line to read (1-based, inclusive). Use with start_line to read a range. "
+                    + "0, null, or empty means end of file. Reads are always capped at " + MAX_READ_LINES + " lines.")
         );
     }
 
@@ -83,14 +86,26 @@ public class ReadFileTool extends FileTool {
         }
     }
 
-    private int getLineParam(@NotNull JsonObject args, String paramName, int defaultValue) {
-        if (!args.has(paramName)) {
-            return defaultValue;
+    /**
+     * A line bound is "unset" — and defaults to start-of-file (start_line) or EOF (end_line) —
+     * when the key is absent, JSON null, or a blank string. These sentinels are intentional:
+     * agents routinely pass 0/null/"" to mean "no bound", so we treat them as such rather than
+     * erroring. A non-blank, non-numeric value is still a hard error (see validateLineParams).
+     */
+    private static boolean isUnsetLineParam(@NotNull JsonObject args, String param) {
+        if (!args.has(param) || args.get(param).isJsonNull()) {
+            return true;
         }
-        if (args.get(paramName).isJsonNull()) {
-            return defaultValue;
-        }
-        return args.get(paramName).getAsInt();
+        return args.get(param).isJsonPrimitive()
+            && args.get(param).getAsJsonPrimitive().isString()
+            && args.get(param).getAsString().isBlank();
+    }
+
+    /**
+     * Returns the 1-based line bound, or 0 when unset (see {@link #isUnsetLineParam}).
+     */
+    private int getLineParam(@NotNull JsonObject args, String paramName) {
+        return isUnsetLineParam(args, paramName) ? 0 : args.get(paramName).getAsInt();
     }
 
     @Override
@@ -100,11 +115,12 @@ public class ReadFileTool extends FileTool {
             return inputError;
         }
         String pathStr = args.get("path").getAsString();
-        // A numbered range read requires BOTH bounds. A missing/0/null bound (start or end)
-        // falls back to a full-file read from the top — 0 and null are treated as "unset".
-        int startLine = getLineParam(args, PARAM_START_LINE, 0);
-        int endLine = getLineParam(args, PARAM_END_LINE, 0);
-        boolean rangeMode = startLine > 0 && endLine > 0;
+        // Range mode is active when at least one bound is set (> 0).
+        // A missing/0/null bound means "unset": start defaults to line 1, end defaults to EOF.
+        // Only when NEITHER bound is set do we fall back to buildFullResult (plain header + raw text).
+        int startLine = getLineParam(args, PARAM_START_LINE);
+        int endLine = getLineParam(args, PARAM_END_LINE);
+        boolean rangeMode = startLine > 0 || endLine > 0;
 
         FileReadResult result = ReadAction.nonBlocking(
             () -> buildResult(pathStr, startLine, endLine, rangeMode)
@@ -136,11 +152,13 @@ public class ReadFileTool extends FileTool {
 
     /**
      * Numbered slice [startLine, endLine] (1-based inclusive), capped at {@link #MAX_READ_LINES}.
+     * 0 means "unset": startLine=0 defaults to line 1, endLine=0 defaults to EOF.
      * No line-total header — this is a targeted range read.
      */
     private FileReadResult buildRangeResult(String[] lines, int startLine, int endLine) {
-        int from = Math.min(startLine - 1, lines.length);
-        int to = Math.min(endLine, lines.length);
+        // 0 means "unset": start defaults to line 1 (index 0), end defaults to EOF
+        int from = startLine == 0 ? 0 : Math.min(startLine - 1, lines.length);
+        int to = endLine == 0 ? lines.length : Math.min(endLine, lines.length);
         if (to < from) to = from;
         StringBuilder sb = new StringBuilder();
         if (to - from > MAX_READ_LINES) {
@@ -180,7 +198,8 @@ public class ReadFileTool extends FileTool {
 
     private @Nullable String validateLineParams(@NotNull JsonObject args) {
         for (String param : new String[]{PARAM_START_LINE, PARAM_END_LINE}) {
-            if (!args.has(param) || args.get(param).isJsonNull()) continue;
+            // 0, null, and blank are intentional "no bound" sentinels — skip validation.
+            if (isUnsetLineParam(args, param)) continue;
             int value;
             try {
                 value = args.get(param).getAsInt();
@@ -188,7 +207,7 @@ public class ReadFileTool extends FileTool {
                 return ToolUtils.ERROR_PREFIX + param + " must be an integer, got: " + args.get(param);
             }
             if (value < 0)
-                return ToolUtils.ERROR_PREFIX + param + " must be >= 0, got: " + value;
+                return ToolUtils.ERROR_PREFIX + param + " must be >= 0 (0 means start/end of file), got: " + value;
         }
         return null;
     }

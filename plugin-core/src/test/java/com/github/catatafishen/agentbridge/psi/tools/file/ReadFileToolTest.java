@@ -200,6 +200,10 @@ public class ReadFileToolTest extends BasePlatformTestCase {
             result.startsWith("Error:") && result.contains("start_line"));
     }
 
+    /**
+     * start_line=1 with end_line=null triggers range mode (|| means only one bound is needed).
+     * The result should be numbered lines from line 1 to EOF, without the [N lines total] header.
+     */
     public void testNullEndLineReturnsEOF() {
         VirtualFile vf = createTestFile("nullend.txt", "a\nb\nc");
         JsonObject args = new JsonObject();
@@ -208,8 +212,12 @@ public class ReadFileToolTest extends BasePlatformTestCase {
         args.add("end_line", com.google.gson.JsonNull.INSTANCE);
 
         String result = tool.execute(args);
-        assertTrue("Expected full file, got: " + result,
-            result.contains("a\nb\nc"));
+        // start_line=1 is set → rangeMode=true → numbered output, no header
+        assertFalse("Range mode should not include [N lines total] header, got: " + result,
+            result.contains("lines total"));
+        assertTrue("Expected numbered line 1, got: " + result, result.contains("1: a"));
+        assertTrue("Expected numbered line 2, got: " + result, result.contains("2: b"));
+        assertTrue("Expected numbered line 3, got: " + result, result.contains("3: c"));
     }
 
     public void testZeroEndLineReturnsEOF() {
@@ -221,6 +229,38 @@ public class ReadFileToolTest extends BasePlatformTestCase {
         String result = tool.execute(args);
         assertTrue("Expected full file, got: " + result,
             result.contains("a\nb\nc"));
+    }
+
+    public void testRangeWithOnlyStartLine() {
+        // start_line=2 with no end_line → rangeMode=true (2 > 0 || 0 > 0), end defaults to EOF
+        VirtualFile vf = createTestFile("only-start.txt", "line1\nline2\nline3");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("start_line", 2);
+        // end_line intentionally omitted
+
+        String result = tool.execute(args);
+        assertFalse("Range mode should not include [N lines total] header, got: " + result,
+            result.contains("lines total"));
+        assertTrue("Expected numbered line 2, got: " + result, result.contains("2: line2"));
+        assertTrue("Expected numbered line 3, got: " + result, result.contains("3: line3"));
+        assertFalse("Should not include line 1, got: " + result, result.contains("1: line1"));
+    }
+
+    public void testRangeWithOnlyEndLine() {
+        // end_line=2 with no start_line → rangeMode=true (0 > 0 || 2 > 0), start defaults to line 1
+        VirtualFile vf = createTestFile("only-end.txt", "line1\nline2\nline3");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        // start_line intentionally omitted
+        args.addProperty("end_line", 2);
+
+        String result = tool.execute(args);
+        assertFalse("Range mode should not include [N lines total] header, got: " + result,
+            result.contains("lines total"));
+        assertTrue("Expected numbered line 1, got: " + result, result.contains("1: line1"));
+        assertTrue("Expected numbered line 2, got: " + result, result.contains("2: line2"));
+        assertFalse("Should not include line 3, got: " + result, result.contains("3: line3"));
     }
 
     public void testStringStartLineReturnsError() {
