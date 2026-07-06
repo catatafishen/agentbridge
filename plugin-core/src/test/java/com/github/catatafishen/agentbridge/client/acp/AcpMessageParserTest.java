@@ -552,6 +552,41 @@ class AcpMessageParserTest {
     }
 
     @Test
+    void parsesToolCallUpdate_withRawOutputMessageAsFallbackError() {
+        // Copilot CLI reports ACP-level failures (e.g. unknown tool name) via
+        // rawOutput.message instead of the standard `error` field.
+        JsonObject rawOutput = new JsonObject();
+        rawOutput.addProperty("message", "Tool 'agentbridge-git_checkout' does not exist.");
+        rawOutput.addProperty("code", "failure");
+
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "call_cli_err");
+        params.addProperty("status", "failed");
+        params.add("rawOutput", rawOutput);
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals(SessionUpdate.ToolCallStatus.FAILED, tcu.status());
+        assertEquals("Tool 'agentbridge-git_checkout' does not exist.", tcu.error());
+        assertNull(tcu.result());
+    }
+
+    @Test
+    void parsesToolCallUpdate_standardErrorTakesPriorityOverRawOutputMessage() {
+        // When both `error` and `rawOutput.message` are present, the standard field wins.
+        JsonObject rawOutput = new JsonObject();
+        rawOutput.addProperty("message", "rawOutput message");
+
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "call_both_errors");
+        params.addProperty("status", "failed");
+        params.addProperty("error", "Standard error field");
+        params.add("rawOutput", rawOutput);
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals("Standard error field", tcu.error());
+    }
+
+    @Test
     void failedToolCallUpdate_resultTakesPriorityOverError() {
         // When both result and error are present, result should take priority
         JsonObject params = updateParams("tool_call_update");

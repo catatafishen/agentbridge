@@ -42,6 +42,9 @@ class AcpMessageParser {
     private static final String KEY_INPUT = "input";
     private static final String KEY_ERROR = "error";
     private static final String KEY_IS_ERROR = "isError";
+    private static final String KEY_KIND = "kind";
+    private static final String KEY_RAW_OUTPUT = "rawOutput";
+    private static final String KEY_MESSAGE = "message";
 
     /**
      * Callbacks into the owning client for the three points where agent-specific logic is needed.
@@ -148,10 +151,7 @@ class AcpMessageParser {
         String title = getStringOrEmpty(params, KEY_TITLE);
         String resolvedTitle = delegate.resolveToolId(title);
 
-        SessionUpdate.ToolKind kind = null;
-        if (params.has("kind")) {
-            kind = SessionUpdate.ToolKind.fromString(params.get("kind").getAsString());
-        }
+        SessionUpdate.ToolKind kind = parseKind(params);
 
         String kindValue = kind != null ? kind.value() : null;
         String acpName = delegate.resolveAcpName(title, kindValue);
@@ -185,48 +185,72 @@ class AcpMessageParser {
 
     private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {
         String toolCallId = getStringOrEmpty(params, KEY_TOOL_CALL_ID);
+        SessionUpdate.ToolCallStatus status = parseStatus(params);
+        SessionUpdate.ToolKind kind = parseKind(params);
+        String error = extractError(params);
+        String description = params.has(KEY_DESCRIPTION) ? params.get(KEY_DESCRIPTION).getAsString() : null;
+        String result = extractResultText(params);
+        String arguments = extractArguments(params);
+        if (shouldPromoteToFailed(status, error, params)) {
+            status = SessionUpdate.ToolCallStatus.FAILED;
+        }
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments, kind);
+    }
 
-        SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.COMPLETED;
+    private static SessionUpdate.ToolCallStatus parseStatus(JsonObject params) {
         if (params.has(KEY_STATUS)) {
-            status = SessionUpdate.ToolCallStatus.fromString(params.get(KEY_STATUS).getAsString());
+            return SessionUpdate.ToolCallStatus.fromString(params.get(KEY_STATUS).getAsString());
         }
+        return SessionUpdate.ToolCallStatus.COMPLETED;
+    }
 
-        SessionUpdate.ToolKind kind = null;
-        if (params.has("kind")) {
-            kind = SessionUpdate.ToolKind.fromString(params.get("kind").getAsString());
+    private static SessionUpdate.ToolKind parseKind(JsonObject params) {
+        if (params.has(KEY_KIND)) {
+            return SessionUpdate.ToolKind.fromString(params.get(KEY_KIND).getAsString());
         }
+        return null;
+    }
 
+    private static @Nullable String extractError(JsonObject params) {
         String error = params.has(KEY_ERROR) && params.get(KEY_ERROR).isJsonPrimitive()
             ? params.get(KEY_ERROR).getAsString() : null;
         if (error != null && error.isEmpty()) {
-            error = null;
+            return null;
         }
-        String description = params.has(KEY_DESCRIPTION) ? params.get(KEY_DESCRIPTION).getAsString() : null;
-        String result = extractResultText(params);
+        // Copilot CLI reports ACP-level failures (e.g. unknown tool name) via
+        // rawOutput.message instead of the standard `error` field. Not part of
+        // the ACP spec, but the de-facto format used by the CLI.
+        if (error == null && params.has(KEY_RAW_OUTPUT) && params.get(KEY_RAW_OUTPUT).isJsonObject()) {
+            JsonObject rawOutput = params.get(KEY_RAW_OUTPUT).getAsJsonObject();
+            if (rawOutput.has(KEY_MESSAGE) && rawOutput.get(KEY_MESSAGE).isJsonPrimitive()) {
+                String msg = rawOutput.get(KEY_MESSAGE).getAsString();
+                if (!msg.isEmpty()) return msg;
+            }
+        }
+        return error;
+    }
 
-        // Extract rawInput for tool correlation - this contains the actual tool arguments
-        String arguments = null;
+    private static @Nullable String extractArguments(JsonObject params) {
         if (params.has(KEY_RAW_INPUT) && params.get(KEY_RAW_INPUT).isJsonObject()) {
-            arguments = params.get(KEY_RAW_INPUT).getAsJsonObject().toString();
+            return params.get(KEY_RAW_INPUT).getAsJsonObject().toString();
         }
+        return null;
+    }
 
-        // Some agents (notably Copilot CLI's built-in execute/bash) always report
-        // status="completed" because the *tool call* completed even when the
-        // underlying command failed. Promote to FAILED when the agent provides an
-        // explicit failure signal so the UI chip reflects reality.
-        // Signals (in priority order):
-        //   1. top-level `error` string is non-empty
-        //   2. top-level `isError: true` boolean (MCP-style tool result flag)
-        //   3. any content block carries `isError: true`
-        if (status == SessionUpdate.ToolCallStatus.COMPLETED
-            && (error != null
+    // Some agents (notably Copilot CLI's built-in execute/bash) always report
+    // status="completed" because the *tool call* completed even when the
+    // underlying command failed. Promote to FAILED when the agent provides an
+    // explicit failure signal so the UI chip reflects reality.
+    // Signals (in priority order):
+    //   1. top-level `error` string is non-empty
+    //   2. top-level `isError: true` boolean (MCP-style tool result flag)
+    //   3. any content block carries `isError: true`
+    private static boolean shouldPromoteToFailed(SessionUpdate.ToolCallStatus status, @Nullable String error, JsonObject params) {
+        if (status != SessionUpdate.ToolCallStatus.COMPLETED) return false;
+        return error != null
             || (params.has(KEY_IS_ERROR) && params.get(KEY_IS_ERROR).isJsonPrimitive()
             && params.get(KEY_IS_ERROR).getAsBoolean())
-            || hasErrorFlaggedContent(params))) {
-            status = SessionUpdate.ToolCallStatus.FAILED;
-        }
-
-        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments, kind);
+            || hasErrorFlaggedContent(params);
     }
 
     private static boolean hasErrorFlaggedContent(JsonObject params) {
@@ -284,7 +308,7 @@ class AcpMessageParser {
     }
 
     private SessionUpdate.Banner parseBanner(JsonObject params) {
-        String message = getStringOrEmpty(params, "message");
+        String message = getStringOrEmpty(params, KEY_MESSAGE);
         String levelStr = params.has("level") ? params.get("level").getAsString() : "warning";
         String clearOnStr = params.has("clearOn") ? params.get("clearOn").getAsString() : null;
         return new SessionUpdate.Banner(
