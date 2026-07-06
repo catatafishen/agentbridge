@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
-import com.github.catatafishen.agentbridge.services.McpHttpServer
+import com.github.catatafishen.agentbridge.services.McpServerControl
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -126,7 +126,7 @@ class McpGroupConfigurable(private val project: Project) :
         button.text = "Restarting..."
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val server = McpHttpServer.getInstance(project)
+                val server = McpServerControl.getInstance(project)
                 if (server == null) {
                     val msg = "MCP server service not found."
                     LOG.warn(msg); showRestartError(button, msg); return@executeOnPooledThread
