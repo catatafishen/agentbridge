@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -18,20 +19,23 @@ internal object ToolCallPopup {
 
     private var currentPopup: com.intellij.openapi.ui.popup.JBPopup? = null
 
-    private val KIND_COLORS = mapOf(
-        "read" to JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185)),
-        "edit" to JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95)),
-        "execute" to JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130)),
-        "search" to JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185)),
-        "think" to JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210)),
-        "other" to JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170)),
-    )
+    private fun kindColorFor(kind: String, project: Project): JBColor {
+        val settings = McpServerSettings.getInstance(project)
+        return when (kind.lowercase()) {
+            "read", "file", "git_read" -> ToolKindColors.readColor(settings)
+            "search" -> ToolKindColors.searchColor(settings)
+            "edit", "delete", "move", "write", "git_write" -> ToolKindColors.editColor(settings)
+            "execute", "run", "terminal", "shell" -> ToolKindColors.executeColor(settings)
+            else -> ChatTheme.THINK_COLOR
+        }
+    }
 
     data class Request(
         val project: Project,
         val title: String,
         val kind: String,
-        val paramsPanel: JComponent?,
+        val toolName: String,
+        val paramsJson: String?,
         val resultPanel: JComponent,
         val toolDescription: String? = null,
         val autoDenied: Boolean = false,
@@ -45,14 +49,16 @@ internal object ToolCallPopup {
     fun show(request: Request) {
         currentPopup?.cancel()
 
-        val kindColor = KIND_COLORS[request.kind] ?: KIND_COLORS["other"]!!
+        val kindColor = kindColorFor(request.kind, request.project)
         val panelBg = UIUtil.getPanelBackground()
         val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
         val contentPanel = buildContentPanel(
             tintedBg,
+            request.toolName,
+            request.paramsJson,
+            request.project,
             request.resultPanel,
-            request.paramsPanel,
             request.toolDescription,
             request.autoDenied,
             request.denialReason,
@@ -102,8 +108,10 @@ internal object ToolCallPopup {
 
     private fun buildContentPanel(
         bg: Color,
+        toolName: String,
+        paramsJson: String?,
+        project: Project,
         resultPanel: JComponent,
-        paramsPanel: JComponent?,
         toolDescription: String? = null,
         autoDenied: Boolean = false,
         denialReason: String? = null,
@@ -158,7 +166,7 @@ internal object ToolCallPopup {
         if (toolDescription != null) {
             val descLabel = JBLabel("<html><body style='width:580px'>$toolDescription</body></html>").apply {
                 foreground = UIUtil.getContextHelpForeground()
-                border = JBUI.Borders.empty(0, 0, 6, 0)
+                border = JBUI.Borders.emptyBottom(6)
                 alignmentX = JComponent.LEFT_ALIGNMENT
             }
             panel.add(descLabel)
@@ -169,16 +177,14 @@ internal object ToolCallPopup {
             panel.add(Box.createVerticalStrut(JBUI.scale(4)))
         }
 
-        if (paramsPanel != null) {
-            panel.add(sectionLabel("Parameters"))
-            paramsPanel.alignmentX = JComponent.LEFT_ALIGNMENT
-            panel.add(paramsPanel)
-            panel.add(Box.createVerticalStrut(JBUI.scale(6)))
-            panel.add(JSeparator().apply {
-                alignmentX = JComponent.LEFT_ALIGNMENT
-                maximumSize = Dimension(Int.MAX_VALUE, 1)
-            })
-        }
+        val paramsComponent = ToolCallParamsPanel.build(toolName, paramsJson, project, bg)
+        paramsComponent.alignmentX = JComponent.LEFT_ALIGNMENT
+        panel.add(paramsComponent)
+        panel.add(Box.createVerticalStrut(JBUI.scale(6)))
+        panel.add(JSeparator().apply {
+            alignmentX = JComponent.LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, 1)
+        })
 
         panel.add(sectionLabel(if (failed) "Error" else "Result"))
         resultPanel.alignmentX = JComponent.LEFT_ALIGNMENT
