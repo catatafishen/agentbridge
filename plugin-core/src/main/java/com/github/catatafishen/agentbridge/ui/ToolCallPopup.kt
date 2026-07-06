@@ -13,6 +13,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
+import java.util.Locale
 import javax.swing.*
 
 internal object ToolCallPopup {
@@ -21,7 +22,7 @@ internal object ToolCallPopup {
 
     private fun kindColorFor(kind: String, project: Project): JBColor {
         val settings = McpServerSettings.getInstance(project)
-        return when (kind.lowercase()) {
+        return when (kind.lowercase(Locale.ROOT)) {
             "read", "file", "git_read" -> ToolKindColors.readColor(settings)
             "search" -> ToolKindColors.searchColor(settings)
             "edit", "delete", "move", "write", "git_write" -> ToolKindColors.editColor(settings)
@@ -40,7 +41,6 @@ internal object ToolCallPopup {
         val toolDescription: String? = null,
         val autoDenied: Boolean = false,
         val denialReason: String? = null,
-        val failed: Boolean = false
     )
 
     private fun popupWidth() = JBUI.scale(650)
@@ -53,17 +53,7 @@ internal object ToolCallPopup {
         val panelBg = UIUtil.getPanelBackground()
         val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
-        val contentPanel = buildContentPanel(
-            tintedBg,
-            request.toolName,
-            request.paramsJson,
-            request.project,
-            request.resultPanel,
-            request.toolDescription,
-            request.autoDenied,
-            request.denialReason,
-            request.failed
-        )
+        val contentPanel = buildContentPanel(tintedBg, request)
 
         val width = popupWidth()
         val height = popupHeight()
@@ -106,17 +96,7 @@ internal object ToolCallPopup {
         }
     }
 
-    private fun buildContentPanel(
-        bg: Color,
-        toolName: String,
-        paramsJson: String?,
-        project: Project,
-        resultPanel: JComponent,
-        toolDescription: String? = null,
-        autoDenied: Boolean = false,
-        denialReason: String? = null,
-        failed: Boolean = false,
-    ): JBPanel<JBPanel<*>> {
+    private fun buildContentPanel(bg: Color, request: Request): JBPanel<JBPanel<*>> {
         val panel = object : JBPanel<JBPanel<*>>(), Scrollable {
             override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
             override fun getScrollableUnitIncrement(visibleRect: java.awt.Rectangle, orientation: Int, direction: Int) =
@@ -125,7 +105,7 @@ internal object ToolCallPopup {
             override fun getScrollableBlockIncrement(
                 visibleRect: java.awt.Rectangle,
                 orientation: Int,
-                direction: Int,
+                direction: Int
             ) = height
 
             override fun getScrollableTracksViewportWidth() = true
@@ -136,7 +116,7 @@ internal object ToolCallPopup {
             border = JBUI.Borders.empty(8, 12)
         }
 
-        if (autoDenied) {
+        if (request.autoDenied) {
             val denialPanel = JBPanel<JBPanel<*>>().apply {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 background = bg
@@ -151,9 +131,9 @@ internal object ToolCallPopup {
                     font = JBUI.Fonts.label().asBold()
                     alignmentX = JComponent.LEFT_ALIGNMENT
                 })
-                if (denialReason != null) {
+                if (request.denialReason != null) {
                     add(Box.createVerticalStrut(JBUI.scale(4)))
-                    add(JBLabel("<html><body style='width:580px'>Reason: $denialReason</body></html>").apply {
+                    add(JBLabel("<html><body style='width:580px'>Reason: ${request.denialReason}</body></html>").apply {
                         foreground = JBColor.RED
                         alignmentX = JComponent.LEFT_ALIGNMENT
                     })
@@ -163,8 +143,10 @@ internal object ToolCallPopup {
             panel.add(Box.createVerticalStrut(JBUI.scale(12)))
         }
 
-        if (toolDescription != null) {
-            val descLabel = JBLabel("<html><body style='width:580px'>$toolDescription</body></html>").apply {
+        if (request.toolDescription != null) {
+            panel.add(sectionLabel("AgentBridge MCP tool description"))
+            panel.add(Box.createVerticalStrut(JBUI.scale(2)))
+            val descLabel = JBLabel("<html><body style='width:580px'>${request.toolDescription}</body></html>").apply {
                 foreground = UIUtil.getContextHelpForeground()
                 border = JBUI.Borders.emptyBottom(6)
                 alignmentX = JComponent.LEFT_ALIGNMENT
@@ -177,7 +159,9 @@ internal object ToolCallPopup {
             panel.add(Box.createVerticalStrut(JBUI.scale(4)))
         }
 
-        val paramsComponent = ToolCallParamsPanel.build(toolName, paramsJson, project, bg)
+        panel.add(sectionLabel("Inputs"))
+        panel.add(Box.createVerticalStrut(JBUI.scale(2)))
+        val paramsComponent = ToolCallParamsPanel.build(request.toolName, request.paramsJson, request.project, bg)
         paramsComponent.alignmentX = JComponent.LEFT_ALIGNMENT
         panel.add(paramsComponent)
         panel.add(Box.createVerticalStrut(JBUI.scale(6)))
@@ -186,9 +170,9 @@ internal object ToolCallPopup {
             maximumSize = Dimension(Int.MAX_VALUE, 1)
         })
 
-        panel.add(sectionLabel(if (failed) "Error" else "Result"))
-        resultPanel.alignmentX = JComponent.LEFT_ALIGNMENT
-        panel.add(resultPanel)
+        panel.add(sectionLabel("Output"))
+        request.resultPanel.alignmentX = JComponent.LEFT_ALIGNMENT
+        panel.add(request.resultPanel)
 
         panel.add(Box.createVerticalGlue())
 

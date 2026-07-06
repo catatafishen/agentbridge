@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.ui.ToolCallParamsPanel.MAX_VALUE_DISPLAY_LENGTH
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
+import java.util.Locale
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -39,9 +39,11 @@ internal object ToolCallParamsPanel {
     private const val MAX_VALUE_DISPLAY_LENGTH = 200
     private const val KEY_COLUMN_WIDTH_PX = 100
 
-    private val FILE_EXTENSION_REGEX = Regex(
-        "\\.(kt|kts|java|py|ts|tsx|js|jsx|go|rs|cpp|c|h|rb|swift|scala|groovy|xml|json|yaml|yml|toml|gradle|properties|sh|bash|zsh|md|txt|sql|html|css|scss)$",
-        RegexOption.IGNORE_CASE
+    private val KNOWN_SOURCE_EXTENSIONS = setOf(
+        "kt", "kts", "java", "py", "ts", "tsx", "js", "jsx", "go", "rs",
+        "cpp", "c", "h", "rb", "swift", "scala", "groovy", "xml", "json",
+        "yaml", "yml", "toml", "gradle", "properties", "sh", "bash", "zsh",
+        "md", "txt", "sql", "html", "css", "scss",
     )
 
     /** Classification of a parameter value for rendering decisions. */
@@ -80,7 +82,8 @@ internal object ToolCallParamsPanel {
         // Relative path with directory separator (e.g. src/main/Foo.kt)
         if (value.contains('/') || value.contains('\\')) return true
         // Bare filename with a known source or config extension (e.g. ToolCallPopup.kt)
-        return FILE_EXTENSION_REGEX.containsMatchIn(value)
+        val ext = value.substringAfterLast('.', "")
+        return ext.isNotEmpty() && ext.lowercase(Locale.ROOT) in KNOWN_SOURCE_EXTENSIONS
     }
 
     private fun looksLikeCommitHash(value: String): Boolean {
@@ -189,7 +192,7 @@ internal object ToolCallParamsPanel {
             val display = if (raw.length > MAX_VALUE_DISPLAY_LENGTH) raw.take(MAX_VALUE_DISPLAY_LENGTH) + "…" else raw
             return monoLabel(display, raw.takeIf { it.length > MAX_VALUE_DISPLAY_LENGTH })
         }
-        val raw = element.asString ?: return mutedLabel("null")
+        val raw = element.asString
         if (raw.isBlank()) return mutedLabel("(empty)")
         if (raw.contains('\n')) {
             val lines = raw.lines()
@@ -255,9 +258,14 @@ internal object ToolCallParamsPanel {
         }
 
     private fun openFileInIde(path: String, project: Project) {
-        val vf = LocalFileSystem.getInstance().findFileByPath(path)
+        val expandedPath = if (path.startsWith("~/")) {
+            System.getProperty("user.home") + path.substring(1)
+        } else {
+            path
+        }
+        val vf = LocalFileSystem.getInstance().findFileByPath(expandedPath)
             ?: project.basePath?.let { base ->
-                LocalFileSystem.getInstance().findFileByPath(Paths.get(base, path).toString())
+                LocalFileSystem.getInstance().findFileByPath(Paths.get(base, expandedPath).toString())
             } ?: return
         ApplicationManager.getApplication().invokeLater {
             OpenFileDescriptor(project, vf).navigate(true)
