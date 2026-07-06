@@ -167,26 +167,26 @@ public class ReadFileToolTest extends BasePlatformTestCase {
         assertTrue(result.contains("2: y"));
     }
 
-    public void testNullStartLineReturnsError() {
+    public void testNullStartLineReturnsOne() {
         VirtualFile vf = createTestFile("nullstart.txt", "a\nb\nc");
         JsonObject args = new JsonObject();
         args.addProperty("path", vf.getPath());
         args.add("start_line", com.google.gson.JsonNull.INSTANCE);
 
         String result = tool.execute(args);
-        assertTrue("Expected error for null start_line, got: " + result,
-            result.startsWith("Error:") && result.contains("start_line"));
+        assertTrue("Expected full file, got: " + result,
+            result.contains("a\nb\nc"));
     }
 
-    public void testZeroStartLineReturnsError() {
+    public void testZeroStartLineReturnsFallsBackToOne() {
         VirtualFile vf = createTestFile("zerostart.txt", "a\nb\nc");
         JsonObject args = new JsonObject();
         args.addProperty("path", vf.getPath());
         args.addProperty("start_line", 0);
 
         String result = tool.execute(args);
-        assertTrue("Expected error for start_line=0, got: " + result,
-            result.startsWith("Error:") && result.contains("start_line"));
+        assertTrue("Expected full file for start_line=0, got: " + result,
+            result.contains("a\nb\nc"));
     }
 
     public void testNegativeStartLineReturnsError() {
@@ -200,7 +200,7 @@ public class ReadFileToolTest extends BasePlatformTestCase {
             result.startsWith("Error:") && result.contains("start_line"));
     }
 
-    public void testNullEndLineReturnsError() {
+    public void testNullEndLineReturnsEOF() {
         VirtualFile vf = createTestFile("nullend.txt", "a\nb\nc");
         JsonObject args = new JsonObject();
         args.addProperty("path", vf.getPath());
@@ -208,19 +208,39 @@ public class ReadFileToolTest extends BasePlatformTestCase {
         args.add("end_line", com.google.gson.JsonNull.INSTANCE);
 
         String result = tool.execute(args);
-        assertTrue("Expected error for null end_line, got: " + result,
-            result.startsWith("Error:") && result.contains("end_line"));
+        assertTrue("Expected full file, got: " + result,
+            result.contains("a\nb\nc"));
     }
 
-    public void testZeroEndLineReturnsError() {
+    public void testZeroEndLineReturnsEOF() {
         VirtualFile vf = createTestFile("zeroend.txt", "a\nb\nc");
         JsonObject args = new JsonObject();
         args.addProperty("path", vf.getPath());
         args.addProperty("end_line", 0);
 
         String result = tool.execute(args);
-        assertTrue("Expected error for end_line=0, got: " + result,
-            result.startsWith("Error:") && result.contains("end_line"));
+        assertTrue("Expected full file, got: " + result,
+            result.contains("a\nb\nc"));
+    }
+
+    public void testStringStartLineReturnsError() {
+        VirtualFile vf = createTestFile("stringstart.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("start_line", "foo");
+        String result = tool.execute(args);
+        assertTrue("Expected error for string start_line, got: " + result,
+            result.startsWith("Error") && result.contains("start_line"));
+    }
+
+    public void testNegativeEndLineReturnsError() {
+        VirtualFile vf = createTestFile("negend.txt", "a\nb\nc");
+        JsonObject args = new JsonObject();
+        args.addProperty("path", vf.getPath());
+        args.addProperty("end_line", -1);
+        String result = tool.execute(args);
+        assertTrue("Expected error for end_line=-1, got: " + result,
+            result.startsWith("Error") && result.contains("end_line"));
     }
 
     public void testLargeFileTruncation() {
@@ -234,8 +254,6 @@ public class ReadFileToolTest extends BasePlatformTestCase {
 
         String result = tool.execute(args);
         assertTrue("Expected truncation notice, got: " + result,
-            result.contains("[Showing first 2000 lines"));
-        assertTrue("Expected total line count header, got: " + result,
-            result.contains("lines total"));
+            result.contains("[Selection too long!"));
     }
 }
