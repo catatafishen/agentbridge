@@ -1,10 +1,10 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
@@ -12,11 +12,9 @@ import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
-
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -82,6 +80,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private data class ToolCallData(
         val title: String,
         val kind: String,
+        val rawToolName: String,
         val arguments: String? = null,
         var status: String = "running",
         var result: String? = null,
@@ -749,7 +748,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val resolvedKind = effectiveKind ?: "other"
         val toolDisplayName = localDef?.displayName() ?: resolveToolDisplayName(title)
         val displayTitle = ToolCallArgParser.extractChipTitle(arguments) ?: toolDisplayName
-        toolCallData[id] = ToolCallData(displayTitle, resolvedKind, arguments)
+        toolCallData[id] = ToolCallData(displayTitle, resolvedKind, title, arguments)
         val chip = ToolChipComponent(
             displayTitle,
             effectiveKind,
@@ -793,21 +792,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun showToolPopup(toolId: String) {
         val data = toolCallData[toolId] ?: return
-        val baseName = data.title.substringBefore('(').trim()
-        val toolDef = toolRegistry?.findById(baseName)
+        val toolDef = toolRegistry?.findById(data.rawToolName)
         val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn) toolDef.description() else null
         val failed = data.status == "failed"
 
-        val resultPanel = if (!data.result.isNullOrBlank()) {
-            com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers.codePanel(data.result!!)
-        } else {
-            JBLabel("No result available").apply { foreground = UIUtil.getContextHelpForeground() }
+        val resultPanel = when {
+            !data.result.isNullOrBlank() ->
+                com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers.codePanel(data.result!!)
+
+            failed ->
+                JBLabel("No error output was captured.").apply { foreground = JBColor.RED }
+
+            else ->
+                JBLabel("No result available").apply { foreground = UIUtil.getContextHelpForeground() }
         }
-        val paramsPanel = if (!data.arguments.isNullOrBlank()) {
-            com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers.jsonEditor(
-                ToolCallArgParser.prettyJson(data.arguments), project
-            )
-        } else null
 
         ApplicationManager.getApplication().invokeLater {
             ToolCallPopup.show(
@@ -815,12 +813,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     project = project,
                     title = data.title,
                     kind = data.kind,
-                    paramsPanel = paramsPanel,
+                    toolName = data.rawToolName,
+                    paramsJson = data.arguments,
                     resultPanel = resultPanel,
                     toolDescription = mcpDescription,
                     autoDenied = data.autoDenied,
                     denialReason = data.denialReason,
-                    failed = failed
+                    failed = failed,
                 )
             )
         }
@@ -841,7 +840,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         // Sub-agent chip in the parent turn's chip strip.
         val chipTitle = "[$label] $description"
-        toolCallData[id] = ToolCallData(chipTitle, "think", null)
+        toolCallData[id] = ToolCallData(chipTitle, "think", agentType, null)
         val chip = ToolChipComponent(
             chipTitle, "think", "running", false,
             McpServerSettings.getInstance(project)
@@ -955,7 +954,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         val resolvedKind = kind ?: "other"
         val displayTitle = ToolCallArgParser.extractChipTitle(arguments) ?: resolveToolDisplayName(title)
-        toolCallData[toolId] = ToolCallData(displayTitle, resolvedKind, arguments)
+        toolCallData[toolId] = ToolCallData(displayTitle, resolvedKind, title, arguments)
         val chip = ToolChipComponent(
             displayTitle, kind, "running", false,
             McpServerSettings.getInstance(project)
