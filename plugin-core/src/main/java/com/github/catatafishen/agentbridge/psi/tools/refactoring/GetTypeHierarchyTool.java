@@ -46,7 +46,7 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
     public @NotNull String description() {
         return """
             Show supertypes and/or subtypes of a class or interface. \
-            When 'file' and 'line' are provided with direction='subtypes', uses platform-level \
+            When 'path' and 'line' are provided with direction='subtypes', uses platform-level \
             DefinitionsScopedSearch — works for Java, Kotlin, TypeScript, Python, C/C++ in \
             CLion, and any language with PSI support. \
             For direction='supertypes' or direction='both' in a non-Java IDE, falls back to the \
