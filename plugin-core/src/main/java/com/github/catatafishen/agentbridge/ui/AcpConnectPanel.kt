@@ -34,7 +34,7 @@ import javax.swing.*
  */
 class AcpConnectPanel(
     private val project: Project,
-    private val onConnect: (String, String?) -> Unit
+    private val onConnect: (String, String?, Boolean) -> Unit
 ) : JBPanel<AcpConnectPanel>(BorderLayout()) {
 
     companion object {
@@ -654,17 +654,24 @@ class AcpConnectPanel(
         // applySessionChoice may do file I/O (deleteIfExists for None/Older cases) which
         // should not block the current event handler.
         ApplicationManager.getApplication().invokeLater {
-            applySessionChoice(profileId)
-            onConnect(profileId, customCommand)
+            val freshSession = applySessionChoice(profileId)
+            onConnect(profileId, customCommand, freshSession)
         }
     }
 
-    private fun applySessionChoice(profileId: String) {
+    /**
+     * Applies the user's session choice and returns `true` if a genuinely fresh session
+     * was requested (i.e. [SessionChoice.None]), `false` otherwise.
+     *
+     * The caller uses the return value to decide whether to clear the chat panel before
+     * showing the new session (needed when reconnecting with an existing chat already visible).
+     */
+    private fun applySessionChoice(profileId: String): Boolean {
         val settings = GenericSettings(profileId, project)
         val sameAgent = agentManager.activeProfileId == profileId
         val sessionSwitch = SessionSwitchService.getInstance(project)
 
-        when (val choice = sessionCombo.selectedItem as? SessionChoice) {
+        return when (val choice = sessionCombo.selectedItem as? SessionChoice) {
             is SessionChoice.None -> {
                 settings.resumeSessionId = null
                 // Clear Claude CLI resume state so it starts fresh (no --resume).
@@ -672,6 +679,7 @@ class AcpConnectPanel(
                 // Delete the session ID file so restoreConversation() finds nothing and
                 // the chat pane opens empty rather than restoring the previous session.
                 ConversationService.getInstance(project).resetCurrentSessionId(project.basePath)
+                true
             }
 
             is SessionChoice.Latest -> {
@@ -679,6 +687,7 @@ class AcpConnectPanel(
                 // Without this, a stale export (e.g. from a previous IDE session) would be
                 // reused and Claude CLI could branch from the wrong message.
                 if (sameAgent) sessionSwitch.exportForRestart(profileId)
+                false
             }
 
             is SessionChoice.Older -> {
@@ -688,10 +697,10 @@ class AcpConnectPanel(
                 // already updated .current-session-id, so exportForRestart() will pick
                 // up the correct session. For agent switches, onAgentSwitch() handles this.
                 if (sameAgent) sessionSwitch.exportForRestart(profileId)
+                false
             }
 
-            null -> { /* no selection — keep defaults */
-            }
+            null -> false // no selection — keep defaults
         }
     }
 

@@ -339,7 +339,7 @@ public final class ConversationService implements Disposable {
         ConversationReader reader = getOrCreateReader();
         if (reader == null) return null;
         try {
-            String sessionId = readCurrentSessionId(basePath, reader);
+            String sessionId = readCurrentSessionId(basePath);
             if (sessionId.isEmpty()) return null;
 
             List<EntryData> entries = reader.loadRecentEntries(sessionId, 50);
@@ -356,18 +356,15 @@ public final class ConversationService implements Disposable {
     }
 
     @NotNull
-    private String readCurrentSessionId(@Nullable String basePath, @NotNull ConversationReader reader) throws IOException {
-        // Prefer the persisted current-session-id file maintained by the active session writer.
+    private String readCurrentSessionId(@Nullable String basePath) throws IOException {
+        // Only use the persisted session-id file. If absent, the session was intentionally reset
+        // (SessionChoice.None) or never started — return empty so loadRecentEntries() returns null
+        // and the chat opens empty. Never fall back to listSessions(): that would silently restore
+        // the last session after the user explicitly chose to start fresh.
         File idFile = currentSessionIdFile(basePath);
         if (idFile.exists()) {
             String id = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
             if (!id.isEmpty()) return id;
-        }
-        // Fall back to the most recently updated session in the database (e.g. first launch
-        // before any file has been written, or after the file is cleaned up on close).
-        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
-        if (!sessions.isEmpty()) {
-            return sessions.get(0).id();
         }
         return "";
     }
