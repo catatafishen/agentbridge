@@ -79,16 +79,16 @@ public final class GetDocumentationTool extends RefactoringTool {
         if (symbol.isEmpty())
             return "Error: 'symbol' parameter required (e.g. java.util.List, com.google.gson.Gson.fromJson)";
 
-        // Validate: file and line must be provided together.
-        if (args.has(PARAM_PATH) != args.has(PARAM_LINE)) {
+        // Validate: path/file and line must be provided together.
+        String filePath = readPathParam(args);
+        if ((filePath != null) != args.has(PARAM_LINE)) {
             return ToolUtils.ERROR_PREFIX + "'path' and 'line' must be provided together";
         }
 
         // Position-based path: language-agnostic, same approach as go_to_declaration / find_implementations.
         // The IDE's reference resolution handles C/C++, Python, Go, and every other language
         // without any knowledge of language-specific FQN separators (:: vs . vs /).
-        if (args.has(PARAM_PATH) && args.has(PARAM_LINE)) {
-            String filePath = args.get(PARAM_PATH).getAsString();
+        if (filePath != null) {
             int line = args.get(PARAM_LINE).getAsInt();
             // Resolve the VirtualFile before entering the read action — consistent with
             // all other tools (FindSuperMethodsTool, GoToDeclarationTool, etc.) that call
