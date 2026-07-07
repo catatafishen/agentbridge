@@ -45,11 +45,14 @@ public final class GetProblemsTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Get cached editor problems for open files. Returns diagnostics at all enabled severity levels (errors, warnings, weak warnings, information — as configured in the MCP Diagnostic Filter settings). Includes severity, message, and available quick-fixes per problem. " +
-            "For files NOT open in an editor, falls back to public batch code-smell analysis " +
-            "(weak warnings are only available when the file is open). " +
-            "Use get_compilation_errors for a faster check focused on compile errors only. " +
-            "Use get_highlights for richer diagnostics including inspections, typos, and intentions.";
+        return "Get cached editor problems for a whole file or all open files. " +
+            "Returns one line per diagnostic — no quick-fix details. " +
+            "For richer per-issue output with fix suggestions on a specific code section, use get_highlights with start_line/end_line. " +
+            "Includes errors, warnings, weak warnings, and information-level hints (code style suggestions). " +
+            "Information-level items (e.g. 'use text block', 'switch expression') can be numerous on large files — " +
+            "disable 'Information' in MCP Diagnostic Filter settings to focus on errors and warnings only. " +
+            "For files NOT open in an editor, falls back to CodeSmellDetector (errors and warnings only). " +
+            "For compile errors only, use get_compilation_errors.";
     }
 
     @Override
