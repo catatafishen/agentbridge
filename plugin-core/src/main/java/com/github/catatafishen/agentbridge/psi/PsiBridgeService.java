@@ -440,14 +440,12 @@ public final class PsiBridgeService implements Disposable {
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
 
-            String readinessError = ToolReadinessGate.checkReady(project, req.def());
-            if (readinessError != null) {
-                if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
+            ToolResult readinessFailure = checkToolReadiness(req, writeRegistered, tracker, callRecord);
+            if (readinessFailure != null) {
                 success = false;
-                errorMessage = readinessError;
-                outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-                tracker.mcpComplete(callRecord.getRecordId(), readinessError, false);
-                return ToolResult.error(readinessError);
+                errorMessage = readinessFailure.contentOrEmpty();
+                outputSize = errorMessage.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                return readinessFailure;
             }
 
             ToolResult toolResult = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), requiresSync);
@@ -498,6 +496,23 @@ public final class PsiBridgeService implements Disposable {
                 fireFocusRestoreEvent();
             }
         }
+    }
+
+    /**
+     * Checks whether the tool is ready to execute. If not, cleans up write registration
+     * and records the failure in the tracker before returning an error result.
+     *
+     * @return {@code null} if the tool is ready to run, or a {@link ToolResult} error if not.
+     */
+    @Nullable
+    private ToolResult checkToolReadiness(ToolCallRequest req,
+                                          java.util.concurrent.atomic.AtomicBoolean writeRegistered,
+                                          ToolCallTracker tracker, ToolCallRecord callRecord) {
+        String readinessError = ToolReadinessGate.checkReady(project, req.def());
+        if (readinessError == null) return null;
+        if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
+        tracker.mcpComplete(callRecord.getRecordId(), readinessError, false);
+        return ToolResult.error(readinessError);
     }
 
     private ToolResult executeWithSyncLock(ToolDefinition def, JsonObject arguments,
