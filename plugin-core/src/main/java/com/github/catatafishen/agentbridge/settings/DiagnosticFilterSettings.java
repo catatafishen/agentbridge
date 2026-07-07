@@ -94,20 +94,45 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
         return myState.suppressedInspectionIds.contains(inspectionId);
     }
 
-    public boolean isShowErrors() { return myState.showErrors; }
-    public void setShowErrors(boolean v) { myState.showErrors = v; }
+    public boolean isShowErrors() {
+        return myState.showErrors;
+    }
 
-    public boolean isShowWarnings() { return myState.showWarnings; }
-    public void setShowWarnings(boolean v) { myState.showWarnings = v; }
+    public void setShowErrors(boolean v) {
+        myState.showErrors = v;
+    }
 
-    public boolean isShowWeakWarnings() { return myState.showWeakWarnings; }
-    public void setShowWeakWarnings(boolean v) { myState.showWeakWarnings = v; }
+    public boolean isShowWarnings() {
+        return myState.showWarnings;
+    }
 
-    public boolean isShowGrammarAndSpelling() { return myState.showGrammarAndSpelling; }
-    public void setShowGrammarAndSpelling(boolean v) { myState.showGrammarAndSpelling = v; }
+    public void setShowWarnings(boolean v) {
+        myState.showWarnings = v;
+    }
 
-    public boolean isShowInformation() { return myState.showInformation; }
-    public void setShowInformation(boolean v) { myState.showInformation = v; }
+    public boolean isShowWeakWarnings() {
+        return myState.showWeakWarnings;
+    }
+
+    public void setShowWeakWarnings(boolean v) {
+        myState.showWeakWarnings = v;
+    }
+
+    public boolean isShowGrammarAndSpelling() {
+        return myState.showGrammarAndSpelling;
+    }
+
+    public void setShowGrammarAndSpelling(boolean v) {
+        myState.showGrammarAndSpelling = v;
+    }
+
+    public boolean isShowInformation() {
+        return myState.showInformation;
+    }
+
+    public void setShowInformation(boolean v) {
+        myState.showInformation = v;
+    }
 
     public @NotNull List<String> getSuppressedInspectionIds() {
         return Collections.unmodifiableList(myState.suppressedInspectionIds);
@@ -118,16 +143,22 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
     }
 
     @Override
-    public @NotNull State getState() { return myState; }
+    public @NotNull State getState() {
+        return myState;
+    }
 
     @Override
-    public void loadState(@NotNull State state) { myState = state; }
+    public void loadState(@NotNull State state) {
+        myState = state;
+    }
 
     public static final class State {
 
         private boolean showErrors = true;
         private boolean showWarnings = true;
-        /** Weak warnings shown by default to match existing {@code get_highlights} behaviour. */
+        /**
+         * Weak warnings shown by default to match existing {@code get_highlights} behaviour.
+         */
         private boolean showWeakWarnings = true;
         /**
          * Grammar and spelling highlights (Grazie, SpellChecker) shown by default.
@@ -147,22 +178,52 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
          */
         private List<String> suppressedInspectionIds = new ArrayList<>(List.of("SpellCheckingInspection"));
 
-        public boolean isShowErrors() { return showErrors; }
-        public void setShowErrors(boolean v) { this.showErrors = v; }
+        public boolean isShowErrors() {
+            return showErrors;
+        }
 
-        public boolean isShowWarnings() { return showWarnings; }
-        public void setShowWarnings(boolean v) { this.showWarnings = v; }
+        public void setShowErrors(boolean v) {
+            this.showErrors = v;
+        }
 
-        public boolean isShowWeakWarnings() { return showWeakWarnings; }
-        public void setShowWeakWarnings(boolean v) { this.showWeakWarnings = v; }
+        public boolean isShowWarnings() {
+            return showWarnings;
+        }
 
-        public boolean isShowGrammarAndSpelling() { return showGrammarAndSpelling; }
-        public void setShowGrammarAndSpelling(boolean v) { this.showGrammarAndSpelling = v; }
+        public void setShowWarnings(boolean v) {
+            this.showWarnings = v;
+        }
 
-        public boolean isShowInformation() { return showInformation; }
-        public void setShowInformation(boolean v) { this.showInformation = v; }
+        public boolean isShowWeakWarnings() {
+            return showWeakWarnings;
+        }
 
-        public List<String> getSuppressedInspectionIds() { return suppressedInspectionIds; }
-        public void setSuppressedInspectionIds(List<String> ids) { this.suppressedInspectionIds = ids; }
+        public void setShowWeakWarnings(boolean v) {
+            this.showWeakWarnings = v;
+        }
+
+        public boolean isShowGrammarAndSpelling() {
+            return showGrammarAndSpelling;
+        }
+
+        public void setShowGrammarAndSpelling(boolean v) {
+            this.showGrammarAndSpelling = v;
+        }
+
+        public boolean isShowInformation() {
+            return showInformation;
+        }
+
+        public void setShowInformation(boolean v) {
+            this.showInformation = v;
+        }
+
+        public List<String> getSuppressedInspectionIds() {
+            return suppressedInspectionIds;
+        }
+
+        public void setSuppressedInspectionIds(List<String> ids) {
+            this.suppressedInspectionIds = ids;
+        }
     }
 }

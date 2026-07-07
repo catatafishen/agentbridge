@@ -361,6 +361,11 @@ class PromptOrchestrator(
         turnHadContent = false
         lastStreamBlockType = StreamBlockType.NONE
         activeSubAgentStack.clear()
+        // Reset nudgesHeld so nudges from the previous turn are not permanently suppressed.
+        // nudgesHeld is cleared automatically when activeSubAgentStack goes empty (see updateToolCallUi),
+        // but if a turn ended with a stuck sub-agent (e.g. agent stopped mid-sub-agent, completion never
+        // received), the stack was never drained and nudgesHeld was never reset to false.
+        AgentNudgeService.getInstance(project).setNudgesHeld(false)
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
         turnStartHeadHash = captureGitHead()
