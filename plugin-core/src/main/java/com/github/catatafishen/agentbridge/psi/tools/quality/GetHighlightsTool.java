@@ -67,8 +67,14 @@ public final class GetHighlightsTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Get cached editor highlights for open files. Richer than get_problems — includes inspections, intentions, " +
-            "and quick-fix action names. Use get_compilation_errors for a fast compile-error-only check.";
+        return "Get cached editor highlights for a focused section of a file. " +
+            "Returns the richest diagnostic output available: all severities, inspections, typos, " +
+            "grammar errors, and available quick-fix action names per issue. " +
+            "Designed for targeted inspection using start_line/end_line (e.g. a single method or class). " +
+            "Large files without a line range produce many results — if output is truncated, " +
+            "narrow with start_line/end_line. " +
+            "For a whole-file problem summary without fix details, use get_problems. " +
+            "For compile errors only, use get_compilation_errors.";
     }
 
     @Override
@@ -164,6 +170,11 @@ public final class GetHighlightsTool extends QualityTool {
                 result.append(String.format("Found %d problems across %d files (showing up to %d):%n%n",
                     counts[0], counts[1], limit));
                 result.append(String.join("\n", problems));
+                if (counts[0] >= limit) {
+                    result.append(String.format(
+                        "%n%n[Results capped at %d. Use start_line and end_line to focus on a specific " +
+                            "section (e.g. a single method or class) to get complete coverage for that range.]", limit));
+                }
             }
         });
         if (resultFuture.isDone()) return;
