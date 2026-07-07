@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.navigation;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.cpp.CppNovaPsiSupport;
@@ -12,9 +13,11 @@ import com.intellij.ide.structureView.StructureViewTreeElement;
 import com.intellij.ide.structureView.TreeBasedStructureViewBuilder;
 import com.intellij.ide.util.treeView.smartTree.TreeElement;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiModifier;
@@ -26,10 +29,13 @@ import com.intellij.psi.search.GlobalSearchScopes;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Abstract base for code navigation tools. Provides shared constants
@@ -62,6 +68,15 @@ public abstract class NavigationTool extends Tool {
     protected static final String PARAM_OFFSET = "offset";
     protected static final int DEFAULT_MAX_RESULTS = 100;
 
+    /**
+     * Format for flat (non-indented) outline entries: {@code "  <line>: <type> <name>"}.
+     */
+    private static final String FORMAT_OUTLINE_ENTRY = "  %d: %s %s";
+    /**
+     * Fallback type label for structure-view nodes whose PSI element has no recognised type.
+     */
+    private static final String ELEMENT_TYPE_SYMBOL = "symbol";
+
     protected NavigationTool(Project project) {
         super(project);
     }
@@ -72,7 +87,7 @@ public abstract class NavigationTool extends Tool {
      */
     protected GlobalSearchScope resolveScope(String scopeName) {
         if (scopeName == null) return GlobalSearchScope.projectScope(project);
-        return switch (scopeName.toLowerCase(java.util.Locale.ROOT)) {
+        return switch (scopeName.toLowerCase(Locale.ROOT)) {
             case SCOPE_PRODUCTION -> GlobalSearchScopes.projectProductionScope(project);
             case SCOPE_TESTS -> GlobalSearchScopes.projectTestScope(project);
             case SCOPE_LIBRARIES -> com.intellij.psi.search.ProjectScope.getLibrariesScope(project);
@@ -97,17 +112,6 @@ public abstract class NavigationTool extends Tool {
         return new int[]{maxResults, offset};
     }
 
-    /**
-     * Builds a pagination footer when results were limited.
-     * Returns empty string if all results fit, otherwise returns hint with next offset.
-     */
-    protected static String paginationFooter(int totalFound, int offset, int maxResults) {
-        int nextOffset = offset + maxResults;
-        if (totalFound <= offset + maxResults) return "";
-        return "\n\n(Showing " + maxResults + " of " + totalFound + " results. "
-            + "Use offset=" + nextOffset + " to see more)";
-    }
-
     @Override
     public @NotNull ToolRegistry.Category category() {
         return ToolRegistry.Category.SEARCH;
@@ -115,12 +119,7 @@ public abstract class NavigationTool extends Tool {
 
     protected void showSearchFeedback(String message) {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
-        EdtUtil.invokeLater(() -> {
-            var statusBar = com.intellij.openapi.wm.WindowManager.getInstance().getStatusBar(project);
-            if (statusBar != null) {
-                statusBar.setInfo(message);
-            }
-        });
+        EdtUtil.invokeLater(() -> PlatformApiCompat.showStatusBarInfo(project, message));
     }
 
     /**
@@ -200,7 +199,7 @@ public abstract class NavigationTool extends Tool {
         String simpleName = simpleNameOf(symbol);
         if (simpleName.equals(symbol)) return new String[0];
         String qualifier = symbol.substring(0, symbol.length() - simpleName.length());
-        return Arrays.stream(qualifier.split("[^a-zA-Z0-9_]+"))
+        return Arrays.stream(qualifier.split("\\W+"))
             .filter(s -> !s.isEmpty())
             .toArray(String[]::new);
     }
@@ -222,7 +221,7 @@ public abstract class NavigationTool extends Tool {
         PsiElement current = element.getParent();
         while (current != null && !(current instanceof PsiFile)) {
             if (current instanceof PsiNamedElement named && named.getName() != null) {
-                ancestorNames.add(0, named.getName()); // prepend → outer-first order
+                ancestorNames.addFirst(named.getName()); // prepend → outer-first order
             }
             current = current.getParent();
         }
@@ -232,20 +231,6 @@ public abstract class NavigationTool extends Tool {
             if (!qualifierTokens[i].equals(ancestorNames.get(offset + i))) return false;
         }
         return true;
-    }
-
-    protected String buildReferenceEntry(com.intellij.psi.PsiReference ref, String filePattern,
-                                         java.util.regex.Pattern compiledGlob, String basePath) {
-        PsiElement refEl = ref.getElement();
-        PsiFile file = refEl.getContainingFile();
-        if (file == null || file.getVirtualFile() == null) return null;
-        String relPath = safeRelativize(basePath, file.getVirtualFile().getPath());
-        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern, compiledGlob)) return null;
-        Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
-        if (doc == null) return null;
-        int line = doc.getLineNumber(refEl.getTextOffset()) + 1;
-        String lineText = ToolUtils.getLineText(doc, line - 1);
-        return String.format(FORMAT_LINE_REF, relPath, line, lineText);
     }
 
     /**
@@ -276,7 +261,7 @@ public abstract class NavigationTool extends Tool {
     }
 
     protected void addSymbolResult(PsiElement element, String basePath,
-                                   java.util.Set<String> seen, List<String> results) {
+                                   Set<String> seen, List<String> results) {
         PsiFile file = element.getContainingFile();
         if (file == null || file.getVirtualFile() == null) return;
         Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
@@ -312,15 +297,15 @@ public abstract class NavigationTool extends Tool {
      */
     @SuppressWarnings("deprecation") // StructureViewBuilder.PROVIDER deprecated but no alternative
     protected List<String> collectOutlineEntries(PsiFile psiFile, Document document,
-                                                 @org.jetbrains.annotations.Nullable com.intellij.openapi.editor.Editor editor) {
-        com.intellij.openapi.vfs.VirtualFile vf = psiFile.getVirtualFile();
+                                                 @Nullable Editor editor) {
+        VirtualFile vf = psiFile.getVirtualFile();
         if (vf != null) {
             StructureViewBuilder svBuilder = StructureViewBuilder.PROVIDER.getStructureViewBuilder(
                 psiFile.getFileType(), vf, project);
             if (svBuilder instanceof TreeBasedStructureViewBuilder treeBuilder) {
                 StructureViewModel model = treeBuilder.createStructureViewModel(editor);
                 try {
-                    List<String> outline = new java.util.ArrayList<>();
+                    List<String> outline = new ArrayList<>();
                     visitStructureNode(model.getRoot(), 0, document, outline);
                     if (!outline.isEmpty()) return outline;
                 } finally {
@@ -331,33 +316,32 @@ public abstract class NavigationTool extends Tool {
         return collectOutlineEntriesByPsiWalk(psiFile, document);
     }
 
-    /**
-     * Recursively traverses a {@link StructureViewModel} tree node, emitting one outline line per
-     * element. The IDE decides what is structural; {@code classifyElement} provides the type label
-     * ("class", "method", etc.) but a {@code null} result no longer excludes the element — it
-     * falls back to the generic label {@code "symbol"}.
-     * <p>
-     * Some language plugins wrap their PSI elements in custom structure-view adapter objects, so
-     * {@code svte.getValue()} may not return a {@link PsiElement} directly. In that case we try
-     * common adapter accessor methods ({@code getPsiElement}, {@code getElement},
-     * {@code getNavigationElement}) reflectively before giving up on the node.
-     */
     private void visitStructureNode(TreeElement node, int depth, Document document, List<String> outline) {
         for (TreeElement child : node.getChildren()) {
-            if (!(child instanceof StructureViewTreeElement svte)) continue;
-            String label = child.getPresentation().getPresentableText();
-            if (label == null || label.isEmpty()) continue;
-            PsiElement psiElement = extractPsiElement(svte.getValue());
-            if (psiElement == null) continue;
-            int offset = Math.clamp(psiElement.getTextOffset(), 0, document.getTextLength());
-            int line = document.getLineNumber(offset) + 1;
-            String type = ToolUtils.classifyElement(psiElement);
-            String displayLabel = (psiElement instanceof PsiModifierListOwner owner)
-                ? prefixModifiers(owner, label) : label;
-            outline.add(String.format("  %s%d: %s %s",
-                "  ".repeat(depth), line, type != null ? type : "symbol", displayLabel));
-            visitStructureNode(child, depth + 1, document, outline);
+            processStructureChild(child, depth, document, outline);
         }
+    }
+
+    /**
+     * Processes a single child node of a {@link StructureViewModel} tree, emitting one outline
+     * line if the child is a valid structural element with a resolvable PSI element.
+     * Extracted from {@link #visitStructureNode} to keep the loop body free of multiple
+     * {@code continue} guards (Sonar S135).
+     */
+    private void processStructureChild(TreeElement child, int depth, Document document, List<String> outline) {
+        if (!(child instanceof StructureViewTreeElement svte)) return;
+        String label = child.getPresentation().getPresentableText();
+        if (label == null || label.isEmpty()) return;
+        PsiElement psiElement = extractPsiElement(svte.getValue());
+        if (psiElement == null) return;
+        int offset = Math.clamp(psiElement.getTextOffset(), 0, document.getTextLength());
+        int line = document.getLineNumber(offset) + 1;
+        String type = ToolUtils.classifyElement(psiElement);
+        String displayLabel = (psiElement instanceof PsiModifierListOwner owner)
+            ? prefixModifiers(owner, label) : label;
+        outline.add(String.format("  %s%d: %s %s",
+            "  ".repeat(depth), line, type != null ? type : ELEMENT_TYPE_SYMBOL, displayLabel));
+        visitStructureNode(child, depth + 1, document, outline);
     }
 
     /**
@@ -403,7 +387,7 @@ public abstract class NavigationTool extends Tool {
                         String type = ToolUtils.classifyElement(element);
                         if (type != null) {
                             int line = document.getLineNumber(element.getTextOffset()) + 1;
-                            outline.add(String.format("  %d: %s %s", line, type, name));
+                            outline.add(String.format(FORMAT_OUTLINE_ENTRY, line, type, name));
                         }
                     }
                 }
@@ -425,14 +409,14 @@ public abstract class NavigationTool extends Tool {
     private List<String> collectOutlineEntriesByNodeType(PsiFile psiFile, Document document) {
         List<String> outline = new ArrayList<>();
         CppNovaPsiSupport.walkSymbols(psiFile, document,
-            (kind, name, line) -> outline.add(String.format("  %d: %s %s", line, kind, name)));
+            (kind, name, line) -> outline.add(String.format(FORMAT_OUTLINE_ENTRY, line, kind, name)));
         return outline;
     }
 
     private static String prefixModifiers(PsiModifierListOwner owner, String label) {
         PsiModifierList modifierList = owner.getModifierList();
         if (modifierList == null) return label;
-        java.util.List<String> modifiers = new java.util.ArrayList<>();
+        List<String> modifiers = new ArrayList<>();
         addModifier(modifierList, modifiers, PsiModifier.PUBLIC, "public");
         addModifier(modifierList, modifiers, PsiModifier.PROTECTED, "protected");
         addModifier(modifierList, modifiers, PsiModifier.PRIVATE, "private");
@@ -442,48 +426,16 @@ public abstract class NavigationTool extends Tool {
         return modifiers.isEmpty() ? label : String.join(" ", modifiers) + " " + label;
     }
 
-    private static void addModifier(PsiModifierList modifierList, java.util.List<String> modifiers,
+    private static void addModifier(PsiModifierList modifierList, List<String> modifiers,
                                     String modifier, String label) {
         if (modifierList.hasModifierProperty(modifier)) {
             modifiers.add(label);
         }
     }
 
-    /**
-     * Analyzes a single {@link PsiFile} for symbols of the given type, without requiring the file
-     * to be in a project source root. Uses the same two-phase analysis as
-     * {@link #collectSymbolsFromFile}: a {@link PsiNamedElement} walk (handles Java, Kotlin, and
-     * classic C++ via {@code com.intellij.cidr.lang}) followed by the CLion Nova node-type
-     * fallback for files whose lazy parser produces {@code DUMMY_NODE}/{@code DUMMY_BLOCK}
-     * structures instead of {@link PsiNamedElement} instances.
-     *
-     * <p>Intended for IDE compatibility tests: create an in-memory C++ {@link PsiFile} via
-     * {@link com.intellij.psi.PsiFileFactory#createFileFromText} using the language object from
-     * {@link com.intellij.lang.Language#findLanguageByID}, then pass it here to exercise the
-     * per-file symbol extraction without depending on FileTypeManager extension registration or
-     * a project source root.</p>
-     *
-     * @param psiFile    the file to analyse; need not have an on-disk backing file
-     * @param typeFilter symbol kind ({@code "class"}, {@code "method"}, …), or {@code null} for all
-     * @return symbol entries in {@code relPath:line [type] name} format
-     */
-    public List<String> analyzeFileSymbols(PsiFile psiFile,
-                                           @org.jetbrains.annotations.Nullable String typeFilter) {
-        return com.intellij.openapi.application.ReadAction.computeCancellable(() -> {
-            Document doc = com.intellij.psi.PsiDocumentManager.getInstance(project)
-                .getDocument(psiFile);
-            if (doc == null) return List.<String>of();
-            com.intellij.openapi.vfs.VirtualFile vf = psiFile.getViewProvider().getVirtualFile();
-            List<String> results = new ArrayList<>();
-            collectSymbolsFromFile(psiFile, doc, vf, typeFilter, null,
-                new java.util.HashSet<>(), results);
-            return results;
-        });
-    }
-
-    protected void collectSymbolsFromFile(PsiFile psiFile, Document doc, com.intellij.openapi.vfs.VirtualFile vf,
+    protected void collectSymbolsFromFile(PsiFile psiFile, Document doc, VirtualFile vf,
                                           String typeFilter, String basePath,
-                                          java.util.Set<String> seen, List<String> results) {
+                                          Set<String> seen, List<String> results) {
         String relPath = safeRelativize(basePath, vf.getPath());
         int sizeBefore = results.size();
         psiFile.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
@@ -496,7 +448,7 @@ public abstract class NavigationTool extends Tool {
                 }
                 String name = named.getName();
                 String type = ToolUtils.classifyElement(element);
-                if (name != null && type != null && type.equals(typeFilter)) {
+                if (name != null && type != null && kindMatchesFilter(type, typeFilter)) {
                     int line = doc.getLineNumber(element.getTextOffset()) + 1;
                     if (seen.add(relPath + ":" + line)) {
                         results.add(String.format(FORMAT_LOCATION, relPath, line, type, name));
@@ -517,6 +469,7 @@ public abstract class NavigationTool extends Tool {
     }
 
     private static boolean kindMatchesFilter(String kind, String typeFilter) {
+        if (typeFilter == null) return true;
         return kind.equals(typeFilter)
             || (ToolUtils.ELEMENT_TYPE_METHOD.equals(typeFilter) && ToolUtils.ELEMENT_TYPE_FUNCTION.equals(kind));
     }

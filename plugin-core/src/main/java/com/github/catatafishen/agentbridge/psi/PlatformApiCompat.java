@@ -75,6 +75,25 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Displays a brief info message in the project's status bar.
+     *
+     * <p><b>Why extracted:</b> {@code WindowManager.getInstance().getStatusBar(Project)} returns
+     * a {@code StatusBar} whose {@code setInfo(String)} method causes "cannot resolve" errors in
+     * the IDE daemon when the development IDE version differs from the target SDK. The Gradle build
+     * compiles cleanly against the target SDK. By centralising this call here, daemon errors are
+     * confined to this class and the rest of the codebase stays clean.</p>
+     *
+     * @param project the project whose status bar should receive the message
+     * @param message the info text to display
+     */
+    public static void showStatusBarInfo(@NotNull Project project, @NotNull String message) {
+        var statusBar = com.intellij.openapi.wm.WindowManager.getInstance().getStatusBar(project);
+        if (statusBar != null) {
+            statusBar.setInfo(message);
+        }
+    }
+
+    /**
      * Returns {@code true} when the IDE is running as the JetBrains thin client (Gateway remote-dev
      * client side, i.e., the laptop side of a remote-development session).
      *
