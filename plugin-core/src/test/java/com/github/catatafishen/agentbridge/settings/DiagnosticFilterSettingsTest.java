@@ -100,11 +100,18 @@ class DiagnosticFilterSettingsTest {
     }
 
     @Test
+    @DisplayName("TEXT_ATTRIBUTES severity always excluded regardless of myVal")
+    void textAttributesAlwaysExcluded() {
+        // In IntelliJ, TEXT_ATTRIBUTES.myVal == INFORMATION.myVal == 10.
+        // They can only be distinguished by name. Verify the name-based guard works.
+        assertFalse(settings.isSeverityEnabled(HighlightSeverity.TEXT_ATTRIBUTES));
+    }
+
+    @Test
     @DisplayName("severity below INFORMATION always excluded")
     void belowInformationAlwaysExcluded() {
-        // TEXT_ATTRIBUTES has myVal = -1, below INFORMATION (0) — always excluded
-        var textAttrs = new HighlightSeverity("TEXT_ATTRIBUTES", HighlightSeverity.INFORMATION.myVal - 1);
-        assertFalse(settings.isSeverityEnabled(textAttrs));
+        var belowInfo = new HighlightSeverity("BELOW_INFO", HighlightSeverity.INFORMATION.myVal - 1);
+        assertFalse(settings.isSeverityEnabled(belowInfo));
     }
 
     @Test

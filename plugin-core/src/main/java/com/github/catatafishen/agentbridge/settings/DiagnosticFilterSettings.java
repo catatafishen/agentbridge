@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Project-level settings that control which diagnostics are surfaced to agents
@@ -49,10 +50,14 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
      * Returns {@code true} if diagnostics at the given severity level should be
      * included in MCP tool output according to the current settings.
      *
-     * <p>Only highlights below INFORMATION level (e.g. {@code TEXT_ATTRIBUTES} formatting-only
-     * entries) are unconditionally excluded — they carry no diagnostic message.</p>
+     * <p>Highlights with severity {@code TEXT_ATTRIBUTES} (pure editor-coloring, e.g.
+     * "Reassigned local variable") are unconditionally excluded — they carry no diagnostic
+     * message and are not shown in the IDE Problems panel. Note: in IntelliJ,
+     * {@code TEXT_ATTRIBUTES.myVal == INFORMATION.myVal == 10}, so they cannot be
+     * distinguished by numeric value alone; an explicit name check is required.</p>
      */
     public boolean isSeverityEnabled(@NotNull HighlightSeverity severity) {
+        if (Objects.equals(HighlightSeverity.TEXT_ATTRIBUTES.getName(), severity.getName())) return false;
         if (severity.myVal >= HighlightSeverity.ERROR.myVal) return myState.showErrors;
         if (severity.myVal >= HighlightSeverity.WARNING.myVal) return myState.showWarnings;
         if (severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal) return myState.showWeakWarnings;
