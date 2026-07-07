@@ -108,6 +108,37 @@ class DiagnosticFilterSettingsTest {
     }
 
     @Test
+    @DisplayName("GRAMMAR_ERROR severity enabled by default")
+    void grammarErrorEnabledByDefault() {
+        var grammarError = new HighlightSeverity("GRAMMAR_ERROR", HighlightSeverity.INFORMATION.myVal + 5);
+        assertTrue(settings.isSeverityEnabled(grammarError));
+    }
+
+    @Test
+    @DisplayName("STYLE_SUGGESTION severity enabled by default")
+    void styleSuggestionEnabledByDefault() {
+        var styleSuggestion = new HighlightSeverity("STYLE_SUGGESTION", HighlightSeverity.INFORMATION.myVal + 4);
+        assertTrue(settings.isSeverityEnabled(styleSuggestion));
+    }
+
+    @Test
+    @DisplayName("disabling grammar and spelling hides GRAMMAR_ERROR and STYLE_SUGGESTION")
+    void disablingGrammarHidesGrammarSeverities() {
+        settings.setShowGrammarAndSpelling(false);
+        assertFalse(settings.isSeverityEnabled(new HighlightSeverity("GRAMMAR_ERROR", HighlightSeverity.INFORMATION.myVal + 5)));
+        assertFalse(settings.isSeverityEnabled(new HighlightSeverity("STYLE_SUGGESTION", HighlightSeverity.INFORMATION.myVal + 4)));
+        assertFalse(settings.isSeverityEnabled(new HighlightSeverity("TYPO", HighlightSeverity.INFORMATION.myVal + 3)));
+    }
+
+    @Test
+    @DisplayName("disabling information does not hide grammar or spelling severities")
+    void disablingInformationDoesNotHideGrammarSeverities() {
+        settings.setShowInformation(false);
+        assertTrue(settings.isSeverityEnabled(new HighlightSeverity("GRAMMAR_ERROR", HighlightSeverity.INFORMATION.myVal + 5)));
+        assertTrue(settings.isSeverityEnabled(new HighlightSeverity("STYLE_SUGGESTION", HighlightSeverity.INFORMATION.myVal + 4)));
+    }
+
+    @Test
     @DisplayName("severity below INFORMATION always excluded")
     void belowInformationAlwaysExcluded() {
         var belowInfo = new HighlightSeverity("BELOW_INFO", HighlightSeverity.INFORMATION.myVal - 1);
