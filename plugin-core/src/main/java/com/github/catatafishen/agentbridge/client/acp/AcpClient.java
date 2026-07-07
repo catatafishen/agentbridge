@@ -14,11 +14,11 @@ import com.github.catatafishen.agentbridge.client.ClientPromptException;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.client.ClientStartException;
 import com.github.catatafishen.agentbridge.client.SlashCommandInfo;
-import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
-import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.ContentBlockSerializer;
 import com.github.catatafishen.agentbridge.model.Model;
@@ -154,12 +154,22 @@ public abstract class AcpClient extends AbstractClient {
     protected volatile boolean postTurnActive = false;
 
     /**
+     * Callback registered by {@link com.github.catatafishen.agentbridge.ui.PromptOrchestrator}
+     * before the turn starts. Held here so it survives the {@link #clearPostTurnState()} call
+     * at turn-start (which clears the previous turn's state) and is transferred to
+     * {@link #firstPostTurnCallback} in {@link #afterPromptComplete()}.
+     */
+    private final AtomicReference<Runnable> pendingPostTurnCallback = new AtomicReference<>();
+
+    /**
      * One-shot callback fired the first time an ACP message arrives after the turn has ended.
      * Cleared after firing. Used to notify the UI that background work is in progress.
      */
     private final AtomicReference<Runnable> firstPostTurnCallback = new AtomicReference<>();
 
-    /** Auto-clear future — cancels the post-turn consumer after 120s of silence. */
+    /**
+     * Auto-clear future — cancels the post-turn consumer after 120s of silence.
+     */
     private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>> postTurnClearFuture =
         new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -981,20 +991,42 @@ public abstract class AcpClient extends AbstractClient {
 
     /**
      * Called in the finally block after {@code sendPrompt} completes (success or failure).
-     * Enters post-turn mode: the consumer stays alive to route background sub-agent messages.
-     * Auto-clears after 120 seconds of silence.
-     * Override to adjust timeout or suppress post-turn mode entirely.
+     * Enters post-turn mode: transfers the pending callback registered by
+     * PromptOrchestrator into the active slot, keeps the consumer alive,
+     * and starts a 120-second inactivity timer. The timer is reset on each arriving
+     * message — see {@link #reschedulePostTurnTimer()}.
      */
     protected void afterPromptComplete() {
         postTurnActive = true;
+        // Transfer the callback that survived clearPostTurnState() at turn-start.
+        firstPostTurnCallback.set(pendingPostTurnCallback.getAndSet(null));
         postTurnClearFuture.set(AppExecutorUtil.getAppScheduledExecutorService()
             .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Resets the post-turn auto-clear timer, extending the inactivity window to 120 seconds
+     * from the most recent message. Called on every arriving message while {@link #postTurnActive}
+     * is true, so the consumer stays alive as long as the background agent keeps streaming.
+     */
+    private void reschedulePostTurnTimer() {
+        if (!postTurnActive) return;
+        // Atomically replace the old scheduled future with a new one, then cancel the old one.
+        java.util.concurrent.ScheduledFuture<?> old = postTurnClearFuture.getAndSet(
+            AppExecutorUtil.getAppScheduledExecutorService()
+                .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS));
+        if (old != null) old.cancel(false);
     }
 
     /**
      * Clears post-turn state immediately: stops routing post-turn messages, cancels the
      * auto-clear timer, and nulls the update consumer. Called when the user stops a
      * background agent, or at the start of the next turn.
+     *
+     * <p><b>Does NOT clear {@link #pendingPostTurnCallback}.</b> That field holds the
+     * callback registered by PromptOrchestrator for the <em>current</em> turn's
+     * post-turn notification. Clearing it here would break the callback when this method
+     * is called at turn-start to wipe the <em>previous</em> turn's state.
      */
     @Override
     public void clearPostTurnState() {
@@ -1007,14 +1039,9 @@ public abstract class AcpClient extends AbstractClient {
         updateConsumer.set(null);
     }
 
-    /**
-     * Registers a one-shot callback that fires the first time an ACP message arrives
-     * after the parent turn has ended (post-turn background mode). Cleared automatically
-     * after firing or at the start of the next turn.
-     */
     @Override
     public void setFirstPostTurnCallback(@Nullable Runnable callback) {
-        firstPostTurnCallback.set(callback);
+        pendingPostTurnCallback.set(callback);
     }
 
     /**
@@ -1726,32 +1753,22 @@ public abstract class AcpClient extends AbstractClient {
     protected void handleSessionUpdate(@Nullable JsonObject params) {
         if (params == null) return;
 
-        // Reset inactivity clock on every update so long turns with active streaming never time out.
+        // Reset inactivity clock on EVERY update — keeps long agentic turns alive
         lastActivityNanos = System.nanoTime();
 
         JsonObject updateObj = normalizeSessionUpdateParams(params);
 
         SessionUpdate update = messageParser.parse(updateObj);
 
-        // Config option updates refresh internal state regardless of whether a consumer is registered.
-        if (update instanceof SessionUpdate.ConfigOptionsChanged(
-            List<NewSessionResponse.SessionConfigOption> options
-        )) {
+        // Side-effects that happen regardless of whether a UI consumer is attached:
+        if (update instanceof SessionUpdate.ConfigOptionsChanged(var options)) {
             updateConfigOptionsFromNotification(options);
         }
-
-        // Command updates refresh internal state regardless of whether a consumer is registered.
-        if (update instanceof SessionUpdate.AvailableCommandsChanged(
-            List<NewSessionResponse.AvailableCommand> commands
-        )) {
+        if (update instanceof SessionUpdate.AvailableCommandsChanged(var commands)) {
             updateCommands(commands);
         }
-
-        // Session info updates (agent-pushed title) are persisted to the DB regardless of consumer.
-        if (update instanceof SessionUpdate.SessionInfoChanged(String title)
-            && title != null
-            && !title.isBlank()
-            && currentSessionId != null) {
+        if (update instanceof SessionUpdate.SessionInfoChanged(var title)
+            && title != null && !title.isBlank() && currentSessionId != null) {
             String sessionId = currentSessionId;
             AppExecutorUtil.getAppExecutorService().execute(() ->
                 ConversationService.getInstance(project).updateSessionTitle(sessionId, title));
@@ -1762,10 +1779,12 @@ public abstract class AcpClient extends AbstractClient {
             LOG.debug("Session update received but no consumer registered");
             return;
         }
-        // Fire the one-shot post-turn callback on the first message that arrives after turn end.
+        // Fire the one-shot post-turn callback on the first message that arrives after turn end,
+        // and extend the auto-clear timer so the window stays open as long as messages keep arriving.
         if (postTurnActive) {
             Runnable cb = firstPostTurnCallback.getAndSet(null);
             if (cb != null) cb.run();
+            reschedulePostTurnTimer();
         }
         if (update != null) {
             update = processUpdate(update);
