@@ -266,14 +266,13 @@ public final class ActiveAgentManager implements Disposable {
      * Returns the agent client only if already started and healthy.
      * Does NOT trigger lazy start — returns {@code null} if the client is not ready.
      * Use this from EDT-sensitive code paths that must not block.
+     *
+     * @deprecated Use {@link #getClientIfRunning()}
      */
+    @Deprecated
     @Nullable
     public AbstractClient getClientIfReady() {
-        AbstractClient client = acpClient;
-        if (!started || client == null || !client.isHealthy()) {
-            return null;
-        }
-        return client;
+        return getClientIfRunning();
     }
 
     /**
@@ -309,7 +308,7 @@ public final class ActiveAgentManager implements Disposable {
      */
     @Nullable
     public AbstractClient getClientIfRunning() {
-        if (started && acpClient != null && acpClient.isHealthy()) {
+        if (isClientHealthy()) {
             return acpClient;
         }
         return null;
@@ -317,7 +316,7 @@ public final class ActiveAgentManager implements Disposable {
 
     @Nullable
     public String checkAuthentication() {
-        if (started && acpClient != null && acpClient.isHealthy()) {
+        if (isClientHealthy()) {
             return acpClient.checkAuthentication();
         }
         // No pre-start credential probing — auth state is observed at runtime from the
@@ -329,7 +328,7 @@ public final class ActiveAgentManager implements Disposable {
      * Start the agent process for the active profile.
      */
     public synchronized void start() {
-        if (started && acpClient != null && acpClient.isHealthy()) {
+        if (isClientHealthy()) {
             LOG.debug("Agent client already running for " + getActiveProfile().getDisplayName());
             return;
         }
