@@ -25,6 +25,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
     private var showErrors = true
     private var showWarnings = true
     private var showWeakWarnings = true
+    private var showGrammarAndSpelling = true
     private var showInformation = true
 
     private val tableModel = InspectionIdsTableModel()
@@ -47,6 +48,10 @@ class DiagnosticFilterConfigurable(private val project: Project) :
             row {
                 checkBox("Weak warnings")
                     .bindSelected({ showWeakWarnings }) { showWeakWarnings = it }
+            }
+            row {
+                checkBox("Grammar and spelling (Grazie / SpellChecker)")
+                    .bindSelected({ showGrammarAndSpelling }) { showGrammarAndSpelling = it }
             }
             row {
                 checkBox("Information")
@@ -93,6 +98,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
             (((showErrors != s.isShowErrors)
                 || (showWarnings != s.isShowWarnings)
                 || (showWeakWarnings != s.isShowWeakWarnings)
+                || (showGrammarAndSpelling != s.isShowGrammarAndSpelling)
                 || (showInformation != s.isShowInformation)
                 || (tableModel.toList() != s.suppressedInspectionIds)))
         }
@@ -101,6 +107,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
             s.isShowErrors = showErrors
             s.isShowWarnings = showWarnings
             s.isShowWeakWarnings = showWeakWarnings
+            s.isShowGrammarAndSpelling = showGrammarAndSpelling
             s.isShowInformation = showInformation
             s.suppressedInspectionIds = tableModel.toList()
         }
@@ -112,6 +119,7 @@ class DiagnosticFilterConfigurable(private val project: Project) :
         showErrors = s.isShowErrors
         showWarnings = s.isShowWarnings
         showWeakWarnings = s.isShowWeakWarnings
+        showGrammarAndSpelling = s.isShowGrammarAndSpelling
         showInformation = s.isShowInformation
         tableModel.clear()
         s.suppressedInspectionIds.forEach { tableModel.addRow(it) }

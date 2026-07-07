@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Project-level settings that control which diagnostics are surfaced to agents
@@ -27,6 +28,21 @@ import java.util.Objects;
 @Service(Service.Level.PROJECT)
 @State(name = "DiagnosticFilterSettings", storages = @Storage("agentbridge-diagnostic-filter.xml"))
 public final class DiagnosticFilterSettings implements PersistentStateComponent<DiagnosticFilterSettings.State> {
+
+    /**
+     * Severity names registered by natural-language analysis plugins (Grazie, SpellChecker).
+     * These are checked by name because their numeric {@code myVal} sits between
+     * {@code INFORMATION.myVal} (10) and {@code WEAK_WARNING.myVal} (200), so they hit
+     * the INFORMATION check in {@link #isSeverityEnabled} — without an explicit guard,
+     * disabling INFORMATION would also silence grammar and spelling suggestions.
+     *
+     * <p>Names sourced from {@code com.intellij.grazie.ide.TextProblemSeverities}
+     * ({@code GRAMMAR_ERROR}, {@code STYLE_SUGGESTION}, {@code STYLE_ERROR},
+     * {@code STYLE_WARNING}) and
+     * {@code com.intellij.spellchecker.SpellCheckerSeveritiesProvider} ({@code TYPO}).</p>
+     */
+    private static final Set<String> GRAMMAR_SPELLING_SEVERITY_NAMES =
+        Set.of("GRAMMAR_ERROR", "STYLE_SUGGESTION", "STYLE_ERROR", "STYLE_WARNING", "TYPO");
 
     private State myState = new State();
 
@@ -50,14 +66,19 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
      * Returns {@code true} if diagnostics at the given severity level should be
      * included in MCP tool output according to the current settings.
      *
-     * <p>Highlights with severity {@code TEXT_ATTRIBUTES} (pure editor-coloring, e.g.
-     * "Reassigned local variable") are unconditionally excluded — they carry no diagnostic
-     * message and are not shown in the IDE Problems panel. Note: in IntelliJ,
-     * {@code TEXT_ATTRIBUTES.myVal == INFORMATION.myVal == 10}, so they cannot be
-     * distinguished by numeric value alone; an explicit name check is required.</p>
+     * <p>Special cases handled by name before numeric comparison:</p>
+     * <ul>
+     *   <li>{@code TEXT_ATTRIBUTES} — unconditionally excluded (pure editor coloring,
+     *       {@code myVal == INFORMATION.myVal == 10}, indistinguishable numerically).</li>
+     *   <li>Grazie/SpellChecker severities ({@code GRAMMAR_ERROR}, {@code STYLE_SUGGESTION},
+     *       {@code TYPO}, etc.) — controlled by {@code showGrammarAndSpelling}; their
+     *       {@code myVal} falls between {@code INFORMATION} and {@code WEAK_WARNING}, so
+     *       without this check they would be silenced whenever INFORMATION is disabled.</li>
+     * </ul>
      */
     public boolean isSeverityEnabled(@NotNull HighlightSeverity severity) {
         if (Objects.equals(HighlightSeverity.TEXT_ATTRIBUTES.getName(), severity.getName())) return false;
+        if (GRAMMAR_SPELLING_SEVERITY_NAMES.contains(severity.getName())) return myState.showGrammarAndSpelling;
         if (severity.myVal >= HighlightSeverity.ERROR.myVal) return myState.showErrors;
         if (severity.myVal >= HighlightSeverity.WARNING.myVal) return myState.showWarnings;
         if (severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal) return myState.showWeakWarnings;
@@ -73,37 +94,20 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
         return myState.suppressedInspectionIds.contains(inspectionId);
     }
 
-    public boolean isShowErrors() {
-        return myState.showErrors;
-    }
+    public boolean isShowErrors() { return myState.showErrors; }
+    public void setShowErrors(boolean v) { myState.showErrors = v; }
 
-    public void setShowErrors(boolean v) {
-        myState.showErrors = v;
-    }
+    public boolean isShowWarnings() { return myState.showWarnings; }
+    public void setShowWarnings(boolean v) { myState.showWarnings = v; }
 
-    public boolean isShowWarnings() {
-        return myState.showWarnings;
-    }
+    public boolean isShowWeakWarnings() { return myState.showWeakWarnings; }
+    public void setShowWeakWarnings(boolean v) { myState.showWeakWarnings = v; }
 
-    public void setShowWarnings(boolean v) {
-        myState.showWarnings = v;
-    }
+    public boolean isShowGrammarAndSpelling() { return myState.showGrammarAndSpelling; }
+    public void setShowGrammarAndSpelling(boolean v) { myState.showGrammarAndSpelling = v; }
 
-    public boolean isShowWeakWarnings() {
-        return myState.showWeakWarnings;
-    }
-
-    public void setShowWeakWarnings(boolean v) {
-        myState.showWeakWarnings = v;
-    }
-
-    public boolean isShowInformation() {
-        return myState.showInformation;
-    }
-
-    public void setShowInformation(boolean v) {
-        myState.showInformation = v;
-    }
+    public boolean isShowInformation() { return myState.showInformation; }
+    public void setShowInformation(boolean v) { myState.showInformation = v; }
 
     public @NotNull List<String> getSuppressedInspectionIds() {
         return Collections.unmodifiableList(myState.suppressedInspectionIds);
@@ -114,75 +118,51 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
     }
 
     @Override
-    public @NotNull State getState() {
-        return myState;
-    }
+    public @NotNull State getState() { return myState; }
 
     @Override
-    public void loadState(@NotNull State state) {
-        myState = state;
-    }
+    public void loadState(@NotNull State state) { myState = state; }
 
     public static final class State {
 
         private boolean showErrors = true;
         private boolean showWarnings = true;
-        /**
-         * Weak warnings enabled by default to match existing {@code get_highlights} behaviour.
-         * Users with noisy codebases can uncheck this to reduce agent context.
-         */
+        /** Weak warnings shown by default to match existing {@code get_highlights} behaviour. */
         private boolean showWeakWarnings = true;
         /**
-         * Information-level highlights included by default. These can be useful context
-         * (e.g. unused parameter hints, return value annotations). Users with very noisy
-         * codebases can uncheck this.
+         * Grammar and spelling highlights (Grazie, SpellChecker) shown by default.
+         * Controlled separately from {@code showInformation} because their severity
+         * {@code myVal} is numerically between INFORMATION and WEAK_WARNING — they would
+         * otherwise be silenced when INFORMATION is disabled.
+         */
+        private boolean showGrammarAndSpelling = true;
+        /**
+         * Information-level code style hints included by default. Can be noisy on large
+         * codebases — uncheck to focus on errors, warnings, and grammar/spelling only.
          */
         private boolean showInformation = true;
         /**
          * SpellCheckingInspection suppressed by default — spell corrections are human-quality
-         * work that creates noise for agents and crowds out real issues. Users who want agents
-         * to fix typos can remove this entry.
+         * work that creates noise for agents. Remove this entry to let typos reach the agent.
          */
         private List<String> suppressedInspectionIds = new ArrayList<>(List.of("SpellCheckingInspection"));
 
-        public boolean isShowErrors() {
-            return showErrors;
-        }
+        public boolean isShowErrors() { return showErrors; }
+        public void setShowErrors(boolean v) { this.showErrors = v; }
 
-        public void setShowErrors(boolean v) {
-            this.showErrors = v;
-        }
+        public boolean isShowWarnings() { return showWarnings; }
+        public void setShowWarnings(boolean v) { this.showWarnings = v; }
 
-        public boolean isShowWarnings() {
-            return showWarnings;
-        }
+        public boolean isShowWeakWarnings() { return showWeakWarnings; }
+        public void setShowWeakWarnings(boolean v) { this.showWeakWarnings = v; }
 
-        public void setShowWarnings(boolean v) {
-            this.showWarnings = v;
-        }
+        public boolean isShowGrammarAndSpelling() { return showGrammarAndSpelling; }
+        public void setShowGrammarAndSpelling(boolean v) { this.showGrammarAndSpelling = v; }
 
-        public boolean isShowWeakWarnings() {
-            return showWeakWarnings;
-        }
+        public boolean isShowInformation() { return showInformation; }
+        public void setShowInformation(boolean v) { this.showInformation = v; }
 
-        public void setShowWeakWarnings(boolean v) {
-            this.showWeakWarnings = v;
-        }
-
-        public boolean isShowInformation() {
-            return showInformation;
-        }
-
-        public void setShowInformation(boolean v) {
-            this.showInformation = v;
-        }
-
-        public List<String> getSuppressedInspectionIds() {
-            return suppressedInspectionIds;
-        }
-
-        public void setSuppressedInspectionIds(List<String> ids) {
-            this.suppressedInspectionIds = ids;
-        }
+        public List<String> getSuppressedInspectionIds() { return suppressedInspectionIds; }
+        public void setSuppressedInspectionIds(List<String> ids) { this.suppressedInspectionIds = ids; }
     }
 }
