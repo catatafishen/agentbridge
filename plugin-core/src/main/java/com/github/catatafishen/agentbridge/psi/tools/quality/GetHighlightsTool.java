@@ -31,9 +31,9 @@ public final class GetHighlightsTool extends QualityTool {
 
     private static final Logger LOG = Logger.getInstance(GetHighlightsTool.class);
     /**
-     * Editor banners that are produced by AgentBridge itself (e.g. the agent-edit review
-     * banner) are noise for the agent — the agent generated the edit and the human-facing
-     * banner exists purely so the user can review later. Filter them out by prefix.
+     * Editor banners that are produced by AgentBridge itself (e.g., the agent-edit review
+     * banner) are noise for the agent — the agent generated the edit, and the human-facing
+     * banner exists purely so the user can review later. Filter them out by a prefix.
      * Git-side gates (AgentEditSession.isGateActive) still enforce commit/push blocking
      * when there are pending changes, so the agent doesn't need the banner to behave correctly.
      */
@@ -110,13 +110,9 @@ public final class GetHighlightsTool extends QualityTool {
         if (endLine > 0 && startLine == 0) {
             startLine = 1;
         }
-        if (startLine < 0 || endLine < 0) {
-            return "Error: start_line and end_line are 1-based line numbers when provided; "
-                + "omit the parameter (or pass 0) to leave that bound unset.";
-        }
-        if (endLine > 0 && startLine > endLine) {
-            return "Error: Invalid range — start_line (" + startLine + ") > end_line (" + endLine + "). Lines are 1-based.";
-        }
+        String rangeError = validateLineRange(startLine, endLine);
+        if (rangeError != null) return rangeError;
+
         final int startLineFinal = startLine;
         final int endLineFinal = endLine;
 
@@ -124,15 +120,7 @@ public final class GetHighlightsTool extends QualityTool {
             return ERROR_IDE_INITIALIZING;
         }
 
-        // For single-file queries, ensure the file is open in an editor so the daemon
-        // produces highlights. Without this, files edited with follow-agent mode off
-        // may never get daemon analysis.
-        if (pathStr != null && !pathStr.isEmpty()) {
-            VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
-            if (vf != null) {
-                ensureDaemonAnalyzed(vf);
-            }
-        }
+        ensureFileAnalyzed(pathStr);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -144,6 +132,25 @@ public final class GetHighlightsTool extends QualityTool {
             }
         });
         return resultFuture.get(30, TimeUnit.SECONDS);
+    }
+
+    private String validateLineRange(int startLine, int endLine) {
+        if (startLine < 0 || endLine < 0) {
+            return "Error: start_line and end_line are 1-based line numbers when provided; "
+                + "omit the parameter (or pass 0) to leave that bound unset.";
+        }
+        if (endLine > 0 && startLine > endLine) {
+            return "Error: Invalid range — start_line (" + startLine + ") > end_line (" + endLine + "). Lines are 1-based.";
+        }
+        return null;
+    }
+
+    private void ensureFileAnalyzed(String pathStr) {
+        if (pathStr == null || pathStr.isEmpty()) return;
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
+        if (vf != null) {
+            ensureDaemonAnalyzed(vf);
+        }
     }
 
     private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
@@ -160,51 +167,50 @@ public final class GetHighlightsTool extends QualityTool {
 
             List<String> problems = new ArrayList<>();
             int[] counts = analyzeFilesForHighlights(allFiles, limit, startLine, endLine, problems);
-
-            if (problems.isEmpty()) {
-                result.append(String.format("No highlights found in %d files analyzed (0 files with issues). " +
-                        "Note: This reads cached daemon analysis results from already-analyzed files. " +
-                        "For comprehensive code quality analysis, use run_inspections instead.",
-                    allFiles.size()));
-            } else {
-                result.append(String.format("Found %d problems across %d files (showing up to %d):%n%n",
-                    counts[0], counts[1], limit));
-                result.append(String.join("\n", problems));
-                if (counts[0] >= limit) {
-                    result.append(String.format(
-                        "%n%n[Results capped at %d. Use start_line and end_line to focus on a specific " +
-                            "section (e.g. a single method or class) to get complete coverage for that range.]", limit));
-                }
-            }
+            result.append(buildHighlightsSummary(counts, problems, limit, allFiles.size()));
         });
         if (resultFuture.isDone()) return;
 
-        // Collect editor notifications (needs EDT for Swing components)
-        if (pathStr != null && !pathStr.isEmpty()) {
-            try {
-                List<String> notifications = collectEditorNotifications(pathStr);
-                if (!notifications.isEmpty()) {
-                    result.append("\n\n--- Editor Notifications ---\n");
-                    result.append(String.join("\n", notifications));
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                LOG.info("Interrupted while collecting editor notifications: " + e.getMessage());
-            } catch (ExecutionException | TimeoutException e) {
-                LOG.info("Failed to collect editor notifications: " + e.getMessage());
-            }
-        }
-
+        appendEditorNotificationsIfPresent(result, pathStr);
         resultFuture.complete(result.toString());
     }
 
-    /**
-     * Ensures the target file is open in an editor and daemon analysis has completed.
-     * When follow-agent mode is off, files may be edited programmatically without ever
-     * being opened in an editor tab, so the daemon never produces highlights for them.
-     * This method opens the file silently (no focus), waits for the daemon to finish,
-     * then closes the file again if follow-agent mode is off (to avoid polluting the editor).
-     */
+    private String buildHighlightsSummary(int[] counts, List<String> problems, int limit, int fileCount) {
+        if (problems.isEmpty()) {
+            return String.format(
+                "No highlights found in %d files analyzed (0 files with issues). " +
+                    "Note: This reads cached daemon analysis results from already-analyzed files. " +
+                    "For comprehensive code quality analysis, use run_inspections instead.",
+                fileCount);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("Found %d problems across %d files (showing up to %d):%n%n",
+            counts[0], counts[1], limit));
+        sb.append(String.join("\n", problems));
+        if (counts[0] >= limit) {
+            sb.append(String.format(
+                "%n%n[Results capped at %d. Use start_line and end_line to focus on a specific " +
+                    "section (e.g. a single method or class) to get complete coverage for that range.]", limit));
+        }
+        return sb.toString();
+    }
+
+    private void appendEditorNotificationsIfPresent(StringBuilder result, String pathStr) {
+        if (pathStr == null || pathStr.isEmpty()) return;
+        try {
+            List<String> notifications = collectEditorNotifications(pathStr);
+            if (!notifications.isEmpty()) {
+                result.append("\n\n--- Editor Notifications ---\n");
+                result.append(String.join("\n", notifications));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.info("Interrupted while collecting editor notifications: " + e.getMessage());
+        } catch (ExecutionException | TimeoutException e) {
+            LOG.info("Failed to collect editor notifications: " + e.getMessage());
+        }
+    }
+
     private void ensureDaemonAnalyzed(@NotNull VirtualFile vf) {
         // Check on EDT whether the file is already open
         CompletableFuture<Boolean> openCheck = new CompletableFuture<>();
@@ -251,7 +257,7 @@ public final class GetHighlightsTool extends QualityTool {
             // Wait for the daemon to finish analysis. We deliberately do NOT call
             // DaemonCodeAnalyzer.restart() here — doing so clears any cached highlights
             // and forces a full re-analysis, which breaks CLion C++ files whose Clang-Tidy
-            // pass takes longer than our wait timeout. Opening the file is sufficient to
+            // pass takes longer than our wait timeout. Opening the file is enough to
             // trigger daemon analysis automatically if the file hasn't been analyzed yet.
             if (!latch.await(15, TimeUnit.SECONDS)) {
                 LOG.info("get_highlights: daemon analysis timed out for " + vf.getPath());
@@ -263,13 +269,19 @@ public final class GetHighlightsTool extends QualityTool {
                 + ": " + e.getMessage());
         } finally {
             disconnect.run();
-            // Close the file again if we opened it and follow-agent mode is off,
-            // to avoid leaving stale editor tabs from silent background analysis.
-            if (!followAgent) {
-                EdtUtil.invokeLater(() ->
-                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                        .closeFile(vf));
-            }
+            closeFileIfNotFollowing(vf, followAgent);
+        }
+    }
+
+    /**
+     * Closes the file in the editor if follow-agent mode is off.
+     * Called from {@link #ensureDaemonAnalyzed} after analysis completes to avoid leaving
+     * stale editor tabs from silent background analysis.
+     */
+    private void closeFileIfNotFollowing(@NotNull VirtualFile vf, boolean followAgent) {
+        if (!followAgent) {
+            EdtUtil.invokeLater(() ->
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).closeFile(vf));
         }
     }
 
@@ -302,25 +314,30 @@ public final class GetHighlightsTool extends QualityTool {
 
             for (var h : highlights) {
                 if (added >= remaining) break;
-                var severity = h.getSeverity();
-                if (h.getDescription() == null || h.getDescription().isBlank()) continue;
-                if (!filter.shouldInclude(h)) continue;
-                int line = doc.getLineNumber(h.getStartOffset()) + 1;
-                if (startLine > 0 && (line < startLine || (endLine > 0 && line > endLine))) continue;
-                StringBuilder entry = new StringBuilder(
-                    String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription()));
-                List<String> fixes = collectQuickFixNames(h);
-                // One fix per line with plain "Fix:" prefix so action names are unambiguous
-                for (String fix : fixes) {
-                    entry.append("\n    Fix: ").append(fix);
+                String description = h.getDescription();
+                if (description != null && !description.isBlank() && filter.shouldInclude(h)) {
+                    int line = doc.getLineNumber(h.getStartOffset()) + 1;
+                    if (isInLineRange(line, startLine, endLine)) {
+                        StringBuilder entry = new StringBuilder(
+                            String.format(FORMAT_LOCATION, relPath, line, h.getSeverity().getName(), description));
+                        List<String> fixes = collectQuickFixNames(h);
+                        // One fix per line with plain "Fix:" prefix so action names are unambiguous
+                        for (String fix : fixes) {
+                            entry.append("\n    Fix: ").append(fix);
+                        }
+                        problems.add(entry.toString());
+                        added++;
+                    }
                 }
-                problems.add(entry.toString());
-                added++;
             }
         } catch (Exception e) {
             LOG.warn("Failed to analyze file: " + relPath, e);
         }
         return added;
+    }
+
+    private static boolean isInLineRange(int line, int startLine, int endLine) {
+        return startLine == 0 || (line >= startLine && (endLine == 0 || line <= endLine));
     }
 
     /**
