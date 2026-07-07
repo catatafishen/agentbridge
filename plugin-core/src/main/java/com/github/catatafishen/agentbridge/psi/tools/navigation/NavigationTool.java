@@ -161,7 +161,7 @@ public abstract class NavigationTool extends Tool {
             scope, simpleName, UsageSearchContext.IN_CODE, true
         );
 
-        if (isQualified && candidates.size() > 1) {
+        if (isQualified) {
             String[] qualifierTokens = qualifierTokensOf(name);
             List<PsiElement> filtered = candidates.stream()
                 .filter(e -> matchesQualifier(e, qualifierTokens))
