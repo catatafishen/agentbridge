@@ -94,7 +94,7 @@ public final class HookToolHandler extends AbstractHookHandler {
         }
 
         try {
-            String result = def.execute(arguments, null);
+            String result = def.execute(arguments, null).contentOrEmpty();
             return successResponse(result);
         } catch (Exception e) {
             LOG.warn("Hook tool call failed: " + toolId, e);

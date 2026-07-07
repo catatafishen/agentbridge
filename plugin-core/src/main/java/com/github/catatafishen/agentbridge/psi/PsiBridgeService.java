@@ -297,11 +297,11 @@ public final class PsiBridgeService implements Disposable {
         FileAccessTracker.clear(project);
     }
 
-    public String callTool(String toolName, JsonObject arguments) {
+    public ToolResult callTool(String toolName, JsonObject arguments) {
         return callTool(toolName, arguments, null);
     }
 
-    public String callTool(String toolName, JsonObject arguments, @Nullable String toolUseId) {
+    public ToolResult callTool(String toolName, JsonObject arguments, @Nullable String toolUseId) {
         return callTool(toolName, arguments, toolUseId, null);
     }
 
@@ -319,8 +319,8 @@ public final class PsiBridgeService implements Disposable {
      * @param toolUseId         optional tool-use ID for direct correlation (Claude)
      * @param originalArguments pre-hook arguments for hash-based correlation, or {@code null}
      */
-    public String callTool(String toolName, JsonObject arguments, @Nullable String toolUseId,
-                           @Nullable JsonObject originalArguments) {
+    public ToolResult callTool(String toolName, JsonObject arguments, @Nullable String toolUseId,
+                               @Nullable JsonObject originalArguments) {
         LOG.info("PSI Bridge: calling " + toolName + " with args: " + arguments);
         long inputSize = arguments != null ? arguments.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
 
@@ -328,7 +328,7 @@ public final class PsiBridgeService implements Disposable {
         if (def == null || !def.hasExecutionHandler()) {
             String err = "Unknown tool: " + toolName;
             fireToolCallEvent(toolName, System.currentTimeMillis(), false, inputSize, 0, null, err);
-            return err;
+            return ToolResult.error(err);
         }
 
         String categoryName = def.category().name();
@@ -358,7 +358,7 @@ public final class PsiBridgeService implements Disposable {
 
         try {
             String preflightError = acquireExecutionContext(req, isWriteOp, needsGlobalLock, writeRegistered);
-            if (preflightError != null) return preflightError;
+            if (preflightError != null) return ToolResult.error(preflightError);
 
             return runToolExecution(req, requiresSync, needsGlobalLock, writeRegistered);
         } finally {
@@ -419,18 +419,10 @@ public final class PsiBridgeService implements Disposable {
         return null;
     }
 
-    /**
-     * Executes the tool inside a {@link DaemonWaiter} try-with-resources, piggybacking
-     * highlights on successful writes, and managing all error/cleanup paths via catch+finally.
-     *
-     * <p>The {@code writeRegistered} flag is shared with {@link #acquireExecutionContext}: it
-     * is set there and cleared here after the write completes. If an exception escapes before
-     * the normal unregister, the {@code finally} block performs the cleanup.</p>
-     */
     @SuppressWarnings("java:S2139") // intentional re-throw of ProcessCanceledException
-    private String runToolExecution(ToolCallRequest req,
-                                    boolean requiresSync, boolean needsGlobalLock,
-                                    java.util.concurrent.atomic.AtomicBoolean writeRegistered) {
+    private ToolResult runToolExecution(ToolCallRequest req,
+                                        boolean requiresSync, boolean needsGlobalLock,
+                                        java.util.concurrent.atomic.AtomicBoolean writeRegistered) {
         boolean success = true;
         String errorMessage = null;
         long outputSize = 0;
@@ -455,22 +447,22 @@ public final class PsiBridgeService implements Disposable {
                 errorMessage = readinessError;
                 outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
                 tracker.mcpComplete(callRecord.getRecordId(), readinessError, false);
-                return readinessError;
+                return ToolResult.error(readinessError);
             }
 
-            String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), requiresSync);
+            ToolResult toolResult = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), requiresSync);
             if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
 
-            result = appendHighlightsIfApplicable(
-                req.toolName(), result, daemonWaiter, filePathForHighlights, vfForHighlights, semaphoreReleasedEarly);
-            result = AgentNudgeService.appendNudgeToResult(result, AgentNudgeService.getInstance(project).consumePendingNudges());
-            if (result.startsWith("Error")) {
+            String content = appendHighlightsIfApplicable(
+                req.toolName(), toolResult.contentOrEmpty(), daemonWaiter, filePathForHighlights, vfForHighlights, semaphoreReleasedEarly);
+            content = AgentNudgeService.appendNudgeToResult(content, AgentNudgeService.getInstance(project).consumePendingNudges());
+            if (toolResult.isError()) {
                 success = false;
-                errorMessage = result;
+                errorMessage = content;
             }
-            outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            tracker.mcpComplete(callRecord.getRecordId(), result, !result.startsWith("Error"));
-            return result;
+            outputSize = content.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            tracker.mcpComplete(callRecord.getRecordId(), content, !toolResult.isError());
+            return toolResult.isError() ? ToolResult.error(content) : ToolResult.success(content);
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
             // The instanceof + early-return pattern is intentional: splitting into a separate
             // catch for CannotRunReadActionException would trigger IntelliJ's "PCE inheritor
@@ -480,7 +472,7 @@ public final class PsiBridgeService implements Disposable {
                 success = false;
                 errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
                 tracker.mcpComplete(callRecord.getRecordId(), errorMessage, false);
-                return errorMessage;
+                return ToolResult.error(errorMessage);
             }
             // All other PCE variants signal IDE shutdown or project disposal — must rethrow.
             throw e;
@@ -489,7 +481,7 @@ public final class PsiBridgeService implements Disposable {
             success = false;
             errorMessage = "Error: Tool execution interrupted: " + req.toolName();
             tracker.mcpComplete(callRecord.getRecordId(), errorMessage, false);
-            return errorMessage;
+            return ToolResult.error(errorMessage);
         } catch (Exception e) {
             LOG.warn("Tool call error: " + req.toolName(), e);
             success = false;
@@ -497,40 +489,26 @@ public final class PsiBridgeService implements Disposable {
             errorMessage = buildErrorWithModalDetail(
                 formatBaseErrorMessage(e, modalDetail), modalDetail);
             tracker.mcpComplete(callRecord.getRecordId(), errorMessage, false);
-            return errorMessage;
+            return ToolResult.error(errorMessage);
         } finally {
             if (writeRegistered.get()) writeBatchCoordinator.unregisterWrite();
             if (needsGlobalLock && !semaphoreReleasedEarly.get()) writeToolSemaphore.release();
             fireToolCallEvent(req.toolName(), req.startMs(), success, req.inputSize(), outputSize, req.categoryName(), errorMessage);
-            // Restore focus only if chat was active when the tool STARTED *and* is still active
-            // now. If the user switched away during execution, they made an explicit navigation
-            // decision — honouring chatWasActive alone would steal focus from wherever they went.
             if (req.chatWasActive() && isChatToolWindowActive(project)) {
                 fireFocusRestoreEvent();
             }
         }
     }
 
-    /**
-     * Acquires the per-tool sync lock (if this is a sync-category tool),
-     * executes the tool, then releases the lock in a finally block.
-     *
-     * <p>The lock is set into {@link #currentSyncLock} so that
-     * {@code AgentEditSession.awaitReviewCompletion} can yield it while blocking for user review,
-     * preventing the deadlock described in {@link #currentSyncLock}.</p>
-     *
-     * @throws Exception any exception from {@link ToolDefinition#execute} — caller handles it
-     */
-    private String executeWithSyncLock(ToolDefinition def, JsonObject arguments,
-                                       String toolName,
-                                       boolean requiresSync) throws Exception {
+    private ToolResult executeWithSyncLock(ToolDefinition def, JsonObject arguments,
+                                           String toolName,
+                                           boolean requiresSync) throws Exception {
         String argumentsHash = ToolCallTracker.computeHash(arguments);
         ReentrantLock syncLock = requiresSync
             ? toolLocks.computeIfAbsent(toolName, k -> new ReentrantLock())
             : null;
         if (syncLock != null) {
             syncLock.lock();
-            // Set AFTER locking so the ThreadLocal accurately reflects "lock currently held".
             currentSyncLock.set(syncLock);
         }
         try {
@@ -540,7 +518,6 @@ public final class PsiBridgeService implements Disposable {
                 try {
                     syncLock.unlock();
                 } finally {
-                    // Remove even if unlock() throws, so the ThreadLocal never leaks.
                     currentSyncLock.remove();
                 }
             }

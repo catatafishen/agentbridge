@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools;
 
+import com.github.catatafishen.agentbridge.psi.ToolError;
+import com.github.catatafishen.agentbridge.psi.ToolResult;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.google.gson.JsonObject;
@@ -40,11 +42,16 @@ public abstract class Tool implements ToolDefinition {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
+    public @NotNull ToolResult execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
         this.argumentsHash = argumentsHash;
         String validationError = validateRequiredParams(args);
-        if (validationError != null) return validationError;
-        return execute(args);
+        if (validationError != null) return ToolResult.error(validationError);
+        String rawResult = execute(args);
+        String warning = buildUnknownParamsWarning(args);
+        if (warning == null) return ToolResult.of(rawResult);
+        // Only prepend warning to successful results — never obscure errors
+        if (ToolError.isError(rawResult)) return ToolResult.error(rawResult);
+        return ToolResult.success(rawResult != null ? warning + rawResult : warning);
     }
 
     private @Nullable String validateRequiredParams(@NotNull JsonObject args) {
@@ -60,6 +67,22 @@ public abstract class Tool implements ToolDefinition {
         return "Error: missing required parameter(s): " + missing
             + ". Received keys: " + args.keySet()
             + ". Check the tool schema and retry with all required parameters.";
+    }
+
+    private @Nullable String buildUnknownParamsWarning(@NotNull JsonObject args) {
+        JsonObject schema = effectiveInputSchema();
+        if (schema == null) return null;
+        JsonObject properties = schema.getAsJsonObject(KEY_PROPERTIES);
+        if (properties == null) return null;
+        java.util.Set<String> unknownParams = new java.util.LinkedHashSet<>(args.keySet());
+        unknownParams.removeAll(properties.keySet());
+        if (unknownParams.isEmpty()) return null;
+        return "NOTE: Unknown parameter(s) " + unknownParams + " were passed to tool '" + id() + "' and ignored.\n\n"
+            + "Correct usage for '" + id() + "':\n"
+            + "Description: " + description() + "\n\n"
+            + "Input schema:\n"
+            + new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(schema)
+            + "\n\n---\n\n";
     }
 
     // category() is inherited from ToolDefinition — subclasses must implement it

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.psi.ToolResult;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -330,13 +331,9 @@ public interface ToolDefinition {
         return null;
     }
 
-    /**
-     * Executes the tool with the given JSON arguments and an optional hash for identification.
-     * The hash can be used by the tool to update its own chip in the UI.
-     */
     @SuppressWarnings("java:S112")
-    default @Nullable String execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
-        return execute(args);
+    default @NotNull ToolResult execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
+        return ToolResult.of(execute(args));
     }
 
     /**

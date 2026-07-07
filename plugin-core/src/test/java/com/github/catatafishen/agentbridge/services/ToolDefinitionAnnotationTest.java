@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.psi.ToolResult;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.DisplayName;
@@ -140,7 +141,9 @@ class ToolDefinitionAnnotationTest {
         @Test
         @DisplayName("execute with hash delegates to execute without hash")
         void executeWithHash() throws Exception {
-            assertNull(stub(false).execute(new JsonObject(), "abc123"));
+            ToolResult result = stub(false).execute(new JsonObject(), "abc123");
+            assertNull(result.content());
+            assertFalse(result.isError());
         }
 
         @Test
