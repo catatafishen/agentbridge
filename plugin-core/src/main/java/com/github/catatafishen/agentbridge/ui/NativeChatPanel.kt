@@ -814,8 +814,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     title = data.title,
                     kind = data.kind,
                     toolName = data.rawToolName,
+                    toolDisplayName = toolDef?.displayName(),
                     paramsJson = data.arguments,
                     resultPanel = resultPanel,
+                    outputContent = data.result,
                     toolDescription = mcpDescription,
                     autoDenied = data.autoDenied,
                     denialReason = data.denialReason,
@@ -1538,11 +1540,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 is EntryData.ToolCall -> {
                     val status = entry.status ?: "complete"
                     addToolCallEntry(entry.entryId, entry.title, entry.arguments, entry.kind, entry.pluginTool != null)
-                    updateToolCall(entry.entryId, status, ChatPanelApi.ToolCallUpdate(
-                        details = entry.result,
-                        autoDenied = entry.autoDenied,
-                        denialReason = entry.denialReason,
-                    ))
+                    updateToolCall(
+                        entry.entryId, status, ChatPanelApi.ToolCallUpdate(
+                            details = entry.result,
+                            autoDenied = entry.autoDenied,
+                            denialReason = entry.denialReason,
+                        )
+                    )
                 }
 
                 is EntryData.SubAgent -> {

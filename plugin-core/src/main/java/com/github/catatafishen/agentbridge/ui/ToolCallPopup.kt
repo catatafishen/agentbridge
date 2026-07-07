@@ -13,7 +13,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
-import java.util.Locale
+import java.util.*
 import javax.swing.*
 
 internal object ToolCallPopup {
@@ -36,8 +36,10 @@ internal object ToolCallPopup {
         val title: String,
         val kind: String,
         val toolName: String,
+        val toolDisplayName: String? = null,
         val paramsJson: String?,
         val resultPanel: JComponent,
+        val outputContent: String? = null,
         val toolDescription: String? = null,
         val autoDenied: Boolean = false,
         val denialReason: String? = null,
@@ -143,48 +145,94 @@ internal object ToolCallPopup {
             panel.add(Box.createVerticalStrut(JBUI.scale(12)))
         }
 
-        if (request.toolDescription != null) {
-            panel.add(sectionLabel("AgentBridge MCP tool description"))
-            panel.add(Box.createVerticalStrut(JBUI.scale(2)))
-            val descLabel = JBLabel("<html><body style='width:580px'>${request.toolDescription}</body></html>").apply {
-                foreground = UIUtil.getContextHelpForeground()
-                border = JBUI.Borders.emptyBottom(6)
-                alignmentX = JComponent.LEFT_ALIGNMENT
-            }
-            panel.add(descLabel)
-            panel.add(JSeparator().apply {
-                alignmentX = JComponent.LEFT_ALIGNMENT
-                maximumSize = Dimension(Int.MAX_VALUE, 1)
-            })
-            panel.add(Box.createVerticalStrut(JBUI.scale(4)))
-        }
+        // Tool identity: bold name + (raw name), then description or "External"
+        val displayName = request.toolDisplayName ?: request.toolName
+        panel.add(JBLabel("$displayName (${request.toolName})").apply {
+            font = JBUI.Fonts.label().asBold()
+            border = JBUI.Borders.emptyBottom(2)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        })
+        panel.add(JBLabel("<html><body style='width:580px'>${request.toolDescription ?: "External"}</body></html>").apply {
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyBottom(6)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        })
+        panel.add(separator())
 
-        panel.add(sectionLabel("Inputs"))
-        panel.add(Box.createVerticalStrut(JBUI.scale(2)))
-        val paramsComponent = ToolCallParamsPanel.build(request.toolName, request.paramsJson, request.project, bg)
+        // Inputs section header with inline size
+        val inputChars = request.paramsJson?.length ?: 0
+        val inputTokens = inputChars / 4
+        panel.add(sectionHeaderRow("Inputs", "$inputChars chars (~$inputTokens tokens)"))
+        val paramsComponent = ToolCallParamsPanel.build(request.paramsJson, request.project, bg)
         paramsComponent.alignmentX = JComponent.LEFT_ALIGNMENT
         panel.add(paramsComponent)
+        if (!request.paramsJson.isNullOrBlank()) {
+            panel.add(Box.createVerticalStrut(JBUI.scale(4)))
+            panel.add(copyLink("Copy raw JSON", request.paramsJson))
+        }
         panel.add(Box.createVerticalStrut(JBUI.scale(6)))
-        panel.add(JSeparator().apply {
-            alignmentX = JComponent.LEFT_ALIGNMENT
-            maximumSize = Dimension(Int.MAX_VALUE, 1)
-        })
+        panel.add(separator())
 
-        panel.add(sectionLabel("Output"))
+        // Output section header with inline size
+        val outputChars = request.outputContent?.length ?: 0
+        val outputTokens = outputChars / 4
+        val outputSuffix = if (request.outputContent != null) "$outputChars chars (~$outputTokens tokens)" else null
+        panel.add(sectionHeaderRow("Output", outputSuffix))
         request.resultPanel.alignmentX = JComponent.LEFT_ALIGNMENT
         panel.add(request.resultPanel)
+        if (!request.outputContent.isNullOrBlank()) {
+            panel.add(Box.createVerticalStrut(JBUI.scale(4)))
+            panel.add(copyLink("Copy raw", request.outputContent))
+        }
 
         panel.add(Box.createVerticalGlue())
-
         return panel
     }
 
-    private fun sectionLabel(text: String): JBLabel {
-        return JBLabel(text).apply {
-            foreground = UIUtil.getContextHelpForeground()
-            font = JBUI.Fonts.smallFont().asBold()
-            border = JBUI.Borders.empty(4, 0, 6, 0)
+    private fun sectionHeaderRow(label: String, suffix: String?): JPanel {
+        return JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
             alignmentX = JComponent.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(4, 0, 6, 0)
+            add(JBLabel(label).apply {
+                foreground = UIUtil.getContextHelpForeground()
+                font = JBUI.Fonts.smallFont().asBold()
+            })
+            if (suffix != null) {
+                add(Box.createHorizontalStrut(JBUI.scale(8)))
+                add(JBLabel(suffix).apply {
+                    foreground = UIUtil.getContextHelpForeground()
+                    font = JBUI.Fonts.smallFont()
+                })
+            }
+            add(Box.createHorizontalGlue())
+        }
+    }
+
+    private fun separator(): JSeparator = JSeparator().apply {
+        alignmentX = JComponent.LEFT_ALIGNMENT
+        maximumSize = Dimension(Int.MAX_VALUE, 1)
+    }
+
+    private fun copyLink(text: String, content: String): JComponent {
+        return JBLabel("<html><a href=''>$text</a></html>").apply {
+            toolTipText = "Copy to clipboard"
+            alignmentX = JComponent.LEFT_ALIGNMENT
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                    java.awt.Toolkit.getDefaultToolkit().systemClipboard
+                        .setContents(java.awt.datatransfer.StringSelection(content), null)
+                }
+
+                override fun mouseEntered(e: java.awt.event.MouseEvent) {
+                    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+                }
+
+                override fun mouseExited(e: java.awt.event.MouseEvent) {
+                    cursor = java.awt.Cursor.getDefaultCursor()
+                }
+            })
         }
     }
 }

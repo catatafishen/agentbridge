@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.ui.ToolCallParamsPanel.MAX_VALUE_DISPLAY_LENGTH
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
-import java.util.Locale
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -17,6 +17,7 @@ import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.nio.file.Paths
+import java.util.*
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -30,9 +31,6 @@ import javax.swing.JPanel
  * - **Commit hash** (7–40 hex chars with at least one letter a–f): styled as code, click-to-copy
  * - **Multi-line text**: first-line preview with line count; full text in tooltip
  * - **Plain text**: truncated to [MAX_VALUE_DISPLAY_LENGTH] chars; full text in tooltip
- *
- * A synthetic `tool` row is always prepended (showing the raw API tool name), and an
- * `input size` row is always appended (showing char count and rough token estimate at 4 chars/token).
  */
 internal object ToolCallParamsPanel {
 
@@ -96,20 +94,16 @@ internal object ToolCallParamsPanel {
     /**
      * Builds the parameters panel for display in [ToolCallPopup].
      *
-     * @param toolName   Raw API tool name (e.g. `read_file`), shown as the first row.
      * @param paramsJson Raw JSON arguments string, or null when the tool takes no arguments.
      * @param project    IDE project context (used for file navigation).
      * @param bg         Background colour inherited from the popup panel.
      */
-    fun build(toolName: String, paramsJson: String?, project: Project, bg: Color): JComponent {
+    fun build(paramsJson: String?, project: Project, bg: Color): JComponent {
         val grid = JBPanel<JBPanel<*>>(GridBagLayout()).apply {
             background = bg
             alignmentX = Component.LEFT_ALIGNMENT
         }
         var row = 0
-
-        // Tool name is always the first row
-        addRow(grid, row++, "tool", boldLabel(toolName), bg)
 
         // One row per field in the JSON object
         if (!paramsJson.isNullOrBlank()) {
@@ -128,32 +122,6 @@ internal object ToolCallParamsPanel {
                     bg
                 )
             }
-        }
-
-        // Input size is always the last row
-        val charCount = paramsJson?.length ?: 0
-        val approxTokens = charCount / 4
-        addRow(grid, row++, "input size", mutedLabel("$charCount chars (~$approxTokens tokens)"), bg)
-
-        // Copy raw JSON row
-        if (!paramsJson.isNullOrBlank()) {
-            val copyLink = JBLabel("<html><a href=''>Copy raw JSON</a></html>").apply {
-                toolTipText = "Copy the raw JSON arguments to clipboard"
-                addMouseListener(object : MouseAdapter() {
-                    override fun mouseClicked(e: MouseEvent) {
-                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(paramsJson), null)
-                    }
-
-                    override fun mouseEntered(e: MouseEvent) {
-                        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                    }
-
-                    override fun mouseExited(e: MouseEvent) {
-                        cursor = Cursor.getDefaultCursor()
-                    }
-                })
-            }
-            addRow(grid, row++, "", copyLink, bg)
         }
 
         // Vertical filler prevents GridBagLayout from distributing rows evenly when extra height is available
@@ -270,10 +238,6 @@ internal object ToolCallParamsPanel {
         ApplicationManager.getApplication().invokeLater {
             OpenFileDescriptor(project, vf).navigate(true)
         }
-    }
-
-    private fun boldLabel(text: String): JBLabel = JBLabel(text).apply {
-        font = JBUI.Fonts.label().asBold()
     }
 
     private fun plainLabel(display: String, tooltip: String? = null): JBLabel = JBLabel(display).apply {
