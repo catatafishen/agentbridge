@@ -1331,6 +1331,20 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Executes a {@link Runnable} inside a read action on the EDT.
+     *
+     * <p><b>Why extracted:</b> IntelliJ 2025.3+ asserts read access is held before performing
+     * internal model operations (e.g. {@code FileDocumentManagerBase.getDocument} triggered when
+     * closing scratch files during {@code FileEditorManager.openFile}). EDT event handlers
+     * (mouse listeners, action callbacks) must wrap such calls in a read action. We use
+     * {@code ApplicationManager.getApplication().runReadAction(Runnable)} rather than
+     * {@code WriteIntentReadAction} because the latter is marked {@code @ApiStatus.Experimental}.</p>
+     */
+    public static void edtReadAction(@NotNull Runnable action) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction(action);
+    }
+
+    /**
      * Returns all registered configuration type display names.
      *
      * <p><b>Why extracted:</b> {@code ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()}

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -53,7 +54,9 @@ final class ProjectFilesPanel extends JPanel {
         this(project, sessionOnly, null);
     }
 
-    /** Creates a panel in hooks mode, listing {@code *.json} files from {@code hooksDir}. */
+    /**
+     * Creates a panel in hooks mode, listing {@code *.json} files from {@code hooksDir}.
+     */
     ProjectFilesPanel(@NotNull Project project, @NotNull Path hooksDir) {
         this(project, false, hooksDir);
     }
@@ -185,7 +188,7 @@ final class ProjectFilesPanel extends JPanel {
         if (!file.exists()) return;
         VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file);
         if (vf != null) {
-            FileEditorManager.getInstance(project).openFile(vf, true);
+            PlatformApiCompat.edtReadAction(() -> FileEditorManager.getInstance(project).openFile(vf, true));
         }
         refresh();
     }
