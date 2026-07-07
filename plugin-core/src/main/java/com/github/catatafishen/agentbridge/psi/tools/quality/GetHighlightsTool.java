@@ -246,8 +246,9 @@ public final class GetHighlightsTool extends QualityTool {
             CompletableFuture<Void> opened = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
                 try {
-                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                        .openFile(vf, false);
+                    PlatformApiCompat.edtReadAction(() ->
+                        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                            .openFile(vf, false));
                 } finally {
                     opened.complete(null);
                 }

@@ -1350,7 +1350,9 @@ public final class PlatformApiCompat {
     }
 
     /**
-     * Executes a {@link Runnable} inside a read action on the EDT.
+     * Wraps the given action in a read action. This method is intended to be called from
+     * EDT event handlers (mouse listeners, action callbacks, {@code invokeLater} runnables)
+     * that need to access IntelliJ's document or PSI model.
      *
      * <p><b>Why extracted:</b> IntelliJ 2025.3+ asserts read access is held before performing
      * internal model operations (e.g. {@code FileDocumentManagerBase.getDocument} triggered when

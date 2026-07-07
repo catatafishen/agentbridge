@@ -50,7 +50,8 @@ public final class GetProblemsTool extends QualityTool {
             "For richer per-issue output with fix suggestions on a specific code section, use get_highlights with start_line/end_line. " +
             "Includes errors, warnings, weak warnings, and information-level hints (code style suggestions). " +
             "Information-level items (e.g. 'use text block', 'switch expression') can be numerous on large files — " +
-            "disable 'Information' in MCP Diagnostic Filter settings to focus on errors and warnings only. " +
+            "disable 'Information' in MCP Diagnostic Filter settings to focus on errors and warnings only " +
+            "(grammar and spelling have their own separate toggle). " +
             "For files NOT open in an editor, falls back to CodeSmellDetector (errors and warnings only). " +
             "For compile errors only, use get_compilation_errors.";
     }
