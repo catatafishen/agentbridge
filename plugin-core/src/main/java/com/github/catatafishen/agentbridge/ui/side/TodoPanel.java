@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
+import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.ui.MarkdownRenderer;
 import com.github.catatafishen.agentbridge.ui.util.EmptyStateStyles;
@@ -342,7 +343,8 @@ final class TodoPanel extends JPanel implements Disposable {
     private @Nullable Path resolveSessionDir() {
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
-            return manager.getClient().getSessionDirectory();
+            AbstractClient client = manager.getClientIfRunning();
+            return client != null ? client.getSessionDirectory() : null;
         } catch (Exception ignored) {
             return null;
         }
