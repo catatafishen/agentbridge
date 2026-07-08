@@ -339,25 +339,26 @@ public final class HookExecutor {
     private static @NotNull String resolveInterpreter(@NotNull Path scriptPath, @NotNull Project project) {
         try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(scriptPath)) {
             String firstLine = reader.readLine();
-            if (firstLine == null || !firstLine.startsWith("#!")) return ShellEnvironment.getShellPath(project);
+            if (firstLine == null || !firstLine.startsWith("#!")) return resolvePosixShell(project);
             String shebang = firstLine.substring(2).trim();
             // /usr/bin/env python3  →  python3  (PATH lookup, works everywhere)
             if (shebang.startsWith("/usr/bin/env ")) {
                 String[] parts = shebang.substring("/usr/bin/env ".length()).trim().split("\\s+");
-                return parts[0].isEmpty() ? ShellEnvironment.getShellPath(project) : parts[0];
+                return parts[0].isEmpty() ? resolvePosixShell(project) : parts[0];
             }
             String interpreter = shebang.split("\\s+")[0];
             if (!IS_WINDOWS) return interpreter;
-            // On Windows, redirect sh/bash/dash shebangs to the IDE-configured terminal shell.
-            // The IDE is responsible for providing a shell that can handle the script.
-            if (isShellInterpreter(interpreter)) return ShellEnvironment.getShellPath(project);
+            // On Windows, redirect sh/bash/dash shebangs to a POSIX-capable shell.
+            // If the IDE-configured terminal shell is PowerShell or cmd it cannot execute
+            // POSIX hook scripts — resolvePosixShell falls back to "sh" (Git Bash / WSL).
+            if (isShellInterpreter(interpreter)) return resolvePosixShell(project);
             // Other Unix absolute paths (/usr/bin/python3) → basename for PATH lookup
             if (interpreter.startsWith("/")) {
                 return interpreter.substring(interpreter.lastIndexOf('/') + 1);
             }
             return interpreter;
         } catch (java.io.IOException e) {
-            return ShellEnvironment.getShellPath(project);
+            return resolvePosixShell(project);
         }
     }
 
@@ -376,6 +377,41 @@ public final class HookExecutor {
         return switch (basename) {
             case "sh", "bash", "dash" -> true;
             default -> false;
+        };
+    }
+
+    /**
+     * Returns a POSIX-capable shell executable for running hook scripts on behalf of the given project.
+     * Prefers the IDE-configured terminal shell when it is POSIX-capable; falls back to
+     * {@link ShellEnvironment#getShellPath()} (which returns {@code "sh"} on Windows — resolved via
+     * Git Bash or WSL) when the IDE shell is a non-POSIX shell such as PowerShell or cmd.
+     *
+     * <p>Returns only the executable path (first token of the configured command line), discarding
+     * any extra arguments (e.g. {@code --login}), since hook scripts are invoked directly and do not
+     * need a login-shell environment.
+     */
+    private static @NotNull String resolvePosixShell(@NotNull Project project) {
+        String configured = ShellEnvironment.getShellPath(project);
+        // The IDE terminal setting may be a full command line (e.g. "bash.exe --login").
+        // Take only the executable to check the shell family and to invoke the script.
+        String exe = configured.split("\\s+", 2)[0];
+        if (IS_WINDOWS && !isPosixShellExe(exe)) {
+            return ShellEnvironment.getShellPath(); // "sh" on Windows → Git Bash / WSL
+        }
+        return exe;
+    }
+
+    /**
+     * Returns {@code true} if the shell executable is POSIX-capable (i.e., not PowerShell or cmd).
+     */
+    static boolean isPosixShellExe(@NotNull String shellExe) {
+        int lastSep = Math.max(shellExe.lastIndexOf('/'), shellExe.lastIndexOf('\\'));
+        String base = lastSep >= 0 ? shellExe.substring(lastSep + 1) : shellExe;
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) base = base.substring(0, dot);
+        return switch (base.toLowerCase()) {
+            case "powershell", "pwsh", "cmd" -> false;
+            default -> true;
         };
     }
 

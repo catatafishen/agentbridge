@@ -161,6 +161,43 @@ class HookExecutorTest {
         assertEquals(Boolean.TRUE, mod.stateOverride());
     }
 
+    @Test
+    void isPosixShellExe_posixShells_returnTrue() {
+        assertTrue(HookExecutor.isPosixShellExe("sh"));
+        assertTrue(HookExecutor.isPosixShellExe("bash"));
+        assertTrue(HookExecutor.isPosixShellExe("zsh"));
+        assertTrue(HookExecutor.isPosixShellExe("/usr/bin/bash"));
+        assertTrue(HookExecutor.isPosixShellExe("/bin/sh"));
+        assertTrue(HookExecutor.isPosixShellExe("C:\\Program Files\\Git\\bin\\bash.exe"));
+    }
+
+    @Test
+    void isPosixShellExe_nonPosixShells_returnFalse() {
+        assertFalse(HookExecutor.isPosixShellExe("powershell"));
+        assertFalse(HookExecutor.isPosixShellExe("PowerShell"));
+        assertFalse(HookExecutor.isPosixShellExe("pwsh"));
+        assertFalse(HookExecutor.isPosixShellExe("cmd"));
+        assertFalse(HookExecutor.isPosixShellExe("C:\\Windows\\System32\\cmd.exe"));
+        assertFalse(HookExecutor.isPosixShellExe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"));
+    }
+
+    @Test
+    void isShellInterpreter_commonPosixShells_returnTrue() {
+        assertTrue(HookExecutor.isShellInterpreter("sh"));
+        assertTrue(HookExecutor.isShellInterpreter("bash"));
+        assertTrue(HookExecutor.isShellInterpreter("dash"));
+        assertTrue(HookExecutor.isShellInterpreter("/bin/bash"));
+        assertTrue(HookExecutor.isShellInterpreter("/usr/bin/dash"));
+    }
+
+    @Test
+    void isShellInterpreter_otherInterpreters_returnFalse() {
+        assertFalse(HookExecutor.isShellInterpreter("python3"));
+        assertFalse(HookExecutor.isShellInterpreter("node"));
+        assertFalse(HookExecutor.isShellInterpreter("zsh"));
+        assertFalse(HookExecutor.isShellInterpreter("powershell"));
+    }
+
     private static void assertInstanceOfNoOp(HookResult result) {
         assertInstanceOf(HookResult.NoOp.class, result);
     }

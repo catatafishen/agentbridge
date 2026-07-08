@@ -10,10 +10,12 @@ import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.util.execution.ParametersListUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -112,10 +114,14 @@ public final class RunCommandTool extends InfrastructureTool {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
         String shellOverride = args.has(PARAM_SHELL) ? args.get(PARAM_SHELL).getAsString() : null;
+        // Treat a blank shell override (e.g. from JSON templating) the same as "not provided"
+        if (shellOverride != null && shellOverride.isBlank()) shellOverride = null;
 
         Map<String, String> injectedEnv = extractInjectedEnv(args);
         GeneralCommandLine cmd = buildCommandLine(command, basePath, injectedEnv, shellOverride);
-        String shellName = shellBaseName(shellOverride != null ? shellOverride : ShellEnvironment.getShellPath(project));
+        String effectiveShell = shellOverride != null ? shellOverride : ShellEnvironment.getShellPath(project);
+        // Tokenize before extracting the shell name in case the setting includes extra args
+        String shellName = shellBaseName(ParametersListUtil.parse(effectiveShell).getFirst());
         ProcessResult result = executeInRunPanel(cmd, tabTitle, timeoutSec);
 
         return formatExecuteOutput(result, args, maxChars, offset, timeoutSec, shellName);
@@ -133,13 +139,26 @@ public final class RunCommandTool extends InfrastructureTool {
     private GeneralCommandLine buildCommandLine(String command, String basePath,
                                                 Map<String, String> injectedEnv,
                                                 @Nullable String shellOverride) {
-        String shellPath = shellOverride != null ? shellOverride : ShellEnvironment.getShellPath(project);
-        String shellName = shellBaseName(shellPath);
-        GeneralCommandLine cmd = switch (shellName) {
-            case "powershell", "pwsh" -> new GeneralCommandLine(shellPath, "-Command", command);
-            case "cmd" -> new GeneralCommandLine(shellPath, "/c", command);
-            default -> new GeneralCommandLine(shellPath, "-c", command); // POSIX: sh, bash, zsh…
+        String rawShellPath = (shellOverride != null && !shellOverride.isBlank())
+            ? shellOverride
+            : ShellEnvironment.getShellPath(project);
+        // The IDE terminal setting may be a full command line (e.g. "/usr/bin/bash --login" or
+        // "\"C:\Program Files\Git\bin\bash.exe\" --login"). Tokenize so that we pass the
+        // executable and any extra args separately to GeneralCommandLine.
+        List<String> shellTokens = ParametersListUtil.parse(rawShellPath);
+        String shellExe = shellTokens.getFirst();
+        String shellName = shellBaseName(shellExe);
+        String invocationFlag = switch (shellName) {
+            case "powershell", "pwsh" -> "-Command";
+            case "cmd" -> "/c";
+            default -> "-c"; // POSIX: sh, bash, zsh…
         };
+        GeneralCommandLine cmd = new GeneralCommandLine();
+        cmd.setExePath(shellExe);
+        // Preserve any extra args from the configured shell command line (e.g. --login)
+        shellTokens.subList(1, shellTokens.size()).forEach(cmd::addParameter);
+        cmd.addParameter(invocationFlag);
+        cmd.addParameter(command);
         cmd.setWorkDirectory(basePath);
         if (!injectedEnv.isEmpty()) {
             cmd.withEnvironment(injectedEnv);
