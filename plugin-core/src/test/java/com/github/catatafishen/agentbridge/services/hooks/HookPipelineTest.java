@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HookPipelineTest {
 
@@ -138,6 +140,30 @@ class HookPipelineTest {
         void noModificationReturnsNullOriginal() {
             var mod = new HookResult.OutputModification(null, null);
             assertNull(HookPipeline.applyOutputText(mod, null));
+        }
+    }
+
+    @Nested
+    class DetermineErrorState {
+
+        @Test
+        void detectsLegacyErrorPrefix() {
+            assertTrue(HookPipeline.determineErrorState("Error: something broke", null));
+        }
+
+        @Test
+        void treatsPlainOutputAsSuccessWithoutOverride() {
+            assertFalse(HookPipeline.determineErrorState("All good", null));
+        }
+
+        @Test
+        void stateOverrideCanForceSuccess() {
+            assertFalse(HookPipeline.determineErrorState("Error: something broke", true));
+        }
+
+        @Test
+        void stateOverrideCanForceError() {
+            assertTrue(HookPipeline.determineErrorState("All good", false));
         }
     }
 

@@ -1,11 +1,14 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
+import com.github.catatafishen.agentbridge.psi.ToolResult;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for static utility methods in {@link HookToolHandler}.
@@ -57,6 +60,14 @@ class HookToolHandlerTest {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
             assertFalse(obj.get("truncated").getAsBoolean());
             assertEquals(100_000, obj.get("result").getAsString().length());
+        }
+
+        @Test
+        void preservesToolResultErrorFlag() {
+            String json = HookToolHandler.successResponseForToolResult(ToolResult.error("Error: denied"));
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            assertTrue(obj.get("error").getAsBoolean());
+            assertEquals("Error: denied", obj.get("result").getAsString());
         }
     }
 

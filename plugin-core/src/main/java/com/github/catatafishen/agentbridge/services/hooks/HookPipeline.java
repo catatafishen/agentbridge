@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -170,7 +171,7 @@ public final class HookPipeline {
             .findEntries(toolName, HookTrigger.SUCCESS);
 
         String currentOutput = output;
-        boolean isError = false;
+        boolean isError = determineErrorState(currentOutput, null);
 
         if (!entries.isEmpty()) {
             ToolHookConfig config = Objects.requireNonNull(
@@ -184,13 +185,13 @@ public final class HookPipeline {
 
                 HookResult result = HookExecutor.execute(project, entry, HookTrigger.SUCCESS, payload, config, projectEnv);
 
+                Boolean stateOverride = null;
                 if (result instanceof HookResult.OutputModification mod) {
                     currentOutput = applyOutputText(mod, currentOutput);
-                    if (mod.stateOverride() != null) {
-                        isError = !mod.stateOverride();
-                    }
+                    stateOverride = mod.stateOverride();
                 }
                 currentOutput = applyEntryTextModifiers(entry, currentOutput);
+                isError = determineErrorState(currentOutput, stateOverride);
             }
         }
 
@@ -269,6 +270,13 @@ public final class HookPipeline {
             return base + mod.appendedText();
         }
         return original;
+    }
+
+    static boolean determineErrorState(@Nullable String output, @Nullable Boolean stateOverride) {
+        if (stateOverride != null) {
+            return !stateOverride;
+        }
+        return ToolError.isError(output);
     }
 
     static @Nullable String getStringArg(@NotNull JsonObject arguments, @NotNull String key) {

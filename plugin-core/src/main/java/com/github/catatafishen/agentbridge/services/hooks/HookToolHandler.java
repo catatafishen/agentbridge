@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
+import com.github.catatafishen.agentbridge.psi.ToolResult;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
@@ -94,8 +95,8 @@ public final class HookToolHandler extends AbstractHookHandler {
         }
 
         try {
-            String result = def.execute(arguments, null).contentOrEmpty();
-            return successResponse(result);
+            ToolResult result = def.execute(arguments, null);
+            return successResponseForToolResult(result);
         } catch (Exception e) {
             LOG.warn("Hook tool call failed: " + toolId, e);
             return errorResponse("Tool execution failed: "
@@ -103,7 +104,15 @@ public final class HookToolHandler extends AbstractHookHandler {
         }
     }
 
+    static String successResponseForToolResult(ToolResult result) {
+        return successResponse(result.content(), result.isError());
+    }
+
     static String successResponse(String result) {
+        return successResponse(result, false);
+    }
+
+    private static String successResponse(String result, boolean isError) {
         JsonObject response = new JsonObject();
         if (result != null && result.length() > MAX_RESULT_CHARS) {
             response.addProperty("result", result.substring(0, MAX_RESULT_CHARS));
@@ -112,7 +121,7 @@ public final class HookToolHandler extends AbstractHookHandler {
             response.addProperty("result", result != null ? result : "");
             response.addProperty("truncated", false);
         }
-        response.addProperty("error", false);
+        response.addProperty("error", isError);
         return response.toString();
     }
 

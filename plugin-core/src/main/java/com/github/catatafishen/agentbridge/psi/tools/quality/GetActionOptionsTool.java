@@ -182,8 +182,8 @@ public final class GetActionOptionsTool extends QualityTool {
         }
     }
 
-    private String formatDialogOptions(String actionName, String pathStr, int line,
-                                       DialogInterceptor.DialogInfo info) {
+    static String formatDialogOptions(String actionName, String pathStr, int line,
+                                      DialogInterceptor.DialogInfo info) {
         StringBuilder sb = new StringBuilder();
         sb.append(ACTION_PREFIX).append(actionName).append("' at ").append(pathStr).append(':').append(line)
             .append(" shows a dialog with the following options:\n");
