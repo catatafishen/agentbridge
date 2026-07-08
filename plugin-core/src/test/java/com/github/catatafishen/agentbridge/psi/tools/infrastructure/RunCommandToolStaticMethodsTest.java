@@ -325,4 +325,62 @@ class RunCommandToolStaticMethodsTest {
             assertTrue(output.contains("offset beyond end"));
         }
     }
+
+    // ======================================================================================
+    //  extractInjectedEnv
+    // ======================================================================================
+    @Nested
+    @DisplayName("extractInjectedEnv")
+    class ExtractInjectedEnv {
+
+        @Test
+        @DisplayName("empty args returns empty map")
+        void emptyArgs() {
+            assertTrue(RunCommandTool.extractInjectedEnv(new JsonObject()).isEmpty());
+        }
+
+        @Test
+        @DisplayName("_env.* key is extracted with prefix stripped")
+        void singleEnvVar() {
+            JsonObject args = new JsonObject();
+            args.addProperty("command", "echo hi");
+            args.addProperty("_env.GH_TOKEN", "ghs_abc123");
+            var env = RunCommandTool.extractInjectedEnv(args);
+            assertEquals(1, env.size());
+            assertEquals("ghs_abc123", env.get("GH_TOKEN"));
+        }
+
+        @Test
+        @DisplayName("multiple _env.* keys all extracted")
+        void multipleEnvVars() {
+            JsonObject args = new JsonObject();
+            args.addProperty("_env.FOO", "foo-val");
+            args.addProperty("_env.BAR", "bar-val");
+            args.addProperty("command", "echo");
+            var env = RunCommandTool.extractInjectedEnv(args);
+            assertEquals(2, env.size());
+            assertEquals("foo-val", env.get("FOO"));
+            assertEquals("bar-val", env.get("BAR"));
+        }
+
+        @Test
+        @DisplayName("non-primitive _env.* value is ignored")
+        void nonPrimitiveEnvVarIgnored() {
+            JsonObject args = new JsonObject();
+            args.add("_env.NESTED", new JsonObject()); // not a primitive
+            var env = RunCommandTool.extractInjectedEnv(args);
+            assertTrue(env.isEmpty());
+        }
+
+        @Test
+        @DisplayName("non-_env keys are not extracted")
+        void regularArgsNotExtracted() {
+            JsonObject args = new JsonObject();
+            args.addProperty("command", "ls");
+            args.addProperty("timeout", "60");
+            args.addProperty("env.TOKEN", "should-not-match"); // no underscore prefix
+            var env = RunCommandTool.extractInjectedEnv(args);
+            assertTrue(env.isEmpty());
+        }
+    }
 }

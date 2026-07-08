@@ -289,4 +289,20 @@ class JsHookEngineTest {
         assertTrue(json.contains("\"arguments\""), json);
         assertTrue(json.contains("\"command\":\"echo patched\""), json);
     }
+
+    @Test
+    void setEnvIsShorthandForSetArgumentWithEnvPrefix(@TempDir Path dir) throws IOException {
+        String json = runInline(dir, "Hook.setEnv('GH_TOKEN', 'ghs_abc123');", entry());
+        assertTrue(json.contains("\"arguments\""), json);
+        assertTrue(json.contains("\"_env.GH_TOKEN\":\"ghs_abc123\""), json);
+    }
+
+    @Test
+    void setEnvMultipleVarsAccumulate(@TempDir Path dir) throws IOException {
+        String json = runInline(dir,
+            "Hook.setEnv('FOO', 'bar');\nHook.setEnv('BAZ', 'qux');",
+            entry());
+        assertTrue(json.contains("\"_env.FOO\":\"bar\""), json);
+        assertTrue(json.contains("\"_env.BAZ\":\"qux\""), json);
+    }
 }
