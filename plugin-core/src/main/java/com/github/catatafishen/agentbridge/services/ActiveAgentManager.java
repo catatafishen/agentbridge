@@ -39,6 +39,7 @@ public final class ActiveAgentManager implements Disposable {
 
     private static final String KEY_ACTIVE_PROFILE = "agent.activeProfileId";
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
+    private static final String KEY_ALLOW_TRANSIENT_FILE_OPENS = "agent.allowTransientFileOpens";
     private static final String KEY_INJECT_CONV_HISTORY = "agent.injectConversationHistory";
     private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
     private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
@@ -573,6 +574,16 @@ public final class ActiveAgentManager implements Disposable {
 
     public static void setFollowAgentFiles(@NotNull Project project, boolean enabled) {
         PropertiesComponent.getInstance(project).setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
+    }
+
+    public static boolean getAllowTransientFileOpens(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project)
+            .getBoolean(KEY_ALLOW_TRANSIENT_FILE_OPENS, true);
+    }
+
+    public static void setAllowTransientFileOpens(@NotNull Project project, boolean allow) {
+        PropertiesComponent.getInstance(project)
+            .setValue(KEY_ALLOW_TRANSIENT_FILE_OPENS, allow, true);
     }
 
     public static boolean getInjectConversationHistory(@NotNull Project project) {

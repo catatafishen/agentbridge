@@ -236,6 +236,9 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
             if (ambiguousImportError != null) return ambiguousImportError;
         }
 
+        String accessError = checkEditorAccess(vf);
+        if (accessError != null) return accessError;
+
         ToolEditor toolEditor = openEditorForTool(vf);
         if (toolEditor == null) {
             return "Error: Could not open editor for " + pathStr + ". Ensure the file is open in the IDE.";

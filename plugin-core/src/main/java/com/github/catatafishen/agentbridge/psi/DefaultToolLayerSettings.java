@@ -31,6 +31,13 @@ public final class DefaultToolLayerSettings implements ToolLayerSettings {
     }
 
     @Override
+    public boolean getAllowTransientFileOpens() {
+        if (project == null) return true;
+        return PropertiesComponent.getInstance(project)
+            .getBoolean(ALLOW_TRANSIENT_FILE_OPENS_KEY, true);
+    }
+
+    @Override
     public @Nullable String getActiveAgentLabel() {
         return null;
     }
