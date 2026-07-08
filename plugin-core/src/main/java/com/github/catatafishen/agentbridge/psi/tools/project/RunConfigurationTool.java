@@ -35,7 +35,9 @@ public final class RunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Execute an existing run configuration by name";
+        return "Execute an existing run configuration by name. If the configuration is already running, "
+            + "it is stopped and restarted (equivalent to pressing the Rerun button). "
+            + "Use stop_run_configuration to stop without restarting.";
     }
 
     @Override

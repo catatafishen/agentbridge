@@ -35,6 +35,7 @@ public final class ProjectToolFactory {
         tools.add(new ListRunConfigurationTypesTool(project, runConfigService));
         tools.add(new GetRunConfigurationTemplateTool(project, runConfigService));
         tools.add(new RunConfigurationTool(project, runConfigService));
+        tools.add(new StopRunConfigurationTool(project));
         tools.add(new CreateRunConfigurationTool(project, runConfigService));
         tools.add(new EditRunConfigurationTool(project, runConfigService));
         tools.add(new DeleteRunConfigurationTool(project, runConfigService));
