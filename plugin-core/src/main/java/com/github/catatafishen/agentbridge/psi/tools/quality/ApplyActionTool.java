@@ -236,40 +236,44 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
             if (ambiguousImportError != null) return ambiguousImportError;
         }
 
-        Editor editor = getOrOpenEditor(vf);
-        if (editor == null) {
+        ToolEditor toolEditor = openEditorForTool(vf);
+        if (toolEditor == null) {
             return "Error: Could not open editor for " + pathStr + ". Ensure the file is open in the IDE.";
         }
+        try {
+            Editor editor = toolEditor.editor();
+            int caretCol = resolveColumn(doc, targetLine, symbol, targetCol);
+            editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, caretCol));
 
-        int caretCol = resolveColumn(doc, targetLine, symbol, targetCol);
-        editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, caretCol));
+            IntentionAction action = findActionToApply(doc, targetLine, actionName, editor, psiFile);
+            if (action == null) {
+                List<String> available = collectAvailableActionNames(doc, targetLine, editor, psiFile);
+                String hint = available.isEmpty() ? "none" : String.join(", ", available);
+                return ACTION_PREFIX + actionName + "' not found at " + pathStr + LINE_LABEL + targetLine
+                    + ". Available: [" + hint + "]";
+            }
 
-        IntentionAction action = findActionToApply(doc, targetLine, actionName, editor, psiFile);
-        if (action == null) {
-            List<String> available = collectAvailableActionNames(doc, targetLine, editor, psiFile);
-            String hint = available.isEmpty() ? "none" : String.join(", ", available);
-            return ACTION_PREFIX + actionName + "' not found at " + pathStr + LINE_LABEL + targetLine
-                + ". Available: [" + hint + "]";
+            if (!action.isAvailable(project, editor, psiFile)) {
+                return ACTION_PREFIX + actionName + "' is not currently applicable at " + pathStr
+                    + LINE_LABEL + targetLine + ".";
+            }
+
+            String before = doc.getText();
+            long beforeModStamp = doc.getModificationStamp();
+            ActionContext ctx = new ActionContext(action, editor, psiFile, doc);
+
+            if (option != null) {
+                return applyWithOption(option, actionName, pathStr, targetLine, before, ctx);
+            }
+            if (dryRun) {
+                return applyAsDryRun(actionName, pathStr, before, ctx, vf, handler);
+            }
+            NormalApplyRequest normalRequest = new NormalApplyRequest(
+                actionName, pathStr, targetLine, before, beforeModStamp, vf, request.originalArgs(), handler, isReplay);
+            return applyNormally(normalRequest, ctx);
+        } finally {
+            releaseToolEditor(toolEditor);
         }
-
-        if (!action.isAvailable(project, editor, psiFile)) {
-            return ACTION_PREFIX + actionName + "' is not currently applicable at " + pathStr
-                + LINE_LABEL + targetLine + ".";
-        }
-
-        String before = doc.getText();
-        long beforeModStamp = doc.getModificationStamp();
-        ActionContext ctx = new ActionContext(action, editor, psiFile, doc);
-
-        if (option != null) {
-            return applyWithOption(option, actionName, pathStr, targetLine, before, ctx);
-        }
-        if (dryRun) {
-            return applyAsDryRun(actionName, pathStr, before, ctx, vf, handler);
-        }
-        NormalApplyRequest normalRequest = new NormalApplyRequest(
-            actionName, pathStr, targetLine, before, beforeModStamp, vf, request.originalArgs(), handler, isReplay);
-        return applyNormally(normalRequest, ctx);
     }
 
     private String applyWithOption(String option, String actionName, String pathStr, int targetLine,

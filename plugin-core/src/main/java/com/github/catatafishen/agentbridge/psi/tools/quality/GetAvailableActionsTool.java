@@ -181,61 +181,65 @@ public final class GetAvailableActionsTool extends QualityTool {
             return "Error: Line " + targetLine + " is out of bounds (file has " + doc.getLineCount() + " lines)";
         }
 
-        Editor editor = getOrOpenEditor(vf);
-        if (editor == null) return "Error: Could not open editor for " + pathStr;
+        ToolEditor toolEditor = openEditorForTool(vf);
+        if (toolEditor == null) return "Error: Could not open editor for " + pathStr;
+        try {
+            Editor editor = toolEditor.editor();
+            int col = resolveColumn(doc, targetLine, symbol, targetCol);
+            editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, col));
 
-        int col = resolveColumn(doc, targetLine, symbol, targetCol);
-        editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, col));
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (psiFile == null) return "Error: Cannot parse file: " + pathStr;
 
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return "Error: Cannot parse file: " + pathStr;
+            DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
+            List<String> quickFixes = highlightsOnLine(doc, targetLine).stream()
+                .filter(filter::shouldInclude)
+                .flatMap(h -> collectQuickFixNames(h).stream())
+                .distinct()
+                .toList();
 
-        DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
-        List<String> quickFixes = highlightsOnLine(doc, targetLine).stream()
-            .filter(filter::shouldInclude)
-            .flatMap(h -> collectQuickFixNames(h).stream())
-            .distinct()
-            .toList();
+            List<String> intentions = collectIntentionNames(editor, psiFile);
 
-        List<String> intentions = collectIntentionNames(editor, psiFile);
+            if (quickFixes.isEmpty() && intentions.isEmpty()) {
+                // Diagnose why nothing was found to help with non-Java IDEs (e.g. CLion C++).
+                int totalRegistered = com.intellij.codeInsight.intention.IntentionManager.getInstance()
+                    .getAvailableIntentions().size();
+                int highlightCount = highlightsOnLine(doc, targetLine).size();
+                boolean hasSymbol = symbol != null && !symbol.isBlank();
+                return "No actions available at " + pathStr + LINE_LABEL + targetLine
+                    + (hasSymbol ? " (symbol: '" + symbol + "')" : " col " + (col + 1)) + "."
+                    + " Checked " + totalRegistered + " registered intentions and "
+                    + highlightCount + " daemon highlight(s) on this line."
+                    + (highlightCount == 0
+                    ? " The daemon may not have analyzed this file yet — open it in the editor first, wait a moment, then retry."
+                    : "");
+            }
 
-        if (quickFixes.isEmpty() && intentions.isEmpty()) {
-            // Diagnose why nothing was found to help with non-Java IDEs (e.g. CLion C++).
-            int totalRegistered = com.intellij.codeInsight.intention.IntentionManager.getInstance()
-                .getAvailableIntentions().size();
-            int highlightCount = highlightsOnLine(doc, targetLine).size();
+            StringBuilder sb = new StringBuilder();
+            sb.append("Actions at ").append(pathStr).append(LINE_LABEL).append(targetLine);
             boolean hasSymbol = symbol != null && !symbol.isBlank();
-            return "No actions available at " + pathStr + LINE_LABEL + targetLine
-                + (hasSymbol ? " (symbol: '" + symbol + "')" : " col " + (col + 1)) + "."
-                + " Checked " + totalRegistered + " registered intentions and "
-                + highlightCount + " daemon highlight(s) on this line."
-                + (highlightCount == 0
-                ? " The daemon may not have analyzed this file yet — open it in the editor first, wait a moment, then retry."
-                : "");
-        }
+            if (hasSymbol) {
+                sb.append(" (symbol: '").append(symbol).append("', col ").append(col + 1).append(')');
+            } else {
+                sb.append(" col ").append(col + 1);
+            }
+            sb.append(":\n");
+            sb.append("\nCopy the action name exactly as shown to pass to apply_action.\n");
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Actions at ").append(pathStr).append(LINE_LABEL).append(targetLine);
-        boolean hasSymbol = symbol != null && !symbol.isBlank();
-        if (hasSymbol) {
-            sb.append(" (symbol: '").append(symbol).append("', col ").append(col + 1).append(')');
-        } else {
-            sb.append(" col ").append(col + 1);
-        }
-        sb.append(":\n");
-        sb.append("\nCopy the action name exactly as shown to pass to apply_action.\n");
+            if (!quickFixes.isEmpty()) {
+                sb.append("\n[QUICK FIX]\n");
+                quickFixes.forEach(f -> sb.append("  ").append(f).append("\n"));
+            }
+            if (!intentions.isEmpty()) {
+                sb.append("\n[INTENTION]\n");
+                intentions.forEach(i -> sb.append("  ").append(i).append("\n"));
+            }
 
-        if (!quickFixes.isEmpty()) {
-            sb.append("\n[QUICK FIX]\n");
-            quickFixes.forEach(f -> sb.append("  ").append(f).append("\n"));
+            sb.append("\nUse apply_action(file, line, action_name) to invoke one.");
+            return sb.toString();
+        } finally {
+            releaseToolEditor(toolEditor);
         }
-        if (!intentions.isEmpty()) {
-            sb.append("\n[INTENTION]\n");
-            intentions.forEach(i -> sb.append("  ").append(i).append("\n"));
-        }
-
-        sb.append("\nUse apply_action(file, line, action_name) to invoke one.");
-        return sb.toString();
     }
 
 }
