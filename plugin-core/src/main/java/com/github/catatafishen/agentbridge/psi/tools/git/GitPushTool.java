@@ -130,6 +130,10 @@ public final class GitPushTool extends GitTool {
     private PushTarget resolvePushTarget(@NotNull JsonObject args, @NotNull String root) throws Exception {
         String remote = args.has(PARAM_REMOTE) ? args.get(PARAM_REMOTE).getAsString() : null;
         String branch = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
+        // Normalize empty strings to null so callers can pass "" and get default behavior,
+        // consistent with how every other git tool handles optional parameters.
+        if (remote != null && remote.isEmpty()) remote = null;
+        if (branch != null && branch.isEmpty()) branch = null;
         // When a branch is given without an explicit remote, default to "origin".
         // Without this, "git push <branch>" is interpreted as "git push <remote>" by git's
         // positional argument rules, silently targeting the wrong destination.
@@ -150,7 +154,10 @@ public final class GitPushTool extends GitTool {
         if (hasFlag(args, PARAM_SET_UPSTREAM)) cmdArgs.add("--set-upstream");
         if (target.remote() != null) {
             cmdArgs.add(target.remote());
-            if (target.branch() != null) cmdArgs.add(target.branch());
+            // Always pass an explicit refspec. Without one, "git push <remote>" still depends on
+            // push.default and the upstream tracking ref, causing the same "mismatched upstream"
+            // failures the default case below was designed to avoid.
+            cmdArgs.add(target.branch() != null ? target.branch() : "HEAD");
         } else {
             // No remote or branch specified.  Use "origin HEAD" (push current branch to a same-named
             // remote branch) instead of a bare "git push", which relies on push.default and a
