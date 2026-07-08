@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.project;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ui.RunContentDescriptor;
 import com.intellij.execution.ui.RunContentManager;
@@ -8,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Stops a currently running run configuration by name.
@@ -61,20 +63,25 @@ public final class StopRunConfigurationTool extends ProjectTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String name = args.get("name").getAsString();
-        List<RunContentDescriptor> descriptors = RunContentManager.getInstance(project).getAllDescriptors();
+        var ref = new AtomicReference<String>();
+        EdtUtil.invokeAndWait(() -> ref.set(stopNamed(name)));
+        return ref.get();
+    }
 
+    private String stopNamed(String name) {
+        List<RunContentDescriptor> descriptors = RunContentManager.getInstance(project).getAllDescriptors();
         RunContentDescriptor match = findRunning(descriptors, name);
         if (match == null) {
             List<String> running = descriptors.stream()
                 .filter(d -> d.getProcessHandler() != null && !d.getProcessHandler().isProcessTerminated())
-                .map(RunContentDescriptor::getDisplayName)
+                .map(d -> d.getDisplayName() != null ? d.getDisplayName() : "(unnamed)")
                 .toList();
             if (running.isEmpty()) {
                 return "Error: No running processes found. '" + name + "' is not currently running.";
             }
-            return "Error: '" + name + "' is not currently running. Currently running: " + String.join(", ", running);
+            return "Error: '" + name + "' is not currently running. Currently running: "
+                + String.join(", ", running);
         }
-
         match.getProcessHandler().destroyProcess();
         return "Stopped run configuration: " + name;
     }

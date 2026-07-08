@@ -146,6 +146,7 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.project.EditProjectStructureTool",
         "com.github.catatafishen.agentbridge.psi.tools.project.ListRunConfigurationsTool",
         "com.github.catatafishen.agentbridge.psi.tools.project.RunConfigurationTool",
+        "com.github.catatafishen.agentbridge.psi.tools.project.StopRunConfigurationTool",
         "com.github.catatafishen.agentbridge.psi.tools.project.CreateRunConfigurationTool",
         "com.github.catatafishen.agentbridge.psi.tools.project.EditRunConfigurationTool",
         "com.github.catatafishen.agentbridge.psi.tools.project.DeleteRunConfigurationTool",
