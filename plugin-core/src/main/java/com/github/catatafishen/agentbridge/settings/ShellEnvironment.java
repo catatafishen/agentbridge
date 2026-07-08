@@ -162,15 +162,22 @@ public class ShellEnvironment {
      * Returns the shell configured in IntelliJ's Terminal settings for the given project.
      * Falls back to {@link #getShellPath()} if the IDE setting is unavailable or blank.
      *
+     * <p><b>Return contract:</b> The returned value reflects the raw IDE Terminal "Shell path"
+     * setting, which may be a <em>full command line</em> (executable + arguments), not strictly
+     * an executable path. For example, a user may configure
+     * {@code "C:\Program Files\Git\bin\bash.exe" --login}. Callers that build a
+     * {@link com.intellij.execution.configurations.GeneralCommandLine} must tokenize the result
+     * (e.g., via {@code ParametersListUtil.parse()}) before using it as an executable.
+     *
      * <p>Resolution order:
      * <ol>
-     *   <li>IntelliJ's {@code TerminalProjectOptionsProvider.getShellPath()}</li>
+     *   <li>IntelliJ's {@code TerminalProjectOptionsProvider.getShellPath()} (may include arguments)</li>
      *   <li>{@code $SHELL} environment variable (Unix only).</li>
      *   <li>{@code /bin/sh} on Unix; {@code "sh"} on Windows (resolved via {@code PATH}).</li>
      * </ol>
      *
      * @param project the current project
-     * @return the resolved shell executable path (never blank)
+     * @return the configured shell command line string (never blank; may include arguments)
      */
     @NotNull
     public static String getShellPath(@NotNull Project project) {
