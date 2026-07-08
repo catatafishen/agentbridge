@@ -988,6 +988,25 @@ public final class PsiBridgeService implements Disposable {
 
     private String appendAutoHighlights(String writeResult, String path, DaemonWaiter preWriteWaiter) {
         com.intellij.openapi.vfs.VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
+        // Snapshot whether the file was open BEFORE we do anything, so the finally block
+        // knows whether to close it. (followFileIfEnabled uses invokeLater so the open may not
+        // be visible yet — we intentionally use the current state here.)
+        boolean wasAlreadyOpen = vf != null && ApplicationManager.getApplication().runReadAction(
+            (Computable<Boolean>) () ->
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf));
+
+        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
+        boolean followAgent = settings.getFollowAgentFiles();
+        boolean allowTransient = settings.getAllowTransientFileOpens();
+
+        if (!wasAlreadyOpen && !followAgent && !allowTransient) {
+            // Both Follow Agent Files and Allow Temporary File Opens are off.
+            // Skip auto-highlights entirely to prevent any background file open.
+            return writeResult +
+                "\n\nNote: Auto-highlights skipped — \"Open files temporarily for metadata\" " +
+                "is disabled in AgentBridge \u2192 UI/UX settings.";
+        }
+
         try (DaemonWaiter activeWaiter = resolveActiveWaiter(preWriteWaiter, vf, path)) {
             return waitAndCollectHighlights(writeResult, path, activeWaiter);
         } catch (InterruptedException e) {
@@ -996,6 +1015,15 @@ public final class PsiBridgeService implements Disposable {
         } catch (Exception e) {
             LOG.info("Auto-highlights after write failed: " + e.getMessage());
             return writeResult;
+        } finally {
+            // Close the file if we transiently opened it for daemon analysis.
+            // Condition: file was not open before (we may have opened it via resolveActiveWaiter)
+            //            AND Follow Agent Files is off (when on, the file should remain open).
+            // When the early-return above fires (both settings off), this is a no-op because
+            // resolveActiveWaiter was never called, so no file was opened.
+            if (!wasAlreadyOpen && vf != null && !followAgent) {
+                closeFileSilently(vf);
+            }
         }
     }
 
@@ -1135,6 +1163,15 @@ public final class PsiBridgeService implements Disposable {
         } catch (Exception e) {
             LOG.info("openFileSilently timed out or failed for " + path + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * Closes {@code vf} in the editor, dispatching to the EDT if needed.
+     * No-op if the file is not currently open.
+     */
+    private void closeFileSilently(@NotNull com.intellij.openapi.vfs.VirtualFile vf) {
+        ApplicationManager.getApplication().invokeLater(() ->
+            com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).closeFile(vf));
     }
 
     /**
