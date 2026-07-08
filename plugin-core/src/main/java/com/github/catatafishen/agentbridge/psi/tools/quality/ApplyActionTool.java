@@ -22,7 +22,6 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -216,18 +215,13 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
         boolean dryRun = request.dryRun();
         PopupHandler handler = request.handler();
         boolean isReplay = request.isReplay();
-        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
-        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc == null) return "Error: Cannot get document for: " + pathStr;
-
-        if (targetLine < 1 || targetLine > doc.getLineCount()) {
-            return "Error: Line " + targetLine + " is out of bounds (file has " + doc.getLineCount() + FORMAT_LINES_SUFFIX;
-        }
-
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+        var fileResult = loadFileContext(pathStr, targetLine);
+        if (fileResult instanceof FileContextResult.Err(var error)) return error;
+        var fileCtx = (FileContextResult.Ok) fileResult;
+        VirtualFile vf = fileCtx.vf();
+        Document doc = fileCtx.doc();
+        PsiFile psiFile = fileCtx.psiFile();
 
         // Skip ambiguous-import precheck on replay — the agent already saw the choices and
         // made a selection; refusing here would leave them stuck.
