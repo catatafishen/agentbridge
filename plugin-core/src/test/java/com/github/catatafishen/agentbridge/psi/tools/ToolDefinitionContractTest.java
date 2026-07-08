@@ -88,6 +88,7 @@ import com.github.catatafishen.agentbridge.psi.tools.project.ListRunConfiguratio
 import com.github.catatafishen.agentbridge.psi.tools.project.MarkDirectoryTool;
 import com.github.catatafishen.agentbridge.psi.tools.project.ReloadProjectModelTool;
 import com.github.catatafishen.agentbridge.psi.tools.project.RunConfigurationTool;
+import com.github.catatafishen.agentbridge.psi.tools.project.StopRunConfigurationTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.AddToDictionaryTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.ApplyActionTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.ApplyQuickfixTool;
@@ -264,6 +265,7 @@ class ToolDefinitionContractTest {
             new EditProjectStructureTool(null),
             new ListRunConfigurationsTool(null, null),
             new RunConfigurationTool(null, null),
+            new StopRunConfigurationTool(null),
             new CreateRunConfigurationTool(null, null),
             new EditRunConfigurationTool(null, null),
             new DeleteRunConfigurationTool(null, null),
