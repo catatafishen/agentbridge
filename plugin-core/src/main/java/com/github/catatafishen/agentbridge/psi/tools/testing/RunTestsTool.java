@@ -60,6 +60,7 @@ public final class RunTestsTool extends TestingTool {
     private static final String JSON_MODULE = "module";
     private static final String PARAM_TARGET = "target";
     private static final String PARAM_TEST_TASK = "test_task";
+    private static final String PARAM_TIMEOUT = "timeout";
 
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
@@ -70,9 +71,11 @@ public final class RunTestsTool extends TestingTool {
         "\nCould not capture process handle. Check the Run panel for results.";
     private static final String FIELD_TEST_OBJECT = "TEST_OBJECT";
     private static final String ERROR_PROCESS_FAILED_TO_START = "Error: Test process failed to start for ";
-    private static final String ERROR_TESTS_TIMED_OUT = "Tests timed out after 120 seconds: ";
     private static final String STARTED_TESTS_MSG = "Started tests via IntelliJ JUnit runner: ";
     private static final String ERROR_NO_PROJECT_PATH = "Error: Could not determine project base path";
+
+    /** Timeout in seconds for {@link #awaitProcessTermination}; set in {@link #execute}. */
+    private int timeoutSec = 300;
 
     public RunTestsTool(Project project) {
         super(project);
@@ -94,7 +97,8 @@ public final class RunTestsTool extends TestingTool {
             "auto-detects the test framework (JUnit, TestNG, pytest, etc.) via ConfigurationContext. " +
             "Falls back to the project's build tool for unresolvable targets; use the 'test_task' parameter " +
             "when the project defines a custom test task (e.g., 'unitTest') instead of the standard 'test'. " +
-            "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
+            "Returns pass/fail counts and failure details. Use list_tests to discover available test targets. " +
+            "Use the 'timeout' parameter to override the default 300-second wait.";
     }
 
     @Override
@@ -119,7 +123,8 @@ public final class RunTestsTool extends TestingTool {
             Param.optional(JSON_MODULE, TYPE_STRING, "Optional module name (e.g., 'plugin-core')", ""),
             Param.optional(PARAM_TEST_TASK, TYPE_STRING,
                 "Build task name when the project does not use the standard 'test' task "
-                    + "(e.g., 'unitTest'). Auto-detected from the project model if not specified.", "")
+                    + "(e.g., 'unitTest'). Auto-detected from the project model if not specified.", ""),
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 300)")
         );
     }
 
@@ -133,6 +138,7 @@ public final class RunTestsTool extends TestingTool {
         String target = args.get(PARAM_TARGET).getAsString();
         String module = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         String testTask = args.has(PARAM_TEST_TASK) ? args.get(PARAM_TEST_TASK).getAsString() : "";
+        this.timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 300;
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -604,14 +610,19 @@ public final class RunTestsTool extends TestingTool {
     }
 
     public String executeFromCommand(@NotNull String command) {
-        String target = parseTestsFilterFromCommand(command);
-        String module = parseModuleFromCommand(command);
+        return executeFromCommand(command, 300);
+    }
+
+    public String executeFromCommand(@NotNull String command, int timeoutSec) {
+        String target   = parseTestsFilterFromCommand(command);
+        String module   = parseModuleFromCommand(command);
         String taskName = parseTaskFromCommand(command);
 
         JsonObject args = new JsonObject();
         args.addProperty(PARAM_TARGET, target != null ? target : "*");
         if (!module.isEmpty()) args.addProperty(JSON_MODULE, module);
         if (taskName != null) args.addProperty(PARAM_TEST_TASK, taskName);
+        args.addProperty(PARAM_TIMEOUT, timeoutSec);
 
         try {
             return execute(args);
@@ -685,7 +696,7 @@ public final class RunTestsTool extends TestingTool {
 
         if (handler == null) return ERROR_PROCESS_FAILED_TO_START + configName;
         int exitCode = awaitProcessTermination(handler);
-        if (exitCode == Integer.MIN_VALUE) return ERROR_TESTS_TIMED_OUT + configName;
+        if (exitCode == Integer.MIN_VALUE) return "Tests timed out after " + timeoutSec + " seconds: " + configName;
 
         String testOutput = collectTestRunOutput(configName);
         return formatTestSummary(exitCode, configName, testOutput);
@@ -716,7 +727,7 @@ public final class RunTestsTool extends TestingTool {
 
         if (handler == null) return ERROR_PROCESS_FAILED_TO_START + configName;
         int exitCode = awaitProcessTermination(handler);
-        if (exitCode == Integer.MIN_VALUE) return ERROR_TESTS_TIMED_OUT + configName;
+        if (exitCode == Integer.MIN_VALUE) return "Tests timed out after " + timeoutSec + " seconds: " + configName;
 
         String basePath = project.getBasePath();
         if (basePath != null) {
@@ -746,7 +757,7 @@ public final class RunTestsTool extends TestingTool {
      * @return the process exit code on normal termination, or
      * {@link Integer#MIN_VALUE} on timeout or interruption
      */
-    private static int awaitProcessTermination(@NotNull ProcessHandler handler) {
+    private int awaitProcessTermination(@NotNull ProcessHandler handler) {
         CompletableFuture<Integer> doneFuture = new CompletableFuture<>();
         handler.addProcessListener(new ProcessListener() {
             @Override
@@ -763,7 +774,7 @@ public final class RunTestsTool extends TestingTool {
         // that don't properly fire processTerminated.
         RunPanelExecutor.scheduleHandlerExitFallback(handler, doneFuture);
         try {
-            return doneFuture.get(120, TimeUnit.SECONDS);
+            return doneFuture.get(timeoutSec, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return Integer.MIN_VALUE;
