@@ -53,7 +53,8 @@ public abstract class QualityTool extends Tool {
      * Pairs an open {@link Editor} with context needed for lifecycle management.
      * Returned by {@link #openEditorForTool}; pass to {@link #releaseToolEditor} when done.
      */
-    protected record ToolEditor(@NotNull Editor editor, @NotNull VirtualFile file, boolean wasAlreadyOpen) {}
+    protected record ToolEditor(@NotNull Editor editor, @NotNull VirtualFile file, boolean wasAlreadyOpen) {
+    }
 
     protected QualityTool(Project project) {
         super(project);
@@ -227,6 +228,22 @@ public abstract class QualityTool extends Tool {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             FileEditorManager.getInstance(project).closeFile(te.file());
         }
+    }
+
+    /**
+     * Returns {@code null} if this tool may open {@code vf} in the editor, or an error string
+     * explaining why it cannot. Opening is blocked when Follow Agent Files is off AND temporary
+     * file opens are disabled — the file must already be open for the tool to function.
+     */
+    @Nullable
+    protected String checkEditorAccess(@NotNull VirtualFile vf) {
+        if (FileEditorManager.getInstance(project).isFileOpen(vf)) return null;
+        if (ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return null;
+        if (ToolLayerSettings.getInstance(project).getAllowTransientFileOpens()) return null;
+        return "Error: This tool needs to temporarily open the file in the IDE editor to collect " +
+            "code analysis data, but this is disabled when Follow Agent Files is off. " +
+            "Re-enable 'Open files temporarily for code quality data' in AgentBridge → UI/UX " +
+            "settings, or enable Follow Agent Files.";
     }
 
     /**

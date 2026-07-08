@@ -181,6 +181,9 @@ public final class GetAvailableActionsTool extends QualityTool {
             return "Error: Line " + targetLine + " is out of bounds (file has " + doc.getLineCount() + " lines)";
         }
 
+        String accessError = checkEditorAccess(vf);
+        if (accessError != null) return accessError;
+
         ToolEditor toolEditor = openEditorForTool(vf);
         if (toolEditor == null) return "Error: Could not open editor for " + pathStr;
         try {

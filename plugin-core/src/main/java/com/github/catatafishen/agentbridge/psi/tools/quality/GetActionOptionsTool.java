@@ -128,6 +128,9 @@ public final class GetActionOptionsTool extends QualityTool {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
 
+        String accessError = checkEditorAccess(vf);
+        if (accessError != null) return accessError;
+
         ToolEditor toolEditor = openEditorForTool(vf);
         if (toolEditor == null) return "Error: Could not open editor for " + pathStr;
         try {

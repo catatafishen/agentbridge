@@ -113,6 +113,21 @@ class ChatInputConfigurable(private val project: Project) :
                     { ActiveAgentManager.setFollowAgentFiles(project, it) }
                 )
         }
+        indent {
+            row {
+                checkBox("Open files temporarily for code quality data")
+                    .comment(
+                        "When Follow Agent is disabled, tools like <code>get_highlights</code> and " +
+                            "action tools still briefly open files to collect live code analysis data. " +
+                            "Disable this to prevent <em>all</em> background file opens — those tools " +
+                            "will return degraded or empty results when Follow Agent is off."
+                    )
+                    .bindSelected(
+                        { ActiveAgentManager.getAllowTransientFileOpens(project) },
+                        { ActiveAgentManager.setAllowTransientFileOpens(project, it) }
+                    )
+            }
+        }
         row {
             checkBox("Enable smooth scrolling in chat panel")
                 .comment("⚠ May cause screen tearing on some systems")

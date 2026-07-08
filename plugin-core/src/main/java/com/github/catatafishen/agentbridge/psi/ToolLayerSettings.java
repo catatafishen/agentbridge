@@ -23,6 +23,8 @@ public interface ToolLayerSettings {
      */
     String FOLLOW_AGENT_FILES_KEY = "agent.followAgentFiles";
 
+    String ALLOW_TRANSIENT_FILE_OPENS_KEY = "agent.allowTransientFileOpens";
+
     @NotNull
     static ToolLayerSettings getInstance(@NotNull Project project) {
         ToolLayerSettings service = (ToolLayerSettings) PlatformApiCompat.getServiceByRawClass(project, ToolLayerSettings.class);
@@ -36,6 +38,16 @@ public interface ToolLayerSettings {
      * Whether to auto-navigate to files as the agent reads or edits them.
      */
     boolean getFollowAgentFiles();
+
+    /**
+     * Whether tools are allowed to temporarily open files in the editor to collect
+     * live metadata (daemon highlights, intention actions) when Follow Agent Files
+     * is disabled. Defaults to {@code true}. Only has effect when
+     * {@link #getFollowAgentFiles()} returns {@code false}.
+     */
+    default boolean getAllowTransientFileOpens() {
+        return true;
+    }
 
     /**
      * Display label for the currently active agent or sub-agent (e.g., "ui-reviewer").

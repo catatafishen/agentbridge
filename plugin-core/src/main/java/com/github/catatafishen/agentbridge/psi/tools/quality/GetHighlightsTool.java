@@ -172,6 +172,15 @@ public final class GetHighlightsTool extends QualityTool {
         if (resultFuture.isDone()) return;
 
         appendEditorNotificationsIfPresent(result, pathStr);
+
+        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
+        if (!settings.getFollowAgentFiles() && !settings.getAllowTransientFileOpens()) {
+            result.append("\n\nNote: Results above are from cached analysis only. " +
+                "Temporary file opens are disabled in AgentBridge settings, so files not " +
+                "already open in the editor were not analyzed. Enable 'Open files temporarily " +
+                "for code quality data' in AgentBridge → UI/UX settings for complete results.");
+        }
+
         resultFuture.complete(result.toString());
     }
 
@@ -229,6 +238,11 @@ public final class GetHighlightsTool extends QualityTool {
         if (alreadyOpen) return;
 
         boolean followAgent = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
+        boolean allowTransient = ToolLayerSettings.getInstance(project).getAllowTransientFileOpens();
+        if (!followAgent && !allowTransient) {
+            LOG.debug("get_highlights: skipping transient file open — allowTransientFileOpens=false");
+            return;
+        }
 
         // Subscribe BEFORE opening so we don't miss the daemon pass
         var latch = new java.util.concurrent.CountDownLatch(1);
