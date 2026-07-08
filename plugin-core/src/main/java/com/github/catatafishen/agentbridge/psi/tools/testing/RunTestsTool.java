@@ -74,7 +74,9 @@ public final class RunTestsTool extends TestingTool {
     private static final String STARTED_TESTS_MSG = "Started tests via IntelliJ JUnit runner: ";
     private static final String ERROR_NO_PROJECT_PATH = "Error: Could not determine project base path";
 
-    /** Timeout in seconds for {@link #awaitProcessTermination}; set in {@link #execute}. */
+    /**
+     * Timeout in seconds for {@link #awaitProcessTermination}; set in {@link #execute}.
+     */
     private int timeoutSec = 300;
 
     public RunTestsTool(Project project) {
@@ -139,6 +141,9 @@ public final class RunTestsTool extends TestingTool {
         String module = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         String testTask = args.has(PARAM_TEST_TASK) ? args.get(PARAM_TEST_TASK).getAsString() : "";
         this.timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 300;
+        if (this.timeoutSec <= 0) {
+            return "Error: timeout must be a positive integer (seconds), got: " + this.timeoutSec;
+        }
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -614,8 +619,8 @@ public final class RunTestsTool extends TestingTool {
     }
 
     public String executeFromCommand(@NotNull String command, int timeoutSec) {
-        String target   = parseTestsFilterFromCommand(command);
-        String module   = parseModuleFromCommand(command);
+        String target = parseTestsFilterFromCommand(command);
+        String module = parseModuleFromCommand(command);
         String taskName = parseTaskFromCommand(command);
 
         JsonObject args = new JsonObject();

@@ -92,10 +92,10 @@ public final class RunCommandTool extends InfrastructureTool {
     @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String command = args.get(PARAM_COMMAND).getAsString();
-        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
         String abuseType = ToolUtils.detectCommandAbuseType(command);
         if ("test".equals(abuseType)) {
-            return new RunTestsTool(project).executeFromCommand(command, timeoutSec);
+            int testTimeout = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 300;
+            return new RunTestsTool(project).executeFromCommand(command, testTimeout);
         }
         if ("grep".equals(abuseType) && ToolUtils.grepTargetsOnlyOutsideSourceRoots(project, command)) {
             abuseType = null;
@@ -112,6 +112,7 @@ public final class RunCommandTool extends InfrastructureTool {
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
+        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
         String shellOverride = args.has(PARAM_SHELL) ? args.get(PARAM_SHELL).getAsString() : null;
         // Treat a blank shell override (e.g. from JSON templating) the same as "not provided"
