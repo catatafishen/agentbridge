@@ -17,7 +17,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -115,18 +114,12 @@ public final class GetActionOptionsTool extends QualityTool {
 
     private String captureOptions(String pathStr, int targetLine, String actionName,
                                   @Nullable String symbol, @Nullable Integer targetCol) {
-        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
-        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
-
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc == null) return "Error: Cannot get document for: " + pathStr;
-
-        if (targetLine < 1 || targetLine > doc.getLineCount()) {
-            return "Error: Line " + targetLine + " is out of bounds (file has " + doc.getLineCount() + FORMAT_LINES_SUFFIX;
-        }
-
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+        var fileResult = loadFileContext(pathStr, targetLine);
+        if (fileResult instanceof FileContextResult.Err(var error)) return error;
+        var fileCtx = (FileContextResult.Ok) fileResult;
+        VirtualFile vf = fileCtx.vf();
+        Document doc = fileCtx.doc();
+        PsiFile psiFile = fileCtx.psiFile();
 
         String accessError = checkEditorAccess(vf);
         if (accessError != null) return accessError;
@@ -179,21 +172,18 @@ public final class GetActionOptionsTool extends QualityTool {
             // No dialog — action ran headlessly. Show the diff then undo.
             String diff = DiffUtils.unifiedDiff(before, after, pathStr);
             if (diff.isEmpty()) {
-                return ACTION_PREFIX + actionName + "' made no changes and showed no dialog. "
-                    + "It may require a different caret position or context.";
+                undoLastAction(vf);
+                return ACTION_PREFIX + actionName + "' at " + pathStr + ":" + targetLine + " shows no dialog and makes no changes.";
             }
-
-            // Undo the change so this was truly a preview
             undoLastAction(vf);
-
-            return ACTION_PREFIX + actionName + "' makes the following changes (no dialog — use apply_action to apply):\n\n" + diff;
+            return "Action ran headlessly (no dialog). Changes were undone. Diff:\n\n" + diff;
         } finally {
             releaseToolEditor(toolEditor);
         }
     }
 
-    static String formatDialogOptions(String actionName, String pathStr, int line,
-                                      DialogInterceptor.DialogInfo info) {
+    private String formatDialogOptions(String actionName, String pathStr, int line,
+                                       DialogInterceptor.DialogInfo info) {
         StringBuilder sb = new StringBuilder();
         sb.append(ACTION_PREFIX).append(actionName).append("' at ").append(pathStr).append(':').append(line)
             .append(" shows a dialog with the following options:\n");

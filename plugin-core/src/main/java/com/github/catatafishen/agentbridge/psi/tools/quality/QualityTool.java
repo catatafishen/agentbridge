@@ -11,6 +11,7 @@ import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.IntentionManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
@@ -286,6 +287,47 @@ public abstract class QualityTool extends Tool {
     }
 
     protected record FilePair(VirtualFile vf, PsiFile psiFile) {
+    }
+
+    /**
+     * Result type returned by {@link #loadFileContext}.
+     * Either an error string ({@link Err}) or the resolved VF/document/PSI triple ({@link Ok}).
+     */
+    protected sealed interface FileContextResult permits FileContextResult.Ok, FileContextResult.Err {
+        record Ok(@NotNull VirtualFile vf, @NotNull Document doc, @NotNull PsiFile psiFile)
+            implements FileContextResult {
+        }
+
+        record Err(@NotNull String error) implements FileContextResult {
+        }
+    }
+
+    /**
+     * Validates {@code pathStr} and {@code targetLine}, resolving the VirtualFile, Document, and
+     * PsiFile in one step. Returns {@link FileContextResult.Err} with a ready-to-return error
+     * string on any failure, or {@link FileContextResult.Ok} with the resolved triple on success.
+     *
+     * <p>Extracted from {@link ApplyActionTool} and {@link GetActionOptionsTool} to eliminate
+     * duplicated guard sequences and reduce cognitive complexity.
+     */
+    protected FileContextResult loadFileContext(String pathStr, int targetLine) {
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
+        if (vf == null)
+            return new FileContextResult.Err(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+
+        Document doc = FileDocumentManager.getInstance().getDocument(vf);
+        if (doc == null) return new FileContextResult.Err("Error: Cannot get document for: " + pathStr);
+
+        if (targetLine < 1 || targetLine > doc.getLineCount()) {
+            return new FileContextResult.Err(
+                "Error: Line " + targetLine + " is out of bounds (file has " + doc.getLineCount() + FORMAT_LINES_SUFFIX);
+        }
+
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null)
+            return new FileContextResult.Err(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr);
+
+        return new FileContextResult.Ok(vf, doc, psiFile);
     }
 
     protected FilePair resolveFilePair(String pathStr, CompletableFuture<String> future) {
