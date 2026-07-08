@@ -3,13 +3,13 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.testing.RunTestsTool;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.github.catatafishen.agentbridge.ui.renderers.RunCommandRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -109,9 +109,10 @@ public final class RunCommandTool extends InfrastructureTool {
 
         Map<String, String> injectedEnv = extractInjectedEnv(args);
         GeneralCommandLine cmd = buildCommandLine(command, basePath, injectedEnv);
+        String shellName = shellBaseName(ShellEnvironment.getShellPath(project));
         ProcessResult result = executeInRunPanel(cmd, tabTitle, timeoutSec);
 
-        return formatExecuteOutput(result, args, maxChars, offset, timeoutSec);
+        return formatExecuteOutput(result, args, maxChars, offset, timeoutSec, shellName);
     }
 
     @Override
@@ -125,12 +126,13 @@ public final class RunCommandTool extends InfrastructureTool {
 
     private GeneralCommandLine buildCommandLine(String command, String basePath,
                                                 Map<String, String> injectedEnv) {
-        GeneralCommandLine cmd;
-        if (SystemInfo.isWindows) {
-            cmd = new GeneralCommandLine("cmd", "/c", command);
-        } else {
-            cmd = new GeneralCommandLine("sh", "-c", command);
-        }
+        String shellPath = ShellEnvironment.getShellPath(project);
+        String shellName = shellBaseName(shellPath);
+        GeneralCommandLine cmd = switch (shellName) {
+            case "powershell", "pwsh" -> new GeneralCommandLine(shellPath, "-Command", command);
+            case "cmd" -> new GeneralCommandLine(shellPath, "/c", command);
+            default -> new GeneralCommandLine(shellPath, "-c", command); // POSIX: sh, bash, zsh…
+        };
         cmd.setWorkDirectory(basePath);
         if (!injectedEnv.isEmpty()) {
             cmd.withEnvironment(injectedEnv);
@@ -140,6 +142,17 @@ public final class RunCommandTool extends InfrastructureTool {
             cmd.withEnvironment(JAVA_HOME_ENV, javaHome);
         }
         return cmd;
+    }
+
+    /**
+     * Extracts the lowercase base name (no path, no extension) from a shell path.
+     */
+    static String shellBaseName(String shellPath) {
+        int lastSlash = Math.max(shellPath.lastIndexOf('/'), shellPath.lastIndexOf('\\'));
+        String name = lastSlash >= 0 ? shellPath.substring(lastSlash + 1) : shellPath;
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) name = name.substring(0, dot);
+        return name.toLowerCase();
     }
 
     /**
@@ -158,9 +171,10 @@ public final class RunCommandTool extends InfrastructureTool {
         return env;
     }
 
-    private String formatExecuteOutput(ProcessResult result, JsonObject args, int maxChars, int offset, int timeoutSec) {
+    private String formatExecuteOutput(ProcessResult result, JsonObject args, int maxChars,
+                                       int offset, int timeoutSec, String shellName) {
         if (result.timedOut()) {
-            return "Command timed out after " + timeoutSec + " seconds.\n\n"
+            return "Command timed out after " + timeoutSec + " seconds [" + shellName + "].\n\n"
                 + ToolUtils.truncateOutput(result.output(), maxChars, offset);
         }
         String fullOutput = result.output();
@@ -170,8 +184,8 @@ public final class RunCommandTool extends InfrastructureTool {
             effectiveOffset = fullOutput.length() - maxChars;
         }
         String header = failed
-            ? "Command failed (exit code " + result.exitCode() + ")"
-            : "Command succeeded";
+            ? "Command failed (exit code " + result.exitCode() + ") [" + shellName + "]"
+            : "Command succeeded [" + shellName + "]";
         if (failed && effectiveOffset > 0) {
             header += "\n(showing last " + maxChars + " chars — use offset=0 for beginning)";
         }

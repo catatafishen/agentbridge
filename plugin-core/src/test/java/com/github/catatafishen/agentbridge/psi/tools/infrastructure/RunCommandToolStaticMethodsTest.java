@@ -45,7 +45,7 @@ class RunCommandToolStaticMethodsTest {
 
         formatExecuteOutput = RunCommandTool.class.getDeclaredMethod(
             "formatExecuteOutput", processResultClass, JsonObject.class,
-            int.class, int.class, int.class);
+            int.class, int.class, int.class, String.class);
         formatExecuteOutput.setAccessible(true);
     }
 
@@ -61,7 +61,7 @@ class RunCommandToolStaticMethodsTest {
 
     private static String invokeFormatOutput(Object result, JsonObject args,
                                              int maxChars, int offset, int timeoutSec) throws Exception {
-        return (String) formatExecuteOutput.invoke(TOOL, result, args, maxChars, offset, timeoutSec);
+        return (String) formatExecuteOutput.invoke(TOOL, result, args, maxChars, offset, timeoutSec, "bash");
     }
 
     // --- JSON builder helpers -------------------------------------------------------------
@@ -276,7 +276,7 @@ class RunCommandToolStaticMethodsTest {
             Object result = processResult(-1, "partial output...", true);
             String output = invokeFormatOutput(result, argsWithoutOffset(), 8000, 0, 30);
 
-            assertTrue(output.startsWith("Command timed out after 30 seconds."));
+            assertTrue(output.startsWith("Command timed out after 30 seconds [bash]."));
             assertTrue(output.contains("partial output..."));
             assertFalse(output.contains("Command succeeded"));
             assertFalse(output.contains("Command failed"));
@@ -297,7 +297,7 @@ class RunCommandToolStaticMethodsTest {
             Object result = processResult(-1, "", true);
             String output = invokeFormatOutput(result, argsWithoutOffset(), 8000, 0, 60);
 
-            assertTrue(output.startsWith("Command timed out after 60 seconds."));
+            assertTrue(output.startsWith("Command timed out after 60 seconds [bash]."));
         }
 
         // ------ Pagination/offset cases ------
