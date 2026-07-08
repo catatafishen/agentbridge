@@ -92,9 +92,10 @@ public final class RunCommandTool extends InfrastructureTool {
     @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String command = args.get(PARAM_COMMAND).getAsString();
+        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
         String abuseType = ToolUtils.detectCommandAbuseType(command);
         if ("test".equals(abuseType)) {
-            return new RunTestsTool(project).executeFromCommand(command);
+            return new RunTestsTool(project).executeFromCommand(command, timeoutSec);
         }
         if ("grep".equals(abuseType) && ToolUtils.grepTargetsOnlyOutsideSourceRoots(project, command)) {
             abuseType = null;
@@ -109,7 +110,6 @@ public final class RunCommandTool extends InfrastructureTool {
         String title = args.has(JSON_TITLE) ? args.get(JSON_TITLE).getAsString() : null;
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
-        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
