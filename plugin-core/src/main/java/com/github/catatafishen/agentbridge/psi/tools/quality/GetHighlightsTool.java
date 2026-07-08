@@ -175,10 +175,13 @@ public final class GetHighlightsTool extends QualityTool {
 
         ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
         if (!settings.getFollowAgentFiles() && !settings.getAllowTransientFileOpens()) {
-            result.append("\n\nNote: Results above are from cached analysis only. " +
-                "Temporary file opens are disabled in AgentBridge settings, so files not " +
-                "already open in the editor were not analyzed. Enable 'Open files temporarily " +
-                "for code quality data' in AgentBridge → UI/UX settings for complete results.");
+            result.append("""
+
+
+                Note: Results above are from cached analysis only.
+                Temporary file opens are disabled in AgentBridge settings, so files not
+                already open in the editor were not analyzed. Enable 'Open files temporarily
+                for code quality data' in AgentBridge → UI/UX settings for complete results.""");
         }
 
         resultFuture.complete(result.toString());
