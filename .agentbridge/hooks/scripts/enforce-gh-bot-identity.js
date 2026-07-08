@@ -5,9 +5,15 @@
 // distributed to end users. See docs/BOT-IDENTITY-HOOKS.md. Optional — safe to disable locally.
 //
 // Purpose: intercept `gh` CLI commands that create or modify GitHub content (PRs, issues,
-// comments, reviews, releases, and write `gh api` calls) and enforce bot identity by exporting
-// GH_TOKEN for the wrapped command, so agent-authored actions are attributed to the project bot
-// rather than the developer's personal account.
+// comments, reviews, releases, and write `gh api` calls) and enforce bot identity by injecting
+// GH_TOKEN so agent-authored actions are attributed to the project bot rather than the
+// developer's personal account.
+//
+// Token injection strategy (per tool):
+//   - run_command: Hook.setEnv("GH_TOKEN", token) — sets an OS-level env var via
+//     GeneralCommandLine.withEnvironment(). Safe for heredocs and embedded quotes (#864, #902).
+//   - run_in_terminal: Hook.setCommand("(export GH_TOKEN='...'; <cmd>)") — still required because
+//     terminal input cannot receive env vars from the hook layer.
 //
 // gh api write detection covers:
 //   - Explicit method flags: -X/--method post/patch/put/delete
@@ -18,7 +24,6 @@
 // GitHub App installation token (generate-github-app-token.sh sibling helper).
 //
 // Capabilities: filesystem (read token file), subprocess (mint GitHub App token).
-// Output: Hook.setCommand("(export GH_TOKEN='...'; <original>)") or Hook.error(...).
 //
 // ⚠️ AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry using built-in bash,
 //    run_in_terminal, or any other tool that bypasses this check. Instead, stop and tell the user
@@ -58,11 +63,18 @@
 
     var token = resolveBotToken();
     if (token) {
-        // Wrap in a subshell so the export is visible to every command in the pipeline
-        // (e.g. `cd /path && gh pr create`) without leaking into the outer terminal session.
-        // GitHub tokens are alphanumeric + underscore (ghp_, ghs_, github_pat_), so they cannot
-        // contain single quotes — single-quoting the value is therefore safe.
-        Hook.setCommand("(export GH_TOKEN='" + token + "'; " + command + ')');
+        if (Hook.tool() === 'run_command') {
+            // Inject as an OS-level env var via Hook.setEnv — avoids modifying the command string,
+            // which broke heredocs and embedded double-quotes (see issues #864, #902).
+            // RunCommandTool picks up _env.* args and applies them via GeneralCommandLine.withEnvironment().
+            Hook.setEnv('GH_TOKEN', token);
+        } else {
+            // run_in_terminal sends the command as terminal input, not as a GeneralCommandLine arg.
+            // setEnv() is not supported there, so we keep the subshell wrapping approach.
+            // GitHub tokens are alphanumeric + underscore (ghp_, ghs_, github_pat_), so they cannot
+            // contain single quotes — single-quoting the value is therefore safe.
+            Hook.setCommand("(export GH_TOKEN='" + token + "'; " + command + ')');
+        }
     } else {
         Hook.error("Identity policy: this command would post GitHub content (PR, comment, issue, "
             + "etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using "

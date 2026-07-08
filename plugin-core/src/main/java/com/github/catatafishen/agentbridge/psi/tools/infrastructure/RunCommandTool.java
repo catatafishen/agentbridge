@@ -13,6 +13,9 @@ import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Runs a shell command with paginated output.
  */
@@ -104,7 +107,8 @@ public final class RunCommandTool extends InfrastructureTool {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
 
-        GeneralCommandLine cmd = buildCommandLine(command, basePath);
+        Map<String, String> injectedEnv = extractInjectedEnv(args);
+        GeneralCommandLine cmd = buildCommandLine(command, basePath, injectedEnv);
         ProcessResult result = executeInRunPanel(cmd, tabTitle, timeoutSec);
 
         return formatExecuteOutput(result, args, maxChars, offset, timeoutSec);
@@ -119,7 +123,8 @@ public final class RunCommandTool extends InfrastructureTool {
         return command.length() > 40 ? command.substring(0, 37) + "..." : command;
     }
 
-    private GeneralCommandLine buildCommandLine(String command, String basePath) {
+    private GeneralCommandLine buildCommandLine(String command, String basePath,
+                                                Map<String, String> injectedEnv) {
         GeneralCommandLine cmd;
         if (SystemInfo.isWindows) {
             cmd = new GeneralCommandLine("cmd", "/c", command);
@@ -127,11 +132,30 @@ public final class RunCommandTool extends InfrastructureTool {
             cmd = new GeneralCommandLine("sh", "-c", command);
         }
         cmd.setWorkDirectory(basePath);
+        if (!injectedEnv.isEmpty()) {
+            cmd.withEnvironment(injectedEnv);
+        }
         String javaHome = getProjectJavaHome();
         if (javaHome != null) {
             cmd.withEnvironment(JAVA_HOME_ENV, javaHome);
         }
         return cmd;
+    }
+
+    /**
+     * Scans {@code args} for entries whose key starts with {@code _env.} and returns them as a
+     * map of variable-name → value. These entries are written by {@code Hook.setEnv(name, value)}
+     * in pre-hooks so that sensitive values (e.g., {@code GH_TOKEN}) can be injected as OS-level
+     * environment variables without modifying or wrapping the command string.
+     */
+    static Map<String, String> extractInjectedEnv(JsonObject args) {
+        Map<String, String> env = new LinkedHashMap<>();
+        for (var entry : args.entrySet()) {
+            if (entry.getKey().startsWith("_env.") && entry.getValue().isJsonPrimitive()) {
+                env.put(entry.getKey().substring(5), entry.getValue().getAsString());
+            }
+        }
+        return env;
     }
 
     private String formatExecuteOutput(ProcessResult result, JsonObject args, int maxChars, int offset, int timeoutSec) {

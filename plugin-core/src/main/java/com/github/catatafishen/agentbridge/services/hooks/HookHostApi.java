@@ -388,6 +388,24 @@ public final class HookHostApi {
     }
 
     /**
+     * Injects an environment variable into the tool's process environment without modifying the
+     * command string. For {@code run_command}, the variable is passed via
+     * {@link GeneralCommandLine#withEnvironment} and is visible to every command in the shell
+     * script — including pipelines ({@code cmd1 && cmd2}) — without altering quoting.
+     *
+     * <p>Use this instead of {@link #setCommand} when the goal is token injection or other
+     * environment setup: {@code setCommand} wraps the command in a subshell string, which breaks
+     * heredocs and embedded double-quotes in the original command. {@code setEnv} avoids shell
+     * quoting entirely because the value never enters the shell's argument parser.
+     *
+     * <p>Multiple calls accumulate; the last value for a given name wins. Shorthand for
+     * {@code setArgument("_env." + name, value)}.
+     */
+    public void setEnv(@NotNull String name, @NotNull String value) {
+        setArgument("_env." + name, value);
+    }
+
+    /**
      * Writes a diagnostic line to the IDE log (prefixed with {@code [hook.js]}).
      */
     public void log(@NotNull String message) {
