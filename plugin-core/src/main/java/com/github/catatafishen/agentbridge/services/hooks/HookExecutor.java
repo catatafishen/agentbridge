@@ -336,36 +336,27 @@ public final class HookExecutor {
         return cmd;
     }
 
-    /**
-     * Extract the interpreter from the script's shebang line.
-     * <p>
-     * On Windows, {@code sh} and {@code bash} shebangs are redirected to the
-     * IntelliJ-configured terminal shell (via {@link ShellEnvironment#getShellPath(Project)}).
-     * Other Unix absolute paths (e.g. {@code /usr/bin/python3}) are reduced to their basename
-     * for PATH-based resolution.
-     * Falls back to the IntelliJ-configured shell when the shebang is absent or unreadable.
-     */
     private static @NotNull String resolveInterpreter(@NotNull Path scriptPath, @NotNull Project project) {
         try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(scriptPath)) {
             String firstLine = reader.readLine();
-            if (firstLine == null || !firstLine.startsWith("#!")) return ShellEnvironment.getShellPath(project);
+            if (firstLine == null || !firstLine.startsWith("#!")) return resolvePosixShell(project);
             String shebang = firstLine.substring(2).trim();
             // /usr/bin/env python3  →  python3  (PATH lookup, works everywhere)
             if (shebang.startsWith("/usr/bin/env ")) {
                 String[] parts = shebang.substring("/usr/bin/env ".length()).trim().split("\\s+");
-                return parts[0].isEmpty() ? ShellEnvironment.getShellPath(project) : parts[0];
+                return parts[0].isEmpty() ? resolvePosixShell(project) : parts[0];
             }
             String interpreter = shebang.split("\\s+")[0];
             if (!IS_WINDOWS) return interpreter;
             // On Windows, redirect sh/bash/dash to the IntelliJ-configured terminal shell
-            if (isShellInterpreter(interpreter)) return ShellEnvironment.getShellPath(project);
+            if (isShellInterpreter(interpreter)) return resolvePosixShell(project);
             // Other Unix absolute paths (/usr/bin/python3) → basename for PATH lookup
             if (interpreter.startsWith("/")) {
                 return interpreter.substring(interpreter.lastIndexOf('/') + 1);
             }
             return interpreter;
         } catch (java.io.IOException e) {
-            return ShellEnvironment.getShellPath(project);
+            return resolvePosixShell(project);
         }
     }
 
@@ -383,6 +374,31 @@ public final class HookExecutor {
             : interpreter;
         return switch (basename) {
             case "sh", "bash", "dash" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Returns the configured shell for the project only if it is capable of running POSIX
+     * shell scripts (sh, bash, zsh, dash, fish). Falls back to the system-level shell
+     * (via {@link ShellEnvironment#getShellPath()}) when the IDE is configured to use a
+     * non-POSIX shell such as PowerShell or cmd.exe.
+     *
+     * <p>Use this instead of {@link ShellEnvironment#getShellPath(Project)} when the caller
+     * needs to spawn a shell that understands POSIX syntax (e.g. to execute a hook script).
+     */
+    private static String resolvePosixShell(@NotNull Project project) {
+        String configured = ShellEnvironment.getShellPath(project);
+        return isPosixCapable(configured) ? configured : ShellEnvironment.getShellPath();
+    }
+
+    private static boolean isPosixCapable(@NotNull String shellPath) {
+        int lastSlash = Math.max(shellPath.lastIndexOf('/'), shellPath.lastIndexOf('\\'));
+        String name = lastSlash >= 0 ? shellPath.substring(lastSlash + 1) : shellPath;
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) name = name.substring(0, dot);
+        return switch (name.toLowerCase()) {
+            case "sh", "bash", "zsh", "dash", "fish" -> true;
             default -> false;
         };
     }
