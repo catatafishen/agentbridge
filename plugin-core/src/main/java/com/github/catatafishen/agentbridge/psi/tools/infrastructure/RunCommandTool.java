@@ -22,6 +22,7 @@ import java.util.Map;
 public final class RunCommandTool extends InfrastructureTool {
 
     private static final String PARAM_COMMAND = "command";
+    private static final String PARAM_SHELL = "shell";
     private static final String PARAM_OFFSET = "offset";
     private static final String PARAM_TIMEOUT = "timeout";
     private static final String PARAM_MAX_CHARS = "max_chars";
@@ -72,8 +73,12 @@ public final class RunCommandTool extends InfrastructureTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
+        String configuredShell = project != null ? ShellEnvironment.getShellPath(project) : "IDE-configured shell";
         return schema(
             Param.required(PARAM_COMMAND, TYPE_STRING, "Shell command to execute (e.g., 'gradle build', 'cat file.txt')"),
+            Param.optional(PARAM_SHELL, TYPE_STRING,
+                "Shell executable to use (default: '" + configuredShell + "', the IDE-configured terminal shell). "
+                    + "Override with any shell path available on this system, e.g. '/usr/bin/zsh' or 'pwsh'."),
             Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 60)"),
             Param.optional(JSON_TITLE, TYPE_STRING, "Human-readable title for the Run panel tab. ALWAYS set this to a short descriptive name"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Character offset to start output from (default: 0). Use for pagination when output is truncated"),
@@ -106,10 +111,11 @@ public final class RunCommandTool extends InfrastructureTool {
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
+        String shellOverride = args.has(PARAM_SHELL) ? args.get(PARAM_SHELL).getAsString() : null;
 
         Map<String, String> injectedEnv = extractInjectedEnv(args);
-        GeneralCommandLine cmd = buildCommandLine(command, basePath, injectedEnv);
-        String shellName = shellBaseName(ShellEnvironment.getShellPath(project));
+        GeneralCommandLine cmd = buildCommandLine(command, basePath, injectedEnv, shellOverride);
+        String shellName = shellBaseName(shellOverride != null ? shellOverride : ShellEnvironment.getShellPath(project));
         ProcessResult result = executeInRunPanel(cmd, tabTitle, timeoutSec);
 
         return formatExecuteOutput(result, args, maxChars, offset, timeoutSec, shellName);
@@ -125,8 +131,9 @@ public final class RunCommandTool extends InfrastructureTool {
     }
 
     private GeneralCommandLine buildCommandLine(String command, String basePath,
-                                                Map<String, String> injectedEnv) {
-        String shellPath = ShellEnvironment.getShellPath(project);
+                                                Map<String, String> injectedEnv,
+                                                @Nullable String shellOverride) {
+        String shellPath = shellOverride != null ? shellOverride : ShellEnvironment.getShellPath(project);
         String shellName = shellBaseName(shellPath);
         GeneralCommandLine cmd = switch (shellName) {
             case "powershell", "pwsh" -> new GeneralCommandLine(shellPath, "-Command", command);
