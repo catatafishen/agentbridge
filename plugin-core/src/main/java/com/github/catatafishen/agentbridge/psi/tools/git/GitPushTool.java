@@ -37,7 +37,9 @@ public final class GitPushTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Push commits to a remote repository. Auto-fetches from origin before pushing "
-            + "to detect divergence. Returns push result with remote URL and branch tracking status.";
+            + "to detect divergence. Returns push result with remote URL and branch tracking status. "
+            + "Defaults to 'git push origin HEAD' when no remote or branch is specified, "
+            + "so it always pushes the current branch by name regardless of upstream tracking config.";
     }
 
     @Override
@@ -128,6 +130,12 @@ public final class GitPushTool extends GitTool {
     private PushTarget resolvePushTarget(@NotNull JsonObject args, @NotNull String root) throws Exception {
         String remote = args.has(PARAM_REMOTE) ? args.get(PARAM_REMOTE).getAsString() : null;
         String branch = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
+        // When a branch is given without an explicit remote, default to "origin".
+        // Without this, "git push <branch>" is interpreted as "git push <remote>" by git's
+        // positional argument rules, silently targeting the wrong destination.
+        if (branch != null && remote == null) {
+            remote = DEFAULT_REMOTE;
+        }
         if (!hasFlag(args, PARAM_SET_UPSTREAM)) return new PushTarget(remote, branch);
         return new PushTarget(
             remote != null ? remote : DEFAULT_REMOTE,
@@ -140,8 +148,17 @@ public final class GitPushTool extends GitTool {
         cmdArgs.add("push");
         if (forceFlag) cmdArgs.add("--force");
         if (hasFlag(args, PARAM_SET_UPSTREAM)) cmdArgs.add("--set-upstream");
-        if (target.remote() != null) cmdArgs.add(target.remote());
-        if (target.branch() != null) cmdArgs.add(target.branch());
+        if (target.remote() != null) {
+            cmdArgs.add(target.remote());
+            if (target.branch() != null) cmdArgs.add(target.branch());
+        } else {
+            // No remote or branch specified.  Use "origin HEAD" (push current branch to a same-named
+            // remote branch) instead of a bare "git push", which relies on push.default and a
+            // correctly-configured upstream tracking ref — both of which may be absent or mismatched
+            // (e.g. a feature branch that was branched off master and still tracks origin/master).
+            cmdArgs.add(DEFAULT_REMOTE);
+            cmdArgs.add("HEAD");
+        }
         if (hasFlag(args, "tags")) cmdArgs.add("--tags");
         return cmdArgs.toArray(String[]::new);
     }
