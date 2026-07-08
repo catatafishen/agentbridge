@@ -201,12 +201,14 @@ public abstract class QualityTool extends Tool {
     @Nullable
     protected ToolEditor openEditorForTool(@NotNull VirtualFile vf) {
         FileEditorManager fem = FileEditorManager.getInstance(project);
-        for (var fe : fem.getEditors(vf)) {
+        var existingEditors = fem.getEditors(vf);
+        boolean wasAlreadyOpen = existingEditors.length > 0;
+        for (var fe : existingEditors) {
             if (fe instanceof TextEditor te) return new ToolEditor(te.getEditor(), vf, true);
         }
         var opened = fem.openFile(vf, false);
         for (var fe : opened) {
-            if (fe instanceof TextEditor te) return new ToolEditor(te.getEditor(), vf, false);
+            if (fe instanceof TextEditor te) return new ToolEditor(te.getEditor(), vf, wasAlreadyOpen);
         }
         return null;
     }

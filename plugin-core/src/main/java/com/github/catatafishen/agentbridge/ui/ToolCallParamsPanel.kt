@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.github.catatafishen.agentbridge.ui.ToolCallParamsPanel.MAX_VALUE_DISPLAY_LENGTH
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.intellij.ide.BrowserUtil
@@ -30,7 +29,7 @@ import javax.swing.JPanel
  * - **File path** (starts with `/`, `~/`, `./`, `../`, or Windows drive): clickable link, opens in IDE editor
  * - **Commit hash** (7–40 hex chars with at least one letter a–f): styled as code, click-to-copy
  * - **Multi-line text**: first-line preview with line count; full text in tooltip
- * - **Plain text**: truncated to [MAX_VALUE_DISPLAY_LENGTH] chars; full text in tooltip
+ * - **Plain text**: truncated to `MAX_VALUE_DISPLAY_LENGTH` chars; full text in tooltip
  */
 internal object ToolCallParamsPanel {
 

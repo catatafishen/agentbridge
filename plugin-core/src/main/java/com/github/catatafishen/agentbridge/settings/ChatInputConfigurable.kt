@@ -120,7 +120,7 @@ class ChatInputConfigurable(private val project: Project) :
                         "When Follow Agent is disabled, tools like <code>get_highlights</code> and " +
                             "action tools still briefly open files to collect live code analysis data. " +
                             "Disable this to prevent <em>all</em> background file opens — those tools " +
-                            "will return degraded or empty results when Follow Agent is off."
+                            "will return an error unless the file is already open when Follow Agent is off."
                     )
                     .bindSelected(
                         { ActiveAgentManager.getAllowTransientFileOpens(project) },

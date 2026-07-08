@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -47,6 +48,9 @@ internal object ToolCallPopup {
 
     private fun popupWidth() = JBUI.scale(650)
     private fun popupHeight() = JBUI.scale(420)
+
+    private fun wrappedHtmlText(text: String): String =
+        "<html><body style='width:580px'>${StringUtil.escapeXmlEntities(text)}</body></html>"
 
     fun show(request: Request) {
         currentPopup?.cancel()
@@ -135,7 +139,7 @@ internal object ToolCallPopup {
                 })
                 if (request.denialReason != null) {
                     add(Box.createVerticalStrut(JBUI.scale(4)))
-                    add(JBLabel("<html><body style='width:580px'>Reason: ${request.denialReason}</body></html>").apply {
+                    add(JBLabel(wrappedHtmlText("Reason: ${request.denialReason}")).apply {
                         foreground = JBColor.RED
                         alignmentX = JComponent.LEFT_ALIGNMENT
                     })
@@ -152,7 +156,7 @@ internal object ToolCallPopup {
             border = JBUI.Borders.emptyBottom(2)
             alignmentX = JComponent.LEFT_ALIGNMENT
         })
-        panel.add(JBLabel("<html><body style='width:580px'>${request.toolDescription ?: "External"}</body></html>").apply {
+        panel.add(JBLabel(wrappedHtmlText(request.toolDescription ?: "External")).apply {
             foreground = UIUtil.getContextHelpForeground()
             border = JBUI.Borders.emptyBottom(6)
             alignmentX = JComponent.LEFT_ALIGNMENT

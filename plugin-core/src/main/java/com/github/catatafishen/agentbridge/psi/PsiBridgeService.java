@@ -1003,8 +1003,8 @@ public final class PsiBridgeService implements Disposable {
             // Both Follow Agent Files and Allow Temporary File Opens are off.
             // Skip auto-highlights entirely to prevent any background file open.
             return writeResult +
-                "\n\nNote: Auto-highlights skipped — \"Open files temporarily for metadata\" " +
-                "is disabled in AgentBridge \u2192 UI/UX settings.";
+                "\n\nNote: Auto-highlights skipped — \"Open files temporarily for code quality data\" " +
+                "is disabled in AgentBridge → UI/UX settings.";
         }
 
         try (DaemonWaiter activeWaiter = resolveActiveWaiter(preWriteWaiter, vf, path)) {
