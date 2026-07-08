@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
@@ -47,6 +48,12 @@ public abstract class QualityTool extends Tool {
     protected static final String PARAM_INSPECTION_ID = "inspection_id";
     protected static final String PARAM_SCOPE = "scope";
     protected static final String PARAM_OFFSET = "offset";
+
+    /**
+     * Pairs an open {@link Editor} with context needed for lifecycle management.
+     * Returned by {@link #openEditorForTool}; pass to {@link #releaseToolEditor} when done.
+     */
+    protected record ToolEditor(@NotNull Editor editor, @NotNull VirtualFile file, boolean wasAlreadyOpen) {}
 
     protected QualityTool(Project project) {
         super(project);
@@ -183,20 +190,43 @@ public abstract class QualityTool extends Tool {
     }
 
     /**
-     * Returns an existing text editor for {@code vf}, opening it silently if necessary.
-     * Must be called on the EDT.
+     * Opens {@code vf} silently in a text editor and returns a {@link ToolEditor} that
+     * records whether the file was already open. <em>Must be called on the EDT.</em>
+     *
+     * <p>Always call {@link #releaseToolEditor} when done so that files opened purely for
+     * tool use are closed when the "Follow Agent Files" setting is disabled.
      */
     @Nullable
-    protected Editor getOrOpenEditor(VirtualFile vf) {
+    protected ToolEditor openEditorForTool(@NotNull VirtualFile vf) {
         FileEditorManager fem = FileEditorManager.getInstance(project);
         for (var fe : fem.getEditors(vf)) {
-            if (fe instanceof TextEditor te) return te.getEditor();
+            if (fe instanceof TextEditor te) return new ToolEditor(te.getEditor(), vf, true);
         }
         var opened = fem.openFile(vf, false);
         for (var fe : opened) {
-            if (fe instanceof TextEditor te) return te.getEditor();
+            if (fe instanceof TextEditor te) return new ToolEditor(te.getEditor(), vf, false);
         }
         return null;
+    }
+
+    /**
+     * Closes the file associated with {@code te} if it was opened by {@link #openEditorForTool}
+     * and the "Follow Agent Files" setting is disabled. No-op if {@code te} is {@code null} or
+     * if the file was already open before the tool ran.
+     *
+     * <p><b>Why this matters:</b> Action tools ({@code apply_action}, {@code get_available_actions},
+     * {@code get_action_options}) require a live {@link Editor} to position a caret and evaluate
+     * intention availability — there is no headless alternative in the IntelliJ platform. Without
+     * this release step, every tool call on a closed file permanently adds a new editor tab,
+     * ignoring the "Follow Agent Files" preference.
+     *
+     * <p>Must be called on the EDT (same thread that called {@link #openEditorForTool}).
+     */
+    protected void releaseToolEditor(@Nullable ToolEditor te) {
+        if (te == null || te.wasAlreadyOpen()) return;
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            FileEditorManager.getInstance(project).closeFile(te.file());
+        }
     }
 
     /**

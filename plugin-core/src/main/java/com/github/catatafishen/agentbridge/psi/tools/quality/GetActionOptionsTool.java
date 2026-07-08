@@ -128,61 +128,65 @@ public final class GetActionOptionsTool extends QualityTool {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
 
-        Editor editor = getOrOpenEditor(vf);
-        if (editor == null) return "Error: Could not open editor for " + pathStr;
+        ToolEditor toolEditor = openEditorForTool(vf);
+        if (toolEditor == null) return "Error: Could not open editor for " + pathStr;
+        try {
+            Editor editor = toolEditor.editor();
+            int caretCol = resolveColumn(doc, targetLine, symbol, targetCol);
+            editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, caretCol));
 
-        int caretCol = resolveColumn(doc, targetLine, symbol, targetCol);
-        editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, caretCol));
+            IntentionAction action = findIntentionByName(actionName, editor, psiFile);
+            if (action == null) {
+                return ACTION_PREFIX + actionName + "' not found at " + pathStr + ":" + targetLine
+                    + ". Use get_available_actions to list available actions.";
+            }
+            if (!action.isAvailable(project, editor, psiFile)) {
+                return ACTION_PREFIX + actionName + "' is not currently applicable at " + pathStr + ":" + targetLine;
+            }
 
-        IntentionAction action = findIntentionByName(actionName, editor, psiFile);
-        if (action == null) {
-            return ACTION_PREFIX + actionName + "' not found at " + pathStr + ":" + targetLine
-                + ". Use get_available_actions to list available actions.";
+            // Capture document text before running the action
+            String before = doc.getText();
+
+            // Run the action and intercept any dialog OR popup it opens.
+            // - DialogInterceptor handles modal Dialogs (radio/checkbox forms with OK button).
+            // - PopupInterceptor handles JBPopup choosers (e.g. "select which Cell to import"),
+            //   which would otherwise pump a nested event loop and freeze the EDT.
+            // See .agent-work/freeze-investigation-2026-04-30.md.
+            AtomicReference<DialogInterceptor.DialogInfo> dialogRef = new AtomicReference<>();
+            PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(
+                editor.getComponent(),
+                () -> dialogRef.set(DialogInterceptor.runAndCapture(
+                    () -> invokeRespectingWriteAction(actionName, action, editor, psiFile)
+                ))
+            );
+
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+            String after = doc.getText();
+
+            if (popupResult.popupWasOpened()) {
+                return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
+            }
+
+            DialogInterceptor.DialogInfo dialogInfo = dialogRef.get();
+            if (dialogInfo != null) {
+                // A dialog was intercepted — no changes were committed (dialog was cancelled)
+                return formatDialogOptions(actionName, pathStr, targetLine, dialogInfo);
+            }
+
+            // No dialog — action ran headlessly. Show the diff then undo.
+            String diff = DiffUtils.unifiedDiff(before, after, pathStr);
+            if (diff.isEmpty()) {
+                return ACTION_PREFIX + actionName + "' made no changes and showed no dialog. "
+                    + "It may require a different caret position or context.";
+            }
+
+            // Undo the change so this was truly a preview
+            undoLastAction(vf);
+
+            return ACTION_PREFIX + actionName + "' makes the following changes (no dialog — use apply_action to apply):\n\n" + diff;
+        } finally {
+            releaseToolEditor(toolEditor);
         }
-        if (!action.isAvailable(project, editor, psiFile)) {
-            return ACTION_PREFIX + actionName + "' is not currently applicable at " + pathStr + ":" + targetLine;
-        }
-
-        // Capture document text before running the action
-        String before = doc.getText();
-
-        // Run the action and intercept any dialog OR popup it opens.
-        // - DialogInterceptor handles modal Dialogs (radio/checkbox forms with OK button).
-        // - PopupInterceptor handles JBPopup choosers (e.g. "select which Cell to import"),
-        //   which would otherwise pump a nested event loop and freeze the EDT.
-        // See .agent-work/freeze-investigation-2026-04-30.md.
-        AtomicReference<DialogInterceptor.DialogInfo> dialogRef = new AtomicReference<>();
-        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(
-            editor.getComponent(),
-            () -> dialogRef.set(DialogInterceptor.runAndCapture(
-                () -> invokeRespectingWriteAction(actionName, action, editor, psiFile)
-            ))
-        );
-
-        PsiDocumentManager.getInstance(project).commitAllDocuments();
-        String after = doc.getText();
-
-        if (popupResult.popupWasOpened()) {
-            return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
-        }
-
-        DialogInterceptor.DialogInfo dialogInfo = dialogRef.get();
-        if (dialogInfo != null) {
-            // A dialog was intercepted — no changes were committed (dialog was cancelled)
-            return formatDialogOptions(actionName, pathStr, targetLine, dialogInfo);
-        }
-
-        // No dialog — action ran headlessly. Show the diff then undo.
-        String diff = DiffUtils.unifiedDiff(before, after, pathStr);
-        if (diff.isEmpty()) {
-            return ACTION_PREFIX + actionName + "' made no changes and showed no dialog. "
-                + "It may require a different caret position or context.";
-        }
-
-        // Undo the change so this was truly a preview
-        undoLastAction(vf);
-
-        return ACTION_PREFIX + actionName + "' makes the following changes (no dialog — use apply_action to apply):\n\n" + diff;
     }
 
     static String formatDialogOptions(String actionName, String pathStr, int line,

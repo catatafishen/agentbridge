@@ -243,6 +243,13 @@ public final class GetHighlightsTool extends QualityTool {
                 }
             });
         try {
+            // The daemon only analyzes files that have an open editor — DaemonCodeAnalyzerEx.processHighlights
+            // reads from a per-document cache that is populated exclusively when the file is visible in an editor.
+            // We therefore open the file here to trigger daemon analysis, then close it afterward (via
+            // closeFileIfNotFollowing) if Follow Agent Files is disabled. This causes a brief, visible editor
+            // tab while analysis runs (up to 15 s for slow analyzers like CLion's Clang-Tidy). There is currently
+            // no headless alternative: DaemonCodeAnalyzer.restart(psiFile) was considered but rejected because
+            // it clears the existing cache and forces a full re-analysis, which exceeds the timeout for C++ files.
             CompletableFuture<Void> opened = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
                 try {
@@ -255,11 +262,6 @@ public final class GetHighlightsTool extends QualityTool {
             });
             opened.get(15, TimeUnit.SECONDS);
 
-            // Wait for the daemon to finish analysis. We deliberately do NOT call
-            // DaemonCodeAnalyzer.restart() here — doing so clears any cached highlights
-            // and forces a full re-analysis, which breaks CLion C++ files whose Clang-Tidy
-            // pass takes longer than our wait timeout. Opening the file is enough to
-            // trigger daemon analysis automatically if the file hasn't been analyzed yet.
             if (!latch.await(15, TimeUnit.SECONDS)) {
                 LOG.info("get_highlights: daemon analysis timed out for " + vf.getPath());
             }
