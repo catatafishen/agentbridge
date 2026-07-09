@@ -15,7 +15,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Component
 import java.awt.Dimension
-import com.intellij.openapi.ui.JBComboBox
+import javax.swing.JComboBox
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JComponent
@@ -38,7 +38,7 @@ class McpAppearanceConfigurable(private val project: Project) :
     private var editColorCombo: ThemeColorComboBox? = null
     private var executeColorCombo: ThemeColorComboBox? = null
     private var userColorCombo: ThemeColorComboBox? = null
-    private var styleCombo: JBComboBox<String>? = null
+    private var styleCombo: JComboBox<String>? = null
 
     override fun createPanel() = panel {
         row {
@@ -116,7 +116,7 @@ class McpAppearanceConfigurable(private val project: Project) :
         root.add(colorRow("User bubble accent", userColorCombo!!))
 
         // Bubble style combo
-        styleCombo = JBComboBox(arrayOf("modern", "minimal", "accessible")).also {
+        styleCombo = JComboBox(arrayOf("modern", "minimal", "accessible")).also {
             it.selectedItem = settings.bubbleStyle
         }
         root.add(styleRow("Bubble style", styleCombo!!))
@@ -143,7 +143,7 @@ class McpAppearanceConfigurable(private val project: Project) :
         return row
     }
 
-    private fun styleRow(label: String, combo: JBComboBox<String>): JComponent {
+    private fun styleRow(label: String, combo: JComboBox<String>): JComponent {
         val row = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             alignmentX = Component.LEFT_ALIGNMENT
