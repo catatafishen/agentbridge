@@ -76,6 +76,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun agentBg(): Color = NativeChatColors.agentBubbleBg(currentAgentAccent)
     private fun agentBorder(): Color = NativeChatColors.agentBubbleBorder(currentAgentAccent)
 
+    /**
+     * Resolves the user bubble accent color from project settings, falling back
+     * to the default [ChatTheme.USER_COLOR].
+     */
+    private fun userAccent(): Color {
+        val settings = McpServerSettings.getInstance(project)
+        val key = settings.userBubbleColorKey
+        return ThemeColor.fromKey(key)?.color ?: ChatTheme.USER_COLOR
+    }
+
+    private fun userBg(): Color = NativeChatColors.userBubbleBg(userAccent())
+    private fun userBorder(): Color = NativeChatColors.userBubbleBorder(userAccent())
+
     /** Stored tool call data for popup display when chips are clicked. */
     private data class ToolCallData(
         val title: String,
@@ -1151,7 +1164,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun addUserDecisionBubble(label: String) {
         val pane = createMarkdownPane(label)
-        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+        val (row, _) = createMessageRow(pane, userBg(), explicitBorder = userBorder(), rightAligned = true) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         addRow(row)
@@ -1252,8 +1265,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val pane = createMarkdownPane(text)
         val (row, _) = createMessageRow(
             pane,
-            NativeChatColors.USER_BUBBLE_BG,
+            userBg(),
             rightAligned = true,
+            explicitBorder = userBorder(),
             noBorder = !sent,
         ) { bubbleRow ->
             if (!sent) {
@@ -1601,7 +1615,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ): String {
         finalizeTurn()
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(pane, NativeChatColors.USER_BUBBLE_BG, rightAligned = true) { bubbleRow ->
+        val (row, _) = createMessageRow(pane, userBg(), explicitBorder = userBorder(), rightAligned = true) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         _promptEntryComponents[entryId] = addFn(row)

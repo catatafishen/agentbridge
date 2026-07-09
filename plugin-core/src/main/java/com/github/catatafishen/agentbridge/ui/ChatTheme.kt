@@ -58,6 +58,7 @@ object ChatTheme {
         val linkColor = UIManager.getColor(LINK_COLOR_KEY) ?: JBColor(Color(0x28, 0x7B, 0xDE), Color(0x58, 0x9D, 0xF6))
         val tooltipBg =
             UIManager.getColor("ToolTip.background") ?: JBColor(Gray._247, Color(0x3C, 0x3F, 0x41))
+        val userAccent = mcpSettings?.userBubbleColorKey?.let { ThemeColor.fromKey(it)?.color } ?: USER_COLOR
         val sb = StringBuilder()
         val proseFontSize = maxOf(editorFontSize - 2, 6)
         sb.append("--font-family:'${labelFont.family}',sans-serif;--font-size:${proseFontSize}pt;--code-font-size:${proseFontSize}pt;--code-font:'JetBrains Mono','${labelFont.family}',monospace;")
@@ -69,23 +70,13 @@ object ChatTheme {
                 )
             };--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};"
         )
-        sb.append(
-            "--user:${rgb(USER_COLOR)};--user-a06:${rgba(USER_COLOR, 0.06)};--user-a08:${
-                rgba(
-                    USER_COLOR,
-                    0.08
-                )
-            };"
-        )
-        sb.append(
-            "--user-a12:${rgba(USER_COLOR, 0.12)};--user-a15:${rgba(USER_COLOR, 0.15)};--user-a16:${
-                rgba(
-                    USER_COLOR,
-                    0.16
-                )
-            };"
-        )
-        sb.append("--user-a18:${rgba(USER_COLOR, 0.18)};--user-a25:${rgba(USER_COLOR, 0.25)};")
+        sb.append("--user:${rgb(userAccent)};--user-a06:${rgba(userAccent, 0.06)};--user-a08:${
+            rgba(userAccent, 0.08)
+        };")
+        sb.append("--user-a12:${rgba(userAccent, 0.12)};--user-a15:${rgba(userAccent, 0.15)};--user-a16:${
+            rgba(userAccent, 0.16)
+        };")
+        sb.append("--user-a18:${rgba(userAccent, 0.18)};--user-a25:${rgba(userAccent, 0.25)};")
         sb.append(
             "--agent:${rgb(AGENT_COLOR)};--agent-a06:${rgba(AGENT_COLOR, 0.06)};--agent-a08:${
                 rgba(
@@ -183,6 +174,10 @@ object ChatTheme {
                 sb.append("--client-${clientType}-bubble-bg:${rgba(themeColor.color, 0.05)};")
             }
         }
+        // Bubble style preset + contrast boost for accessibility
+        val bubbleStyle = mcpSettings?.bubbleStyle ?: "modern"
+        val contrastBoost = (mcpSettings?.contrastBoost ?: 0).coerceIn(0, 100)
+        sb.append("--bubble-style:$bubbleStyle;--contrast-boost:$contrastBoost;")
         return sb.toString()
     }
 

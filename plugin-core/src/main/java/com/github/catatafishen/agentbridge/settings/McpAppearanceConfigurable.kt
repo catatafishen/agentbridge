@@ -15,6 +15,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Component
 import java.awt.Dimension
+import com.intellij.openapi.ui.JBComboBox
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JComponent
@@ -36,6 +37,8 @@ class McpAppearanceConfigurable(private val project: Project) :
     private var searchColorCombo: ThemeColorComboBox? = null
     private var editColorCombo: ThemeColorComboBox? = null
     private var executeColorCombo: ThemeColorComboBox? = null
+    private var userColorCombo: ThemeColorComboBox? = null
+    private var styleCombo: JBComboBox<String>? = null
 
     override fun createPanel() = panel {
         row {
@@ -87,11 +90,60 @@ class McpAppearanceConfigurable(private val project: Project) :
         root.add(colorRow("Search & Query", searchColorCombo!!))
         root.add(colorRow("Edit & Refactor", editColorCombo!!))
         root.add(colorRow("Run & Execute", executeColorCombo!!))
+
+        root.add(Box.createVerticalStrut(JBUI.scale(16)))
+
+        root.add(TitledSeparator("Bubble Colors").apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyBottom(4)
+        })
+
+        root.add(JBLabel(
+            "<html>Customize the accent color for user message bubbles and choose " +
+                "a layout style. Agent bubble colors are set per-client in each " +
+                "agent's settings page.</html>"
+        ).apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyBottom(10)
+            alignmentX = Component.LEFT_ALIGNMENT
+            isAllowAutoWrapping = true
+        })
+
+        userColorCombo = ThemeColorComboBox(ThemeColor.BLUE).also {
+            it.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
+        }
+        root.add(colorRow("User bubble accent", userColorCombo!!))
+
+        // Bubble style combo
+        styleCombo = JBComboBox(arrayOf("modern", "minimal", "accessible")).also {
+            it.selectedItem = settings.bubbleStyle
+        }
+        root.add(styleRow("Bubble style", styleCombo!!))
+
         root.add(Box.createVerticalGlue())
         return root
     }
 
     private fun colorRow(label: String, combo: ThemeColorComboBox): JComponent {
+        val row = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.empty(2, 0)
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+        val lbl = JBLabel(label).apply {
+            preferredSize = Dimension(JBUI.scale(140), preferredSize.height)
+            maximumSize = Dimension(JBUI.scale(140), preferredSize.height)
+        }
+        row.add(lbl)
+        combo.maximumSize = Dimension(JBUI.scale(180), combo.preferredSize.height)
+        row.add(combo)
+        row.add(Box.createHorizontalGlue())
+        return row
+    }
+
+    private fun styleRow(label: String, combo: JBComboBox<String>): JComponent {
         val row = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             alignmentX = Component.LEFT_ALIGNMENT
@@ -116,7 +168,9 @@ class McpAppearanceConfigurable(private val project: Project) :
         return readColorCombo != null && keyOf(readColorCombo!!) != settings.kindReadColorKey ||
             searchColorCombo != null && keyOf(searchColorCombo!!) != settings.kindSearchColorKey ||
             editColorCombo != null && keyOf(editColorCombo!!) != settings.kindEditColorKey ||
-            executeColorCombo != null && keyOf(executeColorCombo!!) != settings.kindExecuteColorKey
+            executeColorCombo != null && keyOf(executeColorCombo!!) != settings.kindExecuteColorKey ||
+            userColorCombo != null && keyOf(userColorCombo!!) != settings.userBubbleColorKey ||
+            styleCombo != null && styleCombo!!.selectedItem != settings.bubbleStyle
     }
 
     private fun applySettings() {
@@ -125,6 +179,8 @@ class McpAppearanceConfigurable(private val project: Project) :
         searchColorCombo?.let { settings.kindSearchColorKey = keyOf(it) }
         editColorCombo?.let { settings.kindEditColorKey = keyOf(it) }
         executeColorCombo?.let { settings.kindExecuteColorKey = keyOf(it) }
+        userColorCombo?.let { settings.userBubbleColorKey = keyOf(it) }
+        styleCombo?.let { settings.bubbleStyle = it.selectedItem as? String ?: "modern" }
     }
 
     private fun resetFromSettings() {
@@ -133,6 +189,8 @@ class McpAppearanceConfigurable(private val project: Project) :
         searchColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
         editColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
         executeColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindExecuteColorKey)
+        userColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
+        styleCombo?.selectedItem = settings.bubbleStyle
     }
 
     override fun disposeUIResources() {
@@ -141,5 +199,7 @@ class McpAppearanceConfigurable(private val project: Project) :
         searchColorCombo = null
         editColorCombo = null
         executeColorCombo = null
+        userColorCombo = null
+        styleCombo = null
     }
 }

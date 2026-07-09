@@ -190,10 +190,11 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
 
     private fun buildPage(): String {
         val cssVars = ChatTheme.buildCssVars(McpServerSettings.getInstance(project))
+        val bubbleStyle = McpServerSettings.getInstance(project).bubbleStyle
         val css = loadResource("/chat/chat.css")
         val webAppCss = loadResource("/chat/web-app.css")
         val js = loadResource("/chat/chat-components.js")
-        return """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+        return """<!DOCTYPE html><html lang="en" data-bubble-style="${bubbleStyle}"><head><meta charset="utf-8">
             <style>$css</style>
             <style>$webAppCss</style>
             <style>:root { $cssVars }</style>
@@ -213,7 +214,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
 
     private fun updateThemeColors() {
         val vars = ChatTheme.buildCssVars(McpServerSettings.getInstance(project)).replace("'", "\\'")
-        executeJs("document.documentElement.style.cssText='$vars'")
+        val bubbleStyle = McpServerSettings.getInstance(project).bubbleStyle
+        executeJs("document.documentElement.style.cssText='$vars';document.documentElement.dataset.bubbleStyle='$bubbleStyle'")
         val panelBg = JBUI.CurrentTheme.ToolWindow.background()
         browser?.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
     }

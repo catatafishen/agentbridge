@@ -20,6 +20,11 @@ export default class MessageBubble extends HTMLElement {
         const parent = this.closest('chat-message');
         const isUser = parent?.getAttribute('type') === 'user';
         this.classList.add(isUser ? 'prompt-bubble' : 'agent-bubble');
+        this.setAttribute('role', 'region');
+        if (!isUser) {
+            this.setAttribute('aria-live', 'polite');
+            this.setAttribute('aria-busy', 'true');
+        }
 
         if (isUser) {
             this.onclick = (e: MouseEvent) => {
@@ -64,6 +69,8 @@ export default class MessageBubble extends HTMLElement {
             cancelAnimationFrame(this._rafHandle);
             this._rafHandle = null;
         }
+        this.setAttribute('aria-busy', 'false');
+        this.setAttribute('aria-live', 'off');
         this.innerHTML = html;
     }
 

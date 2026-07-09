@@ -15,6 +15,7 @@ import java.awt.Color
  */
 object NativeChatColors {
 
+    /** Default background for user bubbles when no custom user accent is configured. */
     val USER_BUBBLE_BG = JBColor(Color(86, 156, 214, 25), Color(86, 156, 214, 31))
     val USER_BUBBLE_BORDER = JBColor(Color(86, 156, 214, 45), Color(86, 156, 214, 55))
 
@@ -75,6 +76,18 @@ object NativeChatColors {
      * Border color for a dynamic agent bubble — slightly more opaque than the background.
      */
     fun agentBubbleBorder(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 45)
+
+    /**
+     * Background color for a user bubble using an accent color.
+     * When called with the default [ChatTheme.USER_COLOR], produces the same
+     * visual as the [USER_BUBBLE_BG] constant (used when no custom accent is set).
+     */
+    fun userBubbleBg(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 25)
+
+    /**
+     * Border color for a user bubble using an accent color.
+     */
+    fun userBubbleBorder(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 50)
 
     /**
      * Returns the border color for a bubble background, or null for backgrounds that have no border
