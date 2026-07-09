@@ -2952,3 +2952,175 @@ pre.word-wrap code {
     object-fit: contain;
     display: block;
 }
+
+/* ── Bubble style: minimal (ProxyAI-inspired) ──────── */
+html[data-bubble-style="minimal"] .prompt-row {
+    align-items: flex-start;
+}
+
+html[data-bubble-style="minimal"] .prompt-bubble {
+    background: none;
+    border-radius: 0;
+    border-top: 1px solid var(--fg-a16);
+    max-width: 100%;
+    padding: var(--sp-6) var(--sp-4);
+}
+
+html[data-bubble-style="minimal"] .prompt-bubble:hover {
+    background: var(--fg-a05);
+}
+
+html[data-bubble-style="minimal"] .agent-bubble {
+    background: none;
+    border-radius: 0;
+    max-width: 100%;
+    padding: var(--sp-4) var(--sp-4);
+}
+
+html[data-bubble-style="minimal"] .agent-bubble:hover {
+    background: var(--fg-a05);
+}
+
+html[data-bubble-style="minimal"] .agent-bubble + .agent-bubble {
+    border-top: 1px solid var(--fg-a05);
+}
+
+html[data-bubble-style="minimal"] .thinking-section {
+    background: var(--think-a04);
+    border-radius: 0;
+    max-width: 100%;
+}
+
+html[data-bubble-style="minimal"] working-indicator {
+    background: none;
+    border-radius: 0;
+    max-width: 100%;
+}
+
+/* ── Bubble style: accessible (high contrast) ──────── */
+html[data-bubble-style="accessible"] .prompt-bubble {
+    background: var(--user-a25);
+    border: 1px solid var(--user);
+}
+
+html[data-bubble-style="accessible"] .agent-bubble {
+    background: var(--agent-a16);
+    border: 1px solid var(--agent);
+}
+
+html[data-bubble-style="accessible"] .prompt-bubble:hover {
+    background: var(--user-a40);
+}
+
+html[data-bubble-style="accessible"] .agent-bubble:hover {
+    background: var(--agent-a25);
+}
+
+html[data-bubble-style="accessible"] .thinking-section {
+    background: var(--think-a16);
+    border: 1px solid var(--think);
+}
+
+html[data-bubble-style="accessible"] .turn-chip:focus-visible,
+html[data-bubble-style="accessible"] .prompt-bubble:focus-visible,
+html[data-bubble-style="accessible"] .agent-bubble:focus-visible {
+    outline: 3px solid var(--user);
+    outline-offset: 3px;
+}
+
+/* ── High-contrast mode ──────────────────────────── */
+@media (prefers-contrast: more) {
+  .prompt-bubble {
+    background: var(--user-a25);
+    border: 1px solid var(--user);
+  }
+  .agent-bubble {
+    background: var(--agent-a16);
+    border: 1px solid var(--agent);
+  }
+  .prompt-bubble:hover {
+    background: var(--user-a40);
+  }
+  .agent-bubble:hover {
+    background: var(--agent-a25);
+  }
+  .prompt-bubble:focus-visible,
+  .agent-bubble:focus-visible {
+    outline: 3px solid var(--user);
+    outline-offset: 3px;
+  }
+  .thinking-section {
+    background: var(--think-a16);
+    border: 1px solid var(--think);
+  }
+  working-indicator {
+    border: 1px solid var(--agent);
+  }
+  .turn-chip {
+    border: 1px solid var(--fg-a40);
+  }
+  .fg-muted {
+    color: var(--fg);
+  }
+}
+
+/* ── Windows High Contrast Mode ──────────────────── */
+@media (forced-colors: active) {
+  .prompt-bubble,
+  .agent-bubble,
+  .thinking-section,
+  working-indicator {
+    background: Canvas !important;
+    border: 1px solid ButtonText !important;
+  }
+  .turn-chip,
+  .code-action-btn,
+  .quick-reply-btn,
+  .load-more-banner {
+    border: 1px solid ButtonText !important;
+  }
+  .prompt-bubble:focus-visible,
+  .agent-bubble:focus-visible,
+  .turn-chip:focus-visible,
+  .code-action-btn:focus-visible,
+  .quick-reply-btn:focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 2px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: ButtonText !important;
+  }
+  a {
+    color: LinkText !important;
+  }
+  .code-action-btn svg {
+    filter: none !important;
+  }
+}
+
+/* ── Reduced Transparency ────────────────────────── */
+@media (prefers-reduced-transparency: reduce) {
+  .prompt-bubble {
+    background: var(--user-a25);
+  }
+  .agent-bubble {
+    background: var(--agent-a16);
+  }
+  .thinking-section {
+    background: var(--think-a16);
+  }
+  working-indicator {
+    background: var(--agent-a16);
+  }
+  .tooltip-bg {
+    background: var(--tooltip-bg);
+  }
+}
+
+/* ── Inverted / standalone mode ──────────────────── */
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Fallback defaults when the Kotlin bridge hasn't injected vars yet */
+    --fg-muted: rgba(60, 60, 60, 0.55);
+  }
+}

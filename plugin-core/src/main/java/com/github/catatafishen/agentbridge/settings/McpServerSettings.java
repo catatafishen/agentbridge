@@ -134,6 +134,30 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.setKindSearchColorKey(key);
     }
 
+    public @org.jetbrains.annotations.Nullable String getUserBubbleColorKey() {
+        return myState.userBubbleColorKey;
+    }
+
+    public void setUserBubbleColorKey(@org.jetbrains.annotations.Nullable String key) {
+        myState.userBubbleColorKey = key;
+    }
+
+    public @org.jetbrains.annotations.NotNull String getBubbleStyle() {
+        return myState.bubbleStyle;
+    }
+
+    public void setBubbleStyle(@org.jetbrains.annotations.NotNull String style) {
+        myState.bubbleStyle = style;
+    }
+
+    public int getContrastBoost() {
+        return myState.contrastBoost;
+    }
+
+    public void setContrastBoost(int boost) {
+        myState.contrastBoost = boost;
+    }
+
     public boolean isSmoothScrollEnabled() {
         return myState.smoothScrollEnabled;
     }
@@ -266,6 +290,9 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
         private String kindSearchColorKey = null;
+        private String userBubbleColorKey = null;
+        private String bubbleStyle = "modern";
+        private int contrastBoost = 0;
 
         public int getPort() {
             return port;
@@ -409,6 +436,30 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setKindSearchColorKey(@org.jetbrains.annotations.Nullable String kindSearchColorKey) {
             this.kindSearchColorKey = kindSearchColorKey;
+        }
+
+        public @org.jetbrains.annotations.Nullable String getUserBubbleColorKey() {
+            return userBubbleColorKey;
+        }
+
+        public void setUserBubbleColorKey(@org.jetbrains.annotations.Nullable String userBubbleColorKey) {
+            this.userBubbleColorKey = userBubbleColorKey;
+        }
+
+        public @org.jetbrains.annotations.NotNull String getBubbleStyle() {
+            return bubbleStyle;
+        }
+
+        public void setBubbleStyle(@org.jetbrains.annotations.NotNull String bubbleStyle) {
+            this.bubbleStyle = bubbleStyle;
+        }
+
+        public int getContrastBoost() {
+            return contrastBoost;
+        }
+
+        public void setContrastBoost(int contrastBoost) {
+            this.contrastBoost = contrastBoost;
         }
 
     }
