@@ -62,18 +62,17 @@ open class RoundedPanel(
         }
     }.apply { isRepeats = false }
 
-    /** Updates the bubble colors and forces a repaint. Called when appearance settings change. */
-    fun updateColors(bg: Color, border: Color?) {
-        bgColor = bg
-        borderColor = border
-        cachedBg = null
-        repaint()
-    }
-
     /** Updates colors and style in one call, triggering a single repaint. */
     fun updateAppearance(bg: Color, border: Color?, style: String) {
         bgColor = bg
         borderColor = border
+        bubbleStyle = style
+        cachedBg = null
+        repaint()
+    }
+
+    /** Updates only the visual style and forces a repaint. Called when style-only settings change. */
+    fun updateStyle(style: String) {
         bubbleStyle = style
         cachedBg = null
         repaint()
