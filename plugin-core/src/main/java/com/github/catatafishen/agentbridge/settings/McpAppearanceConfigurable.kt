@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.settings
 
+import com.github.catatafishen.agentbridge.ui.NativeChatPanel
 import com.github.catatafishen.agentbridge.ui.ThemeColor
+import com.github.catatafishen.agentbridge.ui.side.ToolCallsWebPanel
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
@@ -15,9 +17,9 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Component
 import java.awt.Dimension
-import javax.swing.JComboBox
 import javax.swing.Box
 import javax.swing.BoxLayout
+import javax.swing.JComboBox
 import javax.swing.JComponent
 
 /**
@@ -62,17 +64,18 @@ class McpAppearanceConfigurable(private val project: Project) :
             border = JBUI.Borders.emptyBottom(4)
         })
 
-        root.add(JBLabel(
-            "<html>Customize the accent color used for each tool kind in the MCP Tools " +
-                "list, tool-chip labels in the chat view, and permission dropdowns. " +
-                "Colors adapt automatically when the IDE theme changes.</html>"
-        ).apply {
-            font = JBUI.Fonts.smallFont()
-            foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.emptyBottom(10)
-            alignmentX = Component.LEFT_ALIGNMENT
-            isAllowAutoWrapping = true
-        })
+        root.add(
+            JBLabel(
+                "<html>Customize the accent color used for each tool kind in the MCP Tools " +
+                    "list, tool-chip labels in the chat view, and permission dropdowns. " +
+                    "Colors adapt automatically when the IDE theme changes.</html>"
+            ).apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = UIUtil.getContextHelpForeground()
+                border = JBUI.Borders.emptyBottom(10)
+                alignmentX = Component.LEFT_ALIGNMENT
+                isAllowAutoWrapping = true
+            })
 
         readColorCombo = ThemeColorComboBox(ThemeColor.TEAL).also {
             it.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
@@ -98,17 +101,18 @@ class McpAppearanceConfigurable(private val project: Project) :
             border = JBUI.Borders.emptyBottom(4)
         })
 
-        root.add(JBLabel(
-            "<html>Customize the accent color for user message bubbles and choose " +
-                "a layout style. Agent bubble colors are set per-client in each " +
-                "agent's settings page.</html>"
-        ).apply {
-            font = JBUI.Fonts.smallFont()
-            foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.emptyBottom(10)
-            alignmentX = Component.LEFT_ALIGNMENT
-            isAllowAutoWrapping = true
-        })
+        root.add(
+            JBLabel(
+                "<html>Customize the accent color for user message bubbles and choose " +
+                    "a layout style. Agent bubble colors are set per-client in each " +
+                    "agent's settings page.</html>"
+            ).apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = UIUtil.getContextHelpForeground()
+                border = JBUI.Borders.emptyBottom(10)
+                alignmentX = Component.LEFT_ALIGNMENT
+                isAllowAutoWrapping = true
+            })
 
         userColorCombo = ThemeColorComboBox(ThemeColor.BLUE).also {
             it.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
@@ -181,6 +185,8 @@ class McpAppearanceConfigurable(private val project: Project) :
         executeColorCombo?.let { settings.kindExecuteColorKey = keyOf(it) }
         userColorCombo?.let { settings.userBubbleColorKey = keyOf(it) }
         styleCombo?.let { settings.bubbleStyle = it.selectedItem as? String ?: "modern" }
+        NativeChatPanel.getInstance(project)?.refreshUserBubbleColors()
+        ToolCallsWebPanel.refreshForProject(project)
     }
 
     private fun resetFromSettings() {
