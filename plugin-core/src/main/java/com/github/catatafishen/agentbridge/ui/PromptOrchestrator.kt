@@ -169,8 +169,12 @@ class PromptOrchestrator(
         }
         currentPromptThread = Thread.currentThread()
         // Register a one-shot callback so the client notifies us if ACP messages arrive
-        // after this turn ends (background sub-agent still running).
-        agentManager.client.setFirstPostTurnCallback { callbacks.onPostTurnBackgroundDetected() }
+        // after this turn ends (background sub-agent still running). Suppress it if the
+        // user cancelled the turn — residual "cancelled" messages from the remote agent
+        // must not be misreported as a background sub-agent still running.
+        agentManager.client.setFirstPostTurnCallback {
+            if (!stopped) callbacks.onPostTurnBackgroundDetected()
+        }
         try {
             executePrompt(prompt, contextItems, selectedModelId)
         } finally {
