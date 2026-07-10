@@ -142,6 +142,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.userBubbleColorKey = key;
     }
 
+    public @org.jetbrains.annotations.Nullable String getAgentBubbleColorKey() {
+        return myState.agentBubbleColorKey;
+    }
+
+    public void setAgentBubbleColorKey(@org.jetbrains.annotations.Nullable String key) {
+        myState.agentBubbleColorKey = key;
+    }
+
     public @org.jetbrains.annotations.NotNull String getBubbleStyle() {
         return myState.bubbleStyle;
     }
@@ -291,6 +299,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private String kindExecuteColorKey = null;
         private String kindSearchColorKey = null;
         private String userBubbleColorKey = null;
+        private String agentBubbleColorKey = null;
         private String bubbleStyle = "modern";
         private int contrastBoost = 0;
 
@@ -444,6 +453,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setUserBubbleColorKey(@org.jetbrains.annotations.Nullable String userBubbleColorKey) {
             this.userBubbleColorKey = userBubbleColorKey;
+        }
+
+        public @org.jetbrains.annotations.Nullable String getAgentBubbleColorKey() {
+            return agentBubbleColorKey;
+        }
+
+        public void setAgentBubbleColorKey(@org.jetbrains.annotations.Nullable String agentBubbleColorKey) {
+            this.agentBubbleColorKey = agentBubbleColorKey;
         }
 
         public @org.jetbrains.annotations.NotNull String getBubbleStyle() {
