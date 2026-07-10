@@ -204,8 +204,14 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"
       instance="com.github.catatafishen.agentbridge.settings.ChatInputConfigurable"
-      id="com.github.catatafishen.agentbridge.chatInput"
+      id="com.github.catatafishen.agentbridge.ui-ux"
       displayName="UI/UX"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.ui-ux"
+      instance="com.github.catatafishen.agentbridge.settings.ChatAppearanceConfigurable"
+      id="com.github.catatafishen.agentbridge.ui-ux.appearance"
+      displayName="Appearance"/>
 
     <!-- ── Chat History (under Storage) ── -->
     <projectConfigurable
