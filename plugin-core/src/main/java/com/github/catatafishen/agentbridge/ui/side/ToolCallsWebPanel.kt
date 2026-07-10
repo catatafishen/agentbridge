@@ -96,6 +96,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             browser.loadHTML(buildPage())
             add(browser.component, BorderLayout.CENTER)
 
+            instances[project] = this
             PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
             PlatformApiCompat.subscribeUiSettingsChanges(this) { updateThemeColors() }
             PlatformApiCompat.subscribeEditorColorSchemeChanges(this) { updateThemeColors() }
@@ -221,6 +222,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     override fun dispose() {
+        instances.remove(project, this)
         serviceListener?.let {
             LiveToolCallService.getInstance(project).removeChangeListener(it)
             serviceListener = null
@@ -231,6 +233,13 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
         private val LOG = Logger.getInstance(ToolCallsWebPanel::class.java)
         private const val HISTORY_PAGE_SIZE = 50
         private const val JSON_DURATION_MS = ",\"durationMs\":"
+
+        private val instances = java.util.concurrent.ConcurrentHashMap<Project, ToolCallsWebPanel>()
+
+        /** Refreshes the active tool-calls panel for [project] when appearance settings change. */
+        fun refreshForProject(project: Project) {
+            instances[project]?.updateThemeColors()
+        }
 
         fun entryToJson(entry: LiveToolCallEntry, registry: ToolRegistry? = null): String {
             val sb = StringBuilder(256)

@@ -29,8 +29,8 @@ enum class BubbleCorner { NONE, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT }
  * - [borderColor] draws a 1px border when non-null, matching the style of tool chip borders.
  */
 open class RoundedPanel(
-    private val bgColor: Color,
-    private val borderColor: Color? = null,
+    private var bgColor: Color,
+    private var borderColor: Color? = null,
     private val radius: Int = JBUI.scale(10),
     private val squaredCorner: BubbleCorner = BubbleCorner.NONE,
 ) : JPanel(BorderLayout()) {
@@ -39,11 +39,15 @@ open class RoundedPanel(
         isOpaque = false
     }
 
+    /** Controls the visual style preset: "modern" (default), "minimal", or "accessible". */
+    var bubbleStyle: String = "modern"
+
     private var cachedBg: BufferedImage? = null
     private var cachedBgW = -1
     private var cachedBgH = -1
     private var cachedBgColorRGB = Int.MIN_VALUE
     private var cachedBorderColorRGB = Int.MIN_VALUE
+    private var cachedStyle = "modern"
 
     /**
      * Fires after the resize burst quiets down, ensuring any bubble whose background
@@ -58,8 +62,25 @@ open class RoundedPanel(
         }
     }.apply { isRepeats = false }
 
+    /** Updates the bubble colors and forces a repaint. Called when appearance settings change. */
+    fun updateColors(bg: Color, border: Color?) {
+        bgColor = bg
+        borderColor = border
+        cachedBg = null
+        repaint()
+    }
+
+    /** Updates colors and style in one call, triggering a single repaint. */
+    fun updateAppearance(bg: Color, border: Color?, style: String) {
+        bgColor = bg
+        borderColor = border
+        bubbleStyle = style
+        cachedBg = null
+        repaint()
+    }
+
     override fun paintComponent(g: Graphics) {
-        val w = width;
+        val w = width
         val h = height
         if (w <= 0 || h <= 0) return
         val bgRGB = bgColor.rgb
@@ -76,26 +97,53 @@ open class RoundedPanel(
             return
         }
         if (cachedBg == null || cachedBgW != w || cachedBgH != h ||
-            cachedBgColorRGB != bgRGB || cachedBorderColorRGB != borderRGB
+            cachedBgColorRGB != bgRGB || cachedBorderColorRGB != borderRGB || cachedStyle != bubbleStyle
         ) {
             cachedBg = renderBgToImage(w, h)
             cachedBgW = w; cachedBgH = h
             cachedBgColorRGB = bgRGB; cachedBorderColorRGB = borderRGB
+            cachedStyle = bubbleStyle
         }
         UIUtil.drawImage(g, cachedBg!!, 0, 0, null)
     }
 
+    // Colors below are alpha-composited from already-resolved JBColor components at paint time.
+    // JBColor is for theme-constant definitions, not for runtime alpha-modified derived colors.
+    @Suppress("UseJBColor")
     private fun renderBgToImage(w: Int, h: Int): BufferedImage {
         val img = UIUtil.createImage(this, w, h, BufferedImage.TYPE_INT_ARGB)
         val g2 = img.createGraphics()
         try {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            val r = radius.toFloat()
-            g2.color = bgColor
-            g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
-            borderColor?.let {
-                g2.color = it
-                g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
+            when (bubbleStyle) {
+                "minimal" -> {
+                    // No background fill; draw only a hairline top separator matching --fg-a16 from CSS.
+                    val fg = UIUtil.getLabelForeground()
+                    g2.color = Color(fg.red, fg.green, fg.blue, 40)
+                    g2.fillRect(0, 0, w, 1)
+                }
+
+                "accessible" -> {
+                    // High-contrast variant: same fill, but border is always solid (full alpha).
+                    val r = radius.toFloat()
+                    g2.color = bgColor
+                    g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
+                    val solidBorder = borderColor?.let { Color(it.red, it.green, it.blue, 255) }
+                        ?: Color(bgColor.red, bgColor.green, bgColor.blue, 200)
+                    g2.color = solidBorder
+                    g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
+                }
+
+                else -> {
+                    // "modern" — current behavior.
+                    val r = radius.toFloat()
+                    g2.color = bgColor
+                    g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
+                    borderColor?.let {
+                        g2.color = it
+                        g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
+                    }
+                }
             }
         } finally {
             g2.dispose()

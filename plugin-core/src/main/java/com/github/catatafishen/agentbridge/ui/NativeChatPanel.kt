@@ -107,6 +107,28 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /** Maps prompt entryId → rendered row container; used by [scrollToEntry]. */
     private val _promptEntryComponents = mutableMapOf<String, JPanel>()
 
+    /** Weak references to user-bubble RoundedPanels for live color updates. */
+    private val userBubbles = java.util.Collections.synchronizedList(
+        mutableListOf<java.lang.ref.WeakReference<RoundedPanel>>()
+    )
+
+    private fun trackUserBubble(bubble: RoundedPanel) {
+        bubble.bubbleStyle = McpServerSettings.getInstance(project).bubbleStyle
+        userBubbles.removeIf { it.get() == null }
+        userBubbles.add(java.lang.ref.WeakReference(bubble))
+    }
+
+    /** Re-paints all tracked user bubbles with the current settings colors and style. */
+    fun refreshUserBubbleColors() {
+        val bg = userBg()
+        val border = userBorder()
+        val style = McpServerSettings.getInstance(project).bubbleStyle
+        ApplicationManager.getApplication().invokeLater {
+            userBubbles.removeIf { it.get() == null }
+            userBubbles.forEach { it.get()?.updateAppearance(bg, border, style) }
+        }
+    }
+
     /** Buttons of the last-shown quick-reply strip; disabled on reply or new turn. */
     private var currentQuickReplyButtons: List<JButton> = emptyList()
 
@@ -1164,9 +1186,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun addUserDecisionBubble(label: String) {
         val pane = createMarkdownPane(label)
-        val (row, _) = createMessageRow(pane, userBg(), explicitBorder = userBorder(), rightAligned = true) { bubbleRow ->
+        val (row, bubble) = createMessageRow(
+            pane,
+            userBg(),
+            explicitBorder = userBorder(),
+            rightAligned = true
+        ) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
+        trackUserBubble(bubble)
         addRow(row)
     }
 
@@ -1263,7 +1291,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun createNudgeRow(id: String, text: String, sent: Boolean): JPanel {
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(
+        val (row, bubble) = createMessageRow(
             pane,
             userBg(),
             rightAligned = true,
@@ -1277,6 +1305,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
+        trackUserBubble(bubble)
         return row
     }
 
@@ -1615,9 +1644,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ): String {
         finalizeTurn()
         val pane = createMarkdownPane(text)
-        val (row, _) = createMessageRow(pane, userBg(), explicitBorder = userBorder(), rightAligned = true) { bubbleRow ->
+        val (row, bubble) = createMessageRow(
+            pane,
+            userBg(),
+            explicitBorder = userBorder(),
+            rightAligned = true
+        ) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
+        trackUserBubble(bubble)
         _promptEntryComponents[entryId] = addFn(row)
         showWorkingIndicator()
         return entryId
