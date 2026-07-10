@@ -190,8 +190,9 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     private fun buildPage(): String {
-        val cssVars = ChatTheme.buildCssVars(McpServerSettings.getInstance(project))
-        val bubbleStyle = ChatTheme.sanitizeBubbleStyle(McpServerSettings.getInstance(project).bubbleStyle)
+        val settings = McpServerSettings.getInstance(project)
+        val cssVars = ChatTheme.buildCssVars(settings)
+        val bubbleStyle = ChatTheme.sanitizeBubbleStyle(settings.bubbleStyle)
         val css = loadResource("/chat/chat.css")
         val webAppCss = loadResource("/chat/web-app.css")
         val js = loadResource("/chat/chat-components.js")
@@ -214,8 +215,11 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             ?: run { LOG.warn("Missing resource: $path"); "" }
 
     private fun updateThemeColors() {
-        val vars = ChatTheme.buildCssVars(McpServerSettings.getInstance(project)).replace("'", "\\'")
-        val bubbleStyle = ChatTheme.sanitizeBubbleStyle(McpServerSettings.getInstance(project).bubbleStyle)
+        val settings = McpServerSettings.getInstance(project)
+        // Escape backslashes before single-quotes so a color value containing '\' cannot break out
+        // of the single-quoted JS string literal below.
+        val vars = ChatTheme.buildCssVars(settings).replace("\\", "\\\\").replace("'", "\\'")
+        val bubbleStyle = ChatTheme.sanitizeBubbleStyle(settings.bubbleStyle)
         executeJs("document.documentElement.style.cssText='$vars';document.documentElement.dataset.bubbleStyle='$bubbleStyle'")
         val panelBg = JBUI.CurrentTheme.ToolWindow.background()
         browser?.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")

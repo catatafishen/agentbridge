@@ -151,11 +151,11 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     public @org.jetbrains.annotations.NotNull String getBubbleStyle() {
-        return myState.bubbleStyle;
+        return com.github.catatafishen.agentbridge.ui.ChatTheme.sanitizeBubbleStyle(myState.bubbleStyle);
     }
 
     public void setBubbleStyle(@org.jetbrains.annotations.NotNull String style) {
-        myState.bubbleStyle = style;
+        myState.bubbleStyle = com.github.catatafishen.agentbridge.ui.ChatTheme.sanitizeBubbleStyle(style);
     }
 
     public int getContrastBoost() {
@@ -464,11 +464,11 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         }
 
         public @org.jetbrains.annotations.NotNull String getBubbleStyle() {
-            return bubbleStyle;
+            return com.github.catatafishen.agentbridge.ui.ChatTheme.sanitizeBubbleStyle(bubbleStyle);
         }
 
         public void setBubbleStyle(@org.jetbrains.annotations.NotNull String bubbleStyle) {
-            this.bubbleStyle = bubbleStyle;
+            this.bubbleStyle = com.github.catatafishen.agentbridge.ui.ChatTheme.sanitizeBubbleStyle(bubbleStyle);
         }
 
         public int getContrastBoost() {

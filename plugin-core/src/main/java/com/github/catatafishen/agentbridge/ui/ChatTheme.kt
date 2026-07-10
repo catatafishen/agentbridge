@@ -91,7 +91,7 @@ object ChatTheme {
         sb.append("--user-a12:${rgba(userAccent, 0.12)};--user-a15:${rgba(userAccent, 0.15)};--user-a16:${
             rgba(userAccent, 0.16)
         };")
-        sb.append("--user-a18:${rgba(userAccent, 0.18)};--user-a25:${rgba(userAccent, 0.25)};")
+        sb.append("--user-a18:${rgba(userAccent, 0.18)};--user-a25:${rgba(userAccent, 0.25)};--user-a40:${rgba(userAccent, 0.40)};")
         sb.append(
             "--agent:${rgb(AGENT_COLOR)};--agent-a06:${rgba(AGENT_COLOR, 0.06)};--agent-a08:${
                 rgba(
@@ -100,7 +100,7 @@ object ChatTheme {
                 )
             };"
         )
-        sb.append("--agent-a10:${rgba(AGENT_COLOR, 0.10)};--agent-a16:${rgba(AGENT_COLOR, 0.16)};")
+        sb.append("--agent-a10:${rgba(AGENT_COLOR, 0.10)};--agent-a16:${rgba(AGENT_COLOR, 0.16)};--agent-a25:${rgba(AGENT_COLOR, 0.25)};")
         sb.append(
             "--think:${rgb(THINK_COLOR)};--think-a04:${rgba(THINK_COLOR, 0.04)};--think-a06:${
                 rgba(
