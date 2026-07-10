@@ -1,10 +1,12 @@
 package com.github.catatafishen.agentbridge.settings
 
+import com.github.catatafishen.agentbridge.ui.NativeChatPanel
 import com.github.catatafishen.agentbridge.ui.ThemeColor
 import com.github.catatafishen.agentbridge.ui.side.ToolCallsWebPanel
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.TitledSeparator
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -21,22 +23,21 @@ import javax.swing.BoxLayout
 import javax.swing.JComponent
 
 /**
- * Project-wide accent colors for tool kinds (read, search, edit, execute).
+ * Chat bubble appearance: user accent color and bubble layout style
+ * (modern / minimal / accessible).
  *
- * These colors appear in the MCP → Tools list (kind dot per tool), the chat-view
- * tool chips, and permission combo tints. Chat bubble colors and style live
- * under UI/UX → Appearance since they are chat-specific, not MCP-specific.
+ * Lives under UI/UX because these settings affect the chat presentation,
+ * not any MCP-specific behavior. Agent bubble colors remain per-client in
+ * each agent's own settings page.
  */
-class McpAppearanceConfigurable(private val project: Project) :
+class ChatAppearanceConfigurable(private val project: Project) :
     BoundConfigurable("Appearance"),
     SearchableConfigurable {
 
-    override fun getId(): String = "com.github.catatafishen.agentbridge.mcp.appearance"
+    override fun getId(): String = "com.github.catatafishen.agentbridge.ui-ux.appearance"
 
-    private var readColorCombo: ThemeColorComboBox? = null
-    private var searchColorCombo: ThemeColorComboBox? = null
-    private var editColorCombo: ThemeColorComboBox? = null
-    private var executeColorCombo: ThemeColorComboBox? = null
+    private var userColorCombo: ThemeColorComboBox? = null
+    private var styleCombo: ComboBox<String>? = null
 
     override fun createPanel() = panel {
         row {
@@ -55,16 +56,16 @@ class McpAppearanceConfigurable(private val project: Project) :
             border = JBUI.Borders.empty(8)
         }
 
-        root.add(TitledSeparator("Tool Kind Colors").apply {
+        root.add(TitledSeparator("Bubble Colors").apply {
             alignmentX = Component.LEFT_ALIGNMENT
             border = JBUI.Borders.emptyBottom(4)
         })
 
         root.add(
             JBLabel(
-                "<html>Customize the accent color used for each tool kind in the MCP Tools " +
-                    "list, tool-chip labels in the chat view, and permission dropdowns. " +
-                    "Colors adapt automatically when the IDE theme changes.</html>"
+                "<html>Customize the accent color for user message bubbles and choose " +
+                    "a layout style. Agent bubble colors are set per-client in each " +
+                    "agent's settings page.</html>"
             ).apply {
                 font = JBUI.Fonts.smallFont()
                 foreground = UIUtil.getContextHelpForeground()
@@ -73,28 +74,21 @@ class McpAppearanceConfigurable(private val project: Project) :
                 isAllowAutoWrapping = true
             })
 
-        readColorCombo = ThemeColorComboBox(ThemeColor.TEAL).also {
-            it.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
+        userColorCombo = ThemeColorComboBox(ThemeColor.BLUE).also {
+            it.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
         }
-        searchColorCombo = ThemeColorComboBox(ThemeColor.BLUE).also {
-            it.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
+        root.add(labeledRow("User bubble accent", userColorCombo!!))
+
+        styleCombo = ComboBox(arrayOf("modern", "minimal", "accessible")).also {
+            it.selectedItem = settings.bubbleStyle
         }
-        editColorCombo = ThemeColorComboBox(ThemeColor.AMBER).also {
-            it.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
-        }
-        executeColorCombo = ThemeColorComboBox(ThemeColor.GREEN).also {
-            it.selectedThemeColor = ThemeColor.fromKey(settings.kindExecuteColorKey)
-        }
-        root.add(colorRow("Read & Navigate", readColorCombo!!))
-        root.add(colorRow("Search & Query", searchColorCombo!!))
-        root.add(colorRow("Edit & Refactor", editColorCombo!!))
-        root.add(colorRow("Run & Execute", executeColorCombo!!))
+        root.add(labeledRow("Bubble style", styleCombo!!))
 
         root.add(Box.createVerticalGlue())
         return root
     }
 
-    private fun colorRow(label: String, combo: ThemeColorComboBox): JComponent {
+    private fun labeledRow(label: String, combo: JComponent): JComponent {
         val row = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             alignmentX = Component.LEFT_ALIGNMENT
@@ -116,34 +110,27 @@ class McpAppearanceConfigurable(private val project: Project) :
 
     private fun computeIsModified(): Boolean {
         val settings = McpServerSettings.getInstance(project)
-        return readColorCombo != null && keyOf(readColorCombo!!) != settings.kindReadColorKey ||
-            searchColorCombo != null && keyOf(searchColorCombo!!) != settings.kindSearchColorKey ||
-            editColorCombo != null && keyOf(editColorCombo!!) != settings.kindEditColorKey ||
-            executeColorCombo != null && keyOf(executeColorCombo!!) != settings.kindExecuteColorKey
+        return userColorCombo != null && keyOf(userColorCombo!!) != settings.userBubbleColorKey ||
+            styleCombo != null && styleCombo!!.selectedItem != settings.bubbleStyle
     }
 
     private fun applySettings() {
         val settings = McpServerSettings.getInstance(project)
-        readColorCombo?.let { settings.kindReadColorKey = keyOf(it) }
-        searchColorCombo?.let { settings.kindSearchColorKey = keyOf(it) }
-        editColorCombo?.let { settings.kindEditColorKey = keyOf(it) }
-        executeColorCombo?.let { settings.kindExecuteColorKey = keyOf(it) }
+        userColorCombo?.let { settings.userBubbleColorKey = keyOf(it) }
+        styleCombo?.let { settings.bubbleStyle = it.selectedItem as? String ?: "modern" }
+        NativeChatPanel.getInstance(project)?.refreshUserBubbleColors()
         ToolCallsWebPanel.refreshForProject(project)
     }
 
     private fun resetFromSettings() {
         val settings = McpServerSettings.getInstance(project)
-        readColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
-        searchColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
-        editColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
-        executeColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindExecuteColorKey)
+        userColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
+        styleCombo?.selectedItem = settings.bubbleStyle
     }
 
     override fun disposeUIResources() {
         super<BoundConfigurable>.disposeUIResources()
-        readColorCombo = null
-        searchColorCombo = null
-        editColorCombo = null
-        executeColorCombo = null
+        userColorCombo = null
+        styleCombo = null
     }
 }
