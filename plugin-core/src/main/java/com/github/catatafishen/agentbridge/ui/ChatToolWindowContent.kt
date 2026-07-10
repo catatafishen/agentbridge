@@ -2664,6 +2664,7 @@ class ChatToolWindowContent(
         if (isBackgroundAgentRunning) {
             promptOrchestrator.stopPostTurnBackground()
             isBackgroundAgentRunning = false
+            statusBanner?.dismissCurrent()
         }
         setSendingState(false)
         restoreQueuedMessagesToInput()
