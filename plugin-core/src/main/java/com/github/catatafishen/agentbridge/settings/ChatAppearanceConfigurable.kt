@@ -23,12 +23,12 @@ import javax.swing.BoxLayout
 import javax.swing.JComponent
 
 /**
- * Chat bubble appearance: user accent color and bubble layout style
- * (modern / minimal / accessible).
+ * Chat bubble appearance: user accent color, default agent accent color, and bubble
+ * layout style (modern / minimal / accessible).
  *
- * Lives under UI/UX because these settings affect the chat presentation,
- * not any MCP-specific behavior. Agent bubble colors remain per-client in
- * each agent's own settings page.
+ * Lives under UI/UX because these settings affect chat presentation, not any
+ * MCP-specific behavior. The default agent color is used for every agent unless
+ * that agent's own settings page defines a per-client override.
  */
 class ChatAppearanceConfigurable(private val project: Project) :
     BoundConfigurable("Appearance"),
@@ -37,6 +37,7 @@ class ChatAppearanceConfigurable(private val project: Project) :
     override fun getId(): String = "com.github.catatafishen.agentbridge.ui-ux.appearance"
 
     private var userColorCombo: ThemeColorComboBox? = null
+    private var agentColorCombo: ThemeColorComboBox? = null
     private var styleCombo: ComboBox<String>? = null
 
     override fun createPanel() = panel {
@@ -63,9 +64,9 @@ class ChatAppearanceConfigurable(private val project: Project) :
 
         root.add(
             JBLabel(
-                "<html>Customize the accent color for user message bubbles and choose " +
-                    "a layout style. Agent bubble colors are set per-client in each " +
-                    "agent's settings page.</html>"
+                "<html>Customize accent colors for user and agent message bubbles and " +
+                    "choose a layout style. The agent color applies to every agent " +
+                    "unless overridden in that agent's own settings page.</html>"
             ).apply {
                 font = JBUI.Fonts.smallFont()
                 foreground = UIUtil.getContextHelpForeground()
@@ -78,6 +79,11 @@ class ChatAppearanceConfigurable(private val project: Project) :
             it.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
         }
         root.add(labeledRow("User bubble accent", userColorCombo!!))
+
+        agentColorCombo = ThemeColorComboBox(ThemeColor.BLUE).also {
+            it.selectedThemeColor = ThemeColor.fromKey(settings.agentBubbleColorKey)
+        }
+        root.add(labeledRow("Default agent accent", agentColorCombo!!))
 
         styleCombo = ComboBox(arrayOf("modern", "minimal", "accessible")).also {
             it.selectedItem = settings.bubbleStyle
@@ -111,26 +117,30 @@ class ChatAppearanceConfigurable(private val project: Project) :
     private fun computeIsModified(): Boolean {
         val settings = McpServerSettings.getInstance(project)
         return userColorCombo != null && keyOf(userColorCombo!!) != settings.userBubbleColorKey ||
+            agentColorCombo != null && keyOf(agentColorCombo!!) != settings.agentBubbleColorKey ||
             styleCombo != null && styleCombo!!.selectedItem != settings.bubbleStyle
     }
 
     private fun applySettings() {
         val settings = McpServerSettings.getInstance(project)
         userColorCombo?.let { settings.userBubbleColorKey = keyOf(it) }
+        agentColorCombo?.let { settings.agentBubbleColorKey = keyOf(it) }
         styleCombo?.let { settings.bubbleStyle = it.selectedItem as? String ?: "modern" }
-        NativeChatPanel.getInstance(project)?.refreshUserBubbleColors()
+        NativeChatPanel.getInstance(project)?.refreshBubbleColors()
         ToolCallsWebPanel.refreshForProject(project)
     }
 
     private fun resetFromSettings() {
         val settings = McpServerSettings.getInstance(project)
         userColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.userBubbleColorKey)
+        agentColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.agentBubbleColorKey)
         styleCombo?.selectedItem = settings.bubbleStyle
     }
 
     override fun disposeUIResources() {
         super<BoundConfigurable>.disposeUIResources()
         userColorCombo = null
+        agentColorCombo = null
         styleCombo = null
     }
 }

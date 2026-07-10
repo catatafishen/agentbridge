@@ -77,6 +77,40 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun agentBorder(): Color = NativeChatColors.agentBubbleBorder(currentAgentAccent)
 
     /**
+     * Last-known identifiers for the active agent — remembered so the current agent
+     * accent can be re-resolved when appearance settings change without waiting for the
+     * next [setCurrentAgent] call.
+     */
+    private var currentAgentClientType: String = ""
+    private var currentAgentProfileId: String = ""
+
+    /**
+     * Resolves the agent bubble accent color for the given identifiers.
+     * Precedence: per-client override → project-wide default → SA_COLORS by profile ID →
+     * hardcoded [ChatTheme.AGENT_COLOR].
+     *
+     * Returns the accent together with the SA_COLORS slot index that was used (or -1
+     * when the accent came from an override / default / hardcoded fallback). The index
+     * is what sub-agent color allocation relies on to skip the parent's slot.
+     */
+    private fun resolveAgentAccent(clientType: String, profileId: String): Pair<Color, Int> {
+        val perClient = if (clientType.isNotEmpty())
+            ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(clientType))?.color else null
+        if (perClient != null) return perClient to -1
+
+        val projectDefault = ThemeColor.fromKey(
+            McpServerSettings.getInstance(project).agentBubbleColorKey
+        )?.color
+        if (projectDefault != null) return projectDefault to -1
+
+        if (profileId.isNotEmpty()) {
+            val idx = ChatTheme.agentColorIndex(profileId)
+            return ChatTheme.SA_COLORS[idx] to idx
+        }
+        return ChatTheme.AGENT_COLOR to -1
+    }
+
+    /**
      * Resolves the user bubble accent color from project settings, falling back
      * to the default [ChatTheme.USER_COLOR].
      */
@@ -129,12 +163,23 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         agentBubbles.add(java.lang.ref.WeakReference(bubble))
     }
 
-    /** Re-paints all tracked bubbles with the current settings colors and style. */
-    fun refreshUserBubbleColors() {
+    /**
+     * Re-paints all tracked bubbles with the current settings colors/style, and
+     * re-resolves the current agent's accent so **future** agent messages pick up any
+     * changed default. Existing agent bubbles keep their painted color (main-agent and
+     * sub-agent bubbles share the same tracking list and can't be safely repainted in
+     * bulk with a single accent).
+     */
+    fun refreshBubbleColors() {
         val bg = userBg()
         val border = userBorder()
         val style = McpServerSettings.getInstance(project).bubbleStyle
+        val (accent, colorIndex) = resolveAgentAccent(
+            currentAgentClientType, currentAgentProfileId
+        )
         ApplicationManager.getApplication().invokeLater {
+            currentAgentAccent = accent
+            currentAgentColorIndex = colorIndex
             userBubbles.removeIf { it.get() == null }
             userBubbles.forEach { it.get()?.updateAppearance(bg, border, style) }
             agentBubbles.removeIf { it.get() == null }
@@ -1410,17 +1455,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         profileId: String,
         clientType: String
     ) {
-        // Resolve accent color: prefer per-client saved override, then SA_COLORS by profile.
-        val customAccent: Color? = if (clientType.isNotEmpty())
-            ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(clientType))?.color
-        else null
-        currentAgentAccent = customAccent
-            ?: if (profileId.isNotEmpty()) ChatTheme.SA_COLORS[ChatTheme.agentColorIndex(profileId)]
-            else ChatTheme.AGENT_COLOR
+        currentAgentClientType = clientType
+        currentAgentProfileId = profileId
+        val (accent, colorIndex) = resolveAgentAccent(clientType, profileId)
+        currentAgentAccent = accent
         // Track the SA_COLORS index so sub-agent color allocation can skip this slot.
-        currentAgentColorIndex = if (customAccent == null && profileId.isNotEmpty())
-            ChatTheme.agentColorIndex(profileId)
-        else -1
+        currentAgentColorIndex = colorIndex
 
         val display = buildString {
             append(agentName)
