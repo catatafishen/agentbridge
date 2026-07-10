@@ -16,9 +16,10 @@ export default class ChatMessage extends HTMLElement {
 
     attributeChangedCallback(name: string, _oldVal: string | null, newVal: string | null): void {
         if (name === 'type' && this._init) {
+            const type = newVal || 'agent';
             this.classList.remove('prompt-row', 'agent-row');
-            this.classList.add(newVal === 'user' ? 'prompt-row' : 'agent-row');
-            this.setAttribute('aria-label', `${newVal} message`);
+            this.classList.add(type === 'user' ? 'prompt-row' : 'agent-row');
+            this.setAttribute('aria-label', `${type} message`);
         }
     }
 }
