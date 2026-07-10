@@ -126,6 +126,7 @@ class ChatToolWindowContent(
     private lateinit var promptTextArea: EditorTextField
     private val shortcutHintGroup = DefaultActionGroup()
     private lateinit var shortcutHintToolbar: ActionToolbar
+
     // Keyed by (stroke, label) so the same action instance is reused across refreshShortcutHints()
     // calls. ActionToolbarImpl warns (and creates broken UI) when new instances appear every update.
     private val shortcutHintActionCache = HashMap<Pair<KeyStroke, String>, ShortcutHintAction>()
@@ -1220,7 +1221,7 @@ class ChatToolWindowContent(
             if (lastMatchingIndex >= 0) queuedTexts.removeAt(lastMatchingIndex)
             ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
         },
-        onPostTurnBackgroundDetected = { setBackgroundAgentRunning(true) },
+        onPostTurnBackgroundDetected = { showBackgroundAgentRunningBanner() },
     )
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
@@ -1573,7 +1574,12 @@ class ChatToolWindowContent(
         }
         shortcutHintGroup.removeAll()
         list.forEach { (stroke, label) ->
-            shortcutHintGroup.add(shortcutHintActionCache.getOrPut(stroke to label) { ShortcutHintAction(stroke, label) })
+            shortcutHintGroup.add(shortcutHintActionCache.getOrPut(stroke to label) {
+                ShortcutHintAction(
+                    stroke,
+                    label
+                )
+            })
         }
         shortcutHintToolbar.component.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
         shortcutHintToolbar.updateActionsAsync()
@@ -1604,14 +1610,12 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun setBackgroundAgentRunning(active: Boolean) {
-        isBackgroundAgentRunning = active
-        if (active) {
-            consolePanel.addInfoEntry(
-                "⚠ Agent signalled turn-complete but is still sending messages " +
-                    "(background sub-agent in progress). Press Stop to cancel, or wait for it to finish."
-            )
-        }
+    private fun showBackgroundAgentRunningBanner() {
+        isBackgroundAgentRunning = true
+        statusBanner?.showWarning(
+            "Agent finished its turn but is still sending messages. " +
+                "Press Stop to cancel, or wait for it to finish."
+        )
         ApplicationManager.getApplication().invokeLater {
             controlsToolbar.updateActionsAsync()
         }
@@ -2810,10 +2814,12 @@ class ChatToolWindowContent(
                 resetSessionKeepingHistory()
                 true
             }
+
             command.equals("/session-clear", ignoreCase = true) -> {
                 resetSession()
                 true
             }
+
             else -> false
         }
     }
