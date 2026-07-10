@@ -71,6 +71,10 @@ class PromptOrchestrator(
     private val statusBanner: () -> StatusBanner?,
     private val callbacks: PromptOrchestratorCallbacks,
 ) {
+    private companion object {
+        const val STOPPED_BY_USER = "Stopped by user"
+    }
+
     private val log = Logger.getInstance(PromptOrchestrator::class.java)
 
     /** Copilot built-in tool whose summary should render as agent text, not a tool chip. */
@@ -203,13 +207,19 @@ class PromptOrchestrator(
         }
         currentPromptThread?.interrupt()
         consolePanel().cancelAllRunning()
-        consolePanel().addErrorEntry("Stopped by user")
+        consolePanel().addErrorEntry(STOPPED_BY_USER)
     }
 
     /**
      * Cancels background work running after a completed turn (post-turn background agent).
-     * Sends session/cancel to the agent and clears the post-turn consumer.
-     * Does NOT interrupt the current prompt thread (there is none — the turn already ended).
+     * Sends session/cancel to the remote agent, interrupts any local in-flight MCP tool
+     * executions the background sub-agent had spawned (child processes, prompt_user waiters),
+     * cancels running console rows, clears the post-turn consumer, and posts a "Stopped by
+     * user" entry. Does NOT interrupt a prompt thread (there is none — the turn already ended).
+     *
+     * <p>Kept symmetric with {@link #stop} so pressing Stop during a background sub-agent
+     * gives the same cleanup as pressing Stop during a normal turn — otherwise local tool
+     * workers keep running to natural completion and their results are silently discarded.
      */
     fun stopPostTurnBackground() {
         val sessionId = currentSessionId
@@ -220,7 +230,19 @@ class PromptOrchestrator(
                 // Best-effort
             }
         }
+        // Interrupt any in-flight MCP tool executions spawned by the background sub-agent
+        // (e.g. run_command child processes, prompt_user waiters). Without this the remote
+        // agent is cancelled but local tool workers keep running until natural completion.
+        // Transient cancel: does not latch the registry closed, so the next prompt's tool
+        // calls still work.
+        try {
+            InFlightMcpToolRegistry.getInstance(project).cancelInFlight("stopped by user")
+        } catch (_: Exception) {
+            // Best-effort
+        }
         agentManager.client.clearPostTurnState()
+        consolePanel().cancelAllRunning()
+        consolePanel().addErrorEntry(STOPPED_BY_USER)
     }
 
     private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
@@ -253,7 +275,7 @@ class PromptOrchestrator(
             // If stop() was called, the remote turn may have ended cleanly (via turn/interrupt
             // response) without throwing. Treat it as a cancellation so handlePromptCompletion
             // is not invoked and the stale thread interrupt doesn't leak into the next turn.
-            if (stopped) throw InterruptedException("Stopped by user")
+            if (stopped) throw InterruptedException(STOPPED_BY_USER)
             // If the agent returned end_turn but produced no content, the session state is
             // likely corrupted (e.g. OpenCode's compaction state is broken). Handle it
             // explicitly — NOT via handlePromptError, which shows a misleading "Reconnect"
