@@ -172,11 +172,11 @@ class ContrastCheckerTest {
         }
 
         @Test
-        fun `low contrast grey fails AA normal but passes AA large`() {
-            // #999 on #EEE ≈ 2.8:1 — fails AA normal (needs 4.5), passes AA large (needs 3.0)
+        fun `very low contrast grey fails both AA normal and AA large`() {
+            // #999 on #EEE ≈ 2.6:1 — fails AA normal (needs 4.5) AND fails AA large (needs 3.0)
             val result = ContrastChecker.check(Color(0x99, 0x99, 0x99), Color(0xEE, 0xEE, 0xEE))
             assertFalse(result.passesAANormal, "should fail AA normal text threshold")
-            assertFalse(result.passesAALarge, "should fail AA large text threshold")
+            assertFalse(result.passesAALarge, "should fail AA large text threshold (ratio < 3.0)")
         }
 
         @Test
@@ -237,16 +237,19 @@ class ContrastCheckerTest {
         }
 
         @Test
-        fun `zero alpha always fails`() {
-            // With 0% alpha the composite = background — if text matches background that's 1:1
+        fun `search returns non-zero alpha when zero alpha fails target`() {
+            // With text=WHITE on background=WHITE the base ratio is 1.0. Adding a BLACK accent
+            // darkens the composite as alpha grows, so ratio increases with alpha.
+            // Target 4.5 cannot be met at alpha=0 (ratio 1.0), forcing the search to walk upward.
             val minAlpha = ContrastChecker.minAlphaForContrast(
-                accent = Color.RED,
+                accent = Color.BLACK,
                 background = Color.WHITE,
-                textOnTop = Color.BLACK,
-                targetRatio = 1.0,
+                textOnTop = Color.WHITE,
+                targetRatio = 4.5,
             )
             assertNotNull(minAlpha)
-            assertTrue(minAlpha!! >= 0.0)
+            assertTrue(minAlpha!! > 0.0, "target 4.5:1 is unreachable at alpha=0 — search must return alpha > 0")
+            assertTrue(minAlpha <= 1.0)
         }
 
         @Test

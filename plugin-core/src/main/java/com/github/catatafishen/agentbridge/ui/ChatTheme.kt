@@ -17,6 +17,21 @@ object ChatTheme {
     const val SA_COLOR_COUNT = 8
     const val LINK_COLOR_KEY = "Link.activeForeground"
 
+    /** Whitelist of accepted bubble style names. Any other value falls back to [DEFAULT_BUBBLE_STYLE]. */
+    val ALLOWED_BUBBLE_STYLES: Set<String> = setOf("modern", "minimal", "accessible")
+    const val DEFAULT_BUBBLE_STYLE: String = "modern"
+
+    /**
+     * Validates a bubble-style string against the allowed set.
+     *
+     * The value ultimately comes from persisted settings and is embedded into HTML/CSS/JS
+     * strings sent to the JCEF page. Whitelisting here prevents any unexpected value
+     * (accidental or crafted) from breaking out of an attribute or injecting script.
+     */
+    @JvmStatic
+    fun sanitizeBubbleStyle(raw: String?): String =
+        if (raw != null && raw in ALLOWED_BUBBLE_STYLES) raw else DEFAULT_BUBBLE_STYLE
+
     val USER_COLOR: JBColor = JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214))
     val AGENT_COLOR: JBColor = JBColor(Color(0x2A, 0x80, 0x2A), Color(150, 200, 150))
     val TOOL_COLOR: JBColor = JBColor(Color(0x6A, 0x4C, 0xB0), Color(180, 160, 220))
@@ -175,7 +190,7 @@ object ChatTheme {
             }
         }
         // Bubble style preset + contrast boost for accessibility
-        val bubbleStyle = mcpSettings?.bubbleStyle ?: "modern"
+        val bubbleStyle = sanitizeBubbleStyle(mcpSettings?.bubbleStyle)
         val contrastBoost = (mcpSettings?.contrastBoost ?: 0).coerceIn(0, 100)
         sb.append("--bubble-style:$bubbleStyle;--contrast-boost:$contrastBoost;")
         return sb.toString()

@@ -69,25 +69,40 @@ object NativeChatColors {
 
     /**
      * Background color for a dynamic agent bubble using an accent color sampled from [ChatTheme.SA_COLORS].
+     * Alpha mirrors [AGENT_BUBBLE_BG] (12 light / 15 dark).
      */
-    fun agentBubbleBg(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 15)
+    fun agentBubbleBg(accent: Color): Color = JBColor(
+        Color(accent.red, accent.green, accent.blue, 12),
+        Color(accent.red, accent.green, accent.blue, 15),
+    )
 
     /**
      * Border color for a dynamic agent bubble — slightly more opaque than the background.
+     * Alpha mirrors [AGENT_BUBBLE_BORDER] (35 light / 45 dark).
      */
-    fun agentBubbleBorder(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 45)
+    fun agentBubbleBorder(accent: Color): Color = JBColor(
+        Color(accent.red, accent.green, accent.blue, 35),
+        Color(accent.red, accent.green, accent.blue, 45),
+    )
 
     /**
      * Background color for a user bubble using an accent color.
      * When called with the default [ChatTheme.USER_COLOR], produces the same
-     * visual as the [USER_BUBBLE_BG] constant (used when no custom accent is set).
+     * visual as the [USER_BUBBLE_BG] constant (alpha 25 light / 31 dark).
      */
-    fun userBubbleBg(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 25)
+    fun userBubbleBg(accent: Color): Color = JBColor(
+        Color(accent.red, accent.green, accent.blue, 25),
+        Color(accent.red, accent.green, accent.blue, 31),
+    )
 
     /**
      * Border color for a user bubble using an accent color.
+     * Alpha mirrors [USER_BUBBLE_BORDER] (45 light / 55 dark).
      */
-    fun userBubbleBorder(accent: Color): Color = Color(accent.red, accent.green, accent.blue, 50)
+    fun userBubbleBorder(accent: Color): Color = JBColor(
+        Color(accent.red, accent.green, accent.blue, 45),
+        Color(accent.red, accent.green, accent.blue, 55),
+    )
 
     /**
      * Returns the border color for a bubble background, or null for backgrounds that have no border
