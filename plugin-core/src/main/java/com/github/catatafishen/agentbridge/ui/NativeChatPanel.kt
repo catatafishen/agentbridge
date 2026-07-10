@@ -118,7 +118,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         userBubbles.add(java.lang.ref.WeakReference(bubble))
     }
 
-    /** Re-paints all tracked user bubbles with the current settings colors and style. */
+    /** Weak references to all agent-side bubble RoundedPanels for live style updates. */
+    private val agentBubbles = java.util.Collections.synchronizedList(
+        mutableListOf<java.lang.ref.WeakReference<RoundedPanel>>()
+    )
+
+    private fun trackAgentBubble(bubble: RoundedPanel) {
+        bubble.bubbleStyle = McpServerSettings.getInstance(project).bubbleStyle
+        agentBubbles.removeIf { it.get() == null }
+        agentBubbles.add(java.lang.ref.WeakReference(bubble))
+    }
+
+    /** Re-paints all tracked bubbles with the current settings colors and style. */
     fun refreshUserBubbleColors() {
         val bg = userBg()
         val border = userBorder()
@@ -126,6 +137,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         ApplicationManager.getApplication().invokeLater {
             userBubbles.removeIf { it.get() == null }
             userBubbles.forEach { it.get()?.updateAppearance(bg, border, style) }
+            agentBubbles.removeIf { it.get() == null }
+            agentBubbles.forEach { it.get()?.updateStyle(style) }
         }
     }
 
@@ -710,6 +723,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (turn.markdownPane == null) {
             val (row, pane, bubbleRow) = createMarkdownBubble(agentBg(), agentBorder())
             turn.markdownPane = pane
+            trackAgentBubble(bubbleRow.bubble)
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
             addRow(row)
         }
@@ -725,6 +739,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val (contentWrapper, pane, bubbleRow) = createMarkdownBubble(NativeChatColors.THINK_BG)
 
             turn.thinkingPane = pane
+            trackAgentBubble(bubbleRow.bubble)
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
 
             // Top gap between chip row and the thinking bubble; collapses with the panel
@@ -894,6 +909,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 NativeChatColors.agentBubbleBg(accent),
                 explicitBorder = NativeChatColors.agentBubbleBorder(accent)
             )
+            trackAgentBubble(bubbleRow.bubble)
             bubbleRow.bubble.add(pane, BorderLayout.CENTER)
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
             addRow(bubbleRow.row)
@@ -959,6 +975,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             NativeChatColors.agentBubbleBg(accent),
             explicitBorder = NativeChatColors.agentBubbleBorder(accent)
         )
+        trackAgentBubble(bubbleRow.bubble)
         bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         section.contentBox.add(bubbleRow.row)
@@ -1018,17 +1035,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun addErrorEntry(message: String) {
         finalizeTurn()
         val pane = createMarkdownPane("✗ $message")
-        val (row, _) = createMessageRow(pane, NativeChatColors.ERROR_BG) { bubbleRow ->
+        val (row, bubble) = createMessageRow(pane, NativeChatColors.ERROR_BG) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
+        trackAgentBubble(bubble)
         addRow(row)
     }
 
     override fun addInfoEntry(message: String) {
         val pane = createMarkdownPane("ℹ $message")
-        val (row, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { bubbleRow ->
+        val (row, bubble) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { bubbleRow ->
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
+        trackAgentBubble(bubble)
         addRow(row)
     }
 
@@ -1209,9 +1228,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         onExtend: () -> Long, onSuperseded: () -> Unit,
     ) {
         val pane = createMarkdownPane(question)
-        val (bubbleRow, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
+        val (bubbleRow, askBubble) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
             row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
+        trackAgentBubble(askBubble)
         addRow(bubbleRow)
 
         val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
