@@ -46,7 +46,7 @@ public final class ListTerminalsTool extends TerminalTool {
         appendOpenTerminalTabs(result);
         appendDefaultShell(result);
 
-        result.append("\n\nTip: Use read_terminal_output or write_terminal_input with tab_name to interact with a listed tab.");
+        result.append("\n\nTip: Reuse AgentBridge tabs with run_in_terminal, interact with read_terminal_output/write_terminal_input, and close unused tabs with close_terminal.");
         return result.toString();
     }
 
