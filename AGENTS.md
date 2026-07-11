@@ -97,6 +97,39 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
 
+## Do Not Fan Out Branches While Work Is Unmerged
+
+**When an earlier PR from the current session is still unmerged, do not start a new branch for a
+follow-up change. Add follow-up commits to the same branch (or reopen the branch's PR scope) unless
+the human explicitly asks for a separate PR.**
+
+Parallel branches on related code cause real damage in an agent-driven workflow:
+
+- **Merge conflicts** — the same file gets edited on two branches, and one merge overwrites or fights
+  the other's changes.
+- **Duplicate work** — a reviewer's feedback on PR A is fixed independently on branch B, and both
+  branches end up "fixing" the same thing in slightly different ways.
+- **Rebase debt** — the second branch is based on an older master and has to be rebased once the
+  first merges, often with conflicts.
+- **Review fragmentation** — a coherent behaviour (e.g. "the Stop button works properly") gets split
+  across 2–3 PRs that reviewers have to context-switch between.
+
+**The rule:**
+
+1. **Default to extending the current branch.** If the new fix is in the same area of the codebase
+   or logically follows from work you just did in an open PR, add a commit to that branch.
+2. **Ask before branching.** If you genuinely believe a separate branch is warranted (e.g. the fix
+   is fully independent, or the current PR is close to merge and you don't want to expand its
+   scope), state your reasoning and ask the human to confirm before creating the new branch.
+3. **Never open a second branch on the same file** that another open PR of yours already modifies —
+   unless the human has explicitly told you the first PR is finalised.
+4. **When adding to an existing PR's branch,** update the PR title and description to reflect the
+   expanded scope so reviewers know what they are getting.
+
+The bias should be toward *fewer, larger, coherent PRs* rather than *more, smaller, parallel PRs* —
+because agent throughput is fast enough that parallel branches conflict faster than reviewers can
+merge them.
+
 ## Build and Test Verification
 
 **After making code changes**, always run `build_project` and verify it succeeds before ending
