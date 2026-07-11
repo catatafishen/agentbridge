@@ -13,9 +13,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /**
- * Platform tests for the four terminal tools: {@link ListTerminalsTool},
- * {@link ReadTerminalOutputTool}, {@link WriteTerminalInputTool}, and
- * {@link RunInTerminalTool}, plus the {@link TerminalToolFactory}.
+ * Platform tests for the terminal tools: {@link ListTerminalsTool},
+ * {@link ReadTerminalOutputTool}, {@link WriteTerminalInputTool},
+ * {@link RunInTerminalTool}, and {@link CloseTerminalTool}, plus the
+ * {@link TerminalToolFactory}.
  *
  * <p>JUnit 3 style (extends {@link BasePlatformTestCase}): test methods must be
  * {@code public void testXxx()}. Run via Gradle only:
@@ -130,25 +131,27 @@ public class TerminalToolsTest extends BasePlatformTestCase {
 
     /**
      * {@link TerminalToolFactory#create} must return a list containing exactly the
-     * four expected tool instances. Availability of the terminal plugin is checked
+     * five expected tool instances. Availability of the terminal plugin is checked
      * at execution time (via reflection), not at factory creation time — there is
      * no guard to bypass at construction.
      */
-    public void testTerminalToolFactoryCreatesAllFourTools() {
+    public void testTerminalToolFactoryCreatesAllFiveTools() {
         List<Tool> tools = TerminalToolFactory.create(getProject());
 
         assertNotNull("Factory must not return null", tools);
-        assertEquals("Factory must create exactly 4 terminal tools", 4, tools.size());
+        assertEquals("Factory must create exactly 5 terminal tools", 5, tools.size());
 
         long listCount = tools.stream().filter(ListTerminalsTool.class::isInstance).count();
         long readCount = tools.stream().filter(ReadTerminalOutputTool.class::isInstance).count();
         long writeCount = tools.stream().filter(WriteTerminalInputTool.class::isInstance).count();
         long runCount = tools.stream().filter(RunInTerminalTool.class::isInstance).count();
+        long closeCount = tools.stream().filter(CloseTerminalTool.class::isInstance).count();
 
         assertEquals("Expected exactly one ListTerminalsTool", 1, listCount);
         assertEquals("Expected exactly one ReadTerminalOutputTool", 1, readCount);
         assertEquals("Expected exactly one WriteTerminalInputTool", 1, writeCount);
         assertEquals("Expected exactly one RunInTerminalTool", 1, runCount);
+        assertEquals("Expected exactly one CloseTerminalTool", 1, closeCount);
     }
 
     /**

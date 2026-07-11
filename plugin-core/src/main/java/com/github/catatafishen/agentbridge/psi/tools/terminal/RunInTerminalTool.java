@@ -37,6 +37,8 @@ public final class RunInTerminalTool extends TerminalTool {
         return """
             Run a command in IntelliJ's integrated terminal. Returns terminal output. \
             Use for interactive commands that need stdin (prompts, REPL). \
+            Reuses the most recent agent-created terminal by default. Set new_tab only for a truly parallel interactive process. \
+            Close an agent terminal with close_terminal when it is no longer needed. \
             For non-interactive commands with captured output, prefer run_command.
 
             When the terminal is waiting for input:
@@ -68,7 +70,7 @@ public final class RunInTerminalTool extends TerminalTool {
         return schema(
             Param.required(JSON_COMMAND, TYPE_STRING, "The command to run in the terminal"),
             Param.optional(JSON_TAB_NAME, TYPE_STRING, "Name for the terminal tab. If omitted, reuses the most recent agent-created tab or creates a new one"),
-            Param.optional(JSON_NEW_TAB, TYPE_BOOLEAN, "If true, always create a new terminal tab instead of reusing an existing one"),
+            Param.optional(JSON_NEW_TAB, TYPE_BOOLEAN, "If true, create a separate terminal tab. Use only for a parallel interactive process; AgentBridge allows at most 3 agent-created terminals"),
             Param.optional(JSON_SHELL, TYPE_STRING, "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell")
         );
     }
@@ -95,7 +97,7 @@ public final class RunInTerminalTool extends TerminalTool {
                 sendTerminalCommand(result.widget(), command);
 
                 resultFuture.complete("Command sent to terminal '" + result.tabName() + "': " + command +
-                    "\n\nNote: Use read_terminal_output to read terminal content, or run_command if you need output returned directly.");
+                    "\n\nNote: Reuse is the default. Use read_terminal_output for content, close_terminal when done, or run_command for captured output.");
 
             } catch (ClassNotFoundException e) {
                 resultFuture.complete("Terminal plugin not available. Use run_command tool instead.");

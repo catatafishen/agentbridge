@@ -17,6 +17,7 @@ public final class TerminalToolFactory {
     public static @NotNull List<Tool> create(@NotNull Project project) {
         return List.of(
             new RunInTerminalTool(project),
+            new CloseTerminalTool(project),
             new WriteTerminalInputTool(project),
             new ReadTerminalOutputTool(project),
             new ListTerminalsTool(project)

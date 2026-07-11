@@ -97,15 +97,23 @@ public abstract class TerminalTool extends Tool {
     protected TerminalWidgetResult getOrCreateTerminalWidget(Class<?> managerClass, Object manager,
                                                              String tabName, boolean newTab,
                                                              String shell, String command) throws Exception {
-        // Try to reuse existing terminal tab
-        if (tabName != null && !newTab) {
-            Object widget = findTerminalWidgetByTabName(managerClass, tabName);
-            if (widget != null) {
-                return new TerminalWidgetResult(widget, tabName);
+        AgentTabTracker tracker = AgentTabTracker.getInstance(project);
+        if (!newTab) {
+            String reusableName = tabName != null ? tabName : tracker.findMostRecentOpenTerminalTabName();
+            if (reusableName != null) {
+                Object widget = findTerminalWidgetByTabName(managerClass, reusableName);
+                if (widget != null) {
+                    return new TerminalWidgetResult(widget, reusableName + " (reused)");
+                }
             }
         }
 
-        // Create new tab
+        if (!tracker.hasOpenTerminalCapacity()) {
+            throw new IllegalStateException(
+                "Agent terminal limit reached (" + AgentTabTracker.MAX_OPEN_AGENT_TERMINALS
+                    + "). Reuse an existing tab or close one with close_terminal.");
+        }
+
         String title = tabName != null ? tabName : "Agent: " + truncateForTitle(command);
         List<String> shellCommand = shell != null ? List.of(shell) : null;
         var createSession = managerClass.getMethod("createNewSession",
@@ -114,7 +122,7 @@ public abstract class TerminalTool extends Tool {
         // the new terminal tab from yanking the keyboard caret out of the chat prompt.
         boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);
         Object widget = createSession.invoke(manager, project.getBasePath(), title, shellCommand, requestFocus, true);
-        AgentTabTracker.getInstance(project).trackTab(TERMINAL_TOOL_WINDOW_ID, title);
+        tracker.trackTab(TERMINAL_TOOL_WINDOW_ID, title);
         return new TerminalWidgetResult(widget, title + " (new)");
     }
 
@@ -142,7 +150,7 @@ public abstract class TerminalTool extends Tool {
 
                     for (var content : toolWindow.getContentManager().getContents()) {
                         String displayName = content.getDisplayName();
-                        if (displayName != null && displayName.contains(tabName)) {
+                        if (AgentTabTracker.terminalTabNameMatches(tabName, displayName)) {
                             Object widget = findWidgetByContent.invoke(null, content);
                             if (widget != null) {
                                 LOG.info("Reusing terminal tab '" + displayName + "'");
@@ -177,7 +185,7 @@ public abstract class TerminalTool extends Tool {
 
                 for (var content : contentManager.getContents()) {
                     String name = content.getDisplayName();
-                    if (name != null && name.contains(tabName)) {
+                    if (AgentTabTracker.terminalTabNameMatches(tabName, name)) {
                         result[0] = content;
                         return;
                     }
