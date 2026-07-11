@@ -33,6 +33,7 @@ public final class OpenCodeClient extends AcpClient {
     private static final String PLAN_AGENT = "plan";
     private static final String GENERAL_AGENT = "general";
     private static final String EXPLORE_AGENT = "explore";
+    private static final String SCOUT_AGENT = "scout";
     private static final String PROJECT_AGENT_DIR = ".opencode/agent";
     private static final String PROJECT_AGENTS_DIR = ".opencode/agents";
     private static final String DEPLOYED_AGENT_DIR = ".agent-work/opencode/agent";
@@ -78,7 +79,7 @@ public final class OpenCodeClient extends AcpClient {
         if (basePath != null) {
             agents.addAll(ProjectAgentScanner.scanAgentDirectories(
                 Path.of(basePath),
-                Set.of(BUILD_AGENT, PLAN_AGENT, GENERAL_AGENT, EXPLORE_AGENT),
+                Set.of(BUILD_AGENT, PLAN_AGENT, GENERAL_AGENT, EXPLORE_AGENT, SCOUT_AGENT),
                 PROJECT_AGENT_DIR,
                 PROJECT_AGENTS_DIR,
                 DEPLOYED_AGENT_DIR
@@ -92,7 +93,8 @@ public final class OpenCodeClient extends AcpClient {
             new AbstractClient.AgentMode(BUILD_AGENT, "Build", "Default primary agent with full tool access"),
             new AbstractClient.AgentMode(PLAN_AGENT, "Plan", "Read-only planning mode with guarded edits and bash"),
             new AbstractClient.AgentMode(GENERAL_AGENT, "General", "General-purpose subagent for complex tasks"),
-            new AbstractClient.AgentMode(EXPLORE_AGENT, "Explore", "Fast read-only subagent for codebase exploration")
+            new AbstractClient.AgentMode(EXPLORE_AGENT, "Explore", "Fast read-only subagent for codebase exploration"),
+            new AbstractClient.AgentMode(SCOUT_AGENT, "Scout", "Read-only subagent for external docs and dependency research")
         );
     }
 

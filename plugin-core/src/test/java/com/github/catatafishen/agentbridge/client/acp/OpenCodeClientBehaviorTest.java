@@ -103,10 +103,10 @@ class OpenCodeClientBehaviorTest {
         List<AbstractClient.AgentMode> agents = client.getAvailableAgents();
 
         assertEquals(
-            List.of("build", "plan", "general", "explore", "shared", "local"),
+            List.of("build", "plan", "general", "explore", "scout", "shared", "local"),
             agents.stream().map(AbstractClient.AgentMode::slug).toList()
         );
-        assertEquals("Shared Primary", agents.get(4).name());
+        assertEquals("Shared Primary", agents.get(5).name());
         assertTrue(agents.stream().noneMatch(agent -> "Shadow Build".equals(agent.name())));
     }
 

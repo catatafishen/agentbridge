@@ -83,9 +83,11 @@ internal val SUB_AGENT_INFO = mapOf(
     // Built-in Claude Code agents (current casing from docs)
     "Explore" to SubAgentInfo("Explore"),
     "Plan" to SubAgentInfo("Plan"),
+    "Scout" to SubAgentInfo("Scout"),
     AGENT_TYPE_GENERAL to SubAgentInfo("General"),
     // Legacy / lowercase aliases
     "explore" to SubAgentInfo("Explore"),
+    "scout" to SubAgentInfo("Scout"),
     "task" to SubAgentInfo("Task Agent"),
     // Custom intellij-* agents (recommended in startup instructions)
     "intellij-explore" to SubAgentInfo("Explore"),

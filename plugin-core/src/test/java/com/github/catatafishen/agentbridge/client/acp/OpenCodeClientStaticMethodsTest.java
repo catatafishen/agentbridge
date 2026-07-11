@@ -135,17 +135,19 @@ class OpenCodeClientStaticMethodsTest {
     class BuiltInAgents {
 
         @Test
-        @DisplayName("returns OpenCode's 4 native agents in display order")
+        @DisplayName("returns OpenCode's 5 native agents in display order")
         void returnsNativeAgents() {
             var agents = OpenCodeClient.builtInAgents();
 
-            assertEquals(4, agents.size());
+            assertEquals(5, agents.size());
             assertEquals("build", agents.get(0).slug());
             assertEquals("plan", agents.get(1).slug());
             assertEquals("general", agents.get(2).slug());
             assertEquals("explore", agents.get(3).slug());
+            assertEquals("scout", agents.get(4).slug());
             assertEquals("Build", agents.get(0).name());
             assertEquals("Plan", agents.get(1).name());
+            assertEquals("Scout", agents.get(4).name());
         }
     }
 
