@@ -192,6 +192,15 @@ class PromptOrchestrator(
         // Set the flag FIRST so the background thread sees it even if the remote session
         // completes the turn before Thread.interrupt() fires.
         stopped = true
+        // Clear the pending post-turn callback so a late "cancelled" session/update from the
+        // remote agent can't re-arm the "still sending" banner after the *next* turn starts
+        // (stopped is reset to false at execute() start, so the !stopped guard on the callback
+        // is not sufficient across turn boundaries — the callback slot itself must be empty).
+        try {
+            agentManager.client.setFirstPostTurnCallback(null)
+        } catch (_: Exception) {
+            // Best-effort
+        }
         val sessionId = currentSessionId
         if (sessionId != null) {
             try {
