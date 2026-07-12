@@ -143,7 +143,7 @@ public final class GitPushTool extends GitTool {
             + "\nCheck with git_push_status {\"job_id\":\"" + job.id() + "\"}.";
     }
 
-    private @NotNull String executePush(
+    private @NotNull GitPushJobRegistry.JobResult executePush(
         @NotNull String root,
         boolean forceFlag,
         @NotNull PushTarget target,
@@ -152,8 +152,12 @@ public final class GitPushTool extends GitTool {
         String fetchNote = autoFetchIfStaleIn(root);
         String divergenceWarning = divergenceWarning(root, forceFlag);
         String result = runGitIn(root, commandArgs);
-        if (result.startsWith(ERR_PREFIX)) return fetchNote + result + divergenceWarning;
-        return buildPushResponse(result, fetchNote, divergenceWarning, target, root);
+        if (result.startsWith(ERR_PREFIX)) {
+            return GitPushJobRegistry.JobResult.failure(fetchNote + result + divergenceWarning);
+        }
+        return GitPushJobRegistry.JobResult.success(
+            buildPushResponse(result, fetchNote, divergenceWarning, target, root)
+        );
     }
 
     private String preparePush(@Nullable String repoParam) {

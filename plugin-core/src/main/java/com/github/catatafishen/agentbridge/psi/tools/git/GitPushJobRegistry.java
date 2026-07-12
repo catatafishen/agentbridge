@@ -8,6 +8,7 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
@@ -16,19 +17,49 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 @Service(Service.Level.PROJECT)
 public final class GitPushJobRegistry implements Disposable {
 
     private static final int MAX_RESULT_CHARS = 40_000;
+    private static final int MAX_COMPLETED_JOBS = 50;
     private static final int RECENT_LIMIT = 10;
 
     private final Map<String, JobRecord> jobs = new ConcurrentHashMap<>();
     private final AtomicReference<String> latestJobId = new AtomicReference<>();
+    private final AtomicLong sequence = new AtomicLong();
+    private final Executor executor;
+    private final Clock clock;
+    private final int maxCompletedJobs;
+    private final Supplier<String> idSupplier;
 
     @SuppressWarnings("unused") // IntelliJ service container
     public GitPushJobRegistry(@NotNull Project project) {
+        this(
+            AppExecutorUtil.getAppExecutorService(),
+            Clock.systemUTC(),
+            MAX_COMPLETED_JOBS,
+            () -> "git-push-" + UUID.randomUUID().toString().substring(0, 8)
+        );
+    }
+
+    GitPushJobRegistry(
+        @NotNull Executor executor,
+        @NotNull Clock clock,
+        int maxCompletedJobs,
+        @NotNull Supplier<String> idSupplier
+    ) {
+        if (maxCompletedJobs < 1) {
+            throw new IllegalArgumentException("maxCompletedJobs must be positive");
+        }
+        this.executor = executor;
+        this.clock = clock;
+        this.maxCompletedJobs = maxCompletedJobs;
+        this.idSupplier = idSupplier;
     }
 
     public static @NotNull GitPushJobRegistry getInstance(@NotNull Project project) {
@@ -38,16 +69,19 @@ public final class GitPushJobRegistry implements Disposable {
     public @NotNull JobRecord start(
         @NotNull String root,
         @NotNull String displayCommand,
-        @NotNull Callable<String> task
+        @NotNull Callable<JobResult> task
     ) {
-        String id = "git-push-" + UUID.randomUUID().toString().substring(0, 8);
-        JobRecord job = new JobRecord(id, root, displayCommand, Instant.now());
+        String id = idSupplier.get();
+        JobRecord job = new JobRecord(
+            id,
+            root,
+            displayCommand,
+            clock.instant(),
+            sequence.incrementAndGet()
+        );
         jobs.put(id, job);
         latestJobId.set(id);
-        job.future = CompletableFuture.supplyAsync(
-            () -> runTask(job, task),
-            AppExecutorUtil.getAppExecutorService()
-        );
+        job.future = CompletableFuture.supplyAsync(() -> runTask(job, task), executor);
         return job;
     }
 
@@ -65,7 +99,7 @@ public final class GitPushJobRegistry implements Disposable {
     @Override
     public void dispose() {
         for (JobRecord job : jobs.values()) {
-            CompletableFuture<String> future = job.future;
+            CompletableFuture<JobResult> future = job.future;
             if (future != null && !future.isDone()) {
                 future.cancel(true);
             }
@@ -73,25 +107,45 @@ public final class GitPushJobRegistry implements Disposable {
         jobs.clear();
     }
 
-    private @NotNull String runTask(@NotNull JobRecord job, @NotNull Callable<String> task) {
+    private @NotNull JobResult runTask(@NotNull JobRecord job, @NotNull Callable<JobResult> task) {
+        JobResult result;
         try {
-            String result = task.call();
-            complete(job, isError(result) ? JobState.FAILED : JobState.SUCCEEDED, result);
+            result = task.call();
+            if (result == null) {
+                result = JobResult.failure("Error: background git_push job returned no result");
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            complete(job, JobState.FAILED, "Error: background git_push job was interrupted");
+            result = JobResult.failure("Error: background git_push job was interrupted");
         } catch (Exception e) {
-            complete(job, JobState.FAILED,
+            result = JobResult.failure(
                 "Error: background git_push job failed: " + e.getClass().getSimpleName()
-                    + ": " + e.getMessage());
+                    + ": " + e.getMessage()
+            );
         }
-        return job.result == null ? "" : job.result;
+        complete(job, result);
+        return result;
     }
 
-    private void complete(@NotNull JobRecord job, @NotNull JobState state, @Nullable String result) {
-        job.result = truncate(result == null ? "" : result);
-        job.completedAt = Instant.now();
-        job.state.set(state);
+    private void complete(@NotNull JobRecord job, @NotNull JobResult result) {
+        job.result = truncate(result.output());
+        job.completedAt = clock.instant();
+        job.state.set(result.success() ? JobState.SUCCEEDED : JobState.FAILED);
+        pruneCompletedJobs();
+    }
+
+    private void pruneCompletedJobs() {
+        long completedCount = jobs.values().stream()
+            .filter(JobRecord::isCompleted)
+            .count();
+        long excess = completedCount - maxCompletedJobs;
+        if (excess <= 0) return;
+
+        jobs.values().stream()
+            .filter(JobRecord::isCompleted)
+            .sorted(Comparator.comparingLong(JobRecord::sequence))
+            .limit(excess)
+            .forEach(job -> jobs.remove(job.id(), job));
     }
 
     private @NotNull String listRecent() {
@@ -99,7 +153,7 @@ public final class GitPushJobRegistry implements Disposable {
 
         StringBuilder sb = new StringBuilder("Recent background git_push jobs:\n");
         jobs.values().stream()
-            .sorted(Comparator.comparing(JobRecord::startedAt).reversed())
+            .sorted(Comparator.comparingLong(JobRecord::sequence).reversed())
             .limit(RECENT_LIMIT)
             .forEach(job -> sb.append("- ")
                 .append(job.id())
@@ -113,7 +167,7 @@ public final class GitPushJobRegistry implements Disposable {
 
     private @NotNull String formatJob(@NotNull JobRecord job) {
         Instant completedAt = job.completedAt;
-        Instant end = completedAt != null ? completedAt : Instant.now();
+        Instant end = completedAt != null ? completedAt : clock.instant();
 
         StringBuilder sb = new StringBuilder();
         sb.append("Job: ").append(job.id()).append('\n');
@@ -136,10 +190,6 @@ public final class GitPushJobRegistry implements Disposable {
         return sb.toString();
     }
 
-    private static boolean isError(@Nullable String result) {
-        return result != null && result.startsWith(GitTool.ERR_PREFIX);
-    }
-
     private static @NotNull String truncate(@NotNull String result) {
         if (result.length() <= MAX_RESULT_CHARS) return result;
         return result.substring(0, MAX_RESULT_CHARS)
@@ -152,6 +202,17 @@ public final class GitPushJobRegistry implements Disposable {
         long minutes = seconds / 60;
         long remainder = seconds % 60;
         return minutes + "m " + remainder + "s";
+    }
+
+    public record JobResult(boolean success, @NotNull String output) {
+
+        public static @NotNull JobResult success(@NotNull String output) {
+            return new JobResult(true, output);
+        }
+
+        public static @NotNull JobResult failure(@NotNull String output) {
+            return new JobResult(false, output);
+        }
     }
 
     public enum JobState {
@@ -175,8 +236,9 @@ public final class GitPushJobRegistry implements Disposable {
         private final String root;
         private final String displayCommand;
         private final Instant startedAt;
+        private final long sequence;
         private final AtomicReference<JobState> state = new AtomicReference<>(JobState.RUNNING);
-        private volatile CompletableFuture<String> future;
+        private volatile CompletableFuture<JobResult> future;
         private volatile Instant completedAt;
         private volatile String result;
 
@@ -184,12 +246,14 @@ public final class GitPushJobRegistry implements Disposable {
             @NotNull String id,
             @NotNull String root,
             @NotNull String displayCommand,
-            @NotNull Instant startedAt
+            @NotNull Instant startedAt,
+            long sequence
         ) {
             this.id = id;
             this.root = root;
             this.displayCommand = displayCommand;
             this.startedAt = startedAt;
+            this.sequence = sequence;
         }
 
         public @NotNull String id() {
@@ -210,6 +274,14 @@ public final class GitPushJobRegistry implements Disposable {
 
         public @NotNull JobState state() {
             return state.get();
+        }
+
+        private long sequence() {
+            return sequence;
+        }
+
+        private boolean isCompleted() {
+            return state.get() != JobState.RUNNING;
         }
     }
 }
