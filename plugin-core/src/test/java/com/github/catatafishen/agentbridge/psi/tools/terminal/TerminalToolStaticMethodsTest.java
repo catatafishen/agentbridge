@@ -1,13 +1,68 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
+import com.github.catatafishen.agentbridge.services.AgentTabTracker;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class TerminalToolStaticMethodsTest {
+
+    @Test
+    void reusesMostRecentTrackedTerminalWhenNoTabNameIsProvided() throws Exception {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        Object widget = new Object();
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(tracker.findMostRecentOpenTerminalTabName()).thenReturn("Agent: build (1)");
+        TestTerminalTool tool = new TestTerminalTool(project, widget);
+
+        TerminalTool.TerminalWidgetResult result = tool.open(null, false);
+
+        assertSame(widget, result.widget());
+        assertEquals("Agent: build (1) (reused)", result.tabName());
+        verify(tracker, never()).hasOpenTerminalCapacity();
+    }
+
+    @Test
+    void rejectsNewTerminalWhenAgentTerminalLimitIsReached() {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(tracker.hasOpenTerminalCapacity()).thenReturn(false);
+        TestTerminalTool tool = new TestTerminalTool(project, null);
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> tool.open("Agent: overflow", true)
+        );
+
+        assertTrue(error.getMessage().contains("Agent terminal limit reached (3)"));
+        assertTrue(error.getMessage().contains("close_terminal"));
+    }
+
+    @Test
+    void createsAndTracksTerminalWhenNoReusableTabExists() throws Exception {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(project.getBasePath()).thenReturn("/repo");
+        when(tracker.hasOpenTerminalCapacity()).thenReturn(true);
+        TestTerminalTool tool = new TestTerminalTool(project, null);
+
+        TerminalTool.TerminalWidgetResult result = tool.open(null, false);
+
+        assertSame(tool.createdWidget(), result.widget());
+        assertEquals("Agent: echo test (new)", result.tabName());
+        verify(tracker).trackTab("Terminal", "Agent: echo test");
+    }
 
     // ── resolveInputEscapes ─────────────────────────────────
 
@@ -368,6 +423,74 @@ class TerminalToolStaticMethodsTest {
             String result = TerminalTool.truncateForTitle("a".repeat(100));
             assertEquals(40, result.length());
             assertTrue(result.endsWith("..."));
+        }
+    }
+
+    private static final class TestTerminalTool extends TerminalTool {
+        private final Object reusableWidget;
+        private final FakeTerminalManager manager = new FakeTerminalManager();
+
+        private TestTerminalTool(Project project, Object reusableWidget) {
+            super(project);
+            this.reusableWidget = reusableWidget;
+        }
+
+        private TerminalWidgetResult open(String tabName, boolean newTab) throws Exception {
+            return getOrCreateTerminalWidget(
+                FakeTerminalManager.class, manager, tabName, newTab, null, "echo test");
+        }
+
+        private Object createdWidget() {
+            return manager.widget;
+        }
+
+        @Override
+        protected Object findTerminalWidgetByTabName(Class<?> managerClass, String tabName) {
+            return reusableWidget;
+        }
+
+        @Override
+        public @NotNull String id() {
+            return "test_terminal";
+        }
+
+        @Override
+        public @NotNull String displayName() {
+            return "Test Terminal";
+        }
+
+        @Override
+        public @NotNull String description() {
+            return "Test terminal tool";
+        }
+
+        @Override
+        public @NotNull Kind kind() {
+            return Kind.EXECUTE;
+        }
+
+        @Override
+        public @NotNull JsonObject inputSchema() {
+            return new JsonObject();
+        }
+
+        @Override
+        public @NotNull String execute(@NotNull JsonObject args) {
+            return "unused";
+        }
+    }
+
+    public static final class FakeTerminalManager {
+        private final Object widget = new Object();
+
+        public Object createNewSession(
+            String basePath,
+            String title,
+            List<String> shellCommand,
+            boolean requestFocus,
+            boolean deferSessionStartUntilUiShown
+        ) {
+            return widget;
         }
     }
 }
