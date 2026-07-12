@@ -143,6 +143,33 @@ public class GitToolsTest extends BasePlatformTestCase {
         return obj;
     }
 
+    private String awaitGitJobStatus(
+        String startResult,
+        String expectedPrefix,
+        String expectedStatus
+    ) throws Exception {
+        assertTrue("Expected background job response, got: " + startResult,
+            startResult.startsWith(expectedPrefix));
+        String jobId = startResult.substring(expectedPrefix.length()).split("\\R", 2)[0];
+        JsonObject statusArgs = new JsonObject();
+        statusArgs.addProperty("job_id", jobId);
+        GitJobStatusTool statusTool = new GitJobStatusTool(getProject());
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        String status;
+        do {
+            status = statusTool.execute(statusArgs);
+            if (status.contains("Status: " + expectedStatus)) return status;
+            Thread.sleep(25);
+        } while (System.nanoTime() < deadline);
+        fail("Timed out waiting for async Git job: " + status);
+        return status;
+    }
+
+    private void disposeAsyncGitServices() {
+        GitJobRegistry.getInstance(getProject()).dispose();
+        ConversationDatabase.getInstance(getProject()).dispose();
+    }
+
     // ── GitStatusTool ─────────────────────────────────────────────────────────────
 
     /**
@@ -509,31 +536,110 @@ public class GitToolsTest extends BasePlatformTestCase {
                 "async", "true"
             );
             String startResult = new GitCommitTool(getProject()).execute(commitArgs);
+            String status = awaitGitJobStatus(
+                startResult,
+                "Started background git_commit job: ",
+                "succeeded"
+            );
 
-            assertTrue("Expected background job response, got: " + startResult,
-                startResult.startsWith("Started background git_commit job: "));
-            String jobId = startResult.substring("Started background git_commit job: ".length())
-                .split("\\R", 2)[0];
-
-            JsonObject statusArgs = new JsonObject();
-            statusArgs.addProperty("job_id", jobId);
-            GitJobStatusTool statusTool = new GitJobStatusTool(getProject());
-
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-            String status;
-            do {
-                status = statusTool.execute(statusArgs);
-                if (status.contains("Status: succeeded")) {
-                    assertTrue("Commit result must include committed file details: " + status,
-                        status.contains("async-commit.txt"));
-                    return;
-                }
-                Thread.sleep(25);
-            } while (System.nanoTime() < deadline);
-
-            fail("Timed out waiting for async commit job: " + status);
+            assertTrue("Commit result must include committed file details: " + status,
+                status.contains("async-commit.txt"));
         } finally {
-            ConversationDatabase.getInstance(getProject()).dispose();
+            disposeAsyncGitServices();
+        }
+    }
+
+    public void testGitCommitAsyncReportsCommitFailure() throws Exception {
+        try {
+            Path file = Path.of(basePath, "rejected-commit.txt");
+            Files.writeString(file, "rejected commit\n");
+            git("add", "rejected-commit.txt");
+
+            JsonObject commitArgs = args(
+                "message", "test: rejected background commit",
+                "author", "invalid-author",
+                "all", "false",
+                "async", "true"
+            );
+            String startResult = new GitCommitTool(getProject()).execute(commitArgs);
+            String status = awaitGitJobStatus(
+                startResult,
+                "Started background git_commit job: ",
+                "failed"
+            );
+
+            assertTrue("Failed commit must retain the Git error: " + status,
+                status.contains("Error"));
+        } finally {
+            disposeAsyncGitServices();
+        }
+    }
+
+    public void testGitPushSchemaIncludesAsyncMode() {
+        JsonObject properties = new GitPushTool(getProject())
+            .inputSchema()
+            .getAsJsonObject("properties");
+
+        assertTrue("git_push schema must expose async mode", properties.has("async"));
+    }
+
+    public void testGitJobStatusWithoutJobsReportsEmptyRegistry() {
+        GitJobRegistry.getInstance(getProject()).dispose();
+        String result = new GitJobStatusTool(getProject()).execute(new JsonObject());
+
+        assertTrue("Expected an empty registry status, got: " + result,
+            result.contains("No background Git jobs."));
+    }
+
+    public void testGitPushAsyncReturnsSuccessfulPushDetails() throws Exception {
+        try {
+            Path remote = Path.of(basePath, "remote.git");
+            git("init", "--bare", remote.toString());
+            git("remote", "add", "origin", remote.toString());
+            Path file = Path.of(basePath, "async-push.txt");
+            Files.writeString(file, "background push\n");
+            git("add", "async-push.txt");
+            git("commit", "-m", "test: background push");
+
+            String startResult = new GitPushTool(getProject()).execute(args(
+                "async", "true",
+                "set_upstream", "true"
+            ));
+            String status = awaitGitJobStatus(
+                startResult,
+                "Started background git_push job: ",
+                "succeeded"
+            );
+
+            assertTrue("Push result must identify the branch: " + status,
+                status.contains("Pushed test-branch"));
+            assertTrue("Push result must identify the remote target: " + status,
+                status.contains("origin/test-branch"));
+        } finally {
+            disposeAsyncGitServices();
+        }
+    }
+
+    public void testGitPushAsyncReportsPushFailure() throws Exception {
+        try {
+            Path missingRemote = Path.of(basePath, "missing-remote.git");
+            git("remote", "add", "broken", missingRemote.toString());
+
+            String startResult = new GitPushTool(getProject()).execute(args(
+                "remote", "broken",
+                "branch", currentBranch,
+                "async", "true"
+            ));
+            String status = awaitGitJobStatus(
+                startResult,
+                "Started background git_push job: ",
+                "failed"
+            );
+
+            assertTrue("Failed push must retain the Git error: " + status,
+                status.contains("Error"));
+        } finally {
+            disposeAsyncGitServices();
         }
     }
 
