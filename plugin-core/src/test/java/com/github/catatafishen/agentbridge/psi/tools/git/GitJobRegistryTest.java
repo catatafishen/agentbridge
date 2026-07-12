@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class GitPushJobRegistryTest {
+class GitJobRegistryTest {
 
     private ExecutorService executor;
 
@@ -28,16 +28,16 @@ class GitPushJobRegistryTest {
         executor = Executors.newSingleThreadExecutor();
         CountDownLatch taskStarted = new CountDownLatch(1);
         CountDownLatch releaseTask = new CountDownLatch(1);
-        GitPushJobRegistry registry = registry(executor, 10);
+        GitJobRegistry registry = registry(executor, 10);
 
-        GitPushJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD", () -> {
+        GitJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD", () -> {
             taskStarted.countDown();
             releaseTask.await();
-            return GitPushJobRegistry.JobResult.success("done");
+            return GitJobRegistry.JobResult.success("done");
         });
 
         assertTrue(taskStarted.await(2, TimeUnit.SECONDS));
-        assertEquals(GitPushJobRegistry.JobState.RUNNING, job.state());
+        assertEquals(GitJobRegistry.JobState.RUNNING, job.state());
         assertTrue(registry.describe(job.id()).contains("Status: running"));
         releaseTask.countDown();
         awaitStatus(registry, job.id(), "succeeded");
@@ -46,10 +46,10 @@ class GitPushJobRegistryTest {
     @Test
     void explicitFailureRemainsFailedWhenOutputStartsWithFetchNote() throws Exception {
         executor = Executors.newSingleThreadExecutor();
-        GitPushJobRegistry registry = registry(executor, 10);
+        GitJobRegistry registry = registry(executor, 10);
 
-        GitPushJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD", () ->
-            GitPushJobRegistry.JobResult.failure("Fetched origin.\nError: pre-push hook failed")
+        GitJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD", () ->
+            GitJobRegistry.JobResult.failure("Fetched origin.\nError: pre-push hook failed")
         );
 
         String status = awaitStatus(registry, job.id(), "failed");
@@ -60,19 +60,19 @@ class GitPushJobRegistryTest {
     @Test
     void completedJobsAreBoundedWhileRecentJobsRemainQueryable() {
         AtomicInteger ids = new AtomicInteger();
-        GitPushJobRegistry registry = new GitPushJobRegistry(
+        GitJobRegistry registry = new GitJobRegistry(
             Runnable::run,
             Clock.fixed(Instant.parse("2026-07-12T00:00:00Z"), ZoneOffset.UTC),
             2,
             () -> "job-" + ids.incrementAndGet()
         );
 
-        GitPushJobRegistry.JobRecord first = registry.start("/repo", "push 1",
-            () -> GitPushJobRegistry.JobResult.success("one"));
-        GitPushJobRegistry.JobRecord second = registry.start("/repo", "push 2",
-            () -> GitPushJobRegistry.JobResult.success("two"));
-        GitPushJobRegistry.JobRecord third = registry.start("/repo", "push 3",
-            () -> GitPushJobRegistry.JobResult.success("three"));
+        GitJobRegistry.JobRecord first = registry.start("/repo", "push 1",
+            () -> GitJobRegistry.JobResult.success("one"));
+        GitJobRegistry.JobRecord second = registry.start("/repo", "push 2",
+            () -> GitJobRegistry.JobResult.success("two"));
+        GitJobRegistry.JobRecord third = registry.start("/repo", "push 3",
+            () -> GitJobRegistry.JobResult.success("three"));
 
         assertTrue(registry.describe(first.id()).contains("not found"));
         assertTrue(registry.describe(second.id()).contains("Status: succeeded"));
@@ -81,16 +81,16 @@ class GitPushJobRegistryTest {
 
     @Test
     void blankIdDescribesLatestJob() {
-        GitPushJobRegistry registry = registry(Runnable::run, 10);
-        GitPushJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD",
-            () -> GitPushJobRegistry.JobResult.success("done"));
+        GitJobRegistry registry = registry(Runnable::run, 10);
+        GitJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD",
+            () -> GitJobRegistry.JobResult.success("done"));
 
         assertTrue(registry.describe(" ").contains("Job: " + job.id()));
     }
 
-    private static GitPushJobRegistry registry(Executor executor, int maxCompletedJobs) {
+    private static GitJobRegistry registry(Executor executor, int maxCompletedJobs) {
         AtomicInteger ids = new AtomicInteger();
-        return new GitPushJobRegistry(
+        return new GitJobRegistry(
             executor,
             Clock.systemUTC(),
             maxCompletedJobs,
@@ -99,7 +99,7 @@ class GitPushJobRegistryTest {
     }
 
     private static String awaitStatus(
-        GitPushJobRegistry registry,
+        GitJobRegistry registry,
         String jobId,
         String expectedStatus
     ) throws InterruptedException {

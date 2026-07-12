@@ -39,7 +39,7 @@ public final class GitPushTool extends GitTool {
     public @NotNull String description() {
         return "Push commits to a remote repository. Auto-fetches from origin before pushing "
             + "to detect divergence. Use async: true for repositories with long pre-push hooks; "
-            + "then call git_push_status with the returned job_id. "
+            + "then call git_job_status with the returned job_id. "
             + "Defaults to 'git push origin HEAD' when no remote or branch is specified, "
             + "so it always pushes the current branch by name regardless of upstream tracking config.";
     }
@@ -95,7 +95,7 @@ public final class GitPushTool extends GitTool {
             Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "Force push"),
             Param.optional(PARAM_SET_UPSTREAM, TYPE_BOOLEAN, "Set upstream tracking reference"),
             Param.optional(PARAM_ASYNC, TYPE_BOOLEAN,
-                "Run push in background and return job_id immediately; use git_push_status to read the result"),
+                "Run push in background and return job_id immediately; use git_job_status to read the result"),
             Param.optional("tags", TYPE_BOOLEAN, "Push all tags"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
@@ -131,7 +131,7 @@ public final class GitPushTool extends GitTool {
         String[] commandArgs = pushCommandArgs(jobArgs, forceFlag, target);
         String displayCommand = displayGitCommand(commandArgs);
 
-        GitPushJobRegistry.JobRecord job = GitPushJobRegistry.getInstance(project).start(
+        GitJobRegistry.JobRecord job = GitJobRegistry.getInstance(project).start(
             root,
             displayCommand,
             () -> executePush(root, forceFlag, target, commandArgs)
@@ -140,10 +140,10 @@ public final class GitPushTool extends GitTool {
             + "\nStatus: running"
             + "\nRepository: " + root
             + "\nCommand: " + displayCommand
-            + "\nCheck with git_push_status {\"job_id\":\"" + job.id() + "\"}.";
+            + "\nCheck with git_job_status {\"job_id\":\"" + job.id() + "\"}.";
     }
 
-    private @NotNull GitPushJobRegistry.JobResult executePush(
+    private @NotNull GitJobRegistry.JobResult executePush(
         @NotNull String root,
         boolean forceFlag,
         @NotNull PushTarget target,
@@ -153,9 +153,9 @@ public final class GitPushTool extends GitTool {
         String divergenceWarning = divergenceWarning(root, forceFlag);
         String result = runGitIn(root, commandArgs);
         if (result.startsWith(ERR_PREFIX)) {
-            return GitPushJobRegistry.JobResult.failure(fetchNote + result + divergenceWarning);
+            return GitJobRegistry.JobResult.failure(fetchNote + result + divergenceWarning);
         }
-        return GitPushJobRegistry.JobResult.success(
+        return GitJobRegistry.JobResult.success(
             buildPushResponse(result, fetchNote, divergenceWarning, target, root)
         );
     }

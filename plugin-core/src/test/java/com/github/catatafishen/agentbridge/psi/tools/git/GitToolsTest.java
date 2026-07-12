@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
@@ -486,6 +487,54 @@ public class GitToolsTest extends BasePlatformTestCase {
 
         assertNotNull(result);
         assertEquals("Error: 'message' parameter is required", result);
+    }
+
+    public void testGitCommitSchemaIncludesAsyncMode() {
+        JsonObject properties = new GitCommitTool(getProject())
+            .inputSchema()
+            .getAsJsonObject("properties");
+
+        assertTrue("git_commit schema must expose async mode", properties.has("async"));
+    }
+
+    public void testGitCommitAsyncReturnsTrackableBackgroundJob() throws Exception {
+        try {
+            Path file = Path.of(basePath, "async-commit.txt");
+            Files.writeString(file, "background commit\n");
+            git("add", "async-commit.txt");
+
+            JsonObject commitArgs = args(
+                "message", "test: background commit",
+                "all", "false",
+                "async", "true"
+            );
+            String startResult = new GitCommitTool(getProject()).execute(commitArgs);
+
+            assertTrue("Expected background job response, got: " + startResult,
+                startResult.startsWith("Started background git_commit job: "));
+            String jobId = startResult.substring("Started background git_commit job: ".length())
+                .split("\\R", 2)[0];
+
+            JsonObject statusArgs = new JsonObject();
+            statusArgs.addProperty("job_id", jobId);
+            GitJobStatusTool statusTool = new GitJobStatusTool(getProject());
+
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            String status;
+            do {
+                status = statusTool.execute(statusArgs);
+                if (status.contains("Status: succeeded")) {
+                    assertTrue("Commit result must include committed file details: " + status,
+                        status.contains("async-commit.txt"));
+                    return;
+                }
+                Thread.sleep(25);
+            } while (System.nanoTime() < deadline);
+
+            fail("Timed out waiting for async commit job: " + status);
+        } finally {
+            ConversationDatabase.getInstance(getProject()).dispose();
+        }
     }
 
     /**

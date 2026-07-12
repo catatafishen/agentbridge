@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 @Service(Service.Level.PROJECT)
-public final class GitPushJobRegistry implements Disposable {
+public final class GitJobRegistry implements Disposable {
 
     private static final int MAX_RESULT_CHARS = 40_000;
     private static final int MAX_COMPLETED_JOBS = 50;
@@ -38,16 +38,16 @@ public final class GitPushJobRegistry implements Disposable {
     private final Supplier<String> idSupplier;
 
     @SuppressWarnings("unused") // IntelliJ service container
-    public GitPushJobRegistry(@NotNull Project project) {
+    public GitJobRegistry(@NotNull Project project) {
         this(
             AppExecutorUtil.getAppExecutorService(),
             Clock.systemUTC(),
             MAX_COMPLETED_JOBS,
-            () -> "git-push-" + UUID.randomUUID().toString().substring(0, 8)
+            () -> "git-job-" + UUID.randomUUID().toString().substring(0, 8)
         );
     }
 
-    GitPushJobRegistry(
+    GitJobRegistry(
         @NotNull Executor executor,
         @NotNull Clock clock,
         int maxCompletedJobs,
@@ -62,8 +62,8 @@ public final class GitPushJobRegistry implements Disposable {
         this.idSupplier = idSupplier;
     }
 
-    public static @NotNull GitPushJobRegistry getInstance(@NotNull Project project) {
-        return PlatformApiCompat.getService(project, GitPushJobRegistry.class);
+    public static @NotNull GitJobRegistry getInstance(@NotNull Project project) {
+        return PlatformApiCompat.getService(project, GitJobRegistry.class);
     }
 
     public @NotNull JobRecord start(
@@ -91,7 +91,7 @@ public final class GitPushJobRegistry implements Disposable {
 
         JobRecord job = jobs.get(resolvedId);
         if (job == null) {
-            return "Error: git_push job '" + resolvedId + "' not found.\n\n" + listRecent();
+            return "Error: Git job '" + resolvedId + "' not found.\n\n" + listRecent();
         }
         return formatJob(job);
     }
@@ -112,14 +112,14 @@ public final class GitPushJobRegistry implements Disposable {
         try {
             result = task.call();
             if (result == null) {
-                result = JobResult.failure("Error: background git_push job returned no result");
+                result = JobResult.failure("Error: background Git job returned no result");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            result = JobResult.failure("Error: background git_push job was interrupted");
+            result = JobResult.failure("Error: background Git job was interrupted");
         } catch (Exception e) {
             result = JobResult.failure(
-                "Error: background git_push job failed: " + e.getClass().getSimpleName()
+                "Error: background Git job failed: " + e.getClass().getSimpleName()
                     + ": " + e.getMessage()
             );
         }
@@ -149,9 +149,9 @@ public final class GitPushJobRegistry implements Disposable {
     }
 
     private @NotNull String listRecent() {
-        if (jobs.isEmpty()) return "No background git_push jobs.";
+        if (jobs.isEmpty()) return "No background Git jobs.";
 
-        StringBuilder sb = new StringBuilder("Recent background git_push jobs:\n");
+        StringBuilder sb = new StringBuilder("Recent background Git jobs:\n");
         jobs.values().stream()
             .sorted(Comparator.comparingLong(JobRecord::sequence).reversed())
             .limit(RECENT_LIMIT)
@@ -183,7 +183,7 @@ public final class GitPushJobRegistry implements Disposable {
         if (job.result != null) {
             sb.append("\n--- Result ---\n").append(job.result.stripTrailing());
         } else {
-            sb.append("\nResult: still running; call git_push_status again with job_id='")
+            sb.append("\nResult: still running; call git_job_status again with job_id='")
                 .append(job.id())
                 .append("'.");
         }
@@ -193,7 +193,7 @@ public final class GitPushJobRegistry implements Disposable {
     private static @NotNull String truncate(@NotNull String result) {
         if (result.length() <= MAX_RESULT_CHARS) return result;
         return result.substring(0, MAX_RESULT_CHARS)
-            + "\n... [truncated git_push job output after " + MAX_RESULT_CHARS + " chars]";
+            + "\n... [truncated Git job output after " + MAX_RESULT_CHARS + " chars]";
     }
 
     private static @NotNull String formatDuration(@NotNull Duration duration) {
