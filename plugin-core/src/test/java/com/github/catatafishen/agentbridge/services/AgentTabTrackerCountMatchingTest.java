@@ -10,10 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -123,5 +120,39 @@ class AgentTabTrackerCountMatchingTest {
     @DisplayName("blocks creation at the agent terminal limit")
     void blocksCreationAtLimit() {
         assertFalse(AgentTabTracker.hasTerminalCapacity(3));
+    }
+
+    @Test
+    @DisplayName("tracks, recognizes, and untracks an AgentBridge terminal")
+    void tracksAndUntracksTerminalByDisplayName() {
+        AgentTabTracker tracker = new AgentTabTracker(mock(Project.class));
+        tracker.trackTab("Terminal", "Agent: build");
+        tracker.trackTab("Run", "Agent: tests");
+
+        assertTrue(tracker.isTrackedTerminalTab("Agent: build"));
+        assertTrue(tracker.isTrackedTerminalTab("Agent: build (2)"));
+        assertFalse(tracker.isTrackedTerminalTab("Agent: tests"));
+
+        tracker.untrackTerminalTab("Agent: build (2)");
+
+        assertFalse(tracker.isTrackedTerminalTab("Agent: build"));
+    }
+
+    @Test
+    @DisplayName("dispose forgets tracked terminals")
+    void disposeForgetsTrackedTerminals() {
+        AgentTabTracker tracker = new AgentTabTracker(mock(Project.class));
+        tracker.trackTab("Terminal", "Agent: build");
+
+        tracker.dispose();
+
+        assertFalse(tracker.isTrackedTerminalTab("Agent: build"));
+    }
+
+    @Test
+    @DisplayName("terminal matching rejects null names")
+    void terminalMatchingRejectsNullNames() {
+        assertFalse(AgentTabTracker.terminalTabNameMatches(null, "Agent: build"));
+        assertFalse(AgentTabTracker.terminalTabNameMatches("Agent: build", null));
     }
 }

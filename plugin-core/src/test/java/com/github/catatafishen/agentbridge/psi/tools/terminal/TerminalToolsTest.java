@@ -2,15 +2,29 @@ package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
+import com.github.catatafishen.agentbridge.services.AgentTabTracker;
+import com.github.catatafishen.agentbridge.services.CleanupSettings;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.ComponentManager;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.testFramework.ServiceContainerUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.ui.content.Content;
+import com.intellij.ui.content.ContentManager;
 import com.intellij.util.ui.UIUtil;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
 /**
  * Platform tests for the terminal tools: {@link ListTerminalsTool},
@@ -55,6 +69,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     private ReadTerminalOutputTool readTerminalOutputTool;
     private WriteTerminalInputTool writeTerminalInputTool;
     private RunInTerminalTool runInTerminalTool;
+    private CloseTerminalTool closeTerminalTool;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -72,11 +87,16 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         readTerminalOutputTool = new ReadTerminalOutputTool(getProject());
         writeTerminalInputTool = new WriteTerminalInputTool(getProject());
         runInTerminalTool = new RunInTerminalTool(getProject());
+        closeTerminalTool = new CloseTerminalTool(getProject());
     }
 
     @Override
     protected void tearDown() throws Exception {
-        super.tearDown();
+        try {
+            ConversationDatabase.getInstance(getProject()).dispose();
+        } finally {
+            super.tearDown();
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -125,6 +145,132 @@ public class TerminalToolsTest extends BasePlatformTestCase {
             }
         }
         return future.get();
+    }
+
+    private TerminalWindowFixture installTerminalWindow(boolean removeSucceeds, String... displayNames) {
+        ToolWindowManager toolWindowManager = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        ContentManager contentManager = mock(ContentManager.class);
+        List<Content> contents = new ArrayList<>();
+        for (String displayName : displayNames) {
+            Content content = mock(Content.class);
+            when(content.getDisplayName()).thenReturn(displayName);
+            contents.add(content);
+        }
+        when(toolWindowManager.getToolWindow("Terminal")).thenReturn(toolWindow);
+        when(toolWindow.getContentManager()).thenReturn(contentManager);
+        when(contentManager.getContents()).thenReturn(contents.toArray(Content[]::new));
+        when(contentManager.removeContent(any(Content.class), eq(true))).thenReturn(removeSucceeds);
+        replaceProjectService(ToolWindowManager.class, toolWindowManager);
+        return new TerminalWindowFixture(contentManager, contents);
+    }
+
+    private <T> void replaceProjectService(Class<T> serviceClass, T instance) {
+        ServiceContainerUtil.replaceService(
+            (ComponentManager) getProject(), serviceClass, instance, getTestRootDisposable());
+    }
+
+    public void testCloseTerminalMetadataDescribesSafeAgentTabCleanup() {
+        assertEquals("close_terminal", closeTerminalTool.id());
+        assertEquals("Close Terminal", closeTerminalTool.displayName());
+        assertTrue(closeTerminalTool.description().contains("Refuses to close user-created terminal tabs"));
+        assertEquals(Tool.Kind.EDIT, closeTerminalTool.kind());
+        assertTrue(closeTerminalTool.isDestructive());
+        assertEquals("Close terminal: {tab_name}", closeTerminalTool.permissionTemplate());
+        assertTrue(closeTerminalTool.inputSchema().getAsJsonObject("properties").has("tab_name"));
+    }
+
+    public void testCloseTerminalMissingTabReturnsGuidance() throws Exception {
+        String result = executeSync(closeTerminalTool, args("tab_name", "Agent: missing"));
+
+        assertEquals(
+            "No terminal tab found matching 'Agent: missing'. Use list_terminals to see available tabs.",
+            result
+        );
+    }
+
+    public void testCloseTerminalRefusesUserCreatedTab() throws Exception {
+        TerminalWindowFixture fixture = installTerminalWindow(true, "Local");
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        replaceProjectService(AgentTabTracker.class, tracker);
+
+        String result = executeSync(closeTerminalTool, args("tab_name", "Local"));
+
+        assertEquals(
+            "Refusing to close terminal 'Local' because it was not created by AgentBridge.",
+            result
+        );
+        verify(fixture.manager(), never()).removeContent(any(Content.class), eq(true));
+    }
+
+    public void testCloseTerminalRemovesAndUntracksAgentTab() throws Exception {
+        TerminalWindowFixture fixture = installTerminalWindow(true, "Agent: build (1)");
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(tracker.isTrackedTerminalTab("Agent: build (1)")).thenReturn(true);
+        replaceProjectService(AgentTabTracker.class, tracker);
+
+        String result = executeSync(closeTerminalTool, args("tab_name", "Agent: build"));
+
+        assertEquals("Closed AgentBridge terminal 'Agent: build (1)'.", result);
+        verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
+        verify(tracker).untrackTerminalTab("Agent: build (1)");
+    }
+
+    public void testCloseTerminalReportsRemovalFailure() throws Exception {
+        TerminalWindowFixture fixture = installTerminalWindow(false, "Agent: build");
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(tracker.isTrackedTerminalTab("Agent: build")).thenReturn(true);
+        replaceProjectService(AgentTabTracker.class, tracker);
+
+        String result = executeSync(closeTerminalTool, args("tab_name", "Agent: build"));
+
+        assertEquals("Failed to close terminal 'Agent: build'.", result);
+        verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
+        verify(tracker, never()).untrackTerminalTab(any());
+    }
+
+    public void testTrackerCountsAndSelectsOpenAgentTerminals() {
+        installTerminalWindow(true, "Local", "Agent: build", "Agent: test (1)");
+        AgentTabTracker tracker = new AgentTabTracker(getProject());
+        tracker.trackTab("Terminal", "Agent: build");
+        tracker.trackTab("Terminal", "Agent: test");
+
+        assertEquals(2, tracker.countOpenTerminalTabs());
+        assertTrue(tracker.hasOpenTerminalCapacity());
+        assertEquals("Agent: test (1)", tracker.findMostRecentOpenTerminalTabName());
+    }
+
+    public void testTurnCleanupClosesAndForgetsIdleTerminal() {
+        TerminalWindowFixture fixture = installTerminalWindow(true, "Agent: build");
+        CleanupSettings settings = CleanupSettings.getInstance(getProject());
+        settings.setAutoCloseAgentTabs(true);
+        settings.setAutoCloseRunningTerminals(true);
+        AgentTabTracker tracker = new AgentTabTracker(getProject());
+        tracker.trackTab("Terminal", "Agent: build");
+
+        tracker.closeTrackedTabs();
+        UIUtil.dispatchAllInvocationEvents();
+
+        verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
+        assertFalse(tracker.isTrackedTerminalTab("Agent: build"));
+    }
+
+    public void testTurnCleanupRetainsRunningTerminalWhenClosingIsDisabled() {
+        TerminalWindowFixture fixture = installTerminalWindow(true, "Agent: build");
+        CleanupSettings settings = CleanupSettings.getInstance(getProject());
+        settings.setAutoCloseAgentTabs(true);
+        settings.setAutoCloseRunningTerminals(false);
+        AgentTabTracker tracker = new AgentTabTracker(getProject());
+        tracker.trackTab("Terminal", "Agent: build");
+
+        tracker.closeTrackedTabs();
+        UIUtil.dispatchAllInvocationEvents();
+
+        verify(fixture.manager(), never()).removeContent(any(Content.class), eq(true));
+        assertTrue(tracker.isTrackedTerminalTab("Agent: build"));
+    }
+
+    private record TerminalWindowFixture(ContentManager manager, List<Content> contents) {
     }
 
     // ── TerminalToolFactory ────────────────────────────────────────────────────
