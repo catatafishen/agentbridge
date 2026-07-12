@@ -22,6 +22,7 @@ public final class GitCommitTool extends GitTool {
     private static final String PARAM_MESSAGE = "message";
     private static final String PARAM_AMEND = "amend";
     private static final String PARAM_AUTHOR = "author";
+    private static final String PARAM_ASYNC = "async";
     private static final String CRLF_SPLIT = "\\r?\\n";
     private static final String NAME_ONLY = "--name-only";
 
@@ -44,6 +45,7 @@ public final class GitCommitTool extends GitTool {
         return "Commit staged changes with a message. "
             + "By default commits only already-staged changes. "
             + "Set all: true to stage all changes first (equivalent to 'git add -A && git commit'). "
+            + "Use async: true for repositories with long commit hooks, then poll git_job_status. "
             + "Returns the commit result with the list of committed files, branch, tracking status, "
             + "ahead/behind counts, total commits on the branch, and remaining uncommitted changes.";
     }
@@ -64,6 +66,8 @@ public final class GitCommitTool extends GitTool {
             Param.required(PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"),
             Param.optional(PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"),
             Param.optional(PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"),
+            Param.optional(PARAM_ASYNC, TYPE_BOOLEAN,
+                "Run commit in background and return job_id immediately; use git_job_status to read the result"),
             Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing (equivalent to 'git add -A && git commit'). Default: false — commits only already-staged changes."),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
@@ -86,8 +90,47 @@ public final class GitCommitTool extends GitTool {
         if (commitAll) runGitIn(root, "add", "-A");
         if (!isAmend && hasNoStagedChanges(root)) return buildNothingToCommitHint(root);
 
-        String result = runGitIn(root, commitCommandArgs(args, message, isAmend));
-        if (result.startsWith("Error")) return result;
+        String[] commandArgs = commitCommandArgs(args, message, isAmend);
+        if (args.has(PARAM_ASYNC) && args.get(PARAM_ASYNC).getAsBoolean()) {
+            return startBackgroundCommit(root, commandArgs);
+        }
+        return executeCommit(root, commandArgs);
+    }
+
+    private @NotNull String startBackgroundCommit(
+        @NotNull String root,
+        @NotNull String[] commandArgs
+    ) {
+        String displayCommand = "git --no-pager " + String.join(" ", commandArgs);
+        GitJobRegistry.JobRecord job = GitJobRegistry.getInstance(project).start(
+            root,
+            displayCommand,
+            () -> executeCommitJob(root, commandArgs)
+        );
+        return "Started background git_commit job: " + job.id()
+            + "\nStatus: running"
+            + "\nRepository: " + root
+            + "\nCommand: " + displayCommand
+            + "\nCheck with git_job_status {\"job_id\":\"" + job.id() + "\"}.";
+    }
+
+    private @NotNull GitJobRegistry.JobResult executeCommitJob(
+        @NotNull String root,
+        @NotNull String[] commandArgs
+    ) throws Exception {
+        String result = executeCommit(root, commandArgs);
+        if (result.startsWith(ERR_PREFIX)) {
+            return GitJobRegistry.JobResult.failure(result);
+        }
+        return GitJobRegistry.JobResult.success(result);
+    }
+
+    private @NotNull String executeCommit(
+        @NotNull String root,
+        @NotNull String[] commandArgs
+    ) throws Exception {
+        String result = runGitIn(root, commandArgs);
+        if (result.startsWith(ERR_PREFIX)) return result;
 
         showNewCommitInLog(root);
         pruneApprovedReviewRows(root);

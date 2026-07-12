@@ -99,7 +99,7 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.git.GitRevertTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitTagTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitPushTool",
-        "com.github.catatafishen.agentbridge.psi.tools.git.GitPushStatusTool",
+        "com.github.catatafishen.agentbridge.psi.tools.git.GitJobStatusTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitResetTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitRebaseTool",
         "com.github.catatafishen.agentbridge.psi.tools.git.GitFetchTool",
