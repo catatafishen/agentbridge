@@ -16,6 +16,7 @@ public final class GitPushTool extends GitTool {
     private static final String PARAM_BRANCH = "branch";
     private static final String PARAM_FORCE = "force";
     private static final String PARAM_SET_UPSTREAM = "set_upstream";
+    private static final String PARAM_ASYNC = "async";
     private static final String GIT_REV_PARSE = "rev-parse";
     private static final String ABBREV_REF = "--abbrev-ref";
     private static final String DEFAULT_REMOTE = "origin";
@@ -37,7 +38,8 @@ public final class GitPushTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Push commits to a remote repository. Auto-fetches from origin before pushing "
-            + "to detect divergence. Returns push result with remote URL and branch tracking status. "
+            + "to detect divergence. Use async: true for repositories with long pre-push hooks; "
+            + "then call git_push_status with the returned job_id. "
             + "Defaults to 'git push origin HEAD' when no remote or branch is specified, "
             + "so it always pushes the current branch by name regardless of upstream tracking config.";
     }
@@ -92,6 +94,8 @@ public final class GitPushTool extends GitTool {
             Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to push (default: current)"),
             Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "Force push"),
             Param.optional(PARAM_SET_UPSTREAM, TYPE_BOOLEAN, "Set upstream tracking reference"),
+            Param.optional(PARAM_ASYNC, TYPE_BOOLEAN,
+                "Run push in background and return job_id immediately; use git_push_status to read the result"),
             Param.optional("tags", TYPE_BOOLEAN, "Push all tags"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
@@ -101,15 +105,54 @@ public final class GitPushTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
         String root = preparePush(repoParam);
-        if (root.startsWith("Error")) return root;
+        if (root.startsWith(ERR_PREFIX)) return root;
 
         boolean forceFlag = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
+        if (hasFlag(args, PARAM_ASYNC)) {
+            return startBackgroundPush(args, root, forceFlag);
+        }
+
         String fetchNote = autoFetchIfStaleIn(root);
         String divergenceWarning = divergenceWarning(root, forceFlag);
         PushTarget target = resolvePushTarget(args, root);
 
         String result = runGitIn(root, pushCommandArgs(args, forceFlag, target));
-        if (result.startsWith("Error")) return fetchNote + result + divergenceWarning;
+        if (result.startsWith(ERR_PREFIX)) return fetchNote + result + divergenceWarning;
+        return buildPushResponse(result, fetchNote, divergenceWarning, target, root);
+    }
+
+    private @NotNull String startBackgroundPush(
+        @NotNull JsonObject args,
+        @NotNull String root,
+        boolean forceFlag
+    ) throws Exception {
+        JsonObject jobArgs = args.deepCopy();
+        PushTarget target = resolvePushTarget(jobArgs, root);
+        String[] commandArgs = pushCommandArgs(jobArgs, forceFlag, target);
+        String displayCommand = displayGitCommand(commandArgs);
+
+        GitPushJobRegistry.JobRecord job = GitPushJobRegistry.getInstance(project).start(
+            root,
+            displayCommand,
+            () -> executePush(root, forceFlag, target, commandArgs)
+        );
+        return "Started background git_push job: " + job.id()
+            + "\nStatus: running"
+            + "\nRepository: " + root
+            + "\nCommand: " + displayCommand
+            + "\nCheck with git_push_status {\"job_id\":\"" + job.id() + "\"}.";
+    }
+
+    private @NotNull String executePush(
+        @NotNull String root,
+        boolean forceFlag,
+        @NotNull PushTarget target,
+        String... commandArgs
+    ) throws Exception {
+        String fetchNote = autoFetchIfStaleIn(root);
+        String divergenceWarning = divergenceWarning(root, forceFlag);
+        String result = runGitIn(root, commandArgs);
+        if (result.startsWith(ERR_PREFIX)) return fetchNote + result + divergenceWarning;
         return buildPushResponse(result, fetchNote, divergenceWarning, target, root);
     }
 
@@ -130,13 +173,8 @@ public final class GitPushTool extends GitTool {
     private PushTarget resolvePushTarget(@NotNull JsonObject args, @NotNull String root) throws Exception {
         String remote = args.has(PARAM_REMOTE) ? args.get(PARAM_REMOTE).getAsString() : null;
         String branch = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
-        // Normalize empty strings to null so callers can pass "" and get default behavior,
-        // consistent with how every other git tool handles optional parameters.
         if (remote != null && remote.isEmpty()) remote = null;
         if (branch != null && branch.isEmpty()) branch = null;
-        // When a branch is given without an explicit remote, default to "origin".
-        // Without this, "git push <branch>" is interpreted as "git push <remote>" by git's
-        // positional argument rules, silently targeting the wrong destination.
         if (branch != null && remote == null) {
             remote = DEFAULT_REMOTE;
         }
@@ -154,20 +192,17 @@ public final class GitPushTool extends GitTool {
         if (hasFlag(args, PARAM_SET_UPSTREAM)) cmdArgs.add("--set-upstream");
         if (target.remote() != null) {
             cmdArgs.add(target.remote());
-            // Always pass an explicit refspec. Without one, "git push <remote>" still depends on
-            // push.default and the upstream tracking ref, causing the same "mismatched upstream"
-            // failures the default case below was designed to avoid.
             cmdArgs.add(target.branch() != null ? target.branch() : "HEAD");
         } else {
-            // No remote or branch specified.  Use "origin HEAD" (push current branch to a same-named
-            // remote branch) instead of a bare "git push", which relies on push.default and a
-            // correctly-configured upstream tracking ref — both of which may be absent or mismatched
-            // (e.g. a feature branch that was branched off master and still tracks origin/master).
             cmdArgs.add(DEFAULT_REMOTE);
             cmdArgs.add("HEAD");
         }
         if (hasFlag(args, "tags")) cmdArgs.add("--tags");
         return cmdArgs.toArray(String[]::new);
+    }
+
+    private static @NotNull String displayGitCommand(@NotNull String[] commandArgs) {
+        return "git --no-pager " + String.join(" ", commandArgs);
     }
 
     private String buildPushResponse(

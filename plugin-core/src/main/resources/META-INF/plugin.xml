@@ -103,6 +103,8 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.ToolRegistry"/>
     <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.tools.git.GitPushJobRegistry"/>
+    <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.hooks.HookRegistry"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.ToolCallTracker"/>

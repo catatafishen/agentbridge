@@ -35,6 +35,7 @@ public final class GitToolFactory {
             new GitRevertTool(project),
             new GitTagTool(project),
             new GitPushTool(project),
+            new GitPushStatusTool(project),
             new GitResetTool(project),
             new GitRebaseTool(project),
             new GitFetchTool(project),
