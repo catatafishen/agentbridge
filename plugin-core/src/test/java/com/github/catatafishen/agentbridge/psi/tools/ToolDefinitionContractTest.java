@@ -45,6 +45,7 @@ import com.github.catatafishen.agentbridge.psi.tools.git.GitFetchTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitLogTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitMergeTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitPullTool;
+import com.github.catatafishen.agentbridge.psi.tools.git.GitPushStatusTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitPushTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitRebaseTool;
 import com.github.catatafishen.agentbridge.psi.tools.git.GitRemoteTool;
@@ -167,6 +168,7 @@ class ToolDefinitionContractTest {
             new GitRevertTool(null),
             new GitTagTool(null),
             new GitPushTool(null),
+            new GitPushStatusTool(null),
             new GitResetTool(null),
             new GitRebaseTool(null),
             new GitFetchTool(null),
