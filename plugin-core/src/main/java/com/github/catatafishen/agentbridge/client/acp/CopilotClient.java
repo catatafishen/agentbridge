@@ -104,7 +104,7 @@ public final class CopilotClient extends AcpClient {
      * These overlap with (or duplicate) our agentbridge MCP tools and would confuse the model.
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
-        "view,edit,create,bash,glob,grep";
+        "view,edit,create,bash,glob,grep,apply_patch";
     /**
      * Known Copilot CLI built-in tool names. Used by {@link #resolveToolId} to distinguish
      * actual tool names from human-readable task descriptions that the CLI sends as titles
@@ -112,7 +112,7 @@ public final class CopilotClient extends AcpClient {
      */
     private static final Set<String> KNOWN_BUILTIN_TOOL_NAMES = Set.of(
         "view", "edit", "create", "bash", "glob", "grep", "task", "report_intent",
-        "web_fetch", "web_search", "task_complete", "sql", "skill"
+        "web_fetch", "web_search", "task_complete", "sql", "skill", "apply_patch"
     );
 
     // ─── Lifecycle ───────────────────────────────────
