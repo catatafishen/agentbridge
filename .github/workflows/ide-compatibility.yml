@@ -123,9 +123,18 @@ jobs:
         # -PverifyIde selects a single IDE in pluginVerification.ides so this process
         # owns all its JARs exclusively — no shared CachingJarFileSystemProvider.
         # -x buildPlugin skips rebuilding since the artifact was downloaded above.
+        #
+        # DO NOT add `--quiet` here. The intellij-platform-gradle-plugin 2.16.0
+        # verifyPlugin task suppresses the failureLevel check when Gradle log level
+        # is QUIET: the task exits 0 with no output even when INTERNAL_API_USAGES,
+        # DEPRECATED_API_USAGES, etc. are detected. Confirmed 2026-07-13 by
+        # reproducing locally with a known @ApiStatus.Internal call: `--quiet`
+        # → exit 0, silent; no `--quiet` → task fails with the expected report.
+        # An internal-API usage slipped past this workflow into a Marketplace
+        # release because of that silent-suppression bug.
         run: >
           gradle :plugin-core:verifyPlugin
-          --no-daemon --quiet
+          --no-daemon
           -PverifyIde=${{ matrix.ide.id }}
           -x :plugin-core:buildPlugin
           -x :plugin-core:buildChatUi
