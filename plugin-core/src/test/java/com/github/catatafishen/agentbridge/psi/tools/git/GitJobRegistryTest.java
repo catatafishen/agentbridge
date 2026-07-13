@@ -7,11 +7,18 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GitJobRegistryTest {
 
@@ -40,6 +47,37 @@ class GitJobRegistryTest {
         assertTrue(taskStarted.await(2, TimeUnit.SECONDS));
         assertEquals(GitJobRegistry.JobState.RUNNING, job.state());
         assertTrue(registry.describe(job.id()).contains("Status: running"));
+        releaseTask.countDown();
+        awaitStatus(registry, job.id(), "succeeded");
+    }
+
+    @Test
+    void runningJobDoesNotExposeCompletionFieldsBeforeStateTransition() throws Exception {
+        executor = Executors.newSingleThreadExecutor();
+        CountDownLatch taskStarted = new CountDownLatch(1);
+        CountDownLatch releaseTask = new CountDownLatch(1);
+        GitJobRegistry registry = registry(executor, 10);
+        GitJobRegistry.JobRecord job = registry.start("/repo", "git push origin HEAD", () -> {
+            taskStarted.countDown();
+            releaseTask.await();
+            return GitJobRegistry.JobResult.success("done");
+        });
+
+        assertTrue(taskStarted.await(2, TimeUnit.SECONDS));
+        var resultField = GitJobRegistry.JobRecord.class.getDeclaredField("result");
+        resultField.setAccessible(true);
+        resultField.set(job, "premature result");
+        var completedAtField = GitJobRegistry.JobRecord.class.getDeclaredField("completedAt");
+        completedAtField.setAccessible(true);
+        completedAtField.set(job, Instant.parse("2026-07-12T00:00:01Z"));
+
+        String status = registry.describe(job.id());
+
+        assertTrue(status.contains("Status: running"));
+        assertTrue(status.contains("Result: still running"));
+        assertFalse(status.contains("--- Result ---"));
+        assertFalse(status.contains("Completed:"));
+        assertFalse(status.contains("premature result"));
         releaseTask.countDown();
         awaitStatus(registry, job.id(), "succeeded");
     }

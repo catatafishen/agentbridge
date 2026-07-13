@@ -166,12 +166,17 @@ public final class GitJobRegistry implements Disposable {
     }
 
     private @NotNull String formatJob(@NotNull JobRecord job) {
-        Instant completedAt = job.completedAt;
+        // The state transition publishes result/completedAt. Snapshot it once so one response
+        // cannot mix RUNNING status with completion fields written just before that transition.
+        JobState state = job.state();
+        boolean completed = state != JobState.RUNNING;
+        Instant completedAt = completed ? job.completedAt : null;
+        String result = completed ? job.result : null;
         Instant end = completedAt != null ? completedAt : clock.instant();
 
         StringBuilder sb = new StringBuilder();
         sb.append("Job: ").append(job.id()).append('\n');
-        sb.append("Status: ").append(job.state().wireValue()).append('\n');
+        sb.append("Status: ").append(state.wireValue()).append('\n');
         sb.append("Repository: ").append(job.root()).append('\n');
         sb.append("Command: ").append(job.displayCommand()).append('\n');
         sb.append("Started: ").append(job.startedAt()).append('\n');
@@ -180,12 +185,14 @@ public final class GitJobRegistry implements Disposable {
         }
         sb.append("Elapsed: ").append(formatDuration(Duration.between(job.startedAt(), end))).append('\n');
 
-        if (job.result != null) {
-            sb.append("\n--- Result ---\n").append(job.result.stripTrailing());
-        } else {
+        if (!completed) {
             sb.append("\nResult: still running; call git_job_status again with job_id='")
                 .append(job.id())
                 .append("'.");
+        } else if (result != null) {
+            sb.append("\n--- Result ---\n").append(result.stripTrailing());
+        } else {
+            sb.append("\nError: Git job completed without a result.");
         }
         return sb.toString();
     }
