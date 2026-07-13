@@ -21,10 +21,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Platform tests for the terminal tools: {@link ListTerminalsTool},
@@ -70,6 +74,8 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     private WriteTerminalInputTool writeTerminalInputTool;
     private RunInTerminalTool runInTerminalTool;
     private CloseTerminalTool closeTerminalTool;
+    private boolean originalAutoCloseAgentTabs;
+    private boolean originalAutoCloseRunningTerminals;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -88,14 +94,24 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         writeTerminalInputTool = new WriteTerminalInputTool(getProject());
         runInTerminalTool = new RunInTerminalTool(getProject());
         closeTerminalTool = new CloseTerminalTool(getProject());
+
+        CleanupSettings cleanupSettings = CleanupSettings.getInstance(getProject());
+        originalAutoCloseAgentTabs = cleanupSettings.isAutoCloseAgentTabs();
+        originalAutoCloseRunningTerminals = cleanupSettings.isAutoCloseRunningTerminals();
     }
 
     @Override
     protected void tearDown() throws Exception {
         try {
-            ConversationDatabase.getInstance(getProject()).dispose();
+            CleanupSettings cleanupSettings = CleanupSettings.getInstance(getProject());
+            cleanupSettings.setAutoCloseAgentTabs(originalAutoCloseAgentTabs);
+            cleanupSettings.setAutoCloseRunningTerminals(originalAutoCloseRunningTerminals);
         } finally {
-            super.tearDown();
+            try {
+                ConversationDatabase.getInstance(getProject()).dispose();
+            } finally {
+                super.tearDown();
+            }
         }
     }
 
@@ -174,6 +190,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         assertEquals("close_terminal", closeTerminalTool.id());
         assertEquals("Close Terminal", closeTerminalTool.displayName());
         assertTrue(closeTerminalTool.description().contains("Refuses to close user-created terminal tabs"));
+        assertTrue(closeTerminalTool.description().contains("does not stop a running command"));
         assertEquals(Tool.Kind.EDIT, closeTerminalTool.kind());
         assertTrue(closeTerminalTool.isDestructive());
         assertEquals("Close terminal: {tab_name}", closeTerminalTool.permissionTemplate());
@@ -184,20 +201,20 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         String result = executeSync(closeTerminalTool, args("tab_name", "Agent: missing"));
 
         assertEquals(
-            "No terminal tab found matching 'Agent: missing'. Use list_terminals to see available tabs.",
+            "Error: No terminal tab found matching 'Agent: missing'. Use list_terminals to see available tabs.",
             result
         );
     }
 
-    public void testCloseTerminalRefusesUserCreatedTab() throws Exception {
-        TerminalWindowFixture fixture = installTerminalWindow(true, "Local");
+    public void testCloseTerminalRefusesUserCreatedTabUsingResolvedDisplayName() throws Exception {
+        TerminalWindowFixture fixture = installTerminalWindow(true, "Local (1)");
         AgentTabTracker tracker = mock(AgentTabTracker.class);
         replaceProjectService(AgentTabTracker.class, tracker);
 
         String result = executeSync(closeTerminalTool, args("tab_name", "Local"));
 
         assertEquals(
-            "Refusing to close terminal 'Local' because it was not created by AgentBridge.",
+            "Error: Refusing to close terminal 'Local (1)' because it was not created by AgentBridge.",
             result
         );
         verify(fixture.manager(), never()).removeContent(any(Content.class), eq(true));
@@ -216,7 +233,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         verify(tracker).untrackTerminalTab("Agent: build (1)");
     }
 
-    public void testCloseTerminalReportsRemovalFailure() throws Exception {
+    public void testCloseTerminalReportsRemovalFailureAsError() throws Exception {
         TerminalWindowFixture fixture = installTerminalWindow(false, "Agent: build");
         AgentTabTracker tracker = mock(AgentTabTracker.class);
         when(tracker.isTrackedTerminalTab("Agent: build")).thenReturn(true);
@@ -224,9 +241,26 @@ public class TerminalToolsTest extends BasePlatformTestCase {
 
         String result = executeSync(closeTerminalTool, args("tab_name", "Agent: build"));
 
-        assertEquals("Failed to close terminal 'Agent: build'.", result);
+        assertEquals("Error: Failed to close terminal 'Agent: build'.", result);
         verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
         verify(tracker, never()).untrackTerminalTab(any());
+    }
+
+    public void testCloseTerminalReportsExceptionalCompletionCause() {
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        resultFuture.completeExceptionally(new IllegalStateException("content manager failed"));
+
+        String result = CloseTerminalTool.awaitCloseResult(resultFuture, 10, TimeUnit.SECONDS);
+
+        assertEquals("Error: Failed to close terminal: content manager failed", result);
+    }
+
+    public void testCloseTerminalReportsTimeoutSeparately() {
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        String result = CloseTerminalTool.awaitCloseResult(resultFuture, 1, TimeUnit.MILLISECONDS);
+
+        assertEquals("Error: Terminal close timed out.", result);
     }
 
     public void testTrackerCountsAndSelectsOpenAgentTerminals() {

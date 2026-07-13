@@ -96,14 +96,17 @@ public final class RunInTerminalTool extends TerminalTool {
                 var result = getOrCreateTerminalWidget(managerClass, manager, tabName, newTab, shell, command);
                 sendTerminalCommand(result.widget(), command);
 
-                resultFuture.complete("Command sent to terminal '" + result.tabName() + "': " + command +
+                String terminalState = result.reused() ? "reused" : "new";
+                resultFuture.complete("Command sent to " + terminalState + " terminal '" + result.tabName() + "': " + command +
                     "\n\nNote: Reuse is the default. Use read_terminal_output for content, close_terminal when done, or run_command for captured output.");
 
             } catch (ClassNotFoundException e) {
-                resultFuture.complete("Terminal plugin not available. Use run_command tool instead.");
+                resultFuture.complete("Error: Terminal plugin not available. Use run_command tool instead.");
+            } catch (IllegalStateException e) {
+                resultFuture.complete(formatCapacityError(e));
             } catch (Exception e) {
                 LOG.warn("Failed to open terminal", e);
-                resultFuture.complete("Failed to open terminal: " + e.getMessage() + ". Use run_command tool instead.");
+                resultFuture.complete("Error: Failed to open terminal: " + e.getMessage() + ". Use run_command tool instead.");
             }
         });
 
@@ -115,6 +118,10 @@ public final class RunInTerminalTool extends TerminalTool {
         } catch (Exception e) {
             return "Terminal opened (response timed out, but command was likely sent).";
         }
+    }
+
+    static @NotNull String formatCapacityError(@NotNull IllegalStateException error) {
+        return "Error: " + error.getMessage();
     }
 
     @Override

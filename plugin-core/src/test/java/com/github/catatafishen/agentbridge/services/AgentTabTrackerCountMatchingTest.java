@@ -10,12 +10,15 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 /**
- * Tests for pure terminal-tab lifecycle helpers in {@link AgentTabTracker}.
- * No IntelliJ platform dependencies — runs as a plain JUnit test.
+ * Tests for terminal-tab lifecycle helpers in {@link AgentTabTracker}.
+ * Uses mocked IntelliJ types and does not require an IDE fixture or runtime.
  */
 @DisplayName("AgentTabTracker terminal lifecycle")
 class AgentTabTrackerCountMatchingTest {
