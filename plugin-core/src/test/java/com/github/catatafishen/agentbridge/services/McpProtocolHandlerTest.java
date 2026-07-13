@@ -8,7 +8,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -229,6 +228,17 @@ class McpProtocolHandlerTest {
         JsonObject parsed = JsonParser.parseString(response).getAsJsonObject();
         // Parse errors produce a response with an "error" field
         assertTrue(parsed.has("error"));
+    }
+
+    @Test
+    void testInitializeEncouragesTerminalReuseAndCleanup() {
+        JsonObject response = parseResponse(sendRequest("initialize", new JsonObject()));
+        String instructions = response.getAsJsonObject("result").get("instructions").getAsString();
+        String normalizedInstructions = instructions.replaceAll("\\s+", " ");
+
+        assertTrue(instructions.contains("terminal_id"));
+        assertTrue(normalizedInstructions.contains("Reuse that terminal"));
+        assertTrue(instructions.contains("close_terminal"));
     }
 
     @Test

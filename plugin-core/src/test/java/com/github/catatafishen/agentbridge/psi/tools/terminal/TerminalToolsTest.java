@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.CleanupSettings;
+import com.github.catatafishen.agentbridge.services.McpCallContext;
 import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
@@ -147,10 +148,13 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     private String executeSync(Tool tool, JsonObject argsObj) throws Exception {
         CompletableFuture<String> future = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            McpCallContext.setCurrent("test-session");
             try {
                 future.complete(tool.execute(argsObj));
             } catch (Exception e) {
                 future.completeExceptionally(e);
+            } finally {
+                McpCallContext.clear();
             }
         });
         long deadline = System.currentTimeMillis() + 15_000;
@@ -186,27 +190,27 @@ public class TerminalToolsTest extends BasePlatformTestCase {
             (ComponentManager) getProject(), serviceClass, instance, getTestRootDisposable());
     }
 
-    public void testCloseTerminalMetadataDescribesSafeAgentTabCleanup() {
+    public void testCloseTerminalMetadataUsesStableHandle() {
         assertEquals("close_terminal", closeTerminalTool.id());
         assertEquals("Close Terminal", closeTerminalTool.displayName());
-        assertTrue(closeTerminalTool.description().contains("Refuses to close user-created terminal tabs"));
-        assertTrue(closeTerminalTool.description().contains("does not stop a running command"));
+        assertTrue(closeTerminalTool.description().contains("terminal_id"));
+        assertTrue(closeTerminalTool.description().contains("Other agents"));
         assertEquals(Tool.Kind.EDIT, closeTerminalTool.kind());
         assertTrue(closeTerminalTool.isDestructive());
-        assertEquals("Close terminal: {tab_name}", closeTerminalTool.permissionTemplate());
-        assertTrue(closeTerminalTool.inputSchema().getAsJsonObject("properties").has("tab_name"));
+        assertTrue(closeTerminalTool.permissionTemplate().contains("{terminal_id}"));
+        JsonObject properties =
+            closeTerminalTool.inputSchema().getAsJsonObject("properties");
+        assertTrue(properties.has("terminal_id"));
+        assertTrue(properties.has("tab_name"));
     }
 
-    public void testCloseTerminalMissingTabReturnsGuidance() throws Exception {
-        String result = executeSync(closeTerminalTool, args("tab_name", "Agent: missing"));
+    public void testCloseTerminalMissingSelectorReturnsGuidance() throws Exception {
+        String result = executeSync(closeTerminalTool, new JsonObject());
 
-        assertEquals(
-            "Error: No terminal tab found matching 'Agent: missing'. Use list_terminals to see available tabs.",
-            result
-        );
+        assertTrue(result.startsWith("Error: Provide terminal_id"));
     }
 
-    public void testCloseTerminalRefusesUserCreatedTabUsingResolvedDisplayName() throws Exception {
+    public void testCloseTerminalCannotResolveUserCreatedTab() throws Exception {
         TerminalWindowFixture fixture = installTerminalWindow(true, "Local (1)");
         AgentTabTracker tracker = mock(AgentTabTracker.class);
         replaceProjectService(AgentTabTracker.class, tracker);
@@ -214,36 +218,50 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         String result = executeSync(closeTerminalTool, args("tab_name", "Local"));
 
         assertEquals(
-            "Error: Refusing to close terminal 'Local (1)' because it was not created by AgentBridge.",
+            "Error: No terminal owned by this MCP session matches tab_name 'Local'. "
+                + "Use list_terminals to see this session's terminals.",
             result
         );
         verify(fixture.manager(), never()).removeContent(any(Content.class), eq(true));
     }
 
-    public void testCloseTerminalRemovesAndUntracksAgentTab() throws Exception {
-        TerminalWindowFixture fixture = installTerminalWindow(true, "Agent: build (1)");
+    public void testCloseTerminalRemovesExactOwnedContentAndUntracksId() throws Exception {
+        TerminalWindowFixture fixture =
+            installTerminalWindow(true, "Agent: build (1)", "Agent: build (2)");
+        Content owned = fixture.contents().get(1);
         AgentTabTracker tracker = mock(AgentTabTracker.class);
-        when(tracker.isTrackedTerminalTab("Agent: build (1)")).thenReturn(true);
+        when(tracker.findOwnedTerminal("test-session", "terminal-2", null))
+            .thenReturn(new AgentTabTracker.AgentTerminal("terminal-2", owned));
         replaceProjectService(AgentTabTracker.class, tracker);
 
-        String result = executeSync(closeTerminalTool, args("tab_name", "Agent: build"));
+        String result =
+            executeSync(closeTerminalTool, args("terminal_id", "terminal-2"));
 
-        assertEquals("Closed AgentBridge terminal 'Agent: build (1)'.", result);
-        verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
-        verify(tracker).untrackTerminalTab("Agent: build (1)");
+        assertEquals(
+            "Closed AgentBridge terminal 'Agent: build (2)' [terminal_id=terminal-2].",
+            result);
+        verify(fixture.manager()).removeContent(owned, true);
+        verify(fixture.manager(), never())
+            .removeContent(fixture.contents().getFirst(), true);
+        verify(tracker).untrackTerminal("test-session", "terminal-2");
     }
 
     public void testCloseTerminalReportsRemovalFailureAsError() throws Exception {
         TerminalWindowFixture fixture = installTerminalWindow(false, "Agent: build");
+        Content owned = fixture.contents().getFirst();
         AgentTabTracker tracker = mock(AgentTabTracker.class);
-        when(tracker.isTrackedTerminalTab("Agent: build")).thenReturn(true);
+        when(tracker.findOwnedTerminal("test-session", "terminal-1", null))
+            .thenReturn(new AgentTabTracker.AgentTerminal("terminal-1", owned));
         replaceProjectService(AgentTabTracker.class, tracker);
 
-        String result = executeSync(closeTerminalTool, args("tab_name", "Agent: build"));
+        String result =
+            executeSync(closeTerminalTool, args("terminal_id", "terminal-1"));
 
-        assertEquals("Error: Failed to close terminal 'Agent: build'.", result);
-        verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
-        verify(tracker, never()).untrackTerminalTab(any());
+        assertEquals(
+            "Error: Failed to close terminal 'Agent: build' [terminal_id=terminal-1].",
+            result);
+        verify(fixture.manager()).removeContent(owned, true);
+        verify(tracker, never()).untrackTerminal(any(), any());
     }
 
     public void testCloseTerminalReportsExceptionalCompletionCause() {
@@ -263,45 +281,55 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         assertEquals("Error: Terminal close timed out.", result);
     }
 
-    public void testTrackerCountsAndSelectsOpenAgentTerminals() {
-        installTerminalWindow(true, "Local", "Agent: build", "Agent: test (1)");
+    public void testTrackerCountsAndSelectsOnlyOwnedTerminals() {
+        TerminalWindowFixture fixture =
+            installTerminalWindow(true, "Local", "Agent: build", "Agent: test (1)");
         AgentTabTracker tracker = new AgentTabTracker(getProject());
-        tracker.trackTab("Terminal", "Agent: build");
-        tracker.trackTab("Terminal", "Agent: test");
+        tracker.trackTerminal("session-a", fixture.contents().get(1));
+        String latestId =
+            tracker.trackTerminal("session-a", fixture.contents().get(2));
 
-        assertEquals(2, tracker.countOpenTerminalTabs());
-        assertTrue(tracker.hasOpenTerminalCapacity());
-        assertEquals("Agent: test (1)", tracker.findMostRecentOpenTerminalTabName());
+        assertEquals(2, tracker.countOpenTerminalTabs("session-a"));
+        assertTrue(tracker.hasOpenTerminalCapacity("session-a"));
+        AgentTabTracker.AgentTerminal latest =
+            tracker.findOwnedTerminal("session-a", null, null);
+        assertEquals(latestId, latest.terminalId());
+        assertSame(fixture.contents().get(2), latest.content());
     }
 
-    public void testTurnCleanupClosesAndForgetsIdleTerminal() {
+    public void testTurnCleanupNeverClosesSessionOwnedTerminal() {
         TerminalWindowFixture fixture = installTerminalWindow(true, "Agent: build");
-        CleanupSettings settings = CleanupSettings.getInstance(getProject());
-        settings.setAutoCloseAgentTabs(true);
-        settings.setAutoCloseRunningTerminals(true);
+        CleanupSettings.getInstance(getProject()).setAutoCloseAgentTabs(true);
         AgentTabTracker tracker = new AgentTabTracker(getProject());
-        tracker.trackTab("Terminal", "Agent: build");
-
-        tracker.closeTrackedTabs();
-        UIUtil.dispatchAllInvocationEvents();
-
-        verify(fixture.manager()).removeContent(fixture.contents().getFirst(), true);
-        assertFalse(tracker.isTrackedTerminalTab("Agent: build"));
-    }
-
-    public void testTurnCleanupRetainsRunningTerminalWhenClosingIsDisabled() {
-        TerminalWindowFixture fixture = installTerminalWindow(true, "Agent: build");
-        CleanupSettings settings = CleanupSettings.getInstance(getProject());
-        settings.setAutoCloseAgentTabs(true);
-        settings.setAutoCloseRunningTerminals(false);
-        AgentTabTracker tracker = new AgentTabTracker(getProject());
-        tracker.trackTab("Terminal", "Agent: build");
+        String terminalId =
+            tracker.trackTerminal("session-a", fixture.contents().getFirst());
 
         tracker.closeTrackedTabs();
         UIUtil.dispatchAllInvocationEvents();
 
         verify(fixture.manager(), never()).removeContent(any(Content.class), eq(true));
-        assertTrue(tracker.isTrackedTerminalTab("Agent: build"));
+        assertNotNull(
+            tracker.findOwnedTerminal("session-a", terminalId, null));
+    }
+
+    public void testSessionCleanupClosesOnlyItsOwnTerminal() {
+        TerminalWindowFixture fixture =
+            installTerminalWindow(true, "Agent: shared", "Agent: shared (1)");
+        AgentTabTracker tracker = new AgentTabTracker(getProject());
+        String firstId =
+            tracker.trackTerminal("session-a", fixture.contents().getFirst());
+        String secondId =
+            tracker.trackTerminal("session-b", fixture.contents().get(1));
+
+        tracker.closeOwnedTerminalTabs("session-a");
+        UIUtil.dispatchAllInvocationEvents();
+
+        verify(fixture.manager())
+            .removeContent(fixture.contents().getFirst(), true);
+        verify(fixture.manager(), never())
+            .removeContent(fixture.contents().get(1), true);
+        assertNull(tracker.findOwnedTerminal("session-a", firstId, null));
+        assertNotNull(tracker.findOwnedTerminal("session-b", secondId, null));
     }
 
     private record TerminalWindowFixture(ContentManager manager, List<Content> contents) {
@@ -357,7 +385,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     /**
      * In a fresh headless test project there are no open terminal tabs.
      * {@code list_terminals} must still return a structured response containing the
-     * "Open terminal tabs:" section header and an indication that no tabs are
+     * owner-scoped terminal section header and an indication that no tabs are
      * available — it must never throw, return null, or return blank content.
      *
      * <p>{@link ListTerminalsTool} uses {@code EdtUtil.invokeAndWait} internally,
@@ -369,8 +397,8 @@ public class TerminalToolsTest extends BasePlatformTestCase {
 
         assertNotNull("Result must not be null", result);
         assertFalse("Result must not be blank", result.isBlank());
-        assertTrue("Expected 'Open terminal tabs:' section header in result, got: " + result,
-            result.contains("Open terminal tabs:"));
+        assertTrue("Expected owner-scoped terminal section header in result, got: " + result,
+            result.contains("AgentBridge terminals owned by this MCP session:"));
 
         // In the headless test environment the Terminal tool window is either absent
         // or reports no tabs — exactly one of these phrases must appear.
@@ -572,7 +600,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         assertFalse("Result must not be a raw Java exception string",
             result.startsWith("java."));
 
-        boolean noTerminalMessage = result.contains("No terminal found");
+        boolean noTerminalMessage = result.contains("No terminal");
         boolean failedWriteMessage = result.contains("Failed to write to terminal");
         boolean timedOut = result.contains("timed out");
         assertTrue(
@@ -619,6 +647,21 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     }
 
     // ── RunInTerminalTool ──────────────────────────────────────────────────────
+
+    public void testRunInTerminalSchemaSupportsStableHandle() {
+        JsonObject properties = runInTerminalTool.inputSchema().getAsJsonObject("properties");
+
+        assertTrue(properties.has("terminal_id"));
+        assertTrue(properties.has("tab_name"));
+        assertTrue(properties.has("new_tab"));
+    }
+
+    public void testRunInTerminalRejectsStableHandleWithNewTab() throws Exception {
+        String result = executeSync(runInTerminalTool,
+            args("command", "echo hello", "terminal_id", "terminal-1", "new_tab", "true"));
+
+        assertEquals("Error: terminal_id cannot be combined with new_tab=true.", result);
+    }
 
     /**
      * When the required {@code "command"} argument is absent, the tool calls

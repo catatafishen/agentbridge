@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.terminal;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.content.Content;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -10,69 +11,93 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class TerminalToolStaticMethodsTest {
 
     @Test
-    void reusesMostRecentTrackedTerminalWhenNoTabNameIsProvided() throws Exception {
+    void reusesMostRecentTerminalOwnedByCaller() throws Exception {
         Project project = mock(Project.class);
         AgentTabTracker tracker = mock(AgentTabTracker.class);
+        Content content = content("Agent: build (1)");
         Object widget = new Object();
         when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
-        when(tracker.findMostRecentOpenTerminalTabName()).thenReturn("Agent: build (1)");
-        TestTerminalTool tool = new TestTerminalTool(project, widget);
+        when(tracker.findOwnedTerminal("session-a", null, null))
+            .thenReturn(new AgentTabTracker.AgentTerminal("terminal-a", content));
+        TestTerminalTool tool = new TestTerminalTool(project, widget, content);
 
-        TerminalTool.TerminalWidgetResult result = tool.open(null, false);
+        TerminalTool.TerminalWidgetResult result = tool.open(null, null, false);
 
         assertSame(widget, result.widget());
+        assertEquals("terminal-a", result.terminalId());
         assertEquals("Agent: build (1)", result.tabName());
         assertTrue(result.reused());
-        verify(tracker, never()).hasOpenTerminalCapacity();
+        verify(tracker, never()).hasOpenTerminalCapacity("session-a");
     }
 
     @Test
-    void rejectsNewTerminalWhenAgentTerminalLimitIsReached() {
+    void rejectsUnknownExplicitTerminalIdInsteadOfOpeningAnotherTab() {
         Project project = mock(Project.class);
         AgentTabTracker tracker = mock(AgentTabTracker.class);
         when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
-        when(tracker.hasOpenTerminalCapacity()).thenReturn(false);
-        TestTerminalTool tool = new TestTerminalTool(project, null);
+        TestTerminalTool tool =
+            new TestTerminalTool(project, null, content("Agent: unexpected"));
 
         IllegalStateException error = assertThrows(
             IllegalStateException.class,
-            () -> tool.open("Agent: overflow", true)
+            () -> tool.open("terminal-from-another-owner", null, false)
         );
 
-        assertTrue(error.getMessage().contains("Agent terminal limit reached (3)"));
+        assertTrue(error.getMessage().contains("terminal-from-another-owner"));
+        assertTrue(error.getMessage().contains("this MCP session"));
+        verify(tracker, never()).hasOpenTerminalCapacity("session-a");
+    }
+
+    @Test
+    void rejectsNewTerminalWhenOwnerLimitIsReached() {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(tracker.hasOpenTerminalCapacity("session-a")).thenReturn(false);
+        TestTerminalTool tool =
+            new TestTerminalTool(project, null, content("Agent: overflow"));
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> tool.open(null, "Agent: overflow", true)
+        );
+
+        assertTrue(error.getMessage().contains("3 per MCP session"));
         assertTrue(error.getMessage().contains("close_terminal"));
         assertEquals("Error: " + error.getMessage(), RunInTerminalTool.formatCapacityError(error));
         assertFalse(RunInTerminalTool.formatCapacityError(error).contains("run_command"));
     }
 
     @Test
-    void createsAndTracksTerminalWhenNoReusableTabExists() throws Exception {
+    void createsAndTracksExactTerminalContent() throws Exception {
         Project project = mock(Project.class);
         AgentTabTracker tracker = mock(AgentTabTracker.class);
+        Content content = content("Agent: echo test");
         when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
         when(project.getBasePath()).thenReturn("/repo");
-        when(tracker.hasOpenTerminalCapacity()).thenReturn(true);
-        TestTerminalTool tool = new TestTerminalTool(project, null);
+        when(tracker.hasOpenTerminalCapacity("session-a")).thenReturn(true);
+        when(tracker.trackTerminal("session-a", content)).thenReturn("terminal-new");
+        TestTerminalTool tool = new TestTerminalTool(project, null, content);
 
-        TerminalTool.TerminalWidgetResult result = tool.open(null, false);
+        TerminalTool.TerminalWidgetResult result = tool.open(null, null, false);
 
         assertSame(tool.createdWidget(), result.widget());
+        assertEquals("terminal-new", result.terminalId());
         assertEquals("Agent: echo test", result.tabName());
         assertFalse(result.reused());
-        verify(tracker).trackTab("Terminal", "Agent: echo test");
+        verify(tracker).trackTerminal("session-a", content);
+    }
+
+    private static Content content(String displayName) {
+        Content content = mock(Content.class);
+        when(content.getDisplayName()).thenReturn(displayName);
+        return content;
     }
 
     // ── resolveInputEscapes ─────────────────────────────────
@@ -439,16 +464,27 @@ class TerminalToolStaticMethodsTest {
 
     private static final class TestTerminalTool extends TerminalTool {
         private final Object reusableWidget;
+        private final Content content;
         private final FakeTerminalManager manager = new FakeTerminalManager();
 
-        private TestTerminalTool(Project project, Object reusableWidget) {
+        private TestTerminalTool(
+            Project project,
+            Object reusableWidget,
+            Content content
+        ) {
             super(project);
             this.reusableWidget = reusableWidget;
+            this.content = content;
         }
 
-        private TerminalWidgetResult open(String tabName, boolean newTab) throws Exception {
+        private TerminalWidgetResult open(
+            String terminalId,
+            String tabName,
+            boolean newTab
+        ) throws Exception {
             return getOrCreateTerminalWidget(
-                FakeTerminalManager.class, manager, tabName, newTab, null, "echo test");
+                "session-a", FakeTerminalManager.class, manager,
+                terminalId, tabName, newTab, null, "echo test");
         }
 
         private Object createdWidget() {
@@ -456,8 +492,19 @@ class TerminalToolStaticMethodsTest {
         }
 
         @Override
-        protected Object findTerminalWidgetByTabName(Class<?> managerClass, String tabName) {
+        protected Object findTerminalWidgetByContent(
+            @NotNull Class<?> managerClass,
+            @NotNull Content ignored
+        ) {
             return reusableWidget;
+        }
+
+        @Override
+        protected Content findTerminalContentForWidget(
+            @NotNull Class<?> managerClass,
+            @NotNull Object widget
+        ) {
+            return content;
         }
 
         @Override

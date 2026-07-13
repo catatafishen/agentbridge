@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Closes an integrated terminal tab created by AgentBridge.
+ * Closes an integrated terminal owned by the current MCP session.
  */
 public final class CloseTerminalTool extends TerminalTool {
 
@@ -33,9 +33,9 @@ public final class CloseTerminalTool extends TerminalTool {
 
     @Override
     public @NotNull String description() {
-        return "Close an AgentBridge-created terminal tab when it is no longer needed. "
-            + "This closes the tab but does not stop a running command in it. "
-            + "Refuses to close user-created terminal tabs. Use list_terminals to find tab names.";
+        return "Close a terminal owned by this MCP session when it is no longer needed. "
+            + "Use terminal_id (preferred) or the owner-scoped tab_name fallback. "
+            + "Other agents' terminals and user-created terminal tabs cannot be closed.";
     }
 
     @Override
@@ -50,24 +50,32 @@ public final class CloseTerminalTool extends TerminalTool {
 
     @Override
     public @NotNull String permissionTemplate() {
-        return "Close terminal: {tab_name}";
+        return "Close owned terminal: {terminal_id} {tab_name}";
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(JSON_TAB_NAME, TYPE_STRING,
-                "Name of the AgentBridge-created terminal tab to close")
+            Param.optional(JSON_TERMINAL_ID, TYPE_STRING,
+                "Stable ID returned by run_in_terminal (preferred)"),
+            Param.optional(JSON_TAB_NAME, TYPE_STRING,
+                "Owner-scoped terminal tab name (compatibility fallback)")
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        String tabName = args.get(JSON_TAB_NAME).getAsString();
+        String terminalId = optionalSelector(args, JSON_TERMINAL_ID);
+        String tabName = optionalSelector(args, JSON_TAB_NAME);
+        if (terminalId == null && tabName == null) {
+            return "Error: Provide terminal_id from run_in_terminal/list_terminals "
+                + "or an owner-scoped tab_name.";
+        }
+
+        String ownerId = currentOwnerId();
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
-        EdtUtil.invokeLater(() -> closeTerminal(tabName, resultFuture));
-
+        EdtUtil.invokeLater(() ->
+            closeTerminal(ownerId, terminalId, tabName, resultFuture));
         return awaitCloseResult(resultFuture, 10, TimeUnit.SECONDS);
     }
 
@@ -95,41 +103,47 @@ public final class CloseTerminalTool extends TerminalTool {
 
     private static @NotNull String failureDetail(@NotNull Throwable failure) {
         String message = failure.getMessage();
-        return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
+        return message == null || message.isBlank()
+            ? failure.getClass().getSimpleName()
+            : message;
     }
 
-    private void closeTerminal(String tabName, CompletableFuture<String> resultFuture) {
+    private void closeTerminal(
+        String ownerId,
+        String terminalId,
+        String tabName,
+        CompletableFuture<String> resultFuture
+    ) {
         try {
-            var content = resolveTerminalContent(tabName);
-            if (content == null) {
+            AgentTabTracker.AgentTerminal terminal =
+                resolveOwnedTerminal(ownerId, terminalId, tabName);
+            if (terminal == null) {
                 resultFuture.complete(
-                    "Error: No terminal tab found matching '" + tabName
-                        + "'. Use list_terminals to see available tabs.");
+                    "Error: No terminal owned by this MCP session matches "
+                        + selectorDescription(terminalId, tabName)
+                        + ". Use list_terminals to see this session's terminals.");
                 return;
             }
 
-            String displayName = content.getDisplayName();
-            AgentTabTracker tracker = AgentTabTracker.getInstance(project);
-            if (displayName == null || !tracker.isTrackedTerminalTab(displayName)) {
-                String rejectedName = displayName != null ? displayName : tabName;
+            var toolWindow = ToolWindowManager.getInstance(project)
+                .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+            if (toolWindow == null
+                || !toolWindow.getContentManager().removeContent(terminal.content(), true)) {
                 resultFuture.complete(
-                    "Error: Refusing to close terminal '" + rejectedName
-                        + "' because it was not created by AgentBridge.");
+                    "Error: Failed to close terminal '" + terminal.displayName()
+                        + "' [terminal_id=" + terminal.terminalId() + "].");
                 return;
             }
 
-            var toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
-            if (toolWindow == null || !toolWindow.getContentManager().removeContent(content, true)) {
-                resultFuture.complete("Error: Failed to close terminal '" + displayName + "'.");
-                return;
-            }
-
-            tracker.untrackTerminalTab(displayName);
-            resultFuture.complete("Closed AgentBridge terminal '" + displayName + "'.");
-        } catch (Exception e) {
-            LOG.warn("Failed to close terminal: " + tabName, e);
+            AgentTabTracker.getInstance(project)
+                .untrackTerminal(ownerId, terminal.terminalId());
             resultFuture.complete(
-                "Error: Failed to close terminal '" + tabName + "': " + failureDetail(e));
+                "Closed AgentBridge terminal '" + terminal.displayName()
+                    + "' [terminal_id=" + terminal.terminalId() + "].");
+        } catch (Exception e) {
+            LOG.warn("Failed to close terminal " + selectorDescription(terminalId, tabName), e);
+            resultFuture.complete(
+                "Error: Failed to close terminal: " + failureDetail(e));
         }
     }
 }

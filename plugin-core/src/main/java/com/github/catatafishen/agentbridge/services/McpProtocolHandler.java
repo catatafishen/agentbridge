@@ -132,6 +132,16 @@ public final class McpProtocolHandler {
      * Returns null for notifications (no id field).
      */
     public String handleMessage(String messageJson) {
+        return handleMessage(messageJson, legacySessionKey());
+    }
+
+    /**
+     * Handles a request inside an explicit transport-session ownership boundary.
+     */
+    public String handleMessage(
+        @NotNull String messageJson,
+        @NotNull String sessionKey
+    ) {
         try {
             JsonObject msg = JsonParser.parseString(messageJson).getAsJsonObject();
             String method = msg.has("method") ? msg.get("method").getAsString() : null;
@@ -140,7 +150,7 @@ public final class McpProtocolHandler {
             JsonObject result = switch (method) {
                 case "initialize" -> handleInitialize(msg);
                 case "tools/list" -> handleToolsList(msg);
-                case "tools/call" -> handleToolsCall(msg);
+                case "tools/call" -> handleToolsCall(msg, sessionKey);
                 case "resources/list" -> handleResourcesList(msg);
                 case "resources/templates/list" -> handleResourceTemplatesList(msg);
                 case "resources/read" -> handleResourcesRead(msg);
@@ -517,7 +527,10 @@ public final class McpProtocolHandler {
         return respondResult(msg, result);
     }
 
-    private JsonObject handleToolsCall(JsonObject msg) {
+    private JsonObject handleToolsCall(
+        JsonObject msg,
+        @NotNull String sessionKey
+    ) {
         JsonObject params = msg.has(KEY_PARAMS) ? msg.getAsJsonObject(KEY_PARAMS) : new JsonObject();
         String toolName = params.has("name") ? params.get("name").getAsString() : null;
         if (toolName == null) {
@@ -535,7 +548,6 @@ public final class McpProtocolHandler {
         ToolCallMeta meta = extractMeta(params);
         logToolCall(toolName, meta.progressToken(), settings);
 
-        String sessionKey = sessionKey(project);
         PopupGateResult gateResult = evaluatePopupGate(toolName, sessionKey, msg);
         if (gateResult.blocked != null) return gateResult.blocked;
 
@@ -559,8 +571,13 @@ public final class McpProtocolHandler {
         if (preHookResult.blockedMessage != null) return buildToolResult(msg, preHookResult.blockedMessage, true);
         arguments = preHookResult.arguments;
 
-        return executeToolCall(msg, toolName, arguments, preHookResult, hookStages,
-            meta.toolUseId(), originalArguments, gateResult.prefix);
+        McpCallContext.setCurrent(sessionKey);
+        try {
+            return executeToolCall(msg, toolName, arguments, preHookResult, hookStages,
+                meta.toolUseId(), originalArguments, gateResult.prefix);
+        } finally {
+            McpCallContext.clear();
+        }
     }
 
     private JsonObject executeToolCall(JsonObject msg, String toolName, JsonObject arguments,
@@ -633,8 +650,6 @@ public final class McpProtocolHandler {
                 e.getMessage(), kind, hookStages));
 
             return buildToolResult(msg, finalOutput, isError);
-        } finally {
-            McpCallContext.clear();
         }
     }
 
@@ -651,7 +666,7 @@ public final class McpProtocolHandler {
     private ToolResult callToolWithTimeout(String toolName, JsonObject arguments,
                                            @Nullable String toolUseId, JsonObject originalArguments,
                                            @Nullable String displayName) {
-        String sessionKey = sessionKey(project);
+        String sessionKey = McpCallContext.currentOrFallback();
         PsiBridgeService bridge = PsiBridgeService.getInstance(project);
         AtomicReference<Thread> workerThread = new AtomicReference<>();
         long startMs = System.currentTimeMillis();
@@ -882,8 +897,8 @@ public final class McpProtocolHandler {
         return normalized;
     }
 
-    private String sessionKey(com.intellij.openapi.project.Project proj) {
-        return proj.getLocationHash() + ":" + System.identityHashCode(this);
+    private @NotNull String legacySessionKey() {
+        return "legacy:" + project.getLocationHash() + ":" + System.identityHashCode(this);
     }
 
     private @Nullable String evaluatePermissionHook(@NotNull String toolName,

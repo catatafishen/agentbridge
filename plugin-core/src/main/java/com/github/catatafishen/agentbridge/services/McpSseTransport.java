@@ -1,11 +1,13 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import com.sun.net.httpserver.HttpExchange;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -38,12 +40,17 @@ final class McpSseTransport {
 
     private static final String ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin";
 
+    private final Project project;
     private final McpProtocolHandler protocolHandler;
     private final Map<String, SseSession> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger sessionCount = new AtomicInteger(0);
     private ScheduledExecutorService keepAliveExecutor;
 
-    McpSseTransport(@NotNull McpProtocolHandler protocolHandler) {
+    McpSseTransport(
+        @NotNull Project project,
+        @NotNull McpProtocolHandler protocolHandler
+    ) {
+        this.project = project;
         this.protocolHandler = protocolHandler;
     }
 
@@ -66,10 +73,9 @@ final class McpSseTransport {
             keepAliveExecutor.shutdownNow();
             keepAliveExecutor = null;
         }
-        for (SseSession session : sessions.values()) {
-            session.close();
+        for (String sessionId : List.copyOf(sessions.keySet())) {
+            removeSession(sessionId);
         }
-        sessions.clear();
     }
 
     int getActiveSessionCount() {
@@ -160,8 +166,18 @@ final class McpSseTransport {
 
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
+        String ownerKey = McpSessionRegistry.ownerKey("sse", sessionId);
         try {
-            String response = protocolHandler.handleMessage(body);
+            String response;
+            try {
+                response = protocolHandler.handleMessage(body, ownerKey);
+            } finally {
+                // If disconnect cleanup won a race with this in-flight call, release any
+                // terminal created after removeSession took its first ownership snapshot.
+                if (sessions.get(sessionId) != session || session.isClosed()) {
+                    AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(ownerKey);
+                }
+            }
 
             // Acknowledge the POST request
             exchange.sendResponseHeaders(202, -1);
@@ -195,6 +211,8 @@ final class McpSseTransport {
         SseSession session = sessions.remove(sessionId);
         if (session != null) {
             session.close();
+            AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(
+                McpSessionRegistry.ownerKey("sse", sessionId));
             LOG.info("SSE session removed: " + sessionId);
         }
     }

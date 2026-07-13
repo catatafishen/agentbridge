@@ -4,8 +4,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Thread-local that lets quality tools (especially the popup-handling ones) discover the
- * MCP session key of the caller without plumbing it through every tool's signature.
+ * Thread-local that lets tools discover the MCP transport-session owner without plumbing it
+ * through every tool signature. Popup gates use it for per-session counters; stateful resources
+ * such as integrated terminals use it as an isolation boundary.
  *
  * <p><b>Why this exists — DO NOT REMOVE without reading
  * {@code .agent-work/popup-interaction-design-2026-04-30.md}.</b>

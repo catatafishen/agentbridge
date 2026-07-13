@@ -194,7 +194,7 @@ custom MCP clients) that cannot use the stdio-based subprocess model.
 | Class                          | Role                                                            |
 |--------------------------------|-----------------------------------------------------------------|
 | `McpHttpServer`                | Starts `com.sun.net.httpserver.HttpServer`, registers endpoints |
-| `McpProtocolHandler`           | Stateless JSON-RPC handler (shared by all transports)           |
+| `McpProtocolHandler`           | JSON-RPC handler; propagates transport-session ownership         |
 | `McpSseTransport`              | SSE session management, `/sse` and `/message` endpoints         |
 | `SseSession`                   | Single SSE client connection (event stream, keep-alive)         |
 | `McpServerSettings`            | Persistent settings: port, auto-start, transport mode           |
@@ -209,10 +209,16 @@ Configured in **Settings → Tools → AgentBridge → MCP Server → General**.
 
 Single request/response model — the simplest transport for MCP.
 
-| Endpoint  | Method | Description                          |
-|-----------|--------|--------------------------------------|
-| `/mcp`    | POST   | JSON-RPC request → JSON-RPC response |
-| `/health` | GET    | Server status check                  |
+| Endpoint  | Method | Description                                           |
+|-----------|--------|-------------------------------------------------------|
+| `/mcp`    | POST   | JSON-RPC request → JSON-RPC response                  |
+| `/mcp`    | DELETE | End the `Mcp-Session-Id` session and release resources |
+| `/health` | GET    | Server status check                                   |
+
+The initialize response returns `Mcp-Session-Id`. Clients echo that header on
+subsequent requests. AgentBridge uses the transport session as the ownership
+boundary for stateful resources, so concurrent agents cannot read, write, reuse,
+or close one another's integrated terminals.
 
 Client config:
 
@@ -316,11 +322,13 @@ tool documentation. Summary of categories:
 - `http_request` - Make HTTP calls (for API testing)
 - `run_command` - Execute shell commands in project directory
 
-### 8. Terminal & Logs (6 tools)
+### 8. Terminal & Logs (8 tools)
 
-- `run_in_terminal` - Execute commands in IntelliJ terminal tabs
-- `list_terminals` - List available shells and terminal tabs
-- `read_terminal_output` - Read terminal content
+- `run_in_terminal` - Execute commands in an owner-scoped terminal and return a stable `terminal_id`
+- `list_terminals` - List only the current MCP session's terminal resources
+- `read_terminal_output` - Read an owned terminal by stable ID
+- `write_terminal_input` - Send input to an owned terminal by stable ID
+- `close_terminal` - Release an owned terminal explicitly
 - `read_run_output` - Read Run panel output
 - `read_ide_log` - Read IntelliJ's idea.log
 - `get_notifications` - Get IDE notifications

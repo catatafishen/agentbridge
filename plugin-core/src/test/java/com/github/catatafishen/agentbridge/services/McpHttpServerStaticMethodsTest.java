@@ -2,17 +2,20 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.intellij.openapi.project.Project;
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Method;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests for static helper methods in {@link McpHttpServer}.
@@ -133,6 +136,104 @@ class McpHttpServerStaticMethodsTest {
             String json = McpHttpServer.buildJsonRpcErrorResponse(-32601, "Method not found");
             JsonObject error = JsonParser.parseString(json).getAsJsonObject().getAsJsonObject("error");
             assertEquals(-32601, error.get("code").getAsInt());
+        }
+    }
+
+    // ── Streamable HTTP session ownership ─────────────────
+
+    @Nested
+    class TransportSessionResolutionTest {
+
+        @Test
+        void initializePublishesSessionOnlyWithInitializeResult() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            Headers requestHeaders = new Headers();
+            Headers responseHeaders = new Headers();
+            HttpExchange exchange = exchange(requestHeaders, responseHeaders,
+                new ByteArrayOutputStream());
+
+            McpHttpServer.HttpOwnerResolution resolution = server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}");
+            assertNotNull(resolution);
+            String sessionId = resolution.newSessionId();
+
+            assertNotNull(sessionId);
+            assertEquals("http:" + sessionId, resolution.ownerKey());
+            assertNull(responseHeaders.getFirst(McpHttpServer.MCP_SESSION_ID_HEADER));
+
+            assertTrue(server.completeInitialization(exchange, resolution,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"));
+            assertEquals(sessionId,
+                responseHeaders.getFirst(McpHttpServer.MCP_SESSION_ID_HEADER));
+
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, sessionId);
+            McpHttpServer.HttpOwnerResolution established = server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}");
+            assertNotNull(established);
+            assertEquals(resolution.ownerKey(), established.ownerKey());
+            assertNull(established.newSessionId());
+        }
+
+        @Test
+        void failedInitializeDoesNotPublishOrRetainSession() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            Headers requestHeaders = new Headers();
+            Headers responseHeaders = new Headers();
+            HttpExchange exchange = exchange(requestHeaders, responseHeaders,
+                new ByteArrayOutputStream());
+
+            McpHttpServer.HttpOwnerResolution resolution = server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}");
+            assertNotNull(resolution);
+            assertFalse(server.completeInitialization(exchange, resolution,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602}}"));
+            assertNull(responseHeaders.getFirst(McpHttpServer.MCP_SESSION_ID_HEADER));
+
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, resolution.newSessionId());
+            assertNull(server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+        }
+
+        @Test
+        void establishedRequestWithoutSessionIsRejected() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            ByteArrayOutputStream responseBody = new ByteArrayOutputStream();
+            HttpExchange exchange = exchange(new Headers(), new Headers(), responseBody);
+
+            assertNull(server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+
+            verify(exchange).sendResponseHeaders(eq(400), anyLong());
+            JsonObject response = JsonParser.parseString(
+                responseBody.toString(java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            assertTrue(response.getAsJsonObject("error").get("message").getAsString()
+                .contains(McpHttpServer.MCP_SESSION_ID_HEADER));
+        }
+
+        @Test
+        void unknownSessionIsRejected() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            Headers requestHeaders = new Headers();
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, "unknown");
+            HttpExchange exchange = exchange(requestHeaders, new Headers(),
+                new ByteArrayOutputStream());
+
+            assertNull(server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+
+            verify(exchange).sendResponseHeaders(eq(404), anyLong());
+        }
+
+        private HttpExchange exchange(
+            Headers requestHeaders,
+            Headers responseHeaders,
+            ByteArrayOutputStream responseBody
+        ) {
+            HttpExchange exchange = mock(HttpExchange.class);
+            when(exchange.getRequestHeaders()).thenReturn(requestHeaders);
+            when(exchange.getResponseHeaders()).thenReturn(responseHeaders);
+            when(exchange.getResponseBody()).thenReturn(responseBody);
+            return exchange;
         }
     }
 

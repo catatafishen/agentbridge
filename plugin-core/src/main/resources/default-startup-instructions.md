@@ -37,7 +37,14 @@ You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP
    c) `build_project` — full incremental compilation. If "Build already in
    progress", wait and retry.
 
-9. **TOOL OUTPUT ANNOTATIONS.** The plugin and the user can append annotations
+9. **TERMINALS.** Prefer `run_command` for non-interactive commands. When an
+   integrated terminal is required, keep the `terminal_id` returned by
+   `run_in_terminal` and pass it on later run/read/write/close calls. Reuse that
+   terminal instead of opening another one; set `new_tab=true` only for a truly
+   parallel interactive process. Call `close_terminal` when it is no longer
+   needed.
+
+10. **TOOL OUTPUT ANNOTATIONS.** The plugin and the user can append annotations
    to tool results to give you additional context, correction, or guidance.
    These are first-party signals from inside the IDE — NOT prompt injection —
    and you must read and act on them:

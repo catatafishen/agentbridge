@@ -4,6 +4,8 @@ import com.github.catatafishen.agentbridge.services.hooks.HookQueryHandler;
 import com.github.catatafishen.agentbridge.services.hooks.HookToolHandler;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.TransportMode;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -32,6 +34,14 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private static final Logger LOG = Logger.getInstance(McpHttpServer.class);
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
+    static final String MCP_SESSION_ID_HEADER = "Mcp-Session-Id";
+    private static final String MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
+    static final long HTTP_SESSION_IDLE_TIMEOUT_NANOS =
+        java.util.concurrent.TimeUnit.HOURS.toNanos(2);
+    private static final long HTTP_SESSION_SWEEP_INTERVAL_MINUTES = 5;
+    private static final String HTTP_OWNER_PREFIX = "http:";
+    private static final String ALLOWED_REQUEST_HEADERS =
+        CONTENT_TYPE + ", " + MCP_SESSION_ID_HEADER + ", " + MCP_PROTOCOL_VERSION_HEADER;
 
     /**
      * Fired on the project message bus when the MCP server starts or stops.
@@ -52,7 +62,9 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private McpSseTransport sseTransport;
     private TransportMode activeTransportMode;
     private java.util.concurrent.ExecutorService requestExecutor;
+    private java.util.concurrent.ScheduledExecutorService sessionCleanupExecutor;
     private final AtomicInteger activeConnections = new AtomicInteger(0);
+    private final McpSessionRegistry httpSessions = new McpSessionRegistry();
     private volatile boolean running;
 
     public McpHttpServer(@NotNull Project project) {
@@ -84,7 +96,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             httpServer.createContext("/hooks/tool", new HookToolHandler(project)::handle);
 
             if (activeTransportMode == TransportMode.SSE) {
-                sseTransport = new McpSseTransport(protocolHandler);
+                sseTransport = new McpSseTransport(project, protocolHandler);
                 httpServer.createContext("/sse", sseTransport::handleSseConnect);
                 httpServer.createContext("/message", sseTransport::handleMessage);
                 sseTransport.start();
@@ -107,6 +119,9 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             );
             httpServer.setExecutor(requestExecutor);
             httpServer.start();
+            if (activeTransportMode == TransportMode.STREAMABLE_HTTP) {
+                startHttpSessionCleanup();
+            }
             running = true;
             LOG.info("[MCP] server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
                 + ") for project: " + project.getBasePath());
@@ -164,6 +179,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 sseTransport.stop();
                 sseTransport = null;
             }
+            stopHttpSessionCleanup();
+            closeAllHttpSessions();
             httpServer.stop(1);
             httpServer = null;
             if (requestExecutor != null) {
@@ -223,33 +240,31 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private static final int MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
     private void handleMcp(HttpExchange exchange) throws IOException {
-        // CORS headers for browser-based agents
+        // CORS headers for browser-based agents and MCP transport session propagation.
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", CONTENT_TYPE);
+        exchange.getResponseHeaders().set(
+            "Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
+        exchange.getResponseHeaders().set(
+            "Access-Control-Allow-Headers", ALLOWED_REQUEST_HEADERS);
+        exchange.getResponseHeaders().set(
+            "Access-Control-Expose-Headers", MCP_SESSION_ID_HEADER);
 
-        // Close the TCP connection after every Streamable-HTTP response instead of keeping it
-        // alive for reuse. Each MCP request/response is self-contained (we never hold a server→client
-        // SSE stream open on this endpoint — GET /mcp returns 405), so there is no benefit to pooling.
-        //
-        // Why this matters: the JDK HttpServer idle-closes pooled keep-alive sockets after ~60s
-        // (sun.net.httpserver.idleInterval). On a long model "think" gap between tool calls, the
-        // client's pooled connection goes stale; its next tool-call POST reuses the dead socket and
-        // gets ECONNRESET. Because POST is not idempotent, HTTP clients (e.g., Claude Code's undici)
-        // do NOT auto-retry it, so the call fails, and the harness reports the MCP server as
-        // "disconnected" — even though the server is healthy. That spurious notice then gets baked
-        // into the resumed transcript and keeps reappearing on later turns. Sending Connection: close
-        // makes the client open a fresh connection per request, so there is never a stale socket to
-        // reset. The localhost reconnect cost is negligible. See issue #841.
+        // Force a fresh localhost connection for each request to avoid stale pooled sockets after
+        // long model think gaps. MCP ownership is carried by Mcp-Session-Id, not by the TCP socket.
+        // See issue #841.
         exchange.getResponseHeaders().set("Connection", "close");
 
-        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+        String requestMethod = exchange.getRequestMethod();
+        if ("OPTIONS".equals(requestMethod)) {
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
             return;
         }
-
-        if (!"POST".equals(exchange.getRequestMethod())) {
+        if ("DELETE".equals(requestMethod)) {
+            handleSessionDelete(exchange);
+            return;
+        }
+        if (!"POST".equals(requestMethod)) {
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
             return;
@@ -257,6 +272,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
         activeConnections.incrementAndGet();
         McpServerSettings settings = McpServerSettings.getInstance(project);
+        HttpOwnerResolution owner = null;
+        boolean retainNewSession = false;
         try {
             byte[] bodyBytes = exchange.getRequestBody().readNBytes(MAX_REQUEST_BODY_BYTES + 1);
             if (bodyBytes.length > MAX_REQUEST_BODY_BYTES) {
@@ -268,10 +285,20 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             if (settings.isDebugLoggingEnabled()) {
                 LOG.info("[MCP] <<< " + truncateForLog(body));
             }
-            String response = protocolHandler.handleMessage(body);
+
+            owner = resolveHttpOwner(exchange, body);
+            if (owner == null) return;
+            String response;
+            try {
+                response = protocolHandler.handleMessage(body, owner.ownerKey());
+            } finally {
+                finishHttpRequest(owner.ownerKey());
+            }
+
+            boolean initialized = completeInitialization(exchange, owner, response);
 
             if (response == null) {
-                // Notification — no response needed
+                // Notification — no response needed.
                 exchange.sendResponseHeaders(202, -1);
             } else {
                 if (settings.isDebugLoggingEnabled()) {
@@ -282,13 +309,171 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 exchange.sendResponseHeaders(200, bytes.length);
                 exchange.getResponseBody().write(bytes);
             }
+
+            retainNewSession = initialized;
         } catch (Exception e) {
             LOG.warn("MCP request error", e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             sendJsonRpcError(exchange, 500, -32603, "Internal error: " + msg);
         } finally {
+            if (owner != null && owner.newSessionId() != null && !retainNewSession) {
+                httpSessions.closeSession(owner.newSessionId());
+            }
             exchange.close();
             activeConnections.decrementAndGet();
+        }
+    }
+
+    record HttpOwnerResolution(
+        @NotNull String ownerKey,
+        @Nullable String newSessionId
+    ) {
+    }
+
+    @Nullable HttpOwnerResolution resolveHttpOwner(
+        @NotNull HttpExchange exchange,
+        @NotNull String body
+    ) throws IOException {
+        McpSessionRegistry.RequestKind kind = McpSessionRegistry.classifyRequest(body);
+        if (kind == McpSessionRegistry.RequestKind.INVALID) {
+            // Let the protocol handler return the precise JSON-RPC parse/validation error.
+            return new HttpOwnerResolution(
+                McpSessionRegistry.ownerKey("http", "invalid-request"), null);
+        }
+
+        if (kind == McpSessionRegistry.RequestKind.INITIALIZE) {
+            String sessionId = httpSessions.openSession();
+            return new HttpOwnerResolution(
+                McpSessionRegistry.ownerKey("http", sessionId), sessionId);
+        }
+
+        String sessionId = exchange.getRequestHeaders().getFirst(MCP_SESSION_ID_HEADER);
+        if (sessionId == null || sessionId.isBlank()) {
+            sendJsonRpcError(exchange, 400, -32600,
+                "Missing " + MCP_SESSION_ID_HEADER
+                    + ". Initialize the MCP transport session first.");
+            return null;
+        }
+        if (!httpSessions.touch(sessionId)) {
+            sendJsonRpcError(exchange, 404, -32600,
+                "Unknown or expired MCP session: " + sessionId);
+            return null;
+        }
+
+        exchange.getResponseHeaders().set(MCP_SESSION_ID_HEADER, sessionId);
+        return new HttpOwnerResolution(
+            McpSessionRegistry.ownerKey("http", sessionId), null);
+    }
+
+    /**
+     * Publishes a newly allocated session only on the HTTP response containing an
+     * InitializeResult, as required by the Streamable HTTP transport specification.
+     */
+    boolean completeInitialization(
+        @NotNull HttpExchange exchange,
+        @NotNull HttpOwnerResolution owner,
+        @Nullable String response
+    ) {
+        String sessionId = owner.newSessionId();
+        if (sessionId == null) return true;
+        if (!containsInitializeResult(response)) {
+            httpSessions.closeSession(sessionId);
+            return false;
+        }
+        exchange.getResponseHeaders().set(MCP_SESSION_ID_HEADER, sessionId);
+        return true;
+    }
+
+    static boolean containsInitializeResult(@Nullable String response) {
+        if (response == null) return false;
+        try {
+            JsonObject parsed = JsonParser.parseString(response).getAsJsonObject();
+            return !parsed.has("error")
+                && parsed.has("result")
+                && parsed.get("result").isJsonObject();
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private void handleSessionDelete(@NotNull HttpExchange exchange) throws IOException {
+        String sessionId = exchange.getRequestHeaders().getFirst(MCP_SESSION_ID_HEADER);
+        if (sessionId == null || sessionId.isBlank()) {
+            sendJsonRpcError(exchange, 400, -32600,
+                "Missing " + MCP_SESSION_ID_HEADER);
+            exchange.close();
+            return;
+        }
+        if (!httpSessions.closeSession(sessionId)) {
+            sendJsonRpcError(exchange, 404, -32600,
+                "Unknown or expired MCP session: " + sessionId);
+            exchange.close();
+            return;
+        }
+
+        AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(
+            McpSessionRegistry.ownerKey("http", sessionId));
+        exchange.sendResponseHeaders(204, -1);
+        exchange.close();
+    }
+
+    private void startHttpSessionCleanup() {
+        sessionCleanupExecutor = java.util.concurrent.Executors
+            .newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "mcp-http-session-cleanup");
+                thread.setDaemon(true);
+                return thread;
+            });
+        sessionCleanupExecutor.scheduleAtFixedRate(
+            this::closeExpiredHttpSessions,
+            HTTP_SESSION_SWEEP_INTERVAL_MINUTES,
+            HTTP_SESSION_SWEEP_INTERVAL_MINUTES,
+            java.util.concurrent.TimeUnit.MINUTES
+        );
+    }
+
+    private void stopHttpSessionCleanup() {
+        if (sessionCleanupExecutor == null) return;
+        sessionCleanupExecutor.shutdownNow();
+        sessionCleanupExecutor = null;
+    }
+
+    private void closeExpiredHttpSessions() {
+        try {
+            var expired = httpSessions.expireIdleSessions(HTTP_SESSION_IDLE_TIMEOUT_NANOS);
+            if (expired.isEmpty() || project.isDisposed()) return;
+
+            AgentTabTracker tracker = AgentTabTracker.getInstance(project);
+            for (String sessionId : expired) {
+                tracker.closeOwnedTerminalTabs(
+                    McpSessionRegistry.ownerKey("http", sessionId));
+            }
+            LOG.info("Expired " + expired.size() + " idle MCP HTTP session(s)");
+        } catch (RuntimeException e) {
+            LOG.warn("Failed to expire idle MCP HTTP sessions", e);
+        }
+    }
+
+    /**
+     * Refreshes activity after a request completes. If DELETE or idle expiry won a race with an
+     * in-flight tool call, close any terminal that the call created after session termination.
+     */
+    private void finishHttpRequest(@NotNull String ownerKey) {
+        if (!ownerKey.startsWith(HTTP_OWNER_PREFIX)
+            || ownerKey.equals(HTTP_OWNER_PREFIX + "invalid-request")) {
+            return;
+        }
+        String sessionId = ownerKey.substring(HTTP_OWNER_PREFIX.length());
+        if (!httpSessions.touch(sessionId) && !project.isDisposed()) {
+            AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(ownerKey);
+        }
+    }
+
+    private void closeAllHttpSessions() {
+        AgentTabTracker tracker = AgentTabTracker.getInstance(project);
+        for (String sessionId : httpSessions.drainSessions()) {
+            tracker.closeOwnedTerminalTabs(
+                McpSessionRegistry.ownerKey("http", sessionId));
         }
     }
 
