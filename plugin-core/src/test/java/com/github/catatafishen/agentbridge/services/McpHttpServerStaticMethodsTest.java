@@ -172,6 +172,7 @@ class McpHttpServerStaticMethodsTest {
             String sessionId = resolution.newSessionId();
 
             assertNotNull(sessionId);
+            assertEquals(McpHttpServer.HttpOwnerKind.INITIALIZE, resolution.kind());
             assertEquals("http:" + sessionId, resolution.ownerKey());
             assertNull(responseHeaders.getFirst(McpHttpServer.MCP_SESSION_ID_HEADER));
 
@@ -184,13 +185,17 @@ class McpHttpServerStaticMethodsTest {
             McpHttpServer.HttpOwnerResolution established = server.resolveHttpOwner(exchange,
                 "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}");
             assertNotNull(established);
+            assertEquals(McpHttpServer.HttpOwnerKind.ESTABLISHED, established.kind());
             assertEquals(resolution.ownerKey(), established.ownerKey());
             assertNull(established.newSessionId());
         }
 
         @Test
         void failedInitializeDoesNotPublishOrRetainSession() throws Exception {
-            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            Project project = mock(Project.class);
+            AgentTabTracker tracker = mock(AgentTabTracker.class);
+            when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+            McpHttpServer server = new McpHttpServer(project);
             Headers requestHeaders = new Headers();
             Headers responseHeaders = new Headers();
             HttpExchange exchange = exchange(requestHeaders, responseHeaders,
@@ -202,6 +207,7 @@ class McpHttpServerStaticMethodsTest {
             assertFalse(server.completeInitialization(exchange, resolution,
                 "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602}}"));
             assertNull(responseHeaders.getFirst(McpHttpServer.MCP_SESSION_ID_HEADER));
+            verify(tracker).closeOwnedTerminalTabs(resolution.ownerKey());
 
             requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, resolution.newSessionId());
             assertNull(server.resolveHttpOwner(exchange,
@@ -242,7 +248,8 @@ class McpHttpServerStaticMethodsTest {
                 server.resolveHttpOwner(exchange, "{broken");
 
             assertNotNull(owner);
-            assertEquals("http:invalid-request", owner.ownerKey());
+            assertEquals(McpHttpServer.HttpOwnerKind.INVALID, owner.kind());
+            assertNull(owner.ownerKey());
             assertNull(owner.newSessionId());
             assertTrue(server.completeInitialization(exchange, owner, null));
         }
@@ -379,8 +386,6 @@ class McpHttpServerStaticMethodsTest {
             clearInvocations(tracker);
             invokePrivate(server, "finishHttpRequest", new Class<?>[]{String.class},
                 "sse:foreign");
-            invokePrivate(server, "finishHttpRequest", new Class<?>[]{String.class},
-                "http:invalid-request");
             verifyNoInteractions(tracker);
         }
 

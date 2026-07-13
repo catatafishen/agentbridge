@@ -47,7 +47,18 @@ public final class AgentTabTracker implements Disposable {
     private record TabRef(String toolWindowId, String tabName) {
     }
 
-    private record TerminalRef(String ownerId, String terminalId, Content content) {
+    private record TerminalRef(
+        String ownerId,
+        String terminalId,
+        Content content,
+        long trackedSequence
+    ) {
+    }
+
+    private record OpenTerminalSnapshot(
+        List<Content> contents,
+        long pruneThroughSequence
+    ) {
     }
 
     /**
@@ -65,6 +76,7 @@ public final class AgentTabTracker implements Disposable {
     private final Supplier<List<Content>> openTerminalContents;
     private final List<TabRef> trackedTabs = new ArrayList<>();
     private final List<TerminalRef> trackedTerminals = new ArrayList<>();
+    private long terminalSequence;
 
     public AgentTabTracker(@NotNull Project project) {
         this(project, () -> readOpenTerminalContents(project));
@@ -106,7 +118,8 @@ public final class AgentTabTracker implements Disposable {
                 "Terminal content is already owned by another MCP session");
         }
         String terminalId = UUID.randomUUID().toString();
-        trackedTerminals.add(new TerminalRef(ownerId, terminalId, content));
+        trackedTerminals.add(new TerminalRef(
+            ownerId, terminalId, content, ++terminalSequence));
         return terminalId;
     }
 
@@ -120,9 +133,9 @@ public final class AgentTabTracker implements Disposable {
         @Nullable String terminalId,
         @Nullable String tabName
     ) {
-        List<Content> open = openTerminalContents.get();
+        OpenTerminalSnapshot snapshot = snapshotOpenTerminals();
         synchronized (this) {
-            pruneClosedTerminals(open);
+            pruneClosedTerminals(snapshot);
             if (terminalId != null) {
                 for (TerminalRef ref : trackedTerminals) {
                     if (ref.ownerId().equals(ownerId) && ref.terminalId().equals(terminalId)) {
@@ -149,9 +162,9 @@ public final class AgentTabTracker implements Disposable {
     }
 
     public @NotNull List<AgentTerminal> listOpenTerminals(@NotNull String ownerId) {
-        List<Content> open = openTerminalContents.get();
+        OpenTerminalSnapshot snapshot = snapshotOpenTerminals();
         synchronized (this) {
-            pruneClosedTerminals(open);
+            pruneClosedTerminals(snapshot);
             List<AgentTerminal> result = new ArrayList<>();
             for (TerminalRef ref : trackedTerminals) {
                 if (ref.ownerId().equals(ownerId)) {
@@ -167,9 +180,9 @@ public final class AgentTabTracker implements Disposable {
     }
 
     public int countOpenTerminalTabs() {
-        List<Content> open = openTerminalContents.get();
+        OpenTerminalSnapshot snapshot = snapshotOpenTerminals();
         synchronized (this) {
-            pruneClosedTerminals(open);
+            pruneClosedTerminals(snapshot);
             return trackedTerminals.size();
         }
     }
@@ -178,9 +191,9 @@ public final class AgentTabTracker implements Disposable {
      * Enforces both the per-owner reuse policy and a project-wide resource safety cap.
      */
     public boolean hasOpenTerminalCapacity(@NotNull String ownerId) {
-        List<Content> open = openTerminalContents.get();
+        OpenTerminalSnapshot snapshot = snapshotOpenTerminals();
         synchronized (this) {
-            pruneClosedTerminals(open);
+            pruneClosedTerminals(snapshot);
             int ownerCount = 0;
             for (TerminalRef ref : trackedTerminals) {
                 if (ref.ownerId().equals(ownerId)) ownerCount++;
@@ -248,8 +261,22 @@ public final class AgentTabTracker implements Disposable {
         return new AgentTerminal(ref.terminalId(), ref.content());
     }
 
-    private synchronized void pruneClosedTerminals(@NotNull List<Content> open) {
-        trackedTerminals.removeIf(ref -> !containsIdentity(open, ref.content()));
+    /**
+     * Captures the tracker generation before the potentially blocking EDT snapshot. Terminals
+     * registered while that snapshot is in flight must not be pruned against stale contents.
+     */
+    private @NotNull OpenTerminalSnapshot snapshotOpenTerminals() {
+        long pruneThroughSequence;
+        synchronized (this) {
+            pruneThroughSequence = terminalSequence;
+        }
+        return new OpenTerminalSnapshot(openTerminalContents.get(), pruneThroughSequence);
+    }
+
+    private synchronized void pruneClosedTerminals(@NotNull OpenTerminalSnapshot snapshot) {
+        trackedTerminals.removeIf(ref ->
+            ref.trackedSequence() <= snapshot.pruneThroughSequence()
+                && !containsIdentity(snapshot.contents(), ref.content()));
     }
 
     private static boolean containsIdentity(@NotNull Content[] contents, @NotNull Content target) {
