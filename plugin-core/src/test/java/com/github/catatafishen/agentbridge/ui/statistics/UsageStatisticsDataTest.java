@@ -17,11 +17,11 @@ class UsageStatisticsDataTest {
 
     private static final UsageStatisticsData.DailyAgentStats STAT1 =
         new UsageStatisticsData.DailyAgentStats(
-            LocalDate.of(2024, 1, 1), "copilot", 5, 1000, 2000, 10, 5000, 50, 20, 1.5);
+            LocalDate.of(2024, 1, 1), "copilot", 5, 1000, 2000, 10, 5000, 50, 20);
 
     private static final UsageStatisticsData.DailyAgentStats STAT2 =
         new UsageStatisticsData.DailyAgentStats(
-            LocalDate.of(2024, 1, 2), "claude-cli", 3, 500, 1000, 8, 3000, 30, 10, 0.5);
+            LocalDate.of(2024, 1, 2), "claude-cli", 3, 500, 1000, 8, 3000, 30, 10);
 
     private static UsageStatisticsData.StatisticsSnapshot snapshotOf(
         List<UsageStatisticsData.DailyAgentStats> stats) {
@@ -38,7 +38,7 @@ class UsageStatisticsDataTest {
     @Test
     void dailyAgentStats_constructableAndFieldsAccessible() {
         var stat = new UsageStatisticsData.DailyAgentStats(
-            LocalDate.of(2024, 1, 1), "copilot", 5, 1000, 2000, 10, 5000, 50, 20, 1.5);
+            LocalDate.of(2024, 1, 1), "copilot", 5, 1000, 2000, 10, 5000, 50, 20);
         assertEquals(LocalDate.of(2024, 1, 1), stat.date());
         assertEquals("copilot", stat.agentId());
         assertEquals(5, stat.turns());
@@ -48,7 +48,6 @@ class UsageStatisticsDataTest {
         assertEquals(5000, stat.durationMs());
         assertEquals(50, stat.linesAdded());
         assertEquals(20, stat.linesRemoved());
-        assertEquals(1.5, stat.premiumRequests());
     }
 
     // ── StatisticsSnapshot aggregations (tests 1–5) ────────────────────
@@ -77,12 +76,6 @@ class UsageStatisticsDataTest {
         assertEquals(8000, snapshot.totalDurationMs()); // 5000 + 3000
     }
 
-    @Test
-    void totalPremiumRequests() {
-        var snapshot = snapshotOf(List.of(STAT1, STAT2));
-        assertEquals(2.0, snapshot.totalPremiumRequests(), 0.001); // 1.5 + 0.5
-    }
-
     // ── StatisticsSnapshot edge cases (tests 6–7) ──────────────────────
 
     @Test
@@ -92,7 +85,6 @@ class UsageStatisticsDataTest {
         assertEquals(0, snapshot.totalTokens());
         assertEquals(0, snapshot.totalToolCalls());
         assertEquals(0, snapshot.totalDurationMs());
-        assertEquals(0.0, snapshot.totalPremiumRequests(), 0.001);
     }
 
     @Test
@@ -102,7 +94,6 @@ class UsageStatisticsDataTest {
         assertEquals(3000, snapshot.totalTokens()); // 1000 + 2000
         assertEquals(10, snapshot.totalToolCalls());
         assertEquals(5000, snapshot.totalDurationMs());
-        assertEquals(1.5, snapshot.totalPremiumRequests(), 0.001);
     }
 
     // ── TimeRange labels (tests 8–11) ───────────────────────────────────
@@ -170,8 +161,7 @@ class UsageStatisticsDataTest {
 
     @Test
     void metric_displayNames() {
-        assertEquals("Premium Requests", UsageStatisticsData.Metric.PREMIUM_REQUESTS.displayName());
-        assertEquals("Turns", UsageStatisticsData.Metric.TURNS.displayName());
+        assertEquals("Prompts", UsageStatisticsData.Metric.PROMPTS.displayName());
         assertEquals("Tokens", UsageStatisticsData.Metric.TOKENS.displayName());
         assertEquals("Tool Calls", UsageStatisticsData.Metric.TOOL_CALLS.displayName());
         assertEquals("Code Changes (lines)", UsageStatisticsData.Metric.CODE_CHANGES.displayName());
@@ -181,7 +171,7 @@ class UsageStatisticsDataTest {
     @Test
     void metric_allValuesHaveNonEmptyDisplayNames() {
         UsageStatisticsData.Metric[] values = UsageStatisticsData.Metric.values();
-        assertEquals(6, values.length);
+        assertEquals(5, values.length);
         for (UsageStatisticsData.Metric metric : values) {
             assertNotNull(metric.displayName(), metric.name() + " has null displayName");
             assertFalse(metric.displayName().isEmpty(), metric.name() + " has empty displayName");

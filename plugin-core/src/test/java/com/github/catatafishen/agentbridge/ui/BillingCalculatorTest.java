@@ -75,65 +75,6 @@ class BillingCalculatorTest {
         assertEquals("50 tok · $0.001", result);
     }
 
-    // ── parseMultiplier ───────────────────────────────────────────────
-
-    @Test
-    void parseMultiplier_integerWithX_parsesCorrectly() {
-        assertEquals(3.0, BillingCalculator.INSTANCE.parseMultiplier("3x"));
-    }
-
-    @Test
-    void parseMultiplier_decimalWithX_parsesCorrectly() {
-        assertEquals(0.33, BillingCalculator.INSTANCE.parseMultiplier("0.33x"));
-    }
-
-    @Test
-    void parseMultiplier_oneX_returnsOne() {
-        assertEquals(1.0, BillingCalculator.INSTANCE.parseMultiplier("1x"));
-    }
-
-    @Test
-    void parseMultiplier_noSuffix_parsesAsNumber() {
-        assertEquals(5.0, BillingCalculator.INSTANCE.parseMultiplier("5"));
-    }
-
-    @Test
-    void parseMultiplier_invalidString_returnsDefault() {
-        assertEquals(1.0, BillingCalculator.INSTANCE.parseMultiplier("abc"));
-    }
-
-    @Test
-    void parseMultiplier_emptyString_returnsDefault() {
-        assertEquals(1.0, BillingCalculator.INSTANCE.parseMultiplier(""));
-    }
-
-    // ── formatPremium ─────────────────────────────────────────────────
-
-    @Test
-    void formatPremium_wholeNumber_returnsInteger() {
-        assertEquals("3", BillingCalculator.INSTANCE.formatPremium(3.0));
-    }
-
-    @Test
-    void formatPremium_fractionalNumber_returnsOneDecimal() {
-        assertEquals("2.5", BillingCalculator.INSTANCE.formatPremium(2.5));
-    }
-
-    @Test
-    void formatPremium_zero_returnsZero() {
-        assertEquals("0", BillingCalculator.INSTANCE.formatPremium(0.0));
-    }
-
-    @Test
-    void formatPremium_largeWholeNumber_returnsInteger() {
-        assertEquals("100", BillingCalculator.INSTANCE.formatPremium(100.0));
-    }
-
-    @Test
-    void formatPremium_smallFraction_returnsOneDecimal() {
-        assertEquals("0.1", BillingCalculator.INSTANCE.formatPremium(0.1));
-    }
-
     // ── buildGraphTooltip ─────────────────────────────────────────────
 
     @Test

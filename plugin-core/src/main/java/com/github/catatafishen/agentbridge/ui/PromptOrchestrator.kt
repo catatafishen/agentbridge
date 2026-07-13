@@ -25,12 +25,6 @@ data class PromptOrchestratorCallbacks(
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
     val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?) -> Unit,
-    /**
-     * Reports the multiplier of the just-completed turn so the side panel's "Last turn"
-     * section can display the correct premium-request weight. Always called once at turn
-     * completion; the multiplier may be null/empty when unknown (handled as 1.0 downstream).
-     */
-    val onTimerSetLastTurnMultiplier: (multiplier: String?) -> Unit,
     val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
@@ -598,17 +592,9 @@ class PromptOrchestrator(
         pendingBanner = null
 
         val client = agentManager.client
-        if (client.supportsMultiplier()) {
-            val multiplier = getModelMultiplier(turnModelId)
-            consolePanel().finishResponse(turnToolCallCount, turnModelId, multiplier ?: "")
-            billing.recordTurnCompleted(multiplier)
-            callbacks.onTimerSetLastTurnMultiplier(multiplier)
-            callbacks.onTimerRecordUsage(0, 0, 0.0)
-        } else {
-            consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
-            callbacks.onTimerSetLastTurnMultiplier(null)
-            callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
-        }
+        consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+        billing.recordTurnCompleted()
+        callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
 
         val codeChanges = CodeChangeTracker.getAndClear()
         if (codeChanges[0] > 0 || codeChanges[1] > 0) {
@@ -627,12 +613,11 @@ class PromptOrchestrator(
         }
 
         val turnDuration = System.currentTimeMillis() - turnStartedAt
-        val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
         val turnEndGitBranch = captureGitBranch()
         val stats = TurnStatsData(
             turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
-            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
+            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, "",
             commitHashes, turnStartGitBranch, turnEndGitBranch, pendingPromptEntryId
         )
 
@@ -1140,13 +1125,6 @@ class PromptOrchestrator(
             emptyList()
         }
     }
-
-    private fun getModelMultiplier(modelId: String): String? =
-        try {
-            agentManager.client.getModelMultiplier(modelId)
-        } catch (_: Exception) {
-            null
-        }
 
     private fun detectQuickReplies(responseText: String): List<String> =
         PromptErrorClassifier.detectQuickReplies(responseText)

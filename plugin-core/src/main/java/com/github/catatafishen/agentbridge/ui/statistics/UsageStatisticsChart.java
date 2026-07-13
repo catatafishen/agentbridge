@@ -167,8 +167,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
 
     static long extractMetricValue(UsageStatisticsData.Metric metric, UsageStatisticsData.DailyAgentStats stats) {
         return switch (metric) {
-            case PREMIUM_REQUESTS -> Math.round(stats.premiumRequests());
-            case TURNS -> stats.turns();
+            case PROMPTS -> stats.turns();
             case TOKENS -> stats.inputTokens() + stats.outputTokens();
             case TOOL_CALLS -> stats.toolCalls();
             case CODE_CHANGES -> stats.linesAdded() + stats.linesRemoved();

@@ -306,37 +306,6 @@ public abstract class AbstractClient {
     }
 
     /**
-     * Extract a multiplier/tier string from model metadata (e.g. "2x").
-     */
-    public @Nullable String getModelMultiplier(@NotNull Model model) {
-        return null;
-    }
-
-    /**
-     * Returns the pricing multiplier label for the given model ID (e.g. "1x", "2x"),
-     * or {@code null} if the multiplier is not available for this model.
-     * Default implementation looks up the model in {@link #getAvailableModels()} and calls
-     * {@link #getModelMultiplier(Model)}.
-     */
-    @Nullable
-    public String getModelMultiplier(@NotNull String modelId) {
-        for (Model m : getAvailableModels()) {
-            if (modelId.equals(m.id())) {
-                return getModelMultiplier(m);
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Whether this client supports per-model premium-request multipliers.
-     * Default: {@code false}.
-     */
-    public boolean supportsMultiplier() {
-        return false;
-    }
-
-    /**
      * Whether this agent's model data can be grouped by provider in the model picker.
      * When {@code true}, the UI renders models in collapsible provider sections
      * with a favorites feature.

@@ -26,7 +26,7 @@ erDiagram
         TEXT started_at
         TEXT ended_at
         TEXT model
-        REAL token_multiplier
+        REAL token_multiplier "legacy: retained for backwards compat, no longer read by statistics"
         INTEGER input_tokens
         INTEGER output_tokens
         REAL cost_usd

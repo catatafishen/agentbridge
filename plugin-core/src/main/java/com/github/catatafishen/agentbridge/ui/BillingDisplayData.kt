@@ -13,5 +13,4 @@ data class BillingDisplayData(
     val overagePermitted: Boolean,
     val resetDate: String,
     val sessionRequests: Int,
-    val sessionPremiumRequests: Double,
 )

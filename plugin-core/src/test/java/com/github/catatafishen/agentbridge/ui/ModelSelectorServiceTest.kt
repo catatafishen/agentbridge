@@ -256,24 +256,6 @@ class ModelSelectorServiceTest {
     }
 
     @Nested
-    inner class GetModelMultiplier {
-
-        @Test
-        fun `client returns value`() {
-            `when`(client.getModelMultiplier("gpt-4o")).thenReturn("2x")
-
-            assertEquals("2x", service.getModelMultiplier("gpt-4o"))
-        }
-
-        @Test
-        fun `client throws returns null`() {
-            `when`(client.getModelMultiplier("gpt-4o")).thenThrow(RuntimeException("fail"))
-
-            assertNull(service.getModelMultiplier("gpt-4o"))
-        }
-    }
-
-    @Nested
     inner class Reset {
 
         @Test

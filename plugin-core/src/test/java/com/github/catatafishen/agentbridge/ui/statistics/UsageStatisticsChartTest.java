@@ -83,11 +83,11 @@ class UsageStatisticsChartTest {
 
     private static UsageStatisticsData.DailyAgentStats makeStats(
         int turns, long inputTokens, long outputTokens, int toolCalls,
-        long durationMs, int linesAdded, int linesRemoved, double premiumRequests) {
+        long durationMs, int linesAdded, int linesRemoved) {
         return new UsageStatisticsData.DailyAgentStats(
             LocalDate.of(2025, 1, 1), "agent-1",
             turns, inputTokens, outputTokens, toolCalls,
-            durationMs, linesAdded, linesRemoved, premiumRequests
+            durationMs, linesAdded, linesRemoved
         );
     }
 
@@ -201,8 +201,8 @@ class UsageStatisticsChartTest {
     }
 
     @Test
-    void formatYLabel_turnsMetricDelegatesToCompact() throws Exception {
-        assertEquals("42", invokeFormatYLabel(42, UsageStatisticsData.Metric.TURNS));
+    void formatYLabel_promptsMetricDelegatesToCompact() throws Exception {
+        assertEquals("42", invokeFormatYLabel(42, UsageStatisticsData.Metric.PROMPTS));
     }
 
     // ── fillDateRange tests ─────────────────────────────────────────────
@@ -279,43 +279,29 @@ class UsageStatisticsChartTest {
     // ── extractMetricValue tests ────────────────────────────────────────
 
     @Test
-    void extractMetricValue_premiumRequests() {
-        var stats = makeStats(0, 0, 0, 0, 0, 0, 0, 3.7);
-        assertEquals(4L, UsageStatisticsChart.extractMetricValue(
-            UsageStatisticsData.Metric.PREMIUM_REQUESTS, stats));
-    }
-
-    @Test
-    void extractMetricValue_premiumRequests_roundsDown() {
-        var stats = makeStats(0, 0, 0, 0, 0, 0, 0, 3.2);
-        assertEquals(3L, UsageStatisticsChart.extractMetricValue(
-            UsageStatisticsData.Metric.PREMIUM_REQUESTS, stats));
-    }
-
-    @Test
-    void extractMetricValue_turns() {
-        var stats = makeStats(15, 0, 0, 0, 0, 0, 0, 0);
+    void extractMetricValue_prompts() {
+        var stats = makeStats(15, 0, 0, 0, 0, 0, 0);
         assertEquals(15L, UsageStatisticsChart.extractMetricValue(
-            UsageStatisticsData.Metric.TURNS, stats));
+            UsageStatisticsData.Metric.PROMPTS, stats));
     }
 
     @Test
     void extractMetricValue_tokens_sumsInputAndOutput() {
-        var stats = makeStats(0, 1000, 2500, 0, 0, 0, 0, 0);
+        var stats = makeStats(0, 1000, 2500, 0, 0, 0, 0);
         assertEquals(3500L, UsageStatisticsChart.extractMetricValue(
             UsageStatisticsData.Metric.TOKENS, stats));
     }
 
     @Test
     void extractMetricValue_toolCalls() {
-        var stats = makeStats(0, 0, 0, 42, 0, 0, 0, 0);
+        var stats = makeStats(0, 0, 0, 42, 0, 0, 0);
         assertEquals(42L, UsageStatisticsChart.extractMetricValue(
             UsageStatisticsData.Metric.TOOL_CALLS, stats));
     }
 
     @Test
     void extractMetricValue_codeChanges_sumsAddedAndRemoved() {
-        var stats = makeStats(0, 0, 0, 0, 0, 100, 50, 0);
+        var stats = makeStats(0, 0, 0, 0, 0, 100, 50);
         assertEquals(150L, UsageStatisticsChart.extractMetricValue(
             UsageStatisticsData.Metric.CODE_CHANGES, stats));
     }
@@ -323,7 +309,7 @@ class UsageStatisticsChartTest {
     @Test
     void extractMetricValue_agentTime_convertsToMinutes() {
         // 90_000 ms = 1.5 minutes → integer division → 1 minute
-        var stats = makeStats(0, 0, 0, 0, 90_000, 0, 0, 0);
+        var stats = makeStats(0, 0, 0, 0, 90_000, 0, 0);
         assertEquals(1L, UsageStatisticsChart.extractMetricValue(
             UsageStatisticsData.Metric.AGENT_TIME, stats));
     }
@@ -331,14 +317,14 @@ class UsageStatisticsChartTest {
     @Test
     void extractMetricValue_agentTime_exactMinutes() {
         // 120_000 ms = 2 minutes
-        var stats = makeStats(0, 0, 0, 0, 120_000, 0, 0, 0);
+        var stats = makeStats(0, 0, 0, 0, 120_000, 0, 0);
         assertEquals(2L, UsageStatisticsChart.extractMetricValue(
             UsageStatisticsData.Metric.AGENT_TIME, stats));
     }
 
     @Test
     void extractMetricValue_allMetricsCovered() {
-        // Verify all six metrics produce distinct correct values from a single stats record
+        // Verify all metrics produce distinct correct values from a single stats record
         var stats = new UsageStatisticsData.DailyAgentStats(
             LocalDate.of(2025, 1, 1), "test",
             10,         // turns
@@ -347,14 +333,11 @@ class UsageStatisticsChartTest {
             25,         // toolCalls
             180_000,    // durationMs (3 min)
             40,         // linesAdded
-            20,         // linesRemoved
-            2.0         // premiumRequests
+            20          // linesRemoved
         );
 
-        assertEquals(2L, UsageStatisticsChart.extractMetricValue(
-            UsageStatisticsData.Metric.PREMIUM_REQUESTS, stats));
         assertEquals(10L, UsageStatisticsChart.extractMetricValue(
-            UsageStatisticsData.Metric.TURNS, stats));
+            UsageStatisticsData.Metric.PROMPTS, stats));
         assertEquals(800L, UsageStatisticsChart.extractMetricValue(
             UsageStatisticsData.Metric.TOKENS, stats));
         assertEquals(25L, UsageStatisticsChart.extractMetricValue(

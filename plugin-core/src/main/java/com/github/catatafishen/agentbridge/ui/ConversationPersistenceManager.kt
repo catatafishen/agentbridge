@@ -70,7 +70,7 @@ class ConversationPersistenceManager(
         fun restoreTurnStats(stats: RestoredSessionStats, lastTurn: RestoredLastTurnStats)
 
         /** Restore billing counters */
-        fun restoreBillingCounters(turnCount: Int, totalPremiumMultiplier: Double)
+        fun restoreBillingCounters(turnCount: Int)
 
         /** Get the active agent's display name */
         fun getAgentDisplayName(): String
@@ -98,8 +98,7 @@ class ConversationPersistenceManager(
         val costUsd: Double?,
         val toolCalls: Int,
         val linesAdded: Int,
-        val linesRemoved: Int,
-        val multiplier: String
+        val linesRemoved: Int
     )
 
     // ------------------------------------------------------------------
@@ -190,10 +189,7 @@ class ConversationPersistenceManager(
         val lastStats = turnStatsList.lastOrNull() ?: return
         val cb = callbacks ?: return
 
-        val totalPremium = turnStatsList.sumOf {
-            BillingCalculator.parseMultiplier(it.multiplier.ifEmpty { "1x" })
-        }
-        cb.restoreBillingCounters(turnStatsList.size, totalPremium)
+        cb.restoreBillingCounters(turnStatsList.size)
 
         cb.restoreTurnStats(
             RestoredSessionStats(
@@ -213,8 +209,7 @@ class ConversationPersistenceManager(
                 costUsd = if (lastStats.costUsd > 0.0) lastStats.costUsd else null,
                 toolCalls = lastStats.toolCallCount,
                 linesAdded = lastStats.linesAdded,
-                linesRemoved = lastStats.linesRemoved,
-                multiplier = lastStats.multiplier
+                linesRemoved = lastStats.linesRemoved
             )
         )
     }

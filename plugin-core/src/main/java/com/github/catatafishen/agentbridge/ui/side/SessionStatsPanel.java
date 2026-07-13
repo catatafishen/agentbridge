@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
-import com.github.catatafishen.agentbridge.ui.BillingCalculator;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
 import com.github.catatafishen.agentbridge.ui.BillingManager;
 import com.github.catatafishen.agentbridge.ui.ProcessingTimerPanel;
@@ -46,7 +45,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private static final DateTimeFormatter RESET_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
     private static final String LABEL_TOKENS = "Tokens";
-    private static final String LABEL_PREMIUM_REQ = "Premium req";
     private static final String TOKENS_IN_OUT_SEP = " in / ";
     private static final String TOKENS_OUT_SUFFIX = " out";
     private static final String LABEL_TOOL_CALLS = "Tool calls";
@@ -202,7 +200,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         int row = 0;
         addStatRow(statsGrid, row++, "Time", timeValue);
-        turnsRow = addStatRow(statsGrid, row++, "Turns", turnsValue);
+        turnsRow = addStatRow(statsGrid, row++, "Prompts", turnsValue);
         sessionToolsRow = addStatRow(statsGrid, row++, LABEL_TOOL_CALLS, toolsValue);
         linesRow = addStatRow(statsGrid, row++, LABEL_LINES_CHANGED, linesValue);
 
@@ -218,7 +216,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             JBUI.scale(2), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
         int dRow = 0;
         addStatRow(todayGrid, dRow++, "Time", todayTimeValue);
-        addStatRow(todayGrid, dRow++, "Turns", todayTurnsValue);
+        addStatRow(todayGrid, dRow++, "Prompts", todayTurnsValue);
         todayToolsRow = addStatRow(todayGrid, dRow++, LABEL_TOOL_CALLS, todayToolsValue);
         todayLinesRow = addStatRow(todayGrid, dRow++, LABEL_LINES_CHANGED, todayLinesValue);
         todayTokensRow = addStatRowWithLabel(todayGrid, dRow, todayTokensRowLabel, todayTokensValue);
@@ -500,7 +498,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             return;
         }
         turnSection.setVisible(true);
-        turnHeaderLabel.setText(snap.isRunning() ? "Active turn" : "Last turn");
+        turnHeaderLabel.setText(snap.isRunning() ? "Active prompt" : "Last prompt");
 
         // Time as a labeled row (mirrors the Session section) instead of inline in the
         // header — the two sections now align visually.
@@ -516,42 +514,23 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     }
 
     private void refreshTurnTokenCostRows(SessionStatsSnapshot snap) {
-        if (snap.getMultiplierMode()) {
-            turnTokensRowLabel.setText(LABEL_PREMIUM_REQ);
-            turnTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getTurnPremiumRequests()));
+        long turnTok = (long) snap.getTurnInputTokens() + snap.getTurnOutputTokens();
+        Double turnCost = snap.getTurnCostUsd();
+        boolean hasTurnUsage = turnTok > 0 || (turnCost != null && turnCost > 0.0);
+        if (hasTurnUsage) {
+            turnTokensRowLabel.setText(LABEL_TOKENS);
+            turnTokensValue.setText(
+                TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
+                    TOKENS_IN_OUT_SEP +
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
+                    TOKENS_OUT_SUFFIX);
             turnTokensRow.setVisible(true);
-            // Reuse the cost row to show raw token counts when available (billing model is being retired).
-            long turnTok = (long) snap.getTurnInputTokens() + snap.getTurnOutputTokens();
-            if (turnTok > 0) {
-                turnCostRowLabel.setText(LABEL_TOKENS);
-                turnCostValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                turnCostRow.setVisible(true);
-            } else {
-                turnCostRow.setVisible(false);
-            }
+            turnCostRowLabel.setText("Cost");
+            turnCostValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(turnCost != null ? turnCost : 0.0));
+            turnCostRow.setVisible(true);
         } else {
-            long turnTok = (long) snap.getTurnInputTokens() + snap.getTurnOutputTokens();
-            Double turnCost = snap.getTurnCostUsd();
-            boolean hasTurnUsage = turnTok > 0 || (turnCost != null && turnCost > 0.0);
-            if (hasTurnUsage) {
-                turnTokensRowLabel.setText(LABEL_TOKENS);
-                turnTokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                turnTokensRow.setVisible(true);
-                turnCostRowLabel.setText("Cost");
-                turnCostValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(turnCost != null ? turnCost : 0.0));
-                turnCostRow.setVisible(true);
-            } else {
-                turnTokensRow.setVisible(false);
-                turnCostRow.setVisible(false);
-            }
+            turnTokensRow.setVisible(false);
+            turnCostRow.setVisible(false);
         }
     }
 
@@ -566,40 +545,21 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         long sessionLines = (long) snap.getSessionLinesAdded() + snap.getSessionLinesRemoved();
         linesRow.setVisible(sessionLines > 0);
 
-        if (snap.getMultiplierMode()) {
-            tokensRowLabel.setText(LABEL_PREMIUM_REQ);
-            tokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getLocalSessionPremiumRequests()));
+        long totalTokens = snap.getSessionInputTokens() + snap.getSessionOutputTokens();
+        if (totalTokens > 0 || snap.getSessionCostUsd() > 0.0) {
+            tokensRowLabel.setText(LABEL_TOKENS);
+            tokensValue.setText(
+                TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
+                    TOKENS_IN_OUT_SEP +
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
+                    TOKENS_OUT_SUFFIX);
             tokensRow.setVisible(true);
-            // Reuse the cost row to show raw token counts when available (billing model is being retired).
-            long totalTokens = snap.getSessionInputTokens() + snap.getSessionOutputTokens();
-            if (totalTokens > 0) {
-                costRowLabel.setText(LABEL_TOKENS);
-                costValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                costRow.setVisible(true);
-            } else {
-                costRow.setVisible(false);
-            }
+            costRowLabel.setText("Cost");
+            costValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(snap.getSessionCostUsd()));
+            costRow.setVisible(true);
         } else {
-            long totalTokens = snap.getSessionInputTokens() + snap.getSessionOutputTokens();
-            if (totalTokens > 0 || snap.getSessionCostUsd() > 0.0) {
-                tokensRowLabel.setText(LABEL_TOKENS);
-                tokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                tokensRow.setVisible(true);
-                costRowLabel.setText("Cost");
-                costValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(snap.getSessionCostUsd()));
-                costRow.setVisible(true);
-            } else {
-                tokensRow.setVisible(false);
-                costRow.setVisible(false);
-            }
+            tokensRow.setVisible(false);
+            costRow.setVisible(false);
         }
     }
 
@@ -692,7 +652,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                     long linesAdded = 0;
                     long linesRemoved = 0;
                     long durMs = 0;
-                    double premium = 0.0;
                     for (ConversationStatistics.DailyTurnAggregate r : rows) {
                         turns += r.turns();
                         tools += r.toolCalls();
@@ -701,16 +660,11 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                         linesAdded += r.linesAdded();
                         linesRemoved += r.linesRemoved();
                         durMs += r.durationMs();
-                        premium += r.premiumRequests();
                     }
                     TodayTotals totals = new TodayTotals(turns, tools, inTok, outTok,
-                        linesAdded, linesRemoved, durMs, premium);
+                        linesAdded, linesRemoved, durMs);
                     todayTotalsRef.set(totals);
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        // Read multiplier mode on the EDT at apply time. The pooled-thread
-                        // DB query may take long enough that the user has switched providers
-                        // by the time we repaint — using the *current* snapshot avoids
-                        // rendering "Today" totals in the stale mode.
                         SessionStatsSnapshot currentSnap = timerPanel.getSessionSnapshot();
                         applyTodayTotals(totals, currentSnap);
                     });
@@ -723,7 +677,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     }
 
     private void applyTodayTotals(TodayTotals t, SessionStatsSnapshot snap) {
-        boolean multiplierMode = snap.getMultiplierMode();
         // Add the active turn's elapsed time on top of the DB-persisted aggregate so the
         // "Today — Time" counter ticks live during a turn, matching Turn / Session timers.
         // Persisted rows only land in turn_stats on stop(), so without this addend the row
@@ -749,36 +702,17 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         todayLinesValue.setText(lines > 0 ? linesHtml : "0");
         todayLinesRow.setVisible(lines > 0);
 
-        if (multiplierMode) {
-            long totalTokens = t.inputTokens() + t.outputTokens();
-            if (totalTokens > 0) {
-                // Show token counts when available — prefer them over premium requests since the
-                // multiplier billing model is being retired.
-                todayTokensRowLabel.setText(LABEL_TOKENS);
-                todayTokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(t.inputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(t.outputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                todayTokensRow.setVisible(true);
-            } else {
-                todayTokensRowLabel.setText(LABEL_PREMIUM_REQ);
-                todayTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(t.premiumRequests()));
-                todayTokensRow.setVisible(true);
-            }
+        long totalTokens = t.inputTokens() + t.outputTokens();
+        if (totalTokens > 0) {
+            todayTokensRowLabel.setText(LABEL_TOKENS);
+            todayTokensValue.setText(
+                TimerDisplayFormatter.INSTANCE.formatTokenCount(t.inputTokens()) +
+                    TOKENS_IN_OUT_SEP +
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(t.outputTokens()) +
+                    TOKENS_OUT_SUFFIX);
+            todayTokensRow.setVisible(true);
         } else {
-            long totalTokens = t.inputTokens() + t.outputTokens();
-            if (totalTokens > 0) {
-                todayTokensRowLabel.setText(LABEL_TOKENS);
-                todayTokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(t.inputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(t.outputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                todayTokensRow.setVisible(true);
-            } else {
-                todayTokensRow.setVisible(false);
-            }
+            todayTokensRow.setVisible(false);
         }
     }
 
@@ -794,10 +728,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         long outputTokens,
         long linesAdded,
         long linesRemoved,
-        long durationMs,
-        double premiumRequests
+        long durationMs
     ) {
-        static final TodayTotals EMPTY = new TodayTotals(0, 0, 0, 0, 0, 0, 0, 0.0);
+        static final TodayTotals EMPTY = new TodayTotals(0, 0, 0, 0, 0, 0, 0);
     }
 
 }

@@ -42,25 +42,19 @@ class BillingManager {
     var localSessionRequests = 0
         private set
 
-    /** Weighted premium request count — accounts for model multipliers (e.g., 3x for Opus). */
-    var localSessionPremiumRequests = 0.0
-        private set
-
     /** Reset the local session counter (called on session reset). */
     fun resetLocalCounter() {
         localSessionRequests = 0
-        localSessionPremiumRequests = 0.0
     }
 
     /**
      * Restores session-level counters from persisted turn history.
-     * Called once during conversation replay so the side-panel "Premium req" total reflects
-     * the entire session (matching the restored "Turns" count) instead of starting at 0
-     * after each IDE restart.
+     * Called once during conversation replay so the side-panel totals reflect the entire
+     * session (matching the restored "Prompts" count) instead of starting at 0 after each
+     * IDE restart.
      */
-    fun restoreSessionCounters(turns: Int, premium: Double) {
+    fun restoreSessionCounters(turns: Int) {
         localSessionRequests = turns
-        localSessionPremiumRequests = premium
         previousUsedCount = estimatedUsed()
         ApplicationManager.getApplication().invokeLater {
             refreshUsageDisplay()
@@ -110,13 +104,10 @@ class BillingManager {
     /**
      * Records a turn completion — increments the local request counter
      * and updates the UI immediately (no API call needed).
-     * @param multiplier the model's cost multiplier string (e.g., "1x", "3x", "0.33x"),
-     *   or {@code null} if unknown (falls back to 1x for internal accounting).
      */
-    fun recordTurnCompleted(multiplier: String? = null) {
+    fun recordTurnCompleted() {
         localSessionRequests++
-        localSessionPremiumRequests += parseMultiplier(multiplier ?: "1x")
-        LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests, premium=$localSessionPremiumRequests (mult=$multiplier)")
+        LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests")
         val estimated = estimatedUsed()
         val shouldAnimate = previousUsedCount in 0..<estimated
         previousUsedCount = estimated
@@ -127,14 +118,8 @@ class BillingManager {
         }
     }
 
-    /** Estimated total used = initial API value + weighted premium requests. */
-    private fun estimatedUsed(): Int = lastBillingUsed + localSessionPremiumRequests.toInt()
-
-    /** Parses "3x" → 3.0, "0.33x" → 0.33, defaults to 1.0. */
-    private fun parseMultiplier(multiplier: String): Double = BillingCalculator.parseMultiplier(multiplier)
-
-    /** Formats premium count: shows integer if whole, one decimal otherwise. */
-    private fun formatPremium(value: Double): String = BillingCalculator.formatPremium(value)
+    /** Estimated total used = initial API value + prompts issued this session. */
+    private fun estimatedUsed(): Int = lastBillingUsed + localSessionRequests
 
     /**
      * Fetches billing data from the GitHub API on a pooled thread and updates the UI.
@@ -209,21 +194,16 @@ class BillingManager {
                     costLabel.text = ""
                 } else {
                     usageLabel.text = "$estimated / $lastBillingEntitlement"
-                    val premiumDisplay = if (localSessionPremiumRequests != localSessionRequests.toDouble())
-                        "$localSessionRequests turns ≈ ${formatPremium(localSessionPremiumRequests)} premium"
-                    else "$localSessionRequests this session"
                     usageLabel.toolTipText =
-                        "Premium requests this cycle ($premiumDisplay) \u2022 Click to show session usage$polledSuffix"
-                    val estimatedRemaining = lastBillingRemaining - localSessionPremiumRequests.toInt()
+                        "Prompts this cycle ($localSessionRequests this session) \u2022 Click to show session usage$polledSuffix"
+                    val estimatedRemaining = lastBillingRemaining - localSessionRequests
                     updateCostLabel(estimatedRemaining, lastBillingOveragePermitted)
                 }
             }
 
             UsageDisplayMode.SESSION -> {
-                val premiumSuffix = if (localSessionPremiumRequests != localSessionRequests.toDouble())
-                    " (≈${formatPremium(localSessionPremiumRequests)} premium)" else ""
-                usageLabel.text = "$localSessionRequests session$premiumSuffix"
-                usageLabel.toolTipText = "Premium requests this session \u2022 Click to show monthly usage$polledSuffix"
+                usageLabel.text = "$localSessionRequests session"
+                usageLabel.toolTipText = "Prompts this session \u2022 Click to show monthly usage$polledSuffix"
                 costLabel.text = ""
             }
         }
@@ -238,11 +218,10 @@ class BillingManager {
         estimatedUsed = estimatedUsed(),
         entitlement = lastBillingEntitlement,
         unlimited = lastBillingUnlimited,
-        estimatedRemaining = lastBillingRemaining - localSessionPremiumRequests.toInt(),
+        estimatedRemaining = lastBillingRemaining - localSessionRequests,
         overagePermitted = lastBillingOveragePermitted,
         resetDate = lastBillingResetDate,
         sessionRequests = localSessionRequests,
-        sessionPremiumRequests = localSessionPremiumRequests,
     )
 
     private fun updateUsageGraph(used: Int, entitlement: Int, unlimited: Boolean, resetDate: String) {
@@ -349,7 +328,7 @@ class BillingManager {
 
         val content = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             border = JBUI.Borders.empty(10)
-            add(JBLabel("Premium Request Usage").apply {
+            add(JBLabel("Prompt usage").apply {
                 font = font.deriveFont(Font.BOLD, JBUI.Fonts.label().size2D + 1)
                 border = JBUI.Borders.emptyBottom(8)
             }, BorderLayout.NORTH)

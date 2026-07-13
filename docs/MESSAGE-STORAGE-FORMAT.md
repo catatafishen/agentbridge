@@ -115,7 +115,7 @@ Used to restore session-level aggregates (elapsed time, tokens, lines changed) o
 | `linesAdded`        | int           | 0       | Lines of code added this turn                |
 | `linesRemoved`      | int           | 0       | Lines of code removed this turn              |
 | `model`             | string        | `""`    | Model ID (e.g., `"claude-opus-4.6"`)         |
-| `multiplier`        | string        | `""`    | Billing multiplier (e.g., `"1x"`, `"5x"`)    |
+| `multiplier`        | string        | `""`    | Legacy billing multiplier (always `""` on new writes) |
 | `totalDurationMs`   | long          | 0       | Running aggregate: total elapsed time        |
 | `totalInputTokens`  | long          | 0       | Running aggregate: total input tokens        |
 | `totalOutputTokens` | long          | 0       | Running aggregate: total output tokens       |

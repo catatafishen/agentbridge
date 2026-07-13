@@ -99,11 +99,6 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
         return String.format("%.1fM", value / 1_000_000.0);
     }
 
-    private static String formatPremium(double value) {
-        if (value < 100) return String.format("%.1f", value);
-        return String.format("%.0f", value);
-    }
-
     private final class BarCanvas extends JPanel {
         private transient List<UsageStatisticsData.BranchStats> branches = List.of();
 
@@ -124,8 +119,7 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
         private String formatValue(double value) {
             return switch (metric) {
                 case AGENT_TIME -> formatDuration((long) value);
-                case TOKENS, TOOL_CALLS, CODE_CHANGES, TURNS -> formatLargeNumber((long) value);
-                case PREMIUM_REQUESTS -> formatPremium(value);
+                case TOKENS, TOOL_CALLS, CODE_CHANGES, PROMPTS -> formatLargeNumber((long) value);
             };
         }
 

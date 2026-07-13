@@ -752,10 +752,7 @@ class ChatToolWindowContent(
     }
 
     private fun createSessionStatsPanel(): com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel {
-        processingTimerPanel = ProcessingTimerPanel(
-            supportsMultiplier = { agentManager.isClientHealthy && agentManager.client.supportsMultiplier() },
-            localPremiumRequests = { billing.localSessionPremiumRequests }
-        )
+        processingTimerPanel = ProcessingTimerPanel()
         com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)
 
         val statsUsageGraphPanel = UsageGraphPanel().apply {
@@ -1202,9 +1199,6 @@ class ChatToolWindowContent(
         },
         onTimerRecordUsage = { i, o, c ->
             if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
-        },
-        onTimerSetLastTurnMultiplier = { mult ->
-            if (::processingTimerPanel.isInitialized) processingTimerPanel.setLastTurnMultiplier(mult)
         },
         onTimerSetCodeChangeStats = { a, r ->
             if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
@@ -2353,10 +2347,8 @@ class ChatToolWindowContent(
 
         override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
             val group = DefaultActionGroup()
-            val supportsMultiplier = agentManager.client.supportsMultiplier()
             loadedModels.forEachIndexed { index, model ->
-                val cost = if (supportsMultiplier) modelSelector.getModelMultiplier(model.id()) else null
-                group.add(createModelSelectionAction(model, index, cost))
+                group.add(createModelSelectionAction(model, index))
             }
             return group
         }
@@ -2415,9 +2407,8 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun createModelSelectionAction(model: Model, index: Int, cost: String?): AnAction {
-        val label = if (cost != null) "${model.name()}  ($cost)" else model.name()
-        return object : AnAction(label) {
+    private fun createModelSelectionAction(model: Model, index: Int): AnAction {
+        return object : AnAction(model.name()) {
             override fun actionPerformed(e: AnActionEvent) {
                 if (index == selectedModelIndex) return
                 modelSelector.selectModelById(model.id())
@@ -2539,14 +2530,13 @@ class ChatToolWindowContent(
                         costUsd = lastTurn.costUsd,
                         toolCalls = lastTurn.toolCalls,
                         linesAdded = lastTurn.linesAdded,
-                        linesRemoved = lastTurn.linesRemoved,
-                        multiplier = lastTurn.multiplier
+                        linesRemoved = lastTurn.linesRemoved
                     )
                 )
             }
 
-            override fun restoreBillingCounters(turnCount: Int, totalPremiumMultiplier: Double) {
-                billing.restoreSessionCounters(turnCount, totalPremiumMultiplier)
+            override fun restoreBillingCounters(turnCount: Int) {
+                billing.restoreSessionCounters(turnCount)
             }
 
             override fun getAgentDisplayName(): String = agentManager.activeProfile.displayName

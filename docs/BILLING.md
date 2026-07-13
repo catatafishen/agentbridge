@@ -2,8 +2,16 @@
 
 ## Overview
 
-The plugin displays real-time Copilot premium request usage in the toolbar,
+The plugin displays real-time Copilot prompt usage in the toolbar,
 including a sparkline graph, usage counter, cost estimates, and overage warnings.
+
+> **Terminology note.** Copilot originally metered usage in *premium requests*
+> where each turn could count as some multiple (`1x`, `3x`, `0.33x`, ...). GitHub
+> has since retired that concept: every prompt counts as a single request, so
+> "premium requests" and "prompts" now mean the same thing. The plugin uses
+> **prompts** throughout its UI. The API field name (`premium_interactions`)
+> and legacy DB/JSONL columns (`token_multiplier`, `multiplier`) are still read
+> for backwards compatibility but are no longer surfaced to the user.
 
 ## Data Source
 
@@ -39,8 +47,8 @@ This is the same endpoint used by VS Code's Copilot status bar and the
 }
 ```
 
-The `premium_interactions` quota is the one that matters — it tracks premium
-model requests (Claude Opus, GPT-5, etc.) against the monthly entitlement.
+The `premium_interactions` quota is the one that matters — despite the legacy
+name, it now tracks one unit per prompt against the monthly entitlement.
 
 ### Prerequisites
 
@@ -94,9 +102,9 @@ model requests (Claude Opus, GPT-5, etc.) against the monthly entitlement.
 
 Between API polls, the plugin tracks usage locally:
 
-1. Each agent turn completion calls `billing.recordTurnCompleted(multiplier)`
-2. The multiplier (e.g., "1x", "3x", "0.33x") comes from the model metadata
-3. `estimatedUsed = lastApiUsed + localSessionPremiumRequests`
+1. Each agent turn completion calls `billing.recordTurnCompleted()`
+2. Every prompt counts as one request against the entitlement
+3. `estimatedUsed = lastApiUsed + localSessionPrompts`
 4. Labels update immediately — no API call needed
 5. Usage change triggers a brief green→normal color pulse animation
 
@@ -104,8 +112,8 @@ Between API polls, the plugin tracks usage locally:
 
 Click the usage label to toggle between:
 
-- **Monthly**: `639 / 1500` — total used vs. entitlement
-- **Session**: `5 session (≈15 premium)` — current session's local count
+- **Monthly**: `639 / 1500` — total prompts used vs. entitlement
+- **Session**: `5 session` — prompts issued in the current session
 
 ### Overage Tracking
 
