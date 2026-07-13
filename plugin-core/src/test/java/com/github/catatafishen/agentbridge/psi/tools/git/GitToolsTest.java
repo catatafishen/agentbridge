@@ -88,6 +88,15 @@ public class GitToolsTest extends BasePlatformTestCase {
         git("commit", "-m", "chore: initial test commit");
     }
 
+    @Override
+    protected void tearDown() throws Exception {
+        try {
+            disposeAsyncGitServices();
+        } finally {
+            super.tearDown();
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────
 
     /**
