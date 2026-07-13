@@ -6,7 +6,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Lists active terminal tabs.
+ * Lists terminal resources owned by the current MCP session.
  */
 public final class ListTerminalsTool extends TerminalTool {
 
@@ -26,7 +26,8 @@ public final class ListTerminalsTool extends TerminalTool {
 
     @Override
     public @NotNull String description() {
-        return "List active terminal tabs with their names. Use tab names with read_terminal_output or write_terminal_input.";
+        return "List terminal resources owned by this MCP session, including stable terminal_id values. "
+            + "Other agents' terminals and user-created tabs are intentionally hidden.";
     }
 
     @Override
@@ -42,11 +43,11 @@ public final class ListTerminalsTool extends TerminalTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         StringBuilder result = new StringBuilder();
-
-        appendOpenTerminalTabs(result);
+        appendOwnedTerminalTabs(result);
         appendDefaultShell(result);
-
-        result.append("\n\nTip: Reuse AgentBridge tabs with run_in_terminal, interact with read_terminal_output/write_terminal_input, and close unused tabs with close_terminal.");
+        result.append(
+            "\n\nTip: Reuse terminals with run_in_terminal. Use terminal_id with "
+                + "read_terminal_output, write_terminal_input, and close_terminal.");
         return result.toString();
     }
 

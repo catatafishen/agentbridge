@@ -4,28 +4,36 @@ import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.terminal.CloseTerminalTool;
 import com.github.catatafishen.agentbridge.psi.tools.terminal.TerminalToolFactory;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.content.Content;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * Tests for terminal-tab lifecycle helpers in {@link AgentTabTracker}.
- * Uses mocked IntelliJ types and does not require an IDE fixture or runtime.
+ * Tests owner-scoped terminal lifecycle behavior in {@link AgentTabTracker}.
+ * Uses mocked IntelliJ content objects and an injected open-content snapshot.
  */
-@DisplayName("AgentTabTracker terminal lifecycle")
+@DisplayName("AgentTabTracker terminal ownership")
 class AgentTabTrackerCountMatchingTest {
 
+    private final List<Content> openContents = new ArrayList<>();
+    private AgentTabTracker tracker;
+
+    @BeforeEach
+    void setUp() {
+        tracker = new AgentTabTracker(mock(Project.class), () -> List.copyOf(openContents));
+    }
+
     @Test
-    @DisplayName("terminal factory exposes a destructive close_terminal tool")
-    void terminalFactoryExposesCloseTerminal() {
+    @DisplayName("terminal factory exposes terminal_id on the close tool")
+    void terminalFactoryExposesTerminalId() {
         List<Tool> tools = TerminalToolFactory.create(mock(Project.class));
         assertEquals(5, tools.size());
 
@@ -37,125 +45,158 @@ class AgentTabTrackerCountMatchingTest {
         assertEquals("close_terminal", closeTool.id());
         assertEquals(Tool.Kind.EDIT, closeTool.kind());
         assertTrue(closeTool.isDestructive());
+        assertTrue(closeTool.inputSchema().toString().contains("\"terminal_id\""));
         assertTrue(closeTool.inputSchema().toString().contains("\"tab_name\""));
     }
 
     @Test
-    @DisplayName("returns 0 when no tabs are tracked")
-    void returnsZeroWhenNoTrackedTabs() {
-        assertEquals(0, AgentTabTracker.countMatchingTerminalTabs(
-            List.of(), List.of("Agent: build", "Local")));
+    @DisplayName("same tab name resolves to each owner's exact content")
+    void isolatesDuplicateDisplayNamesByOwner() {
+        Content first = openContent("Agent: test");
+        Content second = openContent("Agent: test");
+        String firstId = tracker.trackTerminal("session-a", first);
+        String secondId = tracker.trackTerminal("session-b", second);
+
+        assertNotEquals(firstId, secondId);
+        assertSame(first, tracker.findOwnedTerminal("session-a", null, "Agent: test").content());
+        assertSame(second, tracker.findOwnedTerminal("session-b", null, "Agent: test").content());
     }
 
     @Test
-    @DisplayName("returns 0 when no open tabs match a tracked tab")
-    void returnsZeroWhenNoOpenTabsMatch() {
-        assertEquals(0, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent: build"), List.of("Local", "zsh")));
+    @DisplayName("one IDE terminal content cannot be owned by two sessions")
+    void rejectsDuplicateContentOwnership() {
+        Content content = openContent("Agent: shared");
+        tracker.trackTerminal("session-a", content);
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalStateException.class,
+            () -> tracker.trackTerminal("session-b", content));
+
+        assertTrue(error.getMessage().contains("another MCP session"));
     }
 
     @Test
-    @DisplayName("counts an exact display-name match")
-    void countsExactMatch() {
-        assertEquals(1, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent: build"), List.of("Agent: build", "Local")));
+    @DisplayName("terminal id cannot cross an owner boundary")
+    void rejectsForeignTerminalId() {
+        Content first = openContent("Agent: build");
+        Content second = openContent("Agent: build");
+        String firstId = tracker.trackTerminal("session-a", first);
+        String secondId = tracker.trackTerminal("session-b", second);
+
+        assertSame(first, tracker.findOwnedTerminal("session-a", firstId, null).content());
+        assertNull(tracker.findOwnedTerminal("session-a", secondId, null));
+        assertNull(tracker.findOwnedTerminal("session-b", firstId, null));
     }
 
     @Test
-    @DisplayName("matches an IDE-appended numeric suffix")
-    void matchesDisplayNameWithSuffix() {
-        assertEquals(1, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent: build"), List.of("Agent: build (1)")));
+    @DisplayName("omitted selector resolves the owner's most recent open terminal")
+    void resolvesMostRecentTerminalWithinOwner() {
+        Content first = openContent("Agent: first");
+        Content foreign = openContent("Agent: foreign");
+        Content latest = openContent("Agent: latest");
+        tracker.trackTerminal("session-a", first);
+        tracker.trackTerminal("session-b", foreign);
+        String latestId = tracker.trackTerminal("session-a", latest);
+
+        AgentTabTracker.AgentTerminal resolved =
+            tracker.findOwnedTerminal("session-a", null, null);
+
+        assertEquals(latestId, resolved.terminalId());
+        assertSame(latest, resolved.content());
     }
 
     @Test
-    @DisplayName("does not match unrelated tabs containing the tracked name")
-    void ignoresPartialNameCollisions() {
-        assertEquals(0, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent"), List.of("Agent: build")));
+    @DisplayName("closed IDE content is pruned from ownership and capacity")
+    void prunesClosedContent() {
+        Content content = openContent("Agent: closed");
+        String terminalId = tracker.trackTerminal("session-a", content);
+        openContents.remove(content);
+
+        assertNull(tracker.findOwnedTerminal("session-a", terminalId, null));
+        assertEquals(0, tracker.countOpenTerminalTabs("session-a"));
+        assertTrue(tracker.hasOpenTerminalCapacity("session-a"));
     }
 
     @Test
-    @DisplayName("counts each open tab at most once")
-    void countsEachOpenTabOnce() {
-        assertEquals(1, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent: build", "Agent: build"), List.of("Agent: build")));
-    }
-
-    @Test
-    @DisplayName("counts multiple distinct matching open tabs")
-    void countsMultipleMatchingTabs() {
-        assertEquals(2, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent: build", "Agent: test"),
-            List.of("Agent: build", "Agent: test", "Local")));
-    }
-
-    @Test
-    @DisplayName("ignores null display names")
-    void ignoresNullDisplayNames() {
-        assertEquals(1, AgentTabTracker.countMatchingTerminalTabs(
-            List.of("Agent: build"), Arrays.asList(null, "Agent: build", null)));
-    }
-
-    @Test
-    @DisplayName("returns the newest tracked terminal that is still open")
-    void returnsMostRecentOpenTrackedTerminal() {
-        assertEquals("Agent: test (1)", AgentTabTracker.mostRecentOpenTerminalTabName(
-            List.of("Agent: build", "Agent: closed", "Agent: test"),
-            List.of("Local", "Agent: build", "Agent: test (1)")));
-    }
-
-    @Test
-    @DisplayName("returns null when every tracked terminal is closed")
-    void returnsNullWhenNoTrackedTerminalIsOpen() {
-        assertNull(AgentTabTracker.mostRecentOpenTerminalTabName(
-            List.of("Agent: build"), List.of("Local")));
-    }
-
-    @Test
-    @DisplayName("allows creation below the agent terminal limit")
-    void allowsCreationBelowLimit() {
+    @DisplayName("per-owner cap does not consume another owner's allowance")
+    void appliesPerOwnerCap() {
         assertEquals(3, AgentTabTracker.MAX_OPEN_AGENT_TERMINALS);
-        assertTrue(AgentTabTracker.hasTerminalCapacity(2));
+
+        for (int i = 0; i < AgentTabTracker.MAX_OPEN_AGENT_TERMINALS; i++) {
+            tracker.trackTerminal("session-a", openContent("A-" + i));
+        }
+        tracker.trackTerminal("session-b", openContent("B"));
+
+        assertFalse(tracker.hasOpenTerminalCapacity("session-a"));
+        assertTrue(tracker.hasOpenTerminalCapacity("session-b"));
+        assertEquals(3, tracker.countOpenTerminalTabs("session-a"));
+        assertEquals(1, tracker.countOpenTerminalTabs("session-b"));
     }
 
     @Test
-    @DisplayName("blocks creation at the agent terminal limit")
-    void blocksCreationAtLimit() {
-        assertFalse(AgentTabTracker.hasTerminalCapacity(3));
+    @DisplayName("global cap prevents unbounded terminals across short-lived owners")
+    void appliesGlobalCap() {
+        assertTrue(AgentTabTracker.MAX_OPEN_AGENT_TERMINALS_GLOBAL
+            > AgentTabTracker.MAX_OPEN_AGENT_TERMINALS);
+
+        for (int i = 0; i < AgentTabTracker.MAX_OPEN_AGENT_TERMINALS_GLOBAL; i++) {
+            tracker.trackTerminal("session-" + i, openContent("Terminal-" + i));
+        }
+
+        assertFalse(tracker.hasOpenTerminalCapacity("new-session"));
     }
 
     @Test
-    @DisplayName("tracks, recognizes, and untracks an AgentBridge terminal")
-    void tracksAndUntracksTerminalByDisplayName() {
-        AgentTabTracker tracker = new AgentTabTracker(mock(Project.class));
-        tracker.trackTab("Terminal", "Agent: build");
-        tracker.trackTab("Run", "Agent: tests");
+    @DisplayName("untracking requires both owner and stable id")
+    void untracksOnlyMatchingOwner() {
+        Content content = openContent("Agent: build");
+        String terminalId = tracker.trackTerminal("session-a", content);
 
-        assertTrue(tracker.isTrackedTerminalTab("Agent: build"));
-        assertTrue(tracker.isTrackedTerminalTab("Agent: build (2)"));
-        assertFalse(tracker.isTrackedTerminalTab("Agent: tests"));
+        tracker.untrackTerminal("session-b", terminalId);
+        assertSame(content, tracker.findOwnedTerminal("session-a", terminalId, null).content());
 
-        tracker.untrackTerminalTab("Agent: build (2)");
-
-        assertFalse(tracker.isTrackedTerminalTab("Agent: build"));
+        tracker.untrackTerminal("session-a", terminalId);
+        assertNull(tracker.findOwnedTerminal("session-a", terminalId, null));
     }
 
     @Test
-    @DisplayName("dispose forgets tracked terminals")
-    void disposeForgetsTrackedTerminals() {
-        AgentTabTracker tracker = new AgentTabTracker(mock(Project.class));
-        tracker.trackTab("Terminal", "Agent: build");
+    @DisplayName("list exposes only terminals owned by the caller")
+    void listsOnlyOwnedTerminals() {
+        Content first = openContent("A");
+        Content second = openContent("B");
+        tracker.trackTerminal("session-a", first);
+        tracker.trackTerminal("session-b", second);
+
+        List<AgentTabTracker.AgentTerminal> owned = tracker.listOpenTerminals("session-a");
+
+        assertEquals(1, owned.size());
+        assertSame(first, owned.getFirst().content());
+    }
+
+    @Test
+    @DisplayName("dispose forgets every owner")
+    void disposeForgetsTerminals() {
+        tracker.trackTerminal("session-a", openContent("A"));
+        tracker.trackTerminal("session-b", openContent("B"));
 
         tracker.dispose();
 
-        assertFalse(tracker.isTrackedTerminalTab("Agent: build"));
+        assertTrue(tracker.listOpenTerminals("session-a").isEmpty());
+        assertTrue(tracker.listOpenTerminals("session-b").isEmpty());
     }
 
     @Test
-    @DisplayName("terminal matching rejects null names")
-    void terminalMatchingRejectsNullNames() {
+    @DisplayName("legacy name matching still supports IDE numeric suffixes")
+    void matchesDisplayNameSuffix() {
+        assertTrue(AgentTabTracker.terminalTabNameMatches("Agent: build", "Agent: build (2)"));
+        assertFalse(AgentTabTracker.terminalTabNameMatches("Agent", "Agent: build"));
         assertFalse(AgentTabTracker.terminalTabNameMatches(null, "Agent: build"));
-        assertFalse(AgentTabTracker.terminalTabNameMatches("Agent: build", null));
+    }
+
+    private Content openContent(String displayName) {
+        Content content = mock(Content.class);
+        when(content.getDisplayName()).thenReturn(displayName);
+        openContents.add(content);
+        return content;
     }
 }
