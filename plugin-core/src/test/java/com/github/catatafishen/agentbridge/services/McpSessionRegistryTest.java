@@ -16,8 +16,10 @@ class McpSessionRegistryTest {
     void managesSessionLifecycle() {
         McpSessionRegistry registry = new McpSessionRegistry();
 
-        String first = registry.openSession();
-        String second = registry.openSession();
+        String first = registry.openSession(Integer.MAX_VALUE);
+        String second = registry.openSession(Integer.MAX_VALUE);
+        assertNotNull(first);
+        assertNotNull(second);
 
         assertNotEquals(first, second);
         assertTrue(registry.touch(first));
@@ -32,8 +34,10 @@ class McpSessionRegistryTest {
     @DisplayName("drain returns every live session and empties the registry")
     void drainsSessions() {
         McpSessionRegistry registry = new McpSessionRegistry();
-        String first = registry.openSession();
-        String second = registry.openSession();
+        String first = registry.openSession(Integer.MAX_VALUE);
+        String second = registry.openSession(Integer.MAX_VALUE);
+        assertNotNull(first);
+        assertNotNull(second);
 
         Set<String> drained = registry.drainSessions();
 
@@ -47,9 +51,11 @@ class McpSessionRegistryTest {
     void expiresIdleSessions() {
         AtomicLong now = new AtomicLong();
         McpSessionRegistry registry = new McpSessionRegistry(now::get);
-        String first = registry.openSession();
+        String first = registry.openSession(Integer.MAX_VALUE);
         now.set(10);
-        String second = registry.openSession();
+        String second = registry.openSession(Integer.MAX_VALUE);
+        assertNotNull(first);
+        assertNotNull(second);
         now.set(20);
         assertTrue(registry.touch(first));
         assertFalse(registry.touch("unknown"));
@@ -62,6 +68,37 @@ class McpSessionRegistryTest {
         now.set(35);
         assertEquals(Set.of(first), registry.expireIdleSessions(10));
         assertFalse(registry.touch(first));
+    }
+
+    @Test
+    @DisplayName("returns null once the cap is reached and admits again after a close")
+    void enforcesSessionCap() {
+        McpSessionRegistry registry = new McpSessionRegistry();
+
+        String first = registry.openSession(2);
+        String second = registry.openSession(2);
+        assertNotNull(first);
+        assertNotNull(second);
+
+        assertNull(registry.openSession(2),
+            "third openSession call should be rejected when the cap is 2");
+
+        assertTrue(registry.closeSession(first));
+
+        String third = registry.openSession(2);
+        assertNotNull(third,
+            "closing a session should free a slot for the next openSession call");
+        assertNotEquals(second, third);
+    }
+
+    @Test
+    @DisplayName("treats non-positive caps as unlimited so misconfigured settings don't lock out clients")
+    void nonPositiveCapMeansUnlimited() {
+        McpSessionRegistry registry = new McpSessionRegistry();
+
+        assertNotNull(registry.openSession(0));
+        assertNotNull(registry.openSession(-1));
+        assertNotNull(registry.openSession(-100));
     }
 
     @Test

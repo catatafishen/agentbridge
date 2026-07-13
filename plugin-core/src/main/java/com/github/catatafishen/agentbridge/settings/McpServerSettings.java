@@ -22,6 +22,27 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     private static final Logger LOG = Logger.getInstance(McpServerSettings.class);
     public static final int DEFAULT_PORT = 8642;
 
+    /**
+     * Default maximum number of concurrent Streamable-HTTP transport sessions the server will
+     * hold at once. Reached when a client keeps calling {@code initialize} without ever calling
+     * DELETE — the idle sweep still catches the leaked sessions after
+     * {@link #DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES}, but the cap guarantees a hard ceiling.
+     */
+    public static final int DEFAULT_MAX_OPEN_HTTP_SESSIONS = 64;
+
+    /**
+     * Default idle timeout for a Streamable-HTTP transport session, in minutes. Sessions with
+     * no activity for this long are expired and their owned terminal resources released.
+     */
+    public static final int DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES = 120;
+
+    /**
+     * Default project-wide cap on integrated terminal resources across all MCP sessions.
+     * Individual sessions are also bounded by
+     * {@link com.github.catatafishen.agentbridge.services.AgentTabTracker#MAX_OPEN_AGENT_TERMINALS}.
+     */
+    public static final int DEFAULT_MAX_AGENT_TERMINALS_GLOBAL = 12;
+
     private State myState = new State();
 
     public static McpServerSettings getInstance(@NotNull Project project) {
@@ -34,6 +55,49 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
     public void setPort(int port) {
         myState.port = port;
+    }
+
+    /**
+     * @return the maximum number of concurrent Streamable-HTTP transport sessions this project
+     * will hold. Coerces stored values below 1 to {@link #DEFAULT_MAX_OPEN_HTTP_SESSIONS} to
+     * survive a corrupted or migrated settings file.
+     */
+    public int getMaxOpenHttpSessions() {
+        return myState.maxOpenHttpSessions > 0
+            ? myState.maxOpenHttpSessions
+            : DEFAULT_MAX_OPEN_HTTP_SESSIONS;
+    }
+
+    public void setMaxOpenHttpSessions(int value) {
+        myState.maxOpenHttpSessions = value;
+    }
+
+    /**
+     * @return the idle timeout in minutes for a Streamable-HTTP transport session. Coerces
+     * stored values below 1 to {@link #DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES}.
+     */
+    public int getHttpSessionIdleTimeoutMinutes() {
+        return myState.httpSessionIdleTimeoutMinutes > 0
+            ? myState.httpSessionIdleTimeoutMinutes
+            : DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES;
+    }
+
+    public void setHttpSessionIdleTimeoutMinutes(int minutes) {
+        myState.httpSessionIdleTimeoutMinutes = minutes;
+    }
+
+    /**
+     * @return the project-wide cap on integrated terminals across all MCP sessions. Coerces
+     * stored values below 1 to {@link #DEFAULT_MAX_AGENT_TERMINALS_GLOBAL}.
+     */
+    public int getMaxAgentTerminalsGlobal() {
+        return myState.maxAgentTerminalsGlobal > 0
+            ? myState.maxAgentTerminalsGlobal
+            : DEFAULT_MAX_AGENT_TERMINALS_GLOBAL;
+    }
+
+    public void setMaxAgentTerminalsGlobal(int value) {
+        myState.maxAgentTerminalsGlobal = value;
     }
 
     /**
@@ -302,6 +366,9 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private String agentBubbleColorKey = null;
         private String bubbleStyle = "modern";
         private int contrastBoost = 0;
+        private int maxOpenHttpSessions = DEFAULT_MAX_OPEN_HTTP_SESSIONS;
+        private int httpSessionIdleTimeoutMinutes = DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES;
+        private int maxAgentTerminalsGlobal = DEFAULT_MAX_AGENT_TERMINALS_GLOBAL;
 
         public int getPort() {
             return port;
@@ -477,6 +544,30 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setContrastBoost(int contrastBoost) {
             this.contrastBoost = contrastBoost;
+        }
+
+        public int getMaxOpenHttpSessions() {
+            return maxOpenHttpSessions;
+        }
+
+        public void setMaxOpenHttpSessions(int maxOpenHttpSessions) {
+            this.maxOpenHttpSessions = maxOpenHttpSessions;
+        }
+
+        public int getHttpSessionIdleTimeoutMinutes() {
+            return httpSessionIdleTimeoutMinutes;
+        }
+
+        public void setHttpSessionIdleTimeoutMinutes(int httpSessionIdleTimeoutMinutes) {
+            this.httpSessionIdleTimeoutMinutes = httpSessionIdleTimeoutMinutes;
+        }
+
+        public int getMaxAgentTerminalsGlobal() {
+            return maxAgentTerminalsGlobal;
+        }
+
+        public void setMaxAgentTerminalsGlobal(int maxAgentTerminalsGlobal) {
+            this.maxAgentTerminalsGlobal = maxAgentTerminalsGlobal;
         }
 
     }

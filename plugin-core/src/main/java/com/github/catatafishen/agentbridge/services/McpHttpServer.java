@@ -36,8 +36,6 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private static final String APPLICATION_JSON = "application/json";
     static final String MCP_SESSION_ID_HEADER = "Mcp-Session-Id";
     private static final String MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
-    static final long HTTP_SESSION_IDLE_TIMEOUT_NANOS =
-        java.util.concurrent.TimeUnit.HOURS.toNanos(2);
     private static final long HTTP_SESSION_SWEEP_INTERVAL_MINUTES = 5;
     private static final String HTTP_OWNER_PREFIX = "http:";
     private static final String ALLOWED_REQUEST_HEADERS =
@@ -370,7 +368,15 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         }
 
         if (kind == McpSessionRegistry.RequestKind.INITIALIZE) {
-            String sessionId = httpSessions.openSession();
+            int cap = getMaxOpenHttpSessions();
+            String sessionId = httpSessions.openSession(cap);
+            if (sessionId == null) {
+                sendJsonRpcError(exchange, 503, -32000,
+                    "MCP session limit reached (" + cap + " concurrent sessions)."
+                        + " Close an existing session or raise the limit in"
+                        + " Settings → AgentBridge → MCP Server.");
+                return null;
+            }
             return HttpOwnerResolution.initialize(sessionId);
         }
 
@@ -471,7 +477,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
     private void closeExpiredHttpSessions() {
         try {
-            var expired = httpSessions.expireIdleSessions(HTTP_SESSION_IDLE_TIMEOUT_NANOS);
+            var expired = httpSessions.expireIdleSessions(getHttpSessionIdleTimeoutNanos());
             if (expired.isEmpty() || project.isDisposed()) return;
 
             AgentTabTracker tracker = AgentTabTracker.getInstance(project);
@@ -482,6 +488,34 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             LOG.info("Expired " + expired.size() + " idle MCP HTTP session(s)");
         } catch (RuntimeException e) {
             LOG.warn("Failed to expire idle MCP HTTP sessions", e);
+        }
+    }
+
+    private int getMaxOpenHttpSessions() {
+        McpServerSettings settings = tryGetSettings();
+        return settings != null
+            ? settings.getMaxOpenHttpSessions()
+            : McpServerSettings.DEFAULT_MAX_OPEN_HTTP_SESSIONS;
+    }
+
+    private long getHttpSessionIdleTimeoutNanos() {
+        McpServerSettings settings = tryGetSettings();
+        int minutes = settings != null
+            ? settings.getHttpSessionIdleTimeoutMinutes()
+            : McpServerSettings.DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES;
+        return java.util.concurrent.TimeUnit.MINUTES.toNanos(minutes);
+    }
+
+    /**
+     * Reads the persistent settings service for this project. Returns {@code null} when the
+     * service cannot be resolved (e.g. mock projects in unit tests) so callers can fall back
+     * to the shipping defaults without letting a test-only wiring quirk break production paths.
+     */
+    private @Nullable McpServerSettings tryGetSettings() {
+        try {
+            return McpServerSettings.getInstance(project);
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
