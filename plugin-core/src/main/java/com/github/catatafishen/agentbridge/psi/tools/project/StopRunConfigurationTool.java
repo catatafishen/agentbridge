@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -33,7 +34,8 @@ public final class StopRunConfigurationTool extends ProjectTool {
     @Override
     public @NotNull String description() {
         return "Stop a currently running run configuration by name. "
-            + "Matches the configuration name first; falls back to the tab display name. "
+            + "Matches the run tab display name (which is the configuration name for standard configs; "
+            + "may differ if the tab was renamed or the config uses a custom presentable name). "
             + "Returns an error listing currently running processes if the target is not found. "
             + "Use list_run_configurations to find config names, or run_configuration to restart.";
     }
@@ -70,10 +72,10 @@ public final class StopRunConfigurationTool extends ProjectTool {
 
     private String stopNamed(String name) {
         List<RunContentDescriptor> descriptors = RunContentManager.getInstance(project).getAllDescriptors();
-        RunContentDescriptor match = findRunning(descriptors, name);
+        RunContentDescriptor match = findByDisplayName(descriptors, name);
         if (match == null) {
             List<String> running = descriptors.stream()
-                .filter(d -> d.getProcessHandler() != null && !d.getProcessHandler().isProcessTerminated())
+                .filter(StopRunConfigurationTool::isRunning)
                 .map(d -> d.getDisplayName() != null ? d.getDisplayName() : "(unnamed)")
                 .toList();
             if (running.isEmpty()) {
@@ -82,19 +84,25 @@ public final class StopRunConfigurationTool extends ProjectTool {
             return "Error: '" + name + "' is not currently running. Currently running: "
                 + String.join(", ", running);
         }
-        match.getProcessHandler().destroyProcess();
+        var handler = match.getProcessHandler();
+        if (handler == null) {
+            return "Error: '" + name + "' has no process handler and cannot be stopped.";
+        }
+        handler.destroyProcess();
         return "Stopped run configuration: " + name;
     }
 
+    /**
+     * Matches a descriptor by its tab display name. This is the only stable, non-internal
+     * correlator between a {@link RunContentDescriptor} and a run configuration name — the
+     * precise accessor {@code RunContentDescriptor#getRunConfigurationName()} is marked
+     * {@code @ApiStatus.Internal} and cannot be used by third-party plugins, and the same
+     * restriction applies to {@code ExecutionManager#getRunningDescriptors}.
+     */
     @Nullable
-    private static RunContentDescriptor findRunning(List<RunContentDescriptor> descriptors, String name) {
-        // Prefer matching against the stored run-configuration name (precise)
+    private static RunContentDescriptor findByDisplayName(List<RunContentDescriptor> descriptors, String name) {
         for (RunContentDescriptor d : descriptors) {
-            if (name.equals(d.getRunConfigurationName()) && isRunning(d)) return d;
-        }
-        // Fall back to the tab display name
-        for (RunContentDescriptor d : descriptors) {
-            if (name.equals(d.getDisplayName()) && isRunning(d)) return d;
+            if (Objects.equals(name, d.getDisplayName()) && isRunning(d)) return d;
         }
         return null;
     }
