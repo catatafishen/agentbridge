@@ -10,7 +10,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -78,6 +80,18 @@ class McpHttpServerStaticMethodsTest {
         String result = callTruncateForLog(input);
         assertTrue(result.contains("[truncated 1 chars]"));
         assertTrue(result.startsWith("c".repeat(2000)));
+    }
+
+    @Test
+    void initializeResultRequiresAValidObjectResult() {
+        assertFalse(McpHttpServer.containsInitializeResult(null));
+        assertFalse(McpHttpServer.containsInitializeResult("{broken"));
+        assertFalse(McpHttpServer.containsInitializeResult("[]"));
+        assertFalse(McpHttpServer.containsInitializeResult("{}"));
+        assertFalse(McpHttpServer.containsInitializeResult("{\"result\":[]}"));
+        assertFalse(McpHttpServer.containsInitializeResult(
+            "{\"result\":{},\"error\":{\"code\":-32603}}"));
+        assertTrue(McpHttpServer.containsInitializeResult("{\"result\":{}}"));
     }
 
     // ── buildJsonRpcErrorResponse ──────────────────────────
@@ -208,6 +222,29 @@ class McpHttpServerStaticMethodsTest {
                 responseBody.toString(java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
             assertTrue(response.getAsJsonObject("error").get("message").getAsString()
                 .contains(McpHttpServer.MCP_SESSION_ID_HEADER));
+
+            Headers blankHeaders = new Headers();
+            blankHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, "   ");
+            HttpExchange blank = exchange(blankHeaders, new Headers(),
+                new ByteArrayOutputStream());
+            assertNull(server.resolveHttpOwner(blank,
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"));
+            verify(blank).sendResponseHeaders(eq(400), anyLong());
+        }
+
+        @Test
+        void malformedJsonUsesAnUnscopedProtocolErrorOwner() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            HttpExchange exchange = exchange(new Headers(), new Headers(),
+                new ByteArrayOutputStream());
+
+            McpHttpServer.HttpOwnerResolution owner =
+                server.resolveHttpOwner(exchange, "{broken");
+
+            assertNotNull(owner);
+            assertEquals("http:invalid-request", owner.ownerKey());
+            assertNull(owner.newSessionId());
+            assertTrue(server.completeInitialization(exchange, owner, null));
         }
 
         @Test
@@ -224,6 +261,174 @@ class McpHttpServerStaticMethodsTest {
             verify(exchange).sendResponseHeaders(eq(404), anyLong());
         }
 
+        @Test
+        void optionsRequestPublishesCorsContract() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            Headers responseHeaders = new Headers();
+            HttpExchange exchange = exchange(new Headers(), responseHeaders,
+                new ByteArrayOutputStream());
+            when(exchange.getRequestMethod()).thenReturn("OPTIONS");
+
+            invokePrivate(server, "handleMcp", new Class<?>[]{HttpExchange.class}, exchange);
+
+            assertEquals("*", responseHeaders.getFirst("Access-Control-Allow-Origin"));
+            assertEquals("POST, DELETE, OPTIONS",
+                responseHeaders.getFirst("Access-Control-Allow-Methods"));
+            assertTrue(responseHeaders.getFirst("Access-Control-Allow-Headers")
+                .contains(McpHttpServer.MCP_SESSION_ID_HEADER));
+            assertEquals(McpHttpServer.MCP_SESSION_ID_HEADER,
+                responseHeaders.getFirst("Access-Control-Expose-Headers"));
+            verify(exchange).sendResponseHeaders(204, -1);
+            verify(exchange).close();
+        }
+
+        @Test
+        void unsupportedHttpMethodIsRejected() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            HttpExchange exchange = exchange(new Headers(), new Headers(),
+                new ByteArrayOutputStream());
+            when(exchange.getRequestMethod()).thenReturn("PUT");
+
+            invokePrivate(server, "handleMcp", new Class<?>[]{HttpExchange.class}, exchange);
+
+            verify(exchange).sendResponseHeaders(405, -1);
+            verify(exchange).close();
+        }
+
+        @Test
+        void deleteRequiresAnEstablishedSession() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+            ByteArrayOutputStream missingBody = new ByteArrayOutputStream();
+            HttpExchange missing = exchange(new Headers(), new Headers(), missingBody);
+            when(missing.getRequestMethod()).thenReturn("DELETE");
+
+            invokePrivate(server, "handleMcp", new Class<?>[]{HttpExchange.class}, missing);
+
+            verify(missing).sendResponseHeaders(eq(400), anyLong());
+            assertTrue(missingBody.toString(java.nio.charset.StandardCharsets.UTF_8)
+                .contains(McpHttpServer.MCP_SESSION_ID_HEADER));
+
+            Headers unknownHeaders = new Headers();
+            unknownHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, "unknown");
+            HttpExchange unknown = exchange(unknownHeaders, new Headers(),
+                new ByteArrayOutputStream());
+            when(unknown.getRequestMethod()).thenReturn("DELETE");
+
+            invokePrivate(server, "handleMcp", new Class<?>[]{HttpExchange.class}, unknown);
+
+            verify(unknown).sendResponseHeaders(eq(404), anyLong());
+        }
+
+        @Test
+        void deleteClosesOnlyTheSessionOwnerResources() throws Exception {
+            Project project = mock(Project.class);
+            AgentTabTracker tracker = mock(AgentTabTracker.class);
+            when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+            McpHttpServer server = new McpHttpServer(project);
+            HttpExchange initialize = exchange(new Headers(), new Headers(),
+                new ByteArrayOutputStream());
+            McpHttpServer.HttpOwnerResolution owner = server.resolveHttpOwner(initialize,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}");
+            assertNotNull(owner);
+            assertTrue(server.completeInitialization(initialize, owner,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"));
+
+            Headers deleteHeaders = new Headers();
+            deleteHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, owner.newSessionId());
+            HttpExchange delete = exchange(deleteHeaders, new Headers(),
+                new ByteArrayOutputStream());
+            when(delete.getRequestMethod()).thenReturn("DELETE");
+
+            invokePrivate(server, "handleMcp", new Class<?>[]{HttpExchange.class}, delete);
+
+            verify(tracker).closeOwnedTerminalTabs(owner.ownerKey());
+            verify(delete).sendResponseHeaders(204, -1);
+            verify(delete).close();
+        }
+
+        @Test
+        void requestCompletionReleasesResourcesWhenSessionClosedMidCall() throws Exception {
+            Project project = mock(Project.class);
+            AgentTabTracker tracker = mock(AgentTabTracker.class);
+            when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+            McpHttpServer server = new McpHttpServer(project);
+            HttpExchange initialize = exchange(new Headers(), new Headers(),
+                new ByteArrayOutputStream());
+            McpHttpServer.HttpOwnerResolution owner = server.resolveHttpOwner(initialize,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}");
+            assertNotNull(owner);
+            assertTrue(server.completeInitialization(initialize, owner,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"));
+
+            invokePrivate(server, "finishHttpRequest", new Class<?>[]{String.class},
+                owner.ownerKey());
+            verifyNoInteractions(tracker);
+
+            Headers deleteHeaders = new Headers();
+            deleteHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, owner.newSessionId());
+            HttpExchange delete = exchange(deleteHeaders, new Headers(),
+                new ByteArrayOutputStream());
+            invokePrivate(server, "handleSessionDelete", new Class<?>[]{HttpExchange.class},
+                delete);
+            clearInvocations(tracker);
+
+            invokePrivate(server, "finishHttpRequest", new Class<?>[]{String.class},
+                owner.ownerKey());
+            verify(tracker).closeOwnedTerminalTabs(owner.ownerKey());
+
+            clearInvocations(tracker);
+            invokePrivate(server, "finishHttpRequest", new Class<?>[]{String.class},
+                "sse:foreign");
+            invokePrivate(server, "finishHttpRequest", new Class<?>[]{String.class},
+                "http:invalid-request");
+            verifyNoInteractions(tracker);
+        }
+
+        @Test
+        void cleanupExecutorStartsAndStopsWithoutLeakingAThread() throws Exception {
+            McpHttpServer server = new McpHttpServer(mock(Project.class));
+
+            invokePrivate(server, "startHttpSessionCleanup", new Class<?>[0]);
+            Field field = McpHttpServer.class.getDeclaredField("sessionCleanupExecutor");
+            field.setAccessible(true);
+            ScheduledExecutorService executor = (ScheduledExecutorService) field.get(server);
+            assertNotNull(executor);
+            assertFalse(executor.isShutdown());
+
+            invokePrivate(server, "closeExpiredHttpSessions", new Class<?>[0]);
+            invokePrivate(server, "stopHttpSessionCleanup", new Class<?>[0]);
+
+            assertTrue(executor.isShutdown());
+            assertNull(field.get(server));
+            invokePrivate(server, "stopHttpSessionCleanup", new Class<?>[0]);
+        }
+
+        @Test
+        void serverShutdownDrainsEveryHttpSessionOwner() throws Exception {
+            Project project = mock(Project.class);
+            AgentTabTracker tracker = mock(AgentTabTracker.class);
+            when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+            McpHttpServer server = new McpHttpServer(project);
+            Headers requestHeaders = new Headers();
+            HttpExchange exchange = exchange(requestHeaders, new Headers(),
+                new ByteArrayOutputStream());
+            McpHttpServer.HttpOwnerResolution first = server.resolveHttpOwner(exchange,
+                "{\"method\":\"initialize\"}");
+            McpHttpServer.HttpOwnerResolution second = server.resolveHttpOwner(exchange,
+                "{\"method\":\"initialize\"}");
+            assertNotNull(first);
+            assertNotNull(second);
+
+            invokePrivate(server, "closeAllHttpSessions", new Class<?>[0]);
+
+            verify(tracker).closeOwnedTerminalTabs(first.ownerKey());
+            verify(tracker).closeOwnedTerminalTabs(second.ownerKey());
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, first.newSessionId());
+            assertNull(server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+            verify(exchange).sendResponseHeaders(eq(404), anyLong());
+        }
+
         private HttpExchange exchange(
             Headers requestHeaders,
             Headers responseHeaders,
@@ -235,6 +440,17 @@ class McpHttpServerStaticMethodsTest {
             when(exchange.getResponseBody()).thenReturn(responseBody);
             return exchange;
         }
+    }
+
+    private static Object invokePrivate(
+        Object target,
+        String name,
+        Class<?>[] parameterTypes,
+        Object... args
+    ) throws Exception {
+        Method method = target.getClass().getDeclaredMethod(name, parameterTypes);
+        method.setAccessible(true);
+        return method.invoke(target, args);
     }
 
     // ── buildHealthResponse ────────────────────────────────

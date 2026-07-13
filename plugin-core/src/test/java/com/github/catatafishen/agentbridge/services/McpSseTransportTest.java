@@ -2,22 +2,101 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.intellij.openapi.project.Project;
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for pure static methods in {@link McpSseTransport}.
  */
 class McpSseTransportTest {
+
+    @Test
+    void stopClosesSessionsAndTheirOwnedTerminalResources() throws Exception {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        McpSseTransport transport = new McpSseTransport(
+            project, mock(McpProtocolHandler.class));
+        transport.start();
+        HttpExchange exchange = mock(HttpExchange.class);
+        when(exchange.getResponseBody()).thenReturn(new ByteArrayOutputStream());
+        SseSession session = new SseSession(exchange);
+        sessions(transport).put(session.getSessionId(), session);
+
+        transport.stop();
+
+        assertTrue(session.isClosed());
+        assertEquals(0, transport.getActiveSessionCount());
+        verify(tracker).closeOwnedTerminalTabs(
+            McpSessionRegistry.ownerKey("sse", session.getSessionId()));
+        verify(exchange).close();
+    }
+
+    @Test
+    void disconnectDuringToolCallReleasesResourcesCreatedByTheRace() throws Exception {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        McpProtocolHandler handler = mock(McpProtocolHandler.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        McpSseTransport transport = new McpSseTransport(project, handler);
+
+        HttpExchange streamExchange = mock(HttpExchange.class);
+        when(streamExchange.getResponseBody()).thenReturn(new ByteArrayOutputStream());
+        SseSession session = new SseSession(streamExchange);
+        Map<String, SseSession> sessions = sessions(transport);
+        sessions.put(session.getSessionId(), session);
+        String ownerKey = McpSessionRegistry.ownerKey("sse", session.getSessionId());
+
+        HttpExchange request = mock(HttpExchange.class);
+        when(request.getResponseHeaders()).thenReturn(new Headers());
+        when(request.getRequestMethod()).thenReturn("POST");
+        when(request.getRequestURI()).thenReturn(
+            URI.create("/message?sessionId=" + session.getSessionId()));
+        when(request.getRequestBody()).thenReturn(
+            new ByteArrayInputStream("{}".getBytes(StandardCharsets.UTF_8)));
+        when(handler.handleMessage("{}", ownerKey)).thenAnswer(invocation -> {
+            sessions.remove(session.getSessionId());
+            session.close();
+            return null;
+        });
+
+        transport.handleMessage(request);
+
+        verify(handler).handleMessage("{}", ownerKey);
+        verify(tracker).closeOwnedTerminalTabs(ownerKey);
+        verify(request).sendResponseHeaders(202, -1);
+        verify(request).close();
+        assertTrue(session.isClosed());
+        assertEquals(0, transport.getActiveSessionCount());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, SseSession> sessions(McpSseTransport transport) throws Exception {
+        Field field = McpSseTransport.class.getDeclaredField("sessions");
+        field.setAccessible(true);
+        return (Map<String, SseSession>) field.get(transport);
+    }
 
     // ── parseSessionId (private, via reflection) ───────────
 

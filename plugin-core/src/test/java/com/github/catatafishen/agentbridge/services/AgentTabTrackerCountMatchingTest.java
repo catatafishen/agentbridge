@@ -50,6 +50,15 @@ class AgentTabTrackerCountMatchingTest {
     }
 
     @Test
+    @DisplayName("generic tab tracking rejects terminal tabs without an owner")
+    void genericTrackingRejectsTerminalTabs() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+            () -> tracker.trackTab("Terminal", "Agent: build"));
+
+        assertTrue(error.getMessage().contains("trackTerminal"));
+    }
+
+    @Test
     @DisplayName("same tab name resolves to each owner's exact content")
     void isolatesDuplicateDisplayNamesByOwner() {
         Content first = openContent("Agent: test");
@@ -76,6 +85,18 @@ class AgentTabTrackerCountMatchingTest {
     }
 
     @Test
+    @DisplayName("tracking the same content twice for one owner reuses its stable id")
+    void reusesStableIdForSameOwnerAndContent() {
+        Content content = openContent("Agent: build");
+
+        String firstId = tracker.trackTerminal("session-a", content);
+        String secondId = tracker.trackTerminal("session-a", content);
+
+        assertEquals(firstId, secondId);
+        assertEquals(1, tracker.countOpenTerminalTabs("session-a"));
+    }
+
+    @Test
     @DisplayName("terminal id cannot cross an owner boundary")
     void rejectsForeignTerminalId() {
         Content first = openContent("Agent: build");
@@ -86,6 +107,16 @@ class AgentTabTrackerCountMatchingTest {
         assertSame(first, tracker.findOwnedTerminal("session-a", firstId, null).content());
         assertNull(tracker.findOwnedTerminal("session-a", secondId, null));
         assertNull(tracker.findOwnedTerminal("session-b", firstId, null));
+    }
+
+    @Test
+    @DisplayName("stable id and display name must identify the same terminal")
+    void rejectsMismatchedCombinedSelectors() {
+        Content content = openContent("Agent: build");
+        String terminalId = tracker.trackTerminal("session-a", content);
+
+        assertNull(tracker.findOwnedTerminal(
+            "session-a", terminalId, "Agent: another"));
     }
 
     @Test
@@ -115,6 +146,20 @@ class AgentTabTrackerCountMatchingTest {
         assertNull(tracker.findOwnedTerminal("session-a", terminalId, null));
         assertEquals(0, tracker.countOpenTerminalTabs("session-a"));
         assertTrue(tracker.hasOpenTerminalCapacity("session-a"));
+    }
+
+    @Test
+    @DisplayName("global terminal count prunes closed content")
+    void globalCountPrunesClosedContent() {
+        Content open = openContent("Agent: open");
+        Content closed = openContent("Agent: closed");
+        tracker.trackTerminal("session-a", open);
+        tracker.trackTerminal("session-b", closed);
+        openContents.remove(closed);
+
+        assertEquals(1, tracker.countOpenTerminalTabs());
+        assertSame(open, tracker.findOwnedTerminal("session-a", null, null).content());
+        assertNull(tracker.findOwnedTerminal("session-b", null, null));
     }
 
     @Test
@@ -183,6 +228,13 @@ class AgentTabTrackerCountMatchingTest {
 
         assertTrue(tracker.listOpenTerminals("session-a").isEmpty());
         assertTrue(tracker.listOpenTerminals("session-b").isEmpty());
+    }
+
+    @Test
+    @DisplayName("closing all terminals is a no-op when ownership is empty")
+    void closingAllOnEmptyTrackerIsSafe() {
+        assertDoesNotThrow(tracker::closeAllOwnedTerminalTabs);
+        assertEquals(0, tracker.countOpenTerminalTabs());
     }
 
     @Test

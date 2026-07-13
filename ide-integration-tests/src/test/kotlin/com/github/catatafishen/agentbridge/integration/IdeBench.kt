@@ -206,17 +206,19 @@ object IdeBench {
                 // Everything is driven over the plugin's MCP server — the same boundary an agent
                 // (and the bug reporter) uses — so we deliberately do NOT depend on the Driver UI
                 // DSL. The lambda body just keeps the IDE alive while we issue HTTP calls.
-                val mcp = McpClient(port = MCP_PORT)
-                val version = mcp.awaitHealthy(timeout = ide.bootTimeout)
-                println("[integration] ${ide.key}: MCP healthy — plugin version $version")
+                McpClient(port = MCP_PORT).use { mcp ->
+                    val version = mcp.awaitHealthy(timeout = ide.bootTimeout)
+                    println("[integration] ${ide.key}: MCP healthy — plugin version $version")
+                    mcp.initialize()
 
-                // Gate on indexing + backend warm-up via the plugin's own tool: more reliable than
-                // guessing the Driver's wait DSL, and exercises the MCP path end-to-end.
-                val indexing = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
-                println("[integration] ${ide.key}: get_indexing_status → $indexing")
+                    // Gate on indexing + backend warm-up via the plugin's own tool: more reliable than
+                    // guessing the Driver's wait DSL, and exercises the MCP path end-to-end.
+                    val indexing = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
+                    println("[integration] ${ide.key}: get_indexing_status → $indexing")
 
-                block(ide, mcp)
-                passed = true
+                    block(ide, mcp)
+                    passed = true
+                }
             }
         } finally {
             if (!passed) IdeLogDump.dump(context.paths.testHome)

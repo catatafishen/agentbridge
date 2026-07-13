@@ -37,6 +37,24 @@ class TerminalToolStaticMethodsTest {
     }
 
     @Test
+    void rejectsOwnedTerminalWhoseIdeWidgetDisappeared() {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        Content content = content("Agent: stale");
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(tracker.findOwnedTerminal("session-a", null, null))
+            .thenReturn(new AgentTabTracker.AgentTerminal("terminal-stale", content));
+        TestTerminalTool tool = new TestTerminalTool(project, null, content);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> tool.open(null, null, false));
+
+        assertTrue(error.getMessage().contains("terminal-stale"));
+        assertTrue(error.getMessage().contains("no terminal widget"));
+        verify(tracker, never()).hasOpenTerminalCapacity("session-a");
+    }
+
+    @Test
     void rejectsUnknownExplicitTerminalIdInsteadOfOpeningAnotherTab() {
         Project project = mock(Project.class);
         AgentTabTracker tracker = mock(AgentTabTracker.class);
@@ -92,6 +110,87 @@ class TerminalToolStaticMethodsTest {
         assertEquals("Agent: echo test", result.tabName());
         assertFalse(result.reused());
         verify(tracker).trackTerminal("session-a", content);
+    }
+
+    @Test
+    void rejectsCreatedTerminalWhoseIdeContentCannotBeResolved() {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(tracker.hasOpenTerminalCapacity("session-a")).thenReturn(true);
+        TestTerminalTool tool = new TestTerminalTool(project, null, null);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> tool.open(null, "Agent: missing", true));
+
+        assertTrue(error.getMessage().contains("IDE content could not be resolved"));
+        verify(tracker, never()).trackTerminal(anyString(), any());
+    }
+
+    @Test
+    void reflectiveWidgetLookupReturnsNullWhenManagerHasNoSupportedMethod() {
+        Project project = mock(Project.class);
+        Content content = content("Agent: unresolved");
+        TestTerminalTool tool = new TestTerminalTool(project, null, content);
+
+        assertNull(tool.lookupWidget(Object.class, content));
+    }
+
+    @Test
+    void reflectiveWidgetLookupUsesTheSupportedStaticManagerMethod() {
+        Project project = mock(Project.class);
+        Content content = content("Agent: resolved");
+        Object widget = new Object();
+        FakeWidgetLookupManager.widget = widget;
+        TestTerminalTool tool = new TestTerminalTool(project, null, content);
+
+        assertSame(widget, tool.lookupWidget(FakeWidgetLookupManager.class, content));
+        assertSame(content, FakeWidgetLookupManager.content);
+    }
+
+    @Test
+    void optionalSelectorNormalizesMissingNullAndBlankValues() {
+        JsonObject args = new JsonObject();
+        assertNull(TerminalTool.optionalSelector(args, "terminal_id"));
+
+        args.add("terminal_id", com.google.gson.JsonNull.INSTANCE);
+        assertNull(TerminalTool.optionalSelector(args, "terminal_id"));
+
+        args.addProperty("terminal_id", "   ");
+        assertNull(TerminalTool.optionalSelector(args, "terminal_id"));
+
+        args.addProperty("terminal_id", "terminal-a");
+        assertEquals("terminal-a", TerminalTool.optionalSelector(args, "terminal_id"));
+    }
+
+    @Test
+    void selectorDescriptionExplainsEverySelectorMode() {
+        assertEquals("terminal_id 'terminal-a'",
+            TerminalTool.selectorDescription("terminal-a", "Agent: ignored"));
+        assertEquals("tab_name 'Agent: build'",
+            TerminalTool.selectorDescription(null, "Agent: build"));
+        assertEquals("the caller's most recent terminal",
+            TerminalTool.selectorDescription(null, null));
+    }
+
+    @Test
+    void ownedTerminalSummaryMarksTheMostRecentTerminal() {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        Content oldContent = content("Agent: old");
+        Content newContent = content("Agent: new");
+        when(tracker.listOpenTerminals(anyString())).thenReturn(List.of(
+            new AgentTabTracker.AgentTerminal("terminal-old", oldContent),
+            new AgentTabTracker.AgentTerminal("terminal-new", newContent)
+        ));
+        TestTerminalTool tool = new TestTerminalTool(
+            project, null, content("Agent: unused"));
+
+        String summary = tool.ownedTerminalSummary();
+
+        assertTrue(summary.contains("  • Agent: old [terminal_id=terminal-old]"));
+        assertTrue(summary.contains("  ▸ Agent: new [terminal_id=terminal-new]"));
     }
 
     private static Content content(String displayName) {
@@ -491,6 +590,16 @@ class TerminalToolStaticMethodsTest {
             return manager.widget;
         }
 
+        private Object lookupWidget(Class<?> managerClass, Content target) {
+            return super.findTerminalWidgetByContent(managerClass, target);
+        }
+
+        private String ownedTerminalSummary() {
+            StringBuilder result = new StringBuilder();
+            appendOwnedTerminalTabs(result);
+            return result.toString();
+        }
+
         @Override
         protected Object findTerminalWidgetByContent(
             @NotNull Class<?> managerClass,
@@ -548,6 +657,16 @@ class TerminalToolStaticMethodsTest {
             boolean requestFocus,
             boolean deferSessionStartUntilUiShown
         ) {
+            return widget;
+        }
+    }
+
+    public static final class FakeWidgetLookupManager {
+        private static Object widget;
+        private static Content content;
+
+        public static Object findWidgetByContent(Content target) {
+            content = target;
             return widget;
         }
     }
