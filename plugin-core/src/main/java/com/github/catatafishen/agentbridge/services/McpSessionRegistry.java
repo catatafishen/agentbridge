@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.services;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,12 +39,29 @@ final class McpSessionRegistry {
         this.nanoTime = nanoTime;
     }
 
-    synchronized @NotNull String openSession() {
+    /**
+     * Allocates a new session ID when the registry has room for it.
+     *
+     * @param maxOpenSessions upper bound on concurrent sessions. Values below 1 are treated as
+     *                        "no cap" so that a mis-configured setting cannot make the server
+     *                        refuse every {@code initialize}.
+     * @return the new session ID, or {@code null} when the registry is already at {@code
+     * maxOpenSessions} live entries. Callers must translate {@code null} into a well-formed
+     * transport-level error (HTTP 503) so the client can retry after a session ends.
+     */
+    synchronized @Nullable String openSession(int maxOpenSessions) {
+        if (maxOpenSessions >= 1 && lastActivityNanos.size() >= maxOpenSessions) {
+            return null;
+        }
         String sessionId;
         do {
             sessionId = UUID.randomUUID().toString();
         } while (lastActivityNanos.putIfAbsent(sessionId, nanoTime.getAsLong()) != null);
         return sessionId;
+    }
+
+    synchronized int size() {
+        return lastActivityNanos.size();
     }
 
     synchronized boolean touch(@NotNull String sessionId) {

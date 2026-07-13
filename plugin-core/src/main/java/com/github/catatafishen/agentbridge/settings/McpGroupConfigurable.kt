@@ -71,6 +71,42 @@ class McpGroupConfigurable(private val project: Project) :
                 .bindSelected({ settings.isAutoStart }, { settings.isAutoStart = it })
         }
         separator()
+        group("Session Limits") {
+            row("Max concurrent MCP HTTP sessions:") {
+                spinner(1..10_000, 1)
+                    .bindIntValue(
+                        { settings.maxOpenHttpSessions },
+                        { settings.maxOpenHttpSessions = it }
+                    )
+                    .comment(
+                        "Cap on Streamable-HTTP transport sessions held at once. New " +
+                            "<code>initialize</code> requests beyond this limit receive HTTP 503."
+                    )
+            }
+            row("Idle session timeout (minutes):") {
+                spinner(1..43_200, 1)
+                    .bindIntValue(
+                        { settings.httpSessionIdleTimeoutMinutes },
+                        { settings.httpSessionIdleTimeoutMinutes = it }
+                    )
+                    .comment(
+                        "How long an inactive MCP HTTP session is retained before its owned " +
+                            "terminals are released. Default: 120 minutes."
+                    )
+            }
+            row("Max agent terminals (project-wide):") {
+                spinner(1..100, 1)
+                    .bindIntValue(
+                        { settings.maxAgentTerminalsGlobal },
+                        { settings.maxAgentTerminalsGlobal = it }
+                    )
+                    .comment(
+                        "Safety cap on integrated terminals created by agents across all MCP " +
+                            "sessions. Each session is also bounded per-session."
+                    )
+            }
+        }
+        separator()
         row {
             checkBox("Enable debug logging — log all ACP JSON-RPC messages at INFO level")
                 .comment(

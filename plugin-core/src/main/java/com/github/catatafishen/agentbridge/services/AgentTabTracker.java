@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.ui.RunContentDescriptor;
 import com.intellij.execution.ui.RunContentManager;
@@ -199,8 +200,32 @@ public final class AgentTabTracker implements Disposable {
                 if (ref.ownerId().equals(ownerId)) ownerCount++;
             }
             return ownerCount < MAX_OPEN_AGENT_TERMINALS
-                && trackedTerminals.size() < MAX_OPEN_AGENT_TERMINALS_GLOBAL;
+                && trackedTerminals.size() < resolveGlobalCap();
         }
+    }
+
+    /**
+     * @return the currently effective project-wide terminal cap, sourced from settings when
+     * available and falling back to {@link #MAX_OPEN_AGENT_TERMINALS_GLOBAL}. Exposed so
+     * user-facing error messages can report the actual limit the user has configured.
+     */
+    public int getGlobalCap() {
+        return resolveGlobalCap();
+    }
+
+    /**
+     * Reads the current project-wide terminal cap. Falls back to the shipped default when the
+     * settings service is unavailable (e.g. tests using a mock Project) so unit tests that
+     * exercise this method continue to work without wiring a real service.
+     */
+    private int resolveGlobalCap() {
+        try {
+            McpServerSettings settings = McpServerSettings.getInstance(project);
+            if (settings != null) return settings.getMaxAgentTerminalsGlobal();
+        } catch (RuntimeException ignored) {
+            // fall through to default
+        }
+        return MAX_OPEN_AGENT_TERMINALS_GLOBAL;
     }
 
     public synchronized void untrackTerminal(

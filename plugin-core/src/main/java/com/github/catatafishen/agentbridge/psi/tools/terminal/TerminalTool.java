@@ -121,7 +121,7 @@ public abstract class TerminalTool extends Tool {
             throw new IllegalStateException(
                 "Agent terminal limit reached ("
                     + AgentTabTracker.MAX_OPEN_AGENT_TERMINALS + " per MCP session, "
-                    + AgentTabTracker.MAX_OPEN_AGENT_TERMINALS_GLOBAL + " per project). "
+                    + tracker.getGlobalCap() + " per project). "
                     + "Reuse an existing terminal or close one with close_terminal.");
         }
 

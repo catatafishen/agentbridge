@@ -269,4 +269,65 @@ class McpServerSettingsStateTest {
         assertNull(settings.getKindSearchColorKey());
     }
 
+    // ── Session-limit settings ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("maxOpenHttpSessions defaults to DEFAULT_MAX_OPEN_HTTP_SESSIONS")
+    void defaultMaxOpenHttpSessions() {
+        assertEquals(McpServerSettings.DEFAULT_MAX_OPEN_HTTP_SESSIONS,
+            settings.getMaxOpenHttpSessions());
+    }
+
+    @Test
+    @DisplayName("httpSessionIdleTimeoutMinutes defaults to DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES")
+    void defaultHttpSessionIdleTimeoutMinutes() {
+        assertEquals(McpServerSettings.DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES,
+            settings.getHttpSessionIdleTimeoutMinutes());
+    }
+
+    @Test
+    @DisplayName("maxAgentTerminalsGlobal defaults to DEFAULT_MAX_AGENT_TERMINALS_GLOBAL")
+    void defaultMaxAgentTerminalsGlobal() {
+        assertEquals(McpServerSettings.DEFAULT_MAX_AGENT_TERMINALS_GLOBAL,
+            settings.getMaxAgentTerminalsGlobal());
+    }
+
+    @Test
+    @DisplayName("maxOpenHttpSessions round-trips and coerces non-positive to default")
+    void maxOpenHttpSessionsRoundTrip() {
+        settings.setMaxOpenHttpSessions(200);
+        assertEquals(200, settings.getMaxOpenHttpSessions());
+
+        settings.setMaxOpenHttpSessions(0);
+        assertEquals(McpServerSettings.DEFAULT_MAX_OPEN_HTTP_SESSIONS,
+            settings.getMaxOpenHttpSessions(),
+            "non-positive values must fall back to the default so a corrupted setting doesn't lock the user out");
+
+        settings.setMaxOpenHttpSessions(-5);
+        assertEquals(McpServerSettings.DEFAULT_MAX_OPEN_HTTP_SESSIONS,
+            settings.getMaxOpenHttpSessions());
+    }
+
+    @Test
+    @DisplayName("httpSessionIdleTimeoutMinutes round-trips and coerces non-positive to default")
+    void httpSessionIdleTimeoutMinutesRoundTrip() {
+        settings.setHttpSessionIdleTimeoutMinutes(15);
+        assertEquals(15, settings.getHttpSessionIdleTimeoutMinutes());
+
+        settings.setHttpSessionIdleTimeoutMinutes(0);
+        assertEquals(McpServerSettings.DEFAULT_HTTP_SESSION_IDLE_TIMEOUT_MINUTES,
+            settings.getHttpSessionIdleTimeoutMinutes());
+    }
+
+    @Test
+    @DisplayName("maxAgentTerminalsGlobal round-trips and coerces non-positive to default")
+    void maxAgentTerminalsGlobalRoundTrip() {
+        settings.setMaxAgentTerminalsGlobal(24);
+        assertEquals(24, settings.getMaxAgentTerminalsGlobal());
+
+        settings.setMaxAgentTerminalsGlobal(0);
+        assertEquals(McpServerSettings.DEFAULT_MAX_AGENT_TERMINALS_GLOBAL,
+            settings.getMaxAgentTerminalsGlobal());
+    }
+
 }
