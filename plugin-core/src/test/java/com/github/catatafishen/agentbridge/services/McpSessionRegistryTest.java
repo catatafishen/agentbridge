@@ -65,6 +65,15 @@ class McpSessionRegistryTest {
     }
 
     @Test
+    @DisplayName("rejects a negative idle timeout")
+    void rejectsNegativeIdleTimeout() {
+        McpSessionRegistry registry = new McpSessionRegistry();
+
+        assertThrows(IllegalArgumentException.class,
+            () -> registry.expireIdleSessions(-1));
+    }
+
+    @Test
     @DisplayName("classifies initialize separately from established requests")
     void classifiesRequests() {
         assertEquals(McpSessionRegistry.RequestKind.INITIALIZE,

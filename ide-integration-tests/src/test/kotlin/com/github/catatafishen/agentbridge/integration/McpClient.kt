@@ -16,16 +16,25 @@ import kotlin.time.toJavaDuration
  * tools against a real running IDE.
  *
  * Contract (STREAMABLE_HTTP transport):
- *   GET  http://127.0.0.1:{port}/health  → {"status":"ok","version":...}
- *   POST http://127.0.0.1:{port}/mcp     → JSON-RPC 2.0 tools/call
+ *   GET    http://127.0.0.1:{port}/health  → {"status":"ok","version":...}
+ *   POST   http://127.0.0.1:{port}/mcp     → initialize, then tools/call with Mcp-Session-Id
+ *   DELETE http://127.0.0.1:{port}/mcp     → release the transport session
  */
-class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
+class McpClient(private val port: Int, private val host: String = "127.0.0.1") : AutoCloseable {
+
+    private companion object {
+        const val SESSION_HEADER = "Mcp-Session-Id"
+        const val PROTOCOL_HEADER = "MCP-Protocol-Version"
+        const val PROTOCOL_VERSION = "2025-11-25"
+        const val ACCEPT = "application/json, text/event-stream"
+    }
 
     private val http: HttpClient = HttpClient.newBuilder()
         .connectTimeout(10.seconds.toJavaDuration())
         .build()
 
     private val baseUrl = "http://$host:$port"
+    private var sessionId: String? = null
 
     /** Polls /health until it reports status=ok, or fails after [timeout]. Returns the plugin version. */
     fun awaitHealthy(timeout: kotlin.time.Duration): String {
@@ -57,12 +66,74 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
         throw AssertionError("MCP server at $baseUrl did not become healthy within $timeout (last: $lastError)")
     }
 
+    /** Initializes the Streamable HTTP transport and retains its server-issued session ID. */
+    fun initialize(timeout: Duration = Duration.ofSeconds(30)) {
+        check(sessionId == null) { "MCP transport session is already initialized" }
+
+        val params = JsonObject().apply {
+            addProperty("protocolVersion", PROTOCOL_VERSION)
+            add("capabilities", JsonObject())
+            add("clientInfo", JsonObject().apply {
+                addProperty("name", "agentbridge-ide-integration-tests")
+                addProperty("version", "1.0")
+            })
+        }
+        val request = JsonObject().apply {
+            addProperty("jsonrpc", "2.0")
+            addProperty("id", 1)
+            addProperty("method", "initialize")
+            add("params", params)
+        }
+
+        val resp = http.send(
+            HttpRequest.newBuilder(URI.create("$baseUrl/mcp"))
+                .timeout(timeout)
+                .header("Content-Type", "application/json")
+                .header("Accept", ACCEPT)
+                .POST(HttpRequest.BodyPublishers.ofString(request.toString()))
+                .build(),
+            HttpResponse.BodyHandlers.ofString()
+        )
+        check(resp.statusCode() == 200) { "initialize → HTTP ${resp.statusCode()}: ${resp.body()}" }
+
+        val json = JsonParser.parseString(resp.body()).asJsonObject
+        check(!json.has("error") && json.get("result")?.isJsonObject == true) {
+            "initialize → invalid JSON-RPC response: ${resp.body()}"
+        }
+        val establishedSessionId = resp.headers().firstValue(SESSION_HEADER).orElseThrow {
+            IllegalStateException("initialize response did not include $SESSION_HEADER")
+        }
+        sessionId = establishedSessionId
+
+        val initialized = JsonObject().apply {
+            addProperty("jsonrpc", "2.0")
+            addProperty("method", "notifications/initialized")
+        }
+        val initializedResponse = http.send(
+            HttpRequest.newBuilder(URI.create("$baseUrl/mcp"))
+                .timeout(timeout)
+                .header("Content-Type", "application/json")
+                .header("Accept", ACCEPT)
+                .header(SESSION_HEADER, establishedSessionId)
+                .header(PROTOCOL_HEADER, PROTOCOL_VERSION)
+                .POST(HttpRequest.BodyPublishers.ofString(initialized.toString()))
+                .build(),
+            HttpResponse.BodyHandlers.discarding()
+        )
+        check(initializedResponse.statusCode() == 202) {
+            "notifications/initialized → HTTP ${initializedResponse.statusCode()}"
+        }
+    }
+
     /**
      * Calls a tool via JSON-RPC tools/call and returns the concatenated text content.
      * Throws on HTTP/transport errors only. JSON-RPC errors are returned as plain strings
      * so the test assertion message includes the actual MCP error instead of a stack trace.
      */
     fun callTool(name: String, arguments: Map<String, Any>, timeout: Duration = Duration.ofSeconds(60)): String {
+        val currentSessionId = checkNotNull(sessionId) {
+            "MCP transport session is not initialized; call initialize() first"
+        }
         val args = JsonObject()
         for ((k, v) in arguments) {
             when (v) {
@@ -86,6 +157,9 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
             HttpRequest.newBuilder(URI.create("$baseUrl/mcp"))
                 .timeout(timeout)
                 .header("Content-Type", "application/json")
+                .header("Accept", ACCEPT)
+                .header(SESSION_HEADER, currentSessionId)
+                .header(PROTOCOL_HEADER, PROTOCOL_VERSION)
                 .POST(HttpRequest.BodyPublishers.ofString(request.toString()))
                 .build(),
             HttpResponse.BodyHandlers.ofString()
@@ -107,5 +181,24 @@ class McpClient(private val port: Int, private val host: String = "127.0.0.1") {
             }
         }
         return sb.toString()
+    }
+
+    /** Ends the transport session so server-owned resources are released after each IDE run. */
+    override fun close() {
+        val currentSessionId = sessionId ?: return
+
+        val resp = http.send(
+            HttpRequest.newBuilder(URI.create("$baseUrl/mcp"))
+                .timeout(Duration.ofSeconds(10))
+                .header(SESSION_HEADER, currentSessionId)
+                .header(PROTOCOL_HEADER, PROTOCOL_VERSION)
+                .DELETE()
+                .build(),
+            HttpResponse.BodyHandlers.discarding()
+        )
+        check(resp.statusCode() == 204) {
+            "DELETE /mcp → HTTP ${resp.statusCode()}"
+        }
+        sessionId = null
     }
 }
