@@ -11,6 +11,12 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -163,6 +169,51 @@ class AgentTabTrackerCountMatchingTest {
     }
 
     @Test
+    @DisplayName("a stale IDE snapshot cannot prune a terminal tracked while it was captured")
+    void staleSnapshotPreservesConcurrentlyTrackedTerminal() throws Exception {
+        List<Content> contents = new ArrayList<>();
+        Content existing = content("Agent: existing");
+        contents.add(existing);
+        CountDownLatch snapshotCaptured = new CountDownLatch(1);
+        CountDownLatch releaseSnapshot = new CountDownLatch(1);
+        AtomicBoolean blockFirstSnapshot = new AtomicBoolean(true);
+        AgentTabTracker concurrentTracker = new AgentTabTracker(mock(Project.class), () -> {
+            List<Content> snapshot = List.copyOf(contents);
+            if (blockFirstSnapshot.compareAndSet(true, false)) {
+                snapshotCaptured.countDown();
+                try {
+                    if (!releaseSnapshot.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to release IDE snapshot");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while capturing IDE snapshot", e);
+                }
+            }
+            return snapshot;
+        });
+        concurrentTracker.trackTerminal("session-a", existing);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try {
+            Future<Integer> count = executor.submit(() -> concurrentTracker.countOpenTerminalTabs());
+            assertTrue(snapshotCaptured.await(5, TimeUnit.SECONDS));
+
+            Content concurrent = content("Agent: concurrent");
+            contents.add(concurrent);
+            String terminalId = concurrentTracker.trackTerminal("session-b", concurrent);
+            releaseSnapshot.countDown();
+
+            assertEquals(2, count.get(5, TimeUnit.SECONDS));
+            assertSame(concurrent,
+                concurrentTracker.findOwnedTerminal("session-b", terminalId, null).content());
+        } finally {
+            releaseSnapshot.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     @DisplayName("per-owner cap does not consume another owner's allowance")
     void appliesPerOwnerCap() {
         assertEquals(3, AgentTabTracker.MAX_OPEN_AGENT_TERMINALS);
@@ -246,9 +297,14 @@ class AgentTabTrackerCountMatchingTest {
     }
 
     private Content openContent(String displayName) {
+        Content content = content(displayName);
+        openContents.add(content);
+        return content;
+    }
+
+    private static Content content(String displayName) {
         Content content = mock(Content.class);
         when(content.getDisplayName()).thenReturn(displayName);
-        openContents.add(content);
         return content;
     }
 }

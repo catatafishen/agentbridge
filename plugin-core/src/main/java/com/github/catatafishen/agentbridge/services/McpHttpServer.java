@@ -289,10 +289,15 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             owner = resolveHttpOwner(exchange, body);
             if (owner == null) return;
             String response;
+            String ownerKey = owner.ownerKey();
             try {
-                response = protocolHandler.handleMessage(body, owner.ownerKey());
+                response = ownerKey != null
+                    ? protocolHandler.handleMessage(body, ownerKey)
+                    : protocolHandler.handleMessage(body);
             } finally {
-                finishHttpRequest(owner.ownerKey());
+                if (ownerKey != null) {
+                    finishHttpRequest(ownerKey);
+                }
             }
 
             boolean initialized = completeInitialization(exchange, owner, response);
@@ -317,17 +322,41 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             sendJsonRpcError(exchange, 500, -32603, "Internal error: " + msg);
         } finally {
             if (owner != null && owner.newSessionId() != null && !retainNewSession) {
-                httpSessions.closeSession(owner.newSessionId());
+                closeHttpSession(owner.newSessionId());
             }
             exchange.close();
             activeConnections.decrementAndGet();
         }
     }
 
+    enum HttpOwnerKind {
+        INVALID,
+        INITIALIZE,
+        ESTABLISHED
+    }
+
     record HttpOwnerResolution(
-        @NotNull String ownerKey,
+        @NotNull HttpOwnerKind kind,
+        @Nullable String ownerKey,
         @Nullable String newSessionId
     ) {
+        static @NotNull HttpOwnerResolution invalid() {
+            return new HttpOwnerResolution(HttpOwnerKind.INVALID, null, null);
+        }
+
+        static @NotNull HttpOwnerResolution initialize(@NotNull String sessionId) {
+            return new HttpOwnerResolution(
+                HttpOwnerKind.INITIALIZE,
+                McpSessionRegistry.ownerKey("http", sessionId),
+                sessionId);
+        }
+
+        static @NotNull HttpOwnerResolution established(@NotNull String sessionId) {
+            return new HttpOwnerResolution(
+                HttpOwnerKind.ESTABLISHED,
+                McpSessionRegistry.ownerKey("http", sessionId),
+                null);
+        }
     }
 
     @Nullable HttpOwnerResolution resolveHttpOwner(
@@ -337,14 +366,12 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         McpSessionRegistry.RequestKind kind = McpSessionRegistry.classifyRequest(body);
         if (kind == McpSessionRegistry.RequestKind.INVALID) {
             // Let the protocol handler return the precise JSON-RPC parse/validation error.
-            return new HttpOwnerResolution(
-                McpSessionRegistry.ownerKey("http", "invalid-request"), null);
+            return HttpOwnerResolution.invalid();
         }
 
         if (kind == McpSessionRegistry.RequestKind.INITIALIZE) {
             String sessionId = httpSessions.openSession();
-            return new HttpOwnerResolution(
-                McpSessionRegistry.ownerKey("http", sessionId), sessionId);
+            return HttpOwnerResolution.initialize(sessionId);
         }
 
         String sessionId = exchange.getRequestHeaders().getFirst(MCP_SESSION_ID_HEADER);
@@ -361,8 +388,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         }
 
         exchange.getResponseHeaders().set(MCP_SESSION_ID_HEADER, sessionId);
-        return new HttpOwnerResolution(
-            McpSessionRegistry.ownerKey("http", sessionId), null);
+        return HttpOwnerResolution.established(sessionId);
     }
 
     /**
@@ -377,7 +403,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         String sessionId = owner.newSessionId();
         if (sessionId == null) return true;
         if (!containsInitializeResult(response)) {
-            httpSessions.closeSession(sessionId);
+            closeHttpSession(sessionId);
             return false;
         }
         exchange.getResponseHeaders().set(MCP_SESSION_ID_HEADER, sessionId);
@@ -404,17 +430,22 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             exchange.close();
             return;
         }
-        if (!httpSessions.closeSession(sessionId)) {
+        if (!closeHttpSession(sessionId)) {
             sendJsonRpcError(exchange, 404, -32600,
                 "Unknown or expired MCP session: " + sessionId);
             exchange.close();
             return;
         }
 
-        AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(
-            McpSessionRegistry.ownerKey("http", sessionId));
         exchange.sendResponseHeaders(204, -1);
         exchange.close();
+    }
+
+    private boolean closeHttpSession(@NotNull String sessionId) {
+        if (!httpSessions.closeSession(sessionId)) return false;
+        AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(
+            McpSessionRegistry.ownerKey("http", sessionId));
+        return true;
     }
 
     private void startHttpSessionCleanup() {
@@ -459,10 +490,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * in-flight tool call, close any terminal that the call created after session termination.
      */
     private void finishHttpRequest(@NotNull String ownerKey) {
-        if (!ownerKey.startsWith(HTTP_OWNER_PREFIX)
-            || ownerKey.equals(HTTP_OWNER_PREFIX + "invalid-request")) {
-            return;
-        }
+        if (!ownerKey.startsWith(HTTP_OWNER_PREFIX)) return;
         String sessionId = ownerKey.substring(HTTP_OWNER_PREFIX.length());
         if (!httpSessions.touch(sessionId) && !project.isDisposed()) {
             AgentTabTracker.getInstance(project).closeOwnedTerminalTabs(ownerKey);
