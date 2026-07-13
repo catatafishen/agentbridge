@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.acp.protocol.InitializeResponse;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
-import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
