@@ -91,7 +91,7 @@ public abstract class TerminalTool extends Tool {
         return "'" + raw + "'";
     }
 
-    protected record TerminalWidgetResult(Object widget, String tabName) {
+    protected record TerminalWidgetResult(Object widget, String tabName, boolean reused) {
     }
 
     protected TerminalWidgetResult getOrCreateTerminalWidget(Class<?> managerClass, Object manager,
@@ -103,7 +103,7 @@ public abstract class TerminalTool extends Tool {
             if (reusableName != null) {
                 Object widget = findTerminalWidgetByTabName(managerClass, reusableName);
                 if (widget != null) {
-                    return new TerminalWidgetResult(widget, reusableName + " (reused)");
+                    return new TerminalWidgetResult(widget, reusableName, true);
                 }
             }
         }
@@ -123,7 +123,7 @@ public abstract class TerminalTool extends Tool {
         boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);
         Object widget = createSession.invoke(manager, project.getBasePath(), title, shellCommand, requestFocus, true);
         tracker.trackTab(TERMINAL_TOOL_WINDOW_ID, title);
-        return new TerminalWidgetResult(widget, title + " (new)");
+        return new TerminalWidgetResult(widget, title, false);
     }
 
     /**

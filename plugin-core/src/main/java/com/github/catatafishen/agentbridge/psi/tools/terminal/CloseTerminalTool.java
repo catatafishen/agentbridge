@@ -8,7 +8,9 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Closes an integrated terminal tab created by AgentBridge.
@@ -32,6 +34,7 @@ public final class CloseTerminalTool extends TerminalTool {
     @Override
     public @NotNull String description() {
         return "Close an AgentBridge-created terminal tab when it is no longer needed. "
+            + "This closes the tab but does not stop a running command in it. "
             + "Refuses to close user-created terminal tabs. Use list_terminals to find tab names.";
     }
 
@@ -65,14 +68,34 @@ public final class CloseTerminalTool extends TerminalTool {
 
         EdtUtil.invokeLater(() -> closeTerminal(tabName, resultFuture));
 
+        return awaitCloseResult(resultFuture, 10, TimeUnit.SECONDS);
+    }
+
+    static @NotNull String awaitCloseResult(
+        @NotNull CompletableFuture<String> resultFuture,
+        long timeout,
+        @NotNull TimeUnit unit
+    ) {
         try {
-            return resultFuture.get(10, TimeUnit.SECONDS);
+            return resultFuture.get(timeout, unit);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Terminal close timed out.";
+            return "Error: Terminal close interrupted.";
+        } catch (TimeoutException e) {
+            return "Error: Terminal close timed out.";
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            LOG.warn("Terminal close failed", cause);
+            return "Error: Failed to close terminal: " + failureDetail(cause);
         } catch (Exception e) {
-            return "Terminal close timed out.";
+            LOG.warn("Terminal close failed", e);
+            return "Error: Failed to close terminal: " + failureDetail(e);
         }
+    }
+
+    private static @NotNull String failureDetail(@NotNull Throwable failure) {
+        String message = failure.getMessage();
+        return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
     }
 
     private void closeTerminal(String tabName, CompletableFuture<String> resultFuture) {
@@ -80,21 +103,24 @@ public final class CloseTerminalTool extends TerminalTool {
             var content = resolveTerminalContent(tabName);
             if (content == null) {
                 resultFuture.complete(
-                    "No terminal tab found matching '" + tabName + "'. Use list_terminals to see available tabs.");
+                    "Error: No terminal tab found matching '" + tabName
+                        + "'. Use list_terminals to see available tabs.");
                 return;
             }
 
             String displayName = content.getDisplayName();
             AgentTabTracker tracker = AgentTabTracker.getInstance(project);
             if (displayName == null || !tracker.isTrackedTerminalTab(displayName)) {
+                String rejectedName = displayName != null ? displayName : tabName;
                 resultFuture.complete(
-                    "Refusing to close terminal '" + tabName + "' because it was not created by AgentBridge.");
+                    "Error: Refusing to close terminal '" + rejectedName
+                        + "' because it was not created by AgentBridge.");
                 return;
             }
 
             var toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
             if (toolWindow == null || !toolWindow.getContentManager().removeContent(content, true)) {
-                resultFuture.complete("Failed to close terminal '" + displayName + "'.");
+                resultFuture.complete("Error: Failed to close terminal '" + displayName + "'.");
                 return;
             }
 
@@ -102,7 +128,8 @@ public final class CloseTerminalTool extends TerminalTool {
             resultFuture.complete("Closed AgentBridge terminal '" + displayName + "'.");
         } catch (Exception e) {
             LOG.warn("Failed to close terminal: " + tabName, e);
-            resultFuture.complete("Failed to close terminal '" + tabName + "': " + e.getMessage());
+            resultFuture.complete(
+                "Error: Failed to close terminal '" + tabName + "': " + failureDetail(e));
         }
     }
 }

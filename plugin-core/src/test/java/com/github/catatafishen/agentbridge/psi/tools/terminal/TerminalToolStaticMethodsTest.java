@@ -10,8 +10,15 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TerminalToolStaticMethodsTest {
 
@@ -27,7 +34,8 @@ class TerminalToolStaticMethodsTest {
         TerminalTool.TerminalWidgetResult result = tool.open(null, false);
 
         assertSame(widget, result.widget());
-        assertEquals("Agent: build (1) (reused)", result.tabName());
+        assertEquals("Agent: build (1)", result.tabName());
+        assertTrue(result.reused());
         verify(tracker, never()).hasOpenTerminalCapacity();
     }
 
@@ -46,6 +54,8 @@ class TerminalToolStaticMethodsTest {
 
         assertTrue(error.getMessage().contains("Agent terminal limit reached (3)"));
         assertTrue(error.getMessage().contains("close_terminal"));
+        assertEquals("Error: " + error.getMessage(), RunInTerminalTool.formatCapacityError(error));
+        assertFalse(RunInTerminalTool.formatCapacityError(error).contains("run_command"));
     }
 
     @Test
@@ -60,7 +70,8 @@ class TerminalToolStaticMethodsTest {
         TerminalTool.TerminalWidgetResult result = tool.open(null, false);
 
         assertSame(tool.createdWidget(), result.widget());
-        assertEquals("Agent: echo test (new)", result.tabName());
+        assertEquals("Agent: echo test", result.tabName());
+        assertFalse(result.reused());
         verify(tracker).trackTab("Terminal", "Agent: echo test");
     }
 

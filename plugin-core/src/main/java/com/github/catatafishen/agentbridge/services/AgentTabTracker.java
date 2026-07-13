@@ -139,6 +139,9 @@ public final class AgentTabTracker implements Disposable {
         return count;
     }
 
+    /**
+     * Matches an agent-tracked base name against the IDE display name, which may include a numeric {@code (N)} suffix.
+     */
     public static boolean terminalTabNameMatches(@Nullable String trackedName, @Nullable String displayName) {
         if (trackedName == null || displayName == null) return false;
         return displayName.equals(trackedName) || displayName.matches(
