@@ -409,7 +409,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           REF_NAME: ${{ github.ref_name }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$IS_FORK" = "true" ]; then
+            echo "Fork PR token is read-only; matrix remains available in the job summary."
+            exit 0
+          fi
           if [ "$EVENT_NAME" = "pull_request" ]; then
             PR="$PR_NUMBER"
           else
