@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.client.AbstractClient
+import com.github.catatafishen.agentbridge.client.acp.CopilotClient
 import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
@@ -291,7 +292,7 @@ class PromptOrchestrator(
                 handleSessionCorrupted()
                 return
             }
-            handlePromptCompletion(prompt)
+            handlePromptCompletion()
         } catch (e: Exception) {
             handlePromptError(e)
         } finally {
@@ -582,7 +583,7 @@ class PromptOrchestrator(
         }
     }
 
-    private fun handlePromptCompletion(prompt: String) {
+    private fun handlePromptCompletion() {
         // Unregister the real-time code-change listener before finalising the turn.
         codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
         codeChangeListener = null
@@ -591,9 +592,13 @@ class PromptOrchestrator(
         PsiBridgeService.getInstance(project).clearFileAccessTracking()
         pendingBanner = null
 
-        val client = agentManager.client
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
-        billing.recordTurnCompleted()
+        // Only count prompts against the Copilot quota when the active client is Copilot;
+        // non-Copilot providers (Claude/Kiro/OpenCode/...) would inflate the estimate
+        // otherwise.
+        if (agentManager.client is CopilotClient) {
+            billing.recordTurnCompleted()
+        }
         callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
 
         val codeChanges = CodeChangeTracker.getAndClear()
