@@ -434,15 +434,6 @@ public final class CopilotClient extends AcpClient {
         return ModelDisplayMode.TOKEN_COUNT;
     }
 
-    @Override
-    public @Nullable String getModelMultiplier(Model model) {
-        JsonObject meta = model._meta();
-        if (meta != null && meta.has("copilotUsage")) {
-            return meta.get("copilotUsage").getAsString();
-        }
-        return null;
-    }
-
     // ─── Agent definitions ───────────────────────────
 
     private void writeAgentDefinitions(String configDir) throws IOException {

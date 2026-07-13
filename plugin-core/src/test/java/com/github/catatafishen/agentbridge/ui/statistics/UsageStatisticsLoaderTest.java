@@ -95,54 +95,6 @@ class UsageStatisticsLoaderTest {
         }
     }
 
-    // ── parsePremiumMultiplier (private static, via reflection) ─────────
-
-    @Nested
-    @DisplayName("parsePremiumMultiplier")
-    class ParsePremiumMultiplier {
-
-        @Test
-        @DisplayName("null → 1.0")
-        void nullReturnsOne() throws Exception {
-            assertEquals(1.0, invokeParsePremiumMultiplier(null));
-        }
-
-        @Test
-        @DisplayName("empty string → 1.0")
-        void emptyReturnsOne() throws Exception {
-            assertEquals(1.0, invokeParsePremiumMultiplier(""));
-        }
-
-        @Test
-        @DisplayName("'1x' → 1.0")
-        void oneX() throws Exception {
-            assertEquals(1.0, invokeParsePremiumMultiplier("1x"));
-        }
-
-        @Test
-        @DisplayName("'0.5x' → 0.5")
-        void halfX() throws Exception {
-            assertEquals(0.5, invokeParsePremiumMultiplier("0.5x"));
-        }
-
-        @Test
-        @DisplayName("'2.0' → 2.0 (no suffix)")
-        void twoPointZero() throws Exception {
-            assertEquals(2.0, invokeParsePremiumMultiplier("2.0"));
-        }
-
-        @Test
-        @DisplayName("'invalid' → 1.0 (fallback)")
-        void invalidReturnsFallback() throws Exception {
-            assertEquals(1.0, invokeParsePremiumMultiplier("invalid"));
-        }
-
-        @Test
-        void zeroMultiplier() throws Exception {
-            assertEquals(0.0, invokeParsePremiumMultiplier("0x"));
-        }
-    }
-
     // ── extractDate (private static, via reflection) ────────────────────
 
     @Nested
@@ -366,12 +318,6 @@ class UsageStatisticsLoaderTest {
     }
 
     // ── Reflection helpers ──────────────────────────────────────────────
-
-    private static double invokeParsePremiumMultiplier(String multiplier) throws Exception {
-        Method m = UsageStatisticsLoader.class.getDeclaredMethod("parsePremiumMultiplier", String.class);
-        m.setAccessible(true);
-        return (double) m.invoke(null, multiplier);
-    }
 
     private static LocalDate invokeExtractDate(JsonObject obj, String fallback) throws Exception {
         Method m = UsageStatisticsLoader.class.getDeclaredMethod("extractDate", JsonObject.class, String.class);

@@ -49,8 +49,7 @@ public final class ConversationStatistics {
         int toolCalls,
         long durationMs,
         int linesAdded,
-        int linesRemoved,
-        double premiumRequests
+        int linesRemoved
     ) {
     }
 
@@ -66,8 +65,7 @@ public final class ConversationStatistics {
         int toolCalls,
         long durationMs,
         int linesAdded,
-        int linesRemoved,
-        double premiumRequests
+        int linesRemoved
     ) {
     }
 
@@ -94,8 +92,7 @@ public final class ConversationStatistics {
                COALESCE(SUM(t.tool_call_count), 0)        AS tool_calls,
                COALESCE(SUM(t.duration_ms),     0)        AS duration_ms,
                COALESCE(SUM(t.lines_added),     0)        AS lines_added,
-               COALESCE(SUM(t.lines_removed),   0)        AS lines_removed,
-               COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
+               COALESCE(SUM(t.lines_removed),   0)        AS lines_removed
         FROM turns t
         JOIN sessions s ON t.session_id = s.id
         WHERE (? IS NULL OR date(t.started_at) >= ?)
@@ -113,8 +110,7 @@ public final class ConversationStatistics {
                COALESCE(SUM(t.tool_call_count), 0)            AS tool_calls,
                COALESCE(SUM(t.duration_ms),     0)            AS duration_ms,
                COALESCE(SUM(t.lines_added),     0)            AS lines_added,
-               COALESCE(SUM(t.lines_removed),   0)            AS lines_removed,
-               COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
+               COALESCE(SUM(t.lines_removed),   0)            AS lines_removed
         FROM turns t
         WHERE COALESCE(t.git_branch_at_start, t.git_branch_at_end) IS NOT NULL
           AND (? IS NULL OR date(t.started_at) >= ?)
@@ -193,8 +189,7 @@ public final class ConversationStatistics {
                                 rs.getInt("tool_calls"),
                                 rs.getLong("duration_ms"),
                                 rs.getInt("lines_added"),
-                                rs.getInt("lines_removed"),
-                                rs.getDouble("premium_requests")
+                                rs.getInt("lines_removed")
                             ));
                         }
                     }
@@ -237,8 +232,7 @@ public final class ConversationStatistics {
                                 rs.getInt("tool_calls"),
                                 rs.getLong("duration_ms"),
                                 rs.getInt("lines_added"),
-                                rs.getInt("lines_removed"),
-                                rs.getDouble("premium_requests")
+                                rs.getInt("lines_removed")
                             ));
                         }
                     }

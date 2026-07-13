@@ -47,7 +47,7 @@ class BillingConfigurable :
             text(
                 "<b>Why GitHub CLI is needed:</b><br/>" +
                     "The Copilot ACP (Agent Communication Protocol) mode does not expose billing " +
-                    "or usage data. To view Copilot premium request usage, the plugin uses the " +
+                    "or usage data. To view Copilot prompt quota usage, the plugin uses the " +
                     "GitHub CLI (<code>gh</code>) to query GitHub's internal API endpoint.",
                 MAX_LINE_LENGTH_WORD_WRAP
             ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }

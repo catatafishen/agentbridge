@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -172,30 +171,6 @@ class CopilotClientTest {
         assertNull(invokeTryRecover(new java.io.IOException("network")));
     }
 
-    // ── getModelMultiplier (instance — extracts _meta.copilotUsage) ─────
-
-    @Test
-    void getModelMultiplier_withCopilotUsage() throws Exception {
-        JsonObject meta = new JsonObject();
-        meta.addProperty("copilotUsage", "1x");
-        assertEquals("1x", invokeGetModelMultiplier(
-            new Model("gpt-4", "GPT-4", null, meta)));
-    }
-
-    @Test
-    void getModelMultiplier_noCopilotUsageField() throws Exception {
-        JsonObject meta = new JsonObject();
-        meta.addProperty("other", "value");
-        assertNull(invokeGetModelMultiplier(
-            new Model("gpt-4", "GPT-4", null, meta)));
-    }
-
-    @Test
-    void getModelMultiplier_nullMeta() throws Exception {
-        assertNull(invokeGetModelMultiplier(
-            new Model("gpt-4", "GPT-4", null, null)));
-    }
-
     // ── parseToolCallArguments (instance override — rawInput fallback) ───
 
     @Test
@@ -242,12 +217,6 @@ class CopilotClientTest {
         Method m = CopilotClient.class.getDeclaredMethod("tryRecoverPromptException", Exception.class);
         m.setAccessible(true);
         return (PromptResponse) m.invoke(allocateClient(), cause);
-    }
-
-    private static String invokeGetModelMultiplier(Model model) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("getModelMultiplier", Model.class);
-        m.setAccessible(true);
-        return (String) m.invoke(allocateClient(), model);
     }
 
     private static JsonObject invokeParseToolCallArguments(JsonObject params) throws Exception {

@@ -1,10 +1,9 @@
 package com.github.catatafishen.agentbridge.client;
 
-import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
+import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -103,13 +102,6 @@ class AbstractClientTest {
         @Override
         public void setCurrentAgentSlug(String slug) {
             currentAgentSlug = slug;
-        }
-    }
-
-    private static class MultiplierAgentClient extends TestAgentClient {
-        @Override
-        public @org.jetbrains.annotations.Nullable String getModelMultiplier(@NotNull Model model) {
-            return "2x";
         }
     }
 
@@ -254,37 +246,10 @@ class AbstractClientTest {
 
     // getModelMultiplier(String)
 
-    @Nested
-    class ModelMultiplier {
-        @Test
-        void modelNotInListReturnsNull() {
-            client.setModels(List.of());
-            assertNull(client.getModelMultiplier("gpt-4"));
-        }
-
-        @Test
-        void modelInListButBaseReturnsNullMultiplier() {
-            client.setModels(List.of(new Model("gpt-4", "GPT-4", null, null)));
-            assertNull(client.getModelMultiplier("gpt-4"));
-        }
-
-        @Test
-        void overriddenMultiplierReturnedWhenModelMatches() {
-            MultiplierAgentClient multiplierClient = new MultiplierAgentClient();
-            multiplierClient.setModels(List.of(new Model("gpt-4", "GPT-4", null, null)));
-            assertEquals("2x", multiplierClient.getModelMultiplier("gpt-4"));
-        }
-    }
-
     // Default no-ops
 
     @Nested
     class DefaultNoOps {
-        @Test
-        void supportsMultiplierReturnsFalse() {
-            assertFalse(client.supportsMultiplier());
-        }
-
         @Test
         void modelDisplayModeReturnsNone() {
             assertEquals(AbstractClient.ModelDisplayMode.NONE, client.modelDisplayMode());

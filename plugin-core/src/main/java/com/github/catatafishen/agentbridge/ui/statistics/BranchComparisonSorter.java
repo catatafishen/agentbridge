@@ -20,8 +20,7 @@ final class BranchComparisonSorter {
 
     static double valueFor(UsageStatisticsData.Metric metric, UsageStatisticsData.BranchStats branch) {
         return switch (metric) {
-            case PREMIUM_REQUESTS -> branch.premiumRequests();
-            case TURNS -> branch.turns();
+            case PROMPTS -> branch.turns();
             case TOKENS -> branch.inputTokens() + branch.outputTokens();
             case TOOL_CALLS -> branch.toolCalls();
             case CODE_CHANGES -> branch.linesAdded() + branch.linesRemoved();

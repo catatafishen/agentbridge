@@ -25,7 +25,7 @@ data class UsageGraphData(
 )
 
 /**
- * Tiny sparkline panel showing cumulative premium-request usage over the
+ * Tiny sparkline panel showing cumulative prompt usage over the
  * billing cycle, a linear projection to end-of-month, and a horizontal
  * entitlement threshold line.  Over-quota usage is rendered in red.
  *

@@ -90,14 +90,6 @@ class ModelSelectorService(
         return agentManager.client.currentModelId?.takeIf { it.isNotEmpty() } ?: ""
     }
 
-    fun getModelMultiplier(modelId: String): String? {
-        return try {
-            agentManager.client.getModelMultiplier(modelId)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     fun loadModelsAsync(
         onSuccess: (List<Model>) -> Unit,
         onFailure: ((Exception) -> Unit)? = null

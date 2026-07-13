@@ -75,7 +75,7 @@ final class UsageStatisticsLoader {
                 agg.branch(), LocalDate.parse(agg.firstDetectedDate()),
                 agg.turns(), agg.inputTokens(), agg.outputTokens(),
                 agg.toolCalls(), agg.durationMs(),
-                agg.linesAdded(), agg.linesRemoved(), agg.premiumRequests()
+                agg.linesAdded(), agg.linesRemoved()
             ));
         }
 
@@ -133,7 +133,7 @@ final class UsageStatisticsLoader {
                 LocalDate.parse(agg.date()), toAgentId(agg.agentId()),
                 agg.turns(), agg.inputTokens(), agg.outputTokens(),
                 agg.toolCalls(), agg.durationMs(),
-                agg.linesAdded(), agg.linesRemoved(), agg.premiumRequests()
+                agg.linesAdded(), agg.linesRemoved()
             ));
         }
 
@@ -220,7 +220,7 @@ final class UsageStatisticsLoader {
                 key.date, key.agentId,
                 acc.turns, acc.inputTokens, acc.outputTokens,
                 acc.toolCalls, acc.durationMs,
-                acc.linesAdded, acc.linesRemoved, acc.premiumRequests
+                acc.linesAdded, acc.linesRemoved
             ));
         }
         result.sort(Comparator.comparing(UsageStatisticsData.DailyAgentStats::date)
@@ -321,7 +321,6 @@ final class UsageStatisticsLoader {
             acc.durationMs += stats.getDurationMs();
             acc.linesAdded += stats.getLinesAdded();
             acc.linesRemoved += stats.getLinesRemoved();
-            acc.premiumRequests += parsePremiumMultiplier(stats.getMultiplier());
         } catch (Exception e) {
             LOG.debug("Skipping malformed JSONL line in " + jsonlPath.getFileName() + ": " + e.getMessage());
         }
@@ -355,19 +354,6 @@ final class UsageStatisticsLoader {
         return AgentIdMapper.toAgentId(agentDisplayName);
     }
 
-    private static double parsePremiumMultiplier(String multiplier) {
-        if (multiplier == null || multiplier.isEmpty()) return 1.0;
-        // Strip trailing "x" suffix (e.g. "1x", "0.5x") before parsing
-        String cleaned = multiplier.endsWith("x")
-            ? multiplier.substring(0, multiplier.length() - 1)
-            : multiplier;
-        try {
-            return Double.parseDouble(cleaned);
-        } catch (NumberFormatException e) {
-            return 1.0;
-        }
-    }
-
     private static UsageStatisticsData.StatisticsSnapshot emptySnapshot(LocalDate start, LocalDate end) {
         return new UsageStatisticsData.StatisticsSnapshot(
             List.of(), start, end, Set.of(), Map.of());
@@ -384,6 +370,5 @@ final class UsageStatisticsLoader {
         long durationMs;
         int linesAdded;
         int linesRemoved;
-        double premiumRequests;
     }
 }

@@ -25,8 +25,7 @@ final class UsageStatisticsData {
         int toolCalls,
         long durationMs,
         int linesAdded,
-        int linesRemoved,
-        double premiumRequests
+        int linesRemoved
     ) {
     }
 
@@ -56,10 +55,6 @@ final class UsageStatisticsData {
 
         long totalDurationMs() {
             return dailyStats.stream().mapToLong(DailyAgentStats::durationMs).sum();
-        }
-
-        double totalPremiumRequests() {
-            return dailyStats.stream().mapToDouble(DailyAgentStats::premiumRequests).sum();
         }
     }
 
@@ -92,8 +87,7 @@ final class UsageStatisticsData {
     }
 
     enum Metric {
-        PREMIUM_REQUESTS("Premium Requests"),
-        TURNS("Turns"),
+        PROMPTS("Prompts"),
         TOKENS("Tokens"),
         TOOL_CALLS("Tool Calls"),
         CODE_CHANGES("Code Changes (lines)"),
@@ -139,8 +133,7 @@ final class UsageStatisticsData {
         int toolCalls,
         long durationMs,
         int linesAdded,
-        int linesRemoved,
-        double premiumRequests
+        int linesRemoved
     ) {
     }
 

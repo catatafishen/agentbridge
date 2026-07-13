@@ -30,25 +30,6 @@ object BillingCalculator {
     }
 
     /**
-     * Parses a multiplier string like `"3x"` → `3.0`, `"0.33x"` → `0.33`.
-     * Defaults to `1.0` on parse failure.
-     */
-    fun parseMultiplier(multiplier: String): Double {
-        return try {
-            multiplier.removeSuffix("x").toDouble()
-        } catch (_: NumberFormatException) {
-            1.0
-        }
-    }
-
-    /**
-     * Formats a premium count: integer if whole (e.g., `"3"`), one decimal otherwise (`"2.5"`).
-     */
-    fun formatPremium(value: Double): String =
-        if (value == value.toLong().toDouble()) value.toLong().toString()
-        else "%.1f".format(value)
-
-    /**
      * Builds an HTML tooltip for the usage graph panel showing daily rate, projection,
      * overage costs, and cycle reset date.
      *

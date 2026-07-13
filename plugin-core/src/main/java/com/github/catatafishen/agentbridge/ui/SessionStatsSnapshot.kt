@@ -14,12 +14,6 @@ data class SessionStatsSnapshot(
     val turnInputTokens: Int,
     val turnOutputTokens: Int,
     val turnCostUsd: Double?,
-    /**
-     * Premium-request weight of the most recent turn (e.g. 3.0 for an Opus turn, 1.0 default).
-     * Used by the side panel's "Last turn — Premium req" row to show the actual multiplier
-     * instead of a hardcoded "1". Defaults to 1.0 when no multiplier is known.
-     */
-    val turnPremiumRequests: Double = 1.0,
     val sessionTotalTimeSec: Long,
     val sessionTurnCount: Int,
     val sessionToolCalls: Int,
@@ -28,12 +22,4 @@ data class SessionStatsSnapshot(
     val sessionInputTokens: Long,
     val sessionOutputTokens: Long,
     val sessionCostUsd: Double,
-    /** True when the agent uses premium-request multipliers (Copilot) rather than raw tokens. */
-    val multiplierMode: Boolean,
-    /**
-     * Weighted premium-request count for this session, accounting for model multipliers
-     * (e.g. Opus counts as 3 requests per turn). Sourced from [BillingManager.localSessionPremiumRequests].
-     * Note: not persisted across session restores — resets to 0.0 after reopening the IDE.
-     */
-    val localSessionPremiumRequests: Double,
 )
