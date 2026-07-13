@@ -210,42 +210,19 @@ tasks.named("prepareSandbox") {
     }
 }
 
-// Resolve nvm Node so Gradle's exec tasks use the right version.
-// Prefers the nvm default alias (~/.nvm/alias/default) so the same
-// Node version used in the terminal is used here. Falls back to the
-// highest installed version, then to system PATH.
-val nvmNodeBin: String? by lazy {
-    val home = System.getProperty("user.home")
-    val nvmVersionsDir = File(home, ".nvm/versions/node")
-    if (!nvmVersionsDir.isDirectory) return@lazy null
-
-    // Try the nvm default alias first
-    val defaultAlias = File(home, ".nvm/alias/default")
-    if (defaultAlias.isFile) {
-        val defaultVersion = defaultAlias.readText().trim()
-        val defaultBin = File(nvmVersionsDir, "$defaultVersion/bin")
-        if (File(defaultBin, "node").exists()) return@lazy defaultBin.absolutePath
-    }
-
-    // Fall back to highest installed version
-    nvmVersionsDir.listFiles()
-        ?.filter { it.isDirectory }
-        ?.sortedByDescending { it.name }
-        ?.map { File(it, "bin") }
-        ?.firstOrNull { File(it, "node").exists() }
-        ?.absolutePath
+fun runProcess(workDir: File, vararg cmd: String) {
+    val exit = ProcessBuilder(*cmd).directory(workDir).inheritIO().start().waitFor()
+    if (exit != 0) error("Command failed (exit $exit): ${cmd.joinToString(" ")}")
 }
 
-// Full path to npm from nvm, or bare "npm" if nvm is not available.
-// Using a full path ensures Gradle doesn't resolve the executable from the
-// system PATH before our environment override takes effect.
-val npmCmd: String by lazy { nvmNodeBin?.let { "$it/npm" } ?: "npm" }
-
-fun runProcess(workDir: File, vararg cmd: String) {
-    val pb = ProcessBuilder(*cmd).directory(workDir).inheritIO()
-    nvmNodeBin?.let { bin -> pb.environment()["PATH"] = "$bin:${System.getenv("PATH")}" }
-    val exit = pb.start().waitFor()
-    if (exit != 0) error("Command failed (exit $exit): ${cmd.joinToString(" ")}")
+fun runNpm(workDir: File, vararg args: String) {
+    val command = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        val commandProcessor = System.getenv("ComSpec")?.takeIf { it.isNotBlank() } ?: "cmd.exe"
+        arrayOf(commandProcessor, "/d", "/c", "npm", *args)
+    } else {
+        arrayOf("npm", *args)
+    }
+    runProcess(workDir, *command)
 }
 
 // Build chat-ui TypeScript → bundled JS + copy static assets
@@ -258,7 +235,7 @@ val buildChatUi by tasks.registering {
         // Ensure dist exists
         file("chat-ui/dist").mkdirs()
 
-        runProcess(file("chat-ui"), npmCmd, "run", "build")
+        runNpm(file("chat-ui"), "run", "build")
 
         // Sync to generated resources directory
         copy {
@@ -279,7 +256,7 @@ val jsTest by tasks.registering {
     inputs.dir("js-tests")
 
     doLast {
-        runProcess(file("js-tests"), npmCmd, "test")
+        runNpm(file("js-tests"), "test")
     }
 }
 
