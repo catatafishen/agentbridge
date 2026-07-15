@@ -51,6 +51,11 @@ object ShortcutCheatSheetPopup {
             "Queue (send after agent finishes)"
         ),
         ShortcutRow(
+            PromptShortcutAction.STOP_AGENT_ID,
+            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+            "Stop agent"
+        ),
+        ShortcutRow(
             PromptShortcutAction.SHOW_SHORTCUTS_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_SLASH, InputEvent.CTRL_DOWN_MASK),
             "Show this popup"

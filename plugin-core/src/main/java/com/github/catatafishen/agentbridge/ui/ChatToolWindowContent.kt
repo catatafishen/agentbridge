@@ -1250,6 +1250,7 @@ class ChatToolWindowContent(
                 override fun onNudge() = onNudgeClicked()
                 override fun onQueue() = onQueueMessageClicked()
                 override fun onForceStopAndSend() = this@ChatToolWindowContent.onForceStopAndSend()
+                override fun onStopAgent() = stopAgent()
                 override fun onNewConversation() {
                     promptOrchestrator.currentSessionId = null
                     consolePanel.addSessionSeparator(
@@ -1543,6 +1544,10 @@ class ChatToolWindowContent(
                     java.awt.event.InputEvent.CTRL_DOWN_MASK
                 )
             ) to "Stop && send"
+            list += PromptShortcutAction.resolveKeystroke(
+                PromptShortcutAction.STOP_AGENT_ID,
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0)
+            ) to "Stop"
             list += PromptShortcutAction.resolveKeystroke(
                 PromptShortcutAction.QUEUE_ID,
                 KeyStroke.getKeyStroke(
