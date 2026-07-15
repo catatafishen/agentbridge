@@ -45,6 +45,7 @@ internal class PromptEditorSetup(
         fun onNudge()
         fun onQueue()
         fun onForceStopAndSend()
+        fun onStopAgent()
         fun onNewConversation()
         fun clearAndRemoveNudge(id: String)
         fun refreshShortcutHints()
@@ -67,6 +68,7 @@ internal class PromptEditorSetup(
         registerUpArrowRecall(contentComponent)
         registerPasteIntercept(editor, contentComponent)
         registerTriggerCharDetection(editor)
+        registerEscStop(contentComponent)
     }
 
     fun setupContextMenu(editor: EditorEx) {
@@ -281,6 +283,20 @@ internal class PromptEditorSetup(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.CTRL_DOWN_MASK or java.awt.event.InputEvent.SHIFT_DOWN_MASK
                 )
+            ),
+            contentComponent
+        )
+    }
+
+    private fun registerEscStop(contentComponent: JComponent) {
+        object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                if (callbacks.isSending) callbacks.onStopAgent()
+            }
+        }.registerCustomShortcutSet(
+            PromptShortcutAction.resolveShortcutSet(
+                PromptShortcutAction.STOP_AGENT_ID,
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0)
             ),
             contentComponent
         )
