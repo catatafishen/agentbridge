@@ -38,7 +38,7 @@ object ShortcutCheatSheetPopup {
             "Insert new line"
         ),
         ShortcutRow(
-            PromptShortcutAction.STOP_AND_SEND_ID,
+            PromptShortcutAction.STOP_AGENT_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
             "Stop agent and send"
         ),

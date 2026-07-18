@@ -261,7 +261,7 @@ internal class PromptEditorSetup(
             override fun actionPerformed(e: AnActionEvent) = callbacks.onForceStopAndSend()
         }.registerCustomShortcutSet(
             PromptShortcutAction.resolveShortcutSet(
-                PromptShortcutAction.STOP_AND_SEND_ID,
+                PromptShortcutAction.STOP_AGENT_ID,
                 KeyStroke.getKeyStroke(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.CTRL_DOWN_MASK
