@@ -397,7 +397,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
             description="Show all available chat prompt keyboard shortcuts">
       <keyboard-shortcut keymap="$default" first-keystroke="ctrl SLASH"/>
     </action>
-    <action id="AgentBridge.StopAgent"
+    <action id="AgentBridge.Prompt.StopAgent"
             class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
             text="Stop Agent"
             description="Stop the currently running agent session">
