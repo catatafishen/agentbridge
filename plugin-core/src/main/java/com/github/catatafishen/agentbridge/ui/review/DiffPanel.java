@@ -413,7 +413,7 @@ public final class DiffPanel extends JPanel implements Disposable {
         DefaultActionGroup group = new DefaultActionGroup();
         group.add(new AutoApproveToggleAction(project));
         group.add(new AutoCleanOnNewPromptToggleAction(project));
-        group.add(new ShowEditorHighlightsToggleAction(project));
+        group.add(new ShowReviewInEditorToggleAction(project));
         group.addSeparator();
         group.add(new DumbAwareAction("Clean Approved",
             "Remove all approved rows from the list", AllIcons.Actions.GC) {
@@ -516,12 +516,12 @@ public final class DiffPanel extends JPanel implements Disposable {
         }
     }
 
-    private static final class ShowEditorHighlightsToggleAction extends ToggleAction {
+    private static final class ShowReviewInEditorToggleAction extends ToggleAction {
         private final Project project;
 
-        ShowEditorHighlightsToggleAction(@NotNull Project project) {
-            super("Show Persisted Highlights",
-                "Paint persistent agent-edit background colors in the editor while a review session is active. Real-time follow-agent flash highlights are always shown regardless of this setting.",
+        ShowReviewInEditorToggleAction(@NotNull Project project) {
+            super("Show Changes in Editor",
+                "Show agent-edit changes in the editor while a review session is active: persistent highlights on changed lines and the banner with Accept / Revert / Show diff / Previous / Next actions. When off, the review UI stays in the review tool window only. Real-time follow-agent flash highlights are always shown regardless of this setting.",
                 AllIcons.Actions.Highlighting);
             this.project = project;
         }
@@ -533,18 +533,20 @@ public final class DiffPanel extends JPanel implements Disposable {
 
         @Override
         public boolean isSelected(@NotNull AnActionEvent e) {
-            return McpServerSettings.getInstance(project).isShowEditorHighlights();
+            return McpServerSettings.getInstance(project).isShowReviewInEditor();
         }
 
         @Override
         public void setSelected(@NotNull AnActionEvent e, boolean state) {
-            McpServerSettings.getInstance(project).setShowEditorHighlights(state);
+            McpServerSettings.getInstance(project).setShowReviewInEditor(state);
             AgentEditHighlighter highlighter = AgentEditHighlighter.getInstance(project);
             if (state) {
                 highlighter.refreshAll();
             } else {
                 highlighter.clearAll();
             }
+            // Also refresh editor banners so they appear/disappear immediately alongside the highlights.
+            com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
         }
     }
 
