@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.review;
 
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
 import com.intellij.diff.requests.SimpleDiffRequest;
@@ -37,6 +38,7 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
 
         AgentEditSession session = AgentEditSession.getInstance(project);
         if (!session.isActive()) return null;
+        if (!McpServerSettings.getInstance(project).isShowReviewInEditor()) return null;
         String before = session.getSnapshot(file);
         if (before == null) return null;
 

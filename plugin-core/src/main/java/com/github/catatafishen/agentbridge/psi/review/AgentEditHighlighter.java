@@ -87,12 +87,12 @@ public final class AgentEditHighlighter implements Disposable {
      * {@code vf}. Safe to call from any thread. No-op when the session is inactive
      * or no before-snapshot exists for the file.
      * <p>
-     * When {@link McpServerSettings#isShowEditorHighlights()} is false, any existing
+     * When {@link McpServerSettings#isShowReviewInEditor()} is false, any existing
      * highlights for the file are removed instead of being refreshed.
      */
     public void refreshHighlights(@NotNull VirtualFile vf) {
         AgentEditSession session = AgentEditSession.getInstance(project);
-        if (!session.isActive() || !McpServerSettings.getInstance(project).isShowEditorHighlights()) {
+        if (!session.isActive() || !McpServerSettings.getInstance(project).isShowReviewInEditor()) {
             clearForFile(vf);
             return;
         }
@@ -106,7 +106,7 @@ public final class AgentEditHighlighter implements Disposable {
     /**
      * Briefly highlights all changed ranges for {@code vf} in the editor to guide
      * the user to the changed location after navigation. The flash lasts 1.5 s and
-     * is independent of the {@link McpServerSettings#isShowEditorHighlights()} toggle —
+     * is independent of the {@link McpServerSettings#isShowReviewInEditor()} toggle —
      * it fires even when persistent highlights are disabled.
      * <p>
      * Also scrolls the editor to the first change. Safe to call from any thread.

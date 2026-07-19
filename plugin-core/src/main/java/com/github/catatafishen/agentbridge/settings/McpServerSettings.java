@@ -278,16 +278,19 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
-     * When true (default), agent-edit highlights are painted as persistent background colors
-     * in the editor while a review session is active. Users who rely on git diff colors may
-     * prefer to disable this to avoid redundant overlapping highlights.
+     * When true, agent-edit changes are shown in the editor while a review session is active:
+     * persistent background highlights on changed lines <em>and</em> the editor banner with
+     * Accept / Revert / Show diff / Previous / Next actions. When false, the review UI lives
+     * entirely in the review tool window and does not intrude on the editor.
+     * <p>Real-time follow-agent flash highlights are always shown regardless of this setting.
+     * <p>Default is {@code false} — users opt in explicitly via the review-panel toolbar toggle.
      */
-    public boolean isShowEditorHighlights() {
-        return myState.showEditorHighlights;
+    public boolean isShowReviewInEditor() {
+        return myState.showReviewInEditor;
     }
 
-    public void setShowEditorHighlights(boolean show) {
-        myState.showEditorHighlights = show;
+    public void setShowReviewInEditor(boolean show) {
+        myState.showReviewInEditor = show;
     }
 
     /**
@@ -357,7 +360,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean reviewAgentEdits = false;
         private boolean autoApproveAgentEdits = false;
         private boolean autoCleanReviewOnNewPrompt = false;
-        private boolean showEditorHighlights = true;
+        private boolean showReviewInEditor = false;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
@@ -474,12 +477,12 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
             this.autoCleanReviewOnNewPrompt = autoCleanReviewOnNewPrompt;
         }
 
-        public boolean isShowEditorHighlights() {
-            return showEditorHighlights;
+        public boolean isShowReviewInEditor() {
+            return showReviewInEditor;
         }
 
-        public void setShowEditorHighlights(boolean showEditorHighlights) {
-            this.showEditorHighlights = showEditorHighlights;
+        public void setShowReviewInEditor(boolean showReviewInEditor) {
+            this.showReviewInEditor = showReviewInEditor;
         }
 
         public @org.jetbrains.annotations.Nullable String getKindReadColorKey() {

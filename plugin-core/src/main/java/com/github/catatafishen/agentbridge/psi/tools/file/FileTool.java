@@ -477,7 +477,7 @@ public abstract class FileTool extends Tool {
         Project project = editor.getProject();
         if (color == HIGHLIGHT_EDIT && project != null
             && AgentEditSession.getInstance(project).isActive()
-            && McpServerSettings.getInstance(project).isShowEditorHighlights()) {
+            && McpServerSettings.getInstance(project).isShowReviewInEditor()) {
             return;
         }
 
