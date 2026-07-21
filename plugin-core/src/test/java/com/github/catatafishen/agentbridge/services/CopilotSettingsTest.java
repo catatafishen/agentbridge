@@ -123,33 +123,16 @@ public class CopilotSettingsTest extends BasePlatformTestCase {
         assertEquals(ToolPermission.ALLOW, settings.getToolPermission("unknown_tool"));
     }
 
-    public void testToolPermissionInsideProjectFallsBackToGlobal() {
-        settings.setToolPermission("tool_in_fallback", ToolPermission.ASK);
-        assertEquals(ToolPermission.ASK, settings.getToolPermissionInsideProject("tool_in_fallback"));
+    public void testOutsideProjectAccessDefaultAllow() {
+        assertEquals(ToolPermission.ALLOW, settings.getOutsideProjectAccess());
     }
 
-    public void testSetAndGetToolPermissionInsideProject() {
-        settings.setToolPermissionInsideProject("tool_in_set", ToolPermission.DENY);
-        assertEquals(ToolPermission.DENY, settings.getToolPermissionInsideProject("tool_in_set"));
-    }
-
-    public void testToolPermissionOutsideProjectFallsBackToGlobal() {
-        settings.setToolPermission("tool_out_fallback", ToolPermission.ASK);
-        assertEquals(ToolPermission.ASK, settings.getToolPermissionOutsideProject("tool_out_fallback"));
-    }
-
-    public void testSetAndGetToolPermissionOutsideProject() {
-        settings.setToolPermissionOutsideProject("tool_out_set", ToolPermission.DENY);
-        assertEquals(ToolPermission.DENY, settings.getToolPermissionOutsideProject("tool_out_set"));
-    }
-
-    public void testClearToolSubPermissions() {
-        settings.setToolPermissionInsideProject("tool_to_clear", ToolPermission.DENY);
-        settings.setToolPermissionOutsideProject("tool_to_clear", ToolPermission.ASK);
-        settings.clearToolSubPermissions("tool_to_clear");
-        // After clear, sub-permissions fall back to global (which is ALLOW by default)
-        assertEquals(ToolPermission.ALLOW, settings.getToolPermissionInsideProject("tool_to_clear"));
-        assertEquals(ToolPermission.ALLOW, settings.getToolPermissionOutsideProject("tool_to_clear"));
+    public void testSetAndGetOutsideProjectAccess() {
+        settings.setOutsideProjectAccess(ToolPermission.ASK);
+        assertEquals(ToolPermission.ASK, settings.getOutsideProjectAccess());
+        // Restore the default: this is a single global key shared across tests (unlike the old
+        // per-tool-id sub-permission keys), so leaving it set would pollute the default-value test.
+        settings.setOutsideProjectAccess(ToolPermission.ALLOW);
     }
 
     public void testResolveEffectivePermissionWithDenied() {

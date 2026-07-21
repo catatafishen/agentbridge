@@ -87,27 +87,12 @@ final class GenericAgentUiSettings implements AgentUiSettings {
     }
 
     @Override
-    public @NotNull ToolPermission getToolPermissionInsideProject(@NotNull String toolId) {
-        return settings.getToolPermissionInsideProject(toolId);
+    public @NotNull ToolPermission getOutsideProjectAccess() {
+        return settings.getOutsideProjectAccess();
     }
 
     @Override
-    public void setToolPermissionInsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
-        settings.setToolPermissionInsideProject(toolId, perm);
-    }
-
-    @Override
-    public @NotNull ToolPermission getToolPermissionOutsideProject(@NotNull String toolId) {
-        return settings.getToolPermissionOutsideProject(toolId);
-    }
-
-    @Override
-    public void setToolPermissionOutsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
-        settings.setToolPermissionOutsideProject(toolId, perm);
-    }
-
-    @Override
-    public void clearToolSubPermissions(@NotNull String toolId) {
-        settings.clearToolSubPermissions(toolId);
+    public void setOutsideProjectAccess(@NotNull ToolPermission perm) {
+        settings.setOutsideProjectAccess(perm);
     }
 }

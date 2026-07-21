@@ -48,16 +48,17 @@ public final class ActiveAgentToolLayerSettings implements ToolLayerSettings {
     @Override
     public @NotNull ToolPermission resolveEffectivePermission(@NotNull String toolId, boolean insideProject) {
         AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
-        ToolPermission top = settings.getToolPermission(toolId);
-        if (top != ToolPermission.ALLOW) return top;
-
-        ToolDefinition entry =
-            ToolRegistry.getInstance(project).findById(toolId);
-        if (entry == null || !entry.supportsPathSubPermissions()) return top;
-
-        return insideProject
-            ? settings.getToolPermissionInsideProject(toolId)
-            : settings.getToolPermissionOutsideProject(toolId);
+        ToolPermission base = settings.getToolPermission(toolId);
+        if (insideProject) {
+            return base;
+        }
+        ToolDefinition entry = ToolRegistry.getInstance(project).findById(toolId);
+        if (entry == null || !entry.supportsPathSubPermissions()) {
+            return base;
+        }
+        // Outside the project: escalate to the stricter of the tool's own permission and the
+        // single global outside-project policy.
+        return base.stricterOf(settings.getOutsideProjectAccess());
     }
 
     @Override

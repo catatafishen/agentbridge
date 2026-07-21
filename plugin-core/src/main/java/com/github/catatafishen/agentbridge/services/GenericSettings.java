@@ -15,8 +15,7 @@ import org.jetbrains.annotations.Nullable;
 public final class GenericSettings {
 
     private static final int DEFAULT_MAX_TOOL_CALLS = 0;
-    private static final String TOOL_PERM_IN_PREFIX = "tool.perm.in.";
-    private static final String TOOL_PERM_OUT_PREFIX = "tool.perm.out.";
+    private static final String OUTSIDE_PROJECT_ACCESS_KEY = "tool.outsideProjectAccess";
 
     private final String prefix;
     private final Project project;
@@ -147,32 +146,27 @@ public final class GenericSettings {
         getProperties().setValue("tool.perm." + toolId, perm.name());
     }
 
+    /**
+     * The single, project-wide "outside-project access" policy: the permission applied to any
+     * path-aware tool whose target path falls outside the project root. Defaults to
+     * {@link ToolPermission#ALLOW} — i.e. no extra restriction beyond each tool's own permission.
+     */
     @NotNull
-    public ToolPermission getToolPermissionInsideProject(@NotNull String toolId) {
-        return parseToolPermission(getProperties().getValue(TOOL_PERM_IN_PREFIX + toolId), getToolPermission(toolId));
+    public ToolPermission getOutsideProjectAccess() {
+        return parseToolPermission(getProperties().getValue(OUTSIDE_PROJECT_ACCESS_KEY), ToolPermission.ALLOW);
     }
 
-    public void setToolPermissionInsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
-        getProperties().setValue(TOOL_PERM_IN_PREFIX + toolId, perm.name());
-    }
-
-    @NotNull
-    public ToolPermission getToolPermissionOutsideProject(@NotNull String toolId) {
-        return parseToolPermission(getProperties().getValue(TOOL_PERM_OUT_PREFIX + toolId), getToolPermission(toolId));
-    }
-
-    public void setToolPermissionOutsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
-        getProperties().setValue(TOOL_PERM_OUT_PREFIX + toolId, perm.name());
+    public void setOutsideProjectAccess(@NotNull ToolPermission perm) {
+        getProperties().setValue(OUTSIDE_PROJECT_ACCESS_KEY, perm.name());
     }
 
     @NotNull
     public ToolPermission resolveEffectivePermission(@NotNull String toolId, boolean isInsideProject,
                                                      @NotNull ToolRegistry registry) {
-        ToolPermission top = getToolPermission(toolId);
+        ToolPermission base = getToolPermission(toolId);
         ToolDefinition entry = registry.findById(toolId);
-        boolean supportsSubPerms = entry != null && entry.supportsPathSubPermissions();
-        return resolveEffective(top, supportsSubPerms, isInsideProject,
-            getToolPermissionInsideProject(toolId), getToolPermissionOutsideProject(toolId));
+        boolean pathAware = entry != null && entry.supportsPathSubPermissions();
+        return resolveEffective(base, pathAware, isInsideProject, getOutsideProjectAccess());
     }
 
     /**
@@ -189,21 +183,16 @@ public final class GenericSettings {
     }
 
     /**
-     * Resolves the effective permission considering top-level, sub-permission support, and location.
-     * Pure function — no IDE dependency.
+     * Resolves the effective permission for a tool. Inside the project — or for a non-path tool —
+     * the tool's own permission applies. Outside the project, a path-aware tool is additionally
+     * subject to the global outside-project policy, taking whichever is stricter. Pure function.
      */
-    static ToolPermission resolveEffective(@NotNull ToolPermission top, boolean supportsSubPerms,
-                                           boolean isInsideProject,
-                                           @NotNull ToolPermission insidePerm,
-                                           @NotNull ToolPermission outsidePerm) {
-        if (top != ToolPermission.ALLOW) return top;
-        if (!supportsSubPerms) return top;
-        return isInsideProject ? insidePerm : outsidePerm;
-    }
-
-    public void clearToolSubPermissions(@NotNull String toolId) {
-        getProperties().unsetValue(TOOL_PERM_IN_PREFIX + toolId);
-        getProperties().unsetValue(TOOL_PERM_OUT_PREFIX + toolId);
+    static ToolPermission resolveEffective(@NotNull ToolPermission base, boolean pathAware,
+                                           boolean isInsideProject, @NotNull ToolPermission outsidePolicy) {
+        if (isInsideProject || !pathAware) {
+            return base;
+        }
+        return base.stricterOf(outsidePolicy);
     }
 
     private static final String KEY_RESUME_SESSION_ID = "resumeSessionId";
