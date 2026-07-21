@@ -32,7 +32,8 @@ public final class RunCellTool extends NotebookExecutionTool {
     public @NotNull String description() {
         return "Run one code cell on the notebook's Jupyter kernel and return its new output "
             + "(stdout/stderr, result, or error traceback). Identify the cell with 'index' (0-based) "
-            + "or 'cell_id'. Waits for the cell to finish (up to 'timeout_sec', default "
+            + "or 'cell_id'; omit both to run the cell your caret is on. Waits for the cell to finish "
+            + "(up to 'timeout_sec', default "
             + DEFAULT_TIMEOUT_SEC + "s) by watching its execution_count. Starts the kernel if needed. "
             + "Requires the Jupyter plugin (DataSpell / PyCharm Professional).";
     }
@@ -46,9 +47,8 @@ public final class RunCellTool extends NotebookExecutionTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_PATH, TYPE_STRING, "Absolute or project-relative path to the .ipynb notebook"),
-            Param.optional(PARAM_INDEX, TYPE_INTEGER, "0-based cell index (from notebook_list_cells). "
-                + "Provide this or 'cell_id'."),
-            Param.optional(PARAM_CELL_ID, TYPE_STRING, "Cell id. Provide this or 'index'."),
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, TARGET_INDEX_DESC),
+            Param.optional(PARAM_CELL_ID, TYPE_STRING, TARGET_CELL_ID_DESC),
             Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Seconds to wait for the cell to finish (default "
                 + DEFAULT_TIMEOUT_SEC + ", max " + MAX_TIMEOUT_SEC + ").")
         );
@@ -62,7 +62,7 @@ public final class RunCellTool extends NotebookExecutionTool {
             return notebookNotFound(path);
         }
         NotebookModel nb = NotebookModel.parse(readNotebookText(vf));
-        int index = nb.resolveIndex(optionalIndex(args), optionalCellId(args));
+        int index = resolveTargetIndex(nb, args, vf);
         JsonObject cell = nb.cellAt(index);
         String type = NotebookModel.cellType(cell);
         if (!NotebookModel.CODE.equals(type)) {

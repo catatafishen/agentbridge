@@ -33,7 +33,7 @@ public final class ChangeCellTypeTool extends NotebookTool {
         return "Change a cell's type to code, markdown, or raw, keeping its source. Converting a code "
             + "cell to markdown/raw drops its outputs and execution count (those are not valid on "
             + "non-code cells); converting to code adds an empty outputs list. Identify the cell with "
-            + "'index' (0-based) or 'cell_id'.";
+            + "'index' (0-based) or 'cell_id'; omit both for the cell your caret is on.";
     }
 
     @Override
@@ -56,9 +56,8 @@ public final class ChangeCellTypeTool extends NotebookTool {
         return schema(
             Param.required(PARAM_PATH, TYPE_STRING, "Absolute or project-relative path to the .ipynb notebook"),
             Param.required(PARAM_CELL_TYPE, TYPE_STRING, "New cell type: code, markdown, or raw"),
-            Param.optional(PARAM_INDEX, TYPE_INTEGER, "0-based cell index (from notebook_list_cells). "
-                + "Provide this or 'cell_id'."),
-            Param.optional(PARAM_CELL_ID, TYPE_STRING, "Cell id. Provide this or 'index'.")
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, TARGET_INDEX_DESC),
+            Param.optional(PARAM_CELL_ID, TYPE_STRING, TARGET_CELL_ID_DESC)
         );
     }
 
@@ -76,7 +75,7 @@ public final class ChangeCellTypeTool extends NotebookTool {
         String newType = args.get(PARAM_CELL_TYPE).getAsString();
 
         NotebookModel nb = NotebookModel.parse(readNotebookText(vf));
-        int index = nb.resolveIndex(optionalIndex(args), optionalCellId(args));
+        int index = resolveTargetIndex(nb, args, vf);
         String cellId = NotebookModel.cellId(nb.cellAt(index));
         String oldType = NotebookModel.cellType(nb.cellAt(index));
         nb.changeCellType(index, newType);

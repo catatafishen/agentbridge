@@ -37,6 +37,17 @@ Read and edit tools work wherever an `.ipynb` file exists — they need no kerne
 plugin. Execution tools require the `intellij.jupyter` plugin and register only when it is present;
 they disable gracefully otherwise.
 
+### Targeting the active cell
+
+The single-cell tools — `notebook_read_cell`, `notebook_run_cell`, `notebook_edit_cell`,
+`notebook_delete_cell`, `notebook_move_cell`, `notebook_change_cell_type` — take the cell reference as
+`index` (0-based) **or** `cell_id`. **Omit both** and the tool acts on the cell the caret is currently
+on in the open notebook editor, so an agent can "read/run the cell I'm looking at" without listing
+cells first. The caret cell is resolved from the editor's `#%%` marker offsets (see
+`NotebookExecutor.activeCellIndex` / the pure `cellIndexForOffset`); if the notebook is not open, or
+its markers don't map cleanly to the cell count, the tool returns an actionable error asking for an
+explicit `index`/`cell_id`.
+
 ---
 
 ## How it works

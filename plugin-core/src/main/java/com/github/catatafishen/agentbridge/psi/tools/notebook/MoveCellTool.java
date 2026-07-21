@@ -30,8 +30,9 @@ public final class MoveCellTool extends NotebookTool {
 
     @Override
     public @NotNull String description() {
-        return "Move a cell to a new position. Identify the cell with 'index' (0-based) or 'cell_id', "
-            + "and give the destination 'to_index' (0-based) where the cell should end up.";
+        return "Move a cell to a new position. Identify the cell with 'index' (0-based) or 'cell_id' "
+            + "(omit both for the cell your caret is on), and give the destination 'to_index' (0-based) "
+            + "where the cell should end up.";
     }
 
     @Override
@@ -49,9 +50,8 @@ public final class MoveCellTool extends NotebookTool {
         return schema(
             Param.required(PARAM_PATH, TYPE_STRING, "Absolute or project-relative path to the .ipynb notebook"),
             Param.required(PARAM_TO_INDEX, TYPE_INTEGER, "0-based destination index the cell should end up at"),
-            Param.optional(PARAM_INDEX, TYPE_INTEGER, "0-based index of the cell to move. "
-                + "Provide this or 'cell_id'."),
-            Param.optional(PARAM_CELL_ID, TYPE_STRING, "Id of the cell to move. Provide this or 'index'.")
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, TARGET_INDEX_DESC),
+            Param.optional(PARAM_CELL_ID, TYPE_STRING, TARGET_CELL_ID_DESC)
         );
     }
 
@@ -67,7 +67,7 @@ public final class MoveCellTool extends NotebookTool {
             return guard;
         }
         NotebookModel nb = NotebookModel.parse(readNotebookText(vf));
-        int from = nb.resolveIndex(optionalIndex(args), optionalCellId(args));
+        int from = resolveTargetIndex(nb, args, vf);
         int to = args.get(PARAM_TO_INDEX).getAsInt();
         String cellId = NotebookModel.cellId(nb.cellAt(from));
         nb.moveCell(from, to);

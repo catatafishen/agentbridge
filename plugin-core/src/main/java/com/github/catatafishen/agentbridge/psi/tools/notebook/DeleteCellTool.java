@@ -28,7 +28,8 @@ public final class DeleteCellTool extends NotebookTool {
 
     @Override
     public @NotNull String description() {
-        return "Delete one cell from a notebook, identified by 'index' (0-based) or 'cell_id'. "
+        return "Delete one cell from a notebook, identified by 'index' (0-based) or 'cell_id' "
+            + "(omit both to delete the cell your caret is on). "
             + "This removes the cell's source and any outputs; it is not undoable through the IDE "
             + "(recover via git if needed). Remaining cells shift up.";
     }
@@ -47,9 +48,8 @@ public final class DeleteCellTool extends NotebookTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_PATH, TYPE_STRING, "Absolute or project-relative path to the .ipynb notebook"),
-            Param.optional(PARAM_INDEX, TYPE_INTEGER, "0-based cell index (from notebook_list_cells). "
-                + "Provide this or 'cell_id'."),
-            Param.optional(PARAM_CELL_ID, TYPE_STRING, "Cell id. Provide this or 'index'.")
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, TARGET_INDEX_DESC),
+            Param.optional(PARAM_CELL_ID, TYPE_STRING, TARGET_CELL_ID_DESC)
         );
     }
 
@@ -65,7 +65,7 @@ public final class DeleteCellTool extends NotebookTool {
             return guard;
         }
         NotebookModel nb = NotebookModel.parse(readNotebookText(vf));
-        int index = nb.resolveIndex(optionalIndex(args), optionalCellId(args));
+        int index = resolveTargetIndex(nb, args, vf);
         String cellId = NotebookModel.cellId(nb.cellAt(index));
         String type = NotebookModel.cellType(nb.cellAt(index));
         nb.deleteCell(index);
