@@ -33,7 +33,8 @@ public final class ReadCellTool extends NotebookTool {
         return "Read one notebook cell's full source and its rendered outputs (stdout/stderr streams, "
             + "execute_result and display_data text, and error tracebacks). Rich outputs such as images "
             + "are summarized with their type and size rather than dumped. Identify the cell by 'index' "
-            + "(0-based, from notebook_list_cells) or by 'cell_id'. Reads the on-disk nbformat JSON.";
+            + "(0-based, from notebook_list_cells) or 'cell_id'; omit both to read the cell your caret is "
+            + "currently on. Reads the on-disk nbformat JSON.";
     }
 
     @Override
@@ -50,10 +51,8 @@ public final class ReadCellTool extends NotebookTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_PATH, TYPE_STRING, "Absolute or project-relative path to the .ipynb notebook"),
-            Param.optional(PARAM_INDEX, TYPE_INTEGER, "0-based cell index (from notebook_list_cells). "
-                + "Provide this or 'cell_id'."),
-            Param.optional(PARAM_CELL_ID, TYPE_STRING, "Cell id (from notebook_list_cells). "
-                + "Provide this or 'index'."),
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, TARGET_INDEX_DESC),
+            Param.optional(PARAM_CELL_ID, TYPE_STRING, TARGET_CELL_ID_DESC),
             Param.optional(PARAM_MAX_OUTPUT_CHARS, TYPE_INTEGER,
                 "Maximum characters to show per output before truncation (default "
                     + NotebookOutputFormatter.DEFAULT_MAX_OUTPUT_CHARS + ").")
@@ -70,7 +69,7 @@ public final class ReadCellTool extends NotebookTool {
         NotebookModel nb = NotebookModel.parse(readNotebookText(vf));
         FileAccessTracker.recordRead(project, vf.getPath());
 
-        int index = nb.resolveIndex(optionalIndex(args), optionalCellId(args));
+        int index = resolveTargetIndex(nb, args, vf);
         int maxChars = args.has(PARAM_MAX_OUTPUT_CHARS) && !args.get(PARAM_MAX_OUTPUT_CHARS).isJsonNull()
             ? Math.max(0, args.get(PARAM_MAX_OUTPUT_CHARS).getAsInt())
             : NotebookOutputFormatter.DEFAULT_MAX_OUTPUT_CHARS;

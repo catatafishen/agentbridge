@@ -39,6 +39,14 @@ public abstract class NotebookTool extends FileTool {
     protected static final String PARAM_INDEX = "index";
     protected static final String PARAM_CELL_ID = "cell_id";
 
+    /** Shared param descriptions for single-cell tools — documents the "omit → active cell" default. */
+    protected static final String TARGET_INDEX_DESC =
+        "0-based cell index (from notebook_list_cells). Omit both 'index' and 'cell_id' to target the "
+            + "cell your caret is currently on in the open notebook editor.";
+    protected static final String TARGET_CELL_ID_DESC =
+        "Cell id (from notebook_list_cells). Omit both 'index' and 'cell_id' to target the cell your "
+            + "caret is currently on in the open notebook editor.";
+
     protected NotebookTool(Project project) {
         super(project);
     }
@@ -177,5 +185,21 @@ public abstract class NotebookTool extends FileTool {
     protected static @Nullable String optionalCellId(@NotNull JsonObject args) {
         return args.has(PARAM_CELL_ID) && !args.get(PARAM_CELL_ID).isJsonNull()
             ? args.get(PARAM_CELL_ID).getAsString() : null;
+    }
+
+    /**
+     * Resolves the target cell for a single-cell tool. When {@code index} or {@code cell_id} is given,
+     * behaves like {@link NotebookModel#resolveIndex}. When BOTH are omitted, resolves to the cell the
+     * caret is on in the open notebook editor — so an agent can act on "the cell I'm looking at"
+     * without naming an index. Call off the EDT.
+     */
+    protected int resolveTargetIndex(@NotNull NotebookModel nb, @NotNull JsonObject args,
+                                     @NotNull VirtualFile vf) {
+        Integer index = optionalIndex(args);
+        String cellId = optionalCellId(args);
+        if (index == null && (cellId == null || cellId.isBlank())) {
+            return NotebookExecutor.activeCellIndex(project, vf, nb.cellCount());
+        }
+        return nb.resolveIndex(index, cellId);
     }
 }

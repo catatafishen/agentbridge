@@ -552,6 +552,11 @@ tasks {
             "**/psi/tools/project/RunScratchFileTool*", // ScratchFileService + RunManager
             "**/psi/tools/project/DownloadSourcesTool*", // Reflection into Gradle/Maven internals
             "**/psi/tools/quality/InteractWithModalTool*", // Swing dialog traversal
+            // ── Notebook tools (need VFS / editor / kernel + IDE runtime) ────────────
+            // Pure logic (NotebookModel/Json/OutputFormatter/Markers) is kept and unit-tested;
+            // only the IDE-coupled tool bodies and the action/EDT executor bridge are excluded.
+            "**/psi/tools/notebook/*Tool*",             // 12 notebook_* tools + Notebook{,Execution}Tool + factory
+            "**/psi/tools/notebook/NotebookExecutor*",  // ActionManager/EDT bridge; decisions live in NotebookMarkers
             // ── PSI Java support (need full PSI infrastructure) ──────────────────────
             "**/psi/java/RefactoringJavaSupport*", // PsiClass/PsiMethod traversal
             "**/psi/java/CodeNavigationJavaSupport*", // PsiClass outline + hierarchy

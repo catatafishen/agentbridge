@@ -21,8 +21,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -128,12 +126,59 @@ public final class NotebookExecutor {
         }
     }
 
+    /**
+     * Resolves which cell the caret is currently in for an open notebook editor, as a 0-based index
+     * matching the nbformat cell order. This lets the notebook tools act on "the cell I'm on" when no
+     * explicit {@code index}/{@code cell_id} is given. Call off the EDT.
+     *
+     * @param cellCount the notebook's cell count, used to verify the editor's {@code #%%} markers map
+     *                  cleanly to cells before trusting the caret position
+     * @throws NotebookModel.NotebookException with an actionable message if the notebook is not open in
+     *                                         an editor, the caret is above the first cell, or the
+     *                                         editor's markers cannot be mapped to {@code cellCount}
+     */
+    public static int activeCellIndex(Project project, VirtualFile vf, int cellCount) {
+        CompletableFuture<Object> future = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                Editor editor = findEditor(project, vf);
+                if (editor == null) {
+                    future.complete("notebook '" + vf.getName() + "' is not open in an editor, so the active"
+                        + " cell is unknown — open it and place the caret in a cell, or pass 'index'/'cell_id'");
+                    return;
+                }
+                int[] markers = NotebookMarkers.cellMarkerOffsets(editor.getDocument().getCharsSequence());
+                future.complete(NotebookMarkers.resolveActiveCell(markers, cellCount,
+                    editor.getCaretModel().getOffset()));
+            } catch (NotebookModel.NotebookException e) {
+                future.complete(e.getMessage());
+            } catch (Throwable t) { // NOSONAR — surface any EDT failure as a tool error, never crash the dispatcher
+                LOG.warn("Resolving the active notebook cell failed on EDT", t);
+                future.complete("could not determine the active cell: " + rootMessage(t));
+            }
+        });
+        Object result;
+        try {
+            result = future.get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new NotebookModel.NotebookException("interrupted while resolving the active cell");
+        } catch (Exception e) {
+            throw new NotebookModel.NotebookException(
+                "timed out resolving the active cell (the notebook editor may be busy)");
+        }
+        if (result instanceof Integer i) {
+            return i;
+        }
+        throw new NotebookModel.NotebookException(String.valueOf(result));
+    }
+
     // ── EDT work ──────────────────────────────────────────────────────────────
 
     private @Nullable String invokeOnEdt(VirtualFile vf, String actionId,
                                          @Nullable Integer cellIndex, int cellCount) {
         FileEditorManager.getInstance(project).openFile(vf, false);
-        Editor editor = findEditor(vf);
+        Editor editor = findEditor(project, vf);
         if (editor == null) {
             return "Error: could not obtain a text editor for '" + vf.getName() + "'. "
                 + "Open the notebook in the IDE and ensure the Jupyter plugin is active.";
@@ -161,7 +206,7 @@ public final class NotebookExecutor {
     }
 
     private @Nullable String positionCaret(Editor editor, int cellIndex, int cellCount) {
-        int[] markers = cellMarkerOffsets(editor.getDocument().getCharsSequence());
+        int[] markers = NotebookMarkers.cellMarkerOffsets(editor.getDocument().getCharsSequence());
         if (markers.length != cellCount) {
             return "Error: could not reliably map cell " + cellIndex + " to the notebook editor "
                 + "(found " + markers.length + " cell markers for " + cellCount + " cells). "
@@ -175,7 +220,7 @@ public final class NotebookExecutor {
         return null;
     }
 
-    private @Nullable Editor findEditor(VirtualFile vf) {
+    private static @Nullable Editor findEditor(Project project, VirtualFile vf) {
         FileEditorManager fem = FileEditorManager.getInstance(project);
         FileDocumentManager fdm = FileDocumentManager.getInstance();
 
@@ -196,39 +241,6 @@ public final class NotebookExecutor {
             }
         }
         return null;
-    }
-
-    // ── pure helper (unit-tested) ─────────────────────────────────────────────
-
-    /**
-     * Returns the document offsets where each notebook cell begins in the IDE's {@code #%%} script
-     * view — every cell (code / markdown / raw) is introduced by a line starting with {@code #%%}.
-     * The Nth offset is the start of the Nth cell, matching the nbformat cell order.
-     */
-    static int[] cellMarkerOffsets(CharSequence text) {
-        List<Integer> offsets = new ArrayList<>();
-        int length = text.length();
-        int lineStart = 0;
-        for (int i = 0; i <= length; i++) {
-            if (i == length || text.charAt(i) == '\n') {
-                if (isCellMarker(text, lineStart, i)) {
-                    offsets.add(lineStart);
-                }
-                lineStart = i + 1;
-            }
-        }
-        int[] result = new int[offsets.size()];
-        for (int i = 0; i < result.length; i++) {
-            result[i] = offsets.get(i);
-        }
-        return result;
-    }
-
-    private static boolean isCellMarker(CharSequence text, int start, int end) {
-        return end - start >= 3
-            && text.charAt(start) == '#'
-            && text.charAt(start + 1) == '%'
-            && text.charAt(start + 2) == '%';
     }
 
     private static String rootMessage(Throwable t) {

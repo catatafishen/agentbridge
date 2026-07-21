@@ -31,7 +31,8 @@ public final class EditCellTool extends NotebookTool {
     @Override
     public @NotNull String description() {
         return "Replace the source text of one notebook cell, identified by 'index' (0-based) or "
-            + "'cell_id'. Existing outputs are left as-is (they become stale until the cell is re-run "
+            + "'cell_id' (omit both to edit the cell your caret is on). Existing outputs are left as-is "
+            + "(they become stale until the cell is re-run "
             + "with notebook_run_cell). Does NOT change the cell type — use notebook_change_cell_type "
             + "for that. Writes the nbformat JSON and reloads the notebook editor.";
     }
@@ -56,9 +57,8 @@ public final class EditCellTool extends NotebookTool {
         return schema(
             Param.required(PARAM_PATH, TYPE_STRING, "Absolute or project-relative path to the .ipynb notebook"),
             Param.required(PARAM_SOURCE, TYPE_STRING, "New full source text for the cell"),
-            Param.optional(PARAM_INDEX, TYPE_INTEGER, "0-based cell index (from notebook_list_cells). "
-                + "Provide this or 'cell_id'."),
-            Param.optional(PARAM_CELL_ID, TYPE_STRING, "Cell id. Provide this or 'index'.")
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, TARGET_INDEX_DESC),
+            Param.optional(PARAM_CELL_ID, TYPE_STRING, TARGET_CELL_ID_DESC)
         );
     }
 
@@ -76,7 +76,7 @@ public final class EditCellTool extends NotebookTool {
         String source = args.get(PARAM_SOURCE).getAsString();
 
         NotebookModel nb = NotebookModel.parse(readNotebookText(vf));
-        int index = nb.resolveIndex(optionalIndex(args), optionalCellId(args));
+        int index = resolveTargetIndex(nb, args, vf);
         String cellId = NotebookModel.cellId(nb.cellAt(index));
         nb.setCellSource(index, source);
 
