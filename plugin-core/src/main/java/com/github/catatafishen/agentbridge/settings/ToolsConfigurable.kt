@@ -148,8 +148,6 @@ class ToolsConfigurable(private val project: Project) :
         val tool: ToolDefinition,
         val checkbox: JBCheckBox,
         val permCombo: PermissionComboBox?,
-        val inProjectCombo: PermissionComboBox?,
-        val outProjectCombo: PermissionComboBox?,
         val hookIndicator: JBLabel,
         val card: JComponent,
     )
@@ -383,17 +381,16 @@ class ToolsConfigurable(private val project: Project) :
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             alignmentX = Component.LEFT_ALIGNMENT
             border = JBUI.Borders.empty(6, 0, 2, 0)
-            add(JBLabel("All actions outside project directory:").apply {
+            add(JBLabel("Access outside the project directory:").apply {
                 icon = AllIcons.Nodes.Folder
                 toolTipText =
-                    "Apply this permission to every path-aware tool's 'Outside project' sub-permission"
+                    "One project-wide policy applied to any path-aware tool acting on a file outside " +
+                        "the project (the stricter of this and the tool's own permission wins)"
                 border = JBUI.Borders.emptyRight(6)
             })
             val combo = PermissionComboBox(PermOption.ALL).apply {
-                selectPermission(computeOutsideProjectInitialPermission())
-                toolTipText =
-                    "Set the outside-project sub-permission for every path-aware tool at once"
-                addActionListener { applyOutsideProjectQuickPermission() }
+                selectPermission(uiSettings.outsideProjectAccess)
+                toolTipText = "Single policy for file access outside the project directory"
             }
             outsideProjectCombo = combo
             add(combo)
@@ -556,75 +553,38 @@ class ToolsConfigurable(private val project: Project) :
             }
         }
 
-        val (permCombo, inCombo, outCombo) = buildPermissionCombos(tool, enabled)
+        val permCombo = buildPermissionCombo(tool, enabled)
 
         val hookConfig = HookRegistry.getInstance(project).findConfig(toolId)
         val hasHooks = hookConfig != null && !hookConfig.isEmpty
         val hookIndicator = JBLabel().apply { updateHookIndicator(this, hasHooks) }
 
-        val card = buildCard(tool, checkbox, permCombo, inCombo, outCombo, hookIndicator)
+        val card = buildCard(tool, checkbox, permCombo, hookIndicator)
 
-        return ToolRow(tool, checkbox, permCombo, inCombo, outCombo, hookIndicator, card)
+        return ToolRow(tool, checkbox, permCombo, hookIndicator, card)
     }
 
     /**
-     * Returns (permCombo, inProjectCombo, outProjectCombo). Any element may be null:
-     * - permCombo is null when the tool runs silently (no permission control)
-     * - inProjectCombo/outProjectCombo are null when the tool doesn't accept paths
-     *
-     * Top-level combo offers Allow/Ask only (Deny is expressed by disabling the tool).
-     * Sub-permission combos offer Allow/Ask/Deny so users can enable a tool while
-     * denying a specific scope (e.g. allow inside project, deny outside).
+     * Returns the permission combo for a tool, or null when the tool runs silently (a built-in
+     * without deny control). The combo offers Allow/Ask only — Deny is expressed by disabling the
+     * tool. Path-aware tools are additionally governed by the single global "outside-project access"
+     * control (see buildOutsideProjectQuickRow), not by per-tool sub-permissions.
      */
-    private fun buildPermissionCombos(
+    private fun buildPermissionCombo(
         tool: ToolDefinition,
         enabled: Boolean,
-    ): Triple<PermissionComboBox?, PermissionComboBox?, PermissionComboBox?> {
+    ): PermissionComboBox? {
         // Built-in tools without deny control run silently
         if (tool.isBuiltIn && !tool.hasDenyControl()) {
-            return Triple(null, null, null)
+            return null
         }
-
-        val permCombo = PermissionComboBox(PermOption.ALLOW_ASK).apply {
+        return PermissionComboBox(PermOption.ALLOW_ASK).apply {
             selectPermission(uiSettings.getToolPermission(tool.id()))
             toolTipText = if (enabled) "Permission when agent requests this tool"
             else "This tool is disabled — enable it to control its permission"
             isEnabled = enabled
             isOpaque = false
         }
-
-        if (!tool.supportsPathSubPermissions() || tool.isBuiltIn) {
-            return Triple(permCombo, null, null)
-        }
-
-        val topIsAllow = permCombo.selectedPermission() == ToolPermission.ALLOW
-        fun subTip(inside: Boolean, active: Boolean) =
-            if (active) "Permission for files ${if (inside) "inside" else "outside"} the current project"
-            else "Controlled by the top-level permission above"
-
-        val inCombo = PermissionComboBox(PermOption.ALL).apply {
-            isEnabled = enabled && topIsAllow
-            selectPermission(uiSettings.getToolPermissionInsideProject(tool.id()))
-            toolTipText = subTip(true, topIsAllow)
-            isOpaque = false
-        }
-        val outCombo = PermissionComboBox(PermOption.ALL).apply {
-            isEnabled = enabled && topIsAllow
-            selectPermission(uiSettings.getToolPermissionOutsideProject(tool.id()))
-            toolTipText = subTip(false, topIsAllow)
-            isOpaque = false
-        }
-        permCombo.addActionListener {
-            val allow = permCombo.selectedPermission() == ToolPermission.ALLOW
-            val toolEnabled = toolRows[tool.id()]?.checkbox?.isSelected ?: enabled
-            inCombo.isEnabled = toolEnabled && allow
-            outCombo.isEnabled = toolEnabled && allow
-            inCombo.toolTipText = subTip(true, allow)
-            outCombo.toolTipText = subTip(false, allow)
-            inCombo.repaint()
-            outCombo.repaint()
-        }
-        return Triple(permCombo, inCombo, outCombo)
     }
 
     // Kind-color tinting on combos was removed: each card now sits in a tinted
@@ -635,8 +595,6 @@ class ToolsConfigurable(private val project: Project) :
         tool: ToolDefinition,
         checkbox: JBCheckBox,
         permCombo: PermissionComboBox?,
-        inCombo: PermissionComboBox?,
-        outCombo: PermissionComboBox?,
         hookIndicator: JBLabel,
     ): JComponent {
         val toolId = tool.id()
@@ -695,7 +653,7 @@ class ToolsConfigurable(private val project: Project) :
         // the card's top-row layout (checkbox/spacer/hook indicator/gear).
         gbc.gridy = 2; gbc.gridx = 0; gbc.gridwidth = 4
         gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL
-        card.add(buildPermissionSubPanel(permCombo, inCombo, outCombo), gbc)
+        card.add(buildPermissionSubPanel(permCombo), gbc)
         gbc.gridwidth = 1; gbc.weightx = 0.0; gbc.fill = GridBagConstraints.NONE
 
         return card
@@ -708,8 +666,6 @@ class ToolsConfigurable(private val project: Project) :
      */
     private fun buildPermissionSubPanel(
         permCombo: PermissionComboBox?,
-        inCombo: PermissionComboBox?,
-        outCombo: PermissionComboBox?,
     ): JComponent {
         val panel = JBPanel<JBPanel<*>>(GridBagLayout()).apply { isOpaque = false }
         val pgbc = GridBagConstraints().apply {
@@ -737,17 +693,6 @@ class ToolsConfigurable(private val project: Project) :
         panel.add(JBPanel<JBPanel<*>>().apply { isOpaque = false }, pgbc)
         pgbc.weightx = 0.0; pgbc.fill = GridBagConstraints.NONE
 
-        if (inCombo != null && outCombo != null) {
-            pgbc.gridy = 1; pgbc.gridx = 0
-            panel.add(permLabel("▸ Inside project:", small = true), pgbc)
-            pgbc.gridx = 1
-            panel.add(inCombo, pgbc)
-
-            pgbc.gridy = 2; pgbc.gridx = 0
-            panel.add(permLabel("▸ Outside project:", small = true), pgbc)
-            pgbc.gridx = 1
-            panel.add(outCombo, pgbc)
-        }
         return panel
     }
 
@@ -845,14 +790,8 @@ class ToolsConfigurable(private val project: Project) :
 
     private fun refreshCardEnabledState(toolId: String) {
         val row = toolRows[toolId] ?: return
-        val enabled = row.checkbox.isSelected
-        row.permCombo?.isEnabled = enabled
+        row.permCombo?.isEnabled = row.checkbox.isSelected
         row.permCombo?.repaint()
-        val topAllow = row.permCombo?.selectedPermission() == ToolPermission.ALLOW
-        row.inProjectCombo?.isEnabled = enabled && topAllow
-        row.inProjectCombo?.repaint()
-        row.outProjectCombo?.isEnabled = enabled && topAllow
-        row.outProjectCombo?.repaint()
     }
 
     // ── Counter & batch ───────────────────────────────────────────────────────
@@ -886,18 +825,6 @@ class ToolsConfigurable(private val project: Project) :
         }
     }
 
-    private fun computeOutsideProjectInitialPermission(): ToolPermission {
-        val rows = toolRows.values.mapNotNull { it.outProjectCombo }
-        if (rows.isEmpty()) return ToolPermission.ALLOW
-        val perms = rows.map { it.selectedPermission() }.distinct()
-        return if (perms.size == 1) perms.first() else ToolPermission.ASK
-    }
-
-    private fun applyOutsideProjectQuickPermission() {
-        val perm = outsideProjectCombo?.selectedPermission() ?: return
-        toolRows.values.forEach { row -> row.outProjectCombo?.selectPermission(perm) }
-    }
-
     // ── Persist / modify ──────────────────────────────────────────────────────
 
     private fun computeIsModified(): Boolean {
@@ -905,16 +832,10 @@ class ToolsConfigurable(private val project: Project) :
             val id = row.tool.id()
             if (row.checkbox.isSelected != mcpSettings.isToolEnabled(id)) return true
             val pc = row.permCombo ?: continue
-            val perm = pc.selectedPermission()
-            if (perm != uiSettings.getToolPermission(id)) return true
-            if (perm == ToolPermission.ALLOW) {
-                row.inProjectCombo?.let {
-                    if (it.selectedPermission() != uiSettings.getToolPermissionInsideProject(id)) return true
-                }
-                row.outProjectCombo?.let {
-                    if (it.selectedPermission() != uiSettings.getToolPermissionOutsideProject(id)) return true
-                }
-            }
+            if (pc.selectedPermission() != uiSettings.getToolPermission(id)) return true
+        }
+        outsideProjectCombo?.let {
+            if (it.selectedPermission() != uiSettings.outsideProjectAccess) return true
         }
         return false
     }
@@ -923,21 +844,9 @@ class ToolsConfigurable(private val project: Project) :
         for (row in toolRows.values) {
             val id = row.tool.id()
             mcpSettings.setToolEnabled(id, row.checkbox.isSelected)
-            row.permCombo?.let { pc ->
-                val perm = pc.selectedPermission()
-                uiSettings.setToolPermission(id, perm)
-                if (perm == ToolPermission.ALLOW) {
-                    row.inProjectCombo?.let {
-                        uiSettings.setToolPermissionInsideProject(id, it.selectedPermission())
-                    }
-                    row.outProjectCombo?.let {
-                        uiSettings.setToolPermissionOutsideProject(id, it.selectedPermission())
-                    }
-                } else {
-                    uiSettings.clearToolSubPermissions(id)
-                }
-            }
+            row.permCombo?.let { pc -> uiSettings.setToolPermission(id, pc.selectedPermission()) }
         }
+        outsideProjectCombo?.let { uiSettings.setOutsideProjectAccess(it.selectedPermission()) }
     }
 
     private fun resetFromSettings() {
@@ -945,8 +854,6 @@ class ToolsConfigurable(private val project: Project) :
             val id = row.tool.id()
             row.checkbox.isSelected = mcpSettings.isToolEnabled(id)
             row.permCombo?.selectPermission(uiSettings.getToolPermission(id))
-            row.inProjectCombo?.selectPermission(uiSettings.getToolPermissionInsideProject(id))
-            row.outProjectCombo?.selectPermission(uiSettings.getToolPermissionOutsideProject(id))
             val hookConfig = HookRegistry.getInstance(project).findConfig(id)
             updateHookIndicator(row.hookIndicator, hookConfig != null && !hookConfig.isEmpty)
             refreshCardEnabledState(id)
@@ -954,7 +861,7 @@ class ToolsConfigurable(private val project: Project) :
         for ((group, combo) in groupCombos) {
             combo.selectPermission(computeGroupInitialPermission(group))
         }
-        outsideProjectCombo?.selectPermission(computeOutsideProjectInitialPermission())
+        outsideProjectCombo?.selectPermission(uiSettings.outsideProjectAccess)
         updateCounter()
     }
 

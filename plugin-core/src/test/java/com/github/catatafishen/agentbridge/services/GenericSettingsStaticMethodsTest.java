@@ -77,61 +77,42 @@ class GenericSettingsStaticMethodsTest {
     class ResolveEffective {
 
         @Test
-        @DisplayName("top=DENY short-circuits to DENY regardless of other params")
-        void topDenyShortCircuits() {
-            assertEquals(ToolPermission.DENY,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.DENY, true, true,
-                            ToolPermission.ALLOW, ToolPermission.ALLOW));
-        }
-
-        @Test
-        @DisplayName("top=ASK short-circuits to ASK regardless of other params")
-        void topAskShortCircuits() {
-            assertEquals(ToolPermission.ASK,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.ASK, true, false,
-                            ToolPermission.ALLOW, ToolPermission.ALLOW));
-        }
-
-        @Test
-        @DisplayName("top=ALLOW, supportsSubPerms=false → returns ALLOW")
-        void allowNoSubPerms() {
+        @DisplayName("inside the project → the tool's own permission (outside policy ignored)")
+        void insideUsesBase() {
             assertEquals(ToolPermission.ALLOW,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.ALLOW, false, true,
-                            ToolPermission.DENY, ToolPermission.DENY));
+                    GenericSettings.resolveEffective(ToolPermission.ALLOW, true, true, ToolPermission.DENY));
         }
 
         @Test
-        @DisplayName("top=ALLOW, supportsSubPerms=true, isInside=true → returns insidePerm")
-        void allowSubPermsInsideProject() {
+        @DisplayName("non-path tool → the tool's own permission (outside policy ignored)")
+        void nonPathToolUsesBase() {
+            assertEquals(ToolPermission.ALLOW,
+                    GenericSettings.resolveEffective(ToolPermission.ALLOW, false, false, ToolPermission.DENY));
+        }
+
+        @Test
+        @DisplayName("outside + path tool → outside policy when it is stricter than the tool's permission")
+        void outsidePolicyEscalates() {
             assertEquals(ToolPermission.ASK,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.ALLOW, true, true,
-                            ToolPermission.ASK, ToolPermission.DENY));
+                    GenericSettings.resolveEffective(ToolPermission.ALLOW, true, false, ToolPermission.ASK));
+            assertEquals(ToolPermission.DENY,
+                    GenericSettings.resolveEffective(ToolPermission.ASK, true, false, ToolPermission.DENY));
         }
 
         @Test
-        @DisplayName("top=ALLOW, supportsSubPerms=true, isInside=false → returns outsidePerm")
-        void allowSubPermsOutsideProject() {
+        @DisplayName("outside + path tool → the tool's permission when it is stricter than the outside policy")
+        void toolPermissionWinsWhenStricter() {
             assertEquals(ToolPermission.DENY,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.ALLOW, true, false,
-                            ToolPermission.ASK, ToolPermission.DENY));
-        }
-
-        @Test
-        @DisplayName("inside=DENY, outside=ASK — verifies different sub-permissions")
-        void differentSubPermissions() {
-            assertEquals(ToolPermission.DENY,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.ALLOW, true, true,
-                            ToolPermission.DENY, ToolPermission.ASK));
+                    GenericSettings.resolveEffective(ToolPermission.DENY, true, false, ToolPermission.ALLOW));
             assertEquals(ToolPermission.ASK,
-                    GenericSettings.resolveEffective(
-                            ToolPermission.ALLOW, true, false,
-                            ToolPermission.DENY, ToolPermission.ASK));
+                    GenericSettings.resolveEffective(ToolPermission.ASK, true, false, ToolPermission.ALLOW));
+        }
+
+        @Test
+        @DisplayName("outside + path tool, equal severity → that permission")
+        void equalSeverity() {
+            assertEquals(ToolPermission.ASK,
+                    GenericSettings.resolveEffective(ToolPermission.ASK, true, false, ToolPermission.ASK));
         }
     }
 

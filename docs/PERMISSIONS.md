@@ -198,25 +198,28 @@ public enum ToolPermission {
 
 Default for all tools is **ALLOW** (no stored value = allow).
 
-### Path-based sub-permissions
+### Outside-project access policy
 
-For tools that support path-based sub-permissions (`ToolEntry.supportsPathSubPermissions = true`), the effective
-permission can differ based on whether the target file is inside or outside the project root:
+For tools that act on a file path (`ToolDefinition.supportsPathSubPermissions() == true`), access to files
+**outside the project root** is governed by a single project-wide policy — not by per-tool overrides. Inside the
+project (and for non-path tools) the tool's own permission applies unchanged:
 
 ```
 resolveEffectivePermission(toolId, insideProject):
-  1. Read top-level permission for toolId
-  2. If top-level != ALLOW, return it (DENY/ASK always wins)
-  3. If top-level == ALLOW and tool supports sub-permissions:
-       → return insideProject  ? getToolPermissionInsideProject(toolId)
-                               : getToolPermissionOutsideProject(toolId)
+  1. base = permission for toolId
+  2. If insideProject, or the tool is not path-aware → return base
+  3. Otherwise (path is outside the project) → return the stricter of
+       { base, outsideProjectAccess }        // severity order: ALLOW < ASK < DENY
 ```
+
+A path outside the project can therefore only ever be *more* restricted than the tool's own permission, never
+less. The default `outsideProjectAccess` is `ALLOW`, so out-of-project paths behave exactly like in-project ones
+until the user tightens the policy.
 
 Storage keys in `PropertiesComponent`:
 
-- `{profileId}.tool.perm.{toolId}` — top-level permission
-- `{profileId}.tool.perm.in.{toolId}` — inside-project override
-- `{profileId}.tool.perm.out.{toolId}` — outside-project override
+- `tool.perm.{toolId}` — the tool's permission
+- `tool.outsideProjectAccess` — the single global outside-project policy (default `ALLOW`)
 
 ### `usePluginPermissions` flag
 

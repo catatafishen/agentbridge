@@ -76,15 +76,12 @@ public interface AgentUiSettings {
 
     void setToolPermission(@NotNull String toolId, @NotNull ToolPermission perm);
 
+    /**
+     * The single project-wide "outside-project access" policy applied to path-aware tools whose
+     * target path is outside the project root (the stricter of it and the tool's own permission wins).
+     */
     @NotNull
-    ToolPermission getToolPermissionInsideProject(@NotNull String toolId);
+    ToolPermission getOutsideProjectAccess();
 
-    void setToolPermissionInsideProject(@NotNull String toolId, @NotNull ToolPermission perm);
-
-    @NotNull
-    ToolPermission getToolPermissionOutsideProject(@NotNull String toolId);
-
-    void setToolPermissionOutsideProject(@NotNull String toolId, @NotNull ToolPermission perm);
-
-    void clearToolSubPermissions(@NotNull String toolId);
+    void setOutsideProjectAccess(@NotNull ToolPermission perm);
 }
