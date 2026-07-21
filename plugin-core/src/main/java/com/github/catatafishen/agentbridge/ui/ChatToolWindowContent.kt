@@ -1666,11 +1666,12 @@ class ChatToolWindowContent(
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
         leftGroup.add(AttachContextDropdownAction())
+        leftGroup.add(SessionManagementAction())
         leftGroup.add(DisconnectOrStopAction())
         leftGroup.add(PauseToggleAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
-            "AgentControls", leftGroup, false
+            "AgentControls", leftGroup, true
         )
         controlsToolbar.isReservePlaceAutoPopupIcon = false
         controlsToolbar.targetComponent = controlsToolbar.component
@@ -1759,6 +1760,70 @@ class ChatToolWindowContent(
     }
 
     /**
+     * Dropdown toolbar button that exposes session management options (restart, clear, logout).
+     * Always visible so the user doesn't have to discover these through a popup.
+     */
+    private inner class SessionManagementAction : AnAction(
+        "Session", "Manage session (restart, clear, logout)",
+        AllIcons.Actions.MoreHorizontal
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabledAndVisible = agentManager.isConnected
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val inputEvent = e.inputEvent ?: return
+            val component = inputEvent.source as? Component ?: return
+            val group = DefaultActionGroup()
+            group.add(object : AnAction(
+                "Restart (Keep History)",
+                "Start a new agent session while keeping the conversation visible",
+                AllIcons.Actions.Restart
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = resetSessionKeepingHistory()
+            })
+            group.add(object : AnAction(
+                "Clear and Restart",
+                "Clear the conversation and start a completely fresh session",
+                AllIcons.Actions.GC
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = resetSession()
+            })
+            group.addSeparator()
+            group.add(object : AnAction(
+                "Logout",
+                "Delete authentication tokens for the current agent",
+                AllIcons.Actions.Exit
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun update(e: AnActionEvent) {
+                    val agentId = agentManager.getActiveProfile().id
+                    val isClaudeOrCodex =
+                        agentId == ClaudeClient.PROFILE_ID
+                            || agentId == CodexClient.PROFILE_ID
+                    e.presentation.isEnabledAndVisible = !isClaudeOrCodex
+                }
+
+                override fun actionPerformed(e: AnActionEvent) {
+                    LOG.info("Logout: disabling auto-connect and disconnecting")
+                    agentManager.isAutoConnect = false
+                    authService.logout()
+                    disconnectFromAgent()
+                }
+            })
+            val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+                null, group, e.dataContext,
+                JBPopupFactory.ActionSelectionAid.MNEMONICS, false
+            )
+            popup.showUnderneathOf(component)
+        }
+    }
+
+    /**
      * Single toolbar slot that shows as Stop while the agent is running, and as Disconnect when idle.
      * This lets the power/disconnect action occupy the same visual position as the stop button
      * without needing two separate buttons.
@@ -1778,7 +1843,7 @@ class ChatToolWindowContent(
             } else {
                 e.presentation.icon = powerIcon
                 e.presentation.text = "Disconnect"
-                e.presentation.description = "Disconnect or manage the current session"
+                e.presentation.description = "Disconnect from the agent"
             }
             e.presentation.isEnabled = true
         }
@@ -1787,16 +1852,7 @@ class ChatToolWindowContent(
             if (isSending || isBackgroundAgentRunning) {
                 stopAgent()
             } else {
-                val inputEvent = e.inputEvent ?: return
-                val component = inputEvent.source as? Component ?: return
-                val group = DefaultActionGroup()
-                addSessionManagementSection(group)
-                val popup = JBPopupFactory.getInstance()
-                    .createActionGroupPopup(
-                        null, group, e.dataContext,
-                        JBPopupFactory.ActionSelectionAid.MNEMONICS, false
-                    )
-                popup.showUnderneathOf(component)
+                disconnectFromAgent()
             }
         }
     }
@@ -2179,61 +2235,7 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun addSessionManagementSection(group: DefaultActionGroup) {
-        group.add(object : AnAction(
-            "Disconnect",
-            "Stop the ACP process and return to the connection screen",
-            AllIcons.Actions.Cancel
-        ) {
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-            override fun actionPerformed(e: AnActionEvent) = disconnectFromAgent()
-        })
-        val dangerousActionsGroup = DefaultActionGroup("Session", true)
-        dangerousActionsGroup.add(object : AnAction(
-            "Restart (Keep History)",
-            "Start a new agent session while keeping the conversation visible",
-            AllIcons.Actions.Restart
-        ) {
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-            override fun actionPerformed(e: AnActionEvent) = resetSessionKeepingHistory()
-        })
-        dangerousActionsGroup.add(object : AnAction(
-            "Clear and Restart",
-            "Clear the conversation and start a completely fresh session",
-            AllIcons.Actions.GC
-        ) {
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-            override fun actionPerformed(e: AnActionEvent) = resetSession()
-        })
-        dangerousActionsGroup.addSeparator()
-        dangerousActionsGroup.add(object : AnAction(
-            "Logout",
-            "Delete authentication tokens for the current agent",
-            AllIcons.Actions.Exit
-        ) {
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-            override fun update(e: AnActionEvent) {
-                // The plugin no longer manages credentials for Claude or Codex — there is
-                // no programmatic logout for either CLI (Claude has no clean revoke command;
-                // Codex has no `codex logout` subcommand at all). Hide the button for both
-                // so users aren't misled into thinking it does anything.
-                // See docs/AUTH-HANDLING.md.
-                val agentId = agentManager.getActiveProfile().id
-                val isClaudeOrCodex =
-                    agentId == ClaudeClient.PROFILE_ID
-                        || agentId == CodexClient.PROFILE_ID
-                e.presentation.isEnabledAndVisible = !isClaudeOrCodex
-            }
 
-            override fun actionPerformed(e: AnActionEvent) {
-                LOG.info("Logout: disabling auto-connect and disconnecting")
-                agentManager.isAutoConnect = false
-                authService.logout()
-                disconnectFromAgent()
-            }
-        })
-        group.add(dangerousActionsGroup)
-    }
 
     private inner class StatisticsAction : AnAction(
         "Usage Statistics", "View usage statistics across agent sessions",
