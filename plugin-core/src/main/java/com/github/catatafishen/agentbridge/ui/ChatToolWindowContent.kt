@@ -1673,6 +1673,7 @@ class ChatToolWindowContent(
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentControls", leftGroup, true
         )
+        controlsToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
         controlsToolbar.isReservePlaceAutoPopupIcon = false
         controlsToolbar.targetComponent = controlsToolbar.component
         controlsToolbar.component.border = JBUI.Borders.empty(8, 4, 4, 0)
