@@ -45,6 +45,7 @@ public final class ToolRegistry {
         MACRO("Recorded Macros"),
         CUSTOM_MCP("Custom MCP Servers"),
         DATABASE("Database"),
+        NOTEBOOK("Jupyter Notebook"),
         MEMORY("Memory");
 
         public final String displayName;

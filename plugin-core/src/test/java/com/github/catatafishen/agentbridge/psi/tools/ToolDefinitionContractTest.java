@@ -118,6 +118,18 @@ import com.github.catatafishen.agentbridge.psi.tools.terminal.WriteTerminalInput
 import com.github.catatafishen.agentbridge.psi.tools.testing.GetCoverageTool;
 import com.github.catatafishen.agentbridge.psi.tools.testing.ListTestsTool;
 import com.github.catatafishen.agentbridge.psi.tools.testing.RunTestsTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.AddCellTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.ChangeCellTypeTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.DeleteCellTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.EditCellTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.InterruptKernelTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.KernelStatusTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.ListCellsTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.MoveCellTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.ReadCellTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.RestartKernelTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.RunAllCellsTool;
+import com.github.catatafishen.agentbridge.psi.tools.notebook.RunCellTool;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -357,11 +369,31 @@ class ToolDefinitionContractTest {
         );
     }
 
+    // ── Notebook tools ────────────────────────────────────────────────────────
+
+    static Stream<Tool> notebookTools() {
+        return Stream.of(
+            new ListCellsTool(null),
+            new ReadCellTool(null),
+            new EditCellTool(null),
+            new AddCellTool(null),
+            new DeleteCellTool(null),
+            new MoveCellTool(null),
+            new ChangeCellTypeTool(null),
+            new RunCellTool(null),
+            new RunAllCellsTool(null),
+            new RestartKernelTool(null),
+            new InterruptKernelTool(null),
+            new KernelStatusTool(null)
+        );
+    }
+
     static Stream<Tool> allTools() {
         List<Stream<Tool>> streams = List.of(
             gitTools(), fileTools(), editingTools(), debugTools(), editorTools(),
             navigationTools(), projectTools(), qualityTools(), refactoringTools(),
-            terminalTools(), testingTools(), infrastructureTools(), graphTools()
+            terminalTools(), testingTools(), infrastructureTools(), graphTools(),
+            notebookTools()
         );
         return streams.stream().flatMap(s -> s);
     }
