@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -30,6 +31,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * into {@code "Error: "} results so every tool reports failures uniformly.
  */
 public abstract class NotebookTool extends FileTool {
+
+    private static final Logger LOG = Logger.getInstance(NotebookTool.class);
 
     protected static final String NOTEBOOK_EXTENSION = "ipynb";
     protected static final String PARAM_PATH = "path";
@@ -136,14 +139,32 @@ public abstract class NotebookTool extends FileTool {
         return message + getGitFileStatus(project, vf.getPath());
     }
 
+    /**
+     * Flushes an unsaved notebook document to disk so a subsequent read sees in-editor edits.
+     *
+     * <p>Best-effort: this only exists to capture unsaved editor changes. If a modal dialog holds
+     * the EDT (e.g. the Settings dialog), {@link EdtUtil#invokeAndWait} would abort with an error —
+     * so we skip the flush and let the caller read the on-disk content instead. Missing an unsaved
+     * in-editor edit in that rare case is far better than failing the whole read/edit.
+     */
     private void flushUnsavedToDisk(@NotNull VirtualFile vf) {
-        EdtUtil.invokeAndWait(() -> {
-            FileDocumentManager fdm = FileDocumentManager.getInstance();
-            Document doc = fdm.getDocument(vf);
-            if (doc != null && fdm.isDocumentUnsaved(doc)) {
-                WriteAction.run(() -> fdm.saveDocument(doc));
-            }
-        });
+        if (!EdtUtil.describeModalBlocker().isEmpty()) {
+            LOG.debug("Notebook flush-before-read skipped: EDT blocked by a modal dialog/popup");
+            return;
+        }
+        try {
+            EdtUtil.invokeAndWait(() -> {
+                FileDocumentManager fdm = FileDocumentManager.getInstance();
+                Document doc = fdm.getDocument(vf);
+                if (doc != null && fdm.isDocumentUnsaved(doc)) {
+                    WriteAction.run(() -> fdm.saveDocument(doc));
+                }
+            });
+        } catch (RuntimeException e) {
+            // A modal may have appeared mid-flush, or the EDT is otherwise unavailable — non-fatal;
+            // the caller proceeds to read from disk.
+            LOG.debug("Notebook flush-before-read skipped (EDT unavailable): " + e.getMessage());
+        }
     }
 
     // ── argument helpers ──────────────────────────────────────────────────────
