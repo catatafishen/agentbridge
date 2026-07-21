@@ -5,8 +5,8 @@ import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -31,8 +31,6 @@ import java.util.concurrent.atomic.AtomicReference;
  * into {@code "Error: "} results so every tool reports failures uniformly.
  */
 public abstract class NotebookTool extends FileTool {
-
-    private static final Logger LOG = Logger.getInstance(NotebookTool.class);
 
     protected static final String NOTEBOOK_EXTENSION = "ipynb";
     protected static final String PARAM_PATH = "path";
@@ -150,15 +148,30 @@ public abstract class NotebookTool extends FileTool {
     /**
      * Flushes an unsaved notebook document to disk so a subsequent read sees in-editor edits.
      *
-     * <p>Best-effort: this only exists to capture unsaved editor changes. If a modal dialog holds
-     * the EDT (e.g. the Settings dialog), {@link EdtUtil#invokeAndWait} would abort with an error —
-     * so we skip the flush and let the caller read the on-disk content instead. Missing an unsaved
-     * in-editor edit in that rare case is far better than failing the whole read/edit.
+     * <p>The unsaved check runs off the EDT (a background {@link ReadAction}), so for a saved
+     * notebook — the common case, as notebooks autosave aggressively — the read never touches the
+     * EDT at all and an open modal dialog cannot affect it, matching {@code read_file}.
+     *
+     * <p>When the document <em>does</em> have unsaved changes and a modal dialog blocks the EDT
+     * (e.g. the Settings dialog), the flush cannot run — and skipping it would silently read stale
+     * on-disk state, bypassing the user's in-editor edits. So this fails fast with an actionable
+     * error instead, pointing the agent at {@code interact_with_modal}.
      */
     private void flushUnsavedToDisk(@NotNull VirtualFile vf) {
-        if (!EdtUtil.describeModalBlocker().isEmpty()) {
-            LOG.debug("Notebook flush-before-read skipped: EDT blocked by a modal dialog/popup");
-            return;
+        boolean unsaved = ReadAction.compute(() -> {
+            FileDocumentManager fdm = FileDocumentManager.getInstance();
+            Document doc = fdm.getDocument(vf);
+            return doc != null && fdm.isDocumentUnsaved(doc);
+        });
+        if (!unsaved) {
+            return; // nothing to flush — no EDT hop needed
+        }
+        String modalBlocker = EdtUtil.describeModalBlocker();
+        if (!modalBlocker.isEmpty()) {
+            throw new NotebookModel.NotebookException(
+                "notebook '" + vf.getName() + "' has unsaved in-editor changes that cannot be flushed"
+                    + " while a modal dialog blocks the EDT." + modalBlocker
+                    + " Use the interact_with_modal tool to respond to the dialog, then retry.");
         }
         try {
             EdtUtil.invokeAndWait(() -> {
@@ -169,9 +182,11 @@ public abstract class NotebookTool extends FileTool {
                 }
             });
         } catch (RuntimeException e) {
-            // A modal may have appeared mid-flush, or the EDT is otherwise unavailable — non-fatal;
-            // the caller proceeds to read from disk.
-            LOG.debug("Notebook flush-before-read skipped (EDT unavailable): " + e.getMessage());
+            // A modal appeared mid-flush or the EDT is otherwise unavailable. The unsaved in-editor
+            // state cannot be captured, so fail visibly rather than silently read stale disk content.
+            throw new NotebookModel.NotebookException(
+                "could not flush unsaved notebook changes to disk (" + e.getMessage()
+                    + "). Resolve the blocking dialog with interact_with_modal and retry.");
         }
     }
 

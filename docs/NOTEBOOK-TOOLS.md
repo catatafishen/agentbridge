@@ -63,7 +63,11 @@ newline) so a one-cell edit produces a one-cell git diff.
 
 The tools read the raw VF bytes rather than the editor `Document` (which is the transformed `#%%`
 view). Before reading, an unsaved notebook document is flushed to disk so in-editor edits are not
-missed; after writing, the file is reloaded so an open notebook editor reflects the change.
+missed; after writing, the file is reloaded so an open notebook editor reflects the change. The
+unsaved check runs off the EDT, so reading a saved notebook (the common case) never touches the EDT
+and is unaffected by open modal dialogs — like `read_file`. If unsaved in-editor changes exist but a
+modal dialog blocks the EDT, the read fails with an actionable error (pointing at
+`interact_with_modal`) rather than silently reading stale on-disk state.
 `NotebookOutputFormatter` renders outputs (`stream`, `execute_result`, `display_data`, `error`) to
 compact text — `text/plain` verbatim, images and other rich MIME bundles summarized with their size.
 
