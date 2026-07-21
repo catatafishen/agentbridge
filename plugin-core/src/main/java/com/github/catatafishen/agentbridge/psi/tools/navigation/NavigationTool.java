@@ -133,9 +133,16 @@ public abstract class NavigationTool extends Tool {
      * structure — namespaces, classes, and modules appear as named ancestors regardless of
      * language.
      *
-     * <p>If the qualifier filter produces no match (e.g. package-qualified Java names where
-     * package nodes are not in the PSI tree), all candidates are returned so the caller can
-     * still search references rather than silently returning nothing.
+     * <p>For qualified symbols the qualifier filter is authoritative: only candidates whose
+     * PSI ancestor chain forms a suffix of the qualifier tokens are returned. This prevents
+     * a same-simple-name collision (e.g. {@code WidgetA.render} vs {@code WidgetB.render})
+     * from silently leaking the wrong candidate to the caller when the intended qualifier
+     * doesn't match.
+     *
+     * <p>Package-qualified Java names like {@code com.example.MyClass.method} are handled by
+     * {@link #matchesQualifier}'s partial-suffix logic: {@code [MyClass]} is accepted as a
+     * suffix of {@code [com, example, MyClass]} even though the package segments aren't PSI
+     * ancestors of the method.
      *
      * <p>For unqualified names the word index search stops at the first structural match,
      * preserving existing behavior.
@@ -162,10 +169,9 @@ public abstract class NavigationTool extends Tool {
 
         if (isQualified) {
             String[] qualifierTokens = qualifierTokensOf(name);
-            List<PsiElement> filtered = candidates.stream()
+            return candidates.stream()
                 .filter(e -> matchesQualifier(e, qualifierTokens))
                 .toList();
-            if (!filtered.isEmpty()) return filtered;
         }
         return candidates;
     }
@@ -205,15 +211,28 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
-     * Returns true if the qualifier tokens match a suffix of the named PSI ancestors of
-     * {@code element} (walking up from the element's direct parent to the containing file).
+     * Returns true if the qualifier tokens end with the named PSI ancestors of {@code element}
+     * (walking up from the element's direct parent to the containing file). That is, the
+     * ancestor names must form a <b>suffix</b> of the qualifier tokens.
      *
      * <p>This is language-agnostic: C++ namespaces, Java/Kotlin classes, Rust modules, and
      * similar structural containers all appear as {@link PsiNamedElement}s in the PSI tree,
      * so the check works without any language-specific knowledge.
      *
-     * <p>Example: method {@code "process"} inside class {@code "ProcessorA"} has ancestor
-     * names {@code ["ProcessorA"]}. Qualifier tokens {@code ["ProcessorA"]} → match.
+     * <p>Two matching modes:
+     * <ul>
+     *   <li><b>Full match</b>: method {@code "process"} inside class {@code "ProcessorA"} has
+     *       ancestor names {@code ["ProcessorA"]}. Qualifier tokens {@code ["ProcessorA"]} → match.</li>
+     *   <li><b>Partial (suffix) match</b>: method {@code "method"} inside class {@code "MyClass"} in
+     *       package {@code com.example} has ancestor names {@code ["MyClass"]} (packages are not
+     *       PSI ancestors in Java). Qualifier tokens {@code ["com", "example", "MyClass"]} → match
+     *       because {@code ["MyClass"]} is a suffix of the tokens.</li>
+     * </ul>
+     *
+     * <p>Symbols with no named PSI ancestors (e.g. top-level functions in files where the file
+     * itself is not a PsiNamedElement) never match a non-empty qualifier — this is intentional:
+     * we can't verify the qualifier structurally, so we err on the side of not returning results
+     * that might belong to a differently-qualified same-name symbol.
      */
     protected static boolean matchesQualifier(PsiElement element, String[] qualifierTokens) {
         if (qualifierTokens.length == 0) return true;
@@ -225,10 +244,10 @@ public abstract class NavigationTool extends Tool {
             }
             current = current.getParent();
         }
-        if (ancestorNames.size() < qualifierTokens.length) return false;
-        int offset = ancestorNames.size() - qualifierTokens.length;
-        for (int i = 0; i < qualifierTokens.length; i++) {
-            if (!qualifierTokens[i].equals(ancestorNames.get(offset + i))) return false;
+        if (ancestorNames.isEmpty() || ancestorNames.size() > qualifierTokens.length) return false;
+        int offset = qualifierTokens.length - ancestorNames.size();
+        for (int i = 0; i < ancestorNames.size(); i++) {
+            if (!qualifierTokens[offset + i].equals(ancestorNames.get(i))) return false;
         }
         return true;
     }

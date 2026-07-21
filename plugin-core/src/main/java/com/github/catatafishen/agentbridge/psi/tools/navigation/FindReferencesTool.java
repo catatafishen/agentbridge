@@ -103,8 +103,15 @@ public final class FindReferencesTool extends NavigationTool {
                 collectDefinitionReferences(definition, scope, filePattern, basePath, results, maxResults, offset);
                 if (results.size() >= maxResults) break;
             }
-            if (results.isEmpty()) {
-                collectWordReferences(simpleNameOf(symbol), scope, filePattern, basePath, results, maxResults, offset);
+            // Word-index text fallback: only for unqualified symbols. A qualified symbol like
+            // "WidgetA.render" that finds no PSI definitions must NOT fall back to a raw text
+            // search of the simple name — that would return usages of every other class's
+            // "render()" method too (e.g. "WidgetB.render()"), silently violating the qualifier.
+            // If PSI couldn't identify the qualified symbol, the correct answer is "no references
+            // found" rather than a set of false positives.
+            boolean isQualified = !simpleNameOf(symbol).equals(symbol);
+            if (results.isEmpty() && !isQualified) {
+                collectWordReferences(symbol, scope, filePattern, basePath, results, maxResults, offset);
             }
             if (results.isEmpty()) return "No references found for '" + symbol + "'";
             String footer = results.size() >= maxResults

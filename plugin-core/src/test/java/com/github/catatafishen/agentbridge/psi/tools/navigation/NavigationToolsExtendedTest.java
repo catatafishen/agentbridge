@@ -8,6 +8,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.util.ui.UIUtil;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -412,6 +413,12 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
         myFixture.addFileToProject("RendererB_2342.java", """
             public class RendererB_2342 { public void go() { new WidgetB_2342().render(); } }
             """);
+        // Flush pending indexing/PSI-commit events queued by the four addFileToProject calls
+        // above. Without this the word-index population and reference caches for the last-
+        // added files can race with the search below when the JVM is under load
+        // (observed as a CI flake — one of the four Widgets/Renderers occasionally missing
+        // from the word index).
+        UIUtil.dispatchAllInvocationEvents();
 
         // Qualified search for WidgetA_2342.render must return RendererA but NOT RendererB
         String result = findReferencesTool.execute(args("symbol", "WidgetA_2342.render"));
