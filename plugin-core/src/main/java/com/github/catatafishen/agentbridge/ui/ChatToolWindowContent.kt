@@ -1830,7 +1830,7 @@ class ChatToolWindowContent(
      */
     private inner class DisconnectOrStopAction : AnAction() {
         private val powerIcon = com.intellij.openapi.util.IconLoader.getIcon(
-            "/icons/power.svg", DisconnectOrStopAction::class.java
+            "/icons/expui/power.svg", DisconnectOrStopAction::class.java
         )
 
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -1918,7 +1918,7 @@ class ChatToolWindowContent(
 
     private inner class SendAction : AnAction(), CustomComponentAction {
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
-            "/icons/send.svg", SendAction::class.java
+            "/icons/expui/send.svg", SendAction::class.java
         )
 
         // keepBrightness=false ensures a true white icon, not a brightness-preserved grey.
