@@ -31,6 +31,6 @@ object AgentIconProvider {
     }
 
     private fun loadIcon(filename: String): Icon {
-        return IconLoader.getIcon("/icons/$filename", AgentIconProvider::class.java)
+        return IconLoader.getIcon("/icons/expui/$filename", AgentIconProvider::class.java)
     }
 }
