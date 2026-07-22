@@ -1764,7 +1764,7 @@ class ChatToolWindowContent(
      * Always visible so the user doesn't have to discover these through a popup.
      */
     private inner class SessionManagementAction : AnAction(
-        "Session", "Manage session (restart, clear, logout)",
+        "Session Management", "Manage session (restart, clear, logout)",
         AllIcons.Actions.MoreHorizontal
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
