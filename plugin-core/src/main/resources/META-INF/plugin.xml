@@ -379,7 +379,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
             description="Insert a new line in the chat prompt">
       <keyboard-shortcut keymap="$default" first-keystroke="shift ENTER"/>
     </action>
-    <action id="AgentBridge.Prompt.StopAndSend"
+    <action id="AgentBridge.Prompt.StopAgent"
             class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
             text="Stop and Send"
             description="Force-stop the current agent work and send the prompt">

@@ -1538,7 +1538,7 @@ class ChatToolWindowContent(
                 KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)
             ) to "Nudge"
             list += PromptShortcutAction.resolveKeystroke(
-                PromptShortcutAction.STOP_AND_SEND_ID,
+                PromptShortcutAction.STOP_AGENT_ID,
                 KeyStroke.getKeyStroke(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.CTRL_DOWN_MASK
