@@ -9,6 +9,7 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -31,9 +32,20 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class LiveToolCallService {
 
     private static final int MAX_ENTRIES = 200;
+    static final long MAX_RETAINED_FULL_PAYLOAD_BYTES = 32L * 1024 * 1024;
 
     private final List<LiveToolCallEntry> entries = new ArrayList<>();
     private final List<ChangeListener> listeners = new CopyOnWriteArrayList<>();
+    private final long maxRetainedFullPayloadBytes;
+    private long retainedFullPayloadBytes;
+
+    public LiveToolCallService() {
+        this(MAX_RETAINED_FULL_PAYLOAD_BYTES);
+    }
+
+    LiveToolCallService(long budget) {
+        this.maxRetainedFullPayloadBytes = budget;
+    }
 
     /**
      * Records a tool call starting. Returns the call ID for later completion via {@link #complete}.
@@ -48,7 +60,9 @@ public final class LiveToolCallService {
                                          @org.jetbrains.annotations.Nullable String originalInputJson) {
         LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, displayName, inputJson, originalInputJson, kind, hasHooks);
         entries.add(entry);
+        retainedFullPayloadBytes += entry.retainedFullPayloadBytes();
         evictIfNeeded();
+        enforcePayloadBudget();
         fireChanged();
         return entry.callId();
     }
@@ -62,7 +76,11 @@ public final class LiveToolCallService {
                                       long durationMs, boolean success) {
         for (int i = entries.size() - 1; i >= 0; i--) {
             if (entries.get(i).callId() == callId) {
-                entries.set(i, entries.get(i).completed(output, durationMs, success));
+                LiveToolCallEntry before = entries.get(i);
+                LiveToolCallEntry after = before.completed(output, durationMs, success);
+                entries.set(i, after);
+                retainedFullPayloadBytes += after.retainedFullPayloadBytes() - before.retainedFullPayloadBytes();
+                enforcePayloadBudget();
                 fireChanged();
                 return;
             }
@@ -111,12 +129,17 @@ public final class LiveToolCallService {
         return List.copyOf(entries);
     }
 
+    public synchronized @NotNull Optional<LiveToolCallEntry> findById(long callId) {
+        return entries.stream().filter(entry -> entry.callId() == callId).findFirst();
+    }
+
     public synchronized int size() {
         return entries.size();
     }
 
     public synchronized void clear() {
         entries.clear();
+        retainedFullPayloadBytes = 0;
         fireChanged();
     }
 
@@ -130,7 +153,16 @@ public final class LiveToolCallService {
 
     private void evictIfNeeded() {
         while (entries.size() > MAX_ENTRIES) {
-            entries.removeFirst();
+            retainedFullPayloadBytes -= entries.removeFirst().retainedFullPayloadBytes();
+        }
+    }
+
+    private void enforcePayloadBudget() {
+        for (int i = 0; retainedFullPayloadBytes > maxRetainedFullPayloadBytes && i < entries.size(); i++) {
+            LiveToolCallEntry before = entries.get(i);
+            LiveToolCallEntry after = before.dropRetainedPayloadsForMemoryBudget();
+            entries.set(i, after);
+            retainedFullPayloadBytes -= before.retainedFullPayloadBytes() - after.retainedFullPayloadBytes();
         }
     }
 

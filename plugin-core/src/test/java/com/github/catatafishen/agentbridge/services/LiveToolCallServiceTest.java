@@ -197,4 +197,70 @@ class LiveToolCallServiceTest {
         assertFalse(recent.isRunning());
         assertEquals("done", recent.output());
     }
+
+    @Test
+    void evictsOldestFullBundleButKeepsSummaries() {
+        LiveToolCallService small = new LiveToolCallService(17_500);
+        long first = small.recordStart("first", "First", "x".repeat(9_000), null, false, null);
+        long second = small.recordStart("second", "Second", "y".repeat(9_000), null, false, null);
+
+        assertFalse(small.findById(first).orElseThrow().fullPayloadAvailable());
+        assertTrue(small.findById(first).orElseThrow().input().endsWith("[…truncated]"));
+        assertTrue(small.findById(second).orElseThrow().fullPayloadAvailable());
+    }
+
+    @Test
+    void completionEvictsInputAndOutputTogetherWhenEntryExceedsBudget() {
+        LiveToolCallService small = new LiveToolCallService(17_500);
+        long callId = small.recordStart("tool", "Tool", "x".repeat(9_000), null, false, null);
+        small.complete(callId, "y".repeat(9_000), 10, true);
+
+        LiveToolCallEntry entry = small.findById(callId).orElseThrow();
+        assertFalse(entry.fullPayloadAvailable());
+        assertTrue(entry.input().endsWith("[…truncated]"));
+        assertTrue(entry.output().endsWith("[…truncated]"));
+        assertEquals("memory_budget", entry.fullPayloadUnavailableReason());
+    }
+
+    @Test
+    void entryCountEvictionReleasesItsRetainedPayloadBytesBeforeBudgetEnforcement() {
+        LiveToolCallService small = new LiveToolCallService(1_800_000);
+        long first = small.recordStart("tool_0", "Tool 0", "x".repeat(9_000), null, false, null);
+        long second = 0;
+        for (int i = 1; i <= 200; i++) {
+            long callId = small.recordStart("tool_" + i, "Tool " + i, "x".repeat(9_000), null, false, null);
+            if (i == 1) {
+                second = callId;
+            }
+        }
+
+        assertEquals(200, small.size());
+        assertTrue(small.findById(first).isEmpty());
+        assertTrue(small.findById(second).orElseThrow().fullPayloadAvailable());
+    }
+
+    @Test
+    void clearResetsRetainedPayloadAccounting() {
+        LiveToolCallService small = new LiveToolCallService(17_500);
+        small.recordStart("first", "First", "x".repeat(9_000), null, false, null);
+        small.clear();
+        long afterClear = small.recordStart("second", "Second", "y".repeat(9_000), null, false, null);
+
+        assertTrue(small.findById(afterClear).orElseThrow().fullPayloadAvailable());
+    }
+
+    @Test
+    void listenerSeesOnlyTheBudgetConsistentState() {
+        LiveToolCallService small = new LiveToolCallService(17_500);
+        long first = small.recordStart("first", "First", "x".repeat(9_000), null, false, null);
+        AtomicInteger notifications = new AtomicInteger();
+        small.addChangeListener(event -> {
+            notifications.incrementAndGet();
+            assertFalse(small.findById(first).orElseThrow().fullPayloadAvailable());
+        });
+
+        small.recordStart("second", "Second", "y".repeat(9_000), null, false, null);
+
+        assertEquals(1, notifications.get());
+    }
 }
