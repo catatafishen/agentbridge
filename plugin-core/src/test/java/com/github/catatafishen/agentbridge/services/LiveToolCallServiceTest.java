@@ -4,9 +4,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.event.ChangeListener;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -118,6 +120,67 @@ class LiveToolCallServiceTest {
         service.addChangeListener(e -> count.incrementAndGet());
         service.complete(callId, "done", 5, true);
         assertEquals(1, count.get());
+    }
+
+    @Test
+    void throwingStartListenerDoesNotLoseCallIdOrBlockLaterListener() {
+        String secretPayload = "arguments=super-secret result=private";
+        List<LiveToolCallService.ListenerFailure> failures = new ArrayList<>();
+        LiveToolCallService isolated = new LiveToolCallService(
+            LiveToolCallService.MAX_RETAINED_FULL_PAYLOAD_BYTES, failures::add);
+        AtomicInteger succeedingNotifications = new AtomicInteger();
+        isolated.addChangeListener(event -> {
+            throw new IllegalStateException(secretPayload);
+        });
+        isolated.addChangeListener(event -> {
+            assertTrue(isolated.getEntries().getLast().isRunning());
+            succeedingNotifications.incrementAndGet();
+        });
+
+        long callId = assertDoesNotThrow(
+            () -> isolated.recordStart("read_file", "Read file", "{\"secret\":\"value\"}", "read", false, null));
+
+        assertTrue(callId > 0);
+        assertEquals(callId, isolated.getEntries().getLast().callId());
+        assertEquals(1, succeedingNotifications.get());
+        assertEquals(1, failures.size());
+        LiveToolCallService.ListenerFailure failure = failures.getFirst();
+        assertEquals("recordStart", failure.stage());
+        assertEquals(callId, failure.callId());
+        assertEquals(IllegalStateException.class.getName(), failure.exceptionType());
+        assertFalse(failure.toString().contains(secretPayload));
+    }
+
+    @Test
+    void throwingCompletionListenerLeavesFinalStateAndDoesNotBlockLaterListener() {
+        String secretPayload = "sha256=super-secret originalInput=private";
+        List<LiveToolCallService.ListenerFailure> failures = new ArrayList<>();
+        LiveToolCallService isolated = new LiveToolCallService(
+            LiveToolCallService.MAX_RETAINED_FULL_PAYLOAD_BYTES, failures::add);
+        long callId = isolated.recordStart("run_command", "Run command", "{}", null, false, null);
+        AtomicInteger succeedingNotifications = new AtomicInteger();
+        isolated.addChangeListener(event -> {
+            throw new IllegalArgumentException(secretPayload);
+        });
+        isolated.addChangeListener(event -> {
+            LiveToolCallEntry completed = isolated.findById(callId).orElseThrow();
+            assertFalse(completed.isRunning());
+            assertEquals("done", completed.output());
+            succeedingNotifications.incrementAndGet();
+        });
+
+        assertDoesNotThrow(() -> isolated.complete(callId, "done", 11, true));
+
+        LiveToolCallEntry completed = isolated.findById(callId).orElseThrow();
+        assertFalse(completed.isRunning());
+        assertEquals(Boolean.TRUE, completed.success());
+        assertEquals(1, succeedingNotifications.get());
+        assertEquals(1, failures.size());
+        LiveToolCallService.ListenerFailure failure = failures.getFirst();
+        assertEquals("complete", failure.stage());
+        assertEquals(callId, failure.callId());
+        assertEquals(IllegalArgumentException.class.getName(), failure.exceptionType());
+        assertFalse(failure.toString().contains(secretPayload));
     }
 
     @Test

@@ -2,8 +2,10 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -11,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 /**
  * Project-level service that maintains a bounded, in-memory list of recent MCP
@@ -31,20 +34,27 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Service(Service.Level.PROJECT)
 public final class LiveToolCallService {
 
+    private static final Logger LOG = Logger.getInstance(LiveToolCallService.class);
     private static final int MAX_ENTRIES = 200;
     static final long MAX_RETAINED_FULL_PAYLOAD_BYTES = 32L * 1024 * 1024;
 
     private final List<LiveToolCallEntry> entries = new ArrayList<>();
     private final List<ChangeListener> listeners = new CopyOnWriteArrayList<>();
     private final long maxRetainedFullPayloadBytes;
+    private final Consumer<ListenerFailure> listenerFailureLogger;
     private long retainedFullPayloadBytes;
 
     public LiveToolCallService() {
-        this(MAX_RETAINED_FULL_PAYLOAD_BYTES);
+        this(MAX_RETAINED_FULL_PAYLOAD_BYTES, LiveToolCallService::logListenerFailure);
     }
 
     LiveToolCallService(long budget) {
+        this(budget, LiveToolCallService::logListenerFailure);
+    }
+
+    LiveToolCallService(long budget, @NotNull Consumer<ListenerFailure> listenerFailureLogger) {
         this.maxRetainedFullPayloadBytes = budget;
+        this.listenerFailureLogger = listenerFailureLogger;
     }
 
     /**
@@ -63,7 +73,7 @@ public final class LiveToolCallService {
         retainedFullPayloadBytes += entry.retainedFullPayloadBytes();
         evictIfNeeded();
         enforcePayloadBudget();
-        fireChanged();
+        fireChanged("recordStart", entry.callId());
         return entry.callId();
     }
 
@@ -84,7 +94,7 @@ public final class LiveToolCallService {
                 entries.set(i, after);
                 retainedFullPayloadBytes += after.retainedFullPayloadBytes() - before.retainedFullPayloadBytes();
                 enforcePayloadBudget();
-                fireChanged();
+                fireChanged("complete", callId);
                 return;
             }
         }
@@ -98,7 +108,7 @@ public final class LiveToolCallService {
         for (int i = entries.size() - 1; i >= 0; i--) {
             if (entries.get(i).callId() == callId) {
                 entries.set(i, entries.get(i).withHookStages(stages));
-                fireChanged();
+                fireChanged("setHookStages", callId);
                 return;
             }
         }
@@ -118,7 +128,7 @@ public final class LiveToolCallService {
                 LiveToolCallEntry entry = entries.get(i);
                 if (!entry.acpTitleSet()) {
                     entries.set(i, entry.withDisplayName(displayName));
-                    fireChanged();
+                    fireChanged("setDisplayName", callId);
                 }
                 return;
             }
@@ -143,7 +153,7 @@ public final class LiveToolCallService {
     public synchronized void clear() {
         entries.clear();
         retainedFullPayloadBytes = 0;
-        fireChanged();
+        fireChanged("clear", null);
     }
 
     public void addChangeListener(@NotNull ChangeListener listener) {
@@ -169,10 +179,41 @@ public final class LiveToolCallService {
         }
     }
 
-    private void fireChanged() {
+    private void fireChanged(@NotNull String stage, @Nullable Long callId) {
         ChangeEvent event = new ChangeEvent(this);
         for (ChangeListener l : listeners) {
-            l.stateChanged(event);
+            try {
+                l.stateChanged(event);
+            } catch (RuntimeException exception) {
+                ListenerFailure failure = ListenerFailure.of(stage, callId, l, exception);
+                try {
+                    listenerFailureLogger.accept(failure);
+                } catch (RuntimeException loggingFailure) {
+                    LOG.warn("Tool-call listener failure logging failed: stage=" + stage
+                        + (callId == null ? "" : ", callId=" + callId)
+                        + ", exceptionType=" + loggingFailure.getClass().getName());
+                }
+            }
+        }
+    }
+
+    private static void logListenerFailure(@NotNull ListenerFailure failure) {
+        LOG.warn("Tool-call listener failed: stage=" + failure.stage()
+            + (failure.callId() == null ? "" : ", callId=" + failure.callId())
+            + ", listenerType=" + failure.listenerType()
+            + ", exceptionType=" + failure.exceptionType());
+    }
+
+    record ListenerFailure(@NotNull String stage,
+                           @Nullable Long callId,
+                           @NotNull String listenerType,
+                           @NotNull String exceptionType) {
+        static @NotNull ListenerFailure of(@NotNull String stage,
+                                           @Nullable Long callId,
+                                           @NotNull ChangeListener listener,
+                                           @NotNull RuntimeException exception) {
+            return new ListenerFailure(
+                stage, callId, listener.getClass().getName(), exception.getClass().getName());
         }
     }
 
