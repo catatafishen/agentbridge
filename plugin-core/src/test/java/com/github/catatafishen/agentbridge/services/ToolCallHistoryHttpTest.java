@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +30,20 @@ class ToolCallHistoryHttpTest {
         assertEquals("file contents", summary.get("result").getAsString());
         assertEquals("/tool-calls/" + callId, summary.get("detailUrl").getAsString());
         assertFalse(summary.has("originalInput"));
+    }
+
+    @Test
+    void listFailurePreservesLegacyEmptyItemsResponse() {
+        ToolCallHistoryHttp.Response response = ToolCallHistoryHttp.resolve(
+            "GET", "/tool-calls",
+            () -> {
+                throw new IllegalStateException("history unavailable");
+            },
+            ignored -> Optional.empty());
+
+        assertEquals(200, response.status());
+        assertEquals(0, response.body().getAsJsonArray("items").size());
+        assertTrue(response.error() == null);
     }
 
     @Test

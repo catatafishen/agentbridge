@@ -6,6 +6,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.function.LongFunction;
+import java.util.function.Supplier;
 
 /**
  * Pure HTTP routing and JSON selection for the live tool-call history endpoint.
@@ -21,11 +24,22 @@ final class ToolCallHistoryHttp {
     static @NotNull Response resolve(@Nullable String method,
                                      @Nullable String path,
                                      @NotNull LiveToolCallService service) {
+        return resolve(method, path, service::getEntries, service::findById);
+    }
+
+    static @NotNull Response resolve(@Nullable String method,
+                                     @Nullable String path,
+                                     @NotNull Supplier<List<LiveToolCallEntry>> entriesSupplier,
+                                     @NotNull LongFunction<Optional<LiveToolCallEntry>> entryFinder) {
         if (!"GET".equals(method)) {
             return Response.error(405, "Method not allowed");
         }
         if (LIST_PATH.equals(path)) {
-            return Response.ok(listJson(service.getEntries()));
+            try {
+                return Response.ok(listJson(entriesSupplier.get()));
+            } catch (RuntimeException e) {
+                return Response.ok(listJson(List.of()));
+            }
         }
         if (path == null || !path.matches("/tool-calls/[1-9][0-9]*")) {
             return Response.error(400, "Malformed tool call id");
@@ -38,7 +52,7 @@ final class ToolCallHistoryHttp {
             return Response.error(400, "Malformed tool call id");
         }
 
-        LiveToolCallEntry entry = service.findById(callId).orElse(null);
+        LiveToolCallEntry entry = entryFinder.apply(callId).orElse(null);
         if (entry == null) {
             return Response.error(404, "Tool call not found");
         }
