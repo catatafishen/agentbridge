@@ -30,6 +30,14 @@ val buildTimestamp = providers.exec {
     commandLine("date", "+%Y%m%d-%H%M")
 }.standardOutput.asText.get().trim()
 val ciVersion = providers.environmentVariable("PLUGIN_VERSION").orNull
+val githubRepositoryEnvironment = System.getenv("GITHUB_REPOSITORY")?.trim()
+val githubPackagesRepository = when {
+    !githubRepositoryEnvironment.isNullOrEmpty() -> githubRepositoryEnvironment
+    System.getenv("GITHUB_ACTIONS").equals("true", ignoreCase = true) ->
+        throw GradleException("GITHUB_REPOSITORY is required for GitHub Actions package publication")
+    else -> "catatafishen/agentbridge"
+}
+extra["githubPackagesRepository"] = githubPackagesRepository
 val gitHash: String = try {
     providers.exec { commandLine("git", "rev-parse", "--short", "HEAD") }
         .standardOutput.asText.get().trim()

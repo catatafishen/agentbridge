@@ -134,22 +134,13 @@ jobs:
           CHANGELOG_FORMAT=md \
             bash scripts/generate-changelog.sh > build/since-marketplace.md
 
-          # Assemble GitHub release body with both sections
-          {
-            cat build/this-release.md
-            echo ""
-            # Only add the "since marketplace" section if the baselines differ
-            # (i.e., marketplace-latest is behind the latest v* tag)
-            if ! diff -q build/this-release.md build/since-marketplace.md >/dev/null 2>&1; then
-              echo "---"
-              echo ""
-              echo "<details><summary>All changes since last Marketplace publish</summary>"
-              echo ""
-              cat build/since-marketplace.md
-              echo ""
-              echo "</details>"
-            fi
-          } > build/release-notes.md
+          # Assemble GitHub release body, including an exact-version release-note
+          # fragment when one exists.
+          bash scripts/assemble-release-notes.sh \
+            "$PLUGIN_VERSION" \
+            build/this-release.md \
+            build/since-marketplace.md \
+            build/release-notes.md
 
           echo "### Plugin Changelog (HTML for marketplace)" >> "$GITHUB_STEP_SUMMARY"
           echo '```html' >> "$GITHUB_STEP_SUMMARY"
@@ -211,23 +202,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh auth setup-git
 
-      - name: Create tag and GitHub release
-        if: steps.version.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          ARTIFACTS_DIR: ${{ steps.artifacts.outputs.dir }}
-        run: |
-          # Create tag + release via GitHub API (no git credentials needed;
-          # persist-credentials: false is set on checkout for security)
-          gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "Release $TAG" \
-            --notes-file build/release-notes.md \
-            "$ARTIFACTS_DIR"/*.zip \
-            "$ARTIFACTS_DIR"/*.sigstore.json \
-            "$ARTIFACTS_DIR"/provenance.intoto.jsonl
-
       - name: Publish plugin ZIPs to GitHub Packages
         if: steps.version.outputs.skip != 'true'
         env:
@@ -241,11 +215,45 @@ jobs:
           # release ZIP and the JetBrains Marketplace listing. Also gives
           # OpenSSF Scorecard's "Packaging" check something to detect.
           #
-          # Skip if this version is already published (handles workflow reruns):
-          # GitHub Packages returns 409 Conflict on duplicate uploads.
-          POM_URL="https://maven.pkg.github.com/catatafishen/agentbridge/com/github/catatafishen/ideagentforcopilot/${PLUGIN_VERSION}/ideagentforcopilot-${PLUGIN_VERSION}.pom"
-          if curl -sf -o /dev/null -u "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "${POM_URL}" 2>/dev/null; then
-            echo "Version ${PLUGIN_VERSION} already published to GitHub Packages — skipping."
-          else
-            gradle :plugin-core:publish :plugin-experimental:publish --no-daemon --quiet
+          # Probe and publish each coordinate independently. A rerun can therefore
+          # recover if one publication succeeded before the other failed.
+          if [[ ! "${GITHUB_REPOSITORY:-}" =~ ^[^/]+/[^/]+$ ]]; then
+            echo "GITHUB_REPOSITORY must contain owner/repository" >&2
+            exit 1
           fi
+          PACKAGE_ROOT="https://maven.pkg.github.com/${GITHUB_REPOSITORY}/com/github/catatafishen"
+
+          publish_if_missing() {
+            local artifact_id=$1
+            local task=$2
+            local pom_url="${PACKAGE_ROOT}/${artifact_id}/${PLUGIN_VERSION}/${artifact_id}-${PLUGIN_VERSION}.pom"
+            if curl -sf -o /dev/null -u "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "$pom_url" 2>/dev/null; then
+              echo "${artifact_id} ${PLUGIN_VERSION} already published — skipping."
+            else
+              gradle "$task" --no-daemon --quiet
+            fi
+          }
+
+          publish_if_missing \
+            "ide-agent-for-copilot" \
+            ":plugin-core:publishPluginZipPublicationToGitHubPackagesRepository"
+          publish_if_missing \
+            "ide-agent-for-copilot-experimental" \
+            ":plugin-experimental:publishPluginZipPublicationToGitHubPackagesRepository"
+
+      - name: Create tag and GitHub release
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ARTIFACTS_DIR: ${{ steps.artifacts.outputs.dir }}
+        run: |
+          # Package publication has completed, so a failure there can never leave
+          # a tag that makes an ordinary workflow rerun skip the failed package.
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "Release $TAG" \
+            --notes-file build/release-notes.md \
+            "$ARTIFACTS_DIR"/*.zip \
+            "$ARTIFACTS_DIR"/*.sigstore.json \
+            "$ARTIFACTS_DIR"/provenance.intoto.jsonl

@@ -228,6 +228,8 @@ tasks.named<JacocoReport>("jacocoTestReport") {
 // See plugin-core/build.gradle.kts for the rationale (Scorecard packaging detection,
 // real package-registry distribution channel for users).
 configure<PublishingExtension> {
+    val githubPackagesRepository = rootProject.extra["githubPackagesRepository"] as String
+    val githubRepositoryUrl = "https://github.com/$githubPackagesRepository"
     publications {
         create<MavenPublication>("pluginZip") {
             groupId = "com.github.catatafishen"
@@ -239,11 +241,11 @@ configure<PublishingExtension> {
             pom {
                 name.set("IDE Agent for Copilot (Experimental)")
                 description.set("Experimental variant of the IntelliJ plugin integrating GitHub Copilot via ACP/MCP.")
-                url.set("https://github.com/catatafishen/agentbridge")
+                url.set(githubRepositoryUrl)
                 licenses {
                     license {
                         name.set("MIT")
-                        url.set("https://github.com/catatafishen/agentbridge/blob/master/LICENSE")
+                        url.set("$githubRepositoryUrl/blob/master/LICENSE")
                     }
                 }
             }
@@ -252,7 +254,7 @@ configure<PublishingExtension> {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/catatafishen/agentbridge")
+            url = uri("https://maven.pkg.github.com/$githubPackagesRepository")
             credentials {
                 username = System.getenv("GITHUB_ACTOR") ?: ""
                 password = System.getenv("GITHUB_TOKEN") ?: ""
