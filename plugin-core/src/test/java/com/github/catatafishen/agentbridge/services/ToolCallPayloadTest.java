@@ -2,6 +2,12 @@ package com.github.catatafishen.agentbridge.services;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.HexFormat;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -23,12 +29,29 @@ class ToolCallPayloadTest {
         assertTrue(payload.available());
         assertEquals(0, payload.retainedBytes());
         assertEquals(64, payload.sha256().length());
+        assertEquals(sha256Utf8(value), payload.sha256());
+    }
+
+    @Test
+    void capturesUnpairedSurrogatesUsingUtf8ReplacementSemantics() {
+        String value = "before\uD800after";
+
+        ToolCallPayload payload = ToolCallPayload.capture(value);
+
+        assertEquals(value.getBytes(StandardCharsets.UTF_8).length, payload.byteLength());
+        assertEquals(sha256Utf8(value), payload.sha256());
     }
 
     @Test
     void rejectsRetentionOneByteAboveFieldLimit() {
-        ToolCallPayload payload = ToolCallPayload.capture("x".repeat(512 * 1024 + 1));
+        String value = "x".repeat(512 * 1024 + 1);
 
+        ToolCallPayload payload = ToolCallPayload.capture(value);
+
+        assertTrue(payload.truncated());
+        assertEquals(512 * 1024 + 1L, payload.byteLength());
+        assertEquals(value.substring(0, 8_000) + "\n[…truncated]", payload.summary());
+        assertEquals(sha256Utf8(value), payload.sha256());
         assertFalse(payload.available());
         assertNull(payload.completeValueOrNull());
         assertEquals(ToolCallPayload.UnavailableReason.FIELD_LIMIT, payload.unavailableReason());
@@ -87,5 +110,25 @@ class ToolCallPayloadTest {
         assertEquals(ToolCallPayload.UnavailableReason.MEMORY_BUDGET, evicted.unavailableReason());
         assertEquals(payload.summary(), evicted.summary());
         assertSame(evicted, evicted.evictForMemoryBudget());
+    }
+
+    @Test
+    void keepsRetainedValueAndConstructionOutOfThePublicApiAndToString() {
+        String value = "x".repeat(8_000) + "complete-payload-must-remain-hidden";
+        ToolCallPayload payload = ToolCallPayload.capture(value);
+
+        assertTrue(Arrays.stream(ToolCallPayload.class.getConstructors()).findAny().isEmpty());
+        assertFalse(Arrays.stream(ToolCallPayload.class.getMethods())
+            .anyMatch(method -> method.getName().equals("retainedFullValue")));
+        assertFalse(payload.toString().contains("complete-payload-must-remain-hidden"));
+    }
+
+    private static String sha256Utf8(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new AssertionError(exception);
+        }
     }
 }
