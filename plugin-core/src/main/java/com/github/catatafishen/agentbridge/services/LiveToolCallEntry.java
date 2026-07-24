@@ -127,6 +127,11 @@ public record LiveToolCallEntry(
         return inputPayload.retainedBytes() + outputPayload.retainedBytes();
     }
 
+    boolean hasMemoryBudgetEvictedPayload() {
+        return inputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.MEMORY_BUDGET
+            || outputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.MEMORY_BUDGET;
+    }
+
     public @Nullable String fullPayloadUnavailableReason() {
         if (inputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.FIELD_LIMIT
             || outputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.FIELD_LIMIT) {

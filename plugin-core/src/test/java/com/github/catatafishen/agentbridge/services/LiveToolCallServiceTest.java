@@ -281,4 +281,27 @@ class LiveToolCallServiceTest {
         assertTrue(firstEntry.output().endsWith("[…truncated]"));
         assertTrue(small.findById(second).orElseThrow().fullPayloadAvailable());
     }
+
+    @Test
+    void completionDoesNotResurrectBundleWhenFieldLimitMasksMemoryBudgetReason() {
+        LiveToolCallService small = new LiveToolCallService(17_500);
+        long first = small.recordStart("first", "First", "x".repeat(9_000), null, false, null);
+        long second = small.recordStart("second", "Second", "y".repeat(9_000), null, false, null);
+        small.complete(first, "q".repeat((int) ToolCallPayload.MAX_FULL_PAYLOAD_FIELD_BYTES + 1), 10, true);
+        String latestOutput = "z".repeat(8_001);
+
+        small.complete(first, latestOutput, 20, true);
+
+        LiveToolCallEntry firstEntry = small.findById(first).orElseThrow();
+        assertNull(firstEntry.completeInputOrNull());
+        assertNull(firstEntry.completeOutputOrNull());
+        assertEquals(0, firstEntry.retainedFullPayloadBytes());
+        assertEquals("memory_budget", firstEntry.fullPayloadUnavailableReason());
+        assertEquals(latestOutput.substring(0, LiveToolCallEntry.MAX_IO_CHARS) + "\n[…truncated]", firstEntry.output());
+        assertEquals(8_001, firstEntry.outputPayload().byteLength());
+        assertEquals(ToolCallPayload.capture(latestOutput).sha256(), firstEntry.outputPayload().sha256());
+        assertEquals(20, firstEntry.durationMs());
+        assertEquals(Boolean.TRUE, firstEntry.success());
+        assertTrue(small.findById(second).orElseThrow().fullPayloadAvailable());
+    }
 }
