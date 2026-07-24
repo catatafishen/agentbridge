@@ -78,6 +78,10 @@ public final class LiveToolCallService {
             if (entries.get(i).callId() == callId) {
                 LiveToolCallEntry before = entries.get(i);
                 LiveToolCallEntry after = before.completed(output, durationMs, success);
+                if (ToolCallPayload.UnavailableReason.MEMORY_BUDGET.wireValue()
+                    .equals(before.fullPayloadUnavailableReason())) {
+                    after = after.dropRetainedPayloadsForMemoryBudget();
+                }
                 entries.set(i, after);
                 retainedFullPayloadBytes += after.retainedFullPayloadBytes() - before.retainedFullPayloadBytes();
                 enforcePayloadBudget();

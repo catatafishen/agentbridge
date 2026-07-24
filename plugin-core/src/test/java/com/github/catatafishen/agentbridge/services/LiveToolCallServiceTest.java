@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -262,5 +263,22 @@ class LiveToolCallServiceTest {
         small.recordStart("second", "Second", "y".repeat(9_000), null, false, null);
 
         assertEquals(1, notifications.get());
+    }
+
+    @Test
+    void completionDoesNotResurrectOneHalfOfMemoryBudgetEvictedBundle() {
+        LiveToolCallService small = new LiveToolCallService(17_500);
+        long first = small.recordStart("first", "First", "x".repeat(9_000), null, false, null);
+        long second = small.recordStart("second", "Second", "y".repeat(9_000), null, false, null);
+
+        small.complete(first, "z".repeat(8_001), 10, true);
+
+        LiveToolCallEntry firstEntry = small.findById(first).orElseThrow();
+        assertNull(firstEntry.completeInputOrNull());
+        assertNull(firstEntry.completeOutputOrNull());
+        assertEquals(0, firstEntry.retainedFullPayloadBytes());
+        assertEquals("memory_budget", firstEntry.fullPayloadUnavailableReason());
+        assertTrue(firstEntry.output().endsWith("[…truncated]"));
+        assertTrue(small.findById(second).orElseThrow().fullPayloadAvailable());
     }
 }
