@@ -1721,6 +1721,61 @@ public abstract class AcpClient extends AbstractClient {
         return McpStdioLaunch.describeUnavailable();
     }
 
+    /**
+     * Builds an HTTP MCP server config pointing at the in-IDE {@link McpServerControl} HTTP
+     * endpoint ({@code http://127.0.0.1:<mcpPort>/mcp}).
+     *
+     * <p>Use this instead of {@link #buildMcpStdioServer(String, int)} for agents that advertise
+     * {@code mcpCapabilities.http} at initialize time. Some agents (e.g. Kiro 2.14.1) silently
+     * ignore stdio MCP servers passed over ACP and only load MCP tools when an HTTP server is
+     * supplied, even though the same {@code McpHttpServer} backs both transports.</p>
+     *
+     * @param serverName the MCP server name advertised to the agent
+     * @param mcpPort     the port of the running in-IDE HTTP MCP server; must be positive
+     * @return the HTTP MCP server JSON object
+     * @throws IllegalStateException if {@code mcpPort} is not a valid running port
+     */
+    protected final @NotNull JsonObject buildMcpHttpServer(String serverName, int mcpPort) {
+        if (mcpPort <= 0) {
+            throw new IllegalStateException(
+                "Cannot configure HTTP MCP server — the in-IDE MCP server is not running "
+                    + "(no port available). IntelliJ tools will be unavailable.");
+        }
+        return buildMcpHttpServerJson(serverName, mcpPort);
+    }
+
+    /**
+     * Pure builder for the HTTP MCP server JSON shape. Extracted for unit testing.
+     *
+     * <p>The {@code headers} array is mandatory: Kiro 2.14.1's ACP {@code session/new} parser
+     * requires an HTTP MCP entry to carry a {@code headers} array (even when empty). Omitting it,
+     * or sending {@code headers} as an object instead of an array, makes the Kiro ACP process exit
+     * cleanly (exit code 0, no error) the moment it parses {@code session/new} — killing the whole
+     * session before any MCP connection is attempted. An empty array is correct here because the
+     * in-IDE {@link com.github.catatafishen.agentbridge.services.McpHttpServer} does not require
+     * authentication headers. (See issue #948.)</p>
+     */
+    static @NotNull JsonObject buildMcpHttpServerJson(String serverName, int mcpPort) {
+        JsonObject server = new JsonObject();
+        server.addProperty("type", "http");
+        server.addProperty("name", serverName);
+        server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
+        server.add("headers", new JsonArray());
+        return server;
+    }
+
+    /**
+     * Whether the agent advertised {@code agentCapabilities.mcpCapabilities.http} during
+     * initialization. Agents that support HTTP MCP transport should be given an HTTP MCP server
+     * (see {@link #buildMcpHttpServer(String, int)}) rather than a stdio one.
+     */
+    protected final boolean advertisesHttpMcp() {
+        return capabilities != null
+            && capabilities.agentCapabilities() != null
+            && capabilities.agentCapabilities().mcpCapabilities() != null
+            && Boolean.TRUE.equals(capabilities.agentCapabilities().mcpCapabilities().http());
+    }
+
     private void eagerFetchModels() {
         String cwd = launchCwd != null ? launchCwd : project.getBasePath();
         if (cwd == null) return;

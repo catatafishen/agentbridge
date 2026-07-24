@@ -275,16 +275,97 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        // Kiro requires mcpServers in session/new params (field is mandatory)
-        JsonObject server = buildMcpStdioServer("agentbridge", mcpPort);
-        if (server == null) {
-            throw new IllegalStateException(
-                "Cannot configure Kiro MCP server — " + describeMcpStdioServerFailure());
+        // Kiro requires mcpServers in session/new params (field is mandatory).
+        //
+        // Kiro 2.14.1 only loads @agentbridge tools when given an HTTP MCP server — it silently
+        // ignores STDIO servers over ACP (never emits kiro.dev/mcp/server_initialized). The HTTP
+        // entry must be shaped exactly (including a `headers` ARRAY — see
+        // AcpClient.buildMcpHttpServerJson); a malformed entry makes Kiro exit cleanly on
+        // session/new. (See issue #948.)
+        //
+        // Transport selection stays version-gated rather than driven by mcpCapabilities.http alone:
+        // older Kiro (e.g. 2.10.0) also advertises mcpCapabilities.http:true, but was only ever
+        // observed with the earlier (headerless) HTTP payload, which crashed its ACP process on
+        // session/new. Whether those versions accept the corrected payload was not verified, so we
+        // conservatively require a known-good version (2.14.1+) before sending HTTP and fall back to
+        // STDIO otherwise. STDIO leaves the session alive (just without @agentbridge tools), which
+        // is no worse than the pre-fix behaviour on those versions — it avoids any risk of
+        // regressing an older Kiro from "session works" to "session dies".
+        JsonObject server;
+        if (advertisesHttpMcp() && supportsHttpMcp(kiroVersion())) {
+            server = buildMcpHttpServer("agentbridge", mcpPort);
+        } else {
+            server = buildMcpStdioServer("agentbridge", mcpPort);
+            if (server == null) {
+                throw new IllegalStateException(
+                    "Cannot configure Kiro MCP server — " + describeMcpStdioServerFailure());
+            }
         }
         JsonArray servers = new JsonArray();
         servers.add(server);
         params.add("mcpServers", servers);
     }
+
+    /**
+     * The Kiro CLI version reported in the ACP {@code initialize} response, or {@code null}
+     * if the agent hasn't initialized yet or didn't report a version.
+     */
+    private @org.jetbrains.annotations.Nullable String kiroVersion() {
+        var caps = getCapabilities();
+        return caps != null && caps.agentInfo() != null ? caps.agentInfo().version() : null;
+    }
+
+    /**
+     * The lowest Kiro CLI version verified to load an HTTP MCP server over ACP with the corrected
+     * {@code session/new} payload (see {@link AcpClient#buildMcpHttpServerJson}). Older versions
+     * advertise {@code mcpCapabilities.http:true} but were only ever exercised with the earlier
+     * headerless payload, which crashed their ACP process; they were not re-verified with the fix,
+     * so they conservatively fall back to the STDIO transport instead.
+     */
+    private static final int[] MIN_HTTP_MCP_VERSION = {2, 14, 1};
+
+    /**
+     * Whether the given Kiro CLI version string (e.g. {@code "2.14.1"}) is at least
+     * {@link #MIN_HTTP_MCP_VERSION}. Unparseable or {@code null} versions return {@code false}
+     * so we conservatively fall back to STDIO.
+     */
+    static boolean supportsHttpMcp(@org.jetbrains.annotations.Nullable String version) {
+        int[] parsed = parseVersion(version);
+        if (parsed == null) {
+            return false;
+        }
+        for (int i = 0; i < MIN_HTTP_MCP_VERSION.length; i++) {
+            int part = i < parsed.length ? parsed[i] : 0;
+            if (part != MIN_HTTP_MCP_VERSION[i]) {
+                return part > MIN_HTTP_MCP_VERSION[i];
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Parses a dotted numeric version string into its {@code major.minor.patch} components.
+     * Trailing pre-release/build suffixes (e.g. {@code "-beta"}, {@code "+build"}) on the last
+     * numeric segment are ignored. Returns {@code null} if no leading numeric component is present.
+     */
+    private static int @org.jetbrains.annotations.Nullable [] parseVersion(
+        @org.jetbrains.annotations.Nullable String version) {
+        if (version == null || version.isBlank()) {
+            return null;
+        }
+        String[] segments = version.trim().split("\\.");
+        int[] parts = new int[segments.length];
+        for (int i = 0; i < segments.length; i++) {
+            java.util.regex.Matcher m = LEADING_DIGITS.matcher(segments[i]);
+            if (!m.find()) {
+                return i == 0 ? null : java.util.Arrays.copyOf(parts, i);
+            }
+            parts[i] = Integer.parseInt(m.group());
+        }
+        return parts;
+    }
+
+    private static final Pattern LEADING_DIGITS = Pattern.compile("^\\d+");
 
     @Override
     protected JsonObject parseToolCallArguments(@NotNull JsonObject update) {
