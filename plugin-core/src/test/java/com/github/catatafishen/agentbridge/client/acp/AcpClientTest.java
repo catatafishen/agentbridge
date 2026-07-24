@@ -28,6 +28,38 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AcpClientTest {
 
+    // ── buildMcpHttpServerJson (package-private static) ─────────────────
+
+    @Nested
+    class BuildMcpHttpServerJson {
+
+        @Test
+        void producesHttpServerShape() {
+            JsonObject server = AcpClient.buildMcpHttpServerJson("agentbridge", 8643);
+            assertEquals("http", server.get("type").getAsString());
+            assertEquals("agentbridge", server.get("name").getAsString());
+            assertEquals("http://127.0.0.1:8643/mcp", server.get("url").getAsString());
+        }
+
+        @Test
+        void includesEmptyHeadersArray() {
+            // Kiro 2.14.1's session/new parser requires an HTTP MCP entry to carry a `headers`
+            // ARRAY (even when empty). Without it — or with `headers` as an object — the Kiro ACP
+            // process exits cleanly on session/new and the whole session dies. (Issue #948.)
+            JsonObject server = AcpClient.buildMcpHttpServerJson("agentbridge", 8643);
+            assertTrue(server.has("headers"), "HTTP MCP entry must include a headers field");
+            assertTrue(server.get("headers").isJsonArray(), "headers must be a JSON array");
+            assertEquals(0, server.getAsJsonArray("headers").size());
+        }
+
+        @Test
+        void honorsServerNameAndPort() {
+            JsonObject server = AcpClient.buildMcpHttpServerJson("custom", 12345);
+            assertEquals("custom", server.get("name").getAsString());
+            assertEquals("http://127.0.0.1:12345/mcp", server.get("url").getAsString());
+        }
+    }
+
     // ── truncateForLog (private static) ─────────────────────────────────
 
     @Nested

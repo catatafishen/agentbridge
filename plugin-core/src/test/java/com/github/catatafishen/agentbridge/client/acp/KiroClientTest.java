@@ -92,8 +92,46 @@ class KiroClientTest {
         assertTrue(agentIdx > acpIdx, "--agent must come after acp subcommand");
     }
 
-    // ── buildEnvironmentStatic ──────────────────────────────────────────
+    // ── supportsHttpMcp (version gating) ────────────────────────────────
 
+    @ParameterizedTest
+    @CsvSource({
+        "2.14.1, true",
+        "2.14.2, true",
+        "2.15.0, true",
+        "3.0.0, true",
+        "2.14.0, false",
+        "2.13.9, false",
+        "2.10.0, false",
+        "1.99.99, false",
+        "2.14, false",
+    })
+    void supportsHttpMcp_versionThreshold(String version, boolean expected) {
+        assertEquals(expected, KiroClient.supportsHttpMcp(version));
+    }
+
+    @Test
+    void supportsHttpMcp_nullIsFalse() {
+        assertFalse(KiroClient.supportsHttpMcp(null));
+    }
+
+    @Test
+    void supportsHttpMcp_blankIsFalse() {
+        assertFalse(KiroClient.supportsHttpMcp("   "));
+    }
+
+    @Test
+    void supportsHttpMcp_garbageIsFalse() {
+        assertFalse(KiroClient.supportsHttpMcp("not-a-version"));
+    }
+
+    @Test
+    void supportsHttpMcp_toleratesSuffix() {
+        assertTrue(KiroClient.supportsHttpMcp("2.14.1-beta"));
+        assertTrue(KiroClient.supportsHttpMcp("2.15.0+build.7"));
+    }
+
+    // ── buildEnvironmentStatic ──────────────────────────────────────────
     @Test
     void buildEnvironment_includesRustBacktrace() {
         Map<String, String> env = KiroClient.buildEnvironmentStatic();
