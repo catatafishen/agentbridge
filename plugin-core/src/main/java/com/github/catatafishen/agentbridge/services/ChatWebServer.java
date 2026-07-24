@@ -1920,44 +1920,7 @@ public final class ChatWebServer implements Disposable {
     }
 
     static com.google.gson.JsonObject liveEntryToJson(LiveToolCallEntry entry) {
-        com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
-        obj.addProperty("id", entry.callId());
-        obj.addProperty(KEY_TITLE, entry.displayName());
-        obj.addProperty("toolName", entry.toolName());
-        if (entry.category() != null) {
-            obj.addProperty("kind", entry.category());
-        }
-        String status;
-        if (entry.isRunning()) {
-            status = "running";
-        } else if (Boolean.TRUE.equals(entry.success())) {
-            status = "success";
-        } else {
-            status = "error";
-        }
-        obj.addProperty(KEY_STATUS, status);
-        obj.addProperty("timestamp", entry.timestamp().toString());
-        obj.addProperty("arguments", entry.input());
-        obj.addProperty("result", entry.output());
-        obj.addProperty("durationMs", entry.durationMs());
-        obj.addProperty("hasHooks", entry.hasHooks());
-
-        if (!entry.hookStages().isEmpty()) {
-            com.google.gson.JsonArray stages = new com.google.gson.JsonArray();
-            for (var stage : entry.hookStages()) {
-                com.google.gson.JsonObject s = new com.google.gson.JsonObject();
-                s.addProperty("trigger", stage.trigger());
-                s.addProperty("scriptName", stage.scriptName());
-                s.addProperty("outcome", stage.outcome());
-                s.addProperty("durationMs", stage.durationMs());
-                if (stage.detail() != null) {
-                    s.addProperty("detail", stage.detail());
-                }
-                stages.add(s);
-            }
-            obj.add("hookStages", stages);
-        }
-        return obj;
+        return ToolCallHistoryJson.summary(entry);
     }
 
     private @NotNull List<EntryData> loadSessionEntries() {
