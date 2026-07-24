@@ -1897,25 +1897,18 @@ public final class ChatWebServer implements Disposable {
 
     private void handleToolCalls(HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            exchange.close();
-            return;
-        }
         try {
             LiveToolCallService liveService = LiveToolCallService.getInstance(project);
-            List<LiveToolCallEntry> liveEntries = liveService.getEntries();
-
-            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
-            for (LiveToolCallEntry entry : liveEntries) {
-                arr.add(liveEntryToJson(entry));
+            ToolCallHistoryHttp.Response response = ToolCallHistoryHttp.resolve(
+                exchange.getRequestMethod(), exchange.getRequestURI().getRawPath(), liveService);
+            if (response.status() == 200) {
+                sendJson(exchange, GSON.toJson(response.body()));
+            } else {
+                sendErrorJson(exchange, response.status(), response.error());
             }
-            com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-            json.add(KEY_ITEMS, arr);
-            sendJson(exchange, GSON.toJson(json));
         } catch (Exception e) {
             LOG.warn("handleToolCalls error", e);
-            sendJson(exchange, EMPTY_ITEMS_JSON);
+            sendErrorJson(exchange, 500, "Failed to load tool calls");
         }
     }
 
