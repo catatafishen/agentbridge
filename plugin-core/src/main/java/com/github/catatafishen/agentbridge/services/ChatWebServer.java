@@ -58,6 +58,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Optional HTTP server that streams the chat panel to a local web browser (e.g. phone on LAN).
@@ -1898,9 +1899,10 @@ public final class ChatWebServer implements Disposable {
     private void handleToolCalls(HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
         try {
-            LiveToolCallService liveService = LiveToolCallService.getInstance(project);
-            ToolCallHistoryHttp.Response response = ToolCallHistoryHttp.resolve(
-                exchange.getRequestMethod(), exchange.getRequestURI().getRawPath(), liveService);
+            ToolCallHistoryHttp.Response response = resolveToolCallHistory(
+                exchange.getRequestMethod(), exchange.getRequestURI().getRawPath(),
+                () -> LiveToolCallService.getInstance(project),
+                e -> LOG.warn("handleToolCalls error", e));
             if (response.status() == 200) {
                 sendJson(exchange, GSON.toJson(response.body()));
             } else {
@@ -1910,6 +1912,25 @@ public final class ChatWebServer implements Disposable {
             LOG.warn("handleToolCalls error", e);
             sendErrorJson(exchange, 500, "Failed to load tool calls");
         }
+    }
+
+    static @NotNull ToolCallHistoryHttp.Response resolveToolCallHistory(
+        @Nullable String method,
+        @Nullable String path,
+        @NotNull Supplier<LiveToolCallService> serviceSupplier,
+        @NotNull Consumer<RuntimeException> listFailureLogger) {
+        return ToolCallHistoryHttp.resolve(
+            method,
+            path,
+            () -> {
+                try {
+                    return serviceSupplier.get().getEntries();
+                } catch (RuntimeException e) {
+                    listFailureLogger.accept(e);
+                    throw e;
+                }
+            },
+            callId -> serviceSupplier.get().findById(callId));
     }
 
     static com.google.gson.JsonObject liveEntryToJson(LiveToolCallEntry entry) {

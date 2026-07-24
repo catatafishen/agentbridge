@@ -6,10 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ToolCallHistoryHttpTest {
@@ -33,17 +34,45 @@ class ToolCallHistoryHttpTest {
     }
 
     @Test
-    void listFailurePreservesLegacyEmptyItemsResponse() {
-        ToolCallHistoryHttp.Response response = ToolCallHistoryHttp.resolve(
+    void listLazyAcquisitionExceptionPreservesLegacyEmptyItemsResponse() {
+        AtomicInteger warnings = new AtomicInteger();
+        ToolCallHistoryHttp.Response response = ChatWebServer.resolveToolCallHistory(
             "GET", "/tool-calls",
             () -> {
                 throw new IllegalStateException("history unavailable");
             },
-            ignored -> Optional.empty());
+            ignored -> warnings.incrementAndGet());
 
         assertEquals(200, response.status());
         assertEquals(0, response.body().getAsJsonArray("items").size());
         assertTrue(response.error() == null);
+        assertEquals(1, warnings.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"POST|/tool-calls", "GET|/tool-calls/not-a-number"})
+    void rejectedRoutesDoNotAcquireToolCallBackend(String request) {
+        String[] parts = request.split("\\|", 2);
+        AtomicInteger backendCalls = new AtomicInteger();
+
+        ToolCallHistoryHttp.Response response = ChatWebServer.resolveToolCallHistory(
+            parts[0], parts[1],
+            () -> {
+                backendCalls.incrementAndGet();
+                return new LiveToolCallService();
+            },
+            ignored -> { });
+
+        assertEquals(0, backendCalls.get());
+        assertEquals("POST".equals(parts[0]) ? 405 : 400, response.status());
+    }
+
+    @Test
+    void detailLazyAcquisitionExceptionPropagates() {
+        assertThrows(IllegalStateException.class, () -> ChatWebServer.resolveToolCallHistory(
+            "GET", "/tool-calls/1", () -> {
+                throw new IllegalStateException("history unavailable");
+            }, ignored -> { }));
     }
 
     @Test
