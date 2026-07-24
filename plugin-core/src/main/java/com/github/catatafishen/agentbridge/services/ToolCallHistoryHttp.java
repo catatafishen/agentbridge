@@ -7,6 +7,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.LongFunction;
 import java.util.function.Supplier;
 
@@ -24,13 +25,21 @@ final class ToolCallHistoryHttp {
     static @NotNull Response resolve(@Nullable String method,
                                      @Nullable String path,
                                      @NotNull LiveToolCallService service) {
-        return resolve(method, path, service::getEntries, service::findById);
+        return resolve(method, path, service::getEntries, service::findById, ignored -> { });
     }
 
     static @NotNull Response resolve(@Nullable String method,
                                      @Nullable String path,
                                      @NotNull Supplier<List<LiveToolCallEntry>> entriesSupplier,
                                      @NotNull LongFunction<Optional<LiveToolCallEntry>> entryFinder) {
+        return resolve(method, path, entriesSupplier, entryFinder, ignored -> { });
+    }
+
+    static @NotNull Response resolve(@Nullable String method,
+                                     @Nullable String path,
+                                     @NotNull Supplier<List<LiveToolCallEntry>> entriesSupplier,
+                                     @NotNull LongFunction<Optional<LiveToolCallEntry>> entryFinder,
+                                     @NotNull Consumer<SerializationFailure> failureLogger) {
         if (!"GET".equals(method)) {
             return Response.error(405, "Method not allowed");
         }
@@ -38,6 +47,7 @@ final class ToolCallHistoryHttp {
             try {
                 return Response.ok(listJson(entriesSupplier.get()));
             } catch (RuntimeException e) {
+                failureLogger.accept(SerializationFailure.of("list", path, null, e));
                 return Response.ok(listJson(List.of()));
             }
         }
@@ -59,7 +69,12 @@ final class ToolCallHistoryHttp {
         if (!entry.fullPayloadAvailable()) {
             return Response.error(410, "Full tool call payload unavailable");
         }
-        return Response.ok(ToolCallHistoryJson.detail(entry));
+        try {
+            return Response.ok(ToolCallHistoryJson.detail(entry));
+        } catch (RuntimeException e) {
+            failureLogger.accept(SerializationFailure.of("detail", path, callId, e));
+            throw e;
+        }
     }
 
     private static @NotNull JsonObject listJson(@NotNull List<LiveToolCallEntry> entries) {
@@ -79,6 +94,18 @@ final class ToolCallHistoryHttp {
 
         static @NotNull Response error(int status, @NotNull String error) {
             return new Response(status, null, error);
+        }
+    }
+
+    record SerializationFailure(@NotNull String stage,
+                                @NotNull String path,
+                                @Nullable Long callId,
+                                @NotNull String exceptionType) {
+        static @NotNull SerializationFailure of(@NotNull String stage,
+                                                @NotNull String path,
+                                                @Nullable Long callId,
+                                                @NotNull RuntimeException exception) {
+            return new SerializationFailure(stage, path, callId, exception.getClass().getName());
         }
     }
 }

@@ -1902,14 +1902,20 @@ public final class ChatWebServer implements Disposable {
             ToolCallHistoryHttp.Response response = resolveToolCallHistory(
                 exchange.getRequestMethod(), exchange.getRequestURI().getRawPath(),
                 () -> LiveToolCallService.getInstance(project),
-                e -> LOG.warn("handleToolCalls error", e));
+                diagnostic -> LOG.warn(
+                    "Tool-call history serialization failed: stage=" + diagnostic.stage()
+                        + ", path=" + diagnostic.path()
+                        + (diagnostic.callId() == null ? "" : ", callId=" + diagnostic.callId())
+                        + ", exceptionType=" + diagnostic.exceptionType()));
             if (response.status() == 200) {
                 sendJson(exchange, GSON.toJson(response.body()));
             } else {
                 sendErrorJson(exchange, response.status(), response.error());
             }
         } catch (Exception e) {
-            LOG.warn("handleToolCalls error", e);
+            LOG.warn("Tool-call history request failed: method=" + exchange.getRequestMethod()
+                + ", path=" + exchange.getRequestURI().getRawPath()
+                + ", exceptionType=" + e.getClass().getName());
             sendErrorJson(exchange, 500, "Failed to load tool calls");
         }
     }
@@ -1918,19 +1924,13 @@ public final class ChatWebServer implements Disposable {
         @Nullable String method,
         @Nullable String path,
         @NotNull Supplier<LiveToolCallService> serviceSupplier,
-        @NotNull Consumer<RuntimeException> listFailureLogger) {
+        @NotNull Consumer<ToolCallHistoryHttp.SerializationFailure> failureLogger) {
         return ToolCallHistoryHttp.resolve(
             method,
             path,
-            () -> {
-                try {
-                    return serviceSupplier.get().getEntries();
-                } catch (RuntimeException e) {
-                    listFailureLogger.accept(e);
-                    throw e;
-                }
-            },
-            callId -> serviceSupplier.get().findById(callId));
+            () -> serviceSupplier.get().getEntries(),
+            callId -> serviceSupplier.get().findById(callId),
+            failureLogger);
     }
 
     static com.google.gson.JsonObject liveEntryToJson(LiveToolCallEntry entry) {

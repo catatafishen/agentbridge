@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Instant;
+import java.util.AbstractList;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +52,75 @@ class ToolCallHistoryHttpTest {
         assertEquals(0, response.body().getAsJsonArray("items").size());
         assertTrue(response.error() == null);
         assertEquals(1, warnings.get());
+    }
+
+    @Test
+    void listSerializationFailureReportsSafeStageAndPathMetadata() {
+        String secretPayload = "arguments=super-secret result=private";
+        List<ToolCallHistoryHttp.SerializationFailure> diagnostics = new ArrayList<>();
+        List<LiveToolCallEntry> brokenEntries = new AbstractList<>() {
+            @Override
+            public LiveToolCallEntry get(int index) {
+                throw new IllegalStateException(secretPayload);
+            }
+
+            @Override
+            public int size() {
+                return 1;
+            }
+        };
+
+        ToolCallHistoryHttp.Response response = ToolCallHistoryHttp.resolve(
+            "GET", "/tool-calls", () -> brokenEntries, ignored -> Optional.empty(), diagnostics::add);
+
+        assertEquals(200, response.status());
+        assertEquals(0, response.body().getAsJsonArray("items").size());
+        assertEquals(1, diagnostics.size());
+        ToolCallHistoryHttp.SerializationFailure diagnostic = diagnostics.getFirst();
+        assertEquals("list", diagnostic.stage());
+        assertEquals("/tool-calls", diagnostic.path());
+        assertTrue(diagnostic.callId() == null);
+        assertEquals(IllegalStateException.class.getName(), diagnostic.exceptionType());
+        assertFalse(diagnostic.toString().contains(secretPayload));
+    }
+
+    @Test
+    void detailSerializationFailureReportsSafeStagePathAndCallIdMetadata() {
+        String secretPayload = "originalInput=super-secret sha256=private";
+        List<ToolCallHistoryHttp.SerializationFailure> diagnostics = new ArrayList<>();
+        List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> brokenStages =
+            new AbstractList<>() {
+                @Override
+                public com.github.catatafishen.agentbridge.services.hooks.HookStageResult get(int index) {
+                    throw new IllegalStateException(secretPayload);
+                }
+
+                @Override
+                public int size() {
+                    return 1;
+                }
+
+                @Override
+                public boolean isEmpty() {
+                    return false;
+                }
+            };
+        LiveToolCallEntry entry = new LiveToolCallEntry(
+            73L, "read_file", "Read file", ToolCallPayload.capture("{}"), null,
+            ToolCallPayload.capture("done"), Instant.parse("2026-07-24T08:00:00Z"),
+            4L, true, "read", false, brokenStages, false);
+
+        assertThrows(IllegalStateException.class, () -> ToolCallHistoryHttp.resolve(
+            "GET", "/tool-calls/73", List::of,
+            callId -> Optional.of(entry), diagnostics::add));
+
+        assertEquals(1, diagnostics.size());
+        ToolCallHistoryHttp.SerializationFailure diagnostic = diagnostics.getFirst();
+        assertEquals("detail", diagnostic.stage());
+        assertEquals("/tool-calls/73", diagnostic.path());
+        assertEquals(73L, diagnostic.callId());
+        assertEquals(IllegalStateException.class.getName(), diagnostic.exceptionType());
+        assertFalse(diagnostic.toString().contains(secretPayload));
     }
 
     @ParameterizedTest
