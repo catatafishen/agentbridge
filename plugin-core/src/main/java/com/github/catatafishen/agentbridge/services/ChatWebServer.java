@@ -1897,27 +1897,44 @@ public final class ChatWebServer implements Disposable {
     }
 
     private void handleToolCalls(HttpExchange exchange) throws IOException {
-        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        handleToolCallHistoryExchange(
+            exchange,
+            () -> LiveToolCallService.getInstance(project),
+            diagnostic -> LOG.warn(
+                "Tool-call history serialization failed: stage=" + diagnostic.stage()
+                    + ", path=" + diagnostic.path()
+                    + (diagnostic.callId() == null ? "" : ", callId=" + diagnostic.callId())
+                    + ", exceptionType=" + diagnostic.exceptionType()));
+    }
+
+    static void handleToolCallHistoryExchange(
+        @NotNull HttpExchange exchange,
+        @NotNull Supplier<LiveToolCallService> serviceSupplier,
+        @NotNull Consumer<ToolCallHistoryHttp.SerializationFailure> failureLogger
+    ) throws IOException {
+        ToolCallHistoryHttp.Response response;
         try {
-            ToolCallHistoryHttp.Response response = resolveToolCallHistory(
+            response = resolveToolCallHistory(
                 exchange.getRequestMethod(), exchange.getRequestURI().getRawPath(),
-                () -> LiveToolCallService.getInstance(project),
-                diagnostic -> LOG.warn(
-                    "Tool-call history serialization failed: stage=" + diagnostic.stage()
-                        + ", path=" + diagnostic.path()
-                        + (diagnostic.callId() == null ? "" : ", callId=" + diagnostic.callId())
-                        + ", exceptionType=" + diagnostic.exceptionType()));
-            if (response.status() == 200) {
-                sendJson(exchange, GSON.toJson(response.body()));
-            } else {
-                sendErrorJson(exchange, response.status(), response.error());
-            }
-        } catch (Exception e) {
+                serviceSupplier, failureLogger);
+        } catch (RuntimeException e) {
             LOG.warn("Tool-call history request failed: method=" + exchange.getRequestMethod()
                 + ", path=" + exchange.getRequestURI().getRawPath()
                 + ", exceptionType=" + e.getClass().getName());
-            sendErrorJson(exchange, 500, "Failed to load tool calls");
+            response = ToolCallHistoryHttp.Response.error(500, "Failed to load tool calls");
         }
+
+        JsonObject body = response.body();
+        if (body == null) {
+            body = new JsonObject();
+            body.addProperty("error", response.error());
+        }
+        byte[] bytes = GSON.toJson(body).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(HDR_CONTENT_TYPE, JSON_CONTENT_TYPE);
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        exchange.sendResponseHeaders(response.status(), bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
     }
 
     static @NotNull ToolCallHistoryHttp.Response resolveToolCallHistory(
