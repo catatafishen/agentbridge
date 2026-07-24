@@ -85,6 +85,17 @@ class LiveToolCallEntryTest {
     }
 
     @Test
+    void longPayloadKeepsLegacySummaryAndCompleteValue() {
+        String input = "{\"content\":\"" + "x".repeat(9_000) + "\"}";
+        LiveToolCallEntry entry = LiveToolCallEntry.started("write_file", "Write File", input, null, "edit", false);
+
+        assertTrue(entry.input().endsWith("[…truncated]"));
+        assertEquals(input, entry.completeInputOrNull());
+        assertTrue(entry.fullPayloadAvailable());
+        assertEquals(entry.inputPayload().byteLength(), entry.retainedFullPayloadBytes());
+    }
+
+    @Test
     void output_truncation_at_max_chars() {
         LiveToolCallEntry running = LiveToolCallEntry.started("big_tool", "Big Tool", "{}", null, null, false);
         String longOutput = "y".repeat(LiveToolCallEntry.MAX_IO_CHARS + 1000);
@@ -97,7 +108,8 @@ class LiveToolCallEntryTest {
     @Test
     void empty_strings_handled_gracefully() {
         LiveToolCallEntry entry = new LiveToolCallEntry(
-            1, "test", "test", "", null, "", Instant.now(), -1, null, null, false, List.of(), false);
+            1, "test", "test", ToolCallPayload.capture(""), null, ToolCallPayload.capture(""),
+            Instant.now(), -1, null, null, false, List.of(), false);
         assertEquals("", entry.input());
         assertEquals("", entry.output());
     }
@@ -105,18 +117,21 @@ class LiveToolCallEntryTest {
     @Test
     void isRunning_when_success_is_null() {
         LiveToolCallEntry running = new LiveToolCallEntry(
-            1, "test", "test", "{}", null, "", Instant.now(), -1, null, null, false, List.of(), false);
+            1, "test", "test", ToolCallPayload.capture("{}"), null, ToolCallPayload.capture(""),
+            Instant.now(), -1, null, null, false, List.of(), false);
         assertTrue(running.isRunning());
     }
 
     @Test
     void isRunning_false_when_success_is_set() {
         LiveToolCallEntry done = new LiveToolCallEntry(
-            1, "test", "test", "{}", null, "ok", Instant.now(), 10, true, null, false, List.of(), false);
+            1, "test", "test", ToolCallPayload.capture("{}"), null, ToolCallPayload.capture("ok"),
+            Instant.now(), 10, true, null, false, List.of(), false);
         assertFalse(done.isRunning());
 
         LiveToolCallEntry failed = new LiveToolCallEntry(
-            2, "test", "test", "{}", null, "err", Instant.now(), 5, false, null, false, List.of(), false);
+            2, "test", "test", ToolCallPayload.capture("{}"), null, ToolCallPayload.capture("err"),
+            Instant.now(), 5, false, null, false, List.of(), false);
         assertFalse(failed.isRunning());
     }
 

@@ -16,9 +16,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * @param callId        unique monotonic ID for reliable completion matching (not affected by list eviction)
  * @param toolName      canonical MCP tool id (e.g. "read_file")
  * @param displayName   human-readable tool name (e.g. "Read File"); falls back to toolName if unavailable
- * @param input         raw JSON arguments as received by the tool (after pre-hook modifications)
+ * @param inputPayload  arguments as received by the tool (after pre-hook modifications)
  * @param originalInput pre-hook JSON arguments; non-null only when a pre-hook modified the arguments
- * @param output        raw response text (may be truncated at 8K for memory)
+ * @param outputPayload response text
  * @param timestamp     when the call started
  * @param durationMs    wall-clock execution time; -1 while still running
  * @param success       true if completed without error; null while running
@@ -32,9 +32,9 @@ public record LiveToolCallEntry(
     long callId,
     @NotNull String toolName,
     @NotNull String displayName,
-    @NotNull String input,
+    @NotNull ToolCallPayload inputPayload,
     @Nullable String originalInput,
-    @NotNull String output,
+    @NotNull ToolCallPayload outputPayload,
     @NotNull Instant timestamp,
     long durationMs,
     @Nullable Boolean success,
@@ -43,7 +43,7 @@ public record LiveToolCallEntry(
     @NotNull List<HookStageResult> hookStages,
     boolean acpTitleSet
 ) {
-    static final int MAX_IO_CHARS = 8_000;
+    static final int MAX_IO_CHARS = ToolCallPayload.SUMMARY_MAX_CHARS;
     private static final AtomicLong ID_SEQ = new AtomicLong();
 
     /**
@@ -57,7 +57,8 @@ public record LiveToolCallEntry(
                                             boolean hasHooks) {
         return new LiveToolCallEntry(
             ID_SEQ.incrementAndGet(), toolName, displayName,
-            truncate(input), truncateNullable(originalInput), "", Instant.now(), -1, null, category, hasHooks,
+            ToolCallPayload.capture(input), truncateNullable(originalInput), ToolCallPayload.capture(""),
+            Instant.now(), -1, null, category, hasHooks,
             List.of(), false);
     }
 
@@ -66,7 +67,7 @@ public record LiveToolCallEntry(
      */
     public LiveToolCallEntry completed(@NotNull String output, long durationMs, boolean success) {
         return new LiveToolCallEntry(
-            callId, toolName, displayName, input, originalInput, truncate(output),
+            callId, toolName, displayName, inputPayload, originalInput, ToolCallPayload.capture(output),
             timestamp, durationMs, success, category, hasHooks, hookStages, acpTitleSet);
     }
 
@@ -75,7 +76,7 @@ public record LiveToolCallEntry(
      */
     public LiveToolCallEntry withHookStages(@NotNull List<HookStageResult> stages) {
         return new LiveToolCallEntry(
-            callId, toolName, displayName, input, originalInput, output,
+            callId, toolName, displayName, inputPayload, originalInput, outputPayload,
             timestamp, durationMs, success, category, hasHooks, List.copyOf(stages), acpTitleSet);
     }
 
@@ -85,7 +86,7 @@ public record LiveToolCallEntry(
      */
     public LiveToolCallEntry withDisplayName(@NotNull String newDisplayName) {
         return new LiveToolCallEntry(
-            callId, toolName, newDisplayName, input, originalInput, output,
+            callId, toolName, newDisplayName, inputPayload, originalInput, outputPayload,
             timestamp, durationMs, success, category, hasHooks, hookStages, true);
     }
 
@@ -94,6 +95,59 @@ public record LiveToolCallEntry(
      */
     public boolean isRunning() {
         return success == null;
+    }
+
+    /**
+     * Returns the legacy input summary used by existing live-tool-call consumers.
+     */
+    public @NotNull String input() {
+        return inputPayload.summary();
+    }
+
+    /**
+     * Returns the legacy output summary used by existing live-tool-call consumers.
+     */
+    public @NotNull String output() {
+        return outputPayload.summary();
+    }
+
+    public @Nullable String completeInputOrNull() {
+        return inputPayload.completeValueOrNull();
+    }
+
+    public @Nullable String completeOutputOrNull() {
+        return outputPayload.completeValueOrNull();
+    }
+
+    public boolean fullPayloadAvailable() {
+        return inputPayload.available() && outputPayload.available();
+    }
+
+    public long retainedFullPayloadBytes() {
+        return inputPayload.retainedBytes() + outputPayload.retainedBytes();
+    }
+
+    public @Nullable String fullPayloadUnavailableReason() {
+        if (inputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.FIELD_LIMIT
+            || outputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.FIELD_LIMIT) {
+            return ToolCallPayload.UnavailableReason.FIELD_LIMIT.wireValue();
+        }
+        if (inputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.MEMORY_BUDGET
+            || outputPayload.unavailableReason() == ToolCallPayload.UnavailableReason.MEMORY_BUDGET) {
+            return ToolCallPayload.UnavailableReason.MEMORY_BUDGET.wireValue();
+        }
+        return null;
+    }
+
+    public LiveToolCallEntry dropRetainedPayloadsForMemoryBudget() {
+        return copyWithPayloads(inputPayload.evictForMemoryBudget(), outputPayload.evictForMemoryBudget());
+    }
+
+    private @NotNull LiveToolCallEntry copyWithPayloads(@NotNull ToolCallPayload newInputPayload,
+                                                         @NotNull ToolCallPayload newOutputPayload) {
+        return new LiveToolCallEntry(
+            callId, toolName, displayName, newInputPayload, originalInput, newOutputPayload,
+            timestamp, durationMs, success, category, hasHooks, hookStages, acpTitleSet);
     }
 
     private static @NotNull String truncate(@NotNull String s) {

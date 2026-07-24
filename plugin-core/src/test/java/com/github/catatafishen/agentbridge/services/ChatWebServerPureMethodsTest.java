@@ -122,8 +122,8 @@ class ChatWebServerPureMethodsTest {
         @Test
         void serializesBasicEntry() {
             var entry = new LiveToolCallEntry(
-                1L, "read_file", "Read file.txt", "{\"path\":\"file.txt\"}", null,
-                "file content", Instant.parse("2024-01-01T00:00:00Z"),
+                1L, "read_file", "Read file.txt", ToolCallPayload.capture("{\"path\":\"file.txt\"}"), null,
+                ToolCallPayload.capture("file content"), Instant.parse("2024-01-01T00:00:00Z"),
                 100L, true, "file", false, Collections.emptyList(), false);
 
             JsonObject json = ChatWebServer.liveEntryToJson(entry);
@@ -141,8 +141,8 @@ class ChatWebServerPureMethodsTest {
         @Test
         void setsErrorStatusOnFailure() {
             var entry = new LiveToolCallEntry(
-                2L, "write_file", "Write", "{}", null,
-                "Error: failed", Instant.parse("2024-01-01T00:00:00Z"),
+                2L, "write_file", "Write", ToolCallPayload.capture("{}"), null,
+                ToolCallPayload.capture("Error: failed"), Instant.parse("2024-01-01T00:00:00Z"),
                 50L, false, null, false, Collections.emptyList(), false);
 
             JsonObject json = ChatWebServer.liveEntryToJson(entry);
@@ -153,8 +153,8 @@ class ChatWebServerPureMethodsTest {
         @Test
         void setsRunningStatusWhenSuccessIsNull() {
             var entry = new LiveToolCallEntry(
-                3L, "git_status", "Git status", "{}", null,
-                "", Instant.parse("2024-01-01T00:00:00Z"),
+                3L, "git_status", "Git status", ToolCallPayload.capture("{}"), null,
+                ToolCallPayload.capture(""), Instant.parse("2024-01-01T00:00:00Z"),
                 0L, null, null, false, Collections.emptyList(), false);
 
             JsonObject json = ChatWebServer.liveEntryToJson(entry);
@@ -166,8 +166,8 @@ class ChatWebServerPureMethodsTest {
             var stage = new HookStageResult(
                 "pre", "validate.sh", "success", 25L, "all checks passed");
             var entry = new LiveToolCallEntry(
-                4L, "edit_text", "Edit", "{}", null,
-                "done", Instant.parse("2024-01-01T00:00:00Z"),
+                4L, "edit_text", "Edit", ToolCallPayload.capture("{}"), null,
+                ToolCallPayload.capture("done"), Instant.parse("2024-01-01T00:00:00Z"),
                 200L, true, null, true, List.of(stage), false);
 
             JsonObject json = ChatWebServer.liveEntryToJson(entry);
@@ -187,8 +187,8 @@ class ChatWebServerPureMethodsTest {
             var stage = new HookStageResult(
                 "success", "log.sh", "success", 10L, null);
             var entry = new LiveToolCallEntry(
-                5L, "run_command", "Run", "{}", null,
-                "ok", Instant.parse("2024-01-01T00:00:00Z"),
+                5L, "run_command", "Run", ToolCallPayload.capture("{}"), null,
+                ToolCallPayload.capture("ok"), Instant.parse("2024-01-01T00:00:00Z"),
                 50L, true, null, true, List.of(stage), false);
 
             JsonObject json = ChatWebServer.liveEntryToJson(entry);
