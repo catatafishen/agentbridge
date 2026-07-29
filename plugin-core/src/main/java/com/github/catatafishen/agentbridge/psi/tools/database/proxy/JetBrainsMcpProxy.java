@@ -147,12 +147,9 @@ final class JetBrainsMcpProxy {
         Class<?> allowAllClass = Class.forName("com.intellij.mcpserver.McpToolFilter$AllowAll", true, cl);
         Object acceptAllFilter = allowAllClass.getField("INSTANCE").get(null);
 
-        // Call getMcpTools$intellij_mcpserver directly (NOT $default) with all four params.
-        Method getToolsMethod = serviceClass.getDeclaredMethod(
-            "getMcpTools$intellij_mcpserver",
-            mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass);
         // false = do not restrict to "hidden-only" tools — include all registered tools
-        List<?> tools = (List<?>) getToolsMethod.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
+        List<?> tools = invokeGetMcpTools(cl, serviceClass, service, mcpToolFilterClass, implementationClass,
+            sessionOptionsClass, acceptAllFilter, implementation, sessionOptions);
 
         Map<String, Object> map = new ConcurrentHashMap<>();
         for (Object tool : tools) {
@@ -161,6 +158,30 @@ final class JetBrainsMcpProxy {
             map.put(name, tool);
         }
         return map;
+    }
+
+    private static List<?> invokeGetMcpTools(ClassLoader cl, Class<?> serviceClass, Object service,
+        Class<?> mcpToolFilterClass, Class<?> implementationClass, Class<?> sessionOptionsClass,
+        Object acceptAllFilter, Object implementation, Object sessionOptions) throws ReflectiveOperationException {
+        try {
+            // IntelliJ 2026.1 and earlier: four parameter getMcpTools() method.
+            Method getToolsMethod = serviceClass.getDeclaredMethod(
+                "getMcpTools$intellij_mcpserver",
+                mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass);
+            return (List<?>) getToolsMethod.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
+        } catch (NoSuchMethodException e) {
+            // IntelliJ 2026.2 and later: five parameter getMcpTools() method.
+            Class<?> invocationModeClass = Class.forName("com.intellij.mcpserver.McpToolInvocationMode", true, cl);
+            Object directMode = Stream.of(invocationModeClass.getEnumConstants())
+                .filter(c -> "DIRECT".equals(c.toString()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("DIRECT enum constant not found"));
+            Method getToolsMethod = serviceClass.getDeclaredMethod(
+                "getMcpTools$intellij_mcpserver",
+                mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass, invocationModeClass);
+            return (List<?>) getToolsMethod.invoke(
+                service, acceptAllFilter, false, implementation, sessionOptions, directMode);
+        }
     }
 
     private static String invokeInProcess(ClassLoader cl, Project project, Object tool, String argsJson)
