@@ -135,6 +135,9 @@ public class ShellEnvironment {
             + "[ -s '" + home + "/.sdkman/bin/sdkman-init.sh' ] && . '" + home + "/.sdkman/bin/sdkman-init.sh' 2>/dev/null; "
             + "[ -s '" + home + "/.cargo/env' ] && . '" + home + "/.cargo/env' 2>/dev/null; "
             + "[ -f '" + home + "/.pyenv/bin/pyenv' ] && export PATH='" + home + "/.pyenv/bin:$PATH' 2>/dev/null; "
+            // ~/.local/bin is the standard location for pip install --user, uv tool install,
+            // and pipx-installed binaries (e.g. vibe-acp, hermes). Add it if it exists.
+            + "[ -d '" + home + "/.local/bin' ] && case \":$PATH:\" in *:'" + home + "/.local/bin':*) ;; *) export PATH='" + home + "/.local/bin:$PATH' ;; esac 2>/dev/null; "
             + "env 2>/dev/null; }";
     }
 

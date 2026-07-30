@@ -40,6 +40,20 @@ class ShellEnvironmentTest {
     }
 
     @Test
+    void buildEnvCaptureCommand_containsLocalBinPath() throws Exception {
+        String cmd = invokeBuildEnvCaptureCommand("/home/user");
+        assertTrue(cmd.contains("/.local/bin"), "Should include ~/.local/bin for pip/uv/pipx binaries");
+        assertTrue(cmd.contains("/.local/bin:$PATH"), "Should prepend ~/.local/bin to PATH");
+    }
+
+    @Test
+    void buildEnvCaptureCommand_localBinOnlyAddedIfNotAlreadyPresent() throws Exception {
+        String cmd = invokeBuildEnvCaptureCommand("/home/user");
+        // The command uses case ":$PATH:" to check if the path is already present
+        assertTrue(cmd.contains("case \":$PATH:\""), "Should check if ~/.local/bin is already in PATH");
+    }
+
+    @Test
     void buildEnvCaptureCommand_endsWithEnvDump() throws Exception {
         String cmd = invokeBuildEnvCaptureCommand("/home/user");
         assertTrue(cmd.contains("env 2>/dev/null"), "Should dump env vars");
