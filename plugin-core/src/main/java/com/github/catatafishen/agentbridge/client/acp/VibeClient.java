@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
+import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -137,5 +139,68 @@ public final class VibeClient extends AcpClient {
     @Override
     protected boolean supportsAuthenticate() {
         return false;
+    }
+
+    /**
+     * Injects a reprimand nudge when Vibe uses a native (non-MCP) tool instead of the
+     * AgentBridge equivalent.
+     *
+     * <p>Vibe's Devstral model sometimes uses wrong parameter names when calling
+     * AgentBridge MCP tools (e.g. {@code file_path} instead of {@code path}) after
+     * its native tools are denied. This reprimand gives the model precise guidance so
+     * it can correct the call on the next attempt, rather than looping indefinitely.</p>
+     *
+     * <p>The nudge is appended to the next MCP tool result by
+     * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService} via
+     * {@link AgentNudgeService#consumePendingNudges()}.</p>
+     */
+    @Override
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
+        if (project == null || project.isDisposed()) return;
+        String reprimand = buildReprimandText(toolId);
+        AgentNudgeService.getInstance(project).addNudge(reprimand, NudgeSource.NATIVE_TOOL_REPRIMAND, false);
+    }
+
+    /**
+     * Builds the reprimand text for a given built-in tool ID.
+     *
+     * <p>The message names the correct AgentBridge MCP tool to call (with its
+     * {@code agentbridge_} prefix as Vibe uses) and lists the required parameter names,
+     * which Vibe's model has been observed to get wrong.</p>
+     *
+     * <p>Package-private for unit testing.</p>
+     */
+    static String buildReprimandText(String toolId) {
+        return switch (toolId) {
+            case "write", "edit", "create" ->
+                "You used a native write/edit tool that is not available here. " +
+                "Use agentbridge_write_file instead. " +
+                "Required parameter: 'path' (not 'file_path'). " +
+                "Example: agentbridge_write_file(path=\"src/Foo.java\", content=\"...\")";
+            case "read", "view" ->
+                "You used a native read tool that is not available here. " +
+                "Use agentbridge_read_file instead. " +
+                "Required parameter: 'path' (not 'file_path'). " +
+                "Example: agentbridge_read_file(path=\"src/Foo.java\")";
+            case "bash" ->
+                "You used a native bash/shell tool that is not available here. " +
+                "Use agentbridge_run_command or agentbridge_run_in_terminal instead. " +
+                "Required parameter: 'command'. " +
+                "Example: agentbridge_run_command(command=\"./gradlew build\")";
+            case "grep" ->
+                "You used a native grep tool that is not available here. " +
+                "Use agentbridge_search_text instead. " +
+                "Required parameter: 'query'. " +
+                "Example: agentbridge_search_text(query=\"MyClass\")";
+            case "glob" ->
+                "You used a native glob tool that is not available here. " +
+                "Use agentbridge_list_project_files instead. " +
+                "Optional parameter: 'file_pattern'. " +
+                "Example: agentbridge_list_project_files(file_pattern=\"*.java\")";
+            default ->
+                "You used a native tool ('" + toolId + "') that is not available here. " +
+                "Use the corresponding agentbridge_* MCP tool instead. " +
+                "All tool parameters use 'path', not 'file_path'.";
+        };
     }
 }
