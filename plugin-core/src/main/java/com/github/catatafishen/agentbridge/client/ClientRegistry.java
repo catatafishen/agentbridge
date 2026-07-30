@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.client.acp.HermesClient;
 import com.github.catatafishen.agentbridge.client.acp.JunieClient;
 import com.github.catatafishen.agentbridge.client.acp.KiroClient;
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeClient;
+import com.github.catatafishen.agentbridge.client.acp.VibeClient;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
@@ -36,6 +37,7 @@ public final class ClientRegistry {
         register("kiro", "Kiro", KiroClient::new);
         register("opencode", "OpenCode", OpenCodeClient::new);
         register("hermes", "Hermes Agent", HermesClient::new);
+        register("vibe", "Mistral Vibe", VibeClient::new);
         // Claude clients are registered once they support a single-arg Project constructor.
     }
 

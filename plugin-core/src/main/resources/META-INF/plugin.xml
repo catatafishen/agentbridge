@@ -298,6 +298,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
 
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.VibeClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.vibe"
+      displayName="Mistral Vibe"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
       instance="com.github.catatafishen.agentbridge.settings.CodexClientConfigurable"
       id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.client.acp.VibeClient
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient
 import com.github.catatafishen.agentbridge.client.codex.CodexClient
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
@@ -14,6 +15,7 @@ object AgentIconProvider {
     private val junieIcon: Icon = loadIcon("junie.svg")
     private val kiroIcon: Icon = loadIcon("kiro.svg")
     private val codexIcon: Icon = loadIcon("codex.svg")
+    private val vibeIcon: Icon = loadIcon("vibe.svg")
 
     fun getDefaultIcon(): Icon = defaultIcon
 
@@ -25,6 +27,7 @@ object AgentIconProvider {
             AgentProfileManager.JUNIE_PROFILE_ID -> junieIcon
             AgentProfileManager.KIRO_PROFILE_ID -> kiroIcon
             CodexClient.PROFILE_ID -> codexIcon
+            VibeClient.AGENT_ID -> vibeIcon
             else -> null
         }
         return icon ?: defaultIcon
