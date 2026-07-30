@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
+import com.github.catatafishen.agentbridge.client.acp.VibeClient;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
 import com.github.catatafishen.agentbridge.client.codex.CodexClient;
 import com.intellij.openapi.application.ApplicationManager;
@@ -39,6 +40,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String KIRO_PROFILE_ID = "kiro";
     public static final String CODEX_PROFILE_ID = CodexClient.PROFILE_ID;
     public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
+    public static final String VIBE_PROFILE_ID = VibeClient.AGENT_ID;
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
     private PersistedState persistedState = new PersistedState();
@@ -221,7 +223,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     private void ensureDefaults() {
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
             CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID,
-            HERMES_PROFILE_ID)) {
+            HERMES_PROFILE_ID, VIBE_PROFILE_ID)) {
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
                 if (profile != null) profiles.put(id, profile);
@@ -239,6 +241,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case KIRO_PROFILE_ID -> buildKiroProfile();
             case CODEX_PROFILE_ID -> CodexClient.createDefaultProfile();
             case HERMES_PROFILE_ID -> buildHermesProfile();
+            case VIBE_PROFILE_ID -> buildVibeProfile();
             default -> null;
         };
     }
@@ -315,6 +318,19 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBinaryName("hermes");
         p.setInstallHint("See install instructions at https://github.com/NousResearch/hermes-agent#installation");
         p.setInstallUrl("https://github.com/NousResearch/hermes-agent");
+        return p;
+    }
+
+    private static AgentProfile buildVibeProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(VIBE_PROFILE_ID);
+        p.setDisplayName("Mistral Vibe");
+        p.setBuiltIn(true);
+        p.setTransportType(TransportType.ACP);
+        p.setBinaryName("vibe-acp");
+        p.setAlternateNames(List.of("vibe"));
+        p.setInstallHint("Install with: pip install mistral-vibe (requires Python 3.12+)");
+        p.setInstallUrl("https://docs.mistral.ai/vibe/code/cli/install-setup");
         return p;
     }
 }

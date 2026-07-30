@@ -32,6 +32,7 @@ public final class AgentIdMapper {
         if (lower.contains("junie")) return "junie";
         if (lower.contains("kiro")) return "kiro";
         if (lower.contains("codex")) return "codex";
+        if (lower.contains("vibe")) return "vibe";
         return lower.replaceAll("[^a-z0-9]", "-");
     }
 }
