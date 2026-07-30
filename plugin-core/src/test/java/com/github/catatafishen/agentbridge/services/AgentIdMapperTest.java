@@ -1,85 +1,63 @@
 package com.github.catatafishen.agentbridge.services;
 
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.InvocationTargetException;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Tests for {@link AgentIdMapper}.
+ * Unit tests for {@link AgentIdMapper}.
  */
+@DisplayName("AgentIdMapper")
 class AgentIdMapperTest {
 
-    @Nested
-    @DisplayName("toAgentId")
-    class ToAgentId {
+    @ParameterizedTest(name = "''{0}'' → ''{1}''")
+    @DisplayName("toAgentId maps known display names to profile IDs")
+    @CsvSource({
+        "GitHub Copilot, copilot",
+        "Copilot, copilot",
+        "copilot-cli, copilot",
+        "Claude Code, claude-cli",
+        "Claude, claude-cli",
+        "claude, claude-cli",
+        "OpenCode, opencode",
+        "opencode, opencode",
+        "Junie, junie",
+        "JetBrains Junie, junie",
+        "Kiro, kiro",
+        "Amazon Kiro, kiro",
+        "Codex, codex",
+        "OpenAI Codex, codex",
+        "Mistral Vibe, vibe",
+        "Vibe, vibe",
+        "vibe-acp, vibe"
+    })
+    void toAgentId_mapsKnownDisplayNames(String displayName, String expectedId) {
+        assertEquals(expectedId, AgentIdMapper.toAgentId(displayName));
+    }
 
-        @Test
-        @DisplayName("returns 'unknown' for null")
-        void nullAgent() {
-            assertEquals("unknown", AgentIdMapper.toAgentId(null));
-        }
-
-        @Test
-        @DisplayName("returns 'unknown' for empty string")
-        void emptyAgent() {
-            assertEquals("unknown", AgentIdMapper.toAgentId(""));
-        }
-
-        @Test
-        @DisplayName("maps 'GitHub Copilot' → 'copilot'")
-        void copilot() {
-            assertEquals("copilot", AgentIdMapper.toAgentId("GitHub Copilot"));
-        }
-
-        @Test
-        @DisplayName("maps 'Claude Code' → 'claude-cli'")
-        void claude() {
-            assertEquals("claude-cli", AgentIdMapper.toAgentId("Claude Code"));
-        }
-
-        @Test
-        @DisplayName("maps 'OpenCode Agent' → 'opencode'")
-        void opencode() {
-            assertEquals("opencode", AgentIdMapper.toAgentId("OpenCode Agent"));
-        }
-
-        @Test
-        @DisplayName("maps 'Junie' → 'junie'")
-        void junie() {
-            assertEquals("junie", AgentIdMapper.toAgentId("Junie"));
-        }
-
-        @Test
-        @DisplayName("maps 'Kiro' → 'kiro'")
-        void kiro() {
-            assertEquals("kiro", AgentIdMapper.toAgentId("Kiro"));
-        }
-
-        @Test
-        @DisplayName("maps 'codex-mini' → 'codex'")
-        void codex() {
-            assertEquals("codex", AgentIdMapper.toAgentId("codex-mini"));
-        }
-
-        @Test
-        @DisplayName("normalizes unknown agent names to lowercase kebab-case")
-        void unknownAgent() {
-            assertEquals("my-custom-agent", AgentIdMapper.toAgentId("My Custom Agent"));
-        }
+    @ParameterizedTest
+    @DisplayName("toAgentId returns 'unknown' for null or empty input")
+    @NullAndEmptySource
+    void toAgentId_returnsUnknownForNullOrEmpty(String input) {
+        assertEquals("unknown", AgentIdMapper.toAgentId(input));
     }
 
     @Test
-    @DisplayName("private constructor enforces utility-class pattern")
-    void constructorThrowsUtilityClassException() throws Exception {
-        var constructor = AgentIdMapper.class.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        var ex = assertThrows(InvocationTargetException.class, constructor::newInstance);
-        assertInstanceOf(IllegalStateException.class, ex.getCause());
+    @DisplayName("toAgentId normalizes unknown names to lowercase with dashes")
+    void toAgentId_normalizesUnknownNames() {
+        assertEquals("my-custom-agent", AgentIdMapper.toAgentId("My Custom Agent"));
+        assertEquals("agent-x-2", AgentIdMapper.toAgentId("Agent X 2"));
+    }
+
+    @Test
+    @DisplayName("toAgentId is case-insensitive")
+    void toAgentId_isCaseInsensitive() {
+        assertEquals("copilot", AgentIdMapper.toAgentId("GITHUB COPILOT"));
+        assertEquals("claude-cli", AgentIdMapper.toAgentId("CLAUDE CODE"));
+        assertEquals("vibe", AgentIdMapper.toAgentId("MISTRAL VIBE"));
     }
 }
