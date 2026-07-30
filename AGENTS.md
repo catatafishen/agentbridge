@@ -487,6 +487,17 @@ ACP-level agent definitions)
 **Status**: ✅ Working (HTTP MCP server injected via `session/new`; requires `hermes acp --accept-hooks` because the
 plugin launches Hermes without a TTY for hook prompts)
 
+## Mistral Vibe
+
+**Location**: Not yet investigated
+**Format**: N/A — Vibe's agent definition support has not been investigated yet.
+
+**Bundled Agents**: 0
+
+**MCP Tool Prefix**: `agentbridge_` (Vibe names MCP tools as `{server_name}_{tool_name}`)
+
+**Status**: ⚠️ **Experimental** (basic ACP integration works; permission requests and agent definitions not yet tested)
+
 ## Summary Table
 
 | Agent    | MCP Tool Prefix    | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests    | Bundled Agents                      | Status                     |
@@ -496,6 +507,7 @@ plugin launches Hermes without a TTY for hook prompts)
 | Junie    | `agentbridge-`     | ❌ No support                     | N/A                                                        | ❌ No (auto-executes)   | 0                                   | Prompt workaround only     |
 | Kiro     | `@agentbridge/`    | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts    | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
 | Hermes   | `mcp_agentbridge_` | ❌ No ACP-side definitions        | N/A (gating via `~/.hermes/config.yaml` toolsets/skills)   | ✅ Via `--accept-hooks` | 0 (sub-agents via `delegate_task`)  | ✅ Working                  |
+| Vibe     | `agentbridge_`     | ❌ Not yet investigated           | N/A                                                        | ⚠️ Not yet tested      | 0                                   | ⚠️ Experimental            |
 
 See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode investigation
 and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.

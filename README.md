@@ -18,7 +18,7 @@ or generating diffs in isolation.
 
 **Key highlights:**
 
-- **7 agents** — Copilot, Claude Code, Codex, Kiro, Junie, OpenCode, Hermes Agent. Switch with one click.
+- **8 agents** — Copilot, Claude Code, Codex, Kiro, Junie, OpenCode, Hermes Agent, Mistral Vibe. Switch with one click.
 - **120+ MCP tools** — code navigation, refactoring, testing, debugging, git, project management,
   and more — all through native IntelliJ APIs.
 - **Cross-client session resume** — switch agents without losing conversation history.
@@ -65,6 +65,7 @@ a plugin with no reviews.
 | **Junie**                      | ACP (stdin/stdout)         | JetBrains auth                |
 | **OpenCode**                   | ACP (stdin/stdout)         | Configurable (multi-provider) |
 | **Hermes Agent**               | ACP (stdin/stdout)         | Configurable (multi-provider) |
+| **Mistral Vibe**               | ACP (stdin/stdout)         | Mistral API key               |
 
 Switch between agents with one click. Each agent has its own connection settings,
 tool permissions, and custom instructions.
