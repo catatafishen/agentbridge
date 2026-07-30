@@ -1238,6 +1238,20 @@ public abstract class AcpClient extends AbstractClient {
         @NotNull List<AbstractClient.AgentConfigOption> configOptions,
         @NotNull Set<String> sessionModelIds,
         @NotNull Set<String> agentSlugs) {
+        return filterSessionOptionsStatic(configOptions, sessionModelIds, agentSlugs, Collections.emptySet());
+    }
+
+    /**
+     * Variant that also accepts mode slugs — config options whose values are a subset of
+     * {@code modeSlugs} are suppressed to avoid a redundant dropdown section when the agent
+     * already exposes those modes through {@link #getAvailableModes()} or a {@code "mode"}
+     * config option that was already extracted into {@link #availableModes}.
+     */
+    static List<SessionOption> filterSessionOptionsStatic(
+        @NotNull List<AbstractClient.AgentConfigOption> configOptions,
+        @NotNull Set<String> sessionModelIds,
+        @NotNull Set<String> agentSlugs,
+        @NotNull Set<String> modeSlugs) {
         return configOptions.stream()
             .filter(opt -> {
                 Set<String> optValueIds = opt.values().stream()
@@ -1245,8 +1259,10 @@ public abstract class AcpClient extends AbstractClient {
                     .collect(Collectors.toSet());
                 // Suppress if values are covered by the model list (avoids duplicate model dropdown)
                 // Suppress if values are covered by the agent list (avoids duplicate agent dropdown)
+                // Suppress if values are covered by the mode list (avoids duplicate mode dropdown)
                 return (sessionModelIds.isEmpty() || !sessionModelIds.containsAll(optValueIds))
-                    && (agentSlugs.isEmpty() || !agentSlugs.containsAll(optValueIds));
+                    && (agentSlugs.isEmpty() || !agentSlugs.containsAll(optValueIds))
+                    && (modeSlugs.isEmpty() || !modeSlugs.containsAll(optValueIds));
             })
             .map(opt -> {
                 List<String> valueIds = opt.values().stream()
@@ -1273,7 +1289,10 @@ public abstract class AcpClient extends AbstractClient {
         Set<String> agentSlugs = agents.isEmpty()
             ? Collections.emptySet()
             : agents.stream().map(AgentMode::slug).collect(Collectors.toSet());
-        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds, agentSlugs);
+        Set<String> modeSlugs = availableModes.isEmpty()
+            ? Collections.emptySet()
+            : availableModes.stream().map(AgentMode::slug).collect(Collectors.toSet());
+        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds, agentSlugs, modeSlugs);
     }
 
     /**
