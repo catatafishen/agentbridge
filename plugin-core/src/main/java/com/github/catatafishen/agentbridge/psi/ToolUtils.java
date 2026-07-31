@@ -869,15 +869,47 @@ public final class ToolUtils {
         return null;
     }
 
+    /**
+     * Returns {@code true} when every {@code grep}/{@code rg} invocation in {@code command} is
+     * safe to run on disk — either because it only filters piped stdout, or because all of its
+     * file operands sit outside the project's source roots (log files, {@code /tmp} scratch
+     * output, {@code build/} artifacts). Those files are never mirrored in an editor buffer, so
+     * there is nothing stale to read.
+     *
+     * <p>Returns {@code false} when the command invokes no grep at all, so callers can keep
+     * treating "not a grep command" as "no exemption".
+     *
+     * @see GrepCommandSafety for how each invocation is parsed out of the command
+     */
     public static boolean grepTargetsOnlyOutsideSourceRoots(@Nullable Project project, @NotNull String command) {
         if (project == null) return false;
-        java.util.List<String> paths = extractGrepPaths(command);
-        if (paths.isEmpty()) return false;
+
+        java.util.List<GrepCommandSafety.GrepInvocation> invocations = GrepCommandSafety.analyze(command);
+        if (invocations.isEmpty()) return false;
 
         String basePath = project.getBasePath();
         java.nio.file.Path base = basePath != null ? java.nio.file.Path.of(basePath) : null;
         com.intellij.openapi.roots.ProjectFileIndex index =
             com.intellij.openapi.roots.ProjectFileIndex.getInstance(project);
+
+        for (GrepCommandSafety.GrepInvocation invocation : invocations) {
+            if (!isInvocationSafe(invocation, base, index)) return false;
+        }
+        return true;
+    }
+
+    private static boolean isInvocationSafe(
+        @NotNull GrepCommandSafety.GrepInvocation invocation,
+        @Nullable java.nio.file.Path base,
+        @NotNull com.intellij.openapi.roots.ProjectFileIndex index
+    ) {
+        if (invocation.isPipeFilter()) return true;
+
+        java.util.List<String> paths = invocation.paths();
+        // null = a glob operand the shell expands before grep runs, so the real targets are
+        // unknown here. Empty = no operand and nothing piped in, which searches the working
+        // directory (rg) or the terminal (grep). Neither can be proven safe.
+        if (paths == null || paths.isEmpty()) return false;
 
         for (String pathStr : paths) {
             if (!isPathOutsideSourceRoots(pathStr, base, index)) return false;
@@ -916,61 +948,13 @@ public final class ToolUtils {
         }
     }
 
+    /**
+     * Returns the explicit path operands of the first {@code grep}/{@code rg} invocation in
+     * {@code command}, or an empty list when there are none, when an operand contains a glob, or
+     * when the command does not invoke grep.
+     */
     static java.util.List<String> extractGrepPaths(@NotNull String command) {
-        java.util.List<String> tokens = tokenizeShellCommand(command);
-        int idx = findGrepCommandIndex(tokens);
-        if (idx < 0) return java.util.List.of();
-        return collectPathArgs(tokens, idx + 1);
-    }
-
-    private static int findGrepCommandIndex(@NotNull java.util.List<String> tokens) {
-        for (int i = 0; i < tokens.size(); i++) {
-            String t = tokens.get(i);
-            if (t.equalsIgnoreCase("grep") || t.equalsIgnoreCase("rg")) return i;
-        }
-        return -1;
-    }
-
-    private static final java.util.Set<String> GREP_TWO_ARG_FLAGS = java.util.Set.of(
-        "-e", "-f", "--regexp", "--file",
-        "--include", "--exclude", "--exclude-dir", "--include-dir",
-        "-A", "-B", "-C", "--after-context", "--before-context", "--context",
-        "-m", "--max-count", "--max-depth", "-t", "-T", "--type", "--type-not",
-        "-g", "--glob", "--iglob"
-    );
-
-    private static final java.util.Set<String> GREP_PATTERN_FLAGS = java.util.Set.of(
-        "-e", "-f", "--regexp", "--file"
-    );
-
-    private static java.util.List<String> collectPathArgs(@NotNull java.util.List<String> tokens, int from) {
-        boolean patternConsumed = false;
-        boolean skipNext = false;
-        java.util.List<String> paths = new java.util.ArrayList<>();
-        for (int i = from; i < tokens.size(); i++) {
-            String t = tokens.get(i);
-            if (skipNext) {
-                skipNext = false;
-                continue;
-            }
-            if (t.startsWith("-") && !t.equals("-")) {
-                if (GREP_TWO_ARG_FLAGS.contains(t)) {
-                    if (GREP_PATTERN_FLAGS.contains(t)) patternConsumed = true;
-                    skipNext = true;
-                }
-            } else if (!patternConsumed) {
-                patternConsumed = true;
-            } else if (containsGlob(t)) {
-                return java.util.List.of();
-            } else {
-                paths.add(t);
-            }
-        }
-        return paths;
-    }
-
-    private static boolean containsGlob(@NotNull String s) {
-        return s.indexOf('*') >= 0 || s.indexOf('?') >= 0 || s.indexOf('[') >= 0;
+        return GrepCommandSafety.firstInvocationPaths(command);
     }
 
     /**
@@ -979,27 +963,7 @@ public final class ToolUtils {
      */
     @NotNull
     static java.util.List<String> tokenizeShellCommand(@NotNull String command) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        StringBuilder cur = new StringBuilder();
-        char quote = 0;
-        for (int i = 0; i < command.length(); i++) {
-            char c = command.charAt(i);
-            if (quote != 0) {
-                if (c == quote) quote = 0;
-                else cur.append(c);
-            } else if (c == '\'' || c == '"') {
-                quote = c;
-            } else if (Character.isWhitespace(c)) {
-                if (!cur.isEmpty()) {
-                    out.add(cur.toString());
-                    cur.setLength(0);
-                }
-            } else {
-                cur.append(c);
-            }
-        }
-        if (!cur.isEmpty()) out.add(cur.toString());
-        return out;
+        return GrepCommandSafety.tokenize(command);
     }
 
     private static boolean isGradleCompileCommand(String cmd) {
@@ -1113,8 +1077,9 @@ public final class ToolUtils {
                 + "Use edit_text with old_str/new_str for file editing instead.";
             case "grep" -> "Error: grep/rg on project source files is not allowed via " + toolName + " (searches "
                 + "stale disk files). Use search_text or search_symbols to search live editor buffers. "
-                + "Note: grep IS allowed when targeting paths outside source roots (e.g. log files, downloaded "
-                + "CI artifacts, build/ output) — pass an explicit file/dir argument to use it.";
+                + "Note: grep IS allowed when it filters piped output (e.g. `gh pr checks 1 | grep -i build`) "
+                + "or targets paths outside the source roots (log files, downloaded CI artifacts, build/ "
+                + "output) — pipe into it, or pass an explicit file/dir argument, to use it.";
             case "find" -> "Error: find commands are not allowed via " + toolName + ". "
                 + "Use list_project_files to find files instead.";
             case "compile" -> "Error: Gradle compile tasks are not allowed via " + toolName + ". "
