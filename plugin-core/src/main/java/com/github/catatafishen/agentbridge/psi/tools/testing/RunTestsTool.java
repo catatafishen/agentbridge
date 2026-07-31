@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.ClassResolverUtil;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
 import com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor;
 import com.github.catatafishen.agentbridge.ui.renderers.TestResultRenderer;
 import com.google.gson.JsonObject;
@@ -75,9 +76,17 @@ public final class RunTestsTool extends TestingTool {
     private static final String ERROR_NO_PROJECT_PATH = "Error: Could not determine project base path";
 
     /**
+     * Default wait for a test run, in seconds. Kept below
+     * {@link McpRequestDeadline#MAX_TIMEOUT_SECONDS} — the previous default of 300s could never be
+     * honoured, since the MCP client abandons the request long before then and the agent would see
+     * a transport error rather than the test results.
+     */
+    private static final int DEFAULT_TIMEOUT_SECONDS = 150;
+
+    /**
      * Timeout in seconds for {@link #awaitProcessTermination}; set in {@link #execute}.
      */
-    private int timeoutSec = 300;
+    private int timeoutSec = DEFAULT_TIMEOUT_SECONDS;
 
     public RunTestsTool(Project project) {
         super(project);
@@ -100,7 +109,8 @@ public final class RunTestsTool extends TestingTool {
             "Falls back to the project's build tool for unresolvable targets; use the 'test_task' parameter " +
             "when the project defines a custom test task (e.g., 'unitTest') instead of the standard 'test'. " +
             "Returns pass/fail counts and failure details. Use list_tests to discover available test targets. " +
-            "Use the 'timeout' parameter to override the default 300-second wait.";
+            "Use the 'timeout' parameter to override the default " + DEFAULT_TIMEOUT_SECONDS
+            + "-second wait, up to a maximum of " + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "s.";
     }
 
     @Override
@@ -126,7 +136,12 @@ public final class RunTestsTool extends TestingTool {
             Param.optional(PARAM_TEST_TASK, TYPE_STRING,
                 "Build task name when the project does not use the standard 'test' task "
                     + "(e.g., 'unitTest'). Auto-detected from the project model if not specified.", ""),
-            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 300)")
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER,
+                "Timeout in seconds (default: " + DEFAULT_TIMEOUT_SECONDS + ", maximum: "
+                    + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "). Larger values are reduced to the "
+                    + "maximum, because MCP clients abandon a request after roughly 180s and the "
+                    + "results would be lost. For a suite that needs longer, run it with "
+                    + "run_in_terminal and poll with read_terminal_output.")
         );
     }
 
@@ -137,13 +152,20 @@ public final class RunTestsTool extends TestingTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        int requestedTimeout = args.has(PARAM_TIMEOUT)
+            ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TIMEOUT_SECONDS;
+        if (requestedTimeout <= 0) {
+            return "Error: timeout must be a positive integer (seconds), got: " + requestedTimeout;
+        }
+        this.timeoutSec = McpRequestDeadline.clamp(requestedTimeout, DEFAULT_TIMEOUT_SECONDS);
+        return McpRequestDeadline.prependNotice(
+            McpRequestDeadline.clampNotice(requestedTimeout), runResolvedTarget(args));
+    }
+
+    private @NotNull String runResolvedTarget(@NotNull JsonObject args) {
         String target = args.get(PARAM_TARGET).getAsString();
         String module = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         String testTask = args.has(PARAM_TEST_TASK) ? args.get(PARAM_TEST_TASK).getAsString() : "";
-        this.timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 300;
-        if (this.timeoutSec <= 0) {
-            return "Error: timeout must be a positive integer (seconds), got: " + this.timeoutSec;
-        }
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -615,7 +637,7 @@ public final class RunTestsTool extends TestingTool {
     }
 
     public String executeFromCommand(@NotNull String command) {
-        return executeFromCommand(command, 300);
+        return executeFromCommand(command, DEFAULT_TIMEOUT_SECONDS);
     }
 
     public String executeFromCommand(@NotNull String command, int timeoutSec) {

@@ -171,29 +171,53 @@ public final class GrepCommandSafety {
      * of them contains a glob.
      */
     private static @Nullable List<String> collectPathArgs(List<String> tokens, int from) {
+        Operands operands = stripFlags(tokens, from);
+        List<String> paths = new ArrayList<>();
+        boolean patternConsumed = operands.patternConsumed();
+        for (String operand : operands.values()) {
+            if (!patternConsumed) {
+                patternConsumed = true;
+            } else if (containsGlob(operand)) {
+                return null;
+            } else {
+                paths.add(operand);
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * Drops option flags and the arguments they consume, leaving the positional operands.
+     *
+     * @return the operands, plus whether a flag such as {@code -e} already supplied the pattern
+     * (in which case the first operand is a path rather than the pattern)
+     */
+    private static Operands stripFlags(List<String> tokens, int from) {
+        List<String> operands = new ArrayList<>();
         boolean patternConsumed = false;
         boolean skipNext = false;
-        List<String> paths = new ArrayList<>();
         for (int i = from; i < tokens.size(); i++) {
             String token = tokens.get(i);
             if (skipNext) {
                 skipNext = false;
-                continue;
-            }
-            if (token.startsWith("-") && !token.equals("-")) {
-                if (TWO_ARG_FLAGS.contains(token)) {
-                    if (PATTERN_FLAGS.contains(token)) patternConsumed = true;
-                    skipNext = true;
-                }
-            } else if (!patternConsumed) {
-                patternConsumed = true;
-            } else if (containsGlob(token)) {
-                return null;
+            } else if (isFlag(token)) {
+                skipNext = TWO_ARG_FLAGS.contains(token);
+                patternConsumed |= PATTERN_FLAGS.contains(token);
             } else {
-                paths.add(token);
+                operands.add(token);
             }
         }
-        return paths;
+        return new Operands(operands, patternConsumed);
+    }
+
+    /**
+     * A lone {@code -} means stdin, so it is an operand rather than a flag.
+     */
+    private static boolean isFlag(String token) {
+        return token.startsWith("-") && !token.equals("-");
+    }
+
+    private record Operands(List<String> values, boolean patternConsumed) {
     }
 
     private static boolean containsGlob(String s) {

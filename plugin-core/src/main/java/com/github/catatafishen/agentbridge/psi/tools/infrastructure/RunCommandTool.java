@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
 import com.github.catatafishen.agentbridge.psi.tools.testing.RunTestsTool;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.github.catatafishen.agentbridge.ui.renderers.RunCommandRenderer;
@@ -32,6 +33,14 @@ public final class RunCommandTool extends InfrastructureTool {
     private static final String JAVA_HOME_ENV = "JAVA_HOME";
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
 
+    private static final int DEFAULT_TIMEOUT_SECONDS = 60;
+
+    /**
+     * Default wait for a test command routed to {@link RunTestsTool}. Kept under
+     * {@link McpRequestDeadline#MAX_TIMEOUT_SECONDS} so the common case never trips the clamp.
+     */
+    private static final int DEFAULT_TEST_TIMEOUT_SECONDS = 150;
+
     public RunCommandTool(Project project) {
         super(project);
     }
@@ -50,7 +59,11 @@ public final class RunCommandTool extends InfrastructureTool {
     public @NotNull String description() {
         return "Run a shell command with paginated output. Prefer this over the built-in bash tool. " +
             "Returns stdout/stderr with exit code. Use offset parameter to paginate large output. " +
-            "Default timeout: 60s. For interactive commands needing stdin, use run_in_terminal instead.";
+            "Default timeout: " + DEFAULT_TIMEOUT_SECONDS + "s, capped at "
+            + McpRequestDeadline.MAX_TIMEOUT_SECONDS
+            + "s — for anything longer-running use run_in_terminal, which returns immediately, and "
+            + "poll it with read_terminal_output. For interactive commands needing stdin, use "
+            + "run_in_terminal instead.";
     }
 
     @Override
@@ -81,7 +94,12 @@ public final class RunCommandTool extends InfrastructureTool {
             Param.optional(PARAM_SHELL, TYPE_STRING,
                 "Shell executable to use (default: '" + configuredShell + "', the IDE-configured terminal shell). "
                     + "Override with any shell path available on this system, e.g. '/usr/bin/zsh' or 'pwsh'."),
-            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 60)"),
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER,
+                "Timeout in seconds (default: " + DEFAULT_TIMEOUT_SECONDS + ", maximum: "
+                    + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "). Larger values are reduced to the "
+                    + "maximum, because MCP clients abandon a request after roughly 180s and the "
+                    + "output would be lost. For work that takes longer, use run_in_terminal + "
+                    + "read_terminal_output."),
             Param.optional(JSON_TITLE, TYPE_STRING, "Human-readable title for the Run panel tab. ALWAYS set this to a short descriptive name"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Character offset to start output from (default: 0). Use for pagination when output is truncated"),
             Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return per page (default: 8000)")
@@ -94,8 +112,11 @@ public final class RunCommandTool extends InfrastructureTool {
         String command = args.get(PARAM_COMMAND).getAsString();
         String abuseType = ToolUtils.detectCommandAbuseType(command);
         if ("test".equals(abuseType)) {
-            int testTimeout = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 300;
-            return new RunTestsTool(project).executeFromCommand(command, testTimeout);
+            int requestedTestTimeout = args.has(PARAM_TIMEOUT)
+                ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TEST_TIMEOUT_SECONDS;
+            int testTimeout = McpRequestDeadline.clamp(requestedTestTimeout, DEFAULT_TEST_TIMEOUT_SECONDS);
+            return McpRequestDeadline.prependNotice(McpRequestDeadline.clampNotice(requestedTestTimeout),
+                new RunTestsTool(project).executeFromCommand(command, testTimeout));
         }
         if ("grep".equals(abuseType) && ToolUtils.grepTargetsOnlyOutsideSourceRoots(project, command)) {
             abuseType = null;
@@ -112,7 +133,9 @@ public final class RunCommandTool extends InfrastructureTool {
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
-        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
+        int requestedTimeout = args.has(PARAM_TIMEOUT)
+            ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TIMEOUT_SECONDS;
+        int timeoutSec = McpRequestDeadline.clamp(requestedTimeout, DEFAULT_TIMEOUT_SECONDS);
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
         String shellOverride = args.has(PARAM_SHELL) ? args.get(PARAM_SHELL).getAsString() : null;
         // Treat a blank shell override (e.g. from JSON templating) the same as "not provided"
@@ -125,7 +148,8 @@ public final class RunCommandTool extends InfrastructureTool {
         String shellName = shellBaseName(ParametersListUtil.parse(effectiveShell).getFirst());
         ProcessResult result = executeInRunPanel(cmd, tabTitle, timeoutSec);
 
-        return formatExecuteOutput(result, args, maxChars, offset, timeoutSec, shellName);
+        return McpRequestDeadline.prependNotice(McpRequestDeadline.clampNotice(requestedTimeout),
+            formatExecuteOutput(result, args, maxChars, offset, timeoutSec, shellName));
     }
 
     @Override
