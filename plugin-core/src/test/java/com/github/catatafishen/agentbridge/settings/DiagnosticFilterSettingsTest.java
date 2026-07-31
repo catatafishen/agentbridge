@@ -139,6 +139,17 @@ class DiagnosticFilterSettingsTest {
     }
 
     @Test
+    @DisplayName("natural-language severities are recognised by name")
+    void naturalLanguageSeveritiesRecognised() {
+        assertTrue(DiagnosticFilterSettings.isNaturalLanguageSeverity(
+            new HighlightSeverity("GRAMMAR_ERROR", HighlightSeverity.INFORMATION.myVal + 5)));
+        assertTrue(DiagnosticFilterSettings.isNaturalLanguageSeverity(
+            new HighlightSeverity("TYPO", HighlightSeverity.INFORMATION.myVal + 3)));
+        assertFalse(DiagnosticFilterSettings.isNaturalLanguageSeverity(HighlightSeverity.WARNING));
+        assertFalse(DiagnosticFilterSettings.isNaturalLanguageSeverity(HighlightSeverity.ERROR));
+    }
+
+    @Test
     @DisplayName("severity below INFORMATION always excluded")
     void belowInformationAlwaysExcluded() {
         var belowInfo = new HighlightSeverity("BELOW_INFO", HighlightSeverity.INFORMATION.myVal - 1);

@@ -45,6 +45,29 @@ public final class GetHighlightsTool extends QualityTool {
     private static final String PARAM_INCLUDE_UNINDEXED = "include_unindexed";
     private static final String PARAM_START_LINE = "start_line";
     private static final String PARAM_END_LINE = "end_line";
+    private static final String PARAM_INCLUDE_FIXES = "include_fixes";
+
+    /**
+     * Upper bound on the quick-fix names listed per problem. Inspections routinely offer six to
+     * eight fixes (rule configuration, suppression, "report to YouTrack", …) of which only the
+     * first few are real code changes, so listing them all multiplied the output size without
+     * adding actionable information.
+     */
+    private static final int MAX_FIXES_PER_PROBLEM = 3;
+
+    /**
+     * A single {@code get_highlights} request. Grouped into a record because the parameters are
+     * threaded unchanged through four call layers down to {@link #collectFileHighlights}.
+     *
+     * @param limit            maximum number of problems to return
+     * @param includeUnindexed whether to analyze files outside the project index
+     * @param startLine        1-based inclusive lower line bound, or 0 for none
+     * @param endLine          1-based inclusive upper line bound, or 0 for none
+     * @param includeFixes     whether to list quick-fix action names under each problem
+     */
+    private record HighlightQuery(int limit, boolean includeUnindexed,
+                                  int startLine, int endLine, boolean includeFixes) {
+    }
 
     public GetHighlightsTool(Project project) {
         super(project);
@@ -68,12 +91,14 @@ public final class GetHighlightsTool extends QualityTool {
     @Override
     public @NotNull String description() {
         return "Get cached editor highlights for a focused section of a file. " +
-            "Returns the richest diagnostic output available: all severities, inspections, typos, " +
-            "grammar errors, and available quick-fix action names per issue. " +
+            "Returns the richest diagnostic output available: all severities, inspections, typos " +
+            "and grammar errors, one problem per line. " +
+            "Set include_fixes=true to also list the available quick-fix action names per problem " +
+            "(needed before calling apply_quickfix; off by default because it multiplies output size). " +
             "Designed for targeted inspection using start_line/end_line (e.g. a single method or class). " +
             "Large files without a line range produce many results — if output is truncated, " +
             "narrow with start_line/end_line. " +
-            "For a whole-file problem summary without fix details, use get_problems. " +
+            "For a whole-file problem summary, use get_problems. " +
             "For compile errors only, use get_compilation_errors.";
     }
 
@@ -94,7 +119,10 @@ public final class GetHighlightsTool extends QualityTool {
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"),
             Param.optional(PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)"),
             Param.optional(PARAM_START_LINE, TYPE_INTEGER, "Only return highlights on or after this line (1-based, inclusive). If end_line is omitted, includes all lines from start_line onwards."),
-            Param.optional(PARAM_END_LINE, TYPE_INTEGER, "Only return highlights on or before this line (1-based, inclusive). Used with start_line. Defaults to no upper bound when start_line is set.")
+            Param.optional(PARAM_END_LINE, TYPE_INTEGER, "Only return highlights on or before this line (1-based, inclusive). Used with start_line. Defaults to no upper bound when start_line is set."),
+            Param.optional(PARAM_INCLUDE_FIXES, TYPE_BOOLEAN, "If true, list up to " + MAX_FIXES_PER_PROBLEM
+                + " quick-fix action names under each problem, for use with apply_quickfix (default: false). "
+                + "Grammar and spelling problems never list fixes because apply_quickfix cannot apply them.")
         );
     }
 
@@ -103,6 +131,7 @@ public final class GetHighlightsTool extends QualityTool {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
         boolean includeUnindexed = args.has(PARAM_INCLUDE_UNINDEXED) && args.get(PARAM_INCLUDE_UNINDEXED).getAsBoolean();
+        boolean includeFixes = args.has(PARAM_INCLUDE_FIXES) && args.get(PARAM_INCLUDE_FIXES).getAsBoolean();
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : 0;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : 0;
 
@@ -113,8 +142,7 @@ public final class GetHighlightsTool extends QualityTool {
         String rangeError = validateLineRange(startLine, endLine);
         if (rangeError != null) return rangeError;
 
-        final int startLineFinal = startLine;
-        final int endLineFinal = endLine;
+        HighlightQuery query = new HighlightQuery(limit, includeUnindexed, startLine, endLine, includeFixes);
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
@@ -125,7 +153,7 @@ public final class GetHighlightsTool extends QualityTool {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                getHighlightsCached(pathStr, limit, includeUnindexed, startLineFinal, endLineFinal, resultFuture);
+                getHighlightsCached(pathStr, query, resultFuture);
             } catch (Exception e) {
                 LOG.error("Error getting highlights", e);
                 resultFuture.complete("Error getting highlights: " + e.getMessage());
@@ -153,21 +181,20 @@ public final class GetHighlightsTool extends QualityTool {
         }
     }
 
-    private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
-                                     int startLine, int endLine,
+    private void getHighlightsCached(String pathStr, HighlightQuery query,
                                      CompletableFuture<String> resultFuture) {
         StringBuilder result = new StringBuilder();
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
             Collection<VirtualFile> allFiles =
-                collectFilesForHighlightAnalysis(pathStr, includeUnindexed, fileIndex, resultFuture);
+                collectFilesForHighlightAnalysis(pathStr, query.includeUnindexed(), fileIndex, resultFuture);
             if (resultFuture.isDone()) return;
 
             LOG.info("Analyzing " + allFiles.size() + " files for highlights (cached mode)");
 
             List<String> problems = new ArrayList<>();
-            int[] counts = analyzeFilesForHighlights(allFiles, limit, startLine, endLine, problems);
-            result.append(buildHighlightsSummary(counts, problems, limit, allFiles.size()));
+            int[] counts = analyzeFilesForHighlights(allFiles, query, problems);
+            result.append(buildHighlightsSummary(counts, problems, query.limit(), allFiles.size()));
         });
         if (resultFuture.isDone()) return;
 
@@ -305,17 +332,17 @@ public final class GetHighlightsTool extends QualityTool {
         }
     }
 
-    private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, int limit,
-                                            int startLine, int endLine, List<String> problems) {
+    private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, HighlightQuery query,
+                                            List<String> problems) {
         String basePath = project.getBasePath();
         int totalCount = 0;
         int filesWithProblems = 0;
         for (VirtualFile vf : files) {
-            if (totalCount >= limit) break;
+            if (totalCount >= query.limit()) break;
             Document doc = FileDocumentManager.getInstance().getDocument(vf);
             if (doc != null) {
                 String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getName();
-                int added = collectFileHighlights(doc, relPath, limit - totalCount, startLine, endLine, problems);
+                int added = collectFileHighlights(doc, relPath, query.limit() - totalCount, query, problems);
                 if (added > 0) filesWithProblems++;
                 totalCount += added;
             }
@@ -324,7 +351,7 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     private int collectFileHighlights(Document doc, String relPath, int remaining,
-                                      int startLine, int endLine, List<String> problems) {
+                                      HighlightQuery query, List<String> problems) {
         List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
         int added = 0;
         DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
@@ -337,13 +364,11 @@ public final class GetHighlightsTool extends QualityTool {
                 String description = h.getDescription();
                 if (description != null && !description.isBlank() && filter.shouldInclude(h)) {
                     int line = doc.getLineNumber(h.getStartOffset()) + 1;
-                    if (isInLineRange(line, startLine, endLine)) {
+                    if (isInLineRange(line, query.startLine(), query.endLine())) {
                         StringBuilder entry = new StringBuilder(
                             String.format(FORMAT_LOCATION, relPath, line, h.getSeverity().getName(), description));
-                        List<String> fixes = collectQuickFixNames(h);
-                        // One fix per line with plain "Fix:" prefix so action names are unambiguous
-                        for (String fix : fixes) {
-                            entry.append("\n    Fix: ").append(fix);
+                        if (query.includeFixes()) {
+                            appendFixNames(entry, h);
                         }
                         problems.add(entry.toString());
                         added++;
@@ -354,6 +379,39 @@ public final class GetHighlightsTool extends QualityTool {
             LOG.warn("Failed to analyze file: " + relPath, e);
         }
         return added;
+    }
+
+    /**
+     * Appends up to {@link #MAX_FIXES_PER_PROBLEM} quick-fix names, one per line with a plain
+     * {@code Fix:} prefix so action names are unambiguous for {@code apply_quickfix}.
+     *
+     * <p>Grammar and spelling problems are skipped entirely: their fixes come from Grazie and the
+     * spell checker, which {@code apply_quickfix} cannot invoke, so listing them is pure noise.</p>
+     */
+    private static void appendFixNames(StringBuilder entry,
+                                       com.intellij.codeInsight.daemon.impl.HighlightInfo h) {
+        if (DiagnosticFilterSettings.isNaturalLanguageSeverity(h.getSeverity())) return;
+        entry.append(formatFixLines(collectQuickFixNames(h)));
+    }
+
+    /**
+     * Renders quick-fix names as indented {@code Fix:} lines, capped at
+     * {@link #MAX_FIXES_PER_PROBLEM} with a trailing count of what was omitted.
+     *
+     * @return the lines to append, each prefixed with a newline; empty when there are no fixes
+     */
+    static String formatFixLines(@NotNull List<String> fixes) {
+        if (fixes.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int shown = Math.min(fixes.size(), MAX_FIXES_PER_PROBLEM);
+        for (int i = 0; i < shown; i++) {
+            sb.append("\n    Fix: ").append(fixes.get(i));
+        }
+        if (fixes.size() > shown) {
+            sb.append("\n    Fix: … (").append(fixes.size() - shown)
+                .append(" more, use get_available_actions)");
+        }
+        return sb.toString();
     }
 
     private static boolean isInLineRange(int line, int startLine, int endLine) {
