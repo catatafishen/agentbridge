@@ -1088,6 +1088,9 @@ public final class PsiBridgeService implements Disposable {
         JsonObject highlightArgs = new JsonObject();
         highlightArgs.addProperty("path", path);
         highlightArgs.addProperty("include_unindexed", true);
+        // Auto-highlights are scoped to the edited line range, so the fix names stay short and
+        // tell the agent straight away whether apply_quickfix can resolve what it just introduced.
+        highlightArgs.addProperty("include_fixes", true);
         int[] lineRange = parseContextLineRange(writeResult);
         if (lineRange != null) {
             highlightArgs.addProperty("start_line", lineRange[0]);

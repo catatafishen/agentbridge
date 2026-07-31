@@ -78,12 +78,24 @@ public final class DiagnosticFilterSettings implements PersistentStateComponent<
      */
     public boolean isSeverityEnabled(@NotNull HighlightSeverity severity) {
         if (Objects.equals(HighlightSeverity.TEXT_ATTRIBUTES.getName(), severity.getName())) return false;
-        if (GRAMMAR_SPELLING_SEVERITY_NAMES.contains(severity.getName())) return myState.showGrammarAndSpelling;
+        if (isNaturalLanguageSeverity(severity)) return myState.showGrammarAndSpelling;
         if (severity.myVal >= HighlightSeverity.ERROR.myVal) return myState.showErrors;
         if (severity.myVal >= HighlightSeverity.WARNING.myVal) return myState.showWarnings;
         if (severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal) return myState.showWeakWarnings;
         if (severity.myVal >= HighlightSeverity.INFORMATION.myVal) return myState.showInformation;
         return false;
+    }
+
+    /**
+     * Returns {@code true} for the grammar and spelling severities contributed by Grazie and the
+     * spell checker (see {@link #GRAMMAR_SPELLING_SEVERITY_NAMES}).
+     *
+     * <p>Callers use this to treat natural-language findings differently from code inspections —
+     * notably, their quick fixes cannot be invoked through {@code apply_quickfix}, so tools do not
+     * advertise them.</p>
+     */
+    public static boolean isNaturalLanguageSeverity(@NotNull HighlightSeverity severity) {
+        return GRAMMAR_SPELLING_SEVERITY_NAMES.contains(severity.getName());
     }
 
     /**
