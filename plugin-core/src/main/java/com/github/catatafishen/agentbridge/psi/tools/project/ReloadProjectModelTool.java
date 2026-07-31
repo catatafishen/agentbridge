@@ -21,12 +21,35 @@ import java.util.concurrent.TimeUnit;
  * <p>Uses {@code ExternalSystemApiUtil.getAllManagers()} to discover registered
  * systems and {@code ExternalSystemUtil.refreshProjects(ImportSpecBuilder)} to
  * trigger each sync — the same API path the IDE uses for the toolbar action.
- * Falls back to the older {@code refreshProject} signature when
- * {@code ImportSpecBuilder} is unavailable.
+ * Falls back to {@code ExternalSystemUtil.refreshProject(Project, ProjectSystemId,
+ * String, boolean, ProgressExecutionMode)} when the {@code ImportSpecBuilder} path
+ * is unavailable.
+ *
+ * <p>All platform calls go through reflection because the external-system jars live
+ * in {@code lib/} rather than on the plugin's compile classpath — see the deliberate
+ * absence of an external-system entry in {@code plugin-core/build.gradle.kts}. That
+ * makes the class and method names above unverifiable at compile time, so they are
+ * declared as constants and any failure is reported with its exception type.
  */
 public final class ReloadProjectModelTool extends ProjectTool {
 
     private static final Logger LOG = Logger.getInstance(ReloadProjectModelTool.class);
+
+    private static final String EXTERNAL_SYSTEM_API_UTIL_CLASS =
+        "com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil";
+    private static final String EXTERNAL_SYSTEM_UTIL_CLASS =
+        "com.intellij.openapi.externalSystem.util.ExternalSystemUtil";
+    private static final String PROJECT_SYSTEM_ID_CLASS =
+        "com.intellij.openapi.externalSystem.model.ProjectSystemId";
+    /**
+     * {@code ImportSpecBuilder} lives in the {@code ...externalSystem.importing} package, not
+     * {@code ...externalSystem.util} where its companion {@code ExternalSystemUtil} lives. Getting
+     * this wrong yields a {@code ClassNotFoundException} that looks like an IDE-version problem.
+     */
+    private static final String IMPORT_SPEC_BUILDER_CLASS =
+        "com.intellij.openapi.externalSystem.importing.ImportSpecBuilder";
+    private static final String PROGRESS_EXECUTION_MODE_CLASS =
+        "com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode";
 
     public ReloadProjectModelTool(Project project) {
         super(project);
@@ -88,8 +111,7 @@ public final class ReloadProjectModelTool extends ProjectTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         try {
-            Class<?> apiUtilClass = Class.forName(
-                "com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil");
+            Class<?> apiUtilClass = Class.forName(EXTERNAL_SYSTEM_API_UTIL_CLASS);
             Method getAllManagers = apiUtilClass.getMethod("getAllManagers");
             Collection<?> managers = (Collection<?>) getAllManagers.invoke(null);
 
@@ -97,8 +119,7 @@ public final class ReloadProjectModelTool extends ProjectTool {
                 return "No external build systems registered for this project.";
             }
 
-            Class<?> externalSystemUtilClass = Class.forName(
-                "com.intellij.openapi.externalSystem.util.ExternalSystemUtil");
+            Class<?> externalSystemUtilClass = Class.forName(EXTERNAL_SYSTEM_UTIL_CLASS);
 
             CompletableFuture<String> future = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
@@ -115,11 +136,12 @@ public final class ReloadProjectModelTool extends ProjectTool {
                             notConfigured++;
                             continue;
                         }
-                        if (refresh(externalSystemUtilClass, manager)) {
+                        String failure = refresh(externalSystemUtilClass, manager);
+                        if (failure == null) {
                             sb.append("✓ ").append(name).append("\n");
                             synced++;
                         } else {
-                            sb.append("✗ ").append(name).append(" (refresh failed — see IDE log)\n");
+                            sb.append("✗ ").append(name).append(" (").append(failure).append(")\n");
                         }
                     }
                     if (synced == 0 && notConfigured == managers.size()) {
@@ -135,8 +157,7 @@ public final class ReloadProjectModelTool extends ProjectTool {
                         return;
                     }
                     if (synced == 0) {
-                        future.complete("Error: Refresh failed for all configured build system(s). "
-                            + "See IDE log for details.\n" + sb);
+                        future.complete("Error: Refresh failed for all configured build system(s).\n" + sb);
                         return;
                     }
                     sb.append("\nProject model reload triggered for ").append(synced)
@@ -164,25 +185,40 @@ public final class ReloadProjectModelTool extends ProjectTool {
         }
     }
 
-    private boolean refresh(Class<?> externalSystemUtilClass, Object manager) {
+    /**
+     * Refreshes one external system. Returns {@code null} on success, or a human-readable
+     * reason describing why every attempted API path failed.
+     *
+     * <p>Two API paths are tried in order:
+     * <ol>
+     *   <li>{@code ExternalSystemUtil.refreshProjects(ImportSpecBuilder)} — auto-discovers all
+     *       linked project paths, so it handles multi-root setups correctly.</li>
+     *   <li>{@code ExternalSystemUtil.refreshProject(Project, ProjectSystemId, String,
+     *       boolean, ProgressExecutionMode)} — single base path only, used when the
+     *       {@code ImportSpecBuilder} path is unavailable.</li>
+     * </ol>
+     */
+    private @org.jetbrains.annotations.Nullable String refresh(Class<?> externalSystemUtilClass, Object manager) {
         try {
             Object systemId = manager.getClass().getMethod("getSystemId").invoke(manager);
-            Class<?> systemIdClass = Class.forName(
-                "com.intellij.openapi.externalSystem.model.ProjectSystemId");
+            Class<?> systemIdClass = Class.forName(PROJECT_SYSTEM_ID_CLASS);
 
-            if (tryImportSpecRefresh(externalSystemUtilClass, systemIdClass, systemId)) {
-                return true;
+            String importSpecFailure = tryImportSpecRefresh(externalSystemUtilClass, systemIdClass, systemId);
+            if (importSpecFailure == null) {
+                return null;
             }
 
-            // Legacy: refreshProject(Project, ProjectSystemId, String basePath, boolean preview, boolean reportErrors)
-            externalSystemUtilClass.getMethod("refreshProject",
-                    Project.class, systemIdClass, String.class, boolean.class, boolean.class)
-                .invoke(null, project, systemId, project.getBasePath(), false, true);
-            return true;
+            String refreshProjectFailure =
+                tryRefreshProject(externalSystemUtilClass, systemIdClass, systemId);
+            if (refreshProjectFailure == null) {
+                return null;
+            }
+
+            return "ImportSpecBuilder: " + importSpecFailure + "; refreshProject: " + refreshProjectFailure;
 
         } catch (Exception e) {
             LOG.warn("Failed to refresh external system: " + e.getMessage(), e);
-            return false;
+            return describeFailure(e);
         }
     }
 
@@ -196,8 +232,7 @@ public final class ReloadProjectModelTool extends ProjectTool {
     @org.jetbrains.annotations.Nullable Boolean hasLinkedProjects(Class<?> apiUtilClass, Object manager) {
         try {
             Object systemId = manager.getClass().getMethod("getSystemId").invoke(manager);
-            Class<?> systemIdClass = Class.forName(
-                "com.intellij.openapi.externalSystem.model.ProjectSystemId");
+            Class<?> systemIdClass = Class.forName(PROJECT_SYSTEM_ID_CLASS);
             Method getSettings = apiUtilClass.getMethod("getSettings", Project.class, systemIdClass);
             Object settings = getSettings.invoke(null, project, systemId);
             Method getLinked = settings.getClass().getMethod("getLinkedProjectsSettings");
@@ -210,24 +245,62 @@ public final class ReloadProjectModelTool extends ProjectTool {
     }
 
     /**
-     * Attempts refresh via ImportSpecBuilder — auto-discovers project paths, works for multi-root setups.
-     * Returns {@code false} if ImportSpecBuilder is not available in this IDE version.
+     * Attempts refresh via {@code ImportSpecBuilder} — auto-discovers project paths, works for
+     * multi-root setups. Returns {@code null} on success, or a short human-readable reason when
+     * this API path is unavailable so the caller can try the next one and surface why.
      */
-    private boolean tryImportSpecRefresh(Class<?> externalSystemUtilClass, Class<?> systemIdClass, Object systemId) {
+    private @org.jetbrains.annotations.Nullable String tryImportSpecRefresh(
+        Class<?> externalSystemUtilClass, Class<?> systemIdClass, Object systemId) {
         try {
-            Class<?> importSpecBuilderClass = Class.forName(
-                "com.intellij.openapi.externalSystem.util.ImportSpecBuilder");
+            Class<?> importSpecBuilderClass = Class.forName(IMPORT_SPEC_BUILDER_CLASS);
             Constructor<?> ctor = importSpecBuilderClass.getConstructor(Project.class, systemIdClass);
             Object importSpec = ctor.newInstance(project, systemId);
             externalSystemUtilClass.getMethod("refreshProjects", importSpecBuilderClass)
                 .invoke(null, importSpec);
-            return true;
-        } catch (NoSuchMethodException ignored) {
-            return false;
+            return null;
         } catch (Exception e) {
-            LOG.warn("ImportSpecBuilder refresh failed, will try legacy API", e);
-            return false;
+            LOG.warn("ImportSpecBuilder refresh failed, will try the refreshProject API", e);
+            return describeFailure(e);
         }
+    }
+
+    /**
+     * Refreshes via {@code ExternalSystemUtil.refreshProject}. Unlike {@code ImportSpecBuilder}
+     * this only covers the project base path, so it is a fallback rather than the primary path.
+     *
+     * <p>Returns {@code null} on success, or a short human-readable reason on failure.
+     */
+    private @org.jetbrains.annotations.Nullable String tryRefreshProject(
+        Class<?> externalSystemUtilClass, Class<?> systemIdClass, Object systemId) {
+        try {
+            Class<?> progressModeClass = Class.forName(PROGRESS_EXECUTION_MODE_CLASS);
+            // Enum constants are public static final fields — a name lookup is unaffected by
+            // any toString() override on the enum.
+            Object inBackground = progressModeClass.getField("IN_BACKGROUND_ASYNC").get(null);
+            externalSystemUtilClass.getMethod("refreshProject",
+                    Project.class, systemIdClass, String.class, boolean.class, progressModeClass)
+                .invoke(null, project, systemId, project.getBasePath(), false, inBackground);
+            return null;
+        } catch (Exception e) {
+            LOG.warn("refreshProject refresh failed", e);
+            return describeFailure(e);
+        }
+    }
+
+    /**
+     * Renders a reflective failure as a short, self-explanatory string.
+     *
+     * <p>{@code ClassNotFoundException} and {@code NoSuchMethodException} carry only the missing
+     * signature as their message, which is meaningless without the exception type — so the type
+     * is always included. Reflective invocation wraps the real error in
+     * {@code InvocationTargetException}, so the cause is unwrapped first.
+     */
+    private static String describeFailure(Throwable e) {
+        Throwable actual = e instanceof java.lang.reflect.InvocationTargetException && e.getCause() != null
+            ? e.getCause()
+            : e;
+        String message = actual.getMessage();
+        return actual.getClass().getSimpleName() + (message != null ? ": " + message : "");
     }
 
     /**

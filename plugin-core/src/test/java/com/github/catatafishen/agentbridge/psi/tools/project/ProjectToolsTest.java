@@ -428,4 +428,57 @@ public class ProjectToolsTest extends BasePlatformTestCase {
         assertNull("hasLinkedProjects() must return null when manager throws Error, not propagate",
             result);
     }
+
+    /**
+     * Every external-system class {@code ReloadProjectModelTool} reaches by reflection must
+     * actually exist in the running IDE.
+     *
+     * <p>This is the regression guard for issue #960: {@code ImportSpecBuilder} was looked up
+     * under {@code ...externalSystem.util} (where its companion {@code ExternalSystemUtil}
+     * lives) instead of its real home {@code ...externalSystem.importing}. Because the lookup
+     * is reflective, the wrong name compiled and shipped fine and only failed at runtime, where
+     * a {@code catch (Exception)} downgraded it to "refresh failed — see IDE log".
+     */
+    public void testExternalSystemReflectionTargetsResolve() throws Exception {
+        for (String className : new String[]{
+            "com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil",
+            "com.intellij.openapi.externalSystem.util.ExternalSystemUtil",
+            "com.intellij.openapi.externalSystem.model.ProjectSystemId",
+            "com.intellij.openapi.externalSystem.importing.ImportSpecBuilder",
+            "com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode",
+        }) {
+            assertNotNull("Class must resolve in this IDE: " + className, Class.forName(className));
+        }
+    }
+
+    /**
+     * Both refresh API paths used by {@code ReloadProjectModelTool} must exist with the exact
+     * signatures the tool invokes reflectively.
+     *
+     * <p>Regression guard for issue #960: the fallback was declared as
+     * {@code refreshProject(Project, ProjectSystemId, String, boolean, boolean)}, a signature
+     * that has never existed — the last parameter is a {@code ProgressExecutionMode}. Both the
+     * primary and the fallback path were therefore broken, so the tool could never succeed.
+     */
+    public void testExternalSystemRefreshSignaturesExist() throws Exception {
+        Class<?> externalSystemUtil = Class.forName(
+            "com.intellij.openapi.externalSystem.util.ExternalSystemUtil");
+        Class<?> systemId = Class.forName(
+            "com.intellij.openapi.externalSystem.model.ProjectSystemId");
+        Class<?> importSpecBuilder = Class.forName(
+            "com.intellij.openapi.externalSystem.importing.ImportSpecBuilder");
+        Class<?> progressMode = Class.forName(
+            "com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode");
+
+        assertNotNull("ImportSpecBuilder(Project, ProjectSystemId) constructor must exist",
+            importSpecBuilder.getConstructor(com.intellij.openapi.project.Project.class, systemId));
+        assertNotNull("refreshProjects(ImportSpecBuilder) must exist",
+            externalSystemUtil.getMethod("refreshProjects", importSpecBuilder));
+        assertNotNull("refreshProject(Project, ProjectSystemId, String, boolean, ProgressExecutionMode) must exist",
+            externalSystemUtil.getMethod("refreshProject",
+                com.intellij.openapi.project.Project.class, systemId, String.class,
+                boolean.class, progressMode));
+        assertNotNull("ProgressExecutionMode.IN_BACKGROUND_ASYNC must exist",
+            progressMode.getField("IN_BACKGROUND_ASYNC").get(null));
+    }
 }
