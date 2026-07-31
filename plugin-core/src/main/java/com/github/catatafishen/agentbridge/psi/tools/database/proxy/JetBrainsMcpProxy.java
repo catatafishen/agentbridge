@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
 
 /**
  * Calls JetBrains' built-in MCP tools in-process, bypassing the HTTP transport layer.
@@ -161,21 +160,21 @@ final class JetBrainsMcpProxy {
     }
 
     private static List<?> invokeGetMcpTools(ClassLoader cl, Class<?> serviceClass, Object service,
-        Class<?> mcpToolFilterClass, Class<?> implementationClass, Class<?> sessionOptionsClass,
-        Object acceptAllFilter, Object implementation, Object sessionOptions) throws ReflectiveOperationException {
+                                             Class<?> mcpToolFilterClass, Class<?> implementationClass, Class<?> sessionOptionsClass,
+                                             Object acceptAllFilter, Object implementation, Object sessionOptions) throws ReflectiveOperationException {
         try {
-            // IntelliJ 2026.1 and earlier: four parameter getMcpTools() method.
+            // IntelliJ 2026.1 and earlier: four-parameter getMcpTools() method.
             Method getToolsMethod = serviceClass.getDeclaredMethod(
                 "getMcpTools$intellij_mcpserver",
                 mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass);
             return (List<?>) getToolsMethod.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
         } catch (NoSuchMethodException e) {
-            // IntelliJ 2026.2 and later: five parameter getMcpTools() method.
+            // IntelliJ 2026.2 and later: five-parameter getMcpTools() method.
             Class<?> invocationModeClass = Class.forName("com.intellij.mcpserver.McpToolInvocationMode", true, cl);
-            Object directMode = Stream.of(invocationModeClass.getEnumConstants())
-                .filter(c -> "DIRECT".equals(c.toString()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("DIRECT enum constant not found"));
+            // Enum constants are public static final fields — look up DIRECT by name via
+            // reflection instead of scanning getEnumConstants() and comparing toString().
+            // Enums can override toString(), so a name-based field lookup is more robust.
+            Object directMode = invocationModeClass.getField("DIRECT").get(null);
             Method getToolsMethod = serviceClass.getDeclaredMethod(
                 "getMcpTools$intellij_mcpserver",
                 mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass, invocationModeClass);
@@ -257,10 +256,9 @@ final class JetBrainsMcpProxy {
         Class<?> mcpToolFilterClass = Class.forName("com.intellij.mcpserver.McpToolFilter", true, cl);
         Class<?> markerClass = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker", true, cl);
 
-        Object dontAsk = Stream.of(askModeClass.getEnumConstants())
-            .filter(e -> "DONT_ASK".equals(e.toString()))
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException("DONT_ASK enum constant not found"));
+        // Same name-based field lookup as the DIRECT constant above: enum constants are
+        // public static final fields, so this is unaffected by toString() overrides.
+        Object dontAsk = askModeClass.getField("DONT_ASK").get(null);
 
         // Try the newer $default constructor first (AskCommandExecutionMode, McpToolFilter, String, int, Marker)
         // — added when localAgentId: String? was introduced. mask=6 (bits 1+2 set) → use Kotlin defaults
