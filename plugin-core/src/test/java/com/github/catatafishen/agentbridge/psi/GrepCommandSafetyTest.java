@@ -82,11 +82,96 @@ class GrepCommandSafetyTest {
         }
 
         @Test
+        @DisplayName("redirections after grep are not path operands")
+        void redirectionsAreNotPaths() {
+            assertEquals(List.of("/tmp/ci.log"),
+                GrepCommandSafety.analyze("grep TODO /tmp/ci.log > out.txt").getFirst().paths(),
+                "the redirection target is written, not searched");
+            assertEquals(List.of("/tmp/ci.log"),
+                GrepCommandSafety.analyze("grep TODO /tmp/ci.log 2> /dev/null").getFirst().paths(),
+                "a detached redirection target must be consumed with its operator");
+        }
+
+        @Test
         @DisplayName("a leading grep with no operand is not a pipe filter")
         void leadingGrepWithoutOperandIsNotPipeFilter() {
             // Nothing is piped in: rg walks the working directory and grep waits on the terminal.
             assertFalse(GrepCommandSafety.analyze("rg pattern").getFirst().isPipeFilter());
             assertFalse(GrepCommandSafety.analyze("grep pattern").getFirst().isPipeFilter());
+        }
+    }
+
+    /**
+     * Shells do not require whitespace around {@code |}, {@code &&} and friends. Splitting on
+     * whitespace alone left {@code cmd|grep foo} as the single token {@code cmd|grep}, which no
+     * longer looked like a grep at all — so the pipe-filter exemption never applied and the
+     * command was rejected.
+     */
+    @Nested
+    @DisplayName("unspaced separators")
+    class UnspacedSeparators {
+
+        @Test
+        @DisplayName("an unspaced pipe still makes grep a pipe filter")
+        void unspacedPipeIsPipeFilter() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("gh pr checks 963|grep -i build");
+
+            assertEquals(1, found.size());
+            assertTrue(found.getFirst().isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("an unspaced |& still makes grep a pipe filter")
+        void unspacedPipeWithStderrIsPipeFilter() {
+            assertTrue(GrepCommandSafety.analyze("ls|&grep pattern").getFirst().isPipeFilter());
+        }
+
+        @ParameterizedTest
+        @DisplayName("unspaced sequencing operators are found but do not feed stdin")
+        @ValueSource(strings = {"ls&&grep pattern", "ls||grep pattern", "ls;grep pattern"})
+        void unspacedSequencingOperatorsDoNotPipe(String command) {
+            List<GrepCommandSafety.GrepInvocation> found = GrepCommandSafety.analyze(command);
+
+            assertEquals(1, found.size(), "grep must still be found: " + command);
+            assertFalse(found.getFirst().isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("|| is read as one separator, not as two pipes")
+        void doublePipeIsNotTwoPipes() {
+            assertFalse(GrepCommandSafety.analyze("ls||grep pattern").getFirst().isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("operand scan stops at an unspaced pipe")
+        void operandScanStopsAtUnspacedPipe() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("grep -i error /tmp/ci.log|grep -v McpHttpServer");
+
+            assertEquals(2, found.size());
+            assertEquals(List.of("/tmp/ci.log"), found.getFirst().paths());
+            assertTrue(found.get(1).isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("a pipe inside quotes is still part of the pattern")
+        void quotedPipeIsNotASeparator() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("grep -Ei \"build|analyze\" /tmp/ci.log");
+
+            assertEquals(1, found.size(), "the quoted pipe must not split the command");
+            assertEquals(List.of("/tmp/ci.log"), found.getFirst().paths());
+        }
+
+        @Test
+        @DisplayName("a lone & is left attached so redirections survive")
+        void loneAmpersandDoesNotSplitRedirections() {
+            // 2>&1 must stay one token; splitting on the bare & would leave a stray "1" operand.
+            assertEquals(List.of("/tmp/ci.log"),
+                GrepCommandSafety.analyze("grep -i error /tmp/ci.log 2>&1").getFirst().paths());
+            assertTrue(GrepCommandSafety.analyze("gh run view 1 2>&1|grep -i error")
+                .getFirst().isPipeFilter());
         }
     }
 

@@ -152,10 +152,9 @@ public final class RunTestsTool extends TestingTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         int requestedTimeout = args.has(PARAM_TIMEOUT)
             ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TIMEOUT_SECONDS;
-        if (requestedTimeout <= 0) {
-            return "Error: timeout must be a positive integer (seconds), got: " + requestedTimeout;
-        }
-        this.timeoutSec = McpRequestDeadline.clamp(requestedTimeout, DEFAULT_TIMEOUT_SECONDS);
+        String timeoutError = McpRequestDeadline.rejectNonPositive(requestedTimeout);
+        if (timeoutError != null) return timeoutError;
+        this.timeoutSec = McpRequestDeadline.clamp(requestedTimeout);
         return McpRequestDeadline.prependNotice(
             McpRequestDeadline.clampNotice(requestedTimeout), runResolvedTarget(args));
     }

@@ -114,7 +114,9 @@ public final class RunCommandTool extends InfrastructureTool {
         if ("test".equals(abuseType)) {
             int requestedTestTimeout = args.has(PARAM_TIMEOUT)
                 ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TEST_TIMEOUT_SECONDS;
-            int testTimeout = McpRequestDeadline.clamp(requestedTestTimeout, DEFAULT_TEST_TIMEOUT_SECONDS);
+            String testTimeoutError = McpRequestDeadline.rejectNonPositive(requestedTestTimeout);
+            if (testTimeoutError != null) return testTimeoutError;
+            int testTimeout = McpRequestDeadline.clamp(requestedTestTimeout);
             return McpRequestDeadline.prependNotice(McpRequestDeadline.clampNotice(requestedTestTimeout),
                 new RunTestsTool(project).executeFromCommand(command, testTimeout));
         }
@@ -135,7 +137,9 @@ public final class RunCommandTool extends InfrastructureTool {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         int requestedTimeout = args.has(PARAM_TIMEOUT)
             ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TIMEOUT_SECONDS;
-        int timeoutSec = McpRequestDeadline.clamp(requestedTimeout, DEFAULT_TIMEOUT_SECONDS);
+        String timeoutError = McpRequestDeadline.rejectNonPositive(requestedTimeout);
+        if (timeoutError != null) return timeoutError;
+        int timeoutSec = McpRequestDeadline.clamp(requestedTimeout);
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
         String shellOverride = args.has(PARAM_SHELL) ? args.get(PARAM_SHELL).getAsString() : null;
         // Treat a blank shell override (e.g. from JSON templating) the same as "not provided"

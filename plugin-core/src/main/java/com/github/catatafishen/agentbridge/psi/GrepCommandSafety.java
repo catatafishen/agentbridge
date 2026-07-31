@@ -99,31 +99,79 @@ public final class GrepCommandSafety {
     }
 
     /**
-     * Splits a shell command into tokens, respecting single and double quotes. Backslash escapes
-     * inside quotes are not handled — adequate for the simple patterns and paths handled here.
+     * Splits a shell command into tokens, respecting single and double quotes. Unquoted
+     * {@code |}, {@code |&}, {@code ||}, {@code &&} and {@code ;} are emitted as tokens of their
+     * own, so {@code gh pr checks 1|grep build} splits the same way as the spaced form — shells
+     * do not require whitespace around these operators, and the unspaced form is common enough
+     * that missing it would keep rejecting pipe filters this class exists to allow.
+     *
+     * <p>A lone {@code &} is deliberately <em>not</em> an operator here: splitting on it would
+     * tear redirections such as {@code 2>&1} apart, and backgrounding a command does not change
+     * which files a later grep opens.
+     *
+     * <p>Backslash escapes inside quotes are not handled — adequate for the simple patterns and
+     * paths handled here.
      */
     public static @NotNull List<String> tokenize(@NotNull String command) {
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
         char quote = 0;
-        for (int i = 0; i < command.length(); i++) {
+        int i = 0;
+        while (i < command.length()) {
             char c = command.charAt(i);
             if (quote != 0) {
                 if (c == quote) quote = 0;
                 else cur.append(c);
-            } else if (c == '\'' || c == '"') {
-                quote = c;
-            } else if (Character.isWhitespace(c)) {
-                if (!cur.isEmpty()) {
-                    out.add(cur.toString());
-                    cur.setLength(0);
-                }
-            } else {
-                cur.append(c);
+                i++;
+                continue;
             }
+            if (c == '\'' || c == '"') {
+                quote = c;
+                i++;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                flushToken(out, cur);
+                i++;
+                continue;
+            }
+            String operator = operatorAt(command, i);
+            if (operator != null) {
+                flushToken(out, cur);
+                out.add(operator);
+                i += operator.length();
+                continue;
+            }
+            cur.append(c);
+            i++;
         }
-        if (!cur.isEmpty()) out.add(cur.toString());
+        flushToken(out, cur);
         return out;
+    }
+
+    private static void flushToken(@NotNull List<String> out, @NotNull StringBuilder cur) {
+        if (!cur.isEmpty()) {
+            out.add(cur.toString());
+            cur.setLength(0);
+        }
+    }
+
+    /**
+     * Returns the command separator starting at {@code index}, or {@code null} when no separator
+     * starts there. Longer operators are matched before their prefixes so {@code ||} is never
+     * read as two pipes.
+     */
+    private static @Nullable String operatorAt(@NotNull String command, int index) {
+        char c = command.charAt(index);
+        if (c == ';') return ";";
+        char next = index + 1 < command.length() ? command.charAt(index + 1) : 0;
+        if (c == '|') {
+            if (next == '&') return "|&";
+            if (next == '|') return "||";
+            return "|";
+        }
+        if (c == '&' && next == '&') return "&&";
+        return null;
     }
 
     /**
@@ -200,6 +248,11 @@ public final class GrepCommandSafety {
             String token = tokens.get(i);
             if (skipNext) {
                 skipNext = false;
+            } else if (isRedirection(token)) {
+                // A redirection names a stream or an output file, never a file grep reads, so it
+                // must not be counted as a path operand — `grep -i x a.log 2>&1` searches a.log
+                // only. "2>" and "<" with a detached target consume the token after them.
+                skipNext = token.endsWith(">") || token.endsWith("<");
             } else if (isFlag(token)) {
                 skipNext = TWO_ARG_FLAGS.contains(token);
                 patternConsumed |= PATTERN_FLAGS.contains(token);
@@ -215,6 +268,14 @@ public final class GrepCommandSafety {
      */
     private static boolean isFlag(String token) {
         return token.startsWith("-") && !token.equals("-");
+    }
+
+    /**
+     * Recognises the redirection shapes that can follow a grep invocation: {@code >}, {@code >>},
+     * {@code 2>}, {@code &>}, {@code 2>&1} and {@code <}, whether or not the target is attached.
+     */
+    private static boolean isRedirection(String token) {
+        return token.indexOf('>') >= 0 || token.startsWith("<");
     }
 
     private record Operands(List<String> values, boolean patternConsumed) {
