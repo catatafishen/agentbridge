@@ -62,10 +62,11 @@ public final class DebugRunToLineTool extends DebugTool {
         int lineZeroBased = args.get("line").getAsInt() - 1;
 
         VirtualFile file = refreshAndFindVirtualFile(path);
-        if (file == null) return "File not found: " + path;
+        if (file == null) return err("File not found: " + path);
 
         XSourcePosition pos = XDebuggerUtil.getInstance().createPosition(file, lineZeroBased);
-        if (pos == null) return "Cannot create source position at " + file.getName() + ':' + (lineZeroBased + 1);
+        if (pos == null)
+            return err("Cannot create source position at " + file.getName() + ':' + (lineZeroBased + 1));
 
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean stopped = new AtomicBoolean(false);
@@ -91,7 +92,8 @@ public final class DebugRunToLineTool extends DebugTool {
 
         boolean completed = latch.await(60, TimeUnit.SECONDS);
         if (!completed)
-            return "Timed out waiting for program to reach " + file.getName() + ':' + (lineZeroBased + 1) + " (60s).";
+            return err("Timed out waiting for program to reach " + file.getName() + ':' + (lineZeroBased + 1)
+                + " (60s).");
         if (stopped.get()) return "Debug session stopped before reaching target line.";
 
         return buildSnapshot(session, true, true, true);

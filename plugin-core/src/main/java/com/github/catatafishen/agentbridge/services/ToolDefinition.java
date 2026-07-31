@@ -323,6 +323,16 @@ public interface ToolDefinition {
      * point — any tool implementation may need to propagate checked exceptions (ExecutionException,
      * InterruptedException, IOException, ReflectiveOperationException, …). Enumerating them all
      * here would not add value and would force every implementation to declare an equally long list.</p>
+     *
+     * @apiNote <b>Failure messages must start with {@code "Error"}.</b> This overload has no
+     * success flag, so the returned String is classified by
+     * {@link com.github.catatafishen.agentbridge.psi.ToolError#isError(String)}, which tests for
+     * that prefix. A naturally phrased failure such as
+     * {@code "Failed to close terminal 'x'"} is reported to the MCP client as a <em>successful</em>
+     * call whose content happens to describe a problem, and the agent will act on it as if the
+     * operation had worked. Wrap failure paths in {@code Tool.err(...)}, or override
+     * {@link #execute(JsonObject, String)} and return {@link ToolResult#error(String)} explicitly.
+     * {@code ToolErrorPrefixContractTest} enforces this for tools in {@code psi/tools}.
      */
     // Interface extension point — implementations may throw any checked exception; enumerating all
     // possibilities at the interface level would be more verbose without adding safety.

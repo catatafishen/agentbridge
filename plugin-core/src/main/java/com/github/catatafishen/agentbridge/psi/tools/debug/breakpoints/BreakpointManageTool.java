@@ -159,7 +159,7 @@ public final class BreakpointManageTool extends DebugTool {
             XDebuggerUtil.getInstance().toggleLineBreakpoint(project, file, lineZeroBased, false));
 
         XLineBreakpoint<?> bp = findLineBreakpoint(mgr, file, lineZeroBased);
-        if (bp == null) return "Failed to add breakpoint — the file or line may not support breakpoints.";
+        if (bp == null) return err("Failed to add breakpoint — the file or line may not support breakpoints.");
 
         PlatformApiCompat.writeActionRunAndWait(() -> {
             bp.setEnabled(enabled);

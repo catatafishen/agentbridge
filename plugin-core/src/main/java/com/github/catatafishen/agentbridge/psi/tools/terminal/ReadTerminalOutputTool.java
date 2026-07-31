@@ -83,7 +83,7 @@ public final class ReadTerminalOutputTool extends TerminalTool {
                 readTerminalText(resultFuture, terminal, maxLines);
             } catch (Exception e) {
                 LOG.warn("Failed to read terminal", e);
-                resultFuture.complete("Failed to read terminal: " + e.getMessage());
+                resultFuture.complete(err("Failed to read terminal: " + e.getMessage()));
             }
         });
 

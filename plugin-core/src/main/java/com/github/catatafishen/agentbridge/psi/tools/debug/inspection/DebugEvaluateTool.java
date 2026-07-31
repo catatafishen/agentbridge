@@ -77,10 +77,10 @@ public final class DebugEvaluateTool extends DebugTool {
             }
             frame = frames.get(frameIndex);
         }
-        if (frame == null) return "Could not get stack frame #" + frameIndex + ".";
+        if (frame == null) return err("Could not get stack frame #" + frameIndex + ".");
 
         XDebuggerEvaluator evaluator = frame.getEvaluator();
-        if (evaluator == null) return "No evaluator available for the current language/frame.";
+        if (evaluator == null) return err("No evaluator available for the current language/frame.");
 
         XSourcePosition pos = frame.getSourcePosition();
         CompletableFuture<String> future = new CompletableFuture<>();

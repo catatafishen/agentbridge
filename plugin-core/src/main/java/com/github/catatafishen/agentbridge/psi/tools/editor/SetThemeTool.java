@@ -67,7 +67,7 @@ public final class SetThemeTool extends EditorTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has(PARAM_THEME)) {
-            return "Missing required parameter: 'theme' (theme name or partial name)";
+            return err("Missing required parameter: 'theme' (theme name or partial name)");
         }
         String themeQuery = args.get(PARAM_THEME).getAsString();
         String queryLower = themeQuery.toLowerCase();
@@ -100,7 +100,7 @@ public final class SetThemeTool extends EditorTool {
                 resultFuture.complete("Theme changed to '" + finalTarget.getName() + "'.");
             } catch (Exception e) {
                 LOG.warn("Failed to set theme", e);
-                resultFuture.complete("Failed to set theme: " + e.getMessage());
+                resultFuture.complete(err("Failed to set theme: " + e.getMessage()));
             }
         });
 
