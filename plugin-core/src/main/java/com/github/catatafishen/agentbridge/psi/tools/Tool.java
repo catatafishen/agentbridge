@@ -86,6 +86,16 @@ public abstract class Tool implements ToolDefinition {
             + ". Check the tool schema and retry with all required parameters.";
     }
 
+    /**
+     * Prefix reserved for arguments injected by the plugin itself rather than supplied by the agent
+     * — for example the {@code _env.*} entries that {@code Hook.setEnv} adds for
+     * {@link com.github.catatafishen.agentbridge.psi.tools.infrastructure.RunCommandTool}. They are
+     * deliberately absent from every tool schema, so they must be excluded from the unknown-parameter
+     * check: reporting them told the agent its own call was malformed and that the value had been
+     * dropped, when in fact the tool consumed it.
+     */
+    private static final String INTERNAL_PARAM_PREFIX = "_";
+
     private @Nullable String buildUnknownParamsWarning(@NotNull JsonObject args) {
         JsonObject schema = effectiveInputSchema();
         if (schema == null) return null;
@@ -93,6 +103,7 @@ public abstract class Tool implements ToolDefinition {
         if (properties == null) return null;
         java.util.Set<String> unknownParams = new java.util.LinkedHashSet<>(args.keySet());
         unknownParams.removeAll(properties.keySet());
+        unknownParams.removeIf(name -> name.startsWith(INTERNAL_PARAM_PREFIX));
         if (unknownParams.isEmpty()) return null;
         return "NOTE: Unknown parameter(s) " + unknownParams + " were passed to tool '" + id() + "' and ignored.\n\n"
             + "Correct usage for '" + id() + "':\n"
