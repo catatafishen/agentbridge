@@ -203,8 +203,9 @@ public class EditingToolsTest extends BasePlatformTestCase {
 
     /**
      * When the required {@code symbol} argument is omitted, the tool must
-     * return the standard {@code "Missing required parameter: symbol"} error
-     * immediately (before any async dispatch).
+     * return the standard {@code "Error: Missing required parameter: symbol"}
+     * error immediately (before any async dispatch). The {@code "Error: "}
+     * prefix is what makes the MCP client flag the call as failed.
      */
     public void testReplaceSymbolBodyMissingSymbol() throws Exception {
         String path = createTestFile("ReplaceMissingSymbol.java",
@@ -217,7 +218,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
 
         String result = executeSync(replaceSymbolBodyTool, a);
 
-        assertEquals("Missing required parameter: symbol", result);
+        assertEquals("Error: Missing required parameter: symbol", result);
     }
 
     // ── InsertAfterSymbolTool ─────────────────────────────────────────────────
