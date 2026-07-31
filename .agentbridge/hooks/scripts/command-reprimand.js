@@ -10,7 +10,6 @@
     var cmd = Hook.arg('command');
     if (!cmd) return;
 
-    var lcmd = lower(cmd).replace(/^\s+/, '');
-    var nudge = reprimandFor(lcmd);
+    var nudge = reprimandFor(cmd);
     if (nudge) Hook.append(nudge);
 })();
