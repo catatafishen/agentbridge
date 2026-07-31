@@ -410,14 +410,42 @@ class ChatWebServerTest {
         throw new AssertionError("Expected fake command to fail");
     }
 
-    private static String[] fakeProcessCommand(String mode) {
+    private static String[] fakeProcessCommand(String mode) throws IOException {
         return new String[]{
             javaExecutable(),
             "-cp",
-            System.getProperty("java.class.path"),
+            fakeProcessClasspath(),
             FakeProcess.class.getName(),
             mode
         };
+    }
+
+    /**
+     * Return a short classpath containing only {@link FakeProcess}, not the entire test JVM classpath.
+     * Under IntelliJ Platform Gradle Plugin 2.18.1 the test IDE classpath contains 500+ entries
+     * (~66 kB) which exceeds POSIX {@code ARG_MAX} and causes {@code exec()} to fail with
+     * "Argument list too long". {@code FakeProcess} only uses JDK classes, so extracting just
+     * its class file to a temp directory is sufficient.
+     *
+     * <p>We cannot use {@code FakeProcess.class.getProtectionDomain().getCodeSource()} because
+     * {@code com.intellij.util.lang.PathClassLoader} (the test IDE classloader) does not populate
+     * the {@code CodeSource}.
+     */
+    private static String fakeProcessClasspath() throws IOException {
+        String resourcePath = FakeProcess.class.getName().replace('.', '/') + ".class";
+        Path root = Files.createTempDirectory("agentbridge-fakeprocess-cp");
+        root.toFile().deleteOnExit();
+        Path classFile = root.resolve(resourcePath);
+        Files.createDirectories(classFile.getParent());
+        classFile.toFile().deleteOnExit();
+        classFile.getParent().toFile().deleteOnExit();
+        try (InputStream in = FakeProcess.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                throw new IOException("Cannot load " + resourcePath + " from classpath");
+            }
+            Files.copy(in, classFile);
+        }
+        return root.toString();
     }
 
     private static String javaExecutable() {
