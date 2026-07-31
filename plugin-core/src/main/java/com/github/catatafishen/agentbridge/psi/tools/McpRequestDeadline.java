@@ -36,15 +36,33 @@ public final class McpRequestDeadline {
     }
 
     /**
+     * Returns the error to return to the caller when {@code requestedSeconds} is not a usable
+     * timeout, or {@code null} when it is.
+     *
+     * <p>A zero or negative timeout is rejected rather than quietly replaced with the default.
+     * Substituting silently makes an invalid argument look like it was honoured: the caller asks
+     * for {@code timeout: 0}, the command runs for the default 60s, and nothing in the response
+     * says the number was ignored. Every blocking tool should call this before {@link #clamp}.
+     */
+    public static @Nullable String rejectNonPositive(int requestedSeconds) {
+        if (requestedSeconds > 0) return null;
+        return "Error: timeout must be a positive integer (seconds), got: " + requestedSeconds;
+    }
+
+    /**
      * Clamps a requested timeout to {@link #MAX_TIMEOUT_SECONDS}.
      *
-     * @param requestedSeconds the caller's requested timeout
-     * @param defaultSeconds   substituted when {@code requestedSeconds} is not positive, since a
-     *                         zero or negative timeout would make the command fail instantly for
-     *                         reasons the caller almost certainly did not intend
+     * @param requestedSeconds the caller's requested timeout; must be positive, which
+     *                         {@link #rejectNonPositive} is there to establish
+     * @throws IllegalArgumentException if {@code requestedSeconds} is not positive — a caller that
+     *                                  skipped validation would otherwise get a timeout it never
+     *                                  asked for
      */
-    public static int clamp(int requestedSeconds, int defaultSeconds) {
-        if (requestedSeconds <= 0) return Math.min(defaultSeconds, MAX_TIMEOUT_SECONDS);
+    public static int clamp(int requestedSeconds) {
+        if (requestedSeconds <= 0) {
+            throw new IllegalArgumentException(
+                "timeout must be positive, got: " + requestedSeconds + " — call rejectNonPositive first");
+        }
         return Math.min(requestedSeconds, MAX_TIMEOUT_SECONDS);
     }
 
