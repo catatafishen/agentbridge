@@ -14,10 +14,18 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.concurrent.ScheduledExecutorService;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for static helper methods in {@link McpHttpServer}.
@@ -412,7 +420,7 @@ class McpHttpServerStaticMethodsTest {
         void serverShutdownDrainsEveryHttpSessionOwner() throws Exception {
             Project project = mock(Project.class);
             AgentTabTracker tracker = mock(AgentTabTracker.class);
-            when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+            when(project.getServiceIfCreated(AgentTabTracker.class)).thenReturn(tracker);
             McpHttpServer server = new McpHttpServer(project);
             Headers requestHeaders = new Headers();
             HttpExchange exchange = exchange(requestHeaders, new Headers(),
