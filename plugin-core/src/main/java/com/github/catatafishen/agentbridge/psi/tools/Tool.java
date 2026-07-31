@@ -54,6 +54,23 @@ public abstract class Tool implements ToolDefinition {
         return ToolResult.success(rawResult != null ? warning + rawResult : warning);
     }
 
+    /**
+     * Marks a message as a failure so it survives the {@link #execute(JsonObject)} String contract.
+     *
+     * <p>Results returned from the String-based {@code execute} are classified by
+     * {@link ToolError#isError(String)}, which looks for an {@code "Error"} prefix. A failure
+     * message phrased naturally ({@code "Failed to close terminal 'x'"}) therefore reaches the
+     * agent as a <em>successful</em> tool call. Wrapping it here restores the prefix without
+     * forcing every call site to remember it; messages that already carry one are returned
+     * unchanged.</p>
+     *
+     * @param message the failure description, with or without an existing {@code "Error"} prefix
+     * @return a message that {@link ToolError#isError(String)} recognises as an error
+     */
+    protected static @NotNull String err(@NotNull String message) {
+        return ToolError.isError(message) ? message : "Error: " + message;
+    }
+
     private @Nullable String validateRequiredParams(@NotNull JsonObject args) {
         com.google.gson.JsonArray required = inputSchema().getAsJsonArray(KEY_REQUIRED);
         if (required == null || required.isEmpty()) return null;

@@ -84,7 +84,7 @@ public final class DebugStepTool extends DebugTool {
         }
 
         boolean completed = latch.await(30, TimeUnit.SECONDS);
-        if (!completed) return "Timed out waiting for debugger to pause (30s). Session may be running.";
+        if (!completed) return err("Timed out waiting for debugger to pause (30s). Session may be running.");
         if (stopped.get()) return "Debug session stopped.";
 
         return buildSnapshot(session, true, true, true);

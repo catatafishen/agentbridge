@@ -319,7 +319,7 @@ public final class RunTestsTool extends TestingTool {
                 var executor = DefaultRunExecutor.getRunExecutorInstance();
                 var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
                 if (envBuilder == null) {
-                    launchFuture.complete("Cannot create execution environment for: " + configName);
+                    launchFuture.complete(err("Cannot create execution environment for: " + configName));
                     return;
                 }
                 ExecutionManager.getInstance(project).restartRunProfile(envBuilder.build());

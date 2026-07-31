@@ -99,9 +99,9 @@ public abstract class EditingTool extends Tool {
         if (readPathParam(args) == null)
             return ToolUtils.ERROR_PATH_REQUIRED;
         if (!args.has(PARAM_SYMBOL) || args.get(PARAM_SYMBOL).isJsonNull())
-            return "Missing required parameter: symbol";
+            return err("Missing required parameter: symbol");
         if (!args.has(contentParam) || args.get(contentParam).isJsonNull())
-            return "Missing required parameter: " + contentParam;
+            return err("Missing required parameter: " + contentParam);
         return null;
     }
 

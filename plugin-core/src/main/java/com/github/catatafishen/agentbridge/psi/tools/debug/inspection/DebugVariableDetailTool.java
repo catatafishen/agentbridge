@@ -75,12 +75,12 @@ public final class DebugVariableDetailTool extends DebugTool {
         int depth = args.has(PARAM_DEPTH) ? Math.min(args.get(PARAM_DEPTH).getAsInt(), 5) : 2;
 
         XSuspendContext ctx = session.getSuspendContext();
-        if (ctx == null) return "Session has no suspend context.";
+        if (ctx == null) return err("Session has no suspend context.");
         XExecutionStack stack = ctx.getActiveExecutionStack();
-        if (stack == null) return "No active execution stack.";
+        if (stack == null) return err("No active execution stack.");
 
         XStackFrame frame = getTopFrame(stack);
-        if (frame == null) return "Could not get current stack frame.";
+        if (frame == null) return err("Could not get current stack frame.");
 
         String[] parts = path.split("\\.", -1);
         XValue target = findValueInFrame(frame, parts);

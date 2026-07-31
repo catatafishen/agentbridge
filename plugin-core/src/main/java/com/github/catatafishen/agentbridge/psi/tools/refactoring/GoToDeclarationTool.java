@@ -165,8 +165,8 @@ public final class GoToDeclarationTool extends RefactoringTool {
         List<PsiElement> declarations = resolveDeclarationsOnLine(
             psiFile, document, lineStartOffset, lineEndOffset, symbolName);
         if (declarations.isEmpty()) {
-            return "Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
-                " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
+            return err("Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
+                " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.");
         }
 
         captureDeclInfo(declarations.getFirst(), declInfo);

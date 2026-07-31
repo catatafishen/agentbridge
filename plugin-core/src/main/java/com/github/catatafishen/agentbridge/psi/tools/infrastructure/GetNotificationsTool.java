@@ -57,7 +57,7 @@ public final class GetNotificationsTool extends InfrastructureTool {
                 result.append(notification.getContent()).append("\n");
             }
         } catch (Exception e) {
-            return "Could not read notifications: " + e.getMessage();
+            return err("Could not read notifications: " + e.getMessage());
         }
         return result.toString();
     }

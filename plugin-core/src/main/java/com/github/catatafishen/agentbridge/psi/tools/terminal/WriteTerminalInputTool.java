@@ -112,7 +112,7 @@ public final class WriteTerminalInputTool extends TerminalTool {
                         + "\n\nUse read_terminal_output with this terminal_id to see the result.");
             } catch (Exception e) {
                 LOG.warn("Failed to write terminal input", e);
-                resultFuture.complete("Failed to write to terminal: " + e.getMessage());
+                resultFuture.complete(err("Failed to write to terminal: " + e.getMessage()));
             }
         });
 

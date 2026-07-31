@@ -134,11 +134,11 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         String levelParam = args.has(PARAM_LEVEL) ? args.get(PARAM_LEVEL).getAsString().toUpperCase() : null;
 
         Path logFile = findIdeLogFile();
-        if (logFile == null) return "Could not locate idea.log";
+        if (logFile == null) return err("Could not locate idea.log");
 
         Pattern filterPattern = compileFilter(filterStr);
         if (filterPattern == null && filterStr != null && !filterStr.isBlank()) {
-            return "Invalid filter regex - check syntax";
+            return err("Invalid filter regex - check syntax");
         }
 
         LocalDateTime since;
