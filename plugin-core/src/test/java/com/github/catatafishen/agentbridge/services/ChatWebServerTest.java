@@ -31,6 +31,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ChatWebServerTest {
 
+    /**
+     * Class-scoped classpath directory for {@link FakeProcess}, populated lazily by
+     * {@link #fakeProcessClasspath()}. JUnit creates it before the first test and recursively
+     * deletes the whole tree afterwards, so no manual cleanup registration is needed.
+     */
+    @TempDir
+    static Path fakeProcessClasspathDir;
+
     // ── buildStreamingPrefix ──────────────────────────────────────────────────
 
     @Test
@@ -430,22 +438,27 @@ class ChatWebServerTest {
      * <p>We cannot use {@code FakeProcess.class.getProtectionDomain().getCodeSource()} because
      * {@code com.intellij.util.lang.PathClassLoader} (the test IDE classloader) does not populate
      * the {@code CodeSource}.
+     *
+     * <p>The class file is extracted once into {@link #fakeProcessClasspathDir} and reused by
+     * later callers. Cleanup is left to JUnit's {@link TempDir} support, which removes the
+     * directory tree recursively. {@code File.deleteOnExit()} is deliberately not used here: it
+     * deletes in reverse registration order and never removes a non-empty directory, so the
+     * intermediate package directories under the root would survive and keep the root undeletable.
      */
     private static String fakeProcessClasspath() throws IOException {
         String resourcePath = FakeProcess.class.getName().replace('.', '/') + ".class";
-        Path root = Files.createTempDirectory("agentbridge-fakeprocess-cp");
-        root.toFile().deleteOnExit();
-        Path classFile = root.resolve(resourcePath);
+        Path classFile = fakeProcessClasspathDir.resolve(resourcePath);
+        if (Files.exists(classFile)) {
+            return fakeProcessClasspathDir.toString();
+        }
         Files.createDirectories(classFile.getParent());
-        classFile.toFile().deleteOnExit();
-        classFile.getParent().toFile().deleteOnExit();
         try (InputStream in = FakeProcess.class.getClassLoader().getResourceAsStream(resourcePath)) {
             if (in == null) {
                 throw new IOException("Cannot load " + resourcePath + " from classpath");
             }
             Files.copy(in, classFile);
         }
-        return root.toString();
+        return fakeProcessClasspathDir.toString();
     }
 
     private static String javaExecutable() {
