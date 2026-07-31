@@ -53,7 +53,7 @@ jobs:
         working-directory: plugin-core/chat-ui
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@ea14db8afdef5d462e69d78c4ca45002d4522418  # v4.37.4
+        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4.37.4
         with:
           languages: ${{ matrix.language }}
 
@@ -71,6 +71,6 @@ jobs:
           gradle :plugin-core:compileJava :plugin-core:compileKotlin :mcp-server:compileJava --no-daemon --quiet
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@ea14db8afdef5d462e69d78c4ca45002d4522418  # v4.37.4
+        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4.37.4
         with:
           category: "/language:${{ matrix.language }}"
