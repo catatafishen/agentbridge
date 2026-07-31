@@ -9,9 +9,8 @@
 (function () {
     var cmd = Hook.arg('command');
     if (!cmd) return;
-    var lcmd = lower(cmd);
 
-    if (isGitCommand(lcmd)) {
+    if (isGitCommand(cmd)) {
         Hook.deny(gitDeny());
         return;
     }

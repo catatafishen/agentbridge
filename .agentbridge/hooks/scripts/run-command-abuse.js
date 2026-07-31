@@ -6,18 +6,17 @@
 //   • gradle compile → use build_project (IntelliJ incremental compiler)
 //   • in-place write to a SOURCE/TEST file (sed -i, > , >>, tee) → use edit_text / write_file
 //
-// Shared helpers (lower, isGitCommand, isGradleCompileOnly, writeTargets, *Deny) come from _lib.js.
+// Shared helpers (isGitCommand, isGradleCompileOnly, writeTargets, *Deny) come from _lib.js.
 // Output: Hook.deny(reason) to block, or nothing to allow.
 (function () {
     var cmd = Hook.arg('command');
     if (!cmd) return;
-    var lcmd = lower(cmd);
 
-    if (isGitCommand(lcmd)) {
+    if (isGitCommand(cmd)) {
         Hook.deny(gitDeny());
         return;
     }
-    if (isGradleCompileOnly(lcmd)) {
+    if (isGradleCompileOnly(cmd)) {
         Hook.deny(gradleDeny());
         return;
     }
