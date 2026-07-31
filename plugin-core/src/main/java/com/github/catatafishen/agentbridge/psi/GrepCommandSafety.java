@@ -1,0 +1,202 @@
+package com.github.catatafishen.agentbridge.psi;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Parses a shell command string into the individual {@code grep}/{@code rg} invocations it
+ * contains, so callers can decide whether each one is safe to run through {@code run_command}.
+ *
+ * <p>{@code grep} is restricted because searching files on disk returns stale content — the live
+ * text lives in IntelliJ's editor buffers, which {@code search_text}/{@code search_symbols} read.
+ * That rationale only applies when grep actually reads project source files. Two shapes are
+ * therefore harmless and must not be blocked:
+ *
+ * <ul>
+ *   <li><b>Pipe filters</b> — {@code gh pr checks 913 | grep -Ei "build|analyze"} has no file
+ *       operand at all; its input is the previous command's stdout, so there is no file to be
+ *       stale about.</li>
+ *   <li><b>Files outside the source roots</b> — log files, {@code /tmp} scratch output and
+ *       downloaded CI artifacts are never mirrored in an editor buffer.</li>
+ * </ul>
+ *
+ * <p>A leading {@code grep pattern} / {@code rg pattern} with no operand is <em>not</em> treated
+ * as a pipe filter: with nothing piped into it, {@code rg} recursively searches the working
+ * directory and {@code grep} waits on the terminal, so neither is a safe stdout filter.
+ *
+ * <p>This class is deliberately pure — no {@code Project}, VFS or PSI access — so the parsing
+ * rules can be unit-tested directly. Deciding whether a given path sits inside a source root is
+ * the caller's job (see {@link ToolUtils#grepTargetsOnlyOutsideSourceRoots}).
+ */
+public final class GrepCommandSafety {
+
+    /**
+     * Tokens that terminate one command in a pipeline or list. Only {@code |} and {@code |&}
+     * connect the previous command's stdout to the next command's stdin; {@code &&}, {@code ||}
+     * and {@code ;} merely sequence commands, so a grep after one of them is not a pipe filter.
+     */
+    private static final Set<String> COMMAND_SEPARATORS = Set.of("|", "|&", "||", "&&", ";");
+
+    private static final Set<String> PIPE_SEPARATORS = Set.of("|", "|&");
+
+    /**
+     * Flags that consume the following token as their own argument, so that token must not be
+     * mistaken for a pattern or a path.
+     */
+    private static final Set<String> TWO_ARG_FLAGS = Set.of(
+        "-e", "-f", "--regexp", "--file",
+        "--include", "--exclude", "--exclude-dir", "--include-dir",
+        "-A", "-B", "-C", "--after-context", "--before-context", "--context",
+        "-m", "--max-count", "--max-depth", "-t", "-T", "--type", "--type-not",
+        "-g", "--glob", "--iglob"
+    );
+
+    /**
+     * Flags that supply the search pattern, meaning the first bare token is already a path.
+     */
+    private static final Set<String> PATTERN_FLAGS = Set.of("-e", "-f", "--regexp", "--file");
+
+    private GrepCommandSafety() {
+    }
+
+    /**
+     * A single {@code grep}/{@code rg} invocation found in a command.
+     *
+     * @param readsPipedStdin whether the previous command pipes its stdout into this one
+     * @param paths           explicit file/directory operands, or {@code null} when an operand
+     *                        contains a glob — the shell expands those before grep runs, so the
+     *                        real targets cannot be known here and the invocation must be
+     *                        treated as unsafe rather than guessed at
+     */
+    public record GrepInvocation(boolean readsPipedStdin, @Nullable List<String> paths) {
+
+        /**
+         * A pipe filter consumes the previous command's stdout and never opens a file, so no
+         * file can be stale.
+         */
+        public boolean isPipeFilter() {
+            return readsPipedStdin && paths != null && paths.isEmpty();
+        }
+    }
+
+    /**
+     * Returns every {@code grep}/{@code rg} invocation in {@code command}, in order. An empty
+     * list means the command does not invoke grep at all.
+     */
+    public static @NotNull List<GrepInvocation> analyze(@NotNull String command) {
+        List<GrepInvocation> invocations = new ArrayList<>();
+        for (CommandSegment segment : splitIntoSegments(tokenize(command))) {
+            int grepIndex = indexOfGrep(segment.tokens());
+            if (grepIndex < 0) continue;
+            invocations.add(new GrepInvocation(
+                segment.fedByPipe(), collectPathArgs(segment.tokens(), grepIndex + 1)));
+        }
+        return invocations;
+    }
+
+    /**
+     * Splits a shell command into tokens, respecting single and double quotes. Backslash escapes
+     * inside quotes are not handled — adequate for the simple patterns and paths handled here.
+     */
+    public static @NotNull List<String> tokenize(@NotNull String command) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        char quote = 0;
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+                else cur.append(c);
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+            } else if (Character.isWhitespace(c)) {
+                if (!cur.isEmpty()) {
+                    out.add(cur.toString());
+                    cur.setLength(0);
+                }
+            } else {
+                cur.append(c);
+            }
+        }
+        if (!cur.isEmpty()) out.add(cur.toString());
+        return out;
+    }
+
+    /**
+     * Returns the explicit path operands of the first {@code grep}/{@code rg} invocation, or an
+     * empty list when there are none, when an operand contains a glob, or when the command does
+     * not invoke grep.
+     */
+    static @NotNull List<String> firstInvocationPaths(@NotNull String command) {
+        List<GrepInvocation> invocations = analyze(command);
+        if (invocations.isEmpty()) return List.of();
+        List<String> paths = invocations.getFirst().paths();
+        return paths != null ? paths : List.of();
+    }
+
+    private record CommandSegment(boolean fedByPipe, List<String> tokens) {
+    }
+
+    private static List<CommandSegment> splitIntoSegments(List<String> tokens) {
+        List<CommandSegment> segments = new ArrayList<>();
+        List<String> current = new ArrayList<>();
+        boolean fedByPipe = false;
+        for (String token : tokens) {
+            if (COMMAND_SEPARATORS.contains(token)) {
+                segments.add(new CommandSegment(fedByPipe, current));
+                current = new ArrayList<>();
+                fedByPipe = PIPE_SEPARATORS.contains(token);
+            } else {
+                current.add(token);
+            }
+        }
+        segments.add(new CommandSegment(fedByPipe, current));
+        return segments;
+    }
+
+    private static int indexOfGrep(List<String> tokens) {
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            if (token.equalsIgnoreCase("grep") || token.equalsIgnoreCase("rg")) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * Collects the path operands that follow a grep invocation, or returns {@code null} when one
+     * of them contains a glob.
+     */
+    private static @Nullable List<String> collectPathArgs(List<String> tokens, int from) {
+        boolean patternConsumed = false;
+        boolean skipNext = false;
+        List<String> paths = new ArrayList<>();
+        for (int i = from; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            if (skipNext) {
+                skipNext = false;
+                continue;
+            }
+            if (token.startsWith("-") && !token.equals("-")) {
+                if (TWO_ARG_FLAGS.contains(token)) {
+                    if (PATTERN_FLAGS.contains(token)) patternConsumed = true;
+                    skipNext = true;
+                }
+            } else if (!patternConsumed) {
+                patternConsumed = true;
+            } else if (containsGlob(token)) {
+                return null;
+            } else {
+                paths.add(token);
+            }
+        }
+        return paths;
+    }
+
+    private static boolean containsGlob(String s) {
+        return s.indexOf('*') >= 0 || s.indexOf('?') >= 0 || s.indexOf('[') >= 0;
+    }
+}
