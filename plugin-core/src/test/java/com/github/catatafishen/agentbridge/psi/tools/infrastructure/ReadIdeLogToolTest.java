@@ -73,11 +73,11 @@ class ReadIdeLogToolTest {
     }
 
     @Test
-    @DisplayName("returns 'could not locate' when log file does not exist")
+    @DisplayName("returns a prefixed 'could not locate' error when log file does not exist")
     void missingLogFileReturnsError() throws IOException {
         // Don't create the file
         String result = execute(new JsonObject());
-        assertEquals("Could not locate idea.log", result);
+        assertEquals("Error: Could not locate idea.log", result);
     }
 
     @Test
@@ -187,11 +187,11 @@ class ReadIdeLogToolTest {
     }
 
     @Test
-    @DisplayName("invalid regex returns error message")
+    @DisplayName("invalid regex returns a prefixed error message")
     void invalidRegexReturnsError() throws IOException {
         Files.writeString(logFile, logLine("10:00:00", "INFO", "Foo", "msg") + "\n");
         String result = execute(args("filter", "[unclosed bracket"));
-        assertEquals("Invalid filter regex - check syntax", result);
+        assertEquals("Error: Invalid filter regex - check syntax", result);
     }
 
     // ── Time filtering ────────────────────────────────────────────────────────
