@@ -226,6 +226,36 @@ class GrepCommandSafetyTest {
             assertEquals(List.of("file.log"),
                 GrepCommandSafety.analyze("sudo grep PATTERN file.log").getFirst().paths());
         }
+
+        @Test
+        @DisplayName("a grep behind env is still found")
+        void envPrefixedGrepIsFound() {
+            assertEquals(List.of("file.log"),
+                GrepCommandSafety.analyze("env grep PATTERN file.log").getFirst().paths());
+        }
+    }
+
+    @Nested
+    @DisplayName("wrapper commands that consume stdin as arguments")
+    class StdinConsumingWrappers {
+
+        @Test
+        @DisplayName("grep behind xargs is not recognised as a grep invocation at all")
+        void xargsGrepIsNotAnInvocation() {
+            // xargs turns the piped-in lines into extra arguments appended after "PATTERN", so
+            // this is not the harmless "no operand at all" shape isPipeFilter() exists for — it
+            // opens whatever paths xargs supplies. Since the real operands cannot be determined
+            // from the command text, the segment must not be reported as a grep invocation.
+            assertEquals(List.of(),
+                GrepCommandSafety.analyze("find . -name '*.log' | xargs grep PATTERN"));
+        }
+
+        @Test
+        @DisplayName("grep behind xargs with -I is not recognised as a grep invocation")
+        void xargsWithReplacementGrepIsNotAnInvocation() {
+            assertEquals(List.of(),
+                GrepCommandSafety.analyze("cat filelist.txt | xargs -I{} grep PATTERN {}"));
+        }
     }
 
     @Test
