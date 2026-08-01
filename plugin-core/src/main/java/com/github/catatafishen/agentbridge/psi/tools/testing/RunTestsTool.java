@@ -681,7 +681,7 @@ public final class RunTestsTool extends TestingTool {
      * run, so a short {@code timeout} still returns promptly.
      */
     static long handlerWaitSeconds(int timeoutSeconds) {
-        return Math.max(1, Math.min(HANDLER_WAIT_SECONDS, timeoutSeconds));
+        return Math.clamp(timeoutSeconds, 1, HANDLER_WAIT_SECONDS);
     }
 
     private String noProcessHandleError(String configName) {

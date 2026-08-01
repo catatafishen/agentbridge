@@ -123,27 +123,23 @@ public final class GrepCommandSafety {
                 if (c == quote) quote = 0;
                 else cur.append(c);
                 i++;
-                continue;
-            }
-            if (c == '\'' || c == '"') {
+            } else if (c == '\'' || c == '"') {
                 quote = c;
                 i++;
-                continue;
-            }
-            if (Character.isWhitespace(c)) {
+            } else if (Character.isWhitespace(c)) {
                 flushToken(out, cur);
                 i++;
-                continue;
+            } else {
+                String operator = operatorAt(command, i);
+                if (operator != null) {
+                    flushToken(out, cur);
+                    out.add(operator);
+                    i += operator.length();
+                } else {
+                    cur.append(c);
+                    i++;
+                }
             }
-            String operator = operatorAt(command, i);
-            if (operator != null) {
-                flushToken(out, cur);
-                out.add(operator);
-                i += operator.length();
-                continue;
-            }
-            cur.append(c);
-            i++;
         }
         flushToken(out, cur);
         return out;

@@ -46,7 +46,13 @@ class GetHighlightsToolNotificationFormatTest {
         // Regression for #908: inspections offering 8 fixes used to emit 8 lines per problem.
         String rendered = GetHighlightsTool.formatFixLines(
             List.of("a", "b", "c", "d", "e", "f", "g", "h"));
-        assertEquals("\n    Fix: a\n    Fix: b\n    Fix: c"
-            + "\n    Fix: … (5 more, use get_available_actions)", rendered);
+        String expected = """
+
+                Fix: a
+                Fix: b
+                Fix: c
+                Fix: … (5 more, use get_available_actions)\
+            """;
+        assertEquals(expected, rendered);
     }
 }
