@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
 import java.io.IOException;
@@ -123,21 +125,18 @@ class JsHookEngineTest {
         assertEquals("", run(dir, "run-command-abuse.js", command("run_command", "echo digital-github")));
     }
 
-    @Test
-    void runCommandDeniesGitLaterInPipeline(@TempDir Path dir) throws IOException {
-        String json = run(dir, "run-command-abuse.js", command("run_command", "echo hi && git push"));
-        assertTrue(json.contains("\"decision\":\"deny\""), json);
-    }
-
-    @Test
-    void runCommandDeniesGitInCommandSubstitution(@TempDir Path dir) throws IOException {
-        String json = run(dir, "run-command-abuse.js", command("run_command", "echo $(git rev-parse HEAD)"));
-        assertTrue(json.contains("\"decision\":\"deny\""), json);
-    }
-
-    @Test
-    void runCommandDeniesGitBehindAWrapper(@TempDir Path dir) throws IOException {
-        String json = run(dir, "run-command-abuse.js", command("run_command", "env GIT_PAGER=cat git log"));
+    /**
+     * All three forms hide the git invocation from a naive prefix check — later in a pipeline,
+     * inside a command substitution, and behind an environment-setting wrapper.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "echo hi && git push",
+        "echo $(git rev-parse HEAD)",
+        "env GIT_PAGER=cat git log"
+    })
+    void runCommandDeniesGitHiddenInTheCommand(String commandLine, @TempDir Path dir) throws IOException {
+        String json = run(dir, "run-command-abuse.js", command("run_command", commandLine));
         assertTrue(json.contains("\"decision\":\"deny\""), json);
     }
 
