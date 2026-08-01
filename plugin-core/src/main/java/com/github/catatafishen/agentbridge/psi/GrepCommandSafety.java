@@ -5,6 +5,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -42,6 +43,17 @@ public final class GrepCommandSafety {
     private static final Set<String> COMMAND_SEPARATORS = Set.of("|", "|&", "||", "&&", ";");
 
     private static final Set<String> PIPE_SEPARATORS = Set.of("|", "|&");
+
+    /**
+     * Commands that may prefix {@code grep}/{@code rg} without changing what it reads —
+     * {@code sudo grep pattern file} and {@code env grep pattern file} still open exactly the
+     * file operands that follow. Anything else leading the segment (most importantly
+     * {@code xargs}, but also {@code find -exec}, {@code parallel}, etc.) turns stdin into the
+     * grep's file operands, so that segment must not be recognised as a grep invocation at all —
+     * its "no explicit path operand" shape would otherwise be mistaken for a harmless pipe
+     * filter even though it opens whatever paths the wrapper supplies.
+     */
+    private static final Set<String> SAFE_WRAPPER_COMMANDS = Set.of("sudo", "env");
 
     /**
      * Flags that consume the following token as their own argument, so that token must not be
@@ -202,12 +214,23 @@ public final class GrepCommandSafety {
         return segments;
     }
 
+    /**
+     * Returns the index of {@code grep}/{@code rg} when it is the segment's own command —
+     * optionally after leading {@link #SAFE_WRAPPER_COMMANDS} — or {@code -1} when the segment
+     * does not run grep as its command. A {@code grep}/{@code rg} token found deeper in the
+     * segment (e.g. as {@code xargs}'s argument in {@code xargs grep pattern}) is deliberately
+     * not matched: {@code xargs} turns lines read from stdin into extra arguments appended after
+     * the ones written here, so the invocation's real file operands cannot be determined from
+     * the command text alone and must not be treated as empty.
+     */
     private static int indexOfGrep(List<String> tokens) {
-        for (int i = 0; i < tokens.size(); i++) {
-            String token = tokens.get(i);
-            if (token.equalsIgnoreCase("grep") || token.equalsIgnoreCase("rg")) return i;
+        int i = 0;
+        while (i < tokens.size() && SAFE_WRAPPER_COMMANDS.contains(tokens.get(i).toLowerCase(Locale.ROOT))) {
+            i++;
         }
-        return -1;
+        if (i >= tokens.size()) return -1;
+        String token = tokens.get(i);
+        return token.equalsIgnoreCase("grep") || token.equalsIgnoreCase("rg") ? i : -1;
     }
 
     /**
