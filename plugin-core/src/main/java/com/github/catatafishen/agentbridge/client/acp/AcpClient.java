@@ -1259,10 +1259,8 @@ public abstract class AcpClient extends AbstractClient {
                     .collect(Collectors.toSet());
                 // Suppress if values are covered by the model list (avoids duplicate model dropdown)
                 // Suppress if values are covered by the agent list (avoids duplicate agent dropdown)
-                // Suppress if values are covered by the mode list (avoids duplicate mode dropdown)
                 return (sessionModelIds.isEmpty() || !sessionModelIds.containsAll(optValueIds))
-                    && (agentSlugs.isEmpty() || !agentSlugs.containsAll(optValueIds))
-                    && (modeSlugs.isEmpty() || !modeSlugs.containsAll(optValueIds));
+                    && (agentSlugs.isEmpty() || !agentSlugs.containsAll(optValueIds));
             })
             .map(opt -> {
                 List<String> valueIds = opt.values().stream()
