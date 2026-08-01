@@ -911,7 +911,9 @@ class AcpClientTest {
                 List.of(opt), Collections.emptySet(), Collections.emptySet(),
                 Set.of("agent", "plan", "ask"));
 
-            assertTrue(result.isEmpty());
+            // mode slugs no longer suppress; option should be included
+            assertEquals(1, result.size());
+            assertEquals("mode", result.getFirst().key());
         }
 
         @Test
