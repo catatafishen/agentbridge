@@ -4,29 +4,28 @@
 **Environment**: CLion 2026.1.1 (Nova C++ engine), CMake project (vsclib), Linux/NixOS  
 **Issue opened**: 2026-06-02  
 **Last updated**: 2026-06-23 (IDE bench expanded to the refactoring-navigation tools
-`find_implementations`, `get_type_hierarchy`, `get_call_hierarchy`: **bench-confirmed broken on
-CLion Nova** — see #4/#5/#6 — so they are benched on IU only; the earlier headless-only "fixed"
+`find_implementations`, `get_type_hierarchy`, `get_call_hierarchy`: **bench-confirmed broken on CLion Nova** — see
+#4/#5/#6 — so they are benched on IU only; the earlier headless-only "fixed"
 verdicts were corrected)
 
 ---
 
 ## Debug / Development Workflow
 
-Since CLion Nova PSI is only available in a real CLion instance (not reproducible in IntelliJ
-headless tests), the workflow for this issue is:
+Since CLion Nova PSI is only available in a real CLion instance (not reproducible in IntelliJ headless tests), the
+workflow for this issue is:
 
 1. **Make a code change** in IntelliJ IDEA.
-2. **Run the "Deploy to CLion" run configuration** — this builds the plugin ZIP and installs it
-   into the local CLion sandbox, then restarts CLion.
-3. **Poll the MCP health endpoint** until it responds and reports the new version. The version
-   string in the response matches the short git commit hash of the installed build, so you can
-   confirm the right build is running:
+2. **Run the "Deploy to CLion" run configuration** — this builds the plugin ZIP and installs it into the local CLion
+   sandbox, then restarts CLion.
+3. **Poll the MCP health endpoint** until it responds and reports the new version. The version string in the response
+   matches the short git commit hash of the installed build, so you can confirm the right build is running:
    ```
    GET http://localhost:<port>/mcp/health
    # Wait for {"status":"ok","version":"<commit-hash>"}
    ```
-4. **Connect to the MCP directly** and test the changed tool against real CLion Nova C++ PSI
-   (e.g., open `main.cpp` or `classdef.h` and call `get_file_outline`).
+4. **Connect to the MCP directly** and test the changed tool against real CLion Nova C++ PSI (e.g., open `main.cpp` or
+   `classdef.h` and call `get_file_outline`).
 
 ---
 
@@ -51,74 +50,71 @@ prefixes than the old OC engine.
 **Fix attempted**: PR #796 — replaced custom classification with `StructureViewBuilder`.  
 **Fix attempted (Jun 6)**: PR #814 — two new fixes targeting CLion Nova specifically:
 
-1. `NavigationTool.visitStructureNode` now extracts the PSI element from custom adapter wrappers
-   (CLion Nova returns wrapper objects, not `PsiElement`, from `StructureViewTreeElement.getValue()`
+1. `NavigationTool.visitStructureNode` now extracts the PSI element from custom adapter wrappers (CLion Nova returns
+   wrapper objects, not `PsiElement`, from `StructureViewTreeElement.getValue()`
    — the old code silently dropped every node).
-2. `ToolUtils.classifyElement` dropped the per-language prefix switchboard (the old `OC` branch
-   never fired for CLion Nova which uses `Cidr`/`Nova` prefixes). Now a single language-agnostic
-   classifier matches structural keywords anywhere in the PSI class name.
+2. `ToolUtils.classifyElement` dropped the per-language prefix switchboard (the old `OC` branch never fired for CLion
+   Nova which uses `Cidr`/`Nova` prefixes). Now a single language-agnostic classifier matches structural keywords
+   anywhere in the PSI class name.
 
-**Fix confirmed broken (Jun 11)**: PR #814 StructureView path confirmed empty even with the
-Structure panel open — `ProtocolStructureViewBuilder` programmatic instances never populate in
-CLion Nova regardless of IDE state.
+**Fix confirmed broken (Jun 11)**: PR #814 StructureView path confirmed empty even with the Structure panel open —
+`ProtocolStructureViewBuilder` programmatic instances never populate in CLion Nova regardless of IDE state.
 
-**Fix applied (Jun 11)**: PR #837 — dropped the StructureView path for CLion Nova; added a direct
-PSI node-type walk (`collectOutlineEntriesByNodeType`) as the final fallback. Detects:
+**Fix applied (Jun 11)**: PR #837 — dropped the StructureView path for CLion Nova; added a direct PSI node-type walk
+(`collectOutlineEntriesByNodeType`) as the final fallback. Detects:
 
 - **Type declarations** (class, struct, enum, union): `ASTWrapperPsiElement` containing a
   `DUMMY_NODE` name child and a `DUMMY_BLOCK` body child.
 - **Function definitions**: top-level `DUMMY_NODE` signature immediately followed by a
   `DUMMY_BLOCK` sibling (look-ahead at the file level).
 
-Confirmed working against a real CLion Nova instance (`main.cpp`, `classdef.h` — classes,
-structs, and functions all returned correctly).
+Confirmed working against a real CLion Nova instance (`main.cpp`, `classdef.h` — classes, structs, and functions all
+returned correctly).
 
 **Scope note**: `collectOutlineEntriesByNodeType` is called exclusively by `GetFileOutlineTool`.
 `search_symbols` wildcard uses a separate `collectSymbolsFromFile` path (also a `PsiNamedElement`
 walk) that has the same CLion Nova blind spot and is **not** fixed by this PR — see bug #1b below.
 
-**Current status**: ✅ **Fixed in PR #837** for `get_file_outline`. Confirmed working in CLion
-Nova via direct MCP test. Pending reporter re-verification in their vsclib project.
+**Current status**: ✅ **Fixed in PR #837** for `get_file_outline`. Confirmed working in CLion Nova via direct MCP test.
+Pending reporter re-verification in their vsclib project.
 
 **Namespace gap found & fixed (Jun 14)**: The integration bench (`GetFileOutlineClionIntegrationTest`)
-kept failing on the `fixtures/cpp-cmake/classdef.h` fixture, whose `Widget`/`Point`/`Colour` symbols
-live inside `namespace vsc { ... }`. Root cause (reproduced locally against a real CLion Nova, **not**
-a timing/editor issue): the node-type walk only iterated the file's direct children, so it descended
-into the `namespace` node's body and emitted nothing. An earlier "open an editor before polling" fix
-(commit `74c41b43d`) was a false lead — proven inert because the StructureView path is dead in Nova
-regardless of editor state, and a warm Nova returns top-level symbols for unopened files. That commit
-was reverted.
+kept failing on the `fixtures/cpp-cmake/classdef.h` fixture, whose `Widget`/`Point`/`Colour` symbols live inside
+`namespace vsc { ... }`. Root cause (reproduced locally against a real CLion Nova, **not**
+a timing/editor issue): the node-type walk only iterated the file's direct children, so it descended into the
+`namespace` node's body and emitted nothing. An earlier "open an editor before polling" fix (commit `74c41b43d`) was a
+false lead — proven inert because the StructureView path is dead in Nova regardless of editor state, and a warm Nova
+returns top-level symbols for unopened files. That commit was reverted.
 
 Inside a namespace body CLion Nova represents each declaration as a **flat `DUMMY_NODE` token stream**
 (`DUMMY_NODE[CppKeyword:CLASS_KEYWORD][IDENTIFIER]` + sibling `DUMMY_BLOCK`), not the structured
-`CppKeyword:CLASS_KEYWORD` node used at file top level — a different extraction path. The namespace
-node itself is `CppKeyword:NAMESPACE_CPP_KEYWORD` wrapping a `DUMMY_NODE` (name) + `DUMMY_BLOCK` (body).
+`CppKeyword:CLASS_KEYWORD` node used at file top level — a different extraction path. The namespace node itself is
+`CppKeyword:NAMESPACE_CPP_KEYWORD` wrapping a `DUMMY_NODE` (name) + `DUMMY_BLOCK` (body).
 
 Fix: `walkCppSymbolsIn` now recurses into namespace bodies and handles the nested `DUMMY_NODE`
-declaration form (type definitions, free functions, and nested namespaces; forward declarations with
-no following `DUMMY_BLOCK` are skipped). Verified live on doxygen's `regex.h`/`config.h` and the exact
-fixture file — `namespace vsc / class Widget / struct Point / enum Colour` all returned.
+declaration form (type definitions, free functions, and nested namespaces; forward declarations with no following
+`DUMMY_BLOCK` are skipped). Verified live on doxygen's `regex.h`/`config.h` and the exact fixture file —
+`namespace vsc / class Widget / struct Point / enum Colour` all returned.
 
 ---
 
 ### 1b. `search_symbols` — empty results for C/C++ wildcard queries
 
 **Original bug (v1.171.4)**: Returns empty for wildcard queries against `.c`/`.cpp`/`.hpp` files.  
-**Root cause**: `collectSymbolsFromFile` (used by wildcard `search_symbols`) walks the PSI tree
-looking for `PsiNamedElement` instances. CLion Nova's lazy C++ parser does not produce
-`PsiNamedElement` for declarations — the same root cause as the original `get_file_outline` bug,
-but in a separate code path that was not covered by PR #837.  
-**Fix attempted (Jun 6)**: PR #814 — language-agnostic classifier (same fix as `get_file_outline`),
-but this does not help because the `PsiNamedElement` instanceof check runs before `classifyElement`
+**Root cause**: `collectSymbolsFromFile` (used by wildcard `search_symbols`) walks the PSI tree looking for
+`PsiNamedElement` instances. CLion Nova's lazy C++ parser does not produce
+`PsiNamedElement` for declarations — the same root cause as the original `get_file_outline` bug, but in a separate code
+path that was not covered by PR #837.  
+**Fix attempted (Jun 6)**: PR #814 — language-agnostic classifier (same fix as `get_file_outline`), but this does not
+help because the `PsiNamedElement` instanceof check runs before `classifyElement`
 is ever called.  
-**Fix applied (Jun 11)**: PR #838 — `NavigationTool.collectSymbolsFromFile` now falls back to the
-same CLion Nova node-type walk used by `get_file_outline`. The shared helper
-`walkCppSymbolsByNodeType` (extracted from `collectOutlineEntriesByNodeType`) detects type
-declarations (class/struct/enum/union via `CppKeyword:*_KEYWORD`) and function definitions
-(`DUMMY_NODE` followed by `DUMMY_BLOCK` sibling) when the `PsiNamedElement` walk yields no results
-for a given file. Supports `type=class`, `type=struct`, `type=function` (and `type=method` as an
-alias for function). Compat test `SearchSymbolsCompatTest` updated from expected-FAIL to
-expected-PASS.  
+**Fix applied (Jun 11)**: PR #838 — `NavigationTool.collectSymbolsFromFile` now falls back to the same CLion Nova
+node-type walk used by `get_file_outline`. The shared helper
+`walkCppSymbolsByNodeType` (extracted from `collectOutlineEntriesByNodeType`) detects type declarations
+(class/struct/enum/union via `CppKeyword:*_KEYWORD`) and function definitions (`DUMMY_NODE` followed by `DUMMY_BLOCK`
+sibling) when the `PsiNamedElement` walk yields no results for a given file. Supports `type=class`, `type=struct`,
+`type=function` (and `type=method` as an alias for function). Compat test `SearchSymbolsCompatTest` updated from
+expected-FAIL to expected-PASS.  
 **Current status**: ✅ **Fixed in PR #838**. Awaiting CLion Nova verification.
 
 ---
@@ -127,97 +123,111 @@ expected-PASS.
 
 **Original bug (v1.171.4)**: Fails for any position in C/C++ files.  
 **Fix attempted**: PR #796 — same fix as above.  
-**Fix attempted (Jun 6)**: PR #814 — same fixes as bug #1; `get_symbol_info` shares the same
-PSI-classification path so the language-agnostic classifier should benefit both.  
+**Fix attempted (Jun 6)**: PR #814 — same fixes as bug #1; `get_symbol_info` shares the same PSI-classification path so
+the language-agnostic classifier should benefit both.  
 **Root cause confirmed (Jun 17)**: PR #814's classifier fix never helped here — `get_symbol_info`
-doesn't call `ToolUtils.classifyElement` at all. Its own `findNamedAncestor` walks PSI ancestors
-looking for a `PsiNamedElement`, the exact same root cause as the original `get_file_outline` /
-`search_symbols` bugs (#1 / #1b): CLion Nova's lazy C++ parser produces no `PsiNamedElement` for
-declarations. Reproduced live against a real CLion Nova instance (doxygen's `src/anchor.h:25`,
+doesn't call `ToolUtils.classifyElement` at all. Its own `findNamedAncestor` walks PSI ancestors looking for a
+`PsiNamedElement`, the exact same root cause as the original `get_file_outline` /
+`search_symbols` bugs (#1 / #1b): CLion Nova's lazy C++ parser produces no `PsiNamedElement` for declarations.
+Reproduced live against a real CLion Nova instance (doxygen's `src/anchor.h:25`,
 `class AnchorGenerator`) — confirmed broken before the fix below.  
-**Fix applied (Jun 17)**: Added `NavigationTool.findEnclosingCppDeclaration` — walks up from the
-element at the requested offset looking for the same CLion Nova node shapes `get_file_outline` /
-`search_symbols` already recognize (a type declaration's single CppKeyword-wrapped node; a
-function's `DUMMY_NODE`+sibling-`DUMMY_BLOCK` pair; and, mirroring `visitNestedDeclaration`, the
-flat `DUMMY_NODE` token-stream form used for declarations nested inside a namespace body).
-`GetSymbolInfoTool` falls back to it when the ordinary `PsiNamedElement` walk finds nothing.
-Verified live against a real CLion Nova instance: `class`/`struct`/`enum`/`namespace` at both file
-top level (doxygen `src/anchor.h`) and namespace-nested (this repo's `fixtures/cpp-cmake/classdef.h`
-— `vsc::Widget`, `vsc::Point`, `vsc::Colour`, and the `vsc` namespace itself) and a free function
-(doxygen `src/util.cpp:161`) all now resolve correctly. IntelliJ Java unaffected (still resolves via
-the original `PsiNamedElement` walk).  
-**Current status**: ✅ **Fixed and verified live in CLion Nova.** Added to the IDE compatibility
-bench as `GetSymbolInfoIntegrationTest` (`get_symbol_info` × {IU, CL}).
+**Fix applied (Jun 17)**: Added `NavigationTool.findEnclosingCppDeclaration` — walks up from the element at the
+requested offset looking for the same CLion Nova node shapes `get_file_outline` /
+`search_symbols` already recognize (a type declaration's single CppKeyword-wrapped node; a function's `DUMMY_NODE`
++sibling-`DUMMY_BLOCK` pair; and, mirroring `visitNestedDeclaration`, the flat `DUMMY_NODE` token-stream form used for
+declarations nested inside a namespace body).
+`GetSymbolInfoTool` falls back to it when the ordinary `PsiNamedElement` walk finds nothing. Verified live against a
+real CLion Nova instance: `class`/`struct`/`enum`/`namespace` at both file top level (doxygen `src/anchor.h`) and
+namespace-nested (this repo's `fixtures/cpp-cmake/classdef.h`
+— `vsc::Widget`, `vsc::Point`, `vsc::Colour`, and the `vsc` namespace itself) and a free function (doxygen
+`src/util.cpp:161`) all now resolve correctly. IntelliJ Java unaffected (still resolves via the original
+`PsiNamedElement` walk).  
+**Current status**: ✅ **Fixed and verified live in CLion Nova.** Added to the IDE compatibility bench as
+`GetSymbolInfoIntegrationTest` (`get_symbol_info` × {IU, CL}).
 
 ---
 
 ### 3. `go_to_declaration` — "Could not resolve declaration"
 
 **Original bug (v1.171.4)**: Fails for C/C++ symbols.  
-**Root cause** (Jun 6): The old `findDeclarationsOnLine`/`findDeclarationByOffset` walked the PSI
-tree and called `element.getReference()` on each match. For C/C++ leaf identifiers (e.g.
-`printf`), `getReference()` returns `null` — the reference lives on a parent expression. The
-fallback only searched the first occurrence, never adjusted the offset for whitespace, and didn't
-handle `PsiPolyVariantReference`.  
-**Fix attempted (Jun 6)**: PR #815 — replaced with a single `resolveDeclarationsOnLine` that
-delegates to the IDE's language-agnostic infrastructure:
+**Root cause** (Jun 6): The old `findDeclarationsOnLine`/`findDeclarationByOffset` walked the PSI tree and called
+`element.getReference()` on each match. For C/C++ leaf identifiers (e.g.
+`printf`), `getReference()` returns `null` — the reference lives on a parent expression. The fallback only searched the
+first occurrence, never adjusted the offset for whitespace, and didn't handle `PsiPolyVariantReference`.  
+**Fix attempted (Jun 6)**: PR #815 — replaced with a single `resolveDeclarationsOnLine` that delegates to the IDE's
+language-agnostic infrastructure:
 
-1. `PsiFile.findReferenceAt(offset)` (uses every language plugin's registered reference
-   contributors; handles polyvariant via `multiResolve`).
+1. `PsiFile.findReferenceAt(offset)` (uses every language plugin's registered reference contributors; handles
+   polyvariant via `multiResolve`).
 2. Parent-walk fallback (some plugins still attach references higher up the tree).
-3. `TargetElementUtil.getNamedElement` for the "go-to-declaration-on-a-declaration" case.
-   Uses `TargetElementUtil.adjustOffset` so whitespace/punctuation no longer breaks lookup.
+3. `TargetElementUtil.getNamedElement` for the "go-to-declaration-on-a-declaration" case. Uses
+   `TargetElementUtil.adjustOffset` so whitespace/punctuation no longer breaks lookup.
 
-**Current status**: ✅ **Merged in PR #815.** Now covered by the IDE bench as
-`GoToDeclarationIntegrationTest` (`go_to_declaration` × {IU, CL}) — resolves a declaration from a
-usage site against the real CLion Nova backend, replacing the manual reporter re-verification.
+**Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-08-01) — the ✅ above was a false positive.**
+`GoToDeclarationIntegrationTest` was green from the day it landed, but only because `findAndFormatDeclaration`'s failure
+message lacked the `"Error: "` prefix (the bug fixed project-wide by #931): the test's
+`assertFalse(result.startsWith("Error"))` passed on the unprefixed text, and `assertTrue(result.contains("Widget"))`
+passed too because the *failure message itself* echoes the symbol name ("Could not resolve declaration for
+'Widget' ..."). Once #931 added the `err(...)` prefix to this exact return (`GoToDeclarationTool.java`), the same real,
+unchanged behaviour — CLion Nova never resolves `main.cpp:12`'s `vsc::Widget` usage to its declaration in `classdef.h` —
+started failing the bench correctly. Confirmed identical failure text/timing across 3 separate CI runs (2026-07-31,
+2026-08-01 ×2) on real Nova under CI, so this is a deterministic bug, not indexing-timing flakiness (the bench already
+waits on
+`get_indexing_status` before calling any tool).
+
+Root cause not yet isolated — needs live CLion PSI inspection to distinguish two hypotheses:
+(a) `TargetElementUtil.adjustOffset` snaps the raw text offset onto the wrong token for a namespace-qualified name under
+Nova's C++ lexer, so `PsiFile.findReferenceAt` looks at a reference-less node (e.g. the `::` token) instead of the
+`Widget` identifier; or (b) Nova's lazy frontend genuinely returns no reference for the qualified-name leaf, matching
+the
+`PsiNameIdentifierOwner`-shaped gaps already bench-confirmed for bugs #4/#5/#6. (a) is fixable in
+`GoToDeclarationTool`; (b) would need the same "IU only, CL skips" treatment as #4/#5/#6. The
+"Deploy to CLion" workflow (see top of this doc) is the way to test both live, but is currently blocked locally by the
+2026.2.0.1 `intellijPlatform.localPath` breakage — see issue #968. Tracked in issue #970.
 
 ---
 
 ### 4. `get_call_hierarchy` — "Could not find symbol at file:line"
 
 **Original bug (v1.171.4)**: Fails for C/C++ symbols.  
-**Root cause** (Jun 6): Same shape as bug #3 — `resolveNamedElementAtLocation` only looked for a
-declaration on the target line. If the user pointed at a usage (e.g. line containing `printf("hello")`),
-no declaration named `printf` exists there, so the tool reported the error.  
-**Fix attempted (Jun 6)**: PR #816 — added `resolveViaReference` fallback mirroring the PR #815
-approach: scan whole-identifier occurrences of the symbol on the line, `TargetElementUtil.adjustOffset`,
-`PsiFile.findReferenceAt` (handles polyvariant), then `TargetElementUtil.getNamedElement` as final
-fallback. The resolved target must be a `PsiNameIdentifierOwner` for `ReferencesSearch` to find
-its callers.
+**Root cause** (Jun 6): Same shape as bug #3 — `resolveNamedElementAtLocation` only looked for a declaration on the
+target line. If the user pointed at a usage (e.g. line containing `printf("hello")`), no declaration named `printf`
+exists there, so the tool reported the error.  
+**Fix attempted (Jun 6)**: PR #816 — added `resolveViaReference` fallback mirroring the PR #815 approach: scan
+whole-identifier occurrences of the symbol on the line, `TargetElementUtil.adjustOffset`,
+`PsiFile.findReferenceAt` (handles polyvariant), then `TargetElementUtil.getNamedElement` as final fallback. The
+resolved target must be a `PsiNameIdentifierOwner` for `ReferencesSearch` to find its callers.
 
-**Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** PR #816's reference
-fallback resolves nothing on real Nova: `ToolUtils.resolveNamedElement` requires a
-`PsiNameIdentifierOwner`, which Nova's lazy C++ frontend PSI never produces for a declaration or a
-usage, so resolution returns `null` → "Could not find symbol". Even with resolution fixed,
-`ReferencesSearch` has no C++ query executor on the Nova frontend (the semantic index lives in the
-Radler backend), so callers cannot be found. The earlier "fixed" verdict was headless-only and did
-not exercise the real backend. The IDE bench (PR #874) therefore covers this cell on **IU only**;
-CL skips (❓). A real fix needs a Nova-frontend resolution + search path and must be iterated
-against a real CLion.
+**Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** PR #816's reference fallback resolves nothing
+on real Nova: `ToolUtils.resolveNamedElement` requires a
+`PsiNameIdentifierOwner`, which Nova's lazy C++ frontend PSI never produces for a declaration or a usage, so resolution
+returns `null` → "Could not find symbol". Even with resolution fixed,
+`ReferencesSearch` has no C++ query executor on the Nova frontend (the semantic index lives in the Radler backend), so
+callers cannot be found. The earlier "fixed" verdict was headless-only and did not exercise the real backend. The IDE
+bench (PR #874) therefore covers this cell on **IU only**; CL skips (❓). A real fix needs a Nova-frontend resolution +
+search path and must be iterated against a real CLion.
 
 ---
 
 ### 5. `find_implementations` — "Symbol not found at file:line"
 
 **Original bug (v1.171.4)**: Fails for C/C++ symbols.  
-**Root cause** (Jun 6): Same shape as bugs #3 and #4 — `TypeHierarchySupport.findSubtypes` only
-looked for a declaration on the target line via `ToolUtils.findNamedElement`. If the user pointed
-at a usage (constructor call site, method invocation), no declaration was found there and the tool
-returned "Symbol 'X' not found at file:line". In C/C++ this is especially bad because leaf
-identifiers usually have no reference of their own.  
-**Fix attempted (Jun 6)**: PR #817 — extracted the PR #815/#816 reference-fallback path into a
-shared `ToolUtils.resolveNamedElement` (declaration-first → reference-fallback via
+**Root cause** (Jun 6): Same shape as bugs #3 and #4 — `TypeHierarchySupport.findSubtypes` only looked for a declaration
+on the target line via `ToolUtils.findNamedElement`. If the user pointed at a usage (constructor call site, method
+invocation), no declaration was found there and the tool returned "Symbol 'X' not found at file:line". In C/C++ this is
+especially bad because leaf identifiers usually have no reference of their own.  
+**Fix attempted (Jun 6)**: PR #817 — extracted the PR #815/#816 reference-fallback path into a shared
+`ToolUtils.resolveNamedElement` (declaration-first → reference-fallback via
 `TargetElementUtil.adjustOffset` + `PsiFile.findReferenceAt` + polyvariant-aware
-`firstNamedTarget` + `TargetElementUtil.getNamedElement`). `CallHierarchySupport` refactored to
-delegate to the shared helper; `TypeHierarchySupport.findSubtypes` adopts it. Language-agnostic.
+`firstNamedTarget` + `TargetElementUtil.getNamedElement`). `CallHierarchySupport` refactored to delegate to the shared
+helper; `TypeHierarchySupport.findSubtypes` adopts it. Language-agnostic.
 
 **Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** The shared
-`ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner`, which Nova's lazy C++ frontend
-never produces (for declarations or usages), so `find_implementations` returns "Symbol not found"
-on real Nova. Even with resolution fixed, `DefinitionsScopedSearch` has no C++ query executor on
-the Nova frontend, so subtypes/implementations cannot be searched. The IDE bench (PR #874) covers
-this cell on **IU only** (where `Widget` correctly reports "no subtypes"); CL skips (❓).
+`ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner`, which Nova's lazy C++ frontend never produces (for
+declarations or usages), so `find_implementations` returns "Symbol not found"
+on real Nova. Even with resolution fixed, `DefinitionsScopedSearch` has no C++ query executor on the Nova frontend, so
+subtypes/implementations cannot be searched. The IDE bench (PR #874) covers this cell on **IU only** (where `Widget`
+correctly reports "no subtypes"); CL skips (❓).
 
 ---
 
@@ -226,25 +236,24 @@ this cell on **IU only** (where `Widget` correctly reports "no subtypes"); CL sk
 **Original bug (v1.171.4)**: Hard-coded Java guard for `both` direction; PSI lookup fails for non-Java.  
 **Root cause** (Jun 6): Two issues. (1) Symbol resolution — already addressed via the shared
 `ToolUtils.resolveNamedElement` adopted by `TypeHierarchySupport.findSubtypes` in PR #817. (2)
-`GetTypeHierarchyTool` hard-failed for any non-Java direction (default `both` is the most common
-usage), even though the language-agnostic subtypes path worked fine.  
+`GetTypeHierarchyTool` hard-failed for any non-Java direction (default `both` is the most common usage), even though the
+language-agnostic subtypes path worked fine.  
 **Fix attempted (Jun 6)**: PR #818 — partial-results fallback for `direction=both`, with a
 "press Ctrl+H" hint for supertypes.  
-**Fix improved (Jun 7)**: PR #819 — removes the Ctrl+H hint (useless to an autonomous agent) and
-adds real programmatic supertypes via the shared `ToolUtils.findSuperElementsViaPlatform` helper
-(reflective `FindSuperElementsHelper.findSuperElements` + reflective `getSupers()`). Recursive
-walk up to 10 levels with cycle detection. `direction=both` now returns subtypes AND supertypes
-programmatically; `direction=supertypes` returns programmatic results. Clear "not available"
+**Fix improved (Jun 7)**: PR #819 — removes the Ctrl+H hint (useless to an autonomous agent) and adds real programmatic
+supertypes via the shared `ToolUtils.findSuperElementsViaPlatform` helper (reflective
+`FindSuperElementsHelper.findSuperElements` + reflective `getSupers()`). Recursive walk up to 10 levels with cycle
+detection. `direction=both` now returns subtypes AND supertypes programmatically; `direction=supertypes` returns
+programmatic results. Clear "not available"
 error only when no helper is loadable at all (pure non-Java IDE without Java plugin).
 
 **Current status**: ❌ **Broken on CLion Nova (bench-confirmed, 2026-06).** The `direction=both`
-guard fix (PR #818/#819) is real, but the underlying *symbol resolution* still fails on Nova: the
-shared `ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner` that Nova's lazy C++
-frontend never produces, so `get_type_hierarchy` returns "Symbol not found" on real Nova before any
-direction logic runs. `DefinitionsScopedSearch` (subtypes) also has no C++ query executor on the
-frontend. Programmatic supertypes/subtypes work on **Java (IU)** — the IDE bench (PR #874) covers
-the subtypes cell on IU only; CL renders 🚫. The previous "✅ Fixed" verdict reflected headless Java
-tests, not real Nova.
+guard fix (PR #818/#819) is real, but the underlying *symbol resolution* still fails on Nova: the shared
+`ToolUtils.resolveNamedElement` requires a `PsiNameIdentifierOwner` that Nova's lazy C++ frontend never produces, so
+`get_type_hierarchy` returns "Symbol not found" on real Nova before any direction logic runs. `DefinitionsScopedSearch`
+(subtypes) also has no C++ query executor on the frontend. Programmatic supertypes/subtypes work on **Java (IU)** — the
+IDE bench (PR #874) covers the subtypes cell on IU only; CL renders 🚫. The previous "✅ Fixed" verdict reflected headless
+Java tests, not real Nova.
 
 > **Live-CLion verification (2026-06-22, doxygen project, Nova C++).** Probed the running plugin's
 > MCP server directly against real C++ code to settle this empirically:
@@ -256,7 +265,7 @@ tests, not real Nova.
 > - `find_references(ClassDef)` returns 102 hits, but they are the **word-search fallback**
 >   (`PsiSearchHelper.processElementsWithWord`) — the result list includes header-comment line 1 and
 >   bare `{`/`}` lines, not semantic references. This proves Nova's frontend has **no working
->   semantic search**: `ReferencesSearch` / `DefinitionsScopedSearch` have no C++ query executor.
+    > semantic search**: `ReferencesSearch` / `DefinitionsScopedSearch` have no C++ query executor.
 >
 > **Conclusion.** Fixing resolution alone (adding the Nova primitive as a fallback) is **not enough**
 > and would be *dishonest*: `ClassDef` genuinely has subtypes (`ClassDefImpl`, `ClassDefMutable`),
@@ -269,36 +278,35 @@ tests, not real Nova.
 ### 7. `find_super_methods` — "requires Java PSI support"
 
 **Original bug (v1.171.4)**: Hard-coded Java guard, rejects non-Java files entirely.  
-**Root cause** (Jun 7): The tool short-circuited any non-Java IDE with a generic "requires Java
-PSI support" error before even attempting to resolve the position.  
-**Fix attempted (Jun 7)**: PR #819 — drops the hard `hasJava` rejection. For non-Java IDEs,
-resolves the enclosing named declaration via `PsiNameIdentifierOwner` walk and uses the shared
+**Root cause** (Jun 7): The tool short-circuited any non-Java IDE with a generic "requires Java PSI support" error
+before even attempting to resolve the position.  
+**Fix attempted (Jun 7)**: PR #819 — drops the hard `hasJava` rejection. For non-Java IDEs, resolves the enclosing named
+declaration via `PsiNameIdentifierOwner` walk and uses the shared
 `ToolUtils.findSuperElementsViaPlatform` helper (reflective `FindSuperElementsHelper` + reflective
-`getSupers()`). Returns programmatic results when the helper is loadable. Returns clear "not
-available" error only in pure non-Java IDEs without the Java plugin. **No manual-action hints**
-(autonomous agents can't press Ctrl+U). Same PR also fixes the equivalent Ctrl+H hint left over
-from PR #818 in `get_type_hierarchy`.
+`getSupers()`). Returns programmatic results when the helper is loadable. Returns clear "not available" error only in
+pure non-Java IDEs without the Java plugin. **No manual-action hints**
+(autonomous agents can't press Ctrl+U). Same PR also fixes the equivalent Ctrl+H hint left over from PR #818 in
+`get_type_hierarchy`.
 
-**Current status**: ⚠️ **Java-verified only; unverified on CLion Nova.** PR #819 returns
-programmatic results on **Java (IU)**, but the same Nova resolution gap as #4/#5/#6 applies — the
-enclosing-declaration walk relies on `PsiNameIdentifierOwner`, which Nova's lazy C++ frontend never
-produces, and `FindSuperElementsHelper` needs a resolved element. Not yet covered by the IDE bench
-(no honest green is possible until Nova resolution works). The "✅ Fixed" verdict reflected headless
-Java tests, not real Nova.
+**Current status**: ⚠️ **Java-verified only; unverified on CLion Nova.** PR #819 returns programmatic results on
+**Java (IU)**, but the same Nova resolution gap as #4/#5/#6 applies — the enclosing-declaration walk relies on
+`PsiNameIdentifierOwner`, which Nova's lazy C++ frontend never produces, and `FindSuperElementsHelper` needs a resolved
+element. Not yet covered by the IDE bench (no honest green is possible until Nova resolution works). The "✅ Fixed"
+verdict reflected headless Java tests, not real Nova.
 
 ---
 
 ### 8. `get_documentation` — "Symbol not found"
 
 **Original bug (v1.171.4)**: Fails for C/C++ FQNs (e.g., `vsc::Colour32`).  
-**Root cause** (Jun 7): Only used `JavaPsiFacade.findClass()` which is Java/Kotlin-only. No fallback
-for other languages.  
-**Fix applied (Jun 7)**: PR #820 — added optional `file` and `line` parameters. When provided,
-uses language-agnostic position-based resolution (same approach as `go_to_declaration`, `find_implementations`,
-`find_super_methods`). Resolves the symbol by cursor position via `ToolUtils.resolveNamedElement`,
-which delegates to the IDE's language-aware PSI infrastructure. When only FQN is provided (no
-file/line), falls back to JavaPsiFacade for Java/Kotlin. For non-Java languages without file/line,
-returns a clear error message guiding users to supply file+line parameters.  
+**Root cause** (Jun 7): Only used `JavaPsiFacade.findClass()` which is Java/Kotlin-only. No fallback for other
+languages.  
+**Fix applied (Jun 7)**: PR #820 — added optional `file` and `line` parameters. When provided, uses language-agnostic
+position-based resolution (same approach as `go_to_declaration`, `find_implementations`,
+`find_super_methods`). Resolves the symbol by cursor position via `ToolUtils.resolveNamedElement`, which delegates to
+the IDE's language-aware PSI infrastructure. When only FQN is provided (no file/line), falls back to JavaPsiFacade for
+Java/Kotlin. For non-Java languages without file/line, returns a clear error message guiding users to supply file+line
+parameters.  
 **Secondary fixes** (PR #820):
 
 - `FqnResolver.looksLikeFqn()` now excludes C++ source file extensions (`.cpp`, `.hpp`, `.h`, `.cc`, `.cxx`) to prevent
@@ -309,12 +317,11 @@ returns a clear error message guiding users to supply file+line parameters.
   in-memory test files and files not yet synced to LocalFileSystem)
   **Current status**: ✅ **Fixed.** The file+line path (PR #820, `ToolUtils.resolveNamedElement`)
   works for languages that expose a `PsiNameIdentifierOwner` for declarations, but the IDE bench
-  (`GetDocumentationIntegrationTest` × CL) proved it still failed on **CLion Nova C++**: its lazy
-  parser produces no `PsiNameIdentifierOwner`, so `resolveNamedElement` returned null and the tool
-  reported "No symbol 'Widget' found". Fixed by giving `GetDocumentationTool`'s position path the
-  same node-type-based fallback `get_symbol_info` already uses — when `resolveNamedElement` finds
-  nothing, fall back to `CppNovaPsiSupport.findEnclosingDeclaration` (issue #794's shared C++ blind
-  spot). Now covered for {IU, CL} by the bench against the real CLion Nova backend.
+  (`GetDocumentationIntegrationTest` × CL) proved it still failed on **CLion Nova C++**: its lazy parser produces no
+  `PsiNameIdentifierOwner`, so `resolveNamedElement` returned null and the tool reported "No symbol 'Widget' found".
+  Fixed by giving `GetDocumentationTool`'s position path the same node-type-based fallback `get_symbol_info` already
+  uses — when `resolveNamedElement` finds nothing, fall back to `CppNovaPsiSupport.findEnclosingDeclaration` (issue
+  #794's shared C++ blind spot). Now covered for {IU, CL} by the bench against the real CLion Nova backend.
 
 ---
 
@@ -324,29 +331,28 @@ returns a clear error message guiding users to supply file+line parameters.
 **Root cause investigation (Jun 7)**: Two issues identified:
 
 1. `collectIntentionNames` catches `Exception` generically, which silently swallows
-   `ProcessCanceledException` — a platform control-flow exception that CLion Nova C++ intentions
-   may throw when their analysis engine is not yet ready. By catching and discarding it, all
-   CLion-specific intentions are silently dropped from the result.
-2. Both `collectQuickFixesOnly` and `collectActionsWithIntentions` used `resolveVirtualFile` without
-   the `findFileInProjectContent` fallback (same gap fixed in other tools).
+   `ProcessCanceledException` — a platform control-flow exception that CLion Nova C++ intentions may throw when their
+   analysis engine is not yet ready. By catching and discarding it, all CLion-specific intentions are silently dropped
+   from the result.
+2. Both `collectQuickFixesOnly` and `collectActionsWithIntentions` used `resolveVirtualFile` without the
+   `findFileInProjectContent` fallback (same gap fixed in other tools).
 
 **Fix applied (Jun 7)**: PR #821:
 
 - `QualityTool.collectIntentionNames` and `findIntentionByName` now rethrow `ProcessCanceledException`
   so CLion Nova cancellation propagates correctly. Javadoc updated to document the exception contract.
-- `QualityTool.resolveVirtualFileWithFallback()` shared helper added — all four quality tools that
-  do file resolution (`GetAvailableActionsTool` both paths, `ApplyActionTool`, `GetActionOptionsTool`)
+- `QualityTool.resolveVirtualFileWithFallback()` shared helper added — all four quality tools that do file resolution
+  (`GetAvailableActionsTool` both paths, `ApplyActionTool`, `GetActionOptionsTool`)
   now use it so the full list→apply→inspect-options workflow uses a consistent resolver.
 - Blank `symbol` (non-null but whitespace) now treated as absent in the "No actions available"
   and header formatters — consistent with `resolveColumn()`.
-- "No actions available" response includes diagnostic counts: registered intentions checked and
-  daemon highlight count on the line.
+- "No actions available" response includes diagnostic counts: registered intentions checked and daemon highlight count
+  on the line.
 - Tests: 3 new cases (blank symbol, temp:/// quick-fix path, temp:/// symbol path).
 
-**Known limitation**: `IntentionManager.getAvailableIntentions()` may not include all CLion Nova C++
-intentions if they're registered via a different extension mechanism in CLion's own plugin system.
-If the diagnostic output shows "0 registered intentions", a deeper investigation into CLion's
-intention registration is needed.
+**Known limitation**: `IntentionManager.getAvailableIntentions()` may not include all CLion Nova C++ intentions if
+they're registered via a different extension mechanism in CLion's own plugin system. If the diagnostic output shows "0
+registered intentions", a deeper investigation into CLion's intention registration is needed.
 
 **Current status**: ❓ **Needs reporter re-verification once PR #821 ships.** `ProcessCanceledException`
 fix is definitely correct; whether it's the full root cause requires CLion testing.
@@ -378,17 +384,17 @@ against PSI ancestor chain.
 
 **Original bug (v1.171.4)**: >95% of entries have blank/null message text; all severities reported as `INFORMATION`
 regardless of actual severity (no ERROR/WARNING differentiation). Clang-Tidy inspections *are* detected but unusable.  
-**Root cause** (Jun 8): Two separate issues identified. (1) Blank descriptions: CLion Nova's Clang-Tidy inspections
-may return `HighlightInfo` entries with null or blank description strings. The old code only filtered `null`, not
-blank strings, so these entries appeared in the output as useless entries. (2) Severity reporting: Not yet
-investigated — all severities still show as INFORMATION regardless of actual severity level.  
+**Root cause** (Jun 8): Two separate issues identified. (1) Blank descriptions: CLion Nova's Clang-Tidy inspections may
+return `HighlightInfo` entries with null or blank description strings. The old code only filtered `null`, not blank
+strings, so these entries appeared in the output as useless entries. (2) Severity reporting: Not yet investigated — all
+severities still show as INFORMATION regardless of actual severity level.  
 **Fix applied (Jun 8)**: PR #822 (this branch):
 
 - `GetHighlightsTool.java` and `GetProblemsTool.java` — added `isBlank()` check alongside the null check so
   highlights/problems with blank descriptions are now filtered out (same filter as the null check).
-- `ensureDaemonAnalyzed` — removed `DaemonCodeAnalyzer.restart()` call which was clearing cached highlights and
-  forcing a full re-analysis. This was breaking CLion C++ files whose Clang-Tidy pass takes longer than the wait
-  timeout. Opening the file is sufficient to trigger daemon analysis automatically if not yet analyzed.
+- `ensureDaemonAnalyzed` — removed `DaemonCodeAnalyzer.restart()` call which was clearing cached highlights and forcing
+  a full re-analysis. This was breaking CLion C++ files whose Clang-Tidy pass takes longer than the wait timeout.
+  Opening the file is sufficient to trigger daemon analysis automatically if not yet analyzed.
 - `ensureDaemonAnalyzed` — extended daemon wait timeout from 5s to 15s to accommodate slower C++ analysis.
 - Test: `testGetHighlightsFiltersBlankDescriptions` verifies the tool doesn't crash or include blank entries.
 
@@ -408,10 +414,10 @@ In v1.179.16, `get_highlights` on `colour.cpp` and `memory.c` returns empty.
 highlights and forcing a full re-analysis. For CLion C++ files whose Clang-Tidy pass takes longer than the 5s timeout,
 this meant highlights were being cleared and never re-accumulated before the tool returned, resulting in empty output.  
 **Fix applied (Jun 8)**: PR #822 (this branch) — same fix as bug #12. Removed the `restart()` call and extended the
-timeout from 5s to 15s. Opening the file is sufficient to trigger daemon analysis automatically if not yet analyzed;
-the restart was counterproductive.  
-**Current status**: ❓ **Needs reporter re-verification once PR #822 ships.** Fix is a regression fix, not tested in
-an actual CLion Nova C++ project.
+timeout from 5s to 15s. Opening the file is sufficient to trigger daemon analysis automatically if not yet analyzed; the
+restart was counterproductive.  
+**Current status**: ❓ **Needs reporter re-verification once PR #822 ships.** Fix is a regression fix, not tested in an
+actual CLion Nova C++ project.
 
 ---
 
@@ -429,19 +435,19 @@ vsclib_tests' on '<default>'". No output captured via `read_run_output`.
 ### 15. `run_tests` — hardcodes Gradle, fails for CLion test frameworks
 
 **Bug (v1.171.4)**: Returns "Gradle run configuration type not available". Fails for Catch2, Google Test, Doctest.  
-**Root cause (Jun 22)**: `RunTestsTool.execute` tries, in order, `tryRunTestConfig` (existing
-JUnit/test-named run configs), `tryRunViaConfigurationContext` (PSI-element → `ConfigurationContext`),
-and `tryRunJUnitNatively`, then falls through to a **Gradle-only** `runTestsViaGradleConfig`. The
+**Root cause (Jun 22)**: `RunTestsTool.execute` tries, in order, `tryRunTestConfig` (existing JUnit/test-named run
+configs), `tryRunViaConfigurationContext` (PSI-element → `ConfigurationContext`), and `tryRunJUnitNatively`, then falls
+through to a **Gradle-only** `runTestsViaGradleConfig`. The
 `ConfigurationContext` path is the only language-agnostic one, but it depends on
-`resolveTestPsiElement`, which requires the target to resolve to a `PsiNamedElement` classified as
-a class — exactly the CLion Nova C++ blind spot from bugs #1/#1b/#2. So for a C++ target every path
-fails and the Gradle fallback emits the misleading "Gradle run configuration type not available"
-error. The fix must make the fallback framework-agnostic (CTest/Catch2/GoogleTest run-config
-production from a file/location context) rather than Gradle-only.  
+`resolveTestPsiElement`, which requires the target to resolve to a `PsiNamedElement` classified as a class — exactly the
+CLion Nova C++ blind spot from bugs #1/#1b/#2. So for a C++ target every path fails and the Gradle fallback emits the
+misleading "Gradle run configuration type not available"
+error. The fix must make the fallback framework-agnostic (CTest/Catch2/GoogleTest run-config production from a
+file/location context) rather than Gradle-only.  
 **Fix attempted**: None yet — fix branch pending; a `RunTestsIntegrationTest` cell (Testing group)
 will confirm the ❌ empirically and guard the fix.  
-**Current status**: ❌ **Still broken** (confirmed in bot's Jun 5 update). Root cause identified
-Jun 22; never fixed for CLion.
+**Current status**: ❌ **Still broken** (confirmed in bot's Jun 5 update). Root cause identified Jun 22; never fixed for
+CLion.
 
 ---
 
@@ -475,9 +481,9 @@ the breakpoint IS actually added (confirmed by `breakpoint_list`). Affects both 
 **Root cause**: After `toggleLineBreakpoint()` in CLion/C++, `getSourcePosition()` is null because debug symbol index
 hasn't resolved yet. The old code required a non-null source position to match the breakpoint.  
 **Fix applied**: Commit `48806b53` (merged via PR #807, released in v1.179.14).  
-**Current status**: ❓ The fix IS in v1.179.16 that the reporter tested. The reporter's Jun 6 comment did not
-explicitly re-verify `breakpoint_manage` add. Needs targeted re-verification — either the fix is ineffective in
-CLion Nova or the bug is fixed and the reporter simply didn't retest.
+**Current status**: ❓ The fix IS in v1.179.16 that the reporter tested. The reporter's Jun 6 comment did not explicitly
+re-verify `breakpoint_manage` add. Needs targeted re-verification — either the fix is ineffective in CLion Nova or the
+bug is fixed and the reporter simply didn't retest.
 
 ---
 
@@ -536,8 +542,8 @@ agent-started sessions.
 CLion CMake builds go to the Run tool window, not the Build tool window.  
 **Fix applied**: Commit `48806b53` (merged via PR #807, released in v1.179.14) — when Build tool window is absent,
 checks Run tool window and lists available tabs.  
-**Current status**: ❓ The fix IS in v1.179.16 that the reporter tested. The reporter's Jun 6 comment did not
-explicitly re-verify `read_build_output`. Needs targeted re-verification.
+**Current status**: ❓ The fix IS in v1.179.16 that the reporter tested. The reporter's Jun 6 comment did not explicitly
+re-verify `read_build_output`. Needs targeted re-verification.
 
 ---
 
@@ -586,34 +592,34 @@ being misidentified.
 
 ## Summary Table
 
-| #  | Tool / Area                                                | Status              | Fixed In                                                                         |
-|----|------------------------------------------------------------|---------------------|----------------------------------------------------------------------------------|
-| 1  | `get_file_outline` empty in CLion Nova                     | ✅ Fixed             | PR #837 — PSI node-type walk fallback (classes, structs, functions)              |
-| 1b | `search_symbols` wildcard empty in CLion Nova              | ✅ Fixed             | PR #838 — `walkCppSymbolsByNodeType` fallback in `collectSymbolsFromFile`        |
-| 2  | `get_symbol_info` broken                                   | ✅ Fixed             | `NavigationTool.findEnclosingCppDeclaration` node-type-walk fallback (Jun 17)    |
-| 3  | `go_to_declaration` broken                                 | ❓ Needs re-verify   | PR #815 (merged) — findReferenceAt + TargetElementUtil                           |
-| 4  | `get_call_hierarchy` broken                                | ❌ Broken on Nova    | Bench-confirmed (PR #874): no Nova `PsiNameIdentifierOwner` + no C++ `ReferencesSearch` executor   |
-| 5  | `find_implementations` broken                              | ❌ Broken on Nova    | Bench-confirmed (PR #874): no Nova resolution + no C++ `DefinitionsScopedSearch` executor          |
-| 6  | `get_type_hierarchy` broken                                | ❌ Broken on Nova    | Bench-confirmed (PR #874): Java path works (IU); Nova resolution still fails. Was headless-only "✅" |
-| 7  | `find_super_methods` Java-only guard                       | ⚠️ Java-verified only | PR #819 works on IU; unverified on Nova (same resolution gap), not yet benched                    |
-| 8  | `get_documentation` broken for C/C++ FQNs                  | ❓ Needs re-verify   | PR #820 (merged) — position-based + FQN-based resolution, language-agnostic      |
-| 9  | `get_available_actions` empty                              | ❓ Needs re-verify   | PR #821 — ProcessCanceledException fix + diagnostic counts + fallback resolution |
-| 10 | `find_references` noise/false positives                    | ⚠️ Partial          | Known limitation                                                                 |
-| 11 | `find_references` qualified names 0 results                | ✅ Fixed             | PR #801 / `c73ac5ce`                                                             |
-| 12 | `get_highlights` blank messages, wrong severity            | ❓ Needs re-verify   | PR #822 — blank description filter; severity (all INFORMATION) NOT fixed yet     |
-| 13 | `get_highlights` regression (was showing 1 warning, now 0) | ❓ Needs re-verify   | PR #822 — removed restart(), extended timeout to 15s                             |
-| 14 | `run_configuration` timeout / "Cannot run on default"      | ❌ Not investigated  | —                                                                                |
-| 15 | `run_tests` hardcodes Gradle                               | ❌ Not investigated  | —                                                                                |
-| 16 | `list_tests` crash on CLion                                | ✅ Fixed (partial)   | PR #806 / `ddda3937`                                                             |
-| 17 | `debug_session_start` dies immediately                     | ❌ Not investigated  | —                                                                                |
-| 18 | `breakpoint_manage` add false negative                     | ❓ Needs re-verify   | `48806b53` / PR #807 (in v1.179.14+)                                             |
-| 19 | `debug_evaluate` phantom modal + timeout                   | ❌ Not investigated  | —                                                                                |
-| 20 | `debug_variable_detail` "not found"                        | ❌ Not investigated  | —                                                                                |
-| 21 | `debug_read_console` shows only binary path                | ❌ Not investigated  | —                                                                                |
-| 22 | `debug_step` into doesn't enter function                   | ⚠️ Not investigated | —                                                                                |
-| 23 | Debug snapshot/step "No active debug session"              | ✅ Fixed             | Unknown commit between v1.179.7–v1.179.16                                        |
-| 24 | `read_build_output` "no Java/Kotlin project"               | ❓ Needs re-verify   | `48806b53` / PR #807 (in v1.179.14+)                                             |
-| 25 | `reload_project_model` Meson crash + no CMake              | ✅ Fixed             | PR #804 / `86591e51`                                                             |
-| 26 | `get_coverage` no data                                     | 📋 Not investigated | —                                                                                |
-| 27 | Plugin startup crash (JaCoCo Offline)                      | ✅ Fixed             | `2f2578fd`                                                                       |
-| 28 | Phantom MODAL_BLOCKING with no visible dialog              | 📋 Not investigated | —                                                                                |
+| #  | Tool / Area                                                | Status                | Fixed In                                                                                             |
+|----|------------------------------------------------------------|-----------------------|------------------------------------------------------------------------------------------------------|
+| 1  | `get_file_outline` empty in CLion Nova                     | ✅ Fixed              | PR #837 — PSI node-type walk fallback (classes, structs, functions)                                  |
+| 1b | `search_symbols` wildcard empty in CLion Nova              | ✅ Fixed              | PR #838 — `walkCppSymbolsByNodeType` fallback in `collectSymbolsFromFile`                            |
+| 2  | `get_symbol_info` broken                                   | ✅ Fixed              | `NavigationTool.findEnclosingCppDeclaration` node-type-walk fallback (Jun 17)                        |
+| 3  | `go_to_declaration` broken                                 | ❓ Needs re-verify    | PR #815 (merged) — findReferenceAt + TargetElementUtil                                               |
+| 4  | `get_call_hierarchy` broken                                | ❌ Broken on Nova     | Bench-confirmed (PR #874): no Nova `PsiNameIdentifierOwner` + no C++ `ReferencesSearch` executor     |
+| 5  | `find_implementations` broken                              | ❌ Broken on Nova     | Bench-confirmed (PR #874): no Nova resolution + no C++ `DefinitionsScopedSearch` executor            |
+| 6  | `get_type_hierarchy` broken                                | ❌ Broken on Nova     | Bench-confirmed (PR #874): Java path works (IU); Nova resolution still fails. Was headless-only "✅" |
+| 7  | `find_super_methods` Java-only guard                       | ⚠️ Java-verified only | PR #819 works on IU; unverified on Nova (same resolution gap), not yet benched                       |
+| 8  | `get_documentation` broken for C/C++ FQNs                  | ❓ Needs re-verify    | PR #820 (merged) — position-based + FQN-based resolution, language-agnostic                          |
+| 9  | `get_available_actions` empty                              | ❓ Needs re-verify    | PR #821 — ProcessCanceledException fix + diagnostic counts + fallback resolution                     |
+| 10 | `find_references` noise/false positives                    | ⚠️ Partial            | Known limitation                                                                                     |
+| 11 | `find_references` qualified names 0 results                | ✅ Fixed              | PR #801 / `c73ac5ce`                                                                                 |
+| 12 | `get_highlights` blank messages, wrong severity            | ❓ Needs re-verify    | PR #822 — blank description filter; severity (all INFORMATION) NOT fixed yet                         |
+| 13 | `get_highlights` regression (was showing 1 warning, now 0) | ❓ Needs re-verify    | PR #822 — removed restart(), extended timeout to 15s                                                 |
+| 14 | `run_configuration` timeout / "Cannot run on default"      | ❌ Not investigated   | —                                                                                                    |
+| 15 | `run_tests` hardcodes Gradle                               | ❌ Not investigated   | —                                                                                                    |
+| 16 | `list_tests` crash on CLion                                | ✅ Fixed (partial)    | PR #806 / `ddda3937`                                                                                 |
+| 17 | `debug_session_start` dies immediately                     | ❌ Not investigated   | —                                                                                                    |
+| 18 | `breakpoint_manage` add false negative                     | ❓ Needs re-verify    | `48806b53` / PR #807 (in v1.179.14+)                                                                 |
+| 19 | `debug_evaluate` phantom modal + timeout                   | ❌ Not investigated   | —                                                                                                    |
+| 20 | `debug_variable_detail` "not found"                        | ❌ Not investigated   | —                                                                                                    |
+| 21 | `debug_read_console` shows only binary path                | ❌ Not investigated   | —                                                                                                    |
+| 22 | `debug_step` into doesn't enter function                   | ⚠️ Not investigated   | —                                                                                                    |
+| 23 | Debug snapshot/step "No active debug session"              | ✅ Fixed              | Unknown commit between v1.179.7–v1.179.16                                                            |
+| 24 | `read_build_output` "no Java/Kotlin project"               | ❓ Needs re-verify    | `48806b53` / PR #807 (in v1.179.14+)                                                                 |
+| 25 | `reload_project_model` Meson crash + no CMake              | ✅ Fixed              | PR #804 / `86591e51`                                                                                 |
+| 26 | `get_coverage` no data                                     | 📋 Not investigated   | —                                                                                                    |
+| 27 | Plugin startup crash (JaCoCo Offline)                      | ✅ Fixed              | `2f2578fd`                                                                                           |
+| 28 | Phantom MODAL_BLOCKING with no visible dialog              | 📋 Not investigated   | —                                                                                                    |
