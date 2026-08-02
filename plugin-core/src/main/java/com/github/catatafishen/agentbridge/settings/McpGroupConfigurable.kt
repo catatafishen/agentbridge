@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.McpServerControl
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
@@ -126,7 +127,7 @@ class McpGroupConfigurable(private val project: Project) :
                 restartMcpServer(btn)
             }.applyToComponent {
                 icon = AllIcons.Actions.Restart
-                toolTipText = "Stop and restart the MCP server to pick up tool registration changes"
+                toolTipText = RESTART_TOOLTIP
             }
             button("Copy MCP Config") { e ->
                 copyMcpConfig(e.source as JButton)
@@ -177,12 +178,35 @@ class McpGroupConfigurable(private val project: Project) :
                         showRestartError(button, "Failed to start: ${ex.message}")
                         return@schedule
                     }
+                    reconnectActiveAgentIfConnected()
                     ApplicationManager.getApplication().invokeLater { resetRestartButton(button) }
                 }, 500, TimeUnit.MILLISECONDS)
             } catch (ex: Exception) {
                 LOG.error("Failed to restart MCP server", ex)
                 showRestartError(button, "Failed to restart: ${ex.message}")
             }
+        }
+    }
+
+    /**
+     * Restarting the HTTP server discards its in-memory [McpSessionRegistry][
+     * com.github.catatafishen.agentbridge.services.McpSessionRegistry], so any agent that was
+     * already connected is left holding an `Mcp-Session-Id` the fresh server has never seen —
+     * every subsequent tool call would fail with HTTP 404 ("Unknown or expired MCP session")
+     * because the CLI's MCP client has no logic to detect that and re-run `initialize`. The same
+     * thing happens once the server's own idle-session sweep expires a long-lived session.
+     * Before this fix, the only recovery was a full IDE restart, which also happens to respawn
+     * the CLI subprocess. We force that respawn directly here instead, so the agent reconnects
+     * and negotiates a brand-new MCP session against the server we just restarted.
+     */
+    private fun reconnectActiveAgentIfConnected() {
+        val agentManager = ActiveAgentManager.getInstance(project)
+        if (!agentManager.isConnected) return
+        try {
+            agentManager.restart()
+            LOG.info("Restarted active agent connection to establish a fresh MCP session")
+        } catch (ex: Exception) {
+            LOG.warn("MCP server restarted but failed to reconnect the active agent: ${ex.message}", ex)
         }
     }
 
@@ -196,12 +220,15 @@ class McpGroupConfigurable(private val project: Project) :
     private fun resetRestartButton(button: JButton) {
         button.text = "Restart MCP Server"
         button.isEnabled = true
-        button.toolTipText =
-            "Stop and restart the MCP server to pick up tool registration changes"
+        button.toolTipText = RESTART_TOOLTIP
     }
 
     companion object {
         const val ID = "com.github.catatafishen.agentbridge.mcp"
+        private const val RESTART_TOOLTIP =
+            "Stop and restart the MCP server to pick up tool registration changes. " +
+                "Also reconnects the active agent so it doesn't keep using an MCP session " +
+                "the restarted server no longer recognizes."
         private val LOG = Logger.getInstance(McpGroupConfigurable::class.java)
     }
 }
