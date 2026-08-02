@@ -20,11 +20,21 @@ import java.util.logging.Logger;
  * via {@code --additional-mcp-config}. The IDE's McpHttpServer handles all protocol
  * logic, tool schemas, and tool execution — this proxy is just a transport adapter.</p>
  *
+ * <p>McpHttpServer's Streamable-HTTP transport requires every non-{@code initialize} request to
+ * carry the {@code Mcp-Session-Id} it handed back on {@code initialize} (see
+ * {@code McpSessionRegistry}), and rejects unknown/expired ones with HTTP 404. This proxy
+ * captures that header from the {@code initialize} response and echoes it on every later
+ * request. If the session has since expired server-side (idle timeout, or the HTTP server was
+ * restarted), it transparently re-initializes and retries once — the agent on the other end of
+ * stdin/stdout never sees an HTTP session at all, so it has no way to recover on its own.</p>
+ *
  * <p>Usage: {@code java -jar mcp-server.jar --port <N>}</p>
  */
 public class McpStdioProxy {
 
     private static final Logger LOG = Logger.getLogger(McpStdioProxy.class.getName());
+    private static final String SESSION_ID_HEADER = "Mcp-Session-Id";
+    private static final int HTTP_SESSION_EXPIRED = 404;
     private static final int CONNECT_TIMEOUT_MS = 500;
     private static final int READ_TIMEOUT_MS = 600_000;
     private static final int RETRY_DELAY_MS = 500;
@@ -58,12 +68,41 @@ public class McpStdioProxy {
         }
     }
 
+    /**
+     * The {@code Mcp-Session-Id} minted by the most recent {@code initialize} call, echoed on
+     * every later request. The stdin/stdout loop in {@link #main} is strictly sequential (one
+     * message is fully forwarded before the next is read), so a plain static field is safe here.
+     */
+    private static volatile String sessionId;
+
+    /**
+     * The raw {@code initialize} line most recently read from stdin, cached so a mid-stream
+     * session expiry (idle timeout, or the HTTP server being restarted) can be recovered from by
+     * replaying it — see {@link #processMessage}.
+     */
+    private static volatile String lastInitializeMessage;
+
     @SuppressWarnings("java:S106") // System.out is intentional — MCP protocol requires stdout
     private static void processMessage(String mcpUrl, String line) {
+        if (isInitializeMessage(line)) {
+            lastInitializeMessage = line;
+        }
         try {
-            String response = forwardToServer(mcpUrl, line);
-            if (shouldForwardResponse(response)) {
-                System.out.write(response.getBytes(StandardCharsets.UTF_8));
+            ForwardResult result = forwardToServer(mcpUrl, line);
+            if (result.status() == HTTP_SESSION_EXPIRED
+                && lastInitializeMessage != null
+                && !isInitializeMessage(line)) {
+                // The MCP Streamable-HTTP spec says a client that gets a 404 for its session
+                // should recover by re-initializing. The agent on the other end of this stdio
+                // pipe never sees Mcp-Session-Id at all, so it has no way to do that itself —
+                // replay the cached `initialize` call here to mint a fresh session, then retry
+                // the original request once against it.
+                LOG.log(Level.INFO, "MCP session expired; re-initializing and retrying");
+                forwardToServer(mcpUrl, lastInitializeMessage);
+                result = forwardToServer(mcpUrl, line);
+            }
+            if (shouldForwardResponse(result.body())) {
+                System.out.write(result.body().getBytes(StandardCharsets.UTF_8));
                 System.out.write('\n');
                 System.out.flush();
             }
@@ -147,36 +186,86 @@ public class McpStdioProxy {
             new Object[]{port, MAX_RETRIES});
     }
 
-    private static String forwardToServer(String mcpUrl, String jsonBody) throws IOException {
+    /**
+     * Result of forwarding one JSON-RPC message to the HTTP server: the HTTP status code and the
+     * response body (null for a 202-Accepted notification with no body). Exposing the status
+     * lets the caller detect an expired session (404) and self-heal — see
+     * {@link #processMessage}.
+     */
+    private record ForwardResult(int status, String body) {
+    }
+
+    private static ForwardResult forwardToServer(String mcpUrl, String jsonBody) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) URI.create(mcpUrl).toURL().openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(READ_TIMEOUT_MS);
         conn.setRequestProperty("Content-Type", "application/json");
+        if (sessionId != null) {
+            conn.setRequestProperty(SESSION_ID_HEADER, sessionId);
+        }
 
         try (OutputStream os = conn.getOutputStream()) {
             os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
         }
 
         int status = conn.getResponseCode();
+        captureSessionId(conn);
         if (status == 202) {
             // Notification accepted — no response body
-            return null;
+            return new ForwardResult(status, null);
         }
         if (status == 200) {
             try (InputStream is = conn.getInputStream()) {
-                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                return new ForwardResult(status, new String(is.readAllBytes(), StandardCharsets.UTF_8));
             }
         }
 
         // Error — read error stream
         try (InputStream es = conn.getErrorStream()) {
             if (es != null) {
-                return new String(es.readAllBytes(), StandardCharsets.UTF_8);
+                return new ForwardResult(status, new String(es.readAllBytes(), StandardCharsets.UTF_8));
             }
         }
         throw new IOException("MCP server returned HTTP " + status);
+    }
+
+    /**
+     * Captures the {@code Mcp-Session-Id} response header, if present, so it can be echoed on
+     * subsequent requests. Pure side effect on {@link #sessionId} — no return value, since the
+     * caller (the HTTP connection) is already an I/O boundary.
+     */
+    private static void captureSessionId(HttpURLConnection conn) {
+        String header = conn.getHeaderField(SESSION_ID_HEADER);
+        if (header != null && !header.isBlank()) {
+            sessionId = header;
+        }
+    }
+
+    /**
+     * Detects whether a raw JSON-RPC message is an {@code initialize} request, using the same
+     * lightweight scan-to-delimiter approach as {@link #extractJsonRpcId} (no JSON library on
+     * the classpath — this proxy is intentionally dependency-free). Pure function — no I/O.
+     */
+    static boolean isInitializeMessage(String message) {
+        int methodIdx = message.indexOf("\"method\"");
+        if (methodIdx < 0) return false;
+
+        int colon = message.indexOf(':', methodIdx);
+        if (colon < 0) return false;
+
+        int start = colon + 1;
+        while (start < message.length() && Character.isWhitespace(message.charAt(start))) {
+            start++;
+        }
+        int end = start;
+        while (end < message.length()
+            && message.charAt(end) != ','
+            && message.charAt(end) != '}') {
+            end++;
+        }
+        return "\"initialize\"".equals(message.substring(start, end).trim());
     }
 
     /**

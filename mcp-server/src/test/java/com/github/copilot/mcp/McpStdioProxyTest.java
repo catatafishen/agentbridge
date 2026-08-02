@@ -253,6 +253,54 @@ class McpStdioProxyTest {
         }
     }
 
+    // ── isInitializeMessage ─────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("isInitializeMessage")
+    class IsInitializeMessage {
+
+        @Test
+        @DisplayName("returns true for a well-formed initialize request")
+        void returnsTrueForInitialize() {
+            String msg = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
+            assertTrue(McpStdioProxy.isInitializeMessage(msg));
+        }
+
+        @Test
+        @DisplayName("returns true when method is the last field before closing brace")
+        void returnsTrueWhenMethodIsLastField() {
+            String msg = "{\"id\":1,\"method\":\"initialize\"}";
+            assertTrue(McpStdioProxy.isInitializeMessage(msg));
+        }
+
+        @Test
+        @DisplayName("returns true with whitespace around the method value")
+        void returnsTrueWithWhitespace() {
+            String msg = "{\"id\":1,\"method\": \"initialize\" ,\"params\":{}}";
+            assertTrue(McpStdioProxy.isInitializeMessage(msg));
+        }
+
+        @Test
+        @DisplayName("returns false for other methods, e.g. tools/list")
+        void returnsFalseForOtherMethods() {
+            String msg = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}";
+            assertFalse(McpStdioProxy.isInitializeMessage(msg));
+        }
+
+        @Test
+        @DisplayName("returns false when no method key present")
+        void returnsFalseWhenNoMethodKey() {
+            String msg = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}";
+            assertFalse(McpStdioProxy.isInitializeMessage(msg));
+        }
+
+        @Test
+        @DisplayName("returns false for empty string input")
+        void returnsFalseForEmptyString() {
+            assertFalse(McpStdioProxy.isInitializeMessage(""));
+        }
+    }
+
     // ── buildErrorResponse ──────────────────────────────────────────────
 
     @Nested
