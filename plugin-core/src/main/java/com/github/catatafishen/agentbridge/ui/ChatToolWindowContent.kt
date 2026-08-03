@@ -1671,8 +1671,9 @@ class ChatToolWindowContent(
         leftGroup.add(PauseToggleAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
-            "AgentControls", leftGroup, false
+            "AgentControls", leftGroup, true
         )
+        controlsToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
         controlsToolbar.isReservePlaceAutoPopupIcon = false
         controlsToolbar.targetComponent = controlsToolbar.component
         controlsToolbar.component.border = JBUI.Borders.empty(8, 4, 4, 0)
