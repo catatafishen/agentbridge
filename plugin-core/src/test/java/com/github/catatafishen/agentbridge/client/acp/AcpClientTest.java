@@ -902,6 +902,31 @@ class AcpClientTest {
 
             assertEquals(1, result.size());
         }
+
+        @Test
+        void modeSlugsCoverOptionValuesIsFilteredOut() {
+            var opt = makeOpt("mode", "Session Mode", "agent", "plan");
+
+            List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
+                List.of(opt), Collections.emptySet(), Collections.emptySet(),
+                Set.of("agent", "plan", "ask"));
+
+            // mode slugs no longer suppress; option should be included
+            assertEquals(1, result.size());
+            assertEquals("mode", result.getFirst().key());
+        }
+
+        @Test
+        void modeSlugsPartialOverlapIsIncluded() {
+            var opt = makeOpt("foo", "Foo", "x", "y");
+
+            List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
+                List.of(opt), Collections.emptySet(), Collections.emptySet(),
+                Set.of("agent", "plan"));
+
+            assertEquals(1, result.size());
+            assertEquals("foo", result.getFirst().key());
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
