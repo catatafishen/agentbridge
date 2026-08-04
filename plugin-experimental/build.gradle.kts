@@ -173,7 +173,9 @@ intellijPlatform {
         ides {
             // Use explicit stable versions only — recommended() also pulls in EAP builds
             // which cause ClosedByInterruptException from resource exhaustion.
-            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
+            // IntelliJ IDEA Community (IC) is no longer published as a separate artifact
+            // since 2025.3 — JetBrains unified the distribution. Use Ultimate (IU) instead.
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3")
         }
     }
 }
