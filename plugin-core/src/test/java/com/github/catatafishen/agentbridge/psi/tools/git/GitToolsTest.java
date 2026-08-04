@@ -45,6 +45,12 @@ public class GitToolsTest extends BasePlatformTestCase {
     // ── Test lifecycle ────────────────────────────────────────────────────────────
 
     @Override
+    protected boolean runInDispatchThread() {
+        // MCP tool calls are dispatched by McpProtocolHandler on a worker thread.
+        return false;
+    }
+
+    @Override
     protected void setUp() throws Exception {
         super.setUp();
 

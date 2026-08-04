@@ -11,13 +11,11 @@ import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.ui.renderers.GitOperationRenderer;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
-import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -452,7 +450,10 @@ public abstract class GitTool extends Tool {
      * Called before git commands that need the working tree up-to-date.
      */
     protected void flushAndSave() {
-        FileTool.flushPendingAutoFormat(project);
+        if (!FileTool.flushPendingAutoFormat(project)) {
+            throw new IllegalStateException(
+                "Git operation aborted: deferred auto-format did not complete. Retry the operation.");
+        }
         saveAllDocuments();
     }
 
@@ -580,12 +581,10 @@ public abstract class GitTool extends Tool {
         });
     }
 
-    private void saveAllDocuments() {
-        EdtUtil.invokeAndWait(() ->
-            WriteAction.run(() -> {
-                PsiDocumentManager.getInstance(project).commitAllDocuments();
-                FileDocumentManager.getInstance().saveAllDocuments();
-            }));
+    static void saveAllDocuments() {
+        // FileDocumentManager supports background saves and acquires its own narrow write actions.
+        // Wrapping the whole save in an EDT write action can deadlock against background PSI reads.
+        FileDocumentManager.getInstance().saveAllDocuments();
     }
 
     // ── VCS Log follow-along ─────────────────────────────────
