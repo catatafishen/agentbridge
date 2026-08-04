@@ -8,6 +8,7 @@ import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.EdtTestUtil;
@@ -21,6 +22,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Threading integration tests for document saves initiated by Git tools.
@@ -87,6 +91,21 @@ public class GitDocumentSaveIntegrationTest extends BasePlatformTestCase {
         } finally {
             EdtTestUtil.runInEdtAndWait(() ->
                 FileDocumentManager.getInstance().reloadFromDisk(testFile.document()));
+        }
+    }
+
+    public void testGitWriteAbortsWhenDeferredFormatCannotComplete() {
+        Project disposedProject = mock(Project.class);
+        when(disposedProject.isDisposed()).thenReturn(true);
+        GitStatusTool tool = new GitStatusTool(disposedProject);
+
+        try {
+            tool.flushAndSave();
+            fail("Git write must abort when deferred formatting cannot complete");
+        } catch (IllegalStateException e) {
+            assertEquals(
+                "Git operation aborted: deferred auto-format did not complete. Retry the operation.",
+                e.getMessage());
         }
     }
 
