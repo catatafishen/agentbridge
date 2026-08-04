@@ -80,6 +80,13 @@ public abstract class FileTool extends Tool {
     private static final long AUTO_FORMAT_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     /**
+     * Bound each processor invocation so a timeout retains only a small failed chunk instead of
+     * restarting an arbitrarily large queue from the beginning on every retry.
+     */
+    @VisibleForTesting
+    static final int AUTO_FORMAT_BATCH_SIZE = 10;
+
+    /**
      * Files larger than this threshold skip import optimization during deferred auto-format.
      * Import optimization resolves every symbol reference to determine unused imports, so it
      * remains size-guarded even though the processor now runs off the EDT.
@@ -164,32 +171,51 @@ public abstract class FileTool extends Tool {
 
     static boolean flushWhileLocked(Project project, AutoFormatState state,
                                     long deadlineNanos) {
-        List<String> currentBatch = List.of();
+        return flushWhileLocked(
+            project,
+            state,
+            deadlineNanos,
+            (paths, deadline) -> processAutoFormatBatch(project, paths, deadline));
+    }
+
+    @VisibleForTesting
+    static boolean flushWhileLocked(Project project, AutoFormatState state,
+                                    long deadlineNanos,
+                                    AutoFormatBatchProcessor processor) {
+        List<String> remainingPaths = List.of();
         try {
             while (!project.isDisposed()) {
-                currentBatch = state.drain();
-                if (currentBatch.isEmpty()) return true;
+                if (remainingPaths.isEmpty()) {
+                    remainingPaths = state.drain();
+                    if (remainingPaths.isEmpty()) return true;
+                }
                 if (Thread.currentThread().isInterrupted()) {
-                    state.requeueFirst(currentBatch);
+                    state.requeueFirst(remainingPaths);
                     Thread.currentThread().interrupt();
                     LOG.warn("Deferred auto-format interrupted before processing");
                     return false;
                 }
-                if (!processAutoFormatBatch(project, currentBatch, deadlineNanos)) {
-                    state.requeueFirst(currentBatch);
+
+                int batchSize = Math.min(AUTO_FORMAT_BATCH_SIZE, remainingPaths.size());
+                List<String> currentBatch =
+                    new ArrayList<>(remainingPaths.subList(0, batchSize));
+                if (!processor.process(currentBatch, deadlineNanos)) {
+                    state.requeueFirst(remainingPaths);
                     return false;
                 }
-                currentBatch = List.of();
+                remainingPaths = batchSize == remainingPaths.size()
+                    ? List.of()
+                    : new ArrayList<>(remainingPaths.subList(batchSize, remainingPaths.size()));
             }
 
-            state.requeueFirst(currentBatch);
+            state.requeueFirst(remainingPaths);
             return false;
         } catch (ProcessCanceledException e) {
-            state.requeueFirst(currentBatch);
+            state.requeueFirst(remainingPaths);
             LOG.warn("Deferred auto-format cancelled before completion");
             return false;
         } catch (RuntimeException e) {
-            state.requeueFirst(currentBatch);
+            state.requeueFirst(remainingPaths);
             LOG.warn("Deferred auto-format failed; queued files were retained", e);
             return false;
         }
@@ -301,7 +327,12 @@ public abstract class FileTool extends Tool {
     @Nullable
     private static ResolvedFormatFile resolveFormatFile(Project project, String path) {
         VirtualFile virtualFile = ToolUtils.resolveVirtualFile(project, path);
-        if (!isUsableFormatFile(virtualFile)) return null;
+        if (!isUsableFormatFile(virtualFile)) {
+            if (virtualFile != null && virtualFile.isValid() && !virtualFile.isWritable()) {
+                LOG.info("Deferred auto-format skipped (read-only): " + path);
+            }
+            return null;
+        }
 
         long fileBytes = virtualFile.getLength();
         if (fileBytes > MAX_BYTES_FOR_REFORMAT) {
@@ -322,7 +353,7 @@ public abstract class FileTool extends Tool {
 
     @VisibleForTesting
     static boolean isUsableFormatFile(@Nullable VirtualFile virtualFile) {
-        return virtualFile != null && virtualFile.isValid();
+        return virtualFile != null && virtualFile.isValid() && virtualFile.isWritable();
     }
 
     @VisibleForTesting
@@ -387,6 +418,11 @@ public abstract class FileTool extends Tool {
     }
 
     @FunctionalInterface
+    interface AutoFormatBatchProcessor {
+        boolean process(List<String> paths, long deadlineNanos);
+    }
+
+    @FunctionalInterface
     interface LayoutProcessorRunner {
         boolean run(List<PsiFile> files, boolean optimizeImports);
     }
@@ -405,7 +441,12 @@ public abstract class FileTool extends Tool {
 
         @VisibleForTesting
         boolean isIdle() {
-            return !flushLock.isLocked() && !hasPending();
+            if (!flushLock.tryLock()) return false;
+            try {
+                return !hasPending();
+            } finally {
+                flushLock.unlock();
+            }
         }
 
         private boolean hasPending() {

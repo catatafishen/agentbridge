@@ -207,6 +207,64 @@ public class FileToolAutoFormatTest extends BasePlatformTestCase {
         assertTrue(state.drain().isEmpty());
     }
 
+    public void testSuccessfulChunksAreNotRetriedWhenLaterChunkFails() {
+        Project activeProject = mock(Project.class);
+        when(activeProject.isDisposed()).thenReturn(false);
+        FileTool.AutoFormatState state = new FileTool.AutoFormatState();
+        List<String> paths = new ArrayList<>();
+        for (int i = 0; i < FileTool.AUTO_FORMAT_BATCH_SIZE + 2; i++) {
+            String path = "File" + i + ".java";
+            paths.add(path);
+            state.add(path);
+        }
+
+        List<List<String>> attemptedChunks = new ArrayList<>();
+        AtomicInteger calls = new AtomicInteger();
+        assertFalse(FileTool.flushWhileLocked(
+            activeProject,
+            state,
+            Long.MAX_VALUE,
+            (chunk, ignoredDeadline) -> {
+                attemptedChunks.add(List.copyOf(chunk));
+                return calls.getAndIncrement() == 0;
+            }));
+
+        assertEquals(2, attemptedChunks.size());
+        assertEquals(paths.subList(0, FileTool.AUTO_FORMAT_BATCH_SIZE),
+            attemptedChunks.get(0));
+        assertEquals(paths.subList(FileTool.AUTO_FORMAT_BATCH_SIZE, paths.size()),
+            attemptedChunks.get(1));
+        assertEquals(
+            "Only the failed chunk must be retained after earlier chunks succeeded",
+            paths.subList(FileTool.AUTO_FORMAT_BATCH_SIZE, paths.size()),
+            state.drain());
+    }
+
+    public void testLargeQueueCompletesInBoundedChunks() {
+        Project activeProject = mock(Project.class);
+        when(activeProject.isDisposed()).thenReturn(false);
+        FileTool.AutoFormatState state = new FileTool.AutoFormatState();
+        int pathCount = FileTool.AUTO_FORMAT_BATCH_SIZE * 2 + 1;
+        for (int i = 0; i < pathCount; i++) {
+            state.add("File" + i + ".java");
+        }
+
+        List<Integer> chunkSizes = new ArrayList<>();
+        assertTrue(FileTool.flushWhileLocked(
+            activeProject,
+            state,
+            Long.MAX_VALUE,
+            (chunk, ignoredDeadline) -> {
+                chunkSizes.add(chunk.size());
+                return true;
+            }));
+
+        assertEquals(
+            List.of(FileTool.AUTO_FORMAT_BATCH_SIZE, FileTool.AUTO_FORMAT_BATCH_SIZE, 1),
+            chunkSizes);
+        assertTrue(state.drain().isEmpty());
+    }
+
     public void testEmptyAndIdleQueuesReturnImmediately() {
         assertTrue("A project without a queue must be a no-op",
             FileTool.flushPendingAutoFormat(getProject()));
@@ -330,12 +388,17 @@ public class FileToolAutoFormatTest extends BasePlatformTestCase {
     public void testFormatPlanAndVirtualFileBoundaryDecisions() {
         VirtualFile invalidFile = mock(VirtualFile.class);
         when(invalidFile.isValid()).thenReturn(false);
-        VirtualFile validFile = mock(VirtualFile.class);
-        when(validFile.isValid()).thenReturn(true);
+        VirtualFile readOnlyFile = mock(VirtualFile.class);
+        when(readOnlyFile.isValid()).thenReturn(true);
+        when(readOnlyFile.isWritable()).thenReturn(false);
+        VirtualFile writableFile = mock(VirtualFile.class);
+        when(writableFile.isValid()).thenReturn(true);
+        when(writableFile.isWritable()).thenReturn(true);
 
         assertFalse(FileTool.isUsableFormatFile(null));
         assertFalse(FileTool.isUsableFormatFile(invalidFile));
-        assertTrue(FileTool.isUsableFormatFile(validFile));
+        assertFalse(FileTool.isUsableFormatFile(readOnlyFile));
+        assertTrue(FileTool.isUsableFormatFile(writableFile));
 
         PsiFile psiFile = mock(PsiFile.class);
         Document document = mock(Document.class);

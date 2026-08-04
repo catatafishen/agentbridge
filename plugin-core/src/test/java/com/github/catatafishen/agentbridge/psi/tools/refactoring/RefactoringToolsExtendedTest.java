@@ -11,6 +11,7 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
@@ -118,6 +119,23 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(file.toString());
         assertNotNull("Failed to register test file in VFS: " + file, vf);
         return vf;
+    }
+
+    private Editor openEditorAt(VirtualFile file, int offset) {
+        Editor editor = FileEditorManager.getInstance(getProject()).openTextEditor(
+            new OpenFileDescriptor(getProject(), file, offset), false);
+        assertNotNull("Failed to open test editor for " + file.getPath(), editor);
+        editor.getCaretModel().moveToOffset(offset);
+        return editor;
+    }
+
+    private void assertSelectedEditorAt(VirtualFile expectedFile, int expectedOffset) {
+        Editor selected = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+        assertNotNull("Expected a selected text editor", selected);
+        assertSame("The tool must restore the previously selected file",
+            expectedFile, FileDocumentManager.getInstance().getFile(selected.getDocument()));
+        assertEquals("The tool must restore the previous caret offset",
+            expectedOffset, selected.getCaretModel().getOffset());
     }
 
     /**
@@ -441,6 +459,10 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         VirtualFile declarationFile = createTestFile("Widget.java", String.join("\n",
             "public class Widget { }",
             ""));
+        VirtualFile previousFile =
+            createTestFile("ProviderPreviouslySelected.txt", "keep this editor selected\n");
+        int previousOffset = 5;
+        openEditorAt(previousFile, previousOffset);
 
         PsiElement declaration = ApplicationManager.getApplication().runReadAction(
             (Computable<PsiElement>) () -> {
@@ -478,6 +500,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
                 && result.contains("Line: 1"));
         assertFalse("The usage file must not be reported as its own declaration, got: " + result,
             result.contains("ProviderUsage.txt"));
+        assertSelectedEditorAt(previousFile, previousOffset);
     }
 
     public void testGoToDeclarationFallsBackToIdeActionResult() throws Exception {
@@ -517,6 +540,10 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         VirtualFile declarationFile = createTestFile("ActionTarget.java", declarationText);
         int usageOffset = usageText.indexOf("Widget");
         int declarationOffset = declarationText.indexOf("Widget");
+        VirtualFile previousFile =
+            createTestFile("ActionPreviouslySelected.txt", "keep this editor selected\n");
+        int previousOffset = 7;
+        openEditorAt(previousFile, previousOffset);
         AtomicBoolean actionInvoked = new AtomicBoolean(false);
         String actionId = "AgentBridge.TestGotoDeclaration." + System.identityHashCode(this);
 
@@ -548,6 +575,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             assertNotNull("The action navigation target was not captured", location);
             assertSame(declarationFile, location.file());
             assertEquals(declarationOffset, location.offset());
+            assertSelectedEditorAt(previousFile, previousOffset);
         } finally {
             actionManager.unregisterAction(actionId);
         }
@@ -558,10 +586,14 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         VirtualFile usageFile = createTestFile("RetryActionUsage.txt", usageText);
         String declarationText = "class Widget { }\n";
         VirtualFile declarationFile = createTestFile("RetryActionTarget.java", declarationText);
+        String decoyText = "unrelated caret movement\n";
+        VirtualFile decoyFile = createTestFile("RetryActionDecoy.txt", decoyText);
         int usageOffset = usageText.indexOf("Widget");
         int declarationOffset = declarationText.indexOf("Widget");
+        int decoyOffset = decoyText.indexOf("caret");
         AtomicBoolean enabled = new AtomicBoolean(false);
         AtomicBoolean enableQueued = new AtomicBoolean(false);
+        AtomicBoolean decoyMoved = new AtomicBoolean(false);
         AtomicInteger updateCalls = new AtomicInteger();
         String actionId = "AgentBridge.TestRetryGotoDeclaration." + System.identityHashCode(this);
 
@@ -571,7 +603,17 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             public void update(@NotNull AnActionEvent event) {
                 updateCalls.incrementAndGet();
                 if (enableQueued.compareAndSet(false, true)) {
-                    ApplicationManager.getApplication().invokeLater(() -> enabled.set(true));
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        Editor decoyEditor = FileEditorManager.getInstance(getProject())
+                            .openTextEditor(
+                                new OpenFileDescriptor(getProject(), decoyFile, decoyOffset),
+                                false);
+                        if (decoyEditor != null) {
+                            decoyEditor.getCaretModel().moveToOffset(decoyOffset);
+                            decoyMoved.set(true);
+                        }
+                        enabled.set(true);
+                    });
                 }
                 event.getPresentation().setEnabled(enabled.get());
             }
@@ -592,8 +634,10 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
                     .navigate(usageFile, usageOffset));
 
             assertTrue("The rejected action must be updated again", updateCalls.get() > 1);
+            assertTrue("The regression setup must move an unrelated caret", decoyMoved.get());
             assertNotNull("Navigation must succeed after the action becomes enabled", location);
-            assertSame(declarationFile, location.file());
+            assertSame("A rejected attempt must not capture the unrelated editor",
+                declarationFile, location.file());
             assertEquals(declarationOffset, location.offset());
         } finally {
             actionManager.unregisterAction(actionId);

@@ -171,30 +171,38 @@ public final class GoToDeclarationTool extends RefactoringTool {
                 document.getLineCount() + FORMAT_LINES_SUFFIX;
         }
 
-        int[] nativeOffset = {-1};
-        Editor editor = openNavigationEditor(document, vf);
-        if (editor == null) return "Error: Cannot open editor for: " + pathStr;
-        String psiResult = ApplicationManager.getApplication().runReadAction(
-            (Computable<String>) () -> {
-                PsiFile psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document);
-                if (psiFile == null) {
-                    return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
-                }
-                return resolveAndFormatDeclaration(
-                    psiFile, document, editor, targetLine, symbolName, declInfo, nativeOffset);
-            });
+        IdeDeclarationNavigator.EditorState previousEditor =
+            IdeDeclarationNavigator.captureEditorState(project);
+        try {
+            int[] nativeOffset = {-1};
+            Editor editor = openNavigationEditor(document, vf);
+            if (editor == null) return "Error: Cannot open editor for: " + pathStr;
+            String psiResult = ApplicationManager.getApplication().runReadAction(
+                (Computable<String>) () -> {
+                    PsiFile psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document);
+                    if (psiFile == null) {
+                        return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+                    }
+                    return resolveAndFormatDeclaration(
+                        psiFile, document, editor, targetLine, symbolName, declInfo, nativeOffset);
+                });
 
-        if (psiResult != null) return psiResult;
-        if (nativeOffset[0] >= 0) {
-            IdeDeclarationNavigator.Location location =
-                declarationNavigator.navigate(vf, nativeOffset[0]);
-            if (location != null) {
-                String nativeResult = formatNavigatedDeclaration(location, symbolName, declInfo);
-                if (nativeResult != null) return nativeResult;
+            if (psiResult != null) return psiResult;
+            if (nativeOffset[0] >= 0) {
+                IdeDeclarationNavigator.Location location =
+                    declarationNavigator.navigate(vf, nativeOffset[0]);
+                if (location != null) {
+                    String nativeResult =
+                        formatNavigatedDeclaration(location, symbolName, declInfo);
+                    if (nativeResult != null) return nativeResult;
+                }
             }
+            return err("Could not resolve declaration for '" + symbolName
+                + "' at line " + targetLine + " in " + pathStr
+                + ". The symbol may be unresolved or from an unindexed library.");
+        } finally {
+            IdeDeclarationNavigator.restoreEditorState(project, previousEditor);
         }
-        return err("Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
-            " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.");
     }
 
     private @Nullable String resolveAndFormatDeclaration(
@@ -245,7 +253,7 @@ public final class GoToDeclarationTool extends RefactoringTool {
         EdtUtil.invokeAndWait(() -> {
             PsiDocumentManager.getInstance(project).commitDocument(document);
             editor[0] = FileEditorManager.getInstance(project).openTextEditor(
-                new OpenFileDescriptor(project, vf, 0), true);
+                new OpenFileDescriptor(project, vf, 0), false);
         });
         return editor[0];
     }
