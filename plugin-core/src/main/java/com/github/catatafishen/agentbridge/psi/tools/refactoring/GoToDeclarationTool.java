@@ -1,18 +1,23 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.FqnResolver;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.TargetElementUtil;
+import com.intellij.codeInsight.navigation.action.GotoDeclarationUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -111,8 +116,7 @@ public final class GoToDeclarationTool extends RefactoringTool {
         }
 
         String[] declInfo = new String[2];
-        String result = ApplicationManager.getApplication().runReadAction(
-            (Computable<String>) () -> findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo));
+        String result = findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo);
 
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);
@@ -149,9 +153,6 @@ public final class GoToDeclarationTool extends RefactoringTool {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
-
         Document document = FileDocumentManager.getInstance().getDocument(vf);
         if (document == null) return "Error: Cannot get document for: " + pathStr;
 
@@ -159,11 +160,29 @@ public final class GoToDeclarationTool extends RefactoringTool {
             return "Error: Line " + targetLine + " is out of bounds (file has " +
                 document.getLineCount() + FORMAT_LINES_SUFFIX;
         }
+
+        PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
+            (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
+        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+
+        Editor editor = createNavigationEditor(document, vf);
+        try {
+            return ApplicationManager.getApplication().runReadAction(
+                (Computable<String>) () -> resolveAndFormatDeclaration(
+                    psiFile, document, editor, pathStr, targetLine, symbolName, declInfo));
+        } finally {
+            EdtUtil.invokeAndWait(() -> EditorFactory.getInstance().releaseEditor(editor));
+        }
+    }
+
+    private String resolveAndFormatDeclaration(PsiFile psiFile, Document document, Editor editor,
+                                               String pathStr, int targetLine, String symbolName,
+                                               String[] declInfo) {
         int lineStartOffset = document.getLineStartOffset(targetLine - 1);
         int lineEndOffset = document.getLineEndOffset(targetLine - 1);
 
         List<PsiElement> declarations = resolveDeclarationsOnLine(
-            psiFile, document, lineStartOffset, lineEndOffset, symbolName);
+            psiFile, document, editor, lineStartOffset, lineEndOffset, symbolName);
         if (declarations.isEmpty()) {
             return err("Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
                 " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.");
@@ -173,26 +192,35 @@ public final class GoToDeclarationTool extends RefactoringTool {
         return formatDeclarationResults(declarations, symbolName);
     }
 
+    private Editor createNavigationEditor(Document document, VirtualFile vf) {
+        Editor[] editor = new Editor[1];
+        EdtUtil.invokeAndWait(() -> {
+            PsiDocumentManager.getInstance(project).commitDocument(document);
+            editor[0] = EditorFactory.getInstance().createEditor(document, project, vf, true);
+        });
+        return editor[0];
+    }
+
     /**
      * Finds declarations for {@code symbolName} occurring anywhere on the target line.
      * <p>
-     * Uses three layered strategies, all of which delegate to the IDE's own
-     * reference-resolution infrastructure and are therefore language-agnostic:
+     * Uses the same provider-first order as the IDE's Go to Declaration action, followed by the
+     * existing language-agnostic PSI fallbacks:
      *
      * <ol>
-     *   <li>For each text occurrence of {@code symbolName} on the line, ask the IDE for the
-     *       reference at that offset via {@link PsiFile#findReferenceAt(int)} (uses every language
-     *       plugin's registered reference contributors — works for C/C++, Python, JS, Go, etc.).
-     *       Handles polyvariant references via {@link PsiPolyVariantReference#multiResolve}.</li>
-     *   <li>If no reference resolves, walk up the PSI tree from each occurrence — some language
-     *       plugins put the reference on a parent expression rather than the leaf identifier.</li>
-     *   <li>Finally, if the caret sits on a declaration itself, return the enclosing named element
-     *       (matches the IDE's behaviour of "go to declaration on a declaration" showing the
-     *       declaration itself).</li>
+     *   <li>Ask registered declaration providers first. Product plugins such as CLion Nova expose
+     *       semantic navigation through {@link GotoDeclarationUtil}, even when no leaf
+     *       {@link PsiReference} exists.</li>
+     *   <li>Ask {@link PsiFile#findReferenceAt(int)} and handle polyvariant references via
+     *       {@link PsiPolyVariantReference#multiResolve}.</li>
+     *   <li>If no reference resolves, walk up the PSI tree because some language plugins attach
+     *       the reference to a parent expression rather than the leaf identifier.</li>
+     *   <li>Finally, if the caret sits on a declaration itself, return the enclosing named element.</li>
      * </ol>
      */
     private List<PsiElement> resolveDeclarationsOnLine(
-        PsiFile psiFile, Document document, int lineStartOffset, int lineEndOffset, String symbolName) {
+        PsiFile psiFile, Document document, Editor editor, int lineStartOffset,
+        int lineEndOffset, String symbolName) {
         List<PsiElement> declarations = new ArrayList<>();
         if (symbolName.isEmpty()) return declarations;
         String lineText = document.getText(new TextRange(lineStartOffset, lineEndOffset));
@@ -203,6 +231,13 @@ public final class GoToDeclarationTool extends RefactoringTool {
             if (symIdx < 0) break;
             if (isWholeIdentifierMatch(lineText, symIdx, symbolName.length())) {
                 int rawOffset = lineStartOffset + symIdx;
+                PsiElement[] providerTargets =
+                    GotoDeclarationUtil.findTargetElementsFromProviders(editor, rawOffset, psiFile);
+                if (providerTargets != null && providerTargets.length > 0) {
+                    declarations.addAll(List.of(providerTargets));
+                    return declarations;
+                }
+
                 int offset = TargetElementUtil.adjustOffset(psiFile, document, rawOffset);
                 resolveAtOffset(psiFile, offset, declarations);
                 if (!declarations.isEmpty()) return declarations;

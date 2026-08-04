@@ -2,12 +2,18 @@ package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.google.gson.JsonObject;
+import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.util.ui.UIUtil;
 
@@ -16,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
@@ -81,6 +88,7 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             for (VirtualFile openFile : fem.getOpenFiles()) {
                 fem.closeFile(openFile);
             }
+            ConversationDatabase.getInstance(getProject()).dispose();
             deleteDir(tempDir);
         } finally {
             super.tearDown();
@@ -414,6 +422,50 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
                 && result.contains("Line: 2"));
         assertFalse("Should not return the not-resolved error, got: " + result,
             result.contains("Could not resolve"));
+    }
+
+    /**
+     * Regression test for product-specific declaration providers. CLion Nova exposes semantic
+     * navigation through a {@link GotoDeclarationHandler} even when the PSI leaf has no reference.
+     */
+    public void testGoToDeclarationUsesRegisteredProviderBeforePsiFallbacks() throws Exception {
+        VirtualFile usageFile = createTestFile("ProviderUsage.txt", "Widget value;\n");
+        VirtualFile declarationFile = createTestFile("Widget.java", String.join("\n",
+            "public class Widget { }",
+            ""));
+
+        PsiElement declaration = ApplicationManager.getApplication().runReadAction(
+            (Computable<PsiElement>) () -> {
+                PsiFile psiFile = PsiManager.getInstance(getProject()).findFile(declarationFile);
+                if (psiFile == null) return null;
+                int offset = psiFile.getText().indexOf("Widget");
+                return ToolUtils.findNearestNamedAncestor(psiFile.findElementAt(offset));
+            });
+        assertNotNull("Expected a declaration element in Widget.java", declaration);
+
+        AtomicBoolean providerInvoked = new AtomicBoolean(false);
+        GotoDeclarationHandler handler = (sourceElement, offset, editor) -> {
+            if (sourceElement == null
+                || !usageFile.equals(sourceElement.getContainingFile().getVirtualFile())) {
+                return null;
+            }
+            providerInvoked.set(true);
+            assertSame("Provider must receive an editor associated with the active project",
+                getProject(), editor.getProject());
+            return new PsiElement[]{declaration};
+        };
+        GotoDeclarationHandler.EP_NAME.getPoint()
+            .registerExtension(handler, getTestRootDisposable());
+
+        String result = goToDeclarationTool.execute(
+            args("path", usageFile.getPath(), "line", "1", "symbol", "Widget"));
+
+        assertTrue("Registered declaration provider was not invoked", providerInvoked.get());
+        assertTrue("Provider target should win over the plain-text PSI fallback, got: " + result,
+            result.contains("Declaration of 'Widget'") && result.contains("Widget.java")
+                && result.contains("Line: 1"));
+        assertFalse("The usage file must not be reported as its own declaration, got: " + result,
+            result.contains("ProviderUsage.txt"));
     }
 
     public void testGoToDeclarationRejectsSubstringMatch() throws Exception {

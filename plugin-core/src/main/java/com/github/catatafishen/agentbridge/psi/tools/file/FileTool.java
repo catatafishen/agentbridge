@@ -38,6 +38,7 @@ import com.intellij.psi.PsiManager;
 import com.intellij.util.Alarm;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -129,7 +130,13 @@ public abstract class FileTool extends Tool {
     }
 
     private static boolean flushOnBackgroundThread(Project project, AutoFormatState state) {
-        long deadlineNanos = System.nanoTime() + AUTO_FORMAT_TIMEOUT_NANOS;
+        return flushOnBackgroundThread(project, state, AUTO_FORMAT_TIMEOUT_NANOS);
+    }
+
+    @VisibleForTesting
+    static boolean flushOnBackgroundThread(Project project, AutoFormatState state,
+                                           long timeoutNanos) {
+        long deadlineNanos = System.nanoTime() + timeoutNanos;
         try {
             if (!tryAcquireFlushLock(state, deadlineNanos)) {
                 LOG.warn("Deferred auto-format timed out waiting for another flush");
@@ -190,6 +197,13 @@ public abstract class FileTool extends Tool {
 
     private static boolean processAutoFormatBatch(Project project, List<String> paths,
                                                   long deadlineNanos) {
+        return runAutoFormatWithDeadline(
+            deadlineNanos, indicator -> runAutoFormatBatch(project, paths, indicator));
+    }
+
+    @VisibleForTesting
+    static boolean runAutoFormatWithDeadline(long deadlineNanos,
+                                             AutoFormatBatchRunner runner) {
         long remainingNanos = deadlineNanos - System.nanoTime();
         if (remainingNanos <= 0) {
             LOG.warn("Deferred auto-format timed out before processing could start");
@@ -203,7 +217,7 @@ public abstract class FileTool extends Tool {
         AtomicBoolean completed = new AtomicBoolean(false);
         try {
             ProgressManager.getInstance().runProcess(
-                () -> completed.set(runAutoFormatBatch(project, paths, indicator)),
+                () -> completed.set(runner.run(indicator)),
                 indicator);
             if (indicator.isCanceled()) {
                 LOG.warn("Deferred auto-format exceeded the 30-second deadline");
@@ -217,26 +231,53 @@ public abstract class FileTool extends Tool {
 
     private static boolean runAutoFormatBatch(Project project, List<String> paths,
                                               ProgressIndicator indicator) {
-        FormatPlan plan = createFormatPlan(project, paths, indicator);
-        boolean optimizedAndReformatted =
-            runLayoutProcessor(project, plan.optimizeAndReformat(), true, indicator);
-        if (!optimizedAndReformatted) return false;
+        return runAutoFormatBatch(
+            project,
+            paths,
+            indicator,
+            (files, optimizeImports) ->
+                runLayoutProcessor(project, files, optimizeImports, indicator),
+            FileDocumentManager.getInstance());
+    }
 
-        boolean reformatted =
-            runLayoutProcessor(project, plan.reformatOnly(), false, indicator);
-        if (!reformatted) return false;
+    @VisibleForTesting
+    static boolean runAutoFormatBatch(Project project, List<String> paths,
+                                      ProgressIndicator indicator,
+                                      LayoutProcessorRunner runner,
+                                      FileDocumentManager documentManager) {
+        FormatPlan plan = createFormatPlan(project, paths, indicator);
+        boolean formatted = runFormatProcessors(
+            plan.optimizeAndReformat(),
+            plan.reformatOnly(),
+            runner);
+        if (!formatted) return false;
 
         indicator.checkCanceled();
-        FileDocumentManager documentManager = FileDocumentManager.getInstance();
+        return saveProcessedDocuments(
+            documentManager, plan.documents(), paths.size());
+    }
+
+    @VisibleForTesting
+    static boolean runFormatProcessors(List<PsiFile> optimizeAndReformat,
+                                       List<PsiFile> reformatOnly,
+                                       LayoutProcessorRunner runner) {
+        if (!runner.run(optimizeAndReformat, true)) return false;
+        return runner.run(reformatOnly, false);
+    }
+
+    @VisibleForTesting
+    static boolean saveProcessedDocuments(FileDocumentManager documentManager,
+                                          List<Document> documents,
+                                          int processedPathCount) {
         documentManager.saveAllDocuments();
-        for (Document document : plan.documents()) {
+        for (Document document : documents) {
             if (documentManager.isDocumentUnsaved(document)) {
                 LOG.warn("Deferred auto-format completed, but a processed document remained unsaved");
                 return false;
             }
         }
 
-        LOG.info("Deferred auto-format completed for " + paths.size() + " queued file(s)");
+        LOG.info("Deferred auto-format completed for " + processedPathCount + " queued file(s)");
         return true;
     }
 
@@ -260,7 +301,7 @@ public abstract class FileTool extends Tool {
     @Nullable
     private static ResolvedFormatFile resolveFormatFile(Project project, String path) {
         VirtualFile virtualFile = ToolUtils.resolveVirtualFile(project, path);
-        if (virtualFile == null || !virtualFile.isValid()) return null;
+        if (!isUsableFormatFile(virtualFile)) return null;
 
         long fileBytes = virtualFile.getLength();
         if (fileBytes > MAX_BYTES_FOR_REFORMAT) {
@@ -279,10 +320,16 @@ public abstract class FileTool extends Tool {
             .executeSynchronously();
     }
 
-    private static void addToFormatPlan(ResolvedFormatFile resolved,
-                                        List<PsiFile> optimizeAndReformat,
-                                        List<PsiFile> reformatOnly,
-                                        List<Document> documents) {
+    @VisibleForTesting
+    static boolean isUsableFormatFile(@Nullable VirtualFile virtualFile) {
+        return virtualFile != null && virtualFile.isValid();
+    }
+
+    @VisibleForTesting
+    static void addToFormatPlan(ResolvedFormatFile resolved,
+                                List<PsiFile> optimizeAndReformat,
+                                List<PsiFile> reformatOnly,
+                                List<Document> documents) {
         if (resolved.document() != null) documents.add(resolved.document());
         if (resolved.fileBytes() <= MAX_BYTES_FOR_OPTIMIZE_IMPORTS) {
             optimizeAndReformat.add(resolved.psiFile());
@@ -325,7 +372,8 @@ public abstract class FileTool extends Tool {
         }
     }
 
-    private record ResolvedFormatFile(PsiFile psiFile, @Nullable Document document, long fileBytes) {
+    @VisibleForTesting
+    record ResolvedFormatFile(PsiFile psiFile, @Nullable Document document, long fileBytes) {
     }
 
     private record FormatPlan(List<PsiFile> optimizeAndReformat,
@@ -333,9 +381,21 @@ public abstract class FileTool extends Tool {
                               List<Document> documents) {
     }
 
+    @FunctionalInterface
+    interface AutoFormatBatchRunner {
+        boolean run(ProgressIndicator indicator);
+    }
+
+    @FunctionalInterface
+    interface LayoutProcessorRunner {
+        boolean run(List<PsiFile> files, boolean optimizeImports);
+    }
+
+    @VisibleForTesting
     static final class AutoFormatState {
         private final LinkedHashSet<String> pendingPaths = new LinkedHashSet<>();
-        private final ReentrantLock flushLock = new ReentrantLock();
+        @VisibleForTesting
+        final ReentrantLock flushLock = new ReentrantLock();
 
         void add(String path) {
             synchronized (pendingPaths) {
@@ -343,7 +403,8 @@ public abstract class FileTool extends Tool {
             }
         }
 
-        private boolean isIdle() {
+        @VisibleForTesting
+        boolean isIdle() {
             return !flushLock.isLocked() && !hasPending();
         }
 
