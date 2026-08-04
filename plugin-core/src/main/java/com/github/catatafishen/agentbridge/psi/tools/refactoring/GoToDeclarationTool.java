@@ -20,7 +20,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiPolyVariantReference;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.ResolveResult;
@@ -153,7 +152,8 @@ public final class GoToDeclarationTool extends RefactoringTool {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
-        Document document = FileDocumentManager.getInstance().getDocument(vf);
+        Document document = ApplicationManager.getApplication().runReadAction(
+            (Computable<Document>) () -> FileDocumentManager.getInstance().getDocument(vf));
         if (document == null) return "Error: Cannot get document for: " + pathStr;
 
         if (targetLine < 1 || targetLine > document.getLineCount()) {
@@ -161,15 +161,17 @@ public final class GoToDeclarationTool extends RefactoringTool {
                 document.getLineCount() + FORMAT_LINES_SUFFIX;
         }
 
-        PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
-            (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
-        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
-
         Editor editor = createNavigationEditor(document, vf);
         try {
             return ApplicationManager.getApplication().runReadAction(
-                (Computable<String>) () -> resolveAndFormatDeclaration(
-                    psiFile, document, editor, pathStr, targetLine, symbolName, declInfo));
+                (Computable<String>) () -> {
+                    PsiFile psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document);
+                    if (psiFile == null) {
+                        return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+                    }
+                    return resolveAndFormatDeclaration(
+                        psiFile, document, editor, pathStr, targetLine, symbolName, declInfo);
+                });
         } finally {
             EdtUtil.invokeAndWait(() -> EditorFactory.getInstance().releaseEditor(editor));
         }
@@ -211,6 +213,9 @@ public final class GoToDeclarationTool extends RefactoringTool {
      *   <li>Ask registered declaration providers first. Product plugins such as CLion Nova expose
      *       semantic navigation through {@link GotoDeclarationUtil}, even when no leaf
      *       {@link PsiReference} exists.</li>
+     *   <li>Use {@link TargetElementUtil#findTargetElement(Editor, int, int)} with the same
+     *       accepted-target flags as the IDE action. Product backends can contribute target
+     *       evaluators here even when declaration providers return no result.</li>
      *   <li>Ask {@link PsiFile#findReferenceAt(int)} and handle polyvariant references via
      *       {@link PsiPolyVariantReference#multiResolve}.</li>
      *   <li>If no reference resolves, walk up the PSI tree because some language plugins attach
@@ -231,10 +236,10 @@ public final class GoToDeclarationTool extends RefactoringTool {
             if (symIdx < 0) break;
             if (isWholeIdentifierMatch(lineText, symIdx, symbolName.length())) {
                 int rawOffset = lineStartOffset + symIdx;
-                PsiElement[] providerTargets =
-                    GotoDeclarationUtil.findTargetElementsFromProviders(editor, rawOffset, psiFile);
-                if (providerTargets != null && providerTargets.length > 0) {
-                    declarations.addAll(List.of(providerTargets));
+                PsiElement[] nativeTargets = findNativeDeclarationTargets(
+                    psiFile, editor, rawOffset);
+                if (nativeTargets.length > 0) {
+                    declarations.addAll(List.of(nativeTargets));
                     return declarations;
                 }
 
@@ -245,6 +250,23 @@ public final class GoToDeclarationTool extends RefactoringTool {
             searchFrom = symIdx + symbolName.length();
         }
         return declarations;
+    }
+
+    private static PsiElement[] findNativeDeclarationTargets(
+        PsiFile psiFile, Editor editor, int offset) {
+        PsiElement[] providerTargets =
+            GotoDeclarationUtil.findTargetElementsFromProviders(editor, offset, psiFile);
+        if (providerTargets != null && providerTargets.length > 0) {
+            return providerTargets;
+        }
+
+        int platformFlags = TargetElementUtil.getInstance().getAllAccepted()
+            & ~TargetElementUtil.ELEMENT_NAME_ACCEPTED;
+        PsiElement platformTarget = TargetElementUtil.getInstance()
+            .findTargetElement(editor, platformFlags, offset);
+        return platformTarget == null
+            ? PsiElement.EMPTY_ARRAY
+            : new PsiElement[]{platformTarget};
     }
 
     /**

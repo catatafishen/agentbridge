@@ -413,8 +413,8 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             ""));
 
         // Line 3 contains the usage `this.bar()` — resolve 'bar' to its declaration on line 2.
-        String result = goToDeclarationTool.execute(
-            args("path", vf.getPath(), "line", "3", "symbol", "bar"));
+        String result = executeSync(() -> goToDeclarationTool.execute(
+            args("path", vf.getPath(), "line", "3", "symbol", "bar")));
 
         assertNotNull("Result must not be null", result);
         assertTrue("Resolution should succeed for 'bar' usage, got: " + result,
@@ -450,6 +450,8 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
                 return null;
             }
             providerInvoked.set(true);
+            assertTrue("Provider must run under a platform read action",
+                ApplicationManager.getApplication().isReadAccessAllowed());
             assertSame("Provider must receive an editor associated with the active project",
                 getProject(), editor.getProject());
             return new PsiElement[]{declaration};
@@ -457,8 +459,8 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         GotoDeclarationHandler.EP_NAME.getPoint()
             .registerExtension(handler, getTestRootDisposable());
 
-        String result = goToDeclarationTool.execute(
-            args("path", usageFile.getPath(), "line", "1", "symbol", "Widget"));
+        String result = executeSync(() -> goToDeclarationTool.execute(
+            args("path", usageFile.getPath(), "line", "1", "symbol", "Widget")));
 
         assertTrue("Registered declaration provider was not invoked", providerInvoked.get());
         assertTrue("Provider target should win over the plain-text PSI fallback, got: " + result,
