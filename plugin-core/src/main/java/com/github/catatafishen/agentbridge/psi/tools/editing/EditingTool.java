@@ -5,10 +5,7 @@ import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
-import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.WriteCommandAction;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -33,8 +30,6 @@ import java.util.List;
  */
 public abstract class EditingTool extends Tool {
 
-    private static final Logger LOG = Logger.getInstance(EditingTool.class);
-
     protected static final String PARAM_PATH = "path";
     protected static final String PARAM_SYMBOL = "symbol";
     protected static final String PARAM_LINE = "line";
@@ -55,20 +50,9 @@ public abstract class EditingTool extends Tool {
     }
 
     protected void formatInline(VirtualFile vf) {
-        if (vf.getLength() > FileTool.MAX_BYTES_FOR_REFORMAT) {
-            LOG.info("Inline reformat skipped (file too large: " + vf.getLength() + " bytes): " + vf.getPath());
-            FileTool.queueAutoFormat(project, vf.getPath());
-            return;
-        }
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return;
-        WriteCommandAction.runWriteCommandAction(project, "Auto-Format (Symbol Edit)", null, () -> {
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
-            new ReformatCodeProcessor(psiFile, false).run();
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
-        });
-        // Defer import optimization to end of turn so imports added by earlier
-        // edits in the same response are not stripped before later edits use them.
+        // Reformat and import optimization share one deferred background pipeline.
+        // Starting a single-file processor here only queues another background task and,
+        // when wrapped in our own write action, can deadlock the EDT against that task's read phase.
         FileTool.queueAutoFormat(project, vf.getPath());
     }
 

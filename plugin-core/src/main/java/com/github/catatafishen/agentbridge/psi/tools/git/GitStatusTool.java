@@ -52,7 +52,6 @@ public final class GitStatusTool extends GitTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        flushAndSave();
 
         boolean verbose = args.has(PARAM_VERBOSE) && args.get(PARAM_VERBOSE).getAsBoolean();
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
