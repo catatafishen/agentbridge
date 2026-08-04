@@ -155,8 +155,8 @@ public abstract class FileTool extends Tool {
             && state.flushLock.tryLock(lockWaitNanos, TimeUnit.NANOSECONDS);
     }
 
-    private static boolean flushWhileLocked(Project project, AutoFormatState state,
-                                            long deadlineNanos) {
+    static boolean flushWhileLocked(Project project, AutoFormatState state,
+                                    long deadlineNanos) {
         List<String> currentBatch = List.of();
         try {
             while (!project.isDisposed()) {
@@ -333,11 +333,11 @@ public abstract class FileTool extends Tool {
                               List<Document> documents) {
     }
 
-    private static final class AutoFormatState {
+    static final class AutoFormatState {
         private final LinkedHashSet<String> pendingPaths = new LinkedHashSet<>();
         private final ReentrantLock flushLock = new ReentrantLock();
 
-        private void add(String path) {
+        void add(String path) {
             synchronized (pendingPaths) {
                 pendingPaths.add(path);
             }
@@ -353,7 +353,7 @@ public abstract class FileTool extends Tool {
             }
         }
 
-        private List<String> drain() {
+        List<String> drain() {
             synchronized (pendingPaths) {
                 if (pendingPaths.isEmpty()) return List.of();
                 List<String> paths = new ArrayList<>(pendingPaths);
@@ -362,7 +362,7 @@ public abstract class FileTool extends Tool {
             }
         }
 
-        private void requeueFirst(List<String> paths) {
+        void requeueFirst(List<String> paths) {
             if (paths.isEmpty()) return;
             synchronized (pendingPaths) {
                 LinkedHashSet<String> combined = new LinkedHashSet<>(paths);
