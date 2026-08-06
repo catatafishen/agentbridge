@@ -154,6 +154,25 @@ class InstructionsManagerTest {
     // ── additional instructions ───────────────────────────────────────────────
 
     @Test
+    void usesCustomStartupInstructionsWhenEnabled() {
+        String custom = "CUSTOM_STARTUP_INSTRUCTIONS";
+
+        String content = InstructionsManager.buildInstructions("", false, custom);
+
+        assertTrue(content.contains(custom), "custom startup instructions must be included");
+        assertFalse(content.contains("TRUST TOOL OUTPUTS"),
+            "default instructions must not be included when custom instructions are enabled");
+    }
+
+    @Test
+    void usesDefaultStartupInstructionsWhenCustomIsDisabled() {
+        String content = InstructionsManager.buildInstructions("", false, null);
+
+        assertTrue(content.contains("TRUST TOOL OUTPUTS"),
+            "default startup instructions must be included when custom instructions are disabled");
+    }
+
+    @Test
     void blankAdditionalInstructionsNotAppended() {
         InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "   ");
 
