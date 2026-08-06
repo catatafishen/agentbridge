@@ -24,6 +24,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
+import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -32,6 +33,7 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -206,11 +208,12 @@ public final class McpProtocolHandler {
     }
 
     private @NotNull String buildInstructions() {
+        String startupInstructions = getStartupInstructions();
         String memoryContext = buildMemoryContext();
         if (memoryContext.isEmpty()) {
-            return STARTUP_INSTRUCTIONS;
+            return startupInstructions;
         }
-        return STARTUP_INSTRUCTIONS + "\n\n" + memoryContext;
+        return startupInstructions + "\n\n" + memoryContext;
     }
 
     private @NotNull String buildMemoryContext() {
@@ -252,6 +255,15 @@ public final class McpProtocolHandler {
             LOG.warn("Failed to build memory context for MCP init", e);
             return "";
         }
+    }
+
+    private static @NotNull String getStartupInstructions() {
+        var application = ApplicationManager.getApplication();
+        if (application == null) {
+            return STARTUP_INSTRUCTIONS;
+        }
+        var settings = application.getService(StartupInstructionsSettings.class);
+        return settings == null ? STARTUP_INSTRUCTIONS : settings.getInstructions();
     }
 
     private static String loadInstructions() {

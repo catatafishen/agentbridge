@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
+import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -113,8 +115,26 @@ public final class InstructionsManager {
 
     @NotNull
     private static String buildInstructions(@NotNull String additionalInstructions, boolean sandboxEnabled) {
+        var application = ApplicationManager.getApplication();
+        var settings = application == null
+            ? null
+            : application.getService(StartupInstructionsSettings.class);
+        String startupInstructions = settings == null ? null : settings.getInstructions();
+        return buildInstructions(additionalInstructions, sandboxEnabled, startupInstructions);
+    }
+
+    @NotNull
+    static String buildInstructions(
+        @NotNull String additionalInstructions,
+        boolean sandboxEnabled,
+        @Nullable String startupInstructions
+    ) {
         StringBuilder sb = new StringBuilder(INSTRUCTIONS_SENTINEL).append("\n\n");
-        appendResource(sb, "/default-startup-instructions.md");
+        if (startupInstructions != null) {
+            sb.append(startupInstructions);
+        } else {
+            appendResource(sb, "/default-startup-instructions.md");
+        }
         if (sandboxEnabled) {
             sb.append("\n\n");
             appendResource(sb, "/bwrap-sandbox-instructions.md");
