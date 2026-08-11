@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.ui.JcefCompat
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry
 import com.github.catatafishen.agentbridge.services.LiveToolCallService
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -42,7 +43,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             browser.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
             Disposer.register(this, browser)
 
-            val query = PlatformApiCompat.createJSQuery(browser)
+            val query = JcefCompat.createJSQuery(browser)
             query.addHandler { request ->
                 try {
                     val parsed = com.google.gson.JsonParser.parseString(request).asJsonObject
@@ -62,7 +63,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             Disposer.register(this, query)
             diffQuery = query
 
-            val loadMore = PlatformApiCompat.createJSQuery(browser)
+            val loadMore = JcefCompat.createJSQuery(browser)
             loadMore.addHandler { beforeEventId ->
                 loadHistoryPage(if (beforeEventId.isNullOrBlank()) null else beforeEventId)
                 null

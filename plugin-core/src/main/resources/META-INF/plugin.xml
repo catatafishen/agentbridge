@@ -57,6 +57,11 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
   <depends optional="true" config-file="java-features.xml">com.intellij.modules.java</depends>
   <depends optional="true" config-file="git-features.xml">Git4Idea</depends>
   <depends optional="true" config-file="terminal-features.xml">org.jetbrains.plugins.terminal</depends>
+  <!-- JCEF moved from the boot classpath into a separately class-loaded bundled plugin in build 262.
+       Declaring this dependency wires the JCEF classloader so org.cef.* / com.intellij.ui.jcef.*
+       resolve at runtime. Optional so the plugin still loads (headless MCP/PSI features) when JCEF
+       is unavailable; JCEF UI is guarded by JBCefApp.isSupported(). -->
+  <depends optional="true" config-file="jcef-features.xml">com.intellij.modules.jcef</depends>
   <!-- Optional plugins accessed via reflection for enhanced tool support -->
   <depends optional="true" config-file="gradle-features.xml">org.jetbrains.plugins.gradle</depends>
   <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
