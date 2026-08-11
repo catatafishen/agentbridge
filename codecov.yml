@@ -18,6 +18,7 @@ ignore:
   - "**/AgentEditHighlighter.java"
   - "**/AgentEditNotificationProvider.java"
   - "**/RevertReasonDialog.java"
+  - "**/JcefCompat.java"
 
 coverage:
   status:
