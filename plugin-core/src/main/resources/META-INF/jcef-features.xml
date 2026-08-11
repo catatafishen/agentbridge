@@ -1,0 +1,17 @@
+<idea-plugin>
+    <!-- Features requiring the JCEF plugin (com.intellij.modules.jcef).
+
+         In IDE builds up to 2026.1 the JCEF classes (org.cef.* and
+         com.intellij.ui.jcef.*) shipped on the boot classpath as the module
+         intellij.libraries.jcef, so they were always resolvable. Starting with
+         build 262 (2026.2) JCEF moved into a separately class-loaded bundled
+         plugin (id com.intellij.modules.jcef). Without declaring this optional
+         dependency the plugin classloader can no longer see org.cef.* /
+         com.intellij.ui.jcef.*, which crashed startup with
+         NoClassDefFoundError: org/cef/handler/CefLoadHandler.
+
+         The dependency is optional so the plugin still loads (MCP tools, PSI
+         bridge, headless features) in environments where JCEF is unavailable
+         (alternative JDK without JCEF, thin client, remote-dev backend). JCEF
+         UI is guarded at runtime by JBCefApp.isSupported(). -->
+</idea-plugin>

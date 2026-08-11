@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.graph
 
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.ui.JcefCompat
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphStore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -66,7 +66,7 @@ class KnowledgeGraphDiagramPanel(private val project: Project) : Disposable {
             Disposer.register(this, b)
             browser = b
 
-            val q = PlatformApiCompat.createJSQuery(b as com.intellij.ui.jcef.JBCefBrowserBase)
+            val q = JcefCompat.createJSQuery(b as com.intellij.ui.jcef.JBCefBrowserBase)
             q.addHandler { path -> navigateToFile(path); null }
             Disposer.register(this, q)
             navigateQuery = q

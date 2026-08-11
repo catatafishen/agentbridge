@@ -431,47 +431,6 @@ public final class PlatformApiCompat {
     }
 
     /**
-     *
-     * <p><b>Why extracted:</b> {@code CefLoadHandlerAdapter} provides default implementations for all
-     * {@code CefLoadHandler} methods, but the JCEF version bundled with the dev IDE may declare
-     * {@code onLoadError} with a different {@code ErrorCode} enum type than the target platform SDK.
-     * In Kotlin, the compiler flags the anonymous subclass as "not implementing abstract member"
-     * because of this signature mismatch. In Java, the adapter's default implementation satisfies
-     * the contract and no error is reported.</p>
-     */
-    public static org.cef.handler.CefLoadHandler createMainFrameLoadEndHandler(@NotNull Runnable onMainFrameLoaded) {
-        return new org.cef.handler.CefLoadHandlerAdapter() {
-            @Override
-            public void onLoadEnd(org.cef.browser.CefBrowser browser, org.cef.browser.CefFrame frame, int httpStatusCode) {
-                if (frame != null && frame.isMain()) {
-                    onMainFrameLoaded.run();
-                }
-            }
-        };
-    }
-
-    /**
-     * Creates a JCEF display handler that logs console messages to the given logger.
-     *
-     * <p><b>Why extracted:</b> In newer JCEF versions, {@code LogSeverity} was moved from
-     * {@code org.cef.CefSettings.LogSeverity} to a top-level {@code org.cef.LogSeverity} enum.
-     * Kotlin's strict override checking flags the old import path as "overrides nothing" because
-     * the parameter type doesn't match the parent's signature. In Java, the method resolution
-     * handles both paths via the compiled class hierarchy without flagging an error.</p>
-     */
-    public static org.cef.handler.CefDisplayHandler createConsoleLogHandler(@NotNull Logger logger) {
-        return new org.cef.handler.CefDisplayHandlerAdapter() {
-            @Override
-            public boolean onConsoleMessage(org.cef.browser.CefBrowser browser,
-                                            org.cef.CefSettings.LogSeverity level,
-                                            String message, String source, int line) {
-                logger.info("JCEF Console [" + level + "]: " + message);
-                return false;
-            }
-        };
-    }
-
-    /**
      * Subscribes a callback to Look-and-Feel change events on the application message bus.
      *
      * <p><b>Why extracted:</b> {@code LafManagerListener.TOPIC} is typed as
@@ -2085,20 +2044,6 @@ public final class PlatformApiCompat {
     public static @Nullable com.intellij.openapi.ui.popup.ListPopupStep<Object> getListStep(
         @NotNull com.intellij.ui.popup.list.ListPopupImpl popup) {
         return popup.getListStep();
-    }
-
-    /**
-     * Creates a {@link com.intellij.ui.jcef.JBCefJSQuery} for the given JCEF browser.
-     *
-     * <p><b>Why extracted:</b> {@code JBCefJSQuery.create(JBCefBrowser)} is scheduled for
-     * removal in favour of {@code create(JBCefBrowserBase)}. {@code JBCefBrowser} extends
-     * {@code JBCefBrowserBase} in all supported IDE SDK versions (verified in 2024.3–2026.2),
-     * so passing a {@code JBCefBrowserBase} reference here is safe. This wrapper keeps the
-     * call site clean and confines any future API change to one place.</p>
-     */
-    public static @NotNull com.intellij.ui.jcef.JBCefJSQuery createJSQuery(
-        @NotNull com.intellij.ui.jcef.JBCefBrowserBase browser) {
-        return com.intellij.ui.jcef.JBCefJSQuery.create(browser);
     }
 
     /**
