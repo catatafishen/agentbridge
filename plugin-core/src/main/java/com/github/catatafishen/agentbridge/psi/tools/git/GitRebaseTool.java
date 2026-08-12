@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import git4idea.rebase.GitInteractiveRebaseEditorHandler;
@@ -222,8 +223,17 @@ public final class GitRebaseTool extends GitTool {
             if (reviewError != null) return reviewError;
 
             AtomicReference<String> errorRef = new AtomicReference<>();
+            EmptyProgressIndicator indicator = new EmptyProgressIndicator();
+            // git4idea's GitRebaseUtils internally calls checkForRebasingPublishedCommits(),
+            // which uses runBlockingCancellable() and requires a ProgressIndicator/Job to be
+            // installed in the *current thread's* context. A bare executeOnPooledThread()
+            // runnable has no such context, so it must be wrapped in
+            // ProgressManager.runProcess() here rather than merely passed as an argument to
+            // rebaseWithResult() below.
             rebaseFuture = ApplicationManager.getApplication().executeOnPooledThread(() ->
-                executeRebaseOnPooledThread(repo, upstream, operations, messages, errorRef));
+                ProgressManager.getInstance().runProcess(
+                    () -> executeRebaseOnPooledThread(repo, upstream, operations, messages, errorRef, indicator),
+                    indicator));
 
             // Race the rebase against a conflict watcher: if conflicts appear on disk,
             // return immediately instead of waiting for the 60s timeout while IntelliJ's
@@ -274,7 +284,8 @@ public final class GitRebaseTool extends GitTool {
         @NotNull String upstream,
         @NotNull Map<String, String> operations,
         @NotNull Map<String, String> messages,
-        @NotNull AtomicReference<String> errorRef) {
+        @NotNull AtomicReference<String> errorRef,
+        @NotNull EmptyProgressIndicator indicator) {
         try {
             VirtualFile repoRoot = repo.getRoot();
             var handler = new ProgrammaticRebaseEditorHandler(project, repoRoot, operations, messages);
@@ -289,7 +300,7 @@ public final class GitRebaseTool extends GitTool {
             );
 
             boolean ok = GitRebaseUtils.rebaseWithResult(
-                project, List.of(repo), params, new EmptyProgressIndicator());
+                project, List.of(repo), params, indicator);
             if (!ok) {
                 errorRef.set("Rebase failed or conflicts remain. Resolve conflicts and use continue_rebase: true");
             }
