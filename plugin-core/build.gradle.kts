@@ -35,7 +35,10 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull
+        // A blank value (e.g. `-PintellijPlatform.localPath=` passed on the command line to opt
+        // out of a broken local IDE without editing ~/.gradle/gradle.properties) must be treated
+        // as unset, not as a literal empty path passed to local().
+        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull?.takeIf { it.isNotBlank() }
         if (localPath != null) {
             local(localPath)
         } else {
@@ -49,9 +52,26 @@ dependencies {
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
+        // JCEF (com.intellij.ui.jcef.*, org.cef.*) shipped on the auto-included boot classpath
+        // through IU 2026.1. Starting with build 262 (2026.2) it moved into a separately
+        // class-loaded bundled plugin (id com.intellij.modules.jcef), so it must be requested
+        // explicitly to stay resolvable on the compile classpath. Harmless no-op on older versions.
+        bundledPlugin("com.intellij.modules.jcef")
+        // com.intellij.dvcs.repo.Repository / AbstractRepositoryManager (supertypes of
+        // GitRepository) and com.intellij.vcs.log.impl.VcsProjectLog live in these product
+        // modules. IU 262 (2026.2) stopped auto-including every lib/*.jar product module on the
+        // compile classpath, so request them explicitly. Harmless no-op on older versions where
+        // they were already auto-included.
+        bundledModule("intellij.platform.vcs.dvcs")
+        bundledModule("intellij.platform.vcs.dvcs.impl")
+        bundledModule("intellij.platform.vcs.log.impl")
         // In IU-2026.1+, intellij.libraries.lucene.common.jar moved from lib/modules/ (auto-included)
         // to lib/ (not auto-included). Add it explicitly so Lucene packages resolve in both versions.
-        bundledLibrary("lib/intellij.libraries.lucene.common.jar")
+        // IU 2026.2 removed the jar from lib/ entirely, so only request it when we know it exists —
+        // an unconditional bundledLibrary() call here would break every local 2026.2 build outright.
+        if (localPath == null || file("$localPath/lib/intellij.libraries.lucene.common.jar").exists()) {
+            bundledLibrary("lib/intellij.libraries.lucene.common.jar")
+        }
     }
 
     // Kotlin stdlib for UI layer
