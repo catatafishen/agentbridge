@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.client.acp.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.CopilotClient
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.github.catatafishen.agentbridge.ui.ThemeColor
 import com.intellij.openapi.application.ApplicationManager
@@ -99,6 +100,26 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                     { AgentProfileManager.getInstance().saveBinaryPath(AGENT_ID, it.trim()) }
                 )
             liveBinaryFieldText = { cell.component.text }
+        }
+        row("Excluded built-in tools:") {
+            textField()
+                .align(AlignX.FILL)
+                .resizableColumn()
+                .applyToComponent { emptyText.text = CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS }
+                .comment(
+                    "Comma-separated list passed to Copilot CLI's <code>--excluded-tools</code> flag. " +
+                        "Leave empty to use the default: " +
+                        "<code>${CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS}</code>. " +
+                        "Add extra names here if a model exposes a built-in tool under a different " +
+                        "name than the default list expects (e.g. some backends use <code>rg</code> " +
+                        "instead of <code>grep</code>)."
+                )
+                .bindText(
+                    { AgentProfileManager.getInstance().getProfile(AGENT_ID)?.excludedBuiltInTools.orEmpty() },
+                    { value ->
+                        AgentProfileManager.getInstance().getProfile(AGENT_ID)?.excludedBuiltInTools = value.trim()
+                    }
+                )
         }
         row("Bubble color:") {
             cell(ThemeColorComboBox())

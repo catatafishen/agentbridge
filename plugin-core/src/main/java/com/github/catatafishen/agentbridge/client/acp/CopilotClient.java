@@ -101,9 +101,14 @@ public final class CopilotClient extends AcpClient {
     /**
      * Copilot CLI built-in tools to exclude via {@code --excluded-tools}.
      * These overlap with (or duplicate) our agentbridge MCP tools and would confuse the model.
+     * <p>
+     * This is the fallback default used when {@link AgentProfile#getExcludedBuiltInTools()} is
+     * blank. The list is user-editable in Settings because it is CLI/model-dependent — e.g. some
+     * Copilot model backends expose {@code rg} instead of {@code grep} — and we can't reliably
+     * enumerate every built-in name across every model.
      */
-    private static final String EXCLUDED_BUILTIN_TOOLS =
-        "view,edit,create,bash,glob,grep,apply_patch";
+    public static final String DEFAULT_EXCLUDED_BUILT_IN_TOOLS =
+        "view,edit,create,bash,glob,grep,apply_patch,grep_search,file_search,rg";
     /**
      * Known Copilot CLI built-in tool names. Used by {@link #resolveToolId} to distinguish
      * actual tool names from human-readable task descriptions that the CLI sends as titles
@@ -175,7 +180,7 @@ public final class CopilotClient extends AcpClient {
             AGENT_ID, "--acp", "--stdio",
             "--disable-builtin-mcps",
             "--no-auto-update",
-            "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
+            "--excluded-tools", resolveExcludedBuiltInTools()
         ));
         if (agentSlug != null && !agentSlug.isEmpty()) {
             cmd.add("--agent");
@@ -195,6 +200,16 @@ public final class CopilotClient extends AcpClient {
         //     the user that resume was unavailable.
 
         return cmd;
+    }
+
+    /**
+     * Resolves the value passed to {@code --excluded-tools}: the user-configured override from
+     * the Copilot profile settings if set, otherwise {@link #DEFAULT_EXCLUDED_BUILT_IN_TOOLS}.
+     */
+    private String resolveExcludedBuiltInTools() {
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(AGENT_ID);
+        String custom = profile != null ? profile.getExcludedBuiltInTools() : "";
+        return custom.isBlank() ? DEFAULT_EXCLUDED_BUILT_IN_TOOLS : custom;
     }
 
     @Override
