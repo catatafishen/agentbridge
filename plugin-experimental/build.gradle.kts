@@ -18,7 +18,10 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull
+        // A blank value (e.g. `-PintellijPlatform.localPath=` passed on the command line to opt
+        // out of a broken local IDE without editing ~/.gradle/gradle.properties) must be treated
+        // as unset, not as a literal empty path passed to local().
+        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull?.takeIf { it.isNotBlank() }
         if (localPath != null) {
             local(localPath)
         } else {
@@ -32,8 +35,12 @@ dependencies {
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
         bundledPlugin("com.intellij.database")
-        // Required in IU 2026.1+ (moved from lib/modules/ to lib/).
-        bundledLibrary("lib/intellij.libraries.lucene.common.jar")
+        // Required in IU 2026.1+ (moved from lib/modules/ to lib/). IU 2026.2 removed the jar
+        // entirely, so only request it when we know it exists — see plugin-core/build.gradle.kts
+        // for the matching guard and rationale.
+        if (localPath == null || file("$localPath/lib/intellij.libraries.lucene.common.jar").exists()) {
+            bundledLibrary("lib/intellij.libraries.lucene.common.jar")
+        }
     }
 
     compileOnly(project(":plugin-core"))
