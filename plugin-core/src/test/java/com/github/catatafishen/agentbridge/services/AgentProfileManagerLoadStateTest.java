@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
 /**
@@ -76,5 +77,35 @@ public class AgentProfileManagerLoadStateTest extends BasePlatformTestCase {
         AgentProfile p = fresh.getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
         assertNotNull(p);
         assertEquals("custom/instructions.md", p.getPrependInstructionsTo());
+    }
+
+    public void testLoadStateRestoresExcludedBuiltInTools() {
+        AgentProfileManager.ProfileOverride override = new AgentProfileManager.ProfileOverride();
+        override.profileId = AgentProfileManager.COPILOT_PROFILE_ID;
+        override.excludedBuiltInTools = "view,edit,create,bash,glob,grep,rg,apply_patch";
+        AgentProfileManager.PersistedState state = new AgentProfileManager.PersistedState();
+        state.overrides.add(override);
+
+        AgentProfileManager fresh = new AgentProfileManager();
+        fresh.loadState(state);
+
+        AgentProfile p = fresh.getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
+        assertNotNull(p);
+        assertEquals("view,edit,create,bash,glob,grep,rg,apply_patch", p.getExcludedBuiltInTools());
+    }
+
+    public void testLoadStateEmptyExcludedBuiltInToolsOverrideNoOp() {
+        AgentProfileManager.ProfileOverride override = new AgentProfileManager.ProfileOverride();
+        override.profileId = AgentProfileManager.COPILOT_PROFILE_ID;
+        override.excludedBuiltInTools = "";
+        AgentProfileManager.PersistedState state = new AgentProfileManager.PersistedState();
+        state.overrides.add(override);
+
+        AgentProfileManager fresh = new AgentProfileManager();
+        fresh.loadState(state);
+
+        AgentProfile p = fresh.getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
+        assertNotNull(p);
+        assertEquals(CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS, p.getExcludedBuiltInTools());
     }
 }

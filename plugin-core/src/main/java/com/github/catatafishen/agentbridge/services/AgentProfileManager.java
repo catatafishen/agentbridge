@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.bridge.TransportType;
+import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
 import com.github.catatafishen.agentbridge.client.acp.VibeClient;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
@@ -69,6 +70,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public String prependInstructionsTo = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public List<String> customCliModels = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean stripNonEssentialPath; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public String excludedBuiltInTools = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     /**
@@ -116,20 +118,37 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     private synchronized void applyOverrides() {
         for (ProfileOverride o : persistedState.overrides) {
             AgentProfile profile = profiles.get(o.profileId);
-            if (profile == null) continue;
-            if (o.customBinaryPath != null && !o.customBinaryPath.isEmpty()) {
-                profile.setCustomBinaryPath(o.customBinaryPath);
-            }
-            if (o.prependInstructionsTo != null && !o.prependInstructionsTo.isEmpty()) {
-                profile.setPrependInstructionsTo(o.prependInstructionsTo);
-            }
-            if (o.customCliModels != null && !o.customCliModels.isEmpty()) {
-                profile.setCustomCliModels(new ArrayList<>(o.customCliModels));
-            }
-            if (o.stripNonEssentialPath) {
-                profile.setStripNonEssentialPath(true);
+            if (profile != null) {
+                applyOverride(profile, o);
             }
         }
+    }
+
+    /**
+     * Applies a single persisted override onto an in-memory profile. Extracted from
+     * {@link #applyOverrides()} to keep that method's cognitive complexity low — each
+     * field check here is independent and unnested.
+     */
+    private static void applyOverride(AgentProfile profile, ProfileOverride o) {
+        if (isSet(o.customBinaryPath)) {
+            profile.setCustomBinaryPath(o.customBinaryPath);
+        }
+        if (isSet(o.prependInstructionsTo)) {
+            profile.setPrependInstructionsTo(o.prependInstructionsTo);
+        }
+        if (o.customCliModels != null && !o.customCliModels.isEmpty()) {
+            profile.setCustomCliModels(new ArrayList<>(o.customCliModels));
+        }
+        if (o.stripNonEssentialPath) {
+            profile.setStripNonEssentialPath(true);
+        }
+        if (isSet(o.excludedBuiltInTools)) {
+            profile.setExcludedBuiltInTools(o.excludedBuiltInTools);
+        }
+    }
+
+    private static boolean isSet(@Nullable String s) {
+        return s != null && !s.isEmpty();
     }
 
     private static ProfileOverride toDelta(AgentProfile current, AgentProfile defaults) {
@@ -143,6 +162,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         o.customCliModels = models.equals(defaults.getCustomCliModels()) ? new ArrayList<>() : new ArrayList<>(models);
         o.stripNonEssentialPath = current.isStripNonEssentialPath() != defaults.isStripNonEssentialPath()
             && current.isStripNonEssentialPath();
+        String ebt = current.getExcludedBuiltInTools();
+        o.excludedBuiltInTools = ebt.equals(defaults.getExcludedBuiltInTools()) ? "" : ebt;
         return o;
     }
 
@@ -150,7 +171,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         return !o.customBinaryPath.isEmpty()
             || !o.prependInstructionsTo.isEmpty()
             || !o.customCliModels.isEmpty()
-            || o.stripNonEssentialPath;
+            || o.stripNonEssentialPath
+            || !o.excludedBuiltInTools.isEmpty();
     }
 
     private static String nullToEmpty(@Nullable String s) {
@@ -266,6 +288,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setSupportsOAuthSignIn(true);
         p.setPrependInstructionsTo(".github/copilot-instructions.md");
         p.setStripNonEssentialPath(true);
+        p.setExcludedBuiltInTools(CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS);
         return p;
     }
 

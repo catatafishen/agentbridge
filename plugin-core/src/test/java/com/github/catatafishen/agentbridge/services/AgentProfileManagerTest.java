@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -79,6 +80,9 @@ class AgentProfileManagerTest {
         assertTrue(p.isBuiltIn());
         assertTrue(p.isSupportsOAuthSignIn());
         assertEquals(".github/copilot-instructions.md", p.getPrependInstructionsTo());
+        assertEquals(
+            CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS,
+            p.getExcludedBuiltInTools());
     }
 
     @Test
@@ -244,6 +248,14 @@ class AgentProfileManagerTest {
         void customCliModelsReturnsTrue() throws Exception {
             AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
             o.customCliModels = List.of("claude-opus-4-6");
+            assertTrue(invoke(o));
+        }
+
+        @Test
+        @DisplayName("only excludedBuiltInTools set → true")
+        void excludedBuiltInToolsReturnsTrue() throws Exception {
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            o.excludedBuiltInTools = "view,edit,rg";
             assertTrue(invoke(o));
         }
     }

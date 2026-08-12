@@ -97,6 +97,17 @@ public final class AgentProfile {
     private PermissionInjectionMethod permissionInjectionMethod = PermissionInjectionMethod.NONE;
 
     /**
+     * Comma-separated list of built-in CLI tool names to exclude via the agent's own
+     * tool-filtering flag (e.g. Copilot CLI's {@code --excluded-tools}). Empty/null means
+     * "use the plugin's hardcoded default list" ({@code CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS}).
+     *
+     * <p>User-editable so end users can add tool name aliases the plugin doesn't know about yet —
+     * e.g. some Copilot model backends expose {@code rg} instead of {@code grep} — without waiting
+     * for a plugin update.</p>
+     */
+    private String excludedBuiltInTools = "";
+
+    /**
      * Whether this agent supports {@code session/message} JSON-RPC notifications.
      * When {@code true}, startup instructions are sent via {@code session/message}.
      * When {@code false}, instructions must come from config files or MCP prompt field.
@@ -146,71 +157,17 @@ public final class AgentProfile {
 
     public AgentProfile duplicate() {
         AgentProfile copy = new AgentProfile();
-        copy.id = UUID.randomUUID().toString();
+        copy.copyFrom(this);
         copy.displayName = displayName + " (Copy)";
-        copy.builtIn = false;
         copy.experimental = false;
-        copy.description = description;
-        copy.transportType = transportType;
-        copy.installUrl = installUrl;
-        copy.supportsOAuthSignIn = supportsOAuthSignIn;
-        copy.terminalSignInCommand = terminalSignInCommand;
-        copy.binaryName = binaryName;
-        copy.alternateNames = new ArrayList<>(alternateNames);
-        copy.installHint = installHint;
-        copy.customBinaryPath = customBinaryPath;
-        copy.acpArgs = new ArrayList<>(acpArgs);
-        copy.mcpMethod = mcpMethod;
-        copy.mcpConfigTemplate = mcpConfigTemplate;
-        copy.mcpServerName = mcpServerName;
-        copy.supportsModelFlag = supportsModelFlag;
-        copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
-        copy.sendResourceReferences = sendResourceReferences;
-        copy.agentsDirectory = agentsDirectory;
-        copy.usePluginPermissions = usePluginPermissions;
-        copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
-        copy.stripNonEssentialPath = stripNonEssentialPath;
-        copy.permissionInjectionMethod = permissionInjectionMethod;
-        copy.supportsSessionMessage = supportsSessionMessage;
-        copy.prependInstructionsTo = prependInstructionsTo;
-        copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
-        copy.additionalInstructions = additionalInstructions;
-        copy.customCliModels = new ArrayList<>(customCliModels);
         return copy;
     }
 
     public AgentProfile copyForEditing() {
         AgentProfile copy = new AgentProfile();
+        copy.copyFrom(this);
         copy.id = this.id;
-        copy.displayName = this.displayName;
         copy.builtIn = this.builtIn;
-        copy.experimental = this.experimental;
-        copy.description = this.description;
-        copy.transportType = this.transportType;
-        copy.installUrl = this.installUrl;
-        copy.supportsOAuthSignIn = this.supportsOAuthSignIn;
-        copy.terminalSignInCommand = this.terminalSignInCommand;
-        copy.binaryName = binaryName;
-        copy.alternateNames = new ArrayList<>(alternateNames);
-        copy.installHint = installHint;
-        copy.customBinaryPath = customBinaryPath;
-        copy.acpArgs = new ArrayList<>(acpArgs);
-        copy.mcpMethod = mcpMethod;
-        copy.mcpConfigTemplate = mcpConfigTemplate;
-        copy.mcpServerName = mcpServerName;
-        copy.supportsModelFlag = supportsModelFlag;
-        copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
-        copy.sendResourceReferences = sendResourceReferences;
-        copy.agentsDirectory = agentsDirectory;
-        copy.usePluginPermissions = usePluginPermissions;
-        copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
-        copy.stripNonEssentialPath = stripNonEssentialPath;
-        copy.permissionInjectionMethod = permissionInjectionMethod;
-        copy.supportsSessionMessage = supportsSessionMessage;
-        copy.prependInstructionsTo = prependInstructionsTo;
-        copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
-        copy.additionalInstructions = additionalInstructions;
-        copy.customCliModels = new ArrayList<>(customCliModels);
         return copy;
     }
 
@@ -240,6 +197,7 @@ public final class AgentProfile {
         this.usePluginPermissions = other.usePluginPermissions;
         this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
         this.stripNonEssentialPath = other.stripNonEssentialPath;
+        this.excludedBuiltInTools = other.excludedBuiltInTools;
         this.permissionInjectionMethod = other.permissionInjectionMethod;
         this.supportsSessionMessage = other.supportsSessionMessage;
         this.prependInstructionsTo = other.prependInstructionsTo;
@@ -455,6 +413,15 @@ public final class AgentProfile {
 
     public void setStripNonEssentialPath(boolean stripNonEssentialPath) {
         this.stripNonEssentialPath = stripNonEssentialPath;
+    }
+
+    @NotNull
+    public String getExcludedBuiltInTools() {
+        return Objects.requireNonNullElse(excludedBuiltInTools, "");
+    }
+
+    public void setExcludedBuiltInTools(@NotNull String excludedBuiltInTools) {
+        this.excludedBuiltInTools = excludedBuiltInTools;
     }
 
     @NotNull
