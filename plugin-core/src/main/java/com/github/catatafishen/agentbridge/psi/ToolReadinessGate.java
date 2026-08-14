@@ -180,12 +180,50 @@ public final class ToolReadinessGate {
     /**
      * Returns null when no modal dialog is blocking the EDT, otherwise an
      * error nudging the agent to call {@code interact_with_modal}.
+     * <p>
+     * {@link EdtUtil#describeModalBlocker()} treats any active {@code JBPopup} as a
+     * blocker, which also fires for transient, self-dismissing overlays (code-completion
+     * lookups, quick documentation, parameter-info hints) that never actually require a
+     * response. A single instantaneous check would surface these as false-positive
+     * {@code MODAL_BLOCKING} errors even though {@code interact_with_modal} — which only
+     * looks for real AWT modal {@code Dialog}s — correctly reports nothing is blocking.
+     * We debounce with the same tested grace-period logic {@link EdtUtil} already uses
+     * for its own EDT-dispatch polling ({@link EdtUtil#evaluateModalState}), so a
+     * detected blocker must persist continuously for {@value EdtUtil#MODAL_FAIL_AFTER_MS}ms
+     * before it is treated as real.
      */
     @Nullable
     static String checkNoModal(@NotNull String toolName) {
-        String detail = EdtUtil.describeModalBlocker();
-        if (detail == null || detail.isEmpty()) return null;
-        return modalErrorMessage(toolName, detail);
+        long firstSeenMs = 0;
+        while (true) {
+            String detail = EdtUtil.describeModalBlocker();
+            long now = System.currentTimeMillis();
+            EdtUtil.ModalCheckAction action =
+                EdtUtil.evaluateModalState(firstSeenMs, detail, now, EdtUtil.MODAL_FAIL_AFTER_MS);
+            switch (action) {
+                case RESET -> {
+                    return null;
+                }
+                case ABORT -> {
+                    return modalErrorMessage(toolName, detail);
+                }
+                case START_TIMER -> firstSeenMs = now;
+                case CONTINUE -> {
+                    // keep polling until the grace period elapses or the blocker clears
+                }
+            }
+            try {
+                // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here for
+                // the same reason as awaitProjectInitialised() above — this runs in a blocking MCP
+                // call handler that must return a result synchronously, and the debounce window is
+                // short (a few hundred ms) by design.
+                Thread.sleep(EdtUtil.MODAL_POLL_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                    "Interrupted while checking for a blocking modal dialog.");
+            }
+        }
     }
 
     /**
