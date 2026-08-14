@@ -385,4 +385,61 @@ class ToolUtilsAbuseDetectionTest {
             assertEquals(java.util.List.of(), ToolUtils.tokenizeShellCommand(""));
         }
     }
+
+    // ── Heredoc body stripping ───────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("heredoc body stripping")
+    class HeredocBodyStripping {
+
+        @Test
+        @DisplayName("gh pr create with heredoc body mentioning ./gradlew test is NOT blocked as test")
+        void ghPrCreateWithGradlewTestInBodyIsNotBlocked() {
+            String cmd = "gh pr create --title 'My PR' --body <<'EOF'\n"
+                + "This PR improves performance. To verify, run ./gradlew test\n"
+                + "EOF";
+            assertNull(ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @Test
+        @DisplayName("gh pr create with heredoc body mentioning npm test is NOT blocked as test")
+        void ghPrCreateWithNpmTestInBodyIsNotBlocked() {
+            String cmd = "gh pr create --title 'My PR' --body <<EOF\n"
+                + "Run npm test before merging\n"
+                + "EOF";
+            assertNull(ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @Test
+        @DisplayName("actual ./gradlew test command without heredoc IS still blocked")
+        void gradlewTestCommandIsStillBlocked() {
+            assertEquals("test", ToolUtils.detectCommandAbuseType("./gradlew test"));
+        }
+
+        @Test
+        @DisplayName("stripHeredocBodies removes body but keeps delimiters")
+        void stripHeredocBodiesKeepsDelimiters() {
+            String cmd = "gh pr create --body <<'EOF'\nRun ./gradlew test first\nEOF";
+            String stripped = ToolUtils.stripHeredocBodies(cmd);
+            // Body removed; opening <<EOF and closing EOF remain
+            org.junit.jupiter.api.Assertions.assertTrue(stripped.contains("<<EOF"), "opener should remain");
+            org.junit.jupiter.api.Assertions.assertTrue(stripped.contains("\nEOF"), "closer should remain");
+            org.junit.jupiter.api.Assertions.assertFalse(stripped.contains("./gradlew test"), "body should be stripped");
+        }
+
+        @Test
+        @DisplayName("stripHeredocBodies handles <<- form")
+        void stripHeredocBodiesHandlesDashForm() {
+            String cmd = "cat <<-BLOCK\n\tsome content with jest mocha\nBLOCK";
+            String stripped = ToolUtils.stripHeredocBodies(cmd);
+            org.junit.jupiter.api.Assertions.assertFalse(stripped.contains("jest"), "body should be stripped");
+        }
+
+        @Test
+        @DisplayName("command with no heredoc is returned unchanged")
+        void noHeredocReturnedUnchanged() {
+            String cmd = "./gradlew test --info";
+            assertEquals(cmd, ToolUtils.stripHeredocBodies(cmd));
+        }
+    }
 }

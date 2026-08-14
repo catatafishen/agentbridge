@@ -918,13 +918,22 @@ public final class RunTestsTool extends TestingTool {
             var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
             var descriptors = new ArrayList<>(manager.getAllDescriptors());
 
+            // Prefer exact-name match; if absent fall back to the LAST substring match
+            // (RunManager renames duplicate configs to "Name (1)", "Name (2)" etc. — the
+            // last occurrence in getAllDescriptors is the most recently added one).
             com.intellij.execution.ui.RunContentDescriptor target = null;
+            com.intellij.execution.ui.RunContentDescriptor substringFallback = null;
             for (var d : descriptors) {
-                if (d.getDisplayName() != null && d.getDisplayName().contains(configName)) {
+                if (d.getDisplayName() == null) continue;
+                if (d.getDisplayName().equals(configName)) {
                     target = d;
                     break;
                 }
+                if (d.getDisplayName().contains(configName)) {
+                    substringFallback = d; // keep scanning — last match wins
+                }
             }
+            if (target == null) target = substringFallback;
             if (target == null) return "";
 
             var console = target.getExecutionConsole();
