@@ -70,6 +70,18 @@ public final class ToolUtils {
         java.util.regex.Pattern.compile("mvn\\s+(verify|package|install|deploy)(\\s|$)");
 
     /**
+     * Matches a heredoc body: the text between the opening {@code <<[-]['"]?DELIM['"]?\n}
+     * and the closing {@code \nDELIM} line. Used by {@link #stripHeredocBodies(String)}.
+     * {@code DOTALL} is required so {@code .*?} crosses newlines.
+     * Backreference {@code \1} ties the closing delimiter to the opening one.
+     */
+    private static final java.util.regex.Pattern HEREDOC_BODY_PATTERN =
+        java.util.regex.Pattern.compile(
+            "<<-?[\"']?([A-Za-z_][A-Za-z0-9_]*)[\"']?\\n.*?\\n\\1(?=\\n|$)",
+            java.util.regex.Pattern.DOTALL
+        );
+
+    /**
      * Maximum levels to walk up the PSI parent chain when searching for a named ancestor.
      * A small limit avoids incorrectly returning an enclosing method or class when the caret
      * is on an unresolved reference expression — in the "go to declaration on a declaration"
@@ -826,7 +838,9 @@ public final class ToolUtils {
      * @return the abuse type ("git", "cat", "sed", "grep", "find", "test", "compile") or null if allowed
      */
     public static String detectCommandAbuseType(String command) {
-        String cmd = command.toLowerCase().trim();
+        // Strip heredoc bodies before classification — they contain arbitrary user-supplied text
+        // (e.g. a PR description mentioning "./gradlew test") that should not influence routing.
+        String cmd = stripHeredocBodies(command).toLowerCase().trim();
 
         // Block git — causes IntelliJ editor buffer desync
         if (isGitCommand(cmd)) {
@@ -867,6 +881,21 @@ public final class ToolUtils {
         if (isTestCommand(cmd)) return "test";
 
         return null;
+    }
+
+    /**
+     * Strips heredoc body text from {@code command}, leaving the opening {@code <<DELIM} and
+     * closing {@code DELIM} markers in place. The body is arbitrary user-supplied content
+     * (e.g. a PR description) and must not influence abuse-type classification.
+     *
+     * <p>Example: {@code gh pr create --body <<'EOF'\nRun ./gradlew test first\nEOF} becomes
+     * {@code gh pr create --body <<EOF\nEOF} after stripping.
+     */
+    static String stripHeredocBodies(String command) {
+        return HEREDOC_BODY_PATTERN.matcher(command).replaceAll(mr ->
+            "<<" + java.util.regex.Matcher.quoteReplacement(mr.group(1))
+                + "\n" + java.util.regex.Matcher.quoteReplacement(mr.group(1))
+        );
     }
 
     /**
