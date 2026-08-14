@@ -75,8 +75,6 @@ public final class RunConfigurationService {
     private static final String PARAM_EXECUTE_IN_TERMINAL = "execute_in_terminal";
     private static final String PARAM_SCRIPT_TEXT = "script_text";
     private static final String PARAM_SCRIPT_OPTIONS = "script_options";
-    private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
-    private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
 
     private final Project project;
     private final ClassResolverUtil.ClassResolver classResolver;
@@ -127,9 +125,9 @@ public final class RunConfigurationService {
 
         EdtUtil.invokeLater(() -> {
             try {
-                var settings = RunManager.getInstance(project).findConfigurationByName(name);
+                var settings = RunConfigurationNameResolver.findLenient(RunManager.getInstance(project), name);
                 if (settings == null) {
-                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name + ERROR_CONFIG_LIST_HINT);
+                    resultFuture.complete(RunConfigurationNameResolver.notFoundMessage(name));
                     return;
                 }
 
@@ -166,10 +164,10 @@ public final class RunConfigurationService {
 
         EdtUtil.invokeLater(() -> {
             try {
-                var settings = RunManager.getInstance(project).findConfigurationByName(name);
+                var settings = RunConfigurationNameResolver.findLenient(RunManager.getInstance(project), name);
                 if (settings == null) {
                     launchFuture.completeExceptionally(new IllegalArgumentException(
-                        ERROR_CONFIG_NOT_FOUND + name + ERROR_CONFIG_LIST_HINT));
+                        RunConfigurationNameResolver.notFoundMessage(name)));
                     return;
                 }
                 settingsRef.set(settings);
@@ -310,9 +308,9 @@ public final class RunConfigurationService {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                var settings = RunManager.getInstance(project).findConfigurationByName(name);
+                var settings = RunConfigurationNameResolver.findLenient(RunManager.getInstance(project), name);
                 if (settings == null) {
-                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name + "'");
+                    resultFuture.complete(RunConfigurationNameResolver.notFoundMessage(name));
                     return;
                 }
                 List<String> changes = applyEditProperties(settings.getConfiguration(), args);
@@ -370,9 +368,9 @@ public final class RunConfigurationService {
         EdtUtil.invokeLater(() -> {
             try {
                 RunManager runManager = RunManager.getInstance(project);
-                var settings = runManager.findConfigurationByName(name);
+                var settings = RunConfigurationNameResolver.findLenient(runManager, name);
                 if (settings == null) {
-                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name + ERROR_CONFIG_LIST_HINT);
+                    resultFuture.complete(RunConfigurationNameResolver.notFoundMessage(name));
                     return;
                 }
 
@@ -1028,7 +1026,7 @@ public final class RunConfigurationService {
         }
         return errors.isEmpty() ? null
             : "Schema validation failed:\n"
-              + errors.stream().map(e -> "  - " + e).collect(Collectors.joining("\n"));
+            + errors.stream().map(e -> "  - " + e).collect(Collectors.joining("\n"));
     }
 
     static void collectTypeErrors(String key, JsonElement value, JsonObject propSchema,

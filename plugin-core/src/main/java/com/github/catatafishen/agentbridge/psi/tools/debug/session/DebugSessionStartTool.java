@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.debug.session;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.RunConfigurationNameResolver;
 import com.github.catatafishen.agentbridge.psi.tools.debug.DebugTool;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
@@ -64,16 +65,16 @@ public final class DebugSessionStartTool extends DebugTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String name = args.get("name").getAsString();
         RunManager runManager = RunManager.getInstance(project);
-        RunnerAndConfigurationSettings settings = runManager.findConfigurationByName(name);
+        RunnerAndConfigurationSettings settings = RunConfigurationNameResolver.findLenient(runManager, name);
         if (settings == null) {
             String available = runManager.getAllSettings().stream()
                 .map(RunnerAndConfigurationSettings::getName)
                 .sorted()
                 .collect(Collectors.joining(", "));
-            return "Error: Run configuration '" + name + "' not found."
+            return RunConfigurationNameResolver.notFoundMessage(name)
                 + (available.isEmpty()
-                    ? " No run configurations exist in this project."
-                    : " Available: " + available);
+                ? " No run configurations exist in this project."
+                : " Available: " + available);
         }
 
         var executor = DefaultDebugExecutor.getDebugExecutorInstance();
