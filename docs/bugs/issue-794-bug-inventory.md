@@ -585,8 +585,15 @@ couldn't find `Offline` class from bootstrap delegation.
 **Bug (v1.179.7)**: `debug_session_start` and `run_configuration` intermittently fail with `MODAL_BLOCKING` claiming a
 popup dialog is open. `interact_with_modal` reports "No modal dialog is currently visible". Likely a notification toast
 being misidentified.  
-**Fix attempted**: None.  
-**Current status**: 📋 **Still present** (confirmed in v1.179.16 — `debug_evaluate` triggered one). Never investigated.
+**Root cause (found)**: `ToolReadinessGate.checkNoModal()` calls `EdtUtil.describeModalBlocker()`, which OR's a real
+modal-`Dialog` check with `JBPopupFactory.isPopupActive()`. The latter is a broad signal — it fires for *any* active
+`JBPopup`, including transient, self-dismissing overlays (code-completion lookups, quick documentation, parameter-info
+hints) that never require a response. `checkNoModal()` failed on the very first sighting with no debounce, while
+`interact_with_modal` only scans for real AWT modal `Dialog`s and correctly saw nothing — hence the mismatch.  
+**Fix applied**: `checkNoModal()` now reuses the same tested grace-period debounce (`EdtUtil.evaluateModalState` /
+`MODAL_FAIL_AFTER_MS`) that `EdtUtil.invokeAndWait()` already uses for its own polling, requiring a detected blocker to
+persist for 1500ms before it's treated as real. See PR fixing catatafishen/agentbridge#998.  
+**Current status**: ✅ **Fixed** — transient JBPopups now clear within the debounce window instead of failing the tool.
 
 ---
 
@@ -622,4 +629,4 @@ being misidentified.
 | 25 | `reload_project_model` Meson crash + no CMake              | ✅ Fixed              | PR #804 / `86591e51`                                                                                 |
 | 26 | `get_coverage` no data                                     | 📋 Not investigated   | —                                                                                                    |
 | 27 | Plugin startup crash (JaCoCo Offline)                      | ✅ Fixed              | `2f2578fd`                                                                                           |
-| 28 | Phantom MODAL_BLOCKING with no visible dialog              | 📋 Not investigated   | —                                                                                                    |
+| 28 | Phantom MODAL_BLOCKING with no visible dialog              | ✅ Fixed              | PR fixing #998 — debounce grace-period for `checkNoModal()`                                          |
