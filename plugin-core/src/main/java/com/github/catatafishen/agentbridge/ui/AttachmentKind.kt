@@ -20,5 +20,34 @@ enum class AttachmentKind {
     TEXT,
     IMAGE,
     BINARY,
-    PROMPT,
+    PROMPT;
+
+    companion object {
+        private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif")
+
+        /** True if [fileName]'s extension indicates a raster image format sent as [IMAGE]. */
+        fun isImageFileName(fileName: String): Boolean {
+            val ext = fileName.substringAfterLast('.', "").lowercase()
+            return ext in IMAGE_EXTENSIONS
+        }
+
+        /**
+         * Classify [file] for attachment purposes so callers that build a [ContextItemData]
+         * from a [com.intellij.openapi.vfs.VirtualFile] (attach-current-file, file search,
+         * drag-and-drop) don't default to [TEXT] for non-text files. Without this, images and
+         * other binary files silently fail to load a [PromptAttachment] later — the chip and
+         * file path are still shown in the UI, but no content ever reaches the agent, because
+         * [TEXT]'s content path requires an IntelliJ [com.intellij.openapi.editor.Document],
+         * which doesn't exist for binary files.
+         *
+         * Raster images become [IMAGE] (sent inline as base64); other binary file types become
+         * [BINARY] (sent as a resource link only, no inline content); everything else defaults
+         * to [TEXT].
+         */
+        fun forFile(file: com.intellij.openapi.vfs.VirtualFile): AttachmentKind = when {
+            isImageFileName(file.name) -> IMAGE
+            file.fileType.isBinary -> BINARY
+            else -> TEXT
+        }
+    }
 }

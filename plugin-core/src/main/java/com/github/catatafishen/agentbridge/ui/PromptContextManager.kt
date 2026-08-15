@@ -211,7 +211,8 @@ class PromptContextManager(
             promptEditor,
             ContextItemData(
                 path = path, name = currentFile.name, startLine = 1, endLine = lineCount,
-                fileTypeName = currentFile.fileType.name, isSelection = false
+                fileTypeName = currentFile.fileType.name, isSelection = false,
+                attachmentKind = AttachmentKind.forFile(currentFile)
             )
         )
     }
@@ -275,7 +276,8 @@ class PromptContextManager(
                     promptEditor,
                     ContextItemData(
                         path = path, name = vf.name, startLine = 1, endLine = lineCount,
-                        fileTypeName = vf.fileType.name, isSelection = false
+                        fileTypeName = vf.fileType.name, isSelection = false,
+                        attachmentKind = AttachmentKind.forFile(vf)
                     )
                 )
             }
