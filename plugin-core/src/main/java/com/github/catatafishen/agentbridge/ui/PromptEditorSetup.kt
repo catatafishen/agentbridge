@@ -11,18 +11,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.components.JBList
-import java.awt.Component
-import java.awt.Dimension
-import java.awt.Image
-import java.awt.KeyboardFocusManager
-import java.awt.Toolkit
+import java.awt.*
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
-import javax.swing.JComponent
-import javax.swing.JList
-import javax.swing.KeyStroke
-import javax.swing.ListSelectionModel
-import javax.swing.SwingUtilities
+import javax.swing.*
 
 /**
  * Encapsulates all prompt editor wiring: key bindings, paste interception,
@@ -509,14 +501,17 @@ internal class PromptEditorSetup(
                 for (file in files) {
                     val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
                         .findFileByIoFile(file) ?: continue
+                    // No Document exists for binary files (e.g. images) — don't skip the
+                    // chip on that account, just fall back to a zero line count.
                     val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
-                        .getDocument(vf) ?: continue
+                        .getDocument(vf)
                     val existing = contextManager.collectInlineContextItems().any { it.path == vf.path }
                     if (!existing) {
                         val data = ContextItemData(
                             path = vf.path, name = vf.name,
-                            startLine = 1, endLine = doc.lineCount,
-                            fileTypeName = vf.fileType.name, isSelection = false
+                            startLine = 1, endLine = doc?.lineCount ?: 0,
+                            fileTypeName = vf.fileType.name, isSelection = false,
+                            attachmentKind = AttachmentKind.forFile(vf)
                         )
                         contextManager.insertInlineChip(editor, data)
                     }
