@@ -137,6 +137,73 @@ class AgentProfileManagerTest {
         assertNull(manager.loadBinaryPath("unknown-agent"));
     }
 
+    // ── Extra CLI args CRUD ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("loadExtraCliArgs returns empty string for default profile (no custom args)")
+    void loadExtraCliArgsDefaultEmpty() {
+        assertEquals("", manager.loadExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID));
+    }
+
+    @Test
+    @DisplayName("saveExtraCliArgs + loadExtraCliArgs roundtrip")
+    void saveExtraCliArgsRoundtrip() {
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, "--v3");
+        assertEquals("--v3", manager.loadExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID));
+    }
+
+    @Test
+    @DisplayName("saveExtraCliArgs with null clears the override")
+    void saveExtraCliArgsNullClears() {
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, "--v3");
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, null);
+        assertEquals("", manager.loadExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID));
+    }
+
+    @Test
+    @DisplayName("saveExtraCliArgs with blank clears the override")
+    void saveExtraCliArgsBlankClears() {
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, "--v3");
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, "   ");
+        assertEquals("", manager.loadExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID));
+    }
+
+    @Test
+    @DisplayName("saveExtraCliArgs for unknown agentId does nothing")
+    void saveExtraCliArgsUnknownId() {
+        assertDoesNotThrow(() -> manager.saveExtraCliArgs("unknown-agent", "--foo"));
+    }
+
+    @Test
+    @DisplayName("loadExtraCliArgs for unknown agentId returns empty string")
+    void loadExtraCliArgsUnknownId() {
+        assertEquals("", manager.loadExtraCliArgs("unknown-agent"));
+    }
+
+    @Test
+    @DisplayName("getState persists customised extraCliArgs as override")
+    void getStatePersistsExtraCliArgs() {
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, "--v3 --debug");
+        AgentProfileManager.PersistedState state = manager.getState();
+        AgentProfileManager.ProfileOverride saved = state.overrides.stream()
+            .filter(o -> AgentProfileManager.KIRO_PROFILE_ID.equals(o.profileId))
+            .findFirst()
+            .orElse(null);
+        assertNotNull(saved, "Expected override for kiro");
+        assertEquals("--v3 --debug", saved.extraCliArgs);
+    }
+
+    @Test
+    @DisplayName("getState does NOT persist extraCliArgs when it equals the default (empty)")
+    void getStateDoesNotPersistDefaultExtraCliArgs() {
+        // Default is "" so saveExtraCliArgs("") should produce no override
+        manager.saveExtraCliArgs(AgentProfileManager.KIRO_PROFILE_ID, "");
+        AgentProfileManager.PersistedState state = manager.getState();
+        boolean hasKiroOverride = state.overrides.stream()
+            .anyMatch(o -> AgentProfileManager.KIRO_PROFILE_ID.equals(o.profileId));
+        assertFalse(hasKiroOverride, "No override should be persisted when extraCliArgs matches default");
+    }
+
     // ── Snapshot / override persistence ─────────────────────────────────────
 
     @Test
@@ -258,6 +325,14 @@ class AgentProfileManagerTest {
             o.excludedBuiltInTools = "view,edit,rg";
             assertTrue(invoke(o));
         }
+
+        @Test
+        @DisplayName("only extraCliArgs set → true")
+        void extraCliArgsReturnsTrue() throws Exception {
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            o.extraCliArgs = "--v3";
+            assertTrue(invoke(o));
+        }
     }
 
     // ── Private helper: toDelta ──────────────────────────────────────────────
@@ -347,6 +422,30 @@ class AgentProfileManagerTest {
             assertEquals("/my/agent", delta.customBinaryPath);
             assertEquals("MY.md", delta.prependInstructionsTo);
             assertEquals(List.of("m1"), delta.customCliModels);
+        }
+
+        @Test
+        @DisplayName("different extraCliArgs → override has the value")
+        void differentExtraCliArgs() throws Exception {
+            AgentProfile current = makeProfile("test", "", null, new ArrayList<>());
+            current.setExtraCliArgs("--v3 --debug");
+            AgentProfile defaults = makeProfile("test", "", null, new ArrayList<>());
+            AgentProfileManager.ProfileOverride delta = invoke(current, defaults);
+
+            assertEquals("--v3 --debug", delta.extraCliArgs);
+            assertEquals("", delta.customBinaryPath);
+        }
+
+        @Test
+        @DisplayName("identical extraCliArgs → override field is empty")
+        void identicalExtraCliArgsProduceEmptyDelta() throws Exception {
+            AgentProfile current = makeProfile("test", "", null, new ArrayList<>());
+            current.setExtraCliArgs("--foo");
+            AgentProfile defaults = makeProfile("test", "", null, new ArrayList<>());
+            defaults.setExtraCliArgs("--foo");
+            AgentProfileManager.ProfileOverride delta = invoke(current, defaults);
+
+            assertEquals("", delta.extraCliArgs);
         }
 
     }
