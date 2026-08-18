@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public final class KiroClient extends AcpClient {
@@ -93,6 +94,185 @@ public final class KiroClient extends AcpClient {
         });
     }
 
+    /**
+     * Handles Kiro v3's {@code _kiro/auth/getAccessToken} reverse callback by reading the
+     * OIDC access token from the Kiro CLI's local SQLite database and returning it.
+     * <p>
+     * In v3, the harness no longer holds its own auth state — instead it calls back to the
+     * host (IDE extension or, in our case, this plugin) to obtain a fresh token whenever
+     * the underlying API credentials need renewal. This mirrors how the Kiro VS Code extension
+     * works: the extension holds the OIDC session and hands tokens to the CLI on demand.
+     * <p>
+     * We read the token from the same SQLite DB the CLI itself populated during {@code kiro login}
+     * ({@code ~/Library/Application Support/kiro-cli/data.sqlite3}, table {@code auth_kv},
+     * key {@code kirocli:odic:token}). We return {@code accessToken} and {@code expiresAt}, plus the
+     * {@code profileArn} of the selected Q Developer profile (from the {@code state} table, key
+     * {@code api.codewhisperer.profile}). The harness forwards {@code profileArn} to the backend,
+     * which rejects requests without it ({@code "profileArn is required for this request"}).
+     * <p>
+     * All other requests are delegated to the parent {@link AcpClient#handleAgentRequest}.
+     */
+    @Override
+    protected void handleAgentRequest(com.google.gson.JsonElement id,
+                                      com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport.IncomingRequest request) {
+        switch (request.method()) {
+            case "_kiro/auth/getAccessToken" -> handleGetAccessToken(id);
+            case "_kiro/terminal/shell_type" -> handleShellType(id);
+            default -> super.handleAgentRequest(id, request);
+        }
+    }
+
+    /**
+     * Handles Kiro v3's {@code _kiro/terminal/shell_type} reverse callback.
+     * Returns the name of the user's default shell (e.g. {@code "zsh"}, {@code "bash"}).
+     * Reads {@code $SHELL} env var and returns its basename; falls back to {@code "cmd"}
+     * on Windows and {@code "bash"} elsewhere.
+     */
+    private void handleShellType(com.google.gson.JsonElement id) {
+        String shellType = resolveShellType();
+        JsonObject result = new JsonObject();
+        result.addProperty("shellType", shellType);
+        transport.sendResponse(id, result);
+        LOG.debug("Kiro v3: _kiro/terminal/shell_type — returned " + shellType);
+    }
+
+    static String resolveShellType() {
+        String shell = System.getenv("SHELL");
+        if (shell != null && !shell.isBlank()) {
+            // /bin/zsh → "zsh", /usr/bin/fish → "fish", etc.
+            return java.nio.file.Path.of(shell).getFileName().toString();
+        }
+        // Windows: SHELL is not set; COMSPEC points to cmd or powershell
+        String comspec = System.getenv("COMSPEC");
+        if (comspec != null && !comspec.isBlank()) {
+            String name = java.nio.file.Path.of(comspec).getFileName().toString().toLowerCase();
+            if (name.endsWith(".exe")) name = name.substring(0, name.length() - 4);
+            return name; // "cmd" or "powershell"
+        }
+        return com.intellij.openapi.util.SystemInfo.isWindows ? "cmd" : "bash";
+    }
+
+    private void handleGetAccessToken(com.google.gson.JsonElement id) {
+        try {
+            KiroTokenRecord token = readKiroToken();
+            if (token == null) {
+                LOG.warn("Kiro v3: _kiro/auth/getAccessToken — no token found in local DB; " +
+                    "run 'kiro login' to authenticate");
+                transport.sendError(id, -32000, "No Kiro access token found — run 'kiro login'");
+                return;
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("accessToken", token.accessToken());
+            result.addProperty("expiresAt", token.expiresAt());
+            if (token.profileArn() != null && !token.profileArn().isBlank()) {
+                result.addProperty("profileArn", token.profileArn());
+            } else {
+                LOG.warn("Kiro v3: _kiro/auth/getAccessToken — no profileArn found in local DB; " +
+                    "backend requests requiring a Q Developer profile will fail with " +
+                    "'profileArn is required'. Run 'kiro login' to (re)select a profile.");
+            }
+            transport.sendResponse(id, result);
+            LOG.debug("Kiro v3: _kiro/auth/getAccessToken — returned token (expires " + token.expiresAt()
+                + ", profileArn " + (token.profileArn() != null ? "present" : "absent") + ")");
+        } catch (Exception e) {
+            LOG.warn("Kiro v3: _kiro/auth/getAccessToken — failed to read token: " + e.getMessage(), e);
+            transport.sendError(id, -32000, "Auth refresh callback failed: " + e.getMessage());
+        }
+    }
+
+    record KiroTokenRecord(String accessToken, String expiresAt, @org.jetbrains.annotations.Nullable String profileArn) {}
+
+    /**
+     * Reads the Kiro CLI OIDC token from its local SQLite database.
+     * Returns {@code null} if the DB or token row does not exist.
+     */
+    @org.jetbrains.annotations.Nullable
+    static KiroTokenRecord readKiroToken() throws Exception {
+        java.nio.file.Path dbPath = resolveKiroDbPath();
+        if (!java.nio.file.Files.exists(dbPath)) {
+            return null;
+        }
+        // Use sqlite3 subprocess to avoid a JDBC dependency. The DB is small and
+        // this is called at most once per auth refresh cycle.
+        // Returns two tab-separated columns: access_token<TAB>expires_at
+        ProcessBuilder pb = new ProcessBuilder(
+            "sqlite3", dbPath.toString(),
+            "SELECT json_extract(value,'$.access_token') || char(9) || " +
+                "json_extract(value,'$.expires_at') " +
+                "FROM auth_kv WHERE key='kirocli:odic:token';"
+        );
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+        String output;
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+            new java.io.InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            output = reader.lines().collect(java.util.stream.Collectors.joining()).trim();
+        }
+        proc.waitFor(5, TimeUnit.SECONDS);
+        if (output.isBlank()) return null;
+        String[] parts = output.split("\t", 2);
+        if (parts.length < 2 || parts[0].isBlank()) return null;
+        return new KiroTokenRecord(parts[0], parts[1], readKiroProfileArn(dbPath));
+    }
+
+    /**
+     * Reads the Q Developer profile ARN the Kiro CLI selected during {@code kiro login}.
+     * <p>
+     * v3 backend requests require a {@code profileArn} to identify the user's Q Developer
+     * profile — without it the service returns {@code "profileArn is required for this request"}.
+     * The CLI stores the selected profile in its {@code state} table under key
+     * {@code api.codewhisperer.profile} as JSON ({@code {"arn":"arn:aws:codewhisperer:...",
+     * "profile_name":"..."}}); we extract the {@code arn} field.
+     * <p>
+     * Returns {@code null} if the row is absent (e.g. Builder ID / free-tier accounts that
+     * don't use a profile), in which case the callback omits {@code profileArn}.
+     */
+    @org.jetbrains.annotations.Nullable
+    static String readKiroProfileArn(java.nio.file.Path dbPath) throws Exception {
+        // The state table stores value as a BLOB, so CAST to TEXT before json_extract.
+        ProcessBuilder pb = new ProcessBuilder(
+            "sqlite3", dbPath.toString(),
+            "SELECT json_extract(CAST(value AS TEXT),'$.arn') " +
+                "FROM state WHERE key='api.codewhisperer.profile';"
+        );
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+        String output;
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+            new java.io.InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            output = reader.lines().collect(java.util.stream.Collectors.joining()).trim();
+        }
+        proc.waitFor(5, TimeUnit.SECONDS);
+        return output.isBlank() ? null : output;
+    }
+
+    /**
+     * Returns the OS-appropriate path to the Kiro CLI SQLite database.
+     * <ul>
+     *   <li>macOS: {@code ~/Library/Application Support/kiro-cli/data.sqlite3}</li>
+     *   <li>Linux: {@code ~/.local/share/kiro-cli/data.sqlite3}</li>
+     *   <li>Windows: {@code %APPDATA%\kiro-cli\data.sqlite3}</li>
+     * </ul>
+     */
+    static java.nio.file.Path resolveKiroDbPath() {
+        String home = SystemProperties.getUserHome();
+        if (com.intellij.openapi.util.SystemInfo.isMac) {
+            return java.nio.file.Path.of(home, "Library", "Application Support", "kiro-cli", "data.sqlite3");
+        } else if (com.intellij.openapi.util.SystemInfo.isWindows) {
+            String appData = System.getenv("APPDATA");
+            if (appData != null && !appData.isBlank()) {
+                return java.nio.file.Path.of(appData, "kiro-cli", "data.sqlite3");
+            }
+            return java.nio.file.Path.of(home, "AppData", "Roaming", "kiro-cli", "data.sqlite3");
+        } else {
+            // Linux: XDG_DATA_HOME or ~/.local/share
+            String xdgData = System.getenv("XDG_DATA_HOME");
+            if (xdgData != null && !xdgData.isBlank()) {
+                return java.nio.file.Path.of(xdgData, "kiro-cli", "data.sqlite3");
+            }
+            return java.nio.file.Path.of(home, ".local", "share", "kiro-cli", "data.sqlite3");
+        }
+    }
     private void handleKiroNotification(String method, JsonObject params) {
         switch (method) {
             case "_kiro.dev/commands/available" -> handleCommandsAvailable(params);
@@ -222,9 +402,10 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        List<String> cmd = new java.util.ArrayList<>(buildCommandStatic());
         AgentProfile profile = AgentProfileManager
             .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
+        String engine = profile != null ? profile.getKiroAgentEngine() : "v2";
+        List<String> cmd = new java.util.ArrayList<>(buildCommandStatic(engine));
         if (profile != null) {
             cmd.addAll(profile.parsedExtraCliArgs());
         }
@@ -232,13 +413,32 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * Returns the Kiro CLI command with the correct argument order.
-     * {@code --agent} must come AFTER {@code acp} subcommand (as a global flag it starts a chat
-     * session). {@code --trust-all-tools} bypasses per-tool TTY permission prompts that would
-     * block forever since stdin/stdout are wired to JSON-RPC.
+     * Returns the Kiro CLI command for the given engine version.
+     * <ul>
+     *   <li><b>v2</b>: {@code kiro-cli acp --agent intellij-task --trust-all-tools}
+     *       — agent and trust are both CLI flags.</li>
+     *   <li><b>v3</b>: {@code kiro-cli acp --agent-engine v3}
+     *       — neither {@code --agent} nor {@code --trust-all-tools} are supported as flags.
+     *       Trust is set via {@code autopilot:true} in {@code session/new} params
+     *       (see {@link #customizeNewSession}).
+     *       Agent selection is sent as {@code session/set_mode} after session creation
+     *       (see {@link #onSessionCreated}).</li>
+     * </ul>
      */
-    static List<String> buildCommandStatic() {
+    static List<String> buildCommandStatic(String engine) {
+        if ("v3".equals(engine)) {
+            // V3 does not support --agent or --trust-all-tools as CLI flags.
+            // Trust is handled via "autopilot: true" in session/new (see customizeNewSession).
+            // Agent selection is handled via session/set_mode after session/new (see onSessionCreated).
+            return List.of("kiro-cli", "acp", "--agent-engine", "v3");
+        }
         return List.of("kiro-cli", "acp", "--agent", "intellij-task", "--trust-all-tools");
+    }
+
+    /** @deprecated Use {@link #buildCommandStatic(String)} with an explicit engine. */
+    @Deprecated
+    static List<String> buildCommandStatic() {
+        return buildCommandStatic("v2");
     }
 
     @Override
@@ -312,6 +512,41 @@ public final class KiroClient extends AcpClient {
         JsonArray servers = new JsonArray();
         servers.add(server);
         params.add("mcpServers", servers);
+
+        // V3 does not support --trust-all-tools as a CLI flag.
+        // Pass autopilot:true in session/new instead — equivalent to the IDE's "auto-approve all
+        // tools" setting — so tool calls are never blocked waiting for TTY permission prompts.
+        AgentProfile profile = AgentProfileManager
+            .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
+        if (profile != null && "v3".equals(profile.getKiroAgentEngine())) {
+            params.addProperty("autopilot", true);
+        }
+    }
+
+    /**
+     * For v3, sends {@code session/set_mode} with {@code "intellij-task"} immediately after
+     * session creation. This is the v3 replacement for the {@code --agent intellij-task} CLI flag
+     * (which is not supported in v3).
+     */
+    @Override
+    protected void onSessionCreated(String sessionId) {
+        AgentProfile profile = AgentProfileManager
+            .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
+        if (profile == null || !"v3".equals(profile.getKiroAgentEngine())) {
+            return;
+        }
+        JsonObject params = new JsonObject();
+        params.addProperty("sessionId", sessionId);
+        params.addProperty("mode", "intellij-task");
+        transport.sendRequest("session/set_mode", params)
+            .orTimeout(10, TimeUnit.SECONDS)
+            .whenComplete((result, ex) -> {
+                if (ex != null) {
+                    LOG.warn("Kiro v3: session/set_mode failed for intellij-task: " + ex.getMessage());
+                } else {
+                    LOG.info("Kiro v3: session/set_mode intellij-task applied for session " + sessionId);
+                }
+            });
     }
 
     /**

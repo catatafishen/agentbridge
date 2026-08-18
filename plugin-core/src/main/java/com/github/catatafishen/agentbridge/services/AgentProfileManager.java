@@ -235,6 +235,26 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     }
 
     /**
+     * Returns the Kiro agent engine version: {@code "v2"} (default) or {@code "v3"}.
+     */
+    @NotNull
+    public synchronized String loadKiroAgentEngine() {
+        ensureDefaults();
+        AgentProfile profile = profiles.get(KIRO_PROFILE_ID);
+        return profile != null ? profile.getKiroAgentEngine() : "v2";
+    }
+
+    /**
+     * Persists the Kiro agent engine version. Pass {@code "v2"} or {@code "v3"}.
+     */
+    public synchronized void saveKiroAgentEngine(@NotNull String engine) {
+        ensureDefaults();
+        AgentProfile profile = profiles.get(KIRO_PROFILE_ID);
+        if (profile == null) return;
+        profile.setKiroAgentEngine(engine);
+    }
+
+    /**
      * One-time migration: reads binary paths stored in the legacy
      * {@code PropertiesComponent} keys ({@code agentbridge.<id>.customBinary})
      * and copies them into the corresponding {@link AgentProfile}.
