@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -103,7 +105,12 @@ public final class OpenCodeClient extends AcpClient {
         // On Windows, opencode is installed via npm and the native binary is not on PATH.
         // Probe the project-local node_modules path as a fallback.
         String windowsPath = resolveWindowsOpenCodePath(cwd);
-        return List.of(windowsPath != null ? windowsPath : AGENT_ID, "acp");
+        List<String> cmd = new java.util.ArrayList<>(List.of(windowsPath != null ? windowsPath : AGENT_ID, "acp"));
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(AGENT_ID);
+        if (profile != null) {
+            cmd.addAll(profile.parsedExtraCliArgs());
+        }
+        return cmd;
     }
 
     /**

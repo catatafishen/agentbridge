@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.client.acp;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
@@ -220,7 +222,13 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        return buildCommandStatic();
+        List<String> cmd = new java.util.ArrayList<>(buildCommandStatic());
+        AgentProfile profile = AgentProfileManager
+            .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
+        if (profile != null) {
+            cmd.addAll(profile.parsedExtraCliArgs());
+        }
+        return cmd;
     }
 
     /**
