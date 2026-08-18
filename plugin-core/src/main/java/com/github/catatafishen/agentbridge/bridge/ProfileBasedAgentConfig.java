@@ -213,6 +213,9 @@ public class ProfileBasedAgentConfig implements AgentConfig {
             addPermissionCliFlags(cmd);
         }
 
+        // Append user-configured extra CLI args last so they win in "last-wins" flag conflicts.
+        cmd.addAll(profile.parsedExtraCliArgs());
+
         ProcessBuilder pb = new ProcessBuilder(cmd);
 
         // Inject captured shell environment (includes nvm, sdkman, etc.)

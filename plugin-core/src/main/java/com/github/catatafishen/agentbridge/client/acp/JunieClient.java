@@ -5,6 +5,8 @@ import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.client.ClientStartException;
 import com.github.catatafishen.agentbridge.client.acp.junie.JunieKeyStore;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -140,6 +142,11 @@ public final class JunieClient extends AcpClient {
             LOG.info("Junie: using CLI credentials (no token configured in plugin settings)");
         }
 
+        AgentProfile profile =
+            AgentProfileManager.getInstance().getProfile(AgentProfileManager.JUNIE_PROFILE_ID);
+        if (profile != null) {
+            cmd.addAll(profile.parsedExtraCliArgs());
+        }
         return cmd;
     }
 

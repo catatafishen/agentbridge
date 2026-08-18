@@ -125,4 +125,77 @@ class VibeClientStaticMethodsTest {
             assertEquals("http://127.0.0.1:8080/mcp", server.get("url").getAsString());
         }
     }
+
+    // ── buildReprimandText ───────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("buildReprimandText")
+    class BuildReprimandText {
+
+        @Test
+        @DisplayName("write tool → mentions agentbridge_write_file and 'path' param")
+        void writeTool() {
+            String msg = VibeClient.buildReprimandText("write");
+            assertTrue(msg.contains("agentbridge_write_file"));
+            assertTrue(msg.contains("'path'"));
+        }
+
+        @Test
+        @DisplayName("edit tool → same as write (write/edit/create share a branch)")
+        void editTool() {
+            String msg = VibeClient.buildReprimandText("edit");
+            assertTrue(msg.contains("agentbridge_write_file"));
+        }
+
+        @Test
+        @DisplayName("create tool → same as write")
+        void createTool() {
+            String msg = VibeClient.buildReprimandText("create");
+            assertTrue(msg.contains("agentbridge_write_file"));
+        }
+
+        @Test
+        @DisplayName("read tool → mentions agentbridge_read_file and 'path' param")
+        void readTool() {
+            String msg = VibeClient.buildReprimandText("read");
+            assertTrue(msg.contains("agentbridge_read_file"));
+            assertTrue(msg.contains("'path'"));
+        }
+
+        @Test
+        @DisplayName("view tool → same as read")
+        void viewTool() {
+            String msg = VibeClient.buildReprimandText("view");
+            assertTrue(msg.contains("agentbridge_read_file"));
+        }
+
+        @Test
+        @DisplayName("bash tool → mentions agentbridge_run_command")
+        void bashTool() {
+            String msg = VibeClient.buildReprimandText("bash");
+            assertTrue(msg.contains("agentbridge_run_command"));
+        }
+
+        @Test
+        @DisplayName("grep tool → mentions agentbridge_search_text")
+        void grepTool() {
+            String msg = VibeClient.buildReprimandText("grep");
+            assertTrue(msg.contains("agentbridge_search_text"));
+        }
+
+        @Test
+        @DisplayName("glob tool → mentions agentbridge_list_project_files")
+        void globTool() {
+            String msg = VibeClient.buildReprimandText("glob");
+            assertTrue(msg.contains("agentbridge_list_project_files"));
+        }
+
+        @Test
+        @DisplayName("unknown tool → generic message mentioning agentbridge_* prefix")
+        void unknownTool() {
+            String msg = VibeClient.buildReprimandText("some_tool");
+            assertTrue(msg.contains("some_tool"));
+            assertTrue(msg.contains("agentbridge_*"));
+        }
+    }
 }

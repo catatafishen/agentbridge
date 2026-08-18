@@ -24,6 +24,8 @@ class CodexClientConfigurable(private val project: Project) :
     SearchableConfigurable {
 
     private val statusLabel = JBLabel(CHECKING)
+    private var binaryPathField: javax.swing.JTextField? = null
+    private var extraArgsField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = PROFILE_ID,
         displayName = "Codex",
@@ -32,8 +34,12 @@ class CodexClientConfigurable(private val project: Project) :
                 ?: AgentProfileManager.getInstance().loadBinaryPath(PROFILE_ID)
         },
         binaryNameProvider = { "codex" },
+        extraArgsProvider = {
+            com.intellij.util.execution.ParametersListUtil.parse(
+                extraArgsField?.text?.trim().orEmpty()
+            )
+        },
     )
-    private var binaryPathField: javax.swing.JTextField? = null
 
     override fun getId(): String = ID
 
@@ -67,6 +73,25 @@ class CodexClientConfigurable(private val project: Project) :
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(PROFILE_ID).orEmpty() },
                     { AgentProfileManager.getInstance().saveBinaryPath(PROFILE_ID, it.trim()) }
+                )
+        }
+        row("Additional arguments:") {
+            textField()
+                .align(AlignX.FILL)
+                .resizableColumn()
+                .applyToComponent {
+                    emptyText.text = "e.g. --debug (leave empty for none)"
+                    extraArgsField = this
+                    sandboxSection.wireExtraArgsField(this)
+                }
+                .comment(
+                    "Extra CLI flags appended after all plugin-managed arguments when launching Codex. " +
+                        "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
+                        "Args are appended last, so they win for flags that take the last-wins value."
+                )
+                .bindText(
+                    { AgentProfileManager.getInstance().loadExtraCliArgs(PROFILE_ID) },
+                    { AgentProfileManager.getInstance().saveExtraCliArgs(PROFILE_ID, it.trim()) }
                 )
         }
         row("Bubble color:") {

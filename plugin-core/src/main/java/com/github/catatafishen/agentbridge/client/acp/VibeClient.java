@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.bridge.NudgeSource;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -56,7 +58,13 @@ public final class VibeClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        return List.of("vibe-acp");
+        List<String> cmd = new java.util.ArrayList<>(List.of("vibe-acp"));
+        AgentProfile profile =
+            AgentProfileManager.getInstance().getProfile(AGENT_ID);
+        if (profile != null) {
+            cmd.addAll(profile.parsedExtraCliArgs());
+        }
+        return cmd;
     }
 
     @Override

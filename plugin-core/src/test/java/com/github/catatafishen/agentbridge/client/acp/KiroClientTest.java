@@ -79,17 +79,34 @@ class KiroClientTest {
     // ── buildCommandStatic ──────────────────────────────────────────────
 
     @Test
-    void buildCommand_returnsCorrectArgOrder() {
-        List<String> cmd = KiroClient.buildCommandStatic();
+    void buildCommand_v2_returnsCorrectArgOrder() {
+        List<String> cmd = KiroClient.buildCommandStatic("v2");
         assertEquals(List.of("kiro-cli", "acp", "--agent", "intellij-task", "--trust-all-tools"), cmd);
     }
 
     @Test
-    void buildCommand_agentAfterAcp() {
-        List<String> cmd = KiroClient.buildCommandStatic();
+    void buildCommand_v2_agentAfterAcp() {
+        List<String> cmd = KiroClient.buildCommandStatic("v2");
         int acpIdx = cmd.indexOf("acp");
         int agentIdx = cmd.indexOf("--agent");
         assertTrue(agentIdx > acpIdx, "--agent must come after acp subcommand");
+    }
+
+    @Test
+    void buildCommand_v3_usesAgentEngine() {
+        List<String> cmd = KiroClient.buildCommandStatic("v3");
+        assertEquals(List.of("kiro-cli", "acp", "--agent-engine", "v3"), cmd);
+        assertFalse(cmd.contains("--agent"), "--agent must not be present in v3 command");
+        assertFalse(cmd.contains("--trust-all-tools"),
+            "--trust-all-tools not supported in v3; trust is set via autopilot:true in session/new");
+    }
+
+    @Test
+    void buildCommand_defaultFallback_isV2() {
+        // The deprecated no-arg overload must still return the v2 command.
+        @SuppressWarnings("deprecation")
+        List<String> cmd = KiroClient.buildCommandStatic();
+        assertEquals(KiroClient.buildCommandStatic("v2"), cmd);
     }
 
     // ── supportsHttpMcp (version gating) ────────────────────────────────
@@ -203,11 +220,156 @@ class KiroClientTest {
         assertEquals("bold text", KiroClient.stripAnsi("\u001b[1mbold text\u001b[0m"));
     }
 
+    // ── readKiroProfileArn ──────────────────────────────────────────────
+
+    @Test
+    void readKiroProfileArn_extractsArnFromStateTable() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(sqlite3Available(),
+            "sqlite3 CLI not available on this machine");
+        java.nio.file.Path db = java.nio.file.Files.createTempFile("kiro-test", ".sqlite3");
+        try {
+            runSqlite(db,
+                "CREATE TABLE state (key TEXT PRIMARY KEY, value BLOB);",
+                "INSERT INTO state(key,value) VALUES('api.codewhisperer.profile'," +
+                    "'{\"arn\":\"arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEFGH\"," +
+                    "\"profile_name\":\"my-profile\"}');");
+            assertEquals("arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEFGH",
+                KiroClient.readKiroProfileArn(db));
+        } finally {
+            java.nio.file.Files.deleteIfExists(db);
+        }
+    }
+
+    @Test
+    void readKiroProfileArn_returnsNullWhenProfileRowAbsent() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(sqlite3Available(),
+            "sqlite3 CLI not available on this machine");
+        java.nio.file.Path db = java.nio.file.Files.createTempFile("kiro-test", ".sqlite3");
+        try {
+            runSqlite(db, "CREATE TABLE state (key TEXT PRIMARY KEY, value BLOB);");
+            assertNull(KiroClient.readKiroProfileArn(db));
+        } finally {
+            java.nio.file.Files.deleteIfExists(db);
+        }
+    }
+
+    private static boolean sqlite3Available() {
+        try {
+            Process p = new ProcessBuilder("sqlite3", "-version").redirectErrorStream(true).start();
+            return p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void runSqlite(java.nio.file.Path db, String... statements) throws Exception {
+        for (String sql : statements) {
+            Process p = new ProcessBuilder("sqlite3", db.toString(), sql)
+                .redirectErrorStream(true).start();
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
     // ── Reflection helpers ──────────────────────────────────────────────
 
     private static boolean invokeIsPanicLine(String line) throws Exception {
         Method m = KiroClient.class.getDeclaredMethod("isPanicLine", String.class);
         m.setAccessible(true);
         return (boolean) m.invoke(null, line);
+    }
+
+    // ── resolveShellType ────────────────────────────────────────────────
+
+    @Test
+    void resolveShellType_returnsBasenameOfShellEnvVar() {
+        // SHELL is likely set in the test environment; just verify it returns something non-blank
+        String result = KiroClient.resolveShellType();
+        assertNotNull(result);
+        assertFalse(result.isBlank());
+        // Should not contain path separators
+        assertFalse(result.contains("/"), "Expected basename only, got: " + result);
+    }
+
+    // ── resolveKiroDbPath ───────────────────────────────────────────────
+
+    @Test
+    void resolveKiroDbPath_returnsNonNullPath() {
+        java.nio.file.Path path = KiroClient.resolveKiroDbPath();
+        assertNotNull(path);
+        assertTrue(path.toString().contains("kiro-cli"), "Path should contain kiro-cli, got: " + path);
+        assertTrue(path.toString().endsWith("data.sqlite3"), "Path should end with data.sqlite3, got: " + path);
+    }
+
+    @Test
+    void resolveKiroDbPath_containsUserHome() {
+        java.nio.file.Path path = KiroClient.resolveKiroDbPath();
+        String userHome = System.getProperty("user.home");
+        assertTrue(path.toString().startsWith(userHome) ||
+            path.toString().contains("kiro-cli"),
+            "Expected path under user home or APPDATA/XDG, got: " + path);
+    }
+
+    // ── convertThinkingToThought ────────────────────────────────────────
+
+    @Test
+    void convertThinkingToThought_convertsChunkWithThinkingBlock() {
+        var thinking = new com.github.catatafishen.agentbridge.model.ContentBlock.Thinking("some thought");
+        var update = new com.github.catatafishen.agentbridge.model.SessionUpdate.AgentMessageChunk(
+            List.of(thinking));
+        var result = KiroClient.convertThinkingToThought(update);
+        assertInstanceOf(com.github.catatafishen.agentbridge.model.SessionUpdate.AgentThoughtChunk.class,
+            result, "Expected AgentThoughtChunk, got: " + result.getClass().getSimpleName());
+    }
+
+    @Test
+    void convertThinkingToThought_passesThruTextChunkUnchanged() {
+        var text = new com.github.catatafishen.agentbridge.model.ContentBlock.Text("hello");
+        var update = new com.github.catatafishen.agentbridge.model.SessionUpdate.AgentMessageChunk(
+            List.of(text));
+        var result = KiroClient.convertThinkingToThought(update);
+        assertSame(update, result, "Non-thinking chunk should pass through unchanged");
+    }
+
+    @Test
+    void convertThinkingToThought_nonMessageChunkPassesThru() {
+        var update = new com.github.catatafishen.agentbridge.model.SessionUpdate.SessionInfoChanged("title");
+        var result = KiroClient.convertThinkingToThought(update);
+        assertSame(update, result);
+    }
+
+    // ── extractPurposeFromArgs ──────────────────────────────────────────
+
+    @Test
+    void extractPurposeFromArgs_extractsPurposeFromJson() {
+        String args = "{\"path\":\"src/Foo.java\",\"__tool_use_purpose\":\"Read the file\",\"start_line\":1}";
+        assertEquals("Read the file", KiroClient.extractPurposeFromArgs(args));
+    }
+
+    @Test
+    void extractPurposeFromArgs_returnsNullWhenKeyAbsent() {
+        String args = "{\"path\":\"src/Foo.java\"}";
+        assertNull(KiroClient.extractPurposeFromArgs(args));
+    }
+
+    @Test
+    void extractPurposeFromArgs_returnsNullForNull() {
+        assertNull(KiroClient.extractPurposeFromArgs(null));
+    }
+
+    @Test
+    void extractPurposeFromArgs_returnsNullForEmptyString() {
+        assertNull(KiroClient.extractPurposeFromArgs(""));
+    }
+
+    @Test
+    void extractPurposeFromArgs_handlesKeyAtEnd() {
+        String args = "{\"a\":1,\"__tool_use_purpose\":\"last\"}";
+        assertEquals("last", KiroClient.extractPurposeFromArgs(args));
+    }
+
+    @Test
+    void extractPurposeFromArgs_handlesKeyAtStart() {
+        String args = "{\"__tool_use_purpose\":\"first\",\"a\":1}";
+        assertEquals("first", KiroClient.extractPurposeFromArgs(args));
     }
 }

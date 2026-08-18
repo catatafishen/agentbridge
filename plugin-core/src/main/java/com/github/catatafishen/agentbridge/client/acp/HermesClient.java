@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.client.acp;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -54,7 +56,13 @@ public final class HermesClient extends AcpClient {
     protected List<String> buildCommand(String cwd, int mcpPort) {
         // --accept-hooks auto-approves shell hooks that would otherwise prompt
         // on a TTY we don't have when launched from the IDE plugin.
-        return List.of(AGENT_ID, "acp", "--accept-hooks");
+        List<String> cmd = new java.util.ArrayList<>(List.of(AGENT_ID, "acp", "--accept-hooks"));
+        AgentProfile profile =
+            AgentProfileManager.getInstance().getProfile(AGENT_ID);
+        if (profile != null) {
+            cmd.addAll(profile.parsedExtraCliArgs());
+        }
+        return cmd;
     }
 
     @Override

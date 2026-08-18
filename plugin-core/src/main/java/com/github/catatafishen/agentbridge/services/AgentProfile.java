@@ -108,6 +108,22 @@ public final class AgentProfile {
     private String excludedBuiltInTools = "";
 
     /**
+     * Free-text extra CLI arguments appended after all plugin-managed flags when launching
+     * this agent. Tokenized at launch time via {@link com.intellij.util.execution.ParametersListUtil#parse}
+     * (same quoting rules as IntelliJ's own VM-options field). Empty string means no extra args.
+     *
+     * <p>Args are appended <em>after</em> all plugin-managed flags so they win in
+     * &quot;last-wins&quot; flag-conflict scenarios, though this is not guaranteed for every CLI.</p>
+     */
+    private String extraCliArgs = "";
+
+    /**
+     * Kiro agent engine version. Either {@code "v2"} (default, uses {@code --agent} CLI flag)
+     * or {@code "v3"} (uses {@code session/set_mode} ACP method after {@code session/new}).
+     */
+    private String kiroAgentEngine = "v2";
+
+    /**
      * Whether this agent supports {@code session/message} JSON-RPC notifications.
      * When {@code true}, startup instructions are sent via {@code session/message}.
      * When {@code false}, instructions must come from config files or MCP prompt field.
@@ -204,6 +220,8 @@ public final class AgentProfile {
         this.bundledAgentFiles = new ArrayList<>(other.bundledAgentFiles);
         this.additionalInstructions = other.additionalInstructions;
         this.customCliModels = new ArrayList<>(other.customCliModels);
+        this.extraCliArgs = other.extraCliArgs;
+        this.kiroAgentEngine = other.kiroAgentEngine;
     }
 
     // ── Getters / Setters ────────────────────────────────────────────────────
@@ -487,6 +505,39 @@ public final class AgentProfile {
 
     public void setCustomCliModels(@NotNull List<String> customCliModels) {
         this.customCliModels = new ArrayList<>(customCliModels);
+    }
+
+    @NotNull
+    public String getExtraCliArgs() {
+        return extraCliArgs != null ? extraCliArgs : "";
+    }
+
+    public void setExtraCliArgs(@NotNull String extraCliArgs) {
+        this.extraCliArgs = extraCliArgs;
+    }
+
+    /**
+     * Returns the Kiro agent engine version: {@code "v2"} (default) or {@code "v3"}.
+     */
+    @NotNull
+    public String getKiroAgentEngine() {
+        return kiroAgentEngine != null && !kiroAgentEngine.isBlank() ? kiroAgentEngine : "v2";
+    }
+
+    public void setKiroAgentEngine(@NotNull String kiroAgentEngine) {
+        this.kiroAgentEngine = kiroAgentEngine;
+    }
+
+    /**
+     * Tokenizes {@link #extraCliArgs} via {@link com.intellij.util.execution.ParametersListUtil#parse}
+     * and returns the resulting tokens. Returns an empty list when {@link #extraCliArgs} is blank,
+     * avoiding a {@code ParametersListUtil} call in the common (no extra args) case.
+     */
+    @NotNull
+    public List<String> parsedExtraCliArgs() {
+        String raw = getExtraCliArgs();
+        if (raw.isBlank()) return List.of();
+        return com.intellij.util.execution.ParametersListUtil.parse(raw);
     }
 
     /**

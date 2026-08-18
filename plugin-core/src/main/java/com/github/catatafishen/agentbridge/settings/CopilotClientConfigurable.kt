@@ -27,6 +27,7 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
     private var configPanel: com.intellij.openapi.ui.DialogPanel? = null
 
     private var liveBinaryFieldText: () -> String = { "" }
+    private var extraArgsField: javax.swing.JTextField? = null
 
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
@@ -36,6 +37,11 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                 ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
         },
         binaryNameProvider = { "copilot" },
+        extraArgsProvider = {
+            com.intellij.util.execution.ParametersListUtil.parse(
+                extraArgsField?.text?.trim().orEmpty()
+            )
+        },
     )
 
     override fun getDisplayName(): String = "GitHub Copilot"
@@ -119,6 +125,25 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                     { value ->
                         AgentProfileManager.getInstance().getProfile(AGENT_ID)?.excludedBuiltInTools = value.trim()
                     }
+                )
+        }
+        row("Additional arguments:") {
+            textField()
+                .align(AlignX.FILL)
+                .resizableColumn()
+                .applyToComponent {
+                    emptyText.text = "e.g. --debug (leave empty for none)"
+                    extraArgsField = this
+                    sandboxSection.wireExtraArgsField(this)
+                }
+                .comment(
+                    "Extra CLI flags appended after all plugin-managed arguments when launching Copilot. " +
+                        "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
+                        "Args are appended last, so they win for flags that take the last-wins value."
+                )
+                .bindText(
+                    { AgentProfileManager.getInstance().loadExtraCliArgs(AGENT_ID) },
+                    { AgentProfileManager.getInstance().saveExtraCliArgs(AGENT_ID, it.trim()) }
                 )
         }
         row("Bubble color:") {

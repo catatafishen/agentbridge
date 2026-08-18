@@ -22,6 +22,8 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     private val statusLabel = JBLabel()
     private val genericSettings = GenericSettings(AGENT_ID)
     private var binaryPathField: javax.swing.JTextField? = null
+    private var extraArgsField: javax.swing.JTextField? = null
+    private var engineComboBox: javax.swing.JComboBox<String>? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "Kiro",
@@ -30,6 +32,17 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
         },
         binaryNameProvider = { "kiro-cli" },
+        extraArgsProvider = {
+            val engine = engineComboBox?.selectedItem as? String
+                ?: AgentProfileManager.getInstance().loadKiroAgentEngine()
+            val baseArgs = if (engine == "v3")
+                listOf("acp", "--agent-engine", "v3")
+            else
+                listOf("acp", "--agent", "intellij-task", "--trust-all-tools")
+            baseArgs + com.intellij.util.execution.ParametersListUtil.parse(
+                extraArgsField?.text?.trim().orEmpty()
+            )
+        },
     )
 
     override fun getId(): String = ID
@@ -49,6 +62,23 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             cell(link)
         }
         separator()
+        row("Agent engine:") {
+            comboBox(listOf("v2", "v3"))
+                .comment(
+                    "V2 (default): uses <code>--agent intellij-task</code> at launch. " +
+                        "V3: uses <code>--agent-engine v3</code> — agent selection and auth " +
+                        "happen via ACP after connection."
+                )
+                .applyToComponent {
+                    @Suppress("UNCHECKED_CAST")
+                    engineComboBox = this as javax.swing.JComboBox<String>
+                    sandboxSection.wireComboBoxForPreview(this)
+                }
+                .bindItem(
+                    { AgentProfileManager.getInstance().loadKiroAgentEngine() },
+                    { AgentProfileManager.getInstance().saveKiroAgentEngine(it ?: "v2") }
+                )
+        }
         row("Kiro binary:") {
             textField()
                 .align(AlignX.FILL)
@@ -62,6 +92,25 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 .bindText(
                     { AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID).orEmpty() },
                     { AgentProfileManager.getInstance().saveBinaryPath(AGENT_ID, it.trim()) }
+                )
+        }
+        row("Additional arguments:") {
+            textField()
+                .align(AlignX.FILL)
+                .resizableColumn()
+                .applyToComponent {
+                    emptyText.text = "e.g. --debug (leave empty for none)"
+                    extraArgsField = this
+                    sandboxSection.wireExtraArgsField(this)
+                }
+                .comment(
+                    "Extra CLI flags appended after all plugin-managed arguments when launching Kiro. " +
+                        "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
+                        "Args are appended last, so they win for flags that take the last-wins value."
+                )
+                .bindText(
+                    { AgentProfileManager.getInstance().loadExtraCliArgs(AGENT_ID) },
+                    { AgentProfileManager.getInstance().saveExtraCliArgs(AGENT_ID, it.trim()) }
                 )
         }
         row("Bubble color:") {
