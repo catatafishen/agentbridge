@@ -25,6 +25,7 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
     }
 
     private var binaryPathField: javax.swing.JTextField? = null
+    private var extraArgsField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
         displayName = "Claude CLI",
@@ -33,6 +34,11 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
                 ?: profile()?.customBinaryPath
         },
         binaryNameProvider = { "claude" },
+        extraArgsProvider = {
+            com.intellij.util.execution.ParametersListUtil.parse(
+                extraArgsField?.text?.trim().orEmpty()
+            )
+        },
     )
 
     override fun getId(): String = ID
@@ -66,7 +72,11 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "e.g. --debug (leave empty for none)" }
+                .applyToComponent {
+                    emptyText.text = "e.g. --debug (leave empty for none)"
+                    extraArgsField = this
+                    sandboxSection.wireExtraArgsField(this)
+                }
                 .comment(
                     "Extra CLI flags appended after all plugin-managed arguments when launching Claude CLI. " +
                         "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
@@ -103,11 +113,11 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
         }
         separator()
         row {
-            label("Custom models (one per line):")
-                .comment(
+            label(
+                "Custom models (one per line). " +
                     "Format: <code>&lt;model-id&gt;=&lt;Display Name&gt;</code>. " +
-                        "Leave empty to use the built-in model list."
-                )
+                    "Leave empty to use the built-in model list."
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             cell(JBScrollPane(customModelsArea))
@@ -121,7 +131,7 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
                         (profile()?.customCliModels ?: emptyList()).joinToString("\n")
                     customModelsArea.caretPosition = 0
                 }
-        }.layout(RowLayout.PARENT_GRID).resizableRow()
+        }.resizableRow()
         sandboxSection.render(this@panel)
     }
 
