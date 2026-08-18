@@ -24,6 +24,7 @@ class VibeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
 
     private val statusLabel = JBLabel()
     private var binaryPathField: javax.swing.JTextField? = null
+    private var extraArgsField: javax.swing.JTextField? = null
     private val sandboxSection = SandboxSettingsSection(
         agentId = AGENT_ID,
         displayName = "Vibe",
@@ -32,6 +33,11 @@ class VibeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 ?: AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)
         },
         binaryNameProvider = { "vibe-acp" },
+        extraArgsProvider = {
+            com.intellij.util.execution.ParametersListUtil.parse(
+                extraArgsField?.text?.trim().orEmpty()
+            )
+        },
     )
 
     override fun getId(): String = ID
@@ -73,7 +79,11 @@ class VibeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { emptyText.text = "e.g. --debug (leave empty for none)" }
+                .applyToComponent {
+                    emptyText.text = "e.g. --debug (leave empty for none)"
+                    extraArgsField = this
+                    sandboxSection.wireExtraArgsField(this)
+                }
                 .comment(
                     "Extra CLI flags appended after all plugin-managed arguments when launching Vibe. " +
                         "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
