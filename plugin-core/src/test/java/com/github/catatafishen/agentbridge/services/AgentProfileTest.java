@@ -228,7 +228,55 @@ class AgentProfileTest {
         assertEquals(List.of("--v3"), profile.parsedExtraCliArgs());
     }
 
+    // ── getKiroAgentEngine / setKiroAgentEngine ──────────────────────────────
 
+    @Test
+    @DisplayName("getKiroAgentEngine default is 'v2'")
+    void getKiroAgentEngineDefault() {
+        assertEquals("v2", profile.getKiroAgentEngine());
+    }
+
+    @Test
+    @DisplayName("setKiroAgentEngine / getKiroAgentEngine roundtrip")
+    void setAndGetKiroAgentEngine() {
+        profile.setKiroAgentEngine("v3");
+        assertEquals("v3", profile.getKiroAgentEngine());
+    }
+
+    @Test
+    @DisplayName("getKiroAgentEngine returns 'v2' when field is null (null-guard)")
+    void getKiroAgentEngineNullGuard() throws Exception {
+        var field = AgentProfile.class.getDeclaredField("kiroAgentEngine");
+        field.setAccessible(true);
+        field.set(profile, null);
+        assertEquals("v2", profile.getKiroAgentEngine());
+    }
+
+    @Test
+    @DisplayName("getKiroAgentEngine returns 'v2' when field is blank (blank-guard)")
+    void getKiroAgentEngineBlankGuard() {
+        profile.setKiroAgentEngine("   ");
+        assertEquals("v2", profile.getKiroAgentEngine());
+    }
+
+    @Test
+    @DisplayName("copyFrom copies kiroAgentEngine from source")
+    void copyFromCopiesKiroAgentEngine() {
+        AgentProfile src = new AgentProfile();
+        src.setKiroAgentEngine("v3");
+        AgentProfile dest = new AgentProfile();
+        dest.copyFrom(src);
+        assertEquals("v3", dest.getKiroAgentEngine());
+    }
+
+    @Test
+    @DisplayName("getExtraCliArgs returns empty string when field is null (null-guard via reflection)")
+    void getExtraCliArgsNullGuardViaReflection() throws Exception {
+        var field = AgentProfile.class.getDeclaredField("extraCliArgs");
+        field.setAccessible(true);
+        field.set(profile, null);
+        assertEquals("", profile.getExtraCliArgs());
+    }
 
     @Test
     @DisplayName("getClientCssClass returns 'copilot' when binaryName contains 'copilot'")
