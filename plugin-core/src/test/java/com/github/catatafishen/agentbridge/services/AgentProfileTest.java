@@ -159,7 +159,76 @@ class AgentProfileTest {
         assertTrue(dest.isBuiltIn()); // builtIn is NOT copied by copyFrom
     }
 
-    // ── getClientCssClass() ───────────────────────────────────────────────────
+    @Test
+    @DisplayName("getExtraCliArgs default is empty string")
+    void getExtraCliArgsDefaultEmpty() {
+        assertEquals("", profile.getExtraCliArgs());
+    }
+
+    @Test
+    @DisplayName("setExtraCliArgs / getExtraCliArgs roundtrip")
+    void setAndGetExtraCliArgs() {
+        profile.setExtraCliArgs("--foo --bar");
+        assertEquals("--foo --bar", profile.getExtraCliArgs());
+    }
+
+    @Test
+    @DisplayName("setExtraCliArgs null guard via getExtraCliArgs")
+    void getExtraCliArgsNeverNull() {
+        // Field is initialized to "" — even after copyFrom with a null-field profile it should be ""
+        AgentProfile other = new AgentProfile();
+        profile.copyFrom(other);
+        assertNotNull(profile.getExtraCliArgs());
+    }
+
+    @Test
+    @DisplayName("copyFrom copies extraCliArgs from source")
+    void copyFromCopiesExtraCliArgs() {
+        AgentProfile src = new AgentProfile();
+        src.setExtraCliArgs("--v3 --debug");
+        AgentProfile dest = new AgentProfile();
+        dest.copyFrom(src);
+        assertEquals("--v3 --debug", dest.getExtraCliArgs());
+    }
+
+    // ── parsedExtraCliArgs() ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("parsedExtraCliArgs returns empty list when extraCliArgs is blank")
+    void parsedExtraCliArgsEmptyWhenBlank() {
+        profile.setExtraCliArgs("");
+        assertTrue(profile.parsedExtraCliArgs().isEmpty());
+    }
+
+    @Test
+    @DisplayName("parsedExtraCliArgs returns empty list when extraCliArgs is whitespace-only")
+    void parsedExtraCliArgsEmptyWhenWhitespace() {
+        profile.setExtraCliArgs("   ");
+        assertTrue(profile.parsedExtraCliArgs().isEmpty());
+    }
+
+    @Test
+    @DisplayName("parsedExtraCliArgs tokenizes simple flags")
+    void parsedExtraCliArgsSimpleFlags() {
+        profile.setExtraCliArgs("--foo --bar");
+        assertEquals(List.of("--foo", "--bar"), profile.parsedExtraCliArgs());
+    }
+
+    @Test
+    @DisplayName("parsedExtraCliArgs handles quoted values")
+    void parsedExtraCliArgsQuotedValue() {
+        profile.setExtraCliArgs("--flag \"value with spaces\"");
+        assertEquals(List.of("--flag", "value with spaces"), profile.parsedExtraCliArgs());
+    }
+
+    @Test
+    @DisplayName("parsedExtraCliArgs single token")
+    void parsedExtraCliArgsSingleToken() {
+        profile.setExtraCliArgs("--v3");
+        assertEquals(List.of("--v3"), profile.parsedExtraCliArgs());
+    }
+
+
 
     @Test
     @DisplayName("getClientCssClass returns 'copilot' when binaryName contains 'copilot'")
