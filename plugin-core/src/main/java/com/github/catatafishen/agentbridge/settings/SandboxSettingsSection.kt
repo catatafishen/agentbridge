@@ -136,11 +136,33 @@ internal class SandboxSettingsSection(
      * changing the path immediately in the sandbox preview.
      */
     fun wireBinaryPathField(field: javax.swing.text.JTextComponent) {
+        wireFieldForPreview(field)
+    }
+
+    /**
+     * Attaches a {@link javax.swing.event.DocumentListener} to the given text field so the
+     * command preview refreshes live as the user edits the additional arguments. Each client
+     * configurable calls this on its extra-args text field so users see the impact of
+     * changing arguments immediately in the sandbox preview.
+     */
+    fun wireExtraArgsField(field: javax.swing.text.JTextComponent) {
+        wireFieldForPreview(field)
+    }
+
+    private fun wireFieldForPreview(field: javax.swing.text.JTextComponent) {
         field.document.addDocumentListener(object : javax.swing.event.DocumentListener {
             override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = refreshCommandPreview()
             override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = refreshCommandPreview()
             override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = refreshCommandPreview()
         })
+    }
+
+    /**
+     * Attaches an {@link java.awt.event.ItemListener} to the given combo box so the
+     * command preview refreshes live when the selection changes.
+     */
+    fun wireComboBoxForPreview(comboBox: javax.swing.JComboBox<*>) {
+        comboBox.addItemListener { refreshCommandPreview() }
     }
 
     /** Called by the configurable's {@code reset()} to refresh status + preview. */
