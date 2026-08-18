@@ -71,6 +71,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public List<String> customCliModels = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean stripNonEssentialPath; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public String excludedBuiltInTools = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public String extraCliArgs = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     /**
@@ -145,6 +146,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         if (isSet(o.excludedBuiltInTools)) {
             profile.setExcludedBuiltInTools(o.excludedBuiltInTools);
         }
+        if (isSet(o.extraCliArgs)) {
+            profile.setExtraCliArgs(o.extraCliArgs);
+        }
     }
 
     private static boolean isSet(@Nullable String s) {
@@ -164,6 +168,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             && current.isStripNonEssentialPath();
         String ebt = current.getExcludedBuiltInTools();
         o.excludedBuiltInTools = ebt.equals(defaults.getExcludedBuiltInTools()) ? "" : ebt;
+        String eca = current.getExtraCliArgs();
+        o.extraCliArgs = eca.equals(defaults.getExtraCliArgs()) ? "" : eca;
         return o;
     }
 
@@ -172,7 +178,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             || !o.prependInstructionsTo.isEmpty()
             || !o.customCliModels.isEmpty()
             || o.stripNonEssentialPath
-            || !o.excludedBuiltInTools.isEmpty();
+            || !o.excludedBuiltInTools.isEmpty()
+            || !o.extraCliArgs.isEmpty();
     }
 
     private static String nullToEmpty(@Nullable String s) {
@@ -202,6 +209,29 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         AgentProfile profile = profiles.get(agentId);
         if (profile == null) return;
         profile.setCustomBinaryPath(path != null ? path.trim() : "");
+    }
+
+    /**
+     * Returns the user-configured extra CLI arguments for the given agent, or an empty string
+     * if not set. Use {@link AgentProfile#parsedExtraCliArgs()} on the returned profile to get
+     * the tokenized list; this method returns the raw text for binding to a UI text field.
+     */
+    @NotNull
+    public synchronized String loadExtraCliArgs(@NotNull String agentId) {
+        ensureDefaults();
+        AgentProfile profile = profiles.get(agentId);
+        return profile != null ? profile.getExtraCliArgs() : "";
+    }
+
+    /**
+     * Persists extra CLI arguments for the given agent.
+     * Pass {@code null} or blank to clear the override (no extra args).
+     */
+    public synchronized void saveExtraCliArgs(@NotNull String agentId, @Nullable String args) {
+        ensureDefaults();
+        AgentProfile profile = profiles.get(agentId);
+        if (profile == null) return;
+        profile.setExtraCliArgs(args != null ? args.trim() : "");
     }
 
     /**
