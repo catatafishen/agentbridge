@@ -92,7 +92,10 @@ class PromptOrchestrator(
         get() = agentManager.client.activeSessionId
         set(value) {
             require(value == null) { "currentSessionId can only be cleared (set to null), not assigned." }
-            agentManager.client.dropCurrentSession()
+            // Use clientIfRunning (not client) to avoid triggering a fresh agent start here.
+            // If the agent isn't running (e.g. it failed to start), there is no session to drop —
+            // the session state on a not-yet-started client is already empty.
+            agentManager.clientIfRunning?.dropCurrentSession()
             lastInitialisedSessionId = null
         }
 
