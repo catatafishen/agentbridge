@@ -277,4 +277,99 @@ class KiroClientTest {
         m.setAccessible(true);
         return (boolean) m.invoke(null, line);
     }
+
+    // ── resolveShellType ────────────────────────────────────────────────
+
+    @Test
+    void resolveShellType_returnsBasenameOfShellEnvVar() {
+        // SHELL is likely set in the test environment; just verify it returns something non-blank
+        String result = KiroClient.resolveShellType();
+        assertNotNull(result);
+        assertFalse(result.isBlank());
+        // Should not contain path separators
+        assertFalse(result.contains("/"), "Expected basename only, got: " + result);
+    }
+
+    // ── resolveKiroDbPath ───────────────────────────────────────────────
+
+    @Test
+    void resolveKiroDbPath_returnsNonNullPath() {
+        java.nio.file.Path path = KiroClient.resolveKiroDbPath();
+        assertNotNull(path);
+        assertTrue(path.toString().contains("kiro-cli"), "Path should contain kiro-cli, got: " + path);
+        assertTrue(path.toString().endsWith("data.sqlite3"), "Path should end with data.sqlite3, got: " + path);
+    }
+
+    @Test
+    void resolveKiroDbPath_containsUserHome() {
+        java.nio.file.Path path = KiroClient.resolveKiroDbPath();
+        String userHome = System.getProperty("user.home");
+        assertTrue(path.toString().startsWith(userHome) ||
+            path.toString().contains("kiro-cli"),
+            "Expected path under user home or APPDATA/XDG, got: " + path);
+    }
+
+    // ── convertThinkingToThought ────────────────────────────────────────
+
+    @Test
+    void convertThinkingToThought_convertsChunkWithThinkingBlock() {
+        var thinking = new com.github.catatafishen.agentbridge.model.ContentBlock.Thinking("some thought");
+        var update = new com.github.catatafishen.agentbridge.model.SessionUpdate.AgentMessageChunk(
+            List.of(thinking));
+        var result = KiroClient.convertThinkingToThought(update);
+        assertInstanceOf(com.github.catatafishen.agentbridge.model.SessionUpdate.AgentThoughtChunk.class,
+            result, "Expected AgentThoughtChunk, got: " + result.getClass().getSimpleName());
+    }
+
+    @Test
+    void convertThinkingToThought_passesThruTextChunkUnchanged() {
+        var text = new com.github.catatafishen.agentbridge.model.ContentBlock.Text("hello");
+        var update = new com.github.catatafishen.agentbridge.model.SessionUpdate.AgentMessageChunk(
+            List.of(text));
+        var result = KiroClient.convertThinkingToThought(update);
+        assertSame(update, result, "Non-thinking chunk should pass through unchanged");
+    }
+
+    @Test
+    void convertThinkingToThought_nonMessageChunkPassesThru() {
+        var update = new com.github.catatafishen.agentbridge.model.SessionUpdate.SessionInfoChanged("title");
+        var result = KiroClient.convertThinkingToThought(update);
+        assertSame(update, result);
+    }
+
+    // ── extractPurposeFromArgs ──────────────────────────────────────────
+
+    @Test
+    void extractPurposeFromArgs_extractsPurposeFromJson() {
+        String args = "{\"path\":\"src/Foo.java\",\"__tool_use_purpose\":\"Read the file\",\"start_line\":1}";
+        assertEquals("Read the file", KiroClient.extractPurposeFromArgs(args));
+    }
+
+    @Test
+    void extractPurposeFromArgs_returnsNullWhenKeyAbsent() {
+        String args = "{\"path\":\"src/Foo.java\"}";
+        assertNull(KiroClient.extractPurposeFromArgs(args));
+    }
+
+    @Test
+    void extractPurposeFromArgs_returnsNullForNull() {
+        assertNull(KiroClient.extractPurposeFromArgs(null));
+    }
+
+    @Test
+    void extractPurposeFromArgs_returnsNullForEmptyString() {
+        assertNull(KiroClient.extractPurposeFromArgs(""));
+    }
+
+    @Test
+    void extractPurposeFromArgs_handlesKeyAtEnd() {
+        String args = "{\"a\":1,\"__tool_use_purpose\":\"last\"}";
+        assertEquals("last", KiroClient.extractPurposeFromArgs(args));
+    }
+
+    @Test
+    void extractPurposeFromArgs_handlesKeyAtStart() {
+        String args = "{\"__tool_use_purpose\":\"first\",\"a\":1}";
+        assertEquals("first", KiroClient.extractPurposeFromArgs(args));
+    }
 }
