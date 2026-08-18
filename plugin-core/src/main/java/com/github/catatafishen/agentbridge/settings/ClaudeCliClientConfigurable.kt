@@ -62,6 +62,21 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
                     { profile()?.customBinaryPath = it.trim() }
                 )
         }
+        row("Additional arguments:") {
+            textField()
+                .align(AlignX.FILL)
+                .resizableColumn()
+                .applyToComponent { emptyText.text = "e.g. --debug (leave empty for none)" }
+                .comment(
+                    "Extra CLI flags appended after all plugin-managed arguments when launching Claude CLI. " +
+                        "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
+                        "Args are appended last, so they win for flags that take the last-wins value."
+                )
+                .bindText(
+                    { AgentProfileManager.getInstance().loadExtraCliArgs(AgentProfileManager.CLAUDE_CLI_PROFILE_ID) },
+                    { AgentProfileManager.getInstance().saveExtraCliArgs(AgentProfileManager.CLAUDE_CLI_PROFILE_ID, it.trim()) }
+                )
+        }
         row("Instructions file:") {
             textField()
                 .align(AlignX.FILL)
