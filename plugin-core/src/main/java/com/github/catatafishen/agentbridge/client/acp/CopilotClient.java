@@ -199,6 +199,10 @@ public final class CopilotClient extends AcpClient {
         //     standard AcpClient fallback enables conversation-history injection and notifies
         //     the user that resume was unavailable.
 
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(AGENT_ID);
+        if (profile != null) {
+            cmd.addAll(profile.parsedExtraCliArgs());
+        }
         return cmd;
     }
 
