@@ -118,6 +118,12 @@ public final class AgentProfile {
     private String extraCliArgs = "";
 
     /**
+     * Kiro agent engine version. Either {@code "v2"} (default, uses {@code --agent} CLI flag)
+     * or {@code "v3"} (uses {@code session/set_mode} ACP method after {@code session/new}).
+     */
+    private String kiroAgentEngine = "v2";
+
+    /**
      * Whether this agent supports {@code session/message} JSON-RPC notifications.
      * When {@code true}, startup instructions are sent via {@code session/message}.
      * When {@code false}, instructions must come from config files or MCP prompt field.
@@ -215,6 +221,7 @@ public final class AgentProfile {
         this.additionalInstructions = other.additionalInstructions;
         this.customCliModels = new ArrayList<>(other.customCliModels);
         this.extraCliArgs = other.extraCliArgs;
+        this.kiroAgentEngine = other.kiroAgentEngine;
     }
 
     // ── Getters / Setters ────────────────────────────────────────────────────
@@ -507,6 +514,18 @@ public final class AgentProfile {
 
     public void setExtraCliArgs(@NotNull String extraCliArgs) {
         this.extraCliArgs = extraCliArgs;
+    }
+
+    /**
+     * Returns the Kiro agent engine version: {@code "v2"} (default) or {@code "v3"}.
+     */
+    @NotNull
+    public String getKiroAgentEngine() {
+        return kiroAgentEngine != null && !kiroAgentEngine.isBlank() ? kiroAgentEngine : "v2";
+    }
+
+    public void setKiroAgentEngine(@NotNull String kiroAgentEngine) {
+        this.kiroAgentEngine = kiroAgentEngine;
     }
 
     /**
