@@ -121,6 +121,21 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                     }
                 )
         }
+        row("Additional arguments:") {
+            textField()
+                .align(AlignX.FILL)
+                .resizableColumn()
+                .applyToComponent { emptyText.text = "e.g. --debug (leave empty for none)" }
+                .comment(
+                    "Extra CLI flags appended after all plugin-managed arguments when launching Copilot. " +
+                        "Quoted values are supported (e.g. <code>--flag \"value with spaces\"</code>). " +
+                        "Args are appended last, so they win for flags that take the last-wins value."
+                )
+                .bindText(
+                    { AgentProfileManager.getInstance().loadExtraCliArgs(AGENT_ID) },
+                    { AgentProfileManager.getInstance().saveExtraCliArgs(AGENT_ID, it.trim()) }
+                )
+        }
         row("Bubble color:") {
             cell(ThemeColorComboBox())
                 .comment(
