@@ -43,6 +43,7 @@ import org.jetbrains.annotations.VisibleForTesting;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -115,8 +116,8 @@ public abstract class FileTool extends Tool {
      * save have actually completed.
      *
      * <p>The processor pipeline must run on a background thread. Calling this method from the EDT
-     * schedules a background flush and returns {@code false}; callers that require a durable
-     * working tree (notably Git write tools) must treat that as an incomplete flush and abort.
+     * blocks the calling thread behind a modal progress dialog (see {@link #flushFromDispatchThread})
+     * so the real outcome is reported instead of an unconditional {@code false}.
      */
     public static boolean flushPendingAutoFormat(Project project) {
         if (project.isDisposed()) {
@@ -128,12 +129,32 @@ public abstract class FileTool extends Tool {
         if (state == null || state.isIdle()) return true;
 
         if (ApplicationManager.getApplication().isDispatchThread()) {
-            ApplicationManager.getApplication().executeOnPooledThread(
-                () -> flushPendingAutoFormat(project));
-            return false;
+            return flushFromDispatchThread(project, state);
         }
 
         return flushOnBackgroundThread(project, state);
+    }
+
+    /**
+     * Runs the flush on a background thread while pumping a modal progress dialog on the calling
+     * (dispatch) thread, so the EDT genuinely waits for the real result instead of returning
+     * {@code false} the instant the work is handed off.
+     *
+     * <p>A naive {@code Future.get()} here would risk a deadlock: the layout processors apply
+     * their changes via write actions, which are marshalled onto the EDT with {@code invokeAndWait}.
+     * If the EDT were simply blocked in a plain future wait, it could never service that
+     * {@code invokeAndWait} callback. {@link ProgressManager#runProcessWithProgressSynchronously}
+     * nests an event-pumping loop for exactly this situation (and degrades to a plain synchronous
+     * call in headless/test environments, where there is no dialog to pump for in the first place).
+     */
+    private static boolean flushFromDispatchThread(Project project, AutoFormatState state) {
+        AtomicBoolean result = new AtomicBoolean(false);
+        ProgressManager.getInstance().runProcessWithProgressSynchronously(
+            () -> result.set(flushOnBackgroundThread(project, state)),
+            "Applying deferred formatting",
+            false,
+            project);
+        return result.get();
     }
 
     private static boolean flushOnBackgroundThread(Project project, AutoFormatState state) {
@@ -199,10 +220,34 @@ public abstract class FileTool extends Tool {
                 int batchSize = Math.min(AUTO_FORMAT_BATCH_SIZE, remainingPaths.size());
                 List<String> currentBatch =
                     new ArrayList<>(remainingPaths.subList(0, batchSize));
-                if (!processor.process(currentBatch, deadlineNanos)) {
-                    state.requeueFirst(remainingPaths);
-                    return false;
+
+                boolean batchSucceeded;
+                try {
+                    batchSucceeded = processor.process(currentBatch, deadlineNanos);
+                } catch (RuntimeException e) {
+                    LOG.warn("Deferred auto-format failed; queued files were retained", e);
+                    List<String> survivors = survivorsAfterFailure(
+                        state, remainingPaths, currentBatch, "it threw during formatting");
+                    if (survivors == null) {
+                        state.requeueFirst(remainingPaths);
+                        return false;
+                    }
+                    remainingPaths = survivors;
+                    continue;
                 }
+
+                if (!batchSucceeded) {
+                    List<String> survivors = survivorsAfterFailure(
+                        state, remainingPaths, currentBatch, "it failed to format");
+                    if (survivors == null) {
+                        state.requeueFirst(remainingPaths);
+                        return false;
+                    }
+                    remainingPaths = survivors;
+                    continue;
+                }
+
+                state.clearFailures(currentBatch);
                 remainingPaths = batchSize == remainingPaths.size()
                     ? List.of()
                     : new ArrayList<>(remainingPaths.subList(batchSize, remainingPaths.size()));
@@ -219,6 +264,36 @@ public abstract class FileTool extends Tool {
             LOG.warn("Deferred auto-format failed; queued files were retained", e);
             return false;
         }
+    }
+
+    /**
+     * After a batch fails, drops any path that has now failed
+     * {@value AutoFormatState#MAX_CONSECUTIVE_FAILURES} times in a row (logging why) instead of
+     * requeuing it forever. Without this, a single pathological file (one that always times out,
+     * always throws, or never reaches a saved state) would sit at the head of the queue and get
+     * retried -- and fail -- on every future flush attempt, permanently blocking every git
+     * operation that depends on {@link #flushPendingAutoFormat}.
+     *
+     * @return the paths that should keep being processed in this same flush call (excluding any
+     * just-dropped poisoned paths), so the loop can make forward progress without waiting for
+     * an external retry; or {@code null} if nothing was dropped, meaning the caller should
+     * requeue everything and report this attempt as incomplete, same as before this fix.
+     */
+    @Nullable
+    private static List<String> survivorsAfterFailure(AutoFormatState state,
+                                                      List<String> remainingPaths,
+                                                      List<String> failedBatch,
+                                                      String reason) {
+        List<String> poisoned = state.recordFailuresAndFindPoisoned(failedBatch);
+        if (poisoned.isEmpty()) return null;
+        for (String path : poisoned) {
+            LOG.warn("Deferred auto-format: giving up on '" + path + "' after "
+                + AutoFormatState.MAX_CONSECUTIVE_FAILURES + " consecutive failures (" + reason
+                + "); it will be saved as-is, without formatting.");
+        }
+        List<String> survivors = new ArrayList<>(remainingPaths);
+        survivors.removeAll(poisoned);
+        return survivors;
     }
 
     private static boolean processAutoFormatBatch(Project project, List<String> paths,
@@ -430,8 +505,16 @@ public abstract class FileTool extends Tool {
     @VisibleForTesting
     static final class AutoFormatState {
         private final LinkedHashSet<String> pendingPaths = new LinkedHashSet<>();
+        private final Map<String, Integer> failureCounts = new HashMap<>();
         @VisibleForTesting
         final ReentrantLock flushLock = new ReentrantLock();
+
+        /**
+         * A path that fails this many consecutive batch attempts is dropped instead of requeued
+         * (see {@link #recordFailuresAndFindPoisoned}).
+         */
+        @VisibleForTesting
+        static final int MAX_CONSECUTIVE_FAILURES = 2;
 
         void add(String path) {
             synchronized (pendingPaths) {
@@ -471,6 +554,34 @@ public abstract class FileTool extends Tool {
                 combined.addAll(pendingPaths);
                 pendingPaths.clear();
                 pendingPaths.addAll(combined);
+            }
+        }
+
+        /**
+         * Increments the consecutive-failure count for every path in {@code failedBatch} and
+         * returns the subset that has now reached {@link #MAX_CONSECUTIVE_FAILURES}. Those paths
+         * are considered permanently poisoned: the caller drops them instead of requeuing, and
+         * their counters are cleared so a re-added path (e.g. edited again later) starts fresh.
+         */
+        List<String> recordFailuresAndFindPoisoned(List<String> failedBatch) {
+            synchronized (pendingPaths) {
+                List<String> poisoned = new ArrayList<>();
+                for (String path : failedBatch) {
+                    int count = failureCounts.merge(path, 1, Integer::sum);
+                    if (count >= MAX_CONSECUTIVE_FAILURES) poisoned.add(path);
+                }
+                poisoned.forEach(failureCounts::remove);
+                return poisoned;
+            }
+        }
+
+        /**
+         * Clears failure counters for a batch that just succeeded, so a file that failed once
+         * (but recovered) doesn't carry stale failure history into some unrelated future edit.
+         */
+        void clearFailures(List<String> succeededBatch) {
+            synchronized (pendingPaths) {
+                succeededBatch.forEach(failureCounts::remove);
             }
         }
     }
