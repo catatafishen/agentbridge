@@ -81,16 +81,17 @@ public class FileToolAutoFormatTest extends BasePlatformTestCase {
             formatted.contains("int value = 1;"));
     }
 
-    public void testEdtFlushSchedulesBackgroundFormattingAndSave() throws Exception {
+    public void testEdtFlushBlocksUntilBackgroundFormattingAndSaveComplete() throws Exception {
         TestFile testFile = createTestFile(
             "AsyncSample.java", "class AsyncSample{int value=1;}");
         FileTool.queueAutoFormat(getProject(), testFile.file().getPath());
-        AtomicBoolean flushResult = new AtomicBoolean(true);
+        AtomicBoolean flushResult = new AtomicBoolean(false);
 
         EdtTestUtil.runInEdtAndWait(() ->
             flushResult.set(FileTool.flushPendingAutoFormat(getProject())));
 
-        assertFalse("EDT flush must hand work to a background thread", flushResult.get());
+        assertTrue("EDT flush must wait for the real result instead of returning immediately",
+            flushResult.get());
         assertTrue("Background flush did not format and save the file",
             waitForFormattedAndSaved(testFile));
     }
@@ -204,6 +205,73 @@ public class FileToolAutoFormatTest extends BasePlatformTestCase {
 
         assertEquals(List.of("first.java", "new.java"), state.drain());
         state.requeueFirst(List.of());
+        assertTrue(state.drain().isEmpty());
+    }
+
+    public void testPoisonedPathIsDroppedAfterMaxConsecutiveFailuresAndFlushRecovers() {
+        Project activeProject = mock(Project.class);
+        when(activeProject.isDisposed()).thenReturn(false);
+        FileTool.AutoFormatState state = new FileTool.AutoFormatState();
+        state.add("poison.java");
+
+        AtomicInteger attempts = new AtomicInteger();
+        FileTool.AutoFormatBatchProcessor alwaysFails = (chunk, ignoredDeadline) -> {
+            attempts.incrementAndGet();
+            return false;
+        };
+
+        assertFalse("A first-time failure must still be retried, not dropped",
+            FileTool.flushWhileLocked(activeProject, state, Long.MAX_VALUE, alwaysFails));
+
+        assertTrue(
+            "Once the poisoned path is dropped, the flush must report completion instead of "
+                + "blocking every future git operation forever",
+            FileTool.flushWhileLocked(activeProject, state, Long.MAX_VALUE, alwaysFails));
+
+        assertTrue("A path dropped as poisoned must never be requeued", state.drain().isEmpty());
+        assertEquals("The poisoned path must be attempted exactly "
+                + FileTool.AutoFormatState.MAX_CONSECUTIVE_FAILURES + " times before being dropped",
+            FileTool.AutoFormatState.MAX_CONSECUTIVE_FAILURES, attempts.get());
+    }
+
+    public void testPoisonedPathThatThrowsIsAlsoDroppedAndSiblingsStillSucceed() {
+        Project activeProject = mock(Project.class);
+        when(activeProject.isDisposed()).thenReturn(false);
+        FileTool.AutoFormatState state = new FileTool.AutoFormatState();
+        state.add("poison.java");
+        state.add("good.java");
+
+        FileTool.AutoFormatBatchProcessor processor = (chunk, ignoredDeadline) -> {
+            if (chunk.contains("poison.java")) throw new IllegalStateException("boom");
+            return true;
+        };
+
+        assertFalse("A first-time throwing failure must still be retried, not dropped",
+            FileTool.flushWhileLocked(activeProject, state, Long.MAX_VALUE, processor));
+
+        assertTrue(
+            "Once the throwing path is dropped, its sibling must still be formatted and the "
+                + "flush must complete",
+            FileTool.flushWhileLocked(activeProject, state, Long.MAX_VALUE, processor));
+
+        assertTrue("Both paths must be gone: one dropped, one processed successfully",
+            state.drain().isEmpty());
+    }
+
+    public void testTransientFailureDoesNotPoisonAPathThatLaterSucceeds() {
+        Project activeProject = mock(Project.class);
+        when(activeProject.isDisposed()).thenReturn(false);
+        FileTool.AutoFormatState state = new FileTool.AutoFormatState();
+        state.add("flaky.java");
+
+        AtomicInteger attempts = new AtomicInteger();
+        FileTool.AutoFormatBatchProcessor recoversOnSecondAttempt = (chunk, ignoredDeadline) ->
+            attempts.incrementAndGet() > 1;
+
+        assertFalse("The first (transient) failure must be retried",
+            FileTool.flushWhileLocked(activeProject, state, Long.MAX_VALUE, recoversOnSecondAttempt));
+        assertTrue("A path that recovers must be processed normally, not dropped",
+            FileTool.flushWhileLocked(activeProject, state, Long.MAX_VALUE, recoversOnSecondAttempt));
         assertTrue(state.drain().isEmpty());
     }
 
