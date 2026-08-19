@@ -11,10 +11,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class ClientRegistryTest {
 
     @Test
-    @DisplayName("contains all six ACP agents")
+    @DisplayName("contains all seven ACP agents")
     void containsAllAgents() {
         List<ClientRegistry.AgentDescriptor> all = ClientRegistry.getAll();
-        assertEquals(6, all.size());
+        assertEquals(7, all.size());
 
         List<String> ids = all.stream().map(ClientRegistry.AgentDescriptor::id).toList();
         assertTrue(ids.contains("copilot"));
@@ -23,6 +23,7 @@ class ClientRegistryTest {
         assertTrue(ids.contains("opencode"));
         assertTrue(ids.contains("hermes"));
         assertTrue(ids.contains("vibe"));
+        assertTrue(ids.contains("goose"));
     }
 
     @Test
@@ -35,6 +36,7 @@ class ClientRegistryTest {
         assertEquals("opencode", all.get(3).id());
         assertEquals("hermes", all.get(4).id());
         assertEquals("vibe", all.get(5).id());
+        assertEquals("goose", all.get(6).id());
     }
 
     @Test
