@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.client;
 
 import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
+import com.github.catatafishen.agentbridge.client.acp.GooseClient;
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
 import com.github.catatafishen.agentbridge.client.acp.JunieClient;
 import com.github.catatafishen.agentbridge.client.acp.KiroClient;
@@ -38,6 +39,7 @@ public final class ClientRegistry {
         register("opencode", "OpenCode", OpenCodeClient::new);
         register("hermes", "Hermes Agent", HermesClient::new);
         register("vibe", "Mistral Vibe", VibeClient::new);
+        register("goose", "Goose", GooseClient::new);
         // Claude clients are registered once they support a single-arg Project constructor.
     }
 

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
+import com.github.catatafishen.agentbridge.client.acp.GooseClient;
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
 import com.github.catatafishen.agentbridge.client.acp.VibeClient;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
@@ -42,6 +43,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String CODEX_PROFILE_ID = CodexClient.PROFILE_ID;
     public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
     public static final String VIBE_PROFILE_ID = VibeClient.AGENT_ID;
+    public static final String GOOSE_PROFILE_ID = GooseClient.AGENT_ID;
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
     private PersistedState persistedState = new PersistedState();
@@ -245,7 +247,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     private void ensureDefaults() {
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
             CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID,
-            HERMES_PROFILE_ID, VIBE_PROFILE_ID)) {
+            HERMES_PROFILE_ID, VIBE_PROFILE_ID, GOOSE_PROFILE_ID)) {
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
                 if (profile != null) profiles.put(id, profile);
@@ -264,6 +266,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case CODEX_PROFILE_ID -> CodexClient.createDefaultProfile();
             case HERMES_PROFILE_ID -> buildHermesProfile();
             case VIBE_PROFILE_ID -> buildVibeProfile();
+            case GOOSE_PROFILE_ID -> buildGooseProfile();
             default -> null;
         };
     }
@@ -354,6 +357,18 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setAlternateNames(List.of("vibe"));
         p.setInstallHint("Install with: pip install mistral-vibe (requires Python 3.12+)");
         p.setInstallUrl("https://docs.mistral.ai/vibe/code/cli/install-setup");
+        return p;
+    }
+
+    private static AgentProfile buildGooseProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(GOOSE_PROFILE_ID);
+        p.setDisplayName("Goose");
+        p.setBuiltIn(true);
+        p.setTransportType(TransportType.ACP);
+        p.setBinaryName("goose");
+        p.setInstallHint("Install with: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash");
+        p.setInstallUrl("https://goose-docs.ai/docs/getting-started/installation");
         return p;
     }
 }
