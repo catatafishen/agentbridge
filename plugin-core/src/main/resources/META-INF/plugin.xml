@@ -309,6 +309,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
 
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.GooseClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.goose"
+      displayName="Goose"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
       instance="com.github.catatafishen.agentbridge.settings.CodexClientConfigurable"
       id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>

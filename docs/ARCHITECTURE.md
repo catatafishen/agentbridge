@@ -96,7 +96,7 @@ public final class ActiveAgentManager implements Disposable {
 
 Manages the collection of available agent profiles:
 
-- Built-in profiles: GitHub Copilot, OpenCode, Junie, Kiro, Claude Code, Hermes Agent
+- Built-in profiles: GitHub Copilot, OpenCode, Junie, Kiro, Claude Code, Hermes Agent, Goose
 - Custom user-defined profiles
 - Profile persistence and serialization
 
