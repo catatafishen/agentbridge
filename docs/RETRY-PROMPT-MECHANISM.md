@@ -1,4 +1,23 @@
-# Retry Prompt Mechanism
+# Retry Prompt Mechanism (historical — mechanism removed)
+
+## ✅ Removed — superseded by native `--excluded-tools` filtering
+
+**This entire mechanism has been removed from the codebase.** `DENIED_PERMISSION_KINDS` and all of
+`sendPromptMessage()` / `handlePermissionRequest()`'s pre-rejection guidance code no longer exist — there are zero
+remaining references in the source tree. Copilot CLI now honors
+`--excluded-tools` in ACP mode (`CopilotClient.buildCommand()`), so built-in tools like `view`,
+`edit`, `create`, `grep`, `glob`, and `bash` are hidden from the model's tool list outright. There is nothing left to
+deny-and-guide-around — the agent never sees those tools in the first place. See `docs/TOOL-GUARDRAILS.md` (Layer 4) for
+the current, authoritative description.
+
+The class this document calls `CopilotAcpClient.java` no longer exists under that name/package either; permission
+handling for Copilot now lives in
+`com.github.catatafishen.agentbridge.client.acp.AcpClient` (`handlePermissionRequest`), and command construction in
+`com.github.catatafishen.agentbridge.client.acp.CopilotClient`.
+
+Everything below is kept as a **historical record** of why the pre-rejection-guidance approach was built and how it
+worked — useful context if anyone is ever tempted to reintroduce a similar runtime workaround. Do not treat it as
+describing current behavior.
 
 ## Problem
 
@@ -56,7 +75,7 @@ if (DENIED_PERMISSION_KINDS.contains(permKind)) {
 
 ## Implementation Details
 
-### sendPromptMessage()
+### sendPromptMessage ()
 
 Sends a fire-and-forget `session/message` notification (not a request):
 
@@ -98,17 +117,18 @@ Even with pre-rejection guidance, the agent may:
 
 **Why tool filtering would be better:**
 
-- CLI's `--allowed-tools` flag should hide CLI built-ins from agent's tool list
+- CLI's `--excluded-tools` flag should hide CLI built-ins from agent's tool list
 - Agent would only see IntelliJ MCP tools, no confusion possible
-- Bug #556 blocks this: tool filtering doesn't work in --acp mode
+- ~~Bug #556 blocks this: tool filtering doesn't work in --acp mode~~ **Fixed** — see resolution banner at the top of
+  this file
 
-## Workaround Status
+## Workaround Status (historical)
 
-| Approach               | Status    | Reliability   | Notes                         |
-|------------------------|-----------|---------------|-------------------------------|
-| Post-rejection retry   | ❌ Removed | Low           | Agent treats as user feedback |
-| Pre-rejection guidance | ✅ Current | Medium        | Better but not perfect        |
-| Tool filtering         | ⏳ Blocked | Would be 100% | Waiting for CLI bug #556 fix  |
+| Approach               | Status     | Reliability | Notes                                 |
+|------------------------|------------|-------------|---------------------------------------|
+| Post-rejection retry   | ❌ Removed | Low         | Agent treats as user feedback         |
+| Pre-rejection guidance | ❌ Removed | Medium      | Superseded once tool filtering worked |
+| Tool filtering         | ✅ Current | 100%        | `--excluded-tools`, confirmed working |
 
 ## Testing the Mechanism
 
@@ -134,38 +154,26 @@ To test if pre-rejection guidance is working:
     - Does it retry with `agentbridge-` prefix?
     - Or does it give up / try wrong tool?
 
-## Related Issues
+## Related Issues (historical)
 
-- **GitHub CLI bug #556**: `--allowed-tools` doesn't work in `--acp` mode
-- **Removal criteria**: When bug is fixed, remove all denial/retry logic and use proper tool filtering
+- **GitHub CLI bug #556**: `--allowed-tools` doesn't work in `--acp` mode — **fixed**, see resolution banner at the top
+  of this file
+- **Removal criteria**: When bug is fixed, remove all denial/retry logic and use proper tool filtering — ✅ done; this
+  document's mechanism has been fully removed
 
-    - Or "edit a file"
-    - Or "run tests via ./gradlew test"
+## Code Locations (historical — class names no longer current)
 
-3. **Check logs for sequence:**
-   ```
-   ACP request_permission: kind=read ...
-   ACP request_permission: DENYING built-in read
-   sendPrompt: built-in read denied, sending retry with MCP tool instruction
-   sendPrompt: retry result: {"stopReason":"..."}
-   ```
+- **Permission handling:** was `CopilotAcpClient.java:823-857` (`handlePermissionRequest`); now
+  `AcpClient.java` (`com.github.catatafishen.agentbridge.client.acp.AcpClient`)
+- **Retry trigger / implementation / abuse detection:** the `sendPrompt`/`sendRetryPrompt`/
+  `detectCommandAbuse` methods referenced below have been removed along with the rest of this mechanism
 
-4. **Check agent behavior:**
-    - Does it retry with `agentbridge-` prefix?
-    - Or does it give up / try wrong tool?
+## Future Improvements (done)
 
-## Code Locations
+~~When GitHub fixes CLI bug #556 (tool filtering):~~ **This has happened.**
 
-- **Permission handling:** `CopilotAcpClient.java:823-857` (handlePermissionRequest)
-- **Retry trigger:** `CopilotAcpClient.java:404-410` (sendPrompt)
-- **Retry implementation:** `CopilotAcpClient.java:917-953` (sendRetryPrompt)
-- **Abuse detection:** `CopilotAcpClient.java:863-909` (detectCommandAbuse)
-
-## Future Improvements
-
-When GitHub fixes CLI bug #556 (tool filtering):
-
-1. Remove permission denials for `edit`, `create`, `read`
-2. Use proper `availableTools` session parameter
-3. Keep abuse detection for `execute`/`runInTerminal` (custom tools)
-4. Remove this workaround entirely
+1. ~~Remove permission denials for `edit`, `create`, `read`~~ ✅ done
+2. ~~Use proper `availableTools` session parameter~~ ✅ done — via `--excluded-tools`
+   (`CopilotClient.buildCommand()`)
+3. Keep abuse detection for `execute`/`runInTerminal` (custom tools) — unaffected, unrelated to this fix
+4. ~~Remove this workaround entirely~~ ✅ done — see resolution banner at the top of this file
