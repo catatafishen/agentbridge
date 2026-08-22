@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -242,11 +243,85 @@ final class JetBrainsMcpProxy {
         Class<?> sessionOptionsClass = Class.forName(MCP_SESSION_OPTIONS_CLASS, true, cl);
 
         Class<?> mcpCallInfoClass = Class.forName("com.intellij.mcpserver.McpCallInfo", true, cl);
-        Constructor<?> ctor = mcpCallInfoClass.getDeclaredConstructor(
+        Class<?>[] knownParamTypes = {
             int.class, clientInfoClass, Project.class, descriptorClass,
-            jsonObjectClass, jsonObjectClass, sessionOptionsClass, Map.class);
-        return ctor.newInstance(0, clientInfo, project, descriptor, argsJsonObject, emptyJsonObject,
-            sessionOptions, Map.of());
+            jsonObjectClass, jsonObjectClass, sessionOptionsClass, Map.class};
+        Object[] knownArgs = {
+            0, clientInfo, project, descriptor, argsJsonObject, emptyJsonObject, sessionOptions, Map.of()};
+        try {
+            Constructor<?> ctor = mcpCallInfoClass.getDeclaredConstructor(knownParamTypes);
+            return ctor.newInstance(knownArgs);
+        } catch (NoSuchMethodException e) {
+            // Newer plugin versions may append constructor parameters with default values (the
+            // same kind of change that added Implementation/McpSessionOptions fields above).
+            // Fall back to the Kotlin-synthetic $default constructor so unknown new fields fall
+            // back to their compiled-in defaults instead of breaking this proxy again.
+            return buildMcpCallInfoWithDefaults(mcpCallInfoClass, knownParamTypes, knownArgs);
+        }
+    }
+
+    /**
+     * Locates the Kotlin-synthetic {@code $default} constructor for {@code McpCallInfo} once the
+     * plain constructor (matching {@code knownParamTypes} exactly) is no longer found — i.e. the
+     * plugin version has appended new constructor parameters with default values since this class
+     * was last updated.
+     * <p>
+     * Kotlin compiles a class with default constructor parameter values to an additional
+     * constructor overload shaped {@code (<all params>, int mask, DefaultConstructorMarker)},
+     * where bit {@code i} of {@code mask} (0-indexed across ALL parameters) tells the generated
+     * code to substitute its compiled-in default for parameter {@code i} instead of using the
+     * value passed in. This mirrors the {@code Implementation}/{@code McpSessionOptions}
+     * {@code $default} handling elsewhere in this class, generalized so an unknown number/type
+     * of newly appended trailing parameters doesn't need to be hardcoded here.
+     */
+    private static Object buildMcpCallInfoWithDefaults(
+        Class<?> mcpCallInfoClass, Class<?>[] knownParamTypes, Object[] knownArgs)
+        throws ReflectiveOperationException {
+        int knownCount = knownParamTypes.length;
+        for (Constructor<?> ctor : mcpCallInfoClass.getDeclaredConstructors()) {
+            Class<?>[] paramTypes = ctor.getParameterTypes();
+            if (paramTypes.length <= knownCount + 1) continue; // need >=1 extra param + marker
+            if (paramTypes[paramTypes.length - 2] != int.class) continue;
+            if (!"kotlin.jvm.internal.DefaultConstructorMarker".equals(
+                paramTypes[paramTypes.length - 1].getName())) {
+                continue;
+            }
+            if (!prefixMatches(paramTypes, knownParamTypes)) continue;
+
+            Object[] args = new Object[paramTypes.length];
+            System.arraycopy(knownArgs, 0, args, 0, knownCount);
+            int mask = 0;
+            for (int i = knownCount; i < paramTypes.length - 2; i++) {
+                args[i] = defaultValueFor(paramTypes[i]);
+                mask |= 1 << i;
+            }
+            args[paramTypes.length - 2] = mask;
+            args[paramTypes.length - 1] = null; // DefaultConstructorMarker instance
+            ctor.setAccessible(true);
+            return ctor.newInstance(args);
+        }
+        throw new NoSuchMethodException(
+            "No McpCallInfo constructor compatible with known params found: " + Arrays.toString(knownParamTypes));
+    }
+
+    private static boolean prefixMatches(Class<?>[] actual, Class<?>[] expectedPrefix) {
+        if (actual.length < expectedPrefix.length) return false;
+        for (int i = 0; i < expectedPrefix.length; i++) {
+            if (actual[i] != expectedPrefix[i]) return false;
+        }
+        return true;
+    }
+
+    private static Object defaultValueFor(Class<?> type) {
+        if (!type.isPrimitive()) return null;
+        if (type == boolean.class) return false;
+        if (type == char.class) return '\0';
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0f;
+        if (type == double.class) return 0d;
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        return 0;
     }
 
     private static Object buildSessionOptions(ClassLoader cl) throws ReflectiveOperationException {
