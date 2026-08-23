@@ -45,6 +45,8 @@ final class JetBrainsMcpProxy {
     private static final String MCPSERVER_PLUGIN_ID = "com.intellij.mcpServer";
     private static final String MCP_SESSION_OPTIONS_CLASS =
         "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions";
+    private static final String DEFAULT_CONSTRUCTOR_MARKER_CLASS_NAME =
+        "kotlin.jvm.internal.DefaultConstructorMarker";
 
     private static final AtomicReference<Map<String, Object>> toolCacheRef = new AtomicReference<>();
     private static final AtomicReference<ClassLoader> mcpClassLoaderRef = new AtomicReference<>();
@@ -129,7 +131,7 @@ final class JetBrainsMcpProxy {
         // Construct Implementation explicitly.
         // The $default constructor (mask=28 = bits 2+3+4) lets Kotlin fill in defaults for
         // title, websiteUrl, and icons, so we only need to supply name and version.
-        Class<?> markerClass = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker", true, cl);
+        Class<?> markerClass = Class.forName(DEFAULT_CONSTRUCTOR_MARKER_CLASS_NAME, true, cl);
         Constructor<?> implCtor = implementationClass.getDeclaredConstructor(
             String.class, String.class, String.class, String.class, List.class, int.class, markerClass);
         Object implementation = implCtor.newInstance("agentbridge", "1.0", null, null, null, 28, null);
@@ -256,7 +258,7 @@ final class JetBrainsMcpProxy {
             // same kind of change that added Implementation/McpSessionOptions fields above).
             // Fall back to the Kotlin-synthetic $default constructor so unknown new fields fall
             // back to their compiled-in defaults instead of breaking this proxy again.
-            return buildMcpCallInfoWithDefaults(mcpCallInfoClass, knownParamTypes, knownArgs);
+            return buildMcpCallInfoWithDefaults(cl, mcpCallInfoClass, knownParamTypes, knownArgs);
         }
     }
 
@@ -275,18 +277,15 @@ final class JetBrainsMcpProxy {
      * of newly appended trailing parameters doesn't need to be hardcoded here.
      */
     private static Object buildMcpCallInfoWithDefaults(
-        Class<?> mcpCallInfoClass, Class<?>[] knownParamTypes, Object[] knownArgs)
+        ClassLoader cl, Class<?> mcpCallInfoClass, Class<?>[] knownParamTypes, Object[] knownArgs)
         throws ReflectiveOperationException {
         int knownCount = knownParamTypes.length;
+        Class<?> markerClass = Class.forName(DEFAULT_CONSTRUCTOR_MARKER_CLASS_NAME, true, cl);
         for (Constructor<?> ctor : mcpCallInfoClass.getDeclaredConstructors()) {
             Class<?>[] paramTypes = ctor.getParameterTypes();
-            if (paramTypes.length <= knownCount + 1) continue; // need >=1 extra param + marker
-            if (paramTypes[paramTypes.length - 2] != int.class) continue;
-            if (!"kotlin.jvm.internal.DefaultConstructorMarker".equals(
-                paramTypes[paramTypes.length - 1].getName())) {
+            if (!isCompatibleDefaultsConstructor(paramTypes, knownCount, knownParamTypes, markerClass)) {
                 continue;
             }
-            if (!prefixMatches(paramTypes, knownParamTypes)) continue;
 
             Object[] args = new Object[paramTypes.length];
             System.arraycopy(knownArgs, 0, args, 0, knownCount);
@@ -297,11 +296,26 @@ final class JetBrainsMcpProxy {
             }
             args[paramTypes.length - 2] = mask;
             args[paramTypes.length - 1] = null; // DefaultConstructorMarker instance
-            ctor.setAccessible(true);
             return ctor.newInstance(args);
         }
         throw new NoSuchMethodException(
             "No McpCallInfo constructor compatible with known params found: " + Arrays.toString(knownParamTypes));
+    }
+
+    /**
+     * Checks whether {@code paramTypes} is the shape of a Kotlin-synthetic {@code $default}
+     * constructor compatible with {@code knownParamTypes}: the known prefix followed by one or
+     * more newly appended defaulted parameters, then the trailing {@code (int mask,
+     * DefaultConstructorMarker)} pair. Comparing {@code markerClass} by reference (rather than by
+     * name, as before) avoids a false match against an unrelated class of the same name loaded
+     * by a different classloader.
+     */
+    private static boolean isCompatibleDefaultsConstructor(
+        Class<?>[] paramTypes, int knownCount, Class<?>[] knownParamTypes, Class<?> markerClass) {
+        return paramTypes.length > knownCount + 1 // need >=1 extra param + marker
+            && paramTypes[paramTypes.length - 2] == int.class
+            && paramTypes[paramTypes.length - 1] == markerClass
+            && prefixMatches(paramTypes, knownParamTypes);
     }
 
     private static boolean prefixMatches(Class<?>[] actual, Class<?>[] expectedPrefix) {
@@ -329,7 +343,7 @@ final class JetBrainsMcpProxy {
         Class<?> askModeClass = Class.forName(
             "com.intellij.mcpserver.impl.McpServerService$AskCommandExecutionMode", true, cl);
         Class<?> mcpToolFilterClass = Class.forName("com.intellij.mcpserver.McpToolFilter", true, cl);
-        Class<?> markerClass = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker", true, cl);
+        Class<?> markerClass = Class.forName(DEFAULT_CONSTRUCTOR_MARKER_CLASS_NAME, true, cl);
 
         // Same name-based field lookup as the DIRECT constant above: enum constants are
         // public static final fields, so this is unaffected by toString() overrides.
