@@ -136,6 +136,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * Sets {@link #httpServer} on success and returns the actual bound port.
      */
     private int bindServerPort(int port, boolean isStatic) throws IOException {
+        JdkHttpServerConfig.ensureNoDelay();
         if (isStatic) {
             try {
                 httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);

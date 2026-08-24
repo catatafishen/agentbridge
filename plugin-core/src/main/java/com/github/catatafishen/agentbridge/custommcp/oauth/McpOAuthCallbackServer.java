@@ -1,8 +1,9 @@
 package com.github.catatafishen.agentbridge.custommcp.oauth;
 
+import com.github.catatafishen.agentbridge.services.JdkHttpServerConfig;
+import com.intellij.openapi.diagnostic.Logger;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -35,22 +36,24 @@ public final class McpOAuthCallbackServer implements AutoCloseable {
     private static final String CALLBACK_PATH = "/callback";
     private static final String SUCCESS_HTML =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
-        "<title>Authentication Successful</title>" +
-        "<style>body{font-family:sans-serif;text-align:center;padding:60px;color:#1a1a1a}" +
-        "h1{color:#0a7c42}</style></head><body>" +
-        "<h1>&#x2713; Authentication Successful</h1>" +
-        "<p>You can close this window and return to your IDE.</p>" +
-        "</body></html>";
+            "<title>Authentication Successful</title>" +
+            "<style>body{font-family:sans-serif;text-align:center;padding:60px;color:#1a1a1a}" +
+            "h1{color:#0a7c42}</style></head><body>" +
+            "<h1>&#x2713; Authentication Successful</h1>" +
+            "<p>You can close this window and return to your IDE.</p>" +
+            "</body></html>";
     private static final String ERROR_HTML_TEMPLATE =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
-        "<title>Authentication Failed</title>" +
-        "<style>body{font-family:sans-serif;text-align:center;padding:60px;color:#1a1a1a}" +
-        "h1{color:#c0392b}</style></head><body>" +
-        "<h1>Authentication Failed</h1><p>%s</p>" +
-        "<p>You can close this window and retry from your IDE.</p>" +
-        "</body></html>";
+            "<title>Authentication Failed</title>" +
+            "<style>body{font-family:sans-serif;text-align:center;padding:60px;color:#1a1a1a}" +
+            "h1{color:#c0392b}</style></head><body>" +
+            "<h1>Authentication Failed</h1><p>%s</p>" +
+            "<p>You can close this window and retry from your IDE.</p>" +
+            "</body></html>";
 
-    /** Result returned by {@link #waitForCallback(long, TimeUnit)}. */
+    /**
+     * Result returned by {@link #waitForCallback(long, TimeUnit)}.
+     */
     public record Result(
         @NotNull String code,
         @NotNull String state
@@ -68,6 +71,7 @@ public final class McpOAuthCallbackServer implements AutoCloseable {
      * @throws IOException if the server cannot bind
      */
     public void start() throws IOException {
+        JdkHttpServerConfig.ensureNoDelay();
         server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext(CALLBACK_PATH, this::handleCallback);
         server.setExecutor(null);

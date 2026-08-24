@@ -330,6 +330,7 @@ public final class ChatWebServer implements Disposable {
 
     private void bindServers(int port, boolean isStatic, boolean https,
                              ChatWebServerSettings settings) throws IOException {
+        JdkHttpServerConfig.ensureNoDelay();
         if (isStatic) {
             bindStaticPort(port, https);
         } else {
