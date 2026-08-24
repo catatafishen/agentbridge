@@ -206,39 +206,19 @@ public abstract class FileTool extends Tool {
         List<String> remainingPaths = List.of();
         try {
             while (!project.isDisposed()) {
+                remainingPaths = remainingPaths.isEmpty() ? state.drain() : remainingPaths;
                 if (remainingPaths.isEmpty()) {
-                    remainingPaths = state.drain();
-                    if (remainingPaths.isEmpty()) return true;
+                    return true;
                 }
-                if (Thread.currentThread().isInterrupted()) {
-                    state.requeueFirst(remainingPaths);
-                    Thread.currentThread().interrupt();
-                    LOG.warn("Deferred auto-format interrupted before processing");
+                if (interruptedBeforeProcessing(state, remainingPaths)) {
                     return false;
                 }
 
-                int batchSize = Math.min(AUTO_FORMAT_BATCH_SIZE, remainingPaths.size());
-                List<String> currentBatch =
-                    new ArrayList<>(remainingPaths.subList(0, batchSize));
-
-                boolean batchSucceeded;
-                try {
-                    batchSucceeded = processor.process(currentBatch, deadlineNanos);
-                } catch (RuntimeException e) {
-                    LOG.warn("Deferred auto-format failed; queued files were retained", e);
+                List<String> currentBatch = takeNextBatch(remainingPaths);
+                BatchAttempt attempt = attemptBatch(processor, currentBatch, deadlineNanos);
+                if (!attempt.succeeded()) {
                     List<String> survivors = survivorsAfterFailure(
-                        state, remainingPaths, currentBatch, "it threw during formatting");
-                    if (survivors == null) {
-                        state.requeueFirst(remainingPaths);
-                        return false;
-                    }
-                    remainingPaths = survivors;
-                    continue;
-                }
-
-                if (!batchSucceeded) {
-                    List<String> survivors = survivorsAfterFailure(
-                        state, remainingPaths, currentBatch, "it failed to format");
+                        state, remainingPaths, currentBatch, attempt.failureReason());
                     if (survivors == null) {
                         state.requeueFirst(remainingPaths);
                         return false;
@@ -248,9 +228,7 @@ public abstract class FileTool extends Tool {
                 }
 
                 state.clearFailures(currentBatch);
-                remainingPaths = batchSize == remainingPaths.size()
-                    ? List.of()
-                    : new ArrayList<>(remainingPaths.subList(batchSize, remainingPaths.size()));
+                remainingPaths = dropProcessedBatch(remainingPaths, currentBatch.size());
             }
 
             state.requeueFirst(remainingPaths);
@@ -263,6 +241,60 @@ public abstract class FileTool extends Tool {
             state.requeueFirst(remainingPaths);
             LOG.warn("Deferred auto-format failed; queued files were retained", e);
             return false;
+        }
+    }
+
+    /**
+     * Checks for interruption before starting a new batch. If interrupted, requeues the
+     * remaining paths, restores the interrupt flag, and logs why the flush is bailing out.
+     *
+     * @return {@code true} if the caller should stop processing (interrupted), {@code false}
+     * if it is safe to continue with the next batch
+     */
+    private static boolean interruptedBeforeProcessing(AutoFormatState state,
+                                                       List<String> remainingPaths) {
+        if (!Thread.currentThread().isInterrupted()) {
+            return false;
+        }
+        state.requeueFirst(remainingPaths);
+        Thread.currentThread().interrupt();
+        LOG.warn("Deferred auto-format interrupted before processing");
+        return true;
+    }
+
+    private static List<String> takeNextBatch(List<String> remainingPaths) {
+        int batchSize = Math.min(AUTO_FORMAT_BATCH_SIZE, remainingPaths.size());
+        return new ArrayList<>(remainingPaths.subList(0, batchSize));
+    }
+
+    private static List<String> dropProcessedBatch(List<String> remainingPaths, int batchSize) {
+        return batchSize == remainingPaths.size()
+            ? List.of()
+            : new ArrayList<>(remainingPaths.subList(batchSize, remainingPaths.size()));
+    }
+
+    /**
+     * Outcome of running a single batch through the {@link AutoFormatBatchProcessor}. Unifies
+     * "processor threw" and "processor returned false" into a single shape so the caller has one
+     * failure path (and one {@code failureReason}) to hand to {@link #survivorsAfterFailure}
+     * instead of two near-duplicate try/catch and if-branches.
+     */
+    private record BatchAttempt(boolean succeeded, String failureReason) {
+    }
+
+    /**
+     * Runs {@code processor.process} for the given batch, extracted into its own method so the
+     * try/catch around a single processor call isn't nested inside the outer flush loop's
+     * try/catch.
+     */
+    private static BatchAttempt attemptBatch(AutoFormatBatchProcessor processor,
+                                             List<String> currentBatch, long deadlineNanos) {
+        try {
+            boolean succeeded = processor.process(currentBatch, deadlineNanos);
+            return new BatchAttempt(succeeded, succeeded ? null : "it failed to format");
+        } catch (RuntimeException e) {
+            LOG.warn("Deferred auto-format failed; queued files were retained", e);
+            return new BatchAttempt(false, "it threw during formatting");
         }
     }
 
