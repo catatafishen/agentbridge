@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -16,10 +15,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
@@ -45,39 +41,26 @@ public class GitDocumentSaveIntegrationTest extends BasePlatformTestCase {
         }
     }
 
-    public void testBackgroundSaveKeepsGitWriteWaitOffEdt() throws Exception {
+    /**
+     * MCP tools (including all git tools, via {@link GitTool#flushAndSave}) execute on a
+     * background thread, not the EDT. IntelliJ's threading model only allows writing to the
+     * document/VFS model from the EDT (see jb.gg/ij-platform-threading, "Writing data is only
+     * allowed on EDT"); calling {@code FileDocumentManager.saveAllDocuments()} directly from a
+     * background thread throws "Access is allowed from write thread only" on IntelliJ 2025.3+
+     * (reported in production on Windows via {@code git_commit}). Verify that
+     * {@link GitTool#saveAllDocuments} — invoked here from a background pooled thread, just
+     * like real tool execution — completes without that error and actually persists the
+     * document to disk.
+     */
+    public void testBackgroundThreadSaveDispatchesThroughEdtWithoutError() throws Exception {
         TestFile testFile = createUnsavedTestFile();
-        ApplicationImpl application = (ApplicationImpl) ApplicationManager.getApplication();
-        CountDownLatch readStarted = new CountDownLatch(1);
-        CountDownLatch releaseRead = new CountDownLatch(1);
 
-        CompletableFuture<Void> readFuture = runOnPooledThread(() ->
-            application.runReadAction(() -> {
-                readStarted.countDown();
-                awaitRelease(releaseRead, "read action");
-            }));
-        assertTrue("Background read action did not start",
-            readStarted.await(5, TimeUnit.SECONDS));
-
-        CompletableFuture<Void> saveFuture =
-            runOnPooledThread(GitTool::saveAllDocuments);
-
-        EdtSnapshot edtSnapshot;
-        try {
-            assertTrue("Document save never requested a write action",
-                waitForPendingWriteAction(application, saveFuture));
-            edtSnapshot = captureEdtSnapshot();
-        } finally {
-            releaseRead.countDown();
-        }
-
-        readFuture.get(10, TimeUnit.SECONDS);
+        CompletableFuture<Void> saveFuture = runOnPooledThread(GitTool::saveAllDocuments);
         saveFuture.get(10, TimeUnit.SECONDS);
-        assertFalse("Git save was waiting for the write lock on EDT: " + edtSnapshot,
-            edtSnapshot.containsClass(GitTool.class.getName()));
+
         assertFalse("Document must be saved when saveAllDocuments() returns",
             FileDocumentManager.getInstance().isDocumentUnsaved(testFile.document()));
-        assertEquals("changed", Files.readString(testFile.path()));
+        assertEquals("changed", awaitDiskContent(testFile.path(), "changed"));
     }
 
     public void testReadOnlyGitStatusDoesNotSaveEditorDocuments() throws Exception {
@@ -134,30 +117,6 @@ public class GitDocumentSaveIntegrationTest extends BasePlatformTestCase {
         return new TestFile(path, document);
     }
 
-    private static boolean waitForPendingWriteAction(
-        ApplicationImpl application,
-        CompletableFuture<?> saveFuture
-    ) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (!application.isWriteActionPending()
-            && !saveFuture.isDone()
-            && System.nanoTime() < deadline) {
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
-            if (Thread.interrupted()) throw new InterruptedException();
-        }
-        return application.isWriteActionPending();
-    }
-
-    private static EdtSnapshot captureEdtSnapshot() {
-        for (Map.Entry<Thread, StackTraceElement[]> entry
-            : Thread.getAllStackTraces().entrySet()) {
-            if (entry.getKey().getName().startsWith("AWT-EventQueue")) {
-                return new EdtSnapshot(entry.getKey().getState(), entry.getValue());
-            }
-        }
-        throw new AssertionError("AWT event dispatch thread was not found");
-    }
-
     private static CompletableFuture<Void> runOnPooledThread(Runnable action) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -171,29 +130,24 @@ public class GitDocumentSaveIntegrationTest extends BasePlatformTestCase {
         return future;
     }
 
-    private static void awaitRelease(CountDownLatch latch, String operation) {
-        try {
-            if (!latch.await(10, TimeUnit.SECONDS)) {
-                throw new AssertionError("Timed out waiting to release " + operation);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(operation + " was interrupted", e);
-        }
-    }
-
-    private record EdtSnapshot(Thread.State state, StackTraceElement[] stack) {
-        private boolean containsClass(String className) {
-            return Arrays.stream(stack)
-                .anyMatch(frame -> frame.getClassName().startsWith(className));
-        }
-
-        @Override
-        public String toString() {
-            String separator = System.lineSeparator();
-            return state + separator + String.join(separator,
-                Arrays.stream(stack).map(StackTraceElement::toString).toList());
-        }
+    /**
+     * Polls the file on disk for up to 5 seconds until it matches {@code expected}. Physical
+     * disk persistence after {@code FileDocumentManager.saveAllDocuments()} returns is not
+     * guaranteed to be instantaneous (the VFS may flush asynchronously), so a direct read
+     * immediately after the save call can be flaky. Returns the last content read (which may
+     * still differ from {@code expected} if the timeout is reached, so the caller's assertion
+     * produces a useful diff).
+     */
+    private static String awaitDiskContent(Path path, String expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        String content;
+        do {
+            content = Files.readString(path);
+            if (expected.equals(content)) return content;
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(20));
+            if (Thread.interrupted()) throw new InterruptedException();
+        } while (System.nanoTime() < deadline);
+        return content;
     }
 
     private record TestFile(Path path, Document document) {

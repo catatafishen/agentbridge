@@ -582,9 +582,17 @@ public abstract class GitTool extends Tool {
     }
 
     static void saveAllDocuments() {
-        // FileDocumentManager supports background saves and acquires its own narrow write actions.
-        // Wrapping the whole save in an EDT write action can deadlock against background PSI reads.
-        FileDocumentManager.getInstance().saveAllDocuments();
+        // FileDocumentManager.saveAllDocuments() requires write-intent access. IntelliJ
+        // 2025.3+ enforces this with "Access is allowed from write thread only" when called
+        // from a background thread (MCP tools execute off the EDT, e.g. on a JobScheduler
+        // ForkJoinPool thread — reported on Windows). Being on the EDT is sufficient to
+        // satisfy this: EDT dispatch implicitly holds write-intent lock, so we only need to
+        // hop threads here, not wrap in an explicit WriteAction. An earlier version of this
+        // method used EdtUtil.invokeAndWait(() -> WriteAction.run(...)), but that combination
+        // (an explicit write action plus commitAllDocuments()) deadlocked against background
+        // PSI reads and was intentionally removed in 13a51d6af0. Plain EDT dispatch avoids
+        // that deadlock while still giving saveAllDocuments() the write-intent context it needs.
+        EdtUtil.invokeAndWait(() -> FileDocumentManager.getInstance().saveAllDocuments());
     }
 
     // ── VCS Log follow-along ─────────────────────────────────
