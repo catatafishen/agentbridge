@@ -576,6 +576,53 @@ class AcpClientProtocolTest {
     }
 
     @Nested
+    class BackgroundAgentActivity {
+
+        @Test
+        void agentMessageChunkCountsAsActivity() {
+            SessionUpdate update = new SessionUpdate.AgentMessageChunk(List.of());
+            assertTrue(AcpClient.isBackgroundAgentActivity(update));
+        }
+
+        @Test
+        void sessionInfoUpdateIsNotActivity() {
+            // Kiro v3 emits a trailing session_info_update (context-usage telemetry) after the
+            // prompt response — it must NOT trip the background-agent banner / Stop button.
+            SessionUpdate update = new SessionUpdate.SessionInfoChanged(null);
+            assertFalse(AcpClient.isBackgroundAgentActivity(update));
+        }
+
+        @Test
+        void sessionInfoUpdateWithTitleIsNotActivity() {
+            SessionUpdate update = new SessionUpdate.SessionInfoChanged("New title");
+            assertFalse(AcpClient.isBackgroundAgentActivity(update));
+        }
+
+        @Test
+        void availableCommandsChangedIsNotActivity() {
+            SessionUpdate update = new SessionUpdate.AvailableCommandsChanged(List.of());
+            assertFalse(AcpClient.isBackgroundAgentActivity(update));
+        }
+
+        @Test
+        void availableModesChangedIsNotActivity() {
+            SessionUpdate update = new SessionUpdate.AvailableModesChanged(List.of(), null);
+            assertFalse(AcpClient.isBackgroundAgentActivity(update));
+        }
+
+        @Test
+        void configOptionsChangedIsNotActivity() {
+            SessionUpdate update = new SessionUpdate.ConfigOptionsChanged(List.of());
+            assertFalse(AcpClient.isBackgroundAgentActivity(update));
+        }
+
+        @Test
+        void nullUpdateIsNotActivity() {
+            assertFalse(AcpClient.isBackgroundAgentActivity(null));
+        }
+    }
+
+    @Nested
     class PermissionHandling {
 
         @Test
