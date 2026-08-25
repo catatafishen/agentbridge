@@ -27,15 +27,9 @@ class KiroClientAgentsTest {
     @Test
     @DisplayName("includes the session id")
     void includesSessionId() {
-        JsonObject params = KiroClient.buildSetModeParams("session-abc", "kiro_planner");
+        JsonObject params = KiroClient.buildSetModeParams("session-abc", "plan");
 
         assertEquals("session-abc", params.get("sessionId").getAsString());
-        assertEquals("kiro_planner", params.get("modeId").getAsString());
-    }
-
-    @Test
-    @DisplayName("default agent slug is intellij-task")
-    void defaultAgentSlugConstant() {
-        assertEquals("intellij-task", KiroClient.DEFAULT_AGENT_SLUG);
+        assertEquals("plan", params.get("modeId").getAsString());
     }
 }

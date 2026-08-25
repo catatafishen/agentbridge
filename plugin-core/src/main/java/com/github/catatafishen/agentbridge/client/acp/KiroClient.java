@@ -543,12 +543,6 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * The default Kiro agent (mode) slug — matches the {@code --agent intellij-task} CLI flag used
-     * on v2 and the initial {@code session/set_mode} sent on v3.
-     */
-    static final String DEFAULT_AGENT_SLUG = "intellij-task";
-
-    /**
      * Whether the active Kiro profile is running the v3 agent engine. Agent (mode) selection is
      * only exposed and applied for v3, which drives it through {@code session/set_mode}; v2 pins
      * the agent via the {@code --agent} CLI flag and cannot switch without restarting.
@@ -560,9 +554,10 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * On v3, Kiro exposes its agents as standard ACP session modes (parsed from {@code session/new}
-     * into {@link #getAvailableModes()}); surface them as selectable agents. On v2 the agent is
-     * fixed at launch via {@code --agent}, so no runtime selection is offered.
+     * On v3, Kiro exposes its agents as standard ACP session modes (e.g. {@code vibe}, {@code spec},
+     * {@code plan}) parsed from {@code session/new} into {@link #getAvailableModes()}; surface them
+     * as selectable agents. On v2 the agent is fixed at launch via {@code --agent}, so no runtime
+     * selection is offered.
      */
     @Override
     public List<AbstractClient.AgentMode> getAvailableAgents() {
@@ -570,36 +565,47 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * On v3 the default selected agent is {@code intellij-task} (seeded into the current agent slug
-     * so the session menu highlights it). On v2 agent selection is not exposed, so there is no
+     * On v3 the default selected agent mirrors Kiro's own reported {@code currentModeId} (parsed
+     * into {@link #getCurrentModeSlug()} — e.g. {@code vibe}), so the session menu highlights the
+     * agent Kiro actually started with. On v2 agent selection is not exposed, so there is no
      * default agent slug.
+     *
+     * <p>Never returns a synthetic slug: sending an unknown mode to {@code session/set_mode} is
+     * rejected by Kiro, and highlighting a non-existent entry is misleading. {@code intellij-task}
+     * (the v2 {@code --agent} identity) is deliberately not used here — it is not one of the v3
+     * modes Kiro advertises.</p>
      */
     @Override
     public @org.jetbrains.annotations.Nullable String defaultAgentSlug() {
-        return isV3Engine() ? DEFAULT_AGENT_SLUG : null;
+        return isV3Engine() ? getCurrentModeSlug() : null;
     }
 
     /**
-     * For v3, applies the currently selected agent via {@code session/set_mode} immediately after
-     * session creation. This is the v3 replacement for the {@code --agent} CLI flag (which v3 does
-     * not support). Falls back to {@link #DEFAULT_AGENT_SLUG} when no agent has been selected yet.
+     * For v3, applies an explicit agent selection made before the session existed via
+     * {@code session/set_mode} once the session is created. If no explicit selection was made (or
+     * it already matches Kiro's current mode) nothing is sent — Kiro already starts in its own
+     * {@code currentModeId}, so forcing a redundant switch is unnecessary.
      */
     @Override
     protected void onSessionCreated(String sessionId) {
         if (!isV3Engine()) {
             return;
         }
-        applyKiroMode(sessionId, resolveSelectedAgentSlug());
+        String slug = getCurrentAgentSlug();
+        if (isSelectableMode(slug) && !slug.equals(getCurrentModeSlug())) {
+            applyKiroMode(sessionId, slug);
+        }
     }
 
     /**
      * For v3, pushes an agent selection made while a session is live to Kiro via
-     * {@code session/set_mode}. No-op on v2 or when there is no active session (the selection is
-     * then applied later by {@link #onSessionCreated}).
+     * {@code session/set_mode}. No-op on v2, when there is no active session (the selection is then
+     * applied later by {@link #onSessionCreated}), or when the slug is not one of the modes Kiro
+     * advertised (guards against sending an invalid mode that Kiro would reject).
      */
     @Override
     protected void onAgentSlugChanged(@org.jetbrains.annotations.Nullable String slug) {
-        if (!isV3Engine() || slug == null || slug.isBlank()) {
+        if (!isV3Engine() || !isSelectableMode(slug)) {
             return;
         }
         String sessionId = getActiveSessionId();
@@ -608,9 +614,15 @@ public final class KiroClient extends AcpClient {
         }
     }
 
-    private String resolveSelectedAgentSlug() {
-        String slug = getCurrentAgentSlug();
-        return (slug == null || slug.isBlank()) ? DEFAULT_AGENT_SLUG : slug;
+    /**
+     * Whether {@code slug} is a non-blank mode that Kiro actually advertised in {@code session/new}.
+     * Only advertised modes are valid arguments to {@code session/set_mode}.
+     */
+    private boolean isSelectableMode(@org.jetbrains.annotations.Nullable String slug) {
+        if (slug == null || slug.isBlank()) {
+            return false;
+        }
+        return getAvailableModes().stream().anyMatch(m -> slug.equals(m.slug()));
     }
 
     /**
