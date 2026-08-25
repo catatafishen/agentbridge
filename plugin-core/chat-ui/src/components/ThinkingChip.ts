@@ -58,6 +58,10 @@ export default class ThinkingChip extends HTMLElement {
         this._resolveLink();
         const section = this._linkedSection;
         if (!section) return;
+        // Once the user has manually opened/closed this chip, no further automation
+        // (accordion collapse from sibling chips, or the auto-collapse-on-completion in
+        // ChatController) is allowed to override that choice.
+        this.dataset.userToggled = 'true';
         collapseAllChips(this.closest('chat-message'), this);
         if (section.classList.contains('turn-hidden')) {
             section.classList.remove('turn-hidden');

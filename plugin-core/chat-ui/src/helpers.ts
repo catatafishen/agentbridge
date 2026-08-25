@@ -6,11 +6,15 @@ export function decodeBase64(s: string): string {
     return new TextDecoder().decode(b);
 }
 
-/** Collapse all expanded chip sections in a container, optionally except one. */
+/** Collapse all expanded chip sections in a container, optionally except one.
+ *  Skips chips the user has manually toggled at least once — see ThinkingChip/SubagentChip
+ *  _toggleExpand(), which set dataset.userToggled once the user interacts. Automation must
+ *  never override a user's explicit expand/collapse choice. */
 export function collapseAllChips(container: Element | null, except?: Element): void {
     if (!container) return;
     container.querySelectorAll('tool-chip, thinking-chip, subagent-chip').forEach(chip => {
         if (chip === except) return;
+        if ((chip as HTMLElement).dataset.userToggled === 'true') return;
         const section = (chip as any)._linkedSection as HTMLElement | undefined;
         if (!section || section.classList.contains('turn-hidden')) return;
         (chip as HTMLElement).style.opacity = '1';

@@ -258,8 +258,14 @@ const ChatController = {
     } | null): void {
         if (!ctx?.thinkingBlock) return;
         (ctx.thinkingBlock as any).finalize();
-        ctx.thinkingBlock.removeAttribute('expanded');
-        ctx.thinkingBlock.classList.add('turn-hidden');
+        // If the user has manually toggled this chip (expanded or re-collapsed it), leave
+        // its open/closed state alone — completion of streaming must not override an
+        // explicit user choice. Only auto-collapse chips the user never touched.
+        const userToggled = ctx.thinkingChip?.dataset.userToggled === 'true';
+        if (!userToggled) {
+            ctx.thinkingBlock.removeAttribute('expanded');
+            ctx.thinkingBlock.classList.add('turn-hidden');
+        }
         if (ctx.thinkingChip) {
             ctx.thinkingChip.setAttribute('status', 'complete');
             ctx.thinkingChip = null;
