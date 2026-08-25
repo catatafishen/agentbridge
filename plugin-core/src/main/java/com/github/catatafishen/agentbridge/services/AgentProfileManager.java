@@ -74,6 +74,13 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public boolean stripNonEssentialPath; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public String excludedBuiltInTools = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public String extraCliArgs = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        // TECH DEBT: first agent-specific field in this otherwise-generic delta struct. If a SECOND
+        // agent ever needs a persisted variant/backend setting (e.g. a Codex mode or Claude
+        // backend), do NOT add another named field here — replace this with a generic
+        // Map<String,String> agentSettings (keyed e.g. "kiroAgentEngine" -> "v3") so toDelta/
+        // applyOverride/hasUserData handle all agent-specific settings through one code path.
+        // Rule of three: refactor to the abstraction on the second occurrence, not this first one.
+        public String kiroAgentEngine = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     /**
@@ -151,6 +158,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         if (isSet(o.extraCliArgs)) {
             profile.setExtraCliArgs(o.extraCliArgs);
         }
+        if (isSet(o.kiroAgentEngine)) {
+            profile.setKiroAgentEngine(o.kiroAgentEngine);
+        }
     }
 
     private static boolean isSet(@Nullable String s) {
@@ -172,6 +182,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         o.excludedBuiltInTools = ebt.equals(defaults.getExcludedBuiltInTools()) ? "" : ebt;
         String eca = current.getExtraCliArgs();
         o.extraCliArgs = eca.equals(defaults.getExtraCliArgs()) ? "" : eca;
+        String kae = current.getKiroAgentEngine();
+        o.kiroAgentEngine = kae.equals(defaults.getKiroAgentEngine()) ? "" : kae;
         return o;
     }
 
@@ -181,7 +193,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             || !o.customCliModels.isEmpty()
             || o.stripNonEssentialPath
             || !o.excludedBuiltInTools.isEmpty()
-            || !o.extraCliArgs.isEmpty();
+            || !o.extraCliArgs.isEmpty()
+            || !o.kiroAgentEngine.isEmpty();
     }
 
     private static String nullToEmpty(@Nullable String s) {

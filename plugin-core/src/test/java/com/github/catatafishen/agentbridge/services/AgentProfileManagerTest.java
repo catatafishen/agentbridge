@@ -39,6 +39,59 @@ class AgentProfileManagerTest {
         assertEquals(9, profiles.size());
     }
 
+    // ── kiroAgentEngine persistence (delta) ───────────────────────────────────
+
+    @Nested
+    @DisplayName("kiroAgentEngine persistence")
+    class KiroAgentEnginePersistence {
+
+        @Test
+        @DisplayName("save side: v3 selection is written to the persisted override")
+        void v3IsWrittenToOverride() {
+            // getState() needs no IntelliJ platform, so this runs headless. It exercises the
+            // exact bug: saveKiroAgentEngine set the in-memory field but it was never captured
+            // into the persisted delta, so it was lost on restart.
+            manager.saveKiroAgentEngine("v3");
+
+            AgentProfileManager.PersistedState state = manager.getState();
+            AgentProfileManager.ProfileOverride kiro = state.overrides.stream()
+                .filter(o -> AgentProfileManager.KIRO_PROFILE_ID.equals(o.profileId))
+                .findFirst()
+                .orElse(null);
+
+            assertNotNull(kiro, "a Kiro override must be persisted once the engine differs from default");
+            assertEquals("v3", kiro.kiroAgentEngine);
+        }
+
+        @Test
+        @DisplayName("save side: default v2 is not persisted as an override")
+        void defaultV2NotPersisted() {
+            AgentProfileManager.PersistedState state = manager.getState();
+            boolean hasKiroEngineOverride = state.overrides.stream()
+                .anyMatch(o -> AgentProfileManager.KIRO_PROFILE_ID.equals(o.profileId)
+                    && !o.kiroAgentEngine.isEmpty());
+            assertFalse(hasKiroEngineOverride, "default v2 must not be persisted as a delta");
+        }
+
+        @Test
+        @DisplayName("load side: a persisted v3 override is applied to the profile")
+        void v3OverrideIsApplied() {
+            // Mirrors the existing loadStateApplies* tests (platform provided by the CI harness).
+            AgentProfileManager.PersistedState state = new AgentProfileManager.PersistedState();
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            o.profileId = AgentProfileManager.KIRO_PROFILE_ID;
+            o.kiroAgentEngine = "v3";
+            state.overrides.add(o);
+
+            AgentProfileManager fresh = new AgentProfileManager();
+            fresh.loadState(state);
+
+            AgentProfile kiro = fresh.getProfile(AgentProfileManager.KIRO_PROFILE_ID);
+            assertNotNull(kiro);
+            assertEquals("v3", kiro.getKiroAgentEngine());
+        }
+    }
+
     @Test
     @DisplayName("All default profiles have non-empty display names")
     void allProfilesHaveDisplayNames() {
