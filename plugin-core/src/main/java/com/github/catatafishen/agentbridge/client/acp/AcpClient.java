@@ -638,7 +638,13 @@ public abstract class AcpClient extends AbstractClient {
         }
     }
 
-    private void updateCommands(List<NewSessionResponse.AvailableCommand> commands) {
+    /**
+     * Replaces the current slash command list with full command details (name + description).
+     * Both the name list (for matching) and the detail list (for autocomplete descriptions)
+     * are refreshed. Called by subclasses (e.g., {@link KiroClient}) that parse commands from
+     * proprietary notifications and want descriptions surfaced in the prompt autocomplete.
+     */
+    protected void updateCommands(List<NewSessionResponse.AvailableCommand> commands) {
         List<String> names = new ArrayList<>();
         availableCommandDetails.clear();
         for (NewSessionResponse.AvailableCommand cmd : commands) {
@@ -1212,6 +1218,17 @@ public abstract class AcpClient extends AbstractClient {
     @Override
     public final void setCurrentAgentSlug(@Nullable String slug) {
         currentAgentSlug = slug;
+        onAgentSlugChanged(slug);
+    }
+
+    /**
+     * Hook invoked after the current agent slug changes. Default is a no-op. Subclasses whose
+     * agent selection must be applied to a live session (e.g. Kiro v3 via {@code session/set_mode})
+     * override this to push the change to the running agent process. {@code setCurrentAgentSlug}
+     * is {@code final}, so this hook is the extension point for reacting to selection changes.
+     */
+    protected void onAgentSlugChanged(@Nullable String slug) {
+        // no-op by default
     }
 
     @Override

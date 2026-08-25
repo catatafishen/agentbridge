@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
+import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
@@ -288,19 +290,36 @@ public final class KiroClient extends AcpClient {
 
     private void handleCommandsAvailable(JsonObject params) {
         if (params != null && params.has("commands")) {
-            JsonArray commands = params.getAsJsonArray("commands");
+            List<NewSessionResponse.AvailableCommand> commands = parseCommandsAvailable(params);
             LOG.info("Kiro slash commands available: " + commands.size());
-            List<String> names = new java.util.ArrayList<>();
-            for (var el : commands) {
-                if (el.isJsonObject()) {
-                    JsonObject cmd = el.getAsJsonObject();
-                    if (cmd.has("name")) {
-                        names.add(cmd.get("name").getAsString());
-                    }
-                }
-            }
-            updateCommandNames(names);
+            updateCommands(commands);
         }
+    }
+
+    /**
+     * Parses a Kiro {@code _kiro.dev/commands/available} notification payload into
+     * {@link NewSessionResponse.AvailableCommand} records, preserving each command's
+     * description so the prompt autocomplete can display it. Entries without a usable
+     * {@code name} are skipped. Pure and side-effect free for unit testing.
+     */
+    static List<NewSessionResponse.AvailableCommand> parseCommandsAvailable(JsonObject params) {
+        List<NewSessionResponse.AvailableCommand> result = new java.util.ArrayList<>();
+        if (params == null || !params.has("commands")) {
+            return result;
+        }
+        JsonArray commands = params.getAsJsonArray("commands");
+        for (var el : commands) {
+            if (!el.isJsonObject()) continue;
+            JsonObject cmd = el.getAsJsonObject();
+            if (!cmd.has("name") || cmd.get("name").isJsonNull()) continue;
+            String name = cmd.get("name").getAsString();
+            if (name.isBlank()) continue;
+            String description = cmd.has("description") && !cmd.get("description").isJsonNull()
+                ? cmd.get("description").getAsString()
+                : "";
+            result.add(new NewSessionResponse.AvailableCommand(name, description, null));
+        }
+        return result;
     }
 
     public void executeSlashCommand(String command, java.util.function.Consumer<Boolean> callback) {
@@ -524,27 +543,95 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * For v3, sends {@code session/set_mode} with {@code "intellij-task"} immediately after
-     * session creation. This is the v3 replacement for the {@code --agent intellij-task} CLI flag
-     * (which is not supported in v3).
+     * The default Kiro agent (mode) slug — matches the {@code --agent intellij-task} CLI flag used
+     * on v2 and the initial {@code session/set_mode} sent on v3.
+     */
+    static final String DEFAULT_AGENT_SLUG = "intellij-task";
+
+    /**
+     * Whether the active Kiro profile is running the v3 agent engine. Agent (mode) selection is
+     * only exposed and applied for v3, which drives it through {@code session/set_mode}; v2 pins
+     * the agent via the {@code --agent} CLI flag and cannot switch without restarting.
+     */
+    private boolean isV3Engine() {
+        AgentProfile profile = AgentProfileManager
+            .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
+        return profile != null && "v3".equals(profile.getKiroAgentEngine());
+    }
+
+    /**
+     * On v3, Kiro exposes its agents as standard ACP session modes (parsed from {@code session/new}
+     * into {@link #getAvailableModes()}); surface them as selectable agents. On v2 the agent is
+     * fixed at launch via {@code --agent}, so no runtime selection is offered.
+     */
+    @Override
+    public List<AbstractClient.AgentMode> getAvailableAgents() {
+        return isV3Engine() ? getAvailableModes() : List.of();
+    }
+
+    /**
+     * On v3 the default selected agent is {@code intellij-task} (seeded into the current agent slug
+     * so the session menu highlights it). On v2 agent selection is not exposed, so there is no
+     * default agent slug.
+     */
+    @Override
+    public @org.jetbrains.annotations.Nullable String defaultAgentSlug() {
+        return isV3Engine() ? DEFAULT_AGENT_SLUG : null;
+    }
+
+    /**
+     * For v3, applies the currently selected agent via {@code session/set_mode} immediately after
+     * session creation. This is the v3 replacement for the {@code --agent} CLI flag (which v3 does
+     * not support). Falls back to {@link #DEFAULT_AGENT_SLUG} when no agent has been selected yet.
      */
     @Override
     protected void onSessionCreated(String sessionId) {
-        AgentProfile profile = AgentProfileManager
-            .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
-        if (profile == null || !"v3".equals(profile.getKiroAgentEngine())) {
+        if (!isV3Engine()) {
             return;
         }
+        applyKiroMode(sessionId, resolveSelectedAgentSlug());
+    }
+
+    /**
+     * For v3, pushes an agent selection made while a session is live to Kiro via
+     * {@code session/set_mode}. No-op on v2 or when there is no active session (the selection is
+     * then applied later by {@link #onSessionCreated}).
+     */
+    @Override
+    protected void onAgentSlugChanged(@org.jetbrains.annotations.Nullable String slug) {
+        if (!isV3Engine() || slug == null || slug.isBlank()) {
+            return;
+        }
+        String sessionId = getActiveSessionId();
+        if (sessionId != null && !sessionId.isBlank()) {
+            applyKiroMode(sessionId, slug);
+        }
+    }
+
+    private String resolveSelectedAgentSlug() {
+        String slug = getCurrentAgentSlug();
+        return (slug == null || slug.isBlank()) ? DEFAULT_AGENT_SLUG : slug;
+    }
+
+    /**
+     * Builds the {@code session/set_mode} request params for the given session and mode.
+     * The Kiro (standard ACP) field name is {@code modeId}. Pure for unit testing.
+     */
+    static JsonObject buildSetModeParams(String sessionId, String modeId) {
         JsonObject params = new JsonObject();
         params.addProperty("sessionId", sessionId);
-        params.addProperty("mode", "intellij-task");
-        transport.sendRequest("session/set_mode", params)
+        params.addProperty("modeId", modeId);
+        return params;
+    }
+
+    private void applyKiroMode(String sessionId, String modeId) {
+        transport.sendRequest("session/set_mode", buildSetModeParams(sessionId, modeId))
             .orTimeout(10, TimeUnit.SECONDS)
             .whenComplete((result, ex) -> {
                 if (ex != null) {
-                    LOG.warn("Kiro v3: session/set_mode failed for intellij-task: " + ex.getMessage());
+                    LOG.warn("Kiro v3: session/set_mode failed for " + modeId + ": " + ex.getMessage());
                 } else {
-                    LOG.info("Kiro v3: session/set_mode intellij-task applied for session " + sessionId);
+                    LOG.info("Kiro v3: session/set_mode " + modeId + " applied for session " + sessionId);
                 }
             });
     }
