@@ -1329,6 +1329,17 @@ public abstract class AcpClient extends AbstractClient {
 
     @Override
     public final void setModel(String sessionId, String modelId) {
+        sendSetModel(sessionId, modelId);
+    }
+
+    /**
+     * Dispatches a model change to the agent. The default uses the standard ACP
+     * {@code session/set_model} request. Subclasses whose agent does not implement
+     * {@code session/set_model} (e.g. Kiro v3, which returns {@code Method not found} and exposes
+     * models only as a {@code model} session config option) override this to route the change the
+     * way that agent expects. {@link #setModel} is {@code final}, so this is the extension point.
+     */
+    protected void sendSetModel(String sessionId, String modelId) {
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         params.addProperty("modelId", modelId);
