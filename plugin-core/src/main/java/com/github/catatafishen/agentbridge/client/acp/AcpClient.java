@@ -1881,7 +1881,11 @@ public abstract class AcpClient extends AbstractClient {
         }
         // Fire the one-shot post-turn callback on the first message that arrives after turn end,
         // and extend the auto-clear timer so the window stays open as long as messages keep arriving.
-        if (postTurnActive) {
+        // Only real agent activity (message/thought chunks, tool calls, plans) counts as a
+        // "background sub-agent still running" — pure metadata updates that some agents emit AFTER
+        // the prompt response (e.g. Kiro v3's trailing session_info_update context-usage telemetry)
+        // must not trip the background-agent banner or the Stop button.
+        if (postTurnActive && isBackgroundAgentActivity(update)) {
             Runnable cb = firstPostTurnCallback.getAndSet(null);
             if (cb != null) cb.run();
             reschedulePostTurnTimer();
@@ -1892,6 +1896,26 @@ public abstract class AcpClient extends AbstractClient {
                 consumer.accept(update);
             }
         }
+    }
+
+    /**
+     * Whether a parsed session update represents real background-agent activity — i.e. the agent
+     * is genuinely still working after signalling turn-complete. Pure metadata / advisory updates
+     * ({@link SessionUpdate.SessionInfoChanged} context-usage or title telemetry,
+     * {@link SessionUpdate.AvailableCommandsChanged}, {@link SessionUpdate.AvailableModesChanged},
+     * {@link SessionUpdate.ConfigOptionsChanged}) do not count: some agents (e.g. Kiro v3) emit a
+     * trailing {@code session_info_update} AFTER the prompt response as normal turn teardown, and
+     * that must not trip the "background sub-agent still running" banner / Stop button. A {@code null}
+     * update (unparseable) is treated as non-activity.
+     */
+    static boolean isBackgroundAgentActivity(@Nullable SessionUpdate update) {
+        if (update == null) {
+            return false;
+        }
+        return !(update instanceof SessionUpdate.SessionInfoChanged
+            || update instanceof SessionUpdate.AvailableCommandsChanged
+            || update instanceof SessionUpdate.AvailableModesChanged
+            || update instanceof SessionUpdate.ConfigOptionsChanged);
     }
 
     /**
