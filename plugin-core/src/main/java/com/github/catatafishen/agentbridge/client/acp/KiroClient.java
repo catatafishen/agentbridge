@@ -510,16 +510,26 @@ public final class KiroClient extends AcpClient {
         // AcpClient.buildMcpHttpServerJson); a malformed entry makes Kiro exit cleanly on
         // session/new. (See issue #948.)
         //
-        // Transport selection stays version-gated rather than driven by mcpCapabilities.http alone:
-        // older Kiro (e.g. 2.10.0) also advertises mcpCapabilities.http:true, but was only ever
+        // Transport selection: v3 (KAS) always uses HTTP; v2 is version-gated.
+        //
+        // v2: older Kiro (e.g. 2.10.0) also advertises mcpCapabilities.http:true, but was only ever
         // observed with the earlier (headerless) HTTP payload, which crashed its ACP process on
         // session/new. Whether those versions accept the corrected payload was not verified, so we
         // conservatively require a known-good version (2.14.1+) before sending HTTP and fall back to
         // STDIO otherwise. STDIO leaves the session alive (just without @agentbridge tools), which
         // is no worse than the pre-fix behaviour on those versions — it avoids any risk of
         // regressing an older Kiro from "session works" to "session dies".
+        //
+        // v3: the Kiro Agent Server (KAS) reports NO agentInfo/version in its initialize response,
+        // so kiroVersion() is null and the v2 version gate would wrongly fall back to STDIO. But v3
+        // KAS only surfaces @agentbridge tools over HTTP — with STDIO the tools never reach the
+        // model (verified: KAS connects to an injected HTTP MCP server, calls tools/list, and
+        // reports _kiro/mcp/status status:"connected"; STDIO produces no tools). So for v3 we send
+        // HTTP whenever KAS advertises mcpCapabilities.http, bypassing the version gate entirely.
+        boolean useHttp = advertisesHttpMcp()
+            && (isV3Engine() || supportsHttpMcp(kiroVersion()));
         JsonObject server;
-        if (advertisesHttpMcp() && supportsHttpMcp(kiroVersion())) {
+        if (useHttp) {
             server = buildMcpHttpServer("agentbridge", mcpPort);
         } else {
             server = buildMcpStdioServer("agentbridge", mcpPort);
@@ -535,9 +545,7 @@ public final class KiroClient extends AcpClient {
         // V3 does not support --trust-all-tools as a CLI flag.
         // Pass autopilot:true in session/new instead — equivalent to the IDE's "auto-approve all
         // tools" setting — so tool calls are never blocked waiting for TTY permission prompts.
-        AgentProfile profile = AgentProfileManager
-            .getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
-        if (profile != null && "v3".equals(profile.getKiroAgentEngine())) {
+        if (isV3Engine()) {
             params.addProperty("autopilot", true);
         }
     }
@@ -646,6 +654,21 @@ public final class KiroClient extends AcpClient {
                     LOG.info("Kiro v3: session/set_mode " + modeId + " applied for session " + sessionId);
                 }
             });
+    }
+
+    /**
+     * Model selection routing. Kiro v3 has no {@code session/set_model} method — it returns
+     * {@code -32601 "Method not found"} — and instead exposes models as a {@code model} session
+     * config option. Route v3 model changes through {@code session/set_config_option(configId=model)}
+     * (via {@link #setConfigOption}). On v2, fall back to the standard {@code session/set_model}.
+     */
+    @Override
+    protected void sendSetModel(String sessionId, String modelId) {
+        if (isV3Engine()) {
+            setConfigOption(sessionId, "model", modelId);
+        } else {
+            super.sendSetModel(sessionId, modelId);
+        }
     }
 
     /**
