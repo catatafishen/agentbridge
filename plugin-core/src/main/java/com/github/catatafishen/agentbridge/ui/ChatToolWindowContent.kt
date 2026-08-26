@@ -540,7 +540,24 @@ class ChatToolWindowContent(
             is SessionUpdate.ToolCall -> handleToolCall(update)
             is SessionUpdate.ToolCallUpdate -> handleToolCallUpdate(update)
             is SessionUpdate.Plan -> handlePlanUpdate(update)
+            is SessionUpdate.ConfigOptionsChanged -> handleConfigOptionsChanged()
             else -> Unit
+        }
+    }
+
+    /**
+     * Refreshes the model dropdown when the agent pushes a `config_option_update` that changed the
+     * model list. Kiro v3 exposes models as a `model` session config option and re-sends them via
+     * notification after `/session-clear`; the client re-syncs its own model list, but the cached
+     * [ModelSelectorService.loadedModels] backing the bottom-right dropdown must be refreshed too.
+     * Also keeps the web panel's stored model JSON consistent. No-op when the client reports no
+     * models, so unrelated config-option changes never blank the dropdown.
+     */
+    private fun handleConfigOptionsChanged() {
+        ApplicationManager.getApplication().invokeLater {
+            if (modelSelector.syncFromClientModels() != null) {
+                ChatWebServer.getInstance(project)?.setModelsJson(modelSelector.buildModelsJson())
+            }
         }
     }
 

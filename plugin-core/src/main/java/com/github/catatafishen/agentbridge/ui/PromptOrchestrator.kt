@@ -773,9 +773,14 @@ class PromptOrchestrator(
             is SessionUpdate.Plan -> handleClientUpdate(update)
             is SessionUpdate.AvailableCommandsChanged,
             is SessionUpdate.AvailableModesChanged,
-            is SessionUpdate.ConfigOptionsChanged,
             is SessionUpdate.SessionInfoChanged -> { /* handled by AcpClient internally */
             }
+
+            // Forwarded so the UI can refresh the model dropdown: some agents (e.g. Kiro v3)
+            // deliver models as a `model` config option and push updates via config_option_update
+            // notifications (notably after /session-clear). AcpClient re-syncs availableModels
+            // internally; the UI still needs a nudge to reload its cached model list.
+            is SessionUpdate.ConfigOptionsChanged -> handleClientUpdate(update)
 
             is SessionUpdate.UserMessageChunk -> { /* replayed user messages during session/load — no-op during streaming */
             }

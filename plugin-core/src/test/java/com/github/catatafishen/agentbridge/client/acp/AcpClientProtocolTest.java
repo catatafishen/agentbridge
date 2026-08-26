@@ -139,6 +139,55 @@ class AcpClientProtocolTest {
 
             assertEquals(1, updates.size());
             assertInstanceOf(SessionUpdate.ConfigOptionsChanged.class, updates.get(0));
+
+            // The "model" config option must be re-extracted into availableModels so the primary
+            // model dropdown stays populated and the option is suppressed from the session (gear)
+            // menu. Regression guard: Kiro v3 delivers models via config_option_update after
+            // /session-clear; without re-extraction availableModels would be empty here.
+            List<Model> models = client.getAvailableModels();
+            assertEquals(1, models.size());
+            assertEquals("gpt-4", models.get(0).id());
+
+            // Because sessionModelIds now covers the model option's values, listSessionOptions()
+            // suppresses it — no duplicate "model" entry leaks into the gear menu.
+            assertTrue(
+                client.listSessionOptions().stream().noneMatch(opt -> "model".equals(opt.key())),
+                "model option should be suppressed from session options once availableModels is populated");
+        }
+
+        @Test
+        void configOptionUpdateWithoutModelDoesNotClobberModels() {
+            // Seed a model list, then send a config_option_update that only touches an unrelated
+            // option. availableModels must survive — partial notifications never blank the list.
+            JsonObject seed = JsonParser.parseString("""
+                {
+                  "update": {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": [
+                      {"id": "model", "label": "Model", "values": [
+                        {"id": "gpt-4", "label": "GPT-4"}
+                      ]}
+                    ]
+                  }
+                }""").getAsJsonObject();
+            client.handleSessionUpdate(seed);
+            assertEquals(1, client.getAvailableModels().size());
+
+            JsonObject unrelated = JsonParser.parseString("""
+                {
+                  "update": {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": [
+                      {"id": "verbosity", "label": "Verbosity", "values": [
+                        {"id": "high", "label": "High"}
+                      ]}
+                    ]
+                  }
+                }""").getAsJsonObject();
+            client.handleSessionUpdate(unrelated);
+
+            assertEquals(1, client.getAvailableModels().size());
+            assertEquals("gpt-4", client.getAvailableModels().get(0).id());
         }
 
         @Test
