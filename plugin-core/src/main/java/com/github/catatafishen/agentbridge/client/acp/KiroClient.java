@@ -163,9 +163,29 @@ public final class KiroClient extends AcpClient {
         return com.intellij.openapi.util.SystemInfo.isWindows ? "cmd" : "bash";
     }
 
+    /**
+     * Kiro's KAS rejects any token that is already within its 180000ms (180s) refresh buffer
+     * ("Host refresh callback returned token already inside 180000ms refresh buffer"). We refresh
+     * a little earlier than that so the token we hand back always has comfortably more than the
+     * buffer left, avoiding a race where a token fresh at read time slips inside the buffer by the
+     * time KAS validates it.
+     */
+    static final long REFRESH_BUFFER_MILLIS = 200_000L;
+
     private void handleGetAccessToken(com.google.gson.JsonElement id) {
         try {
             KiroTokenRecord token = readKiroToken();
+            // In ACP host-callback auth the CLI delegates token refresh to us. If the cached token
+            // is expired or within Kiro's refresh buffer, returning it as-is makes KAS reject the
+            // prompt with "Authentication token is invalid" and silently kills the turn (the
+            // "Kiro loses the session mid-conversation" symptom). Ask the CLI to refresh its own
+            // token first (see refreshKiroTokenViaCli), then re-read the DB.
+            if (token != null && !isTokenFresh(token.expiresAt(), java.time.Instant.now(), REFRESH_BUFFER_MILLIS)) {
+                LOG.info("Kiro v3: cached access token is expired or within the refresh buffer (expires "
+                    + token.expiresAt() + ") — asking the Kiro CLI to refresh before returning it");
+                refreshKiroTokenViaCli();
+                token = readKiroToken();
+            }
             if (token == null) {
                 LOG.warn("Kiro v3: _kiro/auth/getAccessToken — no token found in local DB; " +
                     "run 'kiro login' to authenticate");
@@ -189,6 +209,63 @@ public final class KiroClient extends AcpClient {
             LOG.warn("Kiro v3: _kiro/auth/getAccessToken — failed to read token: " + e.getMessage(), e);
             transport.sendError(id, -32000, "Auth refresh callback failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * Whether {@code expiresAt} (an ISO-8601 instant, e.g. {@code 2026-08-26T07:25:55.618833Z})
+     * leaves more than {@code bufferMillis} of life relative to {@code now}. A {@code null}, blank,
+     * or unparseable timestamp is treated as NOT fresh so the caller refreshes rather than handing
+     * back a token Kiro will reject. Pure and side-effect free for unit testing.
+     */
+    static boolean isTokenFresh(@org.jetbrains.annotations.Nullable String expiresAt,
+                                java.time.Instant now, long bufferMillis) {
+        if (expiresAt == null || expiresAt.isBlank()) {
+            return false;
+        }
+        try {
+            java.time.Instant exp = java.time.Instant.parse(expiresAt.trim());
+            return exp.toEpochMilli() - now.toEpochMilli() > bufferMillis;
+        } catch (java.time.format.DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Triggers the Kiro CLI to refresh its own OIDC token by running an authenticated command
+     * ({@code kiro-cli whoami}). Under ACP host-callback auth the running KAS process delegates
+     * token refresh to us, but a separate standalone CLI invocation still exercises the CLI's own
+     * auth middleware, which refreshes a stale token before making its backend call and rewrites
+     * the shared SQLite DB. This keeps OIDC token refresh owned by the Kiro CLI (a bridge, not a
+     * reimplementation of AWS SSO OIDC) — we then re-read the freshly written token.
+     * <p>
+     * Best-effort and synchronous: the reverse-RPC caller is already blocked waiting for our
+     * response, so a short bounded wait is acceptable. Failures are logged and the caller falls
+     * back to returning the stale token, which surfaces Kiro's own auth error rather than masking
+     * the problem.
+     */
+    static void refreshKiroTokenViaCli() {
+        String bin = resolveKiroCliBinary();
+        try {
+            Process proc = new ProcessBuilder(bin, "whoami")
+                .redirectErrorStream(true)
+                .start();
+            if (!proc.waitFor(10, TimeUnit.SECONDS)) {
+                proc.destroyForcibly();
+                LOG.warn("Kiro v3: token refresh via '" + bin + " whoami' timed out after 10s");
+            }
+        } catch (Exception e) {
+            LOG.warn("Kiro v3: token refresh via CLI failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Resolves the absolute path to the {@code kiro-cli} executable via the shared
+     * {@link com.github.catatafishen.agentbridge.settings.BinaryDetector}, falling back to the bare
+     * name (PATH lookup) when detection fails.
+     */
+    static String resolveKiroCliBinary() {
+        String found = com.github.catatafishen.agentbridge.settings.BinaryDetector.findBinaryPath("kiro-cli");
+        return found != null ? found : "kiro-cli";
     }
 
     record KiroTokenRecord(String accessToken, String expiresAt, @org.jetbrains.annotations.Nullable String profileArn) {}
