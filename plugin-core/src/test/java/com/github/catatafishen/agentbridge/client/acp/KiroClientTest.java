@@ -240,6 +240,45 @@ class KiroClientTest {
         }
     }
 
+    // ── isTokenFresh ────────────────────────────────────────────────────
+
+    @Test
+    void isTokenFresh_trueWhenWellBeyondBuffer() {
+        java.time.Instant now = java.time.Instant.parse("2026-08-26T06:00:00Z");
+        // Expires 1 hour out, buffer 200s → plenty of life left.
+        assertTrue(KiroClient.isTokenFresh("2026-08-26T07:00:00Z", now, 200_000L));
+    }
+
+    @Test
+    void isTokenFresh_falseWhenAlreadyExpired() {
+        java.time.Instant now = java.time.Instant.parse("2026-08-26T06:25:51Z");
+        // Mirrors the observed failure: token expired ~2.5 min before the callback fired.
+        assertFalse(KiroClient.isTokenFresh("2026-08-26T06:23:23.858398Z", now, 200_000L));
+    }
+
+    @Test
+    void isTokenFresh_falseWhenInsideRefreshBuffer() {
+        java.time.Instant now = java.time.Instant.parse("2026-08-26T06:00:00Z");
+        // Expires in 150s, which is inside the 200s buffer → must refresh.
+        assertFalse(KiroClient.isTokenFresh("2026-08-26T06:02:30Z", now, 200_000L));
+    }
+
+    @Test
+    void isTokenFresh_trueJustOutsideBuffer() {
+        java.time.Instant now = java.time.Instant.parse("2026-08-26T06:00:00Z");
+        // Expires in 201s, just past the 200s buffer → still fresh.
+        assertTrue(KiroClient.isTokenFresh("2026-08-26T06:03:21Z", now, 200_000L));
+    }
+
+    @Test
+    void isTokenFresh_falseForNullBlankOrUnparseable() {
+        java.time.Instant now = java.time.Instant.parse("2026-08-26T06:00:00Z");
+        assertFalse(KiroClient.isTokenFresh(null, now, 200_000L));
+        assertFalse(KiroClient.isTokenFresh("", now, 200_000L));
+        assertFalse(KiroClient.isTokenFresh("   ", now, 200_000L));
+        assertFalse(KiroClient.isTokenFresh("not-a-timestamp", now, 200_000L));
+    }
+
     @Test
     void readKiroProfileArn_returnsNullWhenProfileRowAbsent() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(sqlite3Available(),
