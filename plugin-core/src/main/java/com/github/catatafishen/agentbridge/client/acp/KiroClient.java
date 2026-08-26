@@ -49,6 +49,15 @@ public final class KiroClient extends AcpClient {
         super(project);
     }
 
+    /**
+     * Test constructor — injects a mock transport without launching a real process.
+     * Package-private so only same-package tests can use it.
+     * Mirrors the equivalent constructor in {@link AcpClient}.
+     */
+    KiroClient(Project project, com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport transport) {
+        super(project, transport);
+    }
+
     @Override
     protected void registerHandlers() {
         // Clear crash state from any previous process lifecycle so stale panic lines
