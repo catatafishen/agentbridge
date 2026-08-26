@@ -582,10 +582,32 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     private void extractModelsFromConfigOptions(List<NewSessionResponse.SessionConfigOption> configOptions, NewSessionResponse response) {
+        extractModelsFromConfigOptions(configOptions, response.currentModelId());
+    }
+
+    /**
+     * Re-extracts the model list from a {@code model} session config option into
+     * {@link #availableModels}, keeping the primary model list in sync with the config options.
+     *
+     * <p>Used by both the {@code session/new} path (with {@code currentModelIdOverride} taken from
+     * the response's {@code currentModelId}) and the {@code config_option_update} notification path
+     * (with a {@code null} override, so the option's {@code selectedValueId} becomes the current
+     * model). Only acts when a {@code model} option with values is present, so partial notifications
+     * that do not mention models never clobber the existing list.</p>
+     *
+     * <p>Keeping {@link #availableModels} populated is essential: {@link #listSessionOptions()}
+     * derives {@code sessionModelIds} from it to suppress the {@code model} option from the session
+     * options (gear) menu. If it were left empty while {@link #availableConfigOptions} still held the
+     * {@code model} option, that option would leak into the gear menu and the primary model dropdown
+     * would appear empty (Kiro v3 delivers models via a {@code config_option_update} notification
+     * after {@code /session-clear}).</p>
+     */
+    private void extractModelsFromConfigOptions(
+        List<NewSessionResponse.SessionConfigOption> configOptions, @Nullable String currentModelIdOverride) {
         findOptionWithValues(configOptions, "model").ifPresent(option -> {
             availableModels.clear();
             option.values().forEach(optionValue -> availableModels.add(new Model(optionValue.id(), optionValue.label(), null, null)));
-            if (response.currentModelId() == null && option.selectedValueId() != null) {
+            if (currentModelIdOverride == null && option.selectedValueId() != null) {
                 currentModelId = option.selectedValueId();
             }
         });
@@ -725,6 +747,16 @@ public abstract class AcpClient extends AbstractClient {
         }
         LOG.debug(displayName() + ": config_option_update applied — "
             + availableConfigOptions.size() + " option(s) total");
+
+        // Keep availableModels / availableModes in sync with the updated config options.
+        // Some agents (e.g. Kiro v3) expose models and modes as session config options and push
+        // updates via config_option_update notifications rather than in the session/new response —
+        // notably after /session-clear. Without re-extracting here, availableModels would fall out
+        // of sync with availableConfigOptions, causing the model option to leak into the session
+        // options (gear) menu and the primary model dropdown to appear empty. Only "model"/"mode"
+        // options with values trigger a re-extract, so unrelated partial updates are harmless.
+        extractModelsFromConfigOptions(incoming, (String) null);
+        extractModesFromConfigOptions(incoming);
     }
 
     /**

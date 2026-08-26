@@ -56,6 +56,25 @@ class ModelSelectorService(
         modelsStatusText = null
     }
 
+    /**
+     * Re-syncs [loadedModels] from the client's current model snapshot without a network
+     * round-trip. Used when a `config_option_update` notification changes the model list — e.g.
+     * Kiro v3 delivers models via a `model` session config option and pushes updates through
+     * notifications after `/session-clear`, which would otherwise leave the cached list stale.
+     *
+     * No-op (returns null) when the client reports no models, so unrelated config-option updates
+     * never blank the dropdown. Returns the refreshed list when it updated the cache. Must be
+     * called on the EDT.
+     */
+    fun syncFromClientModels(): List<Model>? {
+        val models = agentManager.client.availableModels
+        if (models.isEmpty()) return null
+        loadedModels = models
+        modelsStatusText = null
+        restoreModelSelection(models)
+        return models
+    }
+
     val currentDisplayText: String
         get() {
             modelsStatusText?.let { return it }
