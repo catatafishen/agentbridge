@@ -904,6 +904,21 @@ class AcpClientTest {
         }
 
         @Test
+        void nonEmptyAgentSlugsPartialOverlapIsIncluded() {
+            // agentSlugs is non-empty but does NOT cover all option values → option must be included.
+            // This exercises the !agentSlugs.isEmpty() && !agentSlugs.containsAll(optValueIds)
+            // branch of the filter predicate (the partial-coverage branch reported by Codecov).
+            var opt = makeOpt("agent", "Agent", "intellij-default", "intellij-explore", "extra-mode");
+
+            List<SessionOption> result = AcpClient.filterSessionOptionsStatic(
+                List.of(opt), Collections.emptySet(),
+                Set.of("intellij-default", "intellij-explore")); // misses "extra-mode"
+
+            assertEquals(1, result.size(), "Partial overlap — option must not be suppressed");
+            assertEquals("agent", result.getFirst().key());
+        }
+
+        @Test
         void modeSlugsCoverOptionValuesIsFilteredOut() {
             var opt = makeOpt("mode", "Session Mode", "agent", "plan");
 
