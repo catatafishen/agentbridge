@@ -12,10 +12,14 @@ import com.intellij.ide.structureView.StructureViewModel;
 import com.intellij.ide.structureView.StructureViewTreeElement;
 import com.intellij.ide.structureView.TreeBasedStructureViewBuilder;
 import com.intellij.ide.util.treeView.smartTree.TreeElement;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.progress.EmptyProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
@@ -36,6 +40,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Abstract base for code navigation tools. Provides shared constants
@@ -110,6 +115,31 @@ public abstract class NavigationTool extends Tool {
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : defaultMax;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         return new int[]{maxResults, offset};
+    }
+
+    /**
+     * Runs {@code computation} inside a read action that also carries a progress-indicator
+     * context, instead of the bare {@link ApplicationManager#getApplication()}{@code .runReadAction}.
+     *
+     * <p>Some JetBrains language-service code paths — notably the TypeScript config/import graph
+     * builder ({@code JSGraphBuildExecutor.ensureGraphInitialized}, reached while resolving module
+     * augmentations for a JS/TS file) — call {@code runBlockingCancellable} internally, which throws
+     * {@code IllegalStateException("There is no ProgressIndicator or Job in this thread")} when the
+     * calling thread carries neither a {@link com.intellij.openapi.progress.ProgressIndicator} nor a
+     * coroutine {@code Job}. Navigation tools run project-wide PSI searches
+     * ({@link PsiSearchHelper#processElementsWithWord}, {@code ReferencesSearch}) directly from the
+     * plain background thread that {@code McpProtocolHandler} dispatches tool calls on, so any
+     * project containing JS/TS sources can trip that assertion mid-search (e.g. {@code search_symbols}
+     * or {@code find_references}). Wrapping the read action in {@link EmptyProgressIndicator} supplies
+     * the missing context without showing any progress UI — the same fix already used in
+     * {@code QualityTool#collectQuickFixNames} for the analogous quick-fix code path.</p>
+     */
+    protected <T> T computeInReadActionWithProgress(Computable<T> computation) {
+        AtomicReference<T> resultRef = new AtomicReference<>();
+        ProgressManager.getInstance().runProcess(
+            () -> resultRef.set(ApplicationManager.getApplication().runReadAction(computation)),
+            new EmptyProgressIndicator());
+        return resultRef.get();
     }
 
     @Override

@@ -3,9 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.navigation;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -92,8 +90,7 @@ public final class FindReferencesTool extends NavigationTool {
         int offset = pagination[1];
 
         showSearchFeedback("🔍 Finding references: " + symbol);
-        // noinspection RedundantCast — cast is needed to disambiguate Computable vs ThrowableComputable overloads
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        String result = computeInReadActionWithProgress(() -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = resolveScope(scopeName);

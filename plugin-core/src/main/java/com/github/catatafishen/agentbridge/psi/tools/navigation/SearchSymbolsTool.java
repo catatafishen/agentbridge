@@ -3,12 +3,10 @@ package com.github.catatafishen.agentbridge.psi.tools.navigation;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -93,7 +91,7 @@ public final class SearchSymbolsTool extends NavigationTool {
         int offset = pagination[1];
 
         showSearchFeedback("🔍 Searching symbols: " + query);
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        String result = computeInReadActionWithProgress(() -> {
             if (query.isEmpty() || "*".equals(query)) {
                 if (!SCOPE_PROJECT.equalsIgnoreCase(scopeName)) {
                     return "Error: Wildcard symbol listing is only supported with scope='project'. "
