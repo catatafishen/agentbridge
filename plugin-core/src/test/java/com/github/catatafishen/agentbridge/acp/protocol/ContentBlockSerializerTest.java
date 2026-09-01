@@ -14,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Type;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link ContentBlockSerializer} — verifies the {@code "type"} discriminator
@@ -23,8 +25,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class ContentBlockSerializerTest {
 
     private final Gson gson = new GsonBuilder()
-            .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
-            .create();
+        .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
+        .create();
 
     // ── Text ─────────────────────────────────────────────────────────────────
 
@@ -140,8 +142,8 @@ class ContentBlockSerializerTest {
         @Test
         @DisplayName("resource with all fields populated")
         void allFields() {
-            ContentBlock.ResourceLink link = new ContentBlock.ResourceLink(
-                    "file:///src/Main.java", "Main.java", "text/x-java", "class Main {}", "YmxvYg=="
+            ContentBlock.EmbeddedResourceContents link = new ContentBlock.EmbeddedResourceContents(
+                "file:///src/Main.java", "Main.java", "text/x-java", "class Main {}", "YmxvYg=="
             );
             ContentBlock block = new ContentBlock.Resource(link);
             JsonObject json = gson.toJsonTree(block).getAsJsonObject();
@@ -160,8 +162,8 @@ class ContentBlockSerializerTest {
         @Test
         @DisplayName("resource with null optional fields")
         void nullOptionalFields() {
-            ContentBlock.ResourceLink link = new ContentBlock.ResourceLink(
-                    "file:///src/Main.java", null, null, null, null
+            ContentBlock.EmbeddedResourceContents link = new ContentBlock.EmbeddedResourceContents(
+                "file:///src/Main.java", null, null, null, null
             );
             ContentBlock block = new ContentBlock.Resource(link);
             JsonObject json = gson.toJsonTree(block).getAsJsonObject();
@@ -180,8 +182,8 @@ class ContentBlockSerializerTest {
         @Test
         @DisplayName("resource with only URI (required field)")
         void onlyUri() {
-            ContentBlock.ResourceLink link = new ContentBlock.ResourceLink(
-                    "https://example.com/readme.md", null, null, null, null
+            ContentBlock.EmbeddedResourceContents link = new ContentBlock.EmbeddedResourceContents(
+                "https://example.com/readme.md", null, null, null, null
             );
             ContentBlock block = new ContentBlock.Resource(link);
             JsonObject json = gson.toJsonTree(block).getAsJsonObject();
@@ -191,6 +193,38 @@ class ContentBlockSerializerTest {
             JsonObject res = json.getAsJsonObject("resource");
             assertEquals("https://example.com/readme.md", res.get("uri").getAsString());
             assertEquals(1, res.size(), "should contain only 'uri'");
+        }
+    }
+
+    // ── ResourceLink (flat resource_link block) ───────────────────────────────
+
+    @Nested
+    @DisplayName("ResourceLink")
+    class ResourceLinkTests {
+
+        @Test
+        @DisplayName("resource_link with mimeType is flat (not nested under 'resource')")
+        void withMimeType() {
+            ContentBlock block = new ContentBlock.ResourceLink("file:///a.pdf", "a.pdf", "application/pdf");
+            JsonObject json = gson.toJsonTree(block).getAsJsonObject();
+
+            assertEquals("resource_link", json.get("type").getAsString());
+            assertEquals("file:///a.pdf", json.get("uri").getAsString());
+            assertEquals("a.pdf", json.get("name").getAsString());
+            assertEquals("application/pdf", json.get("mimeType").getAsString());
+            assertFalse(json.has("resource"), "should NOT be nested under a 'resource' key");
+            assertFalse(json.has("text"), "resource_link has no inline content");
+            assertFalse(json.has("blob"), "resource_link has no inline content");
+        }
+
+        @Test
+        @DisplayName("resource_link with null mimeType omits the field")
+        void nullMimeType() {
+            ContentBlock block = new ContentBlock.ResourceLink("file:///a.bin", "a.bin", null);
+            JsonObject json = gson.toJsonTree(block).getAsJsonObject();
+
+            assertEquals("resource_link", json.get("type").getAsString());
+            assertFalse(json.has("mimeType"), "null 'mimeType' should be absent");
         }
     }
 
@@ -204,16 +238,17 @@ class ContentBlockSerializerTest {
         @DisplayName("list of mixed content blocks preserves type discriminators")
         void mixedList() {
             List<ContentBlock> blocks = List.of(
-                    new ContentBlock.Text("hello"),
-                    new ContentBlock.Thinking("hmm"),
-                    new ContentBlock.Image("data1", "image/jpeg"),
-                    new ContentBlock.Audio("data2", "audio/mp3"),
-                    new ContentBlock.Resource(new ContentBlock.ResourceLink(
-                            "file:///a.txt", "a.txt", "text/plain", "contents", null
-                    ))
+                new ContentBlock.Text("hello"),
+                new ContentBlock.Thinking("hmm"),
+                new ContentBlock.Image("data1", "image/jpeg"),
+                new ContentBlock.Audio("data2", "audio/mp3"),
+                new ContentBlock.Resource(new ContentBlock.EmbeddedResourceContents(
+                    "file:///a.txt", "a.txt", "text/plain", "contents", null
+                ))
             );
 
-            Type listType = new TypeToken<List<ContentBlock>>() {}.getType();
+            Type listType = new TypeToken<List<ContentBlock>>() {
+            }.getType();
             JsonArray array = gson.toJsonTree(blocks, listType).getAsJsonArray();
 
             assertEquals(5, array.size());
@@ -229,11 +264,12 @@ class ContentBlockSerializerTest {
         @DisplayName("serialized JSON string is valid and parseable")
         void jsonStringRoundTrip() {
             List<ContentBlock> blocks = List.of(
-                    new ContentBlock.Text("first"),
-                    new ContentBlock.Thinking("second")
+                new ContentBlock.Text("first"),
+                new ContentBlock.Thinking("second")
             );
 
-            Type listType = new TypeToken<List<ContentBlock>>() {}.getType();
+            Type listType = new TypeToken<List<ContentBlock>>() {
+            }.getType();
             String jsonStr = gson.toJson(blocks, listType);
 
             // Parse back and verify structure

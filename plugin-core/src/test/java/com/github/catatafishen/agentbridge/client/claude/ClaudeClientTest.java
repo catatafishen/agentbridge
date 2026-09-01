@@ -188,7 +188,7 @@ class ClaudeClientTest {
 
         @Test
         void resourceBlockWithText() {
-            ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
+            ContentBlock.EmbeddedResourceContents rl = new ContentBlock.EmbeddedResourceContents(
                 "file:///path/to/file.txt", "file.txt", "text/plain", "line1\nline2", null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
             String result = ClaudeClient.extractPromptText(blocks);
@@ -199,7 +199,7 @@ class ClaudeClientTest {
 
         @Test
         void resourceBlockWithEmptyText() {
-            ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
+            ContentBlock.EmbeddedResourceContents rl = new ContentBlock.EmbeddedResourceContents(
                 "file:///path/to/file.txt", "file.txt", "text/plain", "", null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
             assertEquals("", ClaudeClient.extractPromptText(blocks));
@@ -207,7 +207,7 @@ class ClaudeClientTest {
 
         @Test
         void resourceBlockWithNullText() {
-            ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
+            ContentBlock.EmbeddedResourceContents rl = new ContentBlock.EmbeddedResourceContents(
                 "file:///path/to/file.txt", "file.txt", "text/plain", null, null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
             assertEquals("", ClaudeClient.extractPromptText(blocks));
@@ -215,7 +215,7 @@ class ClaudeClientTest {
 
         @Test
         void mixedBlocks() {
-            ContentBlock.ResourceLink rl = new ContentBlock.ResourceLink(
+            ContentBlock.EmbeddedResourceContents rl = new ContentBlock.EmbeddedResourceContents(
                 "file:///test.txt", "test.txt", "text/plain", "content", null);
             List<ContentBlock> blocks = List.of(
                 new ContentBlock.Text("Before "),

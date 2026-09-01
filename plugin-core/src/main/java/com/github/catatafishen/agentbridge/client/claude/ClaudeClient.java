@@ -438,7 +438,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
         for (ContentBlock block : blocks) {
             if (block instanceof ContentBlock.Text(String text)) {
                 sb.append(text);
-            } else if (block instanceof ContentBlock.Resource(ContentBlock.ResourceLink rl)
+            } else if (block instanceof ContentBlock.Resource(ContentBlock.EmbeddedResourceContents rl)
                 && rl.text() != null && !rl.text().isEmpty()) {
                 sb.append("File: ").append(rl.uri()).append("\n```\n").append(rl.text()).append("\n```\n\n");
             }

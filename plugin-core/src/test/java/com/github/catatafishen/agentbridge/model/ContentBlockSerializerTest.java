@@ -7,7 +7,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link ContentBlockSerializer} at the model level.
@@ -16,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class ContentBlockSerializerTest {
 
     private final Gson gson = new GsonBuilder()
-            .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
-            .create();
+        .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
+        .create();
 
     @Nested
     @DisplayName("Text serialization")
@@ -139,8 +142,8 @@ class ContentBlockSerializerTest {
         @Test
         @DisplayName("produces nested resource structure with all fields")
         void allFields() {
-            var link = new ContentBlock.ResourceLink(
-                    "file:///src/Main.java", "Main.java", "text/x-java", "class Main {}", "YmxvYg=="
+            var link = new ContentBlock.EmbeddedResourceContents(
+                "file:///src/Main.java", "Main.java", "text/x-java", "class Main {}", "YmxvYg=="
             );
             var rec = new ContentBlock.Resource(link);
             JsonObject obj = gson.toJsonTree(rec, ContentBlock.class).getAsJsonObject();
@@ -159,7 +162,7 @@ class ContentBlockSerializerTest {
         @Test
         @DisplayName("resource with only uri (nullable fields omitted)")
         void onlyUri() {
-            var link = new ContentBlock.ResourceLink("file:///a.txt", null, null, null, null);
+            var link = new ContentBlock.EmbeddedResourceContents("file:///a.txt", null, null, null, null);
             var rec = new ContentBlock.Resource(link);
             JsonObject obj = gson.toJsonTree(rec, ContentBlock.class).getAsJsonObject();
 
@@ -174,18 +177,54 @@ class ContentBlockSerializerTest {
     }
 
     @Nested
-    @DisplayName("ResourceLink serialization")
-    class ResourceLinkSerialization {
+    @DisplayName("EmbeddedResourceContents direct serialization")
+    class EmbeddedResourceContentsSerialization {
 
         @Test
-        @DisplayName("ResourceLink serialized via Gson directly has all fields")
+        @DisplayName("EmbeddedResourceContents serialized via Gson directly has all fields")
         void directSerialization() {
-            var link = new ContentBlock.ResourceLink(
-                    "file:///x.txt", "x.txt", "text/plain", "hello", null
+            var link = new ContentBlock.EmbeddedResourceContents(
+                "file:///x.txt", "x.txt", "text/plain", "hello", null
             );
             String json = gson.toJson(link);
             assertTrue(json.contains("\"uri\":\"file:///x.txt\""));
             assertTrue(json.contains("\"name\":\"x.txt\""));
+        }
+    }
+
+    @Nested
+    @DisplayName("ResourceLink (flat resource_link block) serialization")
+    class ResourceLinkBlockSerialization {
+
+        @Test
+        @DisplayName("produces flat {\"type\":\"resource_link\",\"uri\":...,\"name\":...,\"mimeType\":...}")
+        void withMimeType() {
+            ContentBlock block = new ContentBlock.ResourceLink("file:///a.pdf", "a.pdf", "application/pdf");
+            JsonObject obj = gson.toJsonTree(block, ContentBlock.class).getAsJsonObject();
+
+            assertEquals("resource_link", obj.get("type").getAsString());
+            assertEquals("file:///a.pdf", obj.get("uri").getAsString());
+            assertEquals("a.pdf", obj.get("name").getAsString());
+            assertEquals("application/pdf", obj.get("mimeType").getAsString());
+            // Must NOT be nested under a "resource" key, and must NOT require text/blob —
+            // this is the flat pointer-only block used for binary attachments that have no
+            // embedded content (see ContentBlock.ResourceLink javadoc).
+            assertFalse(obj.has("resource"));
+            assertFalse(obj.has("text"));
+            assertFalse(obj.has("blob"));
+            assertEquals(4, obj.size(), "should have exactly 4 fields: type, uri, name, mimeType");
+        }
+
+        @Test
+        @DisplayName("omits mimeType when null")
+        void nullMimeType() {
+            ContentBlock block = new ContentBlock.ResourceLink("file:///a.bin", "a.bin", null);
+            JsonObject obj = gson.toJsonTree(block, ContentBlock.class).getAsJsonObject();
+
+            assertEquals("resource_link", obj.get("type").getAsString());
+            assertEquals("file:///a.bin", obj.get("uri").getAsString());
+            assertEquals("a.bin", obj.get("name").getAsString());
+            assertFalse(obj.has("mimeType"));
         }
     }
 

@@ -194,6 +194,16 @@ class PromptContextManager(
             return
         }
 
+        if (!currentFile.isInLocalFileSystem) {
+            Messages.showWarningDialog(
+                project,
+                "\"${currentFile.name}\" is a preview (e.g. a diff view) and not a file on disk, " +
+                    "so it can't be attached. Open the actual file in an editor tab and attach that instead.",
+                "Cannot Attach This View"
+            )
+            return
+        }
+
         val path = currentFile.path
         val lineCount = try {
             fileEditorManager.selectedTextEditor?.document?.lineCount ?: 0
@@ -224,6 +234,16 @@ class PromptContextManager(
 
         if (editor == null || currentFile == null) {
             Messages.showWarningDialog(project, "No editor is currently open", "No Editor")
+            return
+        }
+
+        if (!currentFile.isInLocalFileSystem) {
+            Messages.showWarningDialog(
+                project,
+                "\"${currentFile.name}\" is a preview (e.g. a diff view) and not a file on disk, " +
+                    "so the selection can't be attached. Select this text in a regular editor tab instead.",
+                "Cannot Attach This Selection"
+            )
             return
         }
 
@@ -363,7 +383,9 @@ class PromptContextManager(
         )
     }
 
-    private fun buildBinaryAttachment(item: ContextItemData): PromptAttachment.BinaryRef {
+    private fun buildBinaryAttachment(item: ContextItemData): PromptAttachment.BinaryRef? {
+        val file = java.io.File(item.path)
+        if (!file.exists() || !file.isFile) return null
         return PromptAttachment.BinaryRef(
             uri = "file://${item.path.replace("\\", "/")}",
             mimeType = guessBinaryMime(item.path),

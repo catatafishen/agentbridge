@@ -39,7 +39,13 @@ public class ContentBlockSerializer implements JsonSerializer<ContentBlock> {
             }
             case ContentBlock.Resource(var resource) -> {
                 obj.addProperty("type", "resource");
-                obj.add("resource", ctx.serialize(resource, ContentBlock.ResourceLink.class));
+                obj.add("resource", ctx.serialize(resource, ContentBlock.EmbeddedResourceContents.class));
+            }
+            case ContentBlock.ResourceLink(var uri, var name, var mimeType) -> {
+                obj.addProperty("type", "resource_link");
+                obj.addProperty("uri", uri);
+                obj.addProperty("name", name);
+                if (mimeType != null) obj.addProperty("mimeType", mimeType);
             }
             case null, default -> {
                 // no additional properties for unrecognized block types
