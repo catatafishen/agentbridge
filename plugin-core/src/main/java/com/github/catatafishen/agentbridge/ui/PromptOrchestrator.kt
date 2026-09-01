@@ -490,7 +490,7 @@ class PromptOrchestrator(
             when (attachment) {
                 is PromptAttachment.TextRef -> blocks.add(
                     ContentBlock.Resource(
-                        ContentBlock.ResourceLink(
+                        ContentBlock.EmbeddedResourceContents(
                             attachment.uri, null, attachment.mimeType, attachment.text, null
                         )
                     )
@@ -501,11 +501,11 @@ class PromptOrchestrator(
                 )
 
                 is PromptAttachment.BinaryRef -> blocks.add(
-                    ContentBlock.Resource(
-                        ContentBlock.ResourceLink(
-                            attachment.uri, attachment.displayName, attachment.mimeType, null, null
-                        )
-                    )
+                    // Flat `resource_link` block (no embedded content) — NOT `Resource`/
+                    // `EmbeddedResourceContents`, which requires text or blob to be non-null
+                    // per the ACP/MCP spec. Using `Resource` here previously sent an invalid
+                    // block (both null) that agents validating against the spec would reject.
+                    ContentBlock.ResourceLink(attachment.uri, attachment.displayName, attachment.mimeType),
                 )
             }
         }

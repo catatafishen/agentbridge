@@ -272,8 +272,8 @@ class CodexMessageParserTest {
 
         @Test
         void resourceBlockWithText_formattedWithCodeFence() {
-            ContentBlock.ResourceLink rl =
-                new ContentBlock.ResourceLink("file:///test.java", "test.java", "text/java", "class Test {}", null);
+            ContentBlock.EmbeddedResourceContents rl =
+                new ContentBlock.EmbeddedResourceContents("file:///test.java", "test.java", "text/java", "class Test {}", null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
             String result = CodexMessageParser.extractPromptText(blocks);
             assertTrue(result.contains("File: file:///test.java"));
@@ -282,16 +282,16 @@ class CodexMessageParserTest {
 
         @Test
         void resourceBlockWithNullText_skipped() {
-            ContentBlock.ResourceLink rl =
-                new ContentBlock.ResourceLink("file:///img.png", "img.png", "image/png", null, "base64data");
+            ContentBlock.EmbeddedResourceContents rl =
+                new ContentBlock.EmbeddedResourceContents("file:///img.png", "img.png", "image/png", null, "base64data");
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
             assertEquals("", CodexMessageParser.extractPromptText(blocks));
         }
 
         @Test
         void resourceBlockWithEmptyText_skipped() {
-            ContentBlock.ResourceLink rl =
-                new ContentBlock.ResourceLink("file:///empty.txt", "empty.txt", "text/plain", "", null);
+            ContentBlock.EmbeddedResourceContents rl =
+                new ContentBlock.EmbeddedResourceContents("file:///empty.txt", "empty.txt", "text/plain", "", null);
             List<ContentBlock> blocks = List.of(new ContentBlock.Resource(rl));
             assertEquals("", CodexMessageParser.extractPromptText(blocks));
         }
@@ -316,8 +316,8 @@ class CodexMessageParserTest {
 
         @Test
         void mixedTextAndResource() {
-            ContentBlock.ResourceLink rl =
-                new ContentBlock.ResourceLink("file:///f.kt", null, null, "fun main()", null);
+            ContentBlock.EmbeddedResourceContents rl =
+                new ContentBlock.EmbeddedResourceContents("file:///f.kt", null, null, "fun main()", null);
             List<ContentBlock> blocks = List.of(
                 new ContentBlock.Text("Check this: "),
                 new ContentBlock.Resource(rl)

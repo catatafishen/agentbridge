@@ -47,7 +47,7 @@ class AcpProtocolRecordTest {
         @Test
         @DisplayName("Resource construction with ResourceLink")
         void resourceConstruction() {
-            var link = new ContentBlock.ResourceLink(
+            var link = new ContentBlock.EmbeddedResourceContents(
                     "file:///tmp/test.txt", "test.txt", "text/plain", "contents", null);
             var block = new ContentBlock.Resource(link);
 
@@ -67,7 +67,7 @@ class AcpProtocolRecordTest {
             ContentBlock image = new ContentBlock.Image("d", "image/jpeg");
             ContentBlock audio = new ContentBlock.Audio("a", "audio/wav");
             ContentBlock resource = new ContentBlock.Resource(
-                    new ContentBlock.ResourceLink("uri", null, null, null, null));
+                    new ContentBlock.EmbeddedResourceContents("uri", null, null, null, null));
 
             assertInstanceOf(ContentBlock.Text.class, text);
             assertInstanceOf(ContentBlock.Thinking.class, thinking);
