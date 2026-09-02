@@ -15,6 +15,8 @@ import java.lang.reflect.Type;
  */
 public class ContentBlockSerializer implements JsonSerializer<ContentBlock> {
 
+    private static final String MIME_TYPE = "mimeType";
+
     @Override
     public JsonElement serialize(ContentBlock src, Type typeOfSrc, JsonSerializationContext ctx) {
         JsonObject obj = new JsonObject();
@@ -30,12 +32,12 @@ public class ContentBlockSerializer implements JsonSerializer<ContentBlock> {
             case ContentBlock.Image(var data, var mimeType) -> {
                 obj.addProperty("type", "image");
                 obj.addProperty("data", data);
-                obj.addProperty("mimeType", mimeType);
+                obj.addProperty(MIME_TYPE, mimeType);
             }
             case ContentBlock.Audio(var data, var mimeType) -> {
                 obj.addProperty("type", "audio");
                 obj.addProperty("data", data);
-                obj.addProperty("mimeType", mimeType);
+                obj.addProperty(MIME_TYPE, mimeType);
             }
             case ContentBlock.Resource(var resource) -> {
                 obj.addProperty("type", "resource");
@@ -45,7 +47,7 @@ public class ContentBlockSerializer implements JsonSerializer<ContentBlock> {
                 obj.addProperty("type", "resource_link");
                 obj.addProperty("uri", uri);
                 obj.addProperty("name", name);
-                if (mimeType != null) obj.addProperty("mimeType", mimeType);
+                if (mimeType != null) obj.addProperty(MIME_TYPE, mimeType);
             }
             case null, default -> {
                 // no additional properties for unrecognized block types
