@@ -1137,6 +1137,20 @@ public final class PsiBridgeService implements Disposable {
         return fresh;
     }
 
+    /**
+     * Opens {@code vf} (or resolves {@code path}) without stealing focus, so the daemon
+     * re-analyzes the file and {@link #appendAutoHighlights} can report fresh highlights.
+     * <p>
+     * <b>Known limitation:</b> the stable {@code FileEditorManager.openFile(vf, false)} call
+     * below occasionally logs a non-fatal {@code TransactionGuard} "Write-unsafe context"
+     * error from the platform's internal blocking composite-open pump. There is no
+     * stable-or-experimental API that avoids this: {@code requestOpenFile()} is
+     * {@code @ApiStatus.Experimental} but is a pure passthrough to this same blocking call, and
+     * the actual non-blocking knob ({@code FileEditorOpenOptions.waitForCompositeOpen}) is
+     * {@code @ApiStatus.Internal}, which this project does not use. See
+     * {@code docs/bugs/OPENFILE-TRANSACTIONGUARD-WARNING.md} for the full analysis and a
+     * candidate JetBrains feature request.
+     */
     private void openFileSilently(@Nullable com.intellij.openapi.vfs.VirtualFile vf, String path) {
         CompletableFuture<Void> opened = new CompletableFuture<>();
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
