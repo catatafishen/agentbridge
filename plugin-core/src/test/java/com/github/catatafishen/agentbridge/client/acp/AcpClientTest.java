@@ -1058,6 +1058,22 @@ class AcpClientTest {
         }
     }
 
+    // ── resolvedBinaryPath — pre-launch returns null ─────────────────────
+
+    @Nested
+    class ResolvedBinaryPath {
+
+        @Test
+        void returnsNullBeforeFirstLaunch() {
+            // A freshly constructed client has never launched a process — resolvedBinaryPath()
+            // must return null, not throw. This validates the field starts null and the getter
+            // is wired correctly.
+            TestableAcpClient client = new TestableAcpClient();
+            assertNull(client.resolvedBinaryPath(),
+                "resolvedBinaryPath() must return null before the client has launched");
+        }
+    }
+
     // ── TestableAcpClient — concrete stub replacing Mockito CALLS_REAL_METHODS ──
 
     /**

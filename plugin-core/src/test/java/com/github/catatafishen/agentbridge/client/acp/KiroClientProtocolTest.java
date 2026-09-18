@@ -394,6 +394,28 @@ class KiroClientProtocolTest {
             f.set(c, path);
         }
 
+        /**
+         * Returns a fake {@link AcpClientBinaryResolver} that always resolves to {@code fixedPath}
+         * without touching {@link com.github.catatafishen.agentbridge.services.AgentProfileManager}.
+         */
+        private com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver stubResolver(
+                @org.jetbrains.annotations.Nullable String fixedPath) {
+            return new com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver(
+                    "kiro", "kiro-cli") {
+                @Override
+                @org.jetbrains.annotations.Nullable
+                protected String customBinaryPath() {
+                    return null;   // no IntelliJ Application needed
+                }
+
+                @Override
+                @org.jetbrains.annotations.Nullable
+                public String resolve() {
+                    return fixedPath;   // short-circuit BinaryDetector PATH scanning
+                }
+            };
+        }
+
         @Test
         @DisplayName("returns the launcher-resolved absolute path when it looks like a path")
         void reusesLauncherResolvedAbsolutePath() throws Exception {
@@ -402,6 +424,74 @@ class KiroClientProtocolTest {
 
             assertEquals(launched, client.resolveKiroCliBinary(),
                 "Should reuse the absolute path the launcher resolved, not re-resolve via PATH");
+        }
+
+        @Test
+        @DisplayName("falls through to resolver when resolvedBinaryPath is null (no launch yet)")
+        void fallsThroughWhenNoLauncherPath() {
+            // resolvedBinaryPath is null by default (no launch) — must hit the resolver
+            String resolverPath = "/opt/homebrew/bin/kiro-cli";
+            client.binaryResolverOverride = stubResolver(resolverPath);
+
+            assertEquals(resolverPath, client.resolveKiroCliBinary(),
+                "Should use the resolver when no launcher-resolved path is available");
+        }
+
+        @Test
+        @DisplayName("falls through to resolver when resolvedBinaryPath is a bare name (not a path)")
+        void fallsThroughWhenLauncherPathIsBareName() throws Exception {
+            // A bare name without path separators should NOT be used as the binary — fall through
+            setResolvedBinaryPath(client, "kiro-cli");
+            String resolverPath = "/usr/local/bin/kiro-cli";
+            client.binaryResolverOverride = stubResolver(resolverPath);
+
+            assertEquals(resolverPath, client.resolveKiroCliBinary(),
+                "Bare name from launcher should not be reused — fall through to resolver");
+        }
+
+        @Test
+        @DisplayName("falls back to bare 'kiro-cli' name when resolver returns null")
+        void fallsBackToBareNameWhenResolverReturnsNull() {
+            // Resolver finds nothing (e.g. kiro-cli not on PATH), must fall back to bare name
+            client.binaryResolverOverride = stubResolver(null);
+
+            assertEquals("kiro-cli", client.resolveKiroCliBinary(),
+                "Should return bare 'kiro-cli' name as last resort when resolver finds nothing");
+        }
+
+        @Test
+        @DisplayName("falls back to bare 'kiro-cli' name when resolver returns blank string")
+        void fallsBackToBareNameWhenResolverReturnsBlank() {
+            client.binaryResolverOverride = stubResolver("  ");
+
+            assertEquals("kiro-cli", client.resolveKiroCliBinary(),
+                "Blank resolver result should trigger last-resort fallback to bare name");
+        }
+    }
+
+    // ── refreshKiroTokenViaCli — error handling ──────────────────────────
+
+    @Nested
+    @DisplayName("refreshKiroTokenViaCli — tolerates exec failures")
+    class RefreshKiroTokenViaCli {
+
+        @Test
+        @DisplayName("does not throw when binary does not exist")
+        void doesNotThrowWhenBinaryMissing() {
+            // An absolute path that certainly doesn't exist — ProcessBuilder will throw IOException
+            // internally, which refreshKiroTokenViaCli must swallow and log instead of propagating.
+            assertDoesNotThrow(() ->
+                KiroClient.refreshKiroTokenViaCli("/nonexistent/path/to/kiro-cli"),
+                "refreshKiroTokenViaCli must not propagate exec failures to the caller");
+        }
+
+        @Test
+        @DisplayName("does not throw when binary is a bare name not on PATH")
+        void doesNotThrowWhenBareNameNotOnPath() {
+            // Bare name that is almost certainly not installed in CI — same branch, caught IOException
+            assertDoesNotThrow(() ->
+                KiroClient.refreshKiroTokenViaCli("definitely-not-a-real-binary-xyzzy123"),
+                "refreshKiroTokenViaCli must not propagate exec failures for unknown bare names");
         }
     }
 

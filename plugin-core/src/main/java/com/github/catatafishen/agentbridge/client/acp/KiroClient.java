@@ -46,6 +46,16 @@ public final class KiroClient extends AcpClient {
      */
     private volatile @org.jetbrains.annotations.Nullable String capturedPanicLine = null;
 
+    /**
+     * Test-only injection point for {@link #createKiroBinaryResolver()}.
+     * When non-null, {@link #createKiroBinaryResolver()} returns this value instead of
+     * constructing a real {@link AcpClientBinaryResolver} (which requires the IntelliJ Application).
+     * Package-private so only same-package tests can set it.
+     */
+    @org.jetbrains.annotations.VisibleForTesting
+    @org.jetbrains.annotations.Nullable
+    AcpClientBinaryResolver binaryResolverOverride = null;
+
     public KiroClient(Project project) {
         super(project);
     }
@@ -318,11 +328,7 @@ public final class KiroClient extends AcpClient {
             return launched;
         }
 
-        AgentProfile profile = AgentProfileManager.getInstance().getProfile(agentId());
-        String[] alternates = profile != null
-            ? profile.getAlternateNames().toArray(new String[0])
-            : new String[0];
-        String resolved = new AcpClientBinaryResolver(agentId(), "kiro-cli", alternates).resolve();
+        String resolved = createKiroBinaryResolver().resolve();
         if (resolved != null && !resolved.isBlank()) {
             return tryResolveBareName(resolved);
         }
@@ -333,7 +339,24 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * Reads the Kiro CLI OIDC token from its local SQLite database.
+     * Creates the {@link AcpClientBinaryResolver} used by {@link #resolveKiroCliBinary()} for
+     * the second-priority resolution step (after reusing the launcher-resolved path). Protected
+     * so tests can override it to inject a resolver that does not require the IntelliJ Application
+     * service to be running.
+     */
+    @org.jetbrains.annotations.NotNull
+    protected AcpClientBinaryResolver createKiroBinaryResolver() {
+        if (binaryResolverOverride != null) {
+            return binaryResolverOverride;
+        }
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(agentId());
+        String[] alternates = profile != null
+            ? profile.getAlternateNames().toArray(new String[0])
+            : new String[0];
+        return new AcpClientBinaryResolver(agentId(), "kiro-cli", alternates);
+    }
+
+    /**
      * Returns {@code null} if the DB or token row does not exist.
      */
     @org.jetbrains.annotations.Nullable
