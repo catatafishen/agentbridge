@@ -376,7 +376,34 @@ class KiroClientProtocolTest {
         }
     }
 
-    // ── tryRecoverPromptException ────────────────────────────────────────
+    // ── resolveKiroCliBinary — reuse launcher-resolved path ──────────────
+
+    /**
+     * Tests for {@link KiroClient#resolveKiroCliBinary()}. The critical behaviour is that a
+     * token refresh reuses the absolute binary path the launcher already resolved, instead of
+     * re-resolving through {@code PATH} — which returns {@code null} when the IDE was GUI-launched
+     * and the login-shell environment could not be captured (the GoLand 2026.2 regression).
+     */
+    @Nested
+    @DisplayName("resolveKiroCliBinary — reuse launcher-resolved path")
+    class ResolveKiroCliBinary {
+
+        private void setResolvedBinaryPath(KiroClient c, String path) throws Exception {
+            java.lang.reflect.Field f = AcpClient.class.getDeclaredField("resolvedBinaryPath");
+            f.setAccessible(true);
+            f.set(c, path);
+        }
+
+        @Test
+        @DisplayName("returns the launcher-resolved absolute path when it looks like a path")
+        void reusesLauncherResolvedAbsolutePath() throws Exception {
+            String launched = "/Users/dev/.local/bin/kiro-cli";
+            setResolvedBinaryPath(client, launched);
+
+            assertEquals(launched, client.resolveKiroCliBinary(),
+                "Should reuse the absolute path the launcher resolved, not re-resolve via PATH");
+        }
+    }
 
     @Nested
     @DisplayName("tryRecoverPromptException — Rust panic detection via stderr")

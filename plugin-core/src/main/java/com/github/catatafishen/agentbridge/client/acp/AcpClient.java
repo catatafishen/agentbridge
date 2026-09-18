@@ -130,6 +130,23 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     private @Nullable String launchCwd;
+
+    /**
+     * The absolute binary path the most recent launch resolved via {@link #resolveCommand}
+     * (honouring the user's custom path from settings). Subclasses that need to invoke the
+     * same CLI out-of-band (e.g. Kiro's OIDC token refresh) should reuse this instead of
+     * re-resolving through {@code PATH}, which can fail when the IDE was GUI-launched and
+     * {@link ShellEnvironment} could not capture the login-shell {@code PATH}.
+     */
+    private @Nullable String resolvedBinaryPath;
+
+    /**
+     * Returns the absolute binary path resolved by the most recent {@link #launchProcess},
+     * or {@code null} if the client has not been launched yet.
+     */
+    protected @Nullable String resolvedBinaryPath() {
+        return resolvedBinaryPath;
+    }
     /**
      * Tracks the resume session ID requested in the current launch cycle.
      * Set at the start of {@link #createSession}, used by {@link #loadSession},
@@ -1572,6 +1589,7 @@ public abstract class AcpClient extends AbstractClient {
         // it's installed via nvm/sdkman/homebrew in a non-standard location. Java's exec()
         // does not search PATH the same way a shell does.
         List<String> resolvedCommand = resolveCommand(command);
+        resolvedBinaryPath = resolvedCommand.getFirst();
 
         // Validate the resolved binary exists before launching. resolveCommand() already tried
         // the user-configured override, primary name, and all alternate names via the same

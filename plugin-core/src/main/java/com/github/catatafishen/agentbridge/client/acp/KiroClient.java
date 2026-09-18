@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
@@ -238,7 +239,7 @@ public final class KiroClient extends AcpClient {
         if (token != null && !isTokenFresh(token.expiresAt(), java.time.Instant.now(), REFRESH_BUFFER_MILLIS)) {
             LOG.info("Kiro v3: cached access token is expired or within the refresh buffer (expires "
                 + token.expiresAt() + ") — asking the Kiro CLI to refresh before returning it");
-            refreshKiroTokenViaCli();
+            refreshKiroTokenViaCli(resolveKiroCliBinary());
             token = readKiroToken();
         }
         return token;
@@ -275,9 +276,10 @@ public final class KiroClient extends AcpClient {
      * response, so a short bounded wait is acceptable. Failures are logged and the caller falls
      * back to returning the stale token, which surfaces Kiro's own auth error rather than masking
      * the problem.
+     *
+     * @param bin the resolved {@code kiro-cli} executable path (see {@link #resolveKiroCliBinary()})
      */
-    static void refreshKiroTokenViaCli() {
-        String bin = resolveKiroCliBinary();
+    static void refreshKiroTokenViaCli(String bin) {
         try {
             Process proc = new ProcessBuilder(bin, "whoami")
                 .redirectErrorStream(true)
@@ -292,13 +294,42 @@ public final class KiroClient extends AcpClient {
     }
 
     /**
-     * Resolves the absolute path to the {@code kiro-cli} executable via the shared
-     * {@link com.github.catatafishen.agentbridge.settings.BinaryDetector}, falling back to the bare
-     * name (PATH lookup) when detection fails.
+     * Resolves the {@code kiro-cli} executable to invoke for an out-of-band token refresh.
+     * <p>
+     * Resolution order (most to least reliable):
+     * <ol>
+     *   <li>The absolute path the launcher already resolved for the running process
+     *       ({@link #resolvedBinaryPath()}) — honours the user's custom binary path from
+     *       settings and, crucially, works even when the IDE was GUI-launched and the shell
+     *       {@code PATH} could not be captured.</li>
+     *   <li>The same {@link AcpClientBinaryResolver} the launcher uses (custom path, then a
+     *       {@code PATH} scan across the primary and alternate names).</li>
+     *   <li>The bare name {@code "kiro-cli"} as a last resort (relies on {@code execvp}).</li>
+     * </ol>
+     * The previous implementation only did a {@code PATH} lookup via
+     * {@link com.github.catatafishen.agentbridge.settings.BinaryDetector#findBinaryPath},
+     * which silently returned {@code null} whenever the login-shell environment capture failed
+     * (e.g. GoLand 2026.2 launched from the Dock), producing the misleading
+     * "access token is expired and could not be refreshed" error.
      */
-    static String resolveKiroCliBinary() {
-        String found = com.github.catatafishen.agentbridge.settings.BinaryDetector.findBinaryPath("kiro-cli");
-        return found != null ? found : "kiro-cli";
+    String resolveKiroCliBinary() {
+        String launched = resolvedBinaryPath();
+        if (launched != null && (launched.contains("/") || launched.contains("\\"))) {
+            return launched;
+        }
+
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(agentId());
+        String[] alternates = profile != null
+            ? profile.getAlternateNames().toArray(new String[0])
+            : new String[0];
+        String resolved = new AcpClientBinaryResolver(agentId(), "kiro-cli", alternates).resolve();
+        if (resolved != null && !resolved.isBlank()) {
+            return tryResolveBareName(resolved);
+        }
+
+        LOG.warn("Kiro v3: could not resolve an absolute path for 'kiro-cli'; "
+            + "falling back to bare name for token refresh");
+        return "kiro-cli";
     }
 
     /**
