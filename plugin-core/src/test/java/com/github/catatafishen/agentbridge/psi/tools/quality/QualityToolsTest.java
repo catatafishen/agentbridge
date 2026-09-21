@@ -216,6 +216,21 @@ public class QualityToolsTest extends BasePlatformTestCase {
             result.contains("compilation error") || result.contains("No compilation"));
     }
 
+    /**
+     * A timed-out daemon pass must be surfaced as pending rather than treated as a clean cached
+     * result, and the response must tell the caller how to obtain a definitive answer.
+     */
+    public void testGetCompilationErrorsPendingAnalysisIsActionable() {
+        String result = GetCompilationErrorsTool.formatPendingAnalysisResult(2);
+
+        assertTrue("Pending result must identify the affected file count, got: " + result,
+            result.contains("Analysis pending for 2 file(s)"));
+        assertTrue("Pending result must state cached diagnostics were not read, got: " + result,
+            result.contains("cached compilation diagnostics were not read"));
+        assertTrue("Pending result must suggest a definitive fallback, got: " + result,
+            result.contains("build_project"));
+    }
+
     // ── GetProblemsTool ───────────────────────────────────────────────────────────
 
     /**
