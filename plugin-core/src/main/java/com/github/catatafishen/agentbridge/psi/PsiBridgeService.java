@@ -562,10 +562,10 @@ public final class PsiBridgeService implements Disposable {
                 + " — draining " + writeBatchCoordinator.getPendingCount() + " pending write(s)");
             writeBatchCoordinator.drainPendingWrites();
             semaphoreReleasedEarly.set(true);
-            return collectPostDrainHighlights(result, filePathForHighlights, vfForHighlights);
+            return collectPostDrainHighlights(toolName, result, filePathForHighlights, vfForHighlights);
         }
         LOG.info("Auto-highlights: piggybacking on write to " + filePathForHighlights);
-        return appendAutoHighlights(result, filePathForHighlights, daemonWaiter);
+        return appendAutoHighlights(toolName, result, filePathForHighlights, daemonWaiter);
     }
 
     /**
@@ -911,6 +911,14 @@ public final class PsiBridgeService implements Disposable {
         };
     }
 
+    static boolean requiresFreshAutoHighlights(String toolName) {
+        return TOOL_REPLACE_SYMBOL_BODY.equals(toolName);
+    }
+
+    static boolean shouldAppendAutoHighlights(String toolName, boolean analysisFinished) {
+        return !requiresFreshAutoHighlights(toolName) || analysisFinished;
+    }
+
     @Nullable
     static String extractFilePath(JsonObject arguments) {
         if (arguments.has("path")) return arguments.get("path").getAsString();
@@ -987,7 +995,8 @@ public final class PsiBridgeService implements Disposable {
         });
     }
 
-    private String appendAutoHighlights(String writeResult, String path, DaemonWaiter preWriteWaiter) {
+    private String appendAutoHighlights(
+        String toolName, String writeResult, String path, DaemonWaiter preWriteWaiter) {
         com.intellij.openapi.vfs.VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
         // Snapshot whether the file was open BEFORE we do anything, so the finally block
         // knows whether to close it. (followFileIfEnabled uses invokeLater so the open may not
@@ -1008,8 +1017,14 @@ public final class PsiBridgeService implements Disposable {
                 "is disabled in AgentBridge → UI/UX settings.";
         }
 
-        try (DaemonWaiter activeWaiter = resolveActiveWaiter(preWriteWaiter, vf, path)) {
-            return waitAndCollectHighlights(writeResult, path, activeWaiter);
+        boolean requireFreshAnalysis = requiresFreshAutoHighlights(toolName);
+        if (requireFreshAnalysis && vf == null) {
+            LOG.info("Auto-highlights: skipping replace_symbol_body diagnostics for an unresolved file");
+            return writeResult;
+        }
+        try (DaemonWaiter activeWaiter = resolveActiveWaiter(
+            preWriteWaiter, vf, path, requireFreshAnalysis)) {
+            return waitAndCollectHighlights(toolName, writeResult, path, activeWaiter);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return writeResult;
@@ -1038,6 +1053,7 @@ public final class PsiBridgeService implements Disposable {
      * version. Explicitly restarts the daemon to ensure a new analysis pass fires.
      */
     private String collectPostDrainHighlights(
+        String toolName,
         String writeResult,
         String path,
         @Nullable com.intellij.openapi.vfs.VirtualFile vf) {
@@ -1053,18 +1069,22 @@ public final class PsiBridgeService implements Disposable {
         com.intellij.openapi.vfs.VirtualFile target = vf;
         try (DaemonWaiter freshWaiter = new DaemonWaiter(project, vf, postDrainStamp)) {
             // Explicitly restart daemon analysis to guarantee a fresh pass fires after
-            // all writes. The daemon may have already completed a stale pass (for an
-            // intermediate document state) that this waiter correctly rejects.
-            ApplicationManager.getApplication().invokeLater(() -> {
-                com.intellij.psi.PsiFile psiFile =
-                    com.intellij.psi.PsiManager.getInstance(project).findFile(target);
-                if (psiFile != null) {
-                    com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project)
-                        .restart(psiFile, "Agent: re-analyzing after write batch drain");
-                }
-            });
+            // all writes. replace_symbol_body starts that pass synchronously so a queued
+            // pre-write event cannot be accepted before the restart is issued.
+            if (requiresFreshAutoHighlights(toolName)) {
+                restartDaemonAnalysis(target);
+            } else {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    com.intellij.psi.PsiFile psiFile =
+                        com.intellij.psi.PsiManager.getInstance(project).findFile(target);
+                    if (psiFile != null) {
+                        com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project)
+                            .restart(psiFile, "Agent: re-analyzing after write batch drain");
+                    }
+                });
+            }
 
-            return waitAndCollectHighlights(writeResult, path, freshWaiter);
+            return waitAndCollectHighlights(toolName, writeResult, path, freshWaiter);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return writeResult;
@@ -1078,9 +1098,13 @@ public final class PsiBridgeService implements Disposable {
      * Shared logic: waits for the daemon to settle, then reads and appends highlights.
      */
     private String waitAndCollectHighlights(
-        String writeResult, String path, DaemonWaiter waiter) throws Exception {
+        String toolName, String writeResult, String path, DaemonWaiter waiter) throws Exception {
 
-        waiter.await();
+        boolean analysisFinished = waiter.await();
+        if (!shouldAppendAutoHighlights(toolName, analysisFinished)) {
+            LOG.info("Auto-highlights: skipping stale diagnostics after replace_symbol_body");
+            return writeResult;
+        }
 
         ToolDefinition highlightDef = registry.findDefinition("get_highlights");
         if (highlightDef == null || !highlightDef.hasExecutionHandler()) return writeResult;
@@ -1123,18 +1147,36 @@ public final class PsiBridgeService implements Disposable {
     private DaemonWaiter resolveActiveWaiter(
         DaemonWaiter preWriteWaiter,
         @Nullable com.intellij.openapi.vfs.VirtualFile vf,
-        String path) {
+        String path,
+        boolean requireFreshAnalysis) {
         boolean alreadyOpen = vf != null
             && ApplicationManager.getApplication().runReadAction(
             (Computable<Boolean>) () -> com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf));
-        if (alreadyOpen) return preWriteWaiter;
-        // Subscribe a file-specific waiter BEFORE opening so we can't miss the new daemon pass.
-        // Use preWriteStamp = -1: the write already happened before this waiter is created, so
-        // any daemon pass that includes this file is necessarily post-write.
+        if (alreadyOpen && !requireFreshAnalysis) return preWriteWaiter;
+
+        // Subscribe after the write and before restarting the daemon so a post-write pass, rather
+        // than an in-flight pre-write pass, is required before highlights are read.
         preWriteWaiter.close();
-        DaemonWaiter fresh = new DaemonWaiter(project, vf, -1L);
-        openFileSilently(vf, path);
+        long postWriteStamp = requireFreshAnalysis ? getDocumentStamp(vf) - 1 : -1L;
+        DaemonWaiter fresh = new DaemonWaiter(project, vf, postWriteStamp);
+        if (alreadyOpen) {
+            restartDaemonAnalysis(vf);
+        } else {
+            openFileSilently(vf, path);
+        }
         return fresh;
+    }
+
+    private void restartDaemonAnalysis(@NotNull com.intellij.openapi.vfs.VirtualFile vf) {
+        // Match get_compilation_errors' freshness sequence: restart synchronously after subscribing
+        // so no queued pre-write daemon result can be mistaken for the replacement's diagnostics.
+        ApplicationManager.getApplication().runReadAction(() -> {
+            com.intellij.psi.PsiFile psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(vf);
+            if (psiFile != null) {
+                com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project)
+                    .restart(psiFile, "Agent: re-analyzing after replace symbol body");
+            }
+        });
     }
 
     /**
@@ -1264,11 +1306,11 @@ public final class PsiBridgeService implements Disposable {
                 });
         }
 
-        void await() throws InterruptedException {
+        boolean await() throws InterruptedException {
             // Phase 1: wait for the first qualifying daemon pass (up to 5s)
             if (!firstPassLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                LOG.info("Auto-highlights: daemon wait timed out (5s), reading available highlights");
-                return;
+                LOG.info("Auto-highlights: daemon wait timed out");
+                return false;
             }
             LOG.info("Auto-highlights: first daemon pass completed, settling for external annotators");
 
@@ -1288,6 +1330,7 @@ public final class PsiBridgeService implements Disposable {
                 }
             }
             LOG.info("Auto-highlights: daemon settled");
+            return true;
         }
 
         @Override

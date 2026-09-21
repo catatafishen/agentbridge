@@ -400,6 +400,35 @@ class PsiBridgeServiceStaticMethodsTest {
     }
 
     // ---------------------------------------------------------------
+    // requiresFreshAutoHighlights
+    // ---------------------------------------------------------------
+    @Nested
+    class RequiresFreshAutoHighlightsTest {
+
+        @Test
+        void replaceSymbolBodyRequiresFreshDaemonHighlights() {
+            assertTrue(PsiBridgeService.requiresFreshAutoHighlights("replace_symbol_body"));
+        }
+
+        @Test
+        void staleReplaceSymbolBodyAnalysisDoesNotAppendHighlights() {
+            assertFalse(PsiBridgeService.shouldAppendAutoHighlights("replace_symbol_body", false));
+        }
+
+        @Test
+        void freshReplaceSymbolBodyAnalysisAppendsHighlights() {
+            assertTrue(PsiBridgeService.shouldAppendAutoHighlights("replace_symbol_body", true));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"write_file", "edit_text", "insert_before_symbol", "insert_after_symbol"})
+        void otherWriteToolsKeepTheirExistingHighlightBehavior(String toolName) {
+            assertFalse(PsiBridgeService.requiresFreshAutoHighlights(toolName));
+            assertTrue(PsiBridgeService.shouldAppendAutoHighlights(toolName, false));
+        }
+    }
+
+    // ---------------------------------------------------------------
     // extractFilePath
     // ---------------------------------------------------------------
     @Nested
