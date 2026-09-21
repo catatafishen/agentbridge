@@ -5,6 +5,8 @@ import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * Platform tests for {@link SearchTextTool}.
  *
@@ -231,6 +233,37 @@ public class SearchTextToolTest extends BasePlatformTestCase {
             result.contains("matches:"));
         assertTrue("Expected exactly 5 matches reported, got: " + result,
             result.startsWith("5 matches:"));
+    }
+
+    /**
+     * Broad UTF-8 searches stay within the inline-result budget. Offset-skipped
+     * matches do not consume that budget, and the continuation starts after the
+     * entries actually returned in this page.
+     */
+    public void testOutputCapUsesReturnedEntriesAndReportsNextOffset() {
+        StringBuilder content = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            content.append("// INLINE_BUDGET_TOKEN_7841 ").append("é".repeat(600)).append('\n');
+        }
+        myFixture.addFileToProject("InlineBudget.java", content.toString());
+
+        JsonObject a = args("query", "INLINE_BUDGET_TOKEN_7841");
+        a.addProperty("max_results", 100);
+        a.addProperty("offset", 20);
+        String result = tool.execute(a);
+
+        assertTrue("Result must stay within the 16 KiB inline budget, got "
+                + result.getBytes(StandardCharsets.UTF_8).length + " bytes",
+            result.getBytes(StandardCharsets.UTF_8).length <= 16 * 1024);
+        assertTrue("Expected inline output truncation notice, got: " + result,
+            result.contains("output truncated at 16 KiB"));
+
+        int returnedEntries = result.split("InlineBudget\\.java:", -1).length - 1;
+        assertTrue("Expected entries after the skipped offset, got: " + result, returnedEntries > 0);
+        assertTrue("Expected the inline cap to stop before all remaining entries, got: " + result,
+            returnedEntries < 80);
+        assertTrue("Expected pagination to continue after returned entries, got: " + result,
+            result.contains("Use offset=" + (20 + returnedEntries)));
     }
 
     /**

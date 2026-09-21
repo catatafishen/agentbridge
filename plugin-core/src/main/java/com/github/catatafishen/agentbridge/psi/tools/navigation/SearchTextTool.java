@@ -22,9 +22,11 @@ import com.intellij.usages.UsageViewPresentation;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -47,9 +49,13 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     /**
-     * Hard cap on total output bytes — prevents 50+ MB responses from broad searches.
+     * Client-safe inline response budget for broad searches.
      */
-    private static final int MAX_OUTPUT_BYTES = 256 * 1024; // 256 KB
+    private static final int MAX_OUTPUT_BYTES = 16 * 1024; // 16 KiB
+    private static final int OUTPUT_METADATA_RESERVE_BYTES = 256;
+    private static final int MAX_ENTRY_BYTES = MAX_OUTPUT_BYTES - OUTPUT_METADATA_RESERVE_BYTES;
+    private static final int MAX_LINE_BYTES = 4 * 1024;
+    private static final String TRUNCATION_SUFFIX = "… [truncated]";
 
     /**
      * Encapsulates the user-provided search configuration (resolves S107: too many params).
@@ -64,8 +70,8 @@ public final class SearchTextTool extends NavigationTool {
                                 List<String> results, @Nullable List<MatchPosition> positions,
                                 AtomicInteger skippedLarge, int maxResults, int offset,
                                 AtomicInteger totalSeen, int contextLines,
-                                AtomicInteger totalOutputBytes,
-                                @Nullable Predicate<VirtualFile> scopeFilter) {
+                                AtomicInteger totalOutputBytes, AtomicBoolean outputTruncated,
+                                String entrySeparator, @Nullable Predicate<VirtualFile> scopeFilter) {
     }
 
     public SearchTextTool(Project project) {
@@ -192,9 +198,12 @@ public final class SearchTextTool extends NavigationTool {
         List<MatchPosition> positions = cfg.followAgent() ? new ArrayList<>() : null;
         AtomicInteger skippedLarge = new AtomicInteger(0);
         AtomicInteger totalOutputBytes = new AtomicInteger(0);
+        AtomicBoolean outputTruncated = new AtomicBoolean(false);
+        String entrySeparator = cfg.contextLines() > 0 ? "\n---\n" : "\n";
         var compiledFileGlob = cfg.filePattern().isEmpty() ? null : ToolUtils.compileGlob(cfg.filePattern());
         var params = new SearchParams(pattern, basePath, cfg.filePattern(), compiledFileGlob, results, positions,
-            skippedLarge, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes, scopeFilter);
+            skippedLarge, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes,
+            outputTruncated, entrySeparator, scopeFilter);
         ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
 
         if (positions != null && !positions.isEmpty()) {
@@ -203,21 +212,21 @@ public final class SearchTextTool extends NavigationTool {
 
         StringBuilder sb = new StringBuilder();
         if (results.isEmpty()) {
-            sb.append("No matches found for '").append(cfg.query()).append("'");
+            sb.append("No matches found for '").append(truncateUtf8(cfg.query(), 128)).append("'");
         } else {
             sb.append(results.size()).append(" matches:\n");
-            String separator = cfg.contextLines() > 0 ? "\n---\n" : "\n";
-            sb.append(String.join(separator, results));
+            sb.append(String.join(entrySeparator, results));
         }
         if (skippedLarge.get() > 0) {
             sb.append("\n(").append(skippedLarge.get()).append(" file(s) >1 MB skipped)");
         }
-        if (totalOutputBytes.get() >= MAX_OUTPUT_BYTES) {
-            sb.append("\n(output truncated at 256 KB — use a more specific query or file_pattern to narrow results)");
+        if (outputTruncated.get()) {
+            sb.append("\n(output truncated at 16 KiB)");
         }
-        if (results.size() >= cfg.maxResults()) {
-            sb.append("\n\n(Showing ").append(cfg.maxResults()).append(" results starting at offset ").append(cfg.offset())
-                .append(". Use offset=").append(cfg.offset() + cfg.maxResults()).append(" to see more)");
+        if (outputTruncated.get() || results.size() >= cfg.maxResults()) {
+            int nextOffset = cfg.offset() + results.size();
+            sb.append("\n\n(Showing ").append(results.size()).append(" results starting at offset ").append(cfg.offset())
+                .append(". Use offset=").append(nextOffset).append(" to see more)");
         }
         return sb.toString();
     }
@@ -285,7 +294,7 @@ public final class SearchTextTool extends NavigationTool {
         com.intellij.psi.PsiFile psiFile = p.positions() != null
             ? PsiManager.getInstance(project).findFile(vf) : null;
         searchFileForPattern(vf, psiFile, relPath, p);
-        return p.results().size() < p.maxResults() && p.totalOutputBytes().get() < MAX_OUTPUT_BYTES;
+        return p.results().size() < p.maxResults() && !p.outputTruncated().get();
     }
 
     private static void searchFileForPattern(VirtualFile vf, @Nullable com.intellij.psi.PsiFile psiFile,
@@ -294,18 +303,25 @@ public final class SearchTextTool extends NavigationTool {
         if (doc == null) return;
         String text = doc.getText();
         Matcher matcher = p.pattern().matcher(text);
-        while (matcher.find() && p.results().size() < p.maxResults() && p.totalOutputBytes().get() < MAX_OUTPUT_BYTES) {
+        while (matcher.find() && p.results().size() < p.maxResults() && !p.outputTruncated().get()) {
+            if (p.totalSeen().getAndIncrement() < p.offset()) continue;
+
             int matchLine = doc.getLineNumber(matcher.start()) + 1;
             String lineText = ToolUtils.getLineText(doc, matchLine - 1);
-            String entry;
-            if (p.contextLines() <= 0) {
-                entry = String.format(FORMAT_LINE_REF, relPath, matchLine, lineText);
-            } else {
-                entry = buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
+            String entry = p.contextLines() <= 0
+                ? formatLineReference(relPath, matchLine, lineText)
+                : buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
+            entry = truncateUtf8(entry, MAX_ENTRY_BYTES);
+
+            int separatorBytes = p.results().isEmpty() ? 0 : utf8Length(p.entrySeparator());
+            int entryBytes = utf8Length(entry);
+            if (p.totalOutputBytes().get() + separatorBytes + entryBytes > MAX_ENTRY_BYTES) {
+                p.outputTruncated().set(true);
+                break;
             }
-            p.totalOutputBytes().addAndGet(entry.length());
-            if (p.totalSeen().getAndIncrement() < p.offset()) continue;
+
             p.results().add(entry);
+            p.totalOutputBytes().addAndGet(separatorBytes + entryBytes);
             if (p.positions() != null) {
                 p.positions().add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
             }
@@ -318,14 +334,45 @@ public final class SearchTextTool extends NavigationTool {
         StringBuilder entry = new StringBuilder();
         int beforeStart = Math.max(1, matchLine - contextLines);
         for (int l = beforeStart; l < matchLine; l++) {
-            entry.append(String.format("  %s:%d:   %s%n", relPath, l, ToolUtils.getLineText(doc, l - 1)));
+            entry.append(formatContextLine(relPath, l, ToolUtils.getLineText(doc, l - 1))).append('\n');
         }
-        entry.append(String.format(FORMAT_LINE_REF, relPath, matchLine, lineText));
+        entry.append(formatLineReference(relPath, matchLine, lineText));
         int afterEnd = Math.min(lineCount, matchLine + contextLines);
         for (int l = matchLine + 1; l <= afterEnd; l++) {
-            entry.append(String.format("%n  %s:%d:   %s", relPath, l, ToolUtils.getLineText(doc, l - 1)));
+            entry.append('\n').append(formatContextLine(relPath, l, ToolUtils.getLineText(doc, l - 1)));
         }
         return entry.toString();
+    }
+
+    private static String formatLineReference(String relPath, int line, String lineText) {
+        return truncateUtf8(String.format(FORMAT_LINE_REF, relPath, line, lineText), MAX_LINE_BYTES);
+    }
+
+    private static String formatContextLine(String relPath, int line, String lineText) {
+        return truncateUtf8(String.format("  %s:%d:   %s", relPath, line, lineText), MAX_LINE_BYTES);
+    }
+
+    private static int utf8Length(String text) {
+        return text.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static String truncateUtf8(String text, int maxBytes) {
+        if (utf8Length(text) <= maxBytes) return text;
+        int suffixBytes = utf8Length(TRUNCATION_SUFFIX);
+        boolean includeSuffix = maxBytes >= suffixBytes;
+        int contentBudget = includeSuffix ? maxBytes - suffixBytes : Math.max(0, maxBytes);
+        StringBuilder result = new StringBuilder();
+        int usedBytes = 0;
+        for (int offset = 0; offset < text.length();) {
+            int codePoint = text.codePointAt(offset);
+            String character = new String(Character.toChars(codePoint));
+            int characterBytes = utf8Length(character);
+            if (usedBytes + characterBytes > contentBudget) break;
+            result.append(character);
+            usedBytes += characterBytes;
+            offset += Character.charCount(codePoint);
+        }
+        return includeSuffix ? result.append(TRUNCATION_SUFFIX).toString() : result.toString();
     }
 
 }

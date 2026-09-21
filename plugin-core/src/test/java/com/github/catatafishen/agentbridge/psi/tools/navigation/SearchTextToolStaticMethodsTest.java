@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -229,11 +230,30 @@ class SearchTextToolStaticMethodsTest {
     class Constants {
 
         @Test
-        @DisplayName("MAX_OUTPUT_BYTES is 256 KB")
+        @DisplayName("MAX_OUTPUT_BYTES is 16 KiB")
         void maxOutputBytes() throws ReflectiveOperationException {
             var field = SearchTextTool.class.getDeclaredField("MAX_OUTPUT_BYTES");
             field.setAccessible(true);
-            assertEquals(256 * 1024, field.getInt(null));
+            assertEquals(16 * 1024, field.getInt(null));
+        }
+    }
+
+    @Nested
+    @DisplayName("UTF-8 output truncation")
+    class Utf8OutputTruncation {
+
+        @Test
+        @DisplayName("truncation preserves the line reference without splitting UTF-8 characters")
+        void truncateUtf8PreservesLineReference() throws ReflectiveOperationException {
+            Method truncate = SearchTextTool.class.getDeclaredMethod("truncateUtf8", String.class, int.class);
+            truncate.setAccessible(true);
+            String lineReference = "src/Unicode.java:42: " + "🙂".repeat(100);
+
+            String truncated = (String) truncate.invoke(null, lineReference, 64);
+
+            assertTrue(truncated.startsWith("src/Unicode.java:42: "));
+            assertTrue(truncated.endsWith("… [truncated]"));
+            assertTrue(truncated.getBytes(StandardCharsets.UTF_8).length <= 64);
         }
     }
 
