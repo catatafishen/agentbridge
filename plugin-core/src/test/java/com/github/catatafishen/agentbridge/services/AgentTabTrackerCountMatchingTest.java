@@ -49,7 +49,7 @@ class AgentTabTrackerCountMatchingTest {
             .orElseThrow();
 
         assertEquals("close_terminal", closeTool.id());
-        assertEquals(Tool.Kind.EDIT, closeTool.kind());
+        assertEquals(Tool.Kind.EXECUTE, closeTool.kind());
         assertTrue(closeTool.isDestructive());
         assertTrue(closeTool.inputSchema().toString().contains("\"terminal_id\""));
         assertTrue(closeTool.inputSchema().toString().contains("\"tab_name\""));

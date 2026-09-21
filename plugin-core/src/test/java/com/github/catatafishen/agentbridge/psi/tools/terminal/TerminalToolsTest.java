@@ -195,7 +195,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         assertEquals("Close Terminal", closeTerminalTool.displayName());
         assertTrue(closeTerminalTool.description().contains("terminal_id"));
         assertTrue(closeTerminalTool.description().contains("Other agents"));
-        assertEquals(Tool.Kind.EDIT, closeTerminalTool.kind());
+        assertEquals(Tool.Kind.EXECUTE, closeTerminalTool.kind());
         assertTrue(closeTerminalTool.isDestructive());
         assertTrue(closeTerminalTool.permissionTemplate().contains("{terminal_id}"));
         JsonObject properties =
@@ -636,12 +636,12 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     }
 
     /**
-     * {@code write_terminal_input} must be declared as {@link Tool.Kind#EDIT} and
-     * {@code isOpenWorld()} must return {@code true} (it interacts with the OS shell).
+     * {@code write_terminal_input} must be declared as {@link Tool.Kind#EXECUTE} because it can
+     * execute commands in an existing terminal, and {@code isOpenWorld()} must return {@code true}.
      */
     public void testWriteTerminalInputKindAndOpenWorld() {
-        assertEquals("write_terminal_input must be Kind.EDIT",
-            Tool.Kind.EDIT, writeTerminalInputTool.kind());
+        assertEquals("write_terminal_input must be Kind.EXECUTE",
+            Tool.Kind.EXECUTE, writeTerminalInputTool.kind());
         assertTrue("write_terminal_input must be open-world",
             writeTerminalInputTool.isOpenWorld());
     }
