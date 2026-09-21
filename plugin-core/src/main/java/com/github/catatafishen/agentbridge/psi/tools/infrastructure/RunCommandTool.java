@@ -58,6 +58,8 @@ public final class RunCommandTool extends InfrastructureTool {
     @Override
     public @NotNull String description() {
         return "Run a shell command with paginated output. Prefer this over the built-in bash tool. " +
+            "Search project source and test files with search_text or search_symbols, not grep or rg; " +
+            "those commands are only allowed for piped output or explicit targets outside source roots. " +
             "Returns stdout/stderr with exit code. Use offset parameter to paginate large output. " +
             "Default timeout: " + DEFAULT_TIMEOUT_SECONDS + "s, capped at "
             + McpRequestDeadline.MAX_TIMEOUT_SECONDS
@@ -90,7 +92,7 @@ public final class RunCommandTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         String configuredShell = project != null ? ShellEnvironment.getShellPath(project) : "IDE-configured shell";
         return schema(
-            Param.required(PARAM_COMMAND, TYPE_STRING, "Shell command to execute (e.g., 'gradle build', 'cat file.txt')"),
+            Param.required(PARAM_COMMAND, TYPE_STRING, "Shell command to execute (e.g., 'gradle build', 'cat file.txt'). Use search_text or search_symbols instead of grep/rg for project source and test files; grep/rg is allowed only for piped output or explicit non-source-root targets."),
             Param.optional(PARAM_SHELL, TYPE_STRING,
                 "Shell executable to use (default: '" + configuredShell + "', the IDE-configured terminal shell). "
                     + "Override with any shell path available on this system, e.g. '/usr/bin/zsh' or 'pwsh'."),
