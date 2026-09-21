@@ -34,7 +34,7 @@ public abstract class EditingTool extends Tool {
     protected static final String PARAM_SYMBOL = "symbol";
     protected static final String PARAM_LINE = "line";
     protected static final String ERROR_CANNOT_OPEN_DOC = "Cannot open document: ";
-    protected static final String FORMATTED_SUFFIX = " (formatted & imports queued)";
+    protected static final String FORMATTED_SUFFIX = " (formatting & imports queued)";
     protected static final String SYMBOL_PREFIX = "Symbol '";
 
     protected record SymbolLocation(int startLine, int endLine, String type, String name) {

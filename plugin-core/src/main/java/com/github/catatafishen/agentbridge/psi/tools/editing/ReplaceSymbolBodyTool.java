@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Replaces the entire definition of a symbol (method, class, field) by name.
- * Auto-formats and optimizes imports immediately on every call.
+ * Queues formatting and import optimization after every call.
  */
 public final class ReplaceSymbolBodyTool extends EditingTool {
 
@@ -43,7 +43,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
     @Override
     public @NotNull String description() {
         return "Replace the entire definition of a symbol (method, class, field) by name -- no line numbers needed. "
-            + "Auto-formats and optimizes imports immediately on every call";
+            + "Queues formatting and import optimization after every call.";
     }
 
     @Override

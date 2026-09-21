@@ -158,7 +158,7 @@ public final class SearchTextTool extends NavigationTool {
      * Compiles the search pattern from user-provided parameters.
      *
      * @return the compiled {@link Pattern}, or {@code null} if {@code query} is
-     *         an invalid regex (only possible when {@code isRegex=true})
+     * an invalid regex (only possible when {@code isRegex=true})
      */
     private static @Nullable Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {
         try {
@@ -304,26 +304,26 @@ public final class SearchTextTool extends NavigationTool {
         String text = doc.getText();
         Matcher matcher = p.pattern().matcher(text);
         while (matcher.find() && p.results().size() < p.maxResults() && !p.outputTruncated().get()) {
-            if (p.totalSeen().getAndIncrement() < p.offset()) continue;
+            if (p.totalSeen().getAndIncrement() >= p.offset()) {
+                int matchLine = doc.getLineNumber(matcher.start()) + 1;
+                String lineText = ToolUtils.getLineText(doc, matchLine - 1);
+                String entry = p.contextLines() <= 0
+                    ? formatLineReference(relPath, matchLine, lineText)
+                    : buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
+                entry = truncateUtf8(entry, MAX_ENTRY_BYTES);
 
-            int matchLine = doc.getLineNumber(matcher.start()) + 1;
-            String lineText = ToolUtils.getLineText(doc, matchLine - 1);
-            String entry = p.contextLines() <= 0
-                ? formatLineReference(relPath, matchLine, lineText)
-                : buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
-            entry = truncateUtf8(entry, MAX_ENTRY_BYTES);
+                int separatorBytes = p.results().isEmpty() ? 0 : utf8Length(p.entrySeparator());
+                int entryBytes = utf8Length(entry);
+                if (p.totalOutputBytes().get() + separatorBytes + entryBytes > MAX_ENTRY_BYTES) {
+                    p.outputTruncated().set(true);
+                    return;
+                }
 
-            int separatorBytes = p.results().isEmpty() ? 0 : utf8Length(p.entrySeparator());
-            int entryBytes = utf8Length(entry);
-            if (p.totalOutputBytes().get() + separatorBytes + entryBytes > MAX_ENTRY_BYTES) {
-                p.outputTruncated().set(true);
-                break;
-            }
-
-            p.results().add(entry);
-            p.totalOutputBytes().addAndGet(separatorBytes + entryBytes);
-            if (p.positions() != null) {
-                p.positions().add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
+                p.results().add(entry);
+                p.totalOutputBytes().addAndGet(separatorBytes + entryBytes);
+                if (p.positions() != null) {
+                    p.positions().add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
+                }
             }
         }
     }
@@ -363,14 +363,13 @@ public final class SearchTextTool extends NavigationTool {
         int contentBudget = includeSuffix ? maxBytes - suffixBytes : Math.max(0, maxBytes);
         StringBuilder result = new StringBuilder();
         int usedBytes = 0;
-        for (int offset = 0; offset < text.length();) {
+        for (int offset = 0; offset < text.length(); offset = text.offsetByCodePoints(offset, 1)) {
             int codePoint = text.codePointAt(offset);
             String character = new String(Character.toChars(codePoint));
             int characterBytes = utf8Length(character);
             if (usedBytes + characterBytes > contentBudget) break;
             result.append(character);
             usedBytes += characterBytes;
-            offset += Character.charCount(codePoint);
         }
         return includeSuffix ? result.append(TRUNCATION_SUFFIX).toString() : result.toString();
     }
