@@ -41,7 +41,7 @@ public final class BuildProjectTool extends ProjectTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EDIT;
+        return Kind.EXECUTE;
     }
 
     @Override

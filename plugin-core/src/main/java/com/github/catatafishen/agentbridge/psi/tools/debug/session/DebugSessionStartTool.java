@@ -46,7 +46,7 @@ public final class DebugSessionStartTool extends DebugTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.WRITE;
+        return Kind.EXECUTE;
     }
 
     @Override

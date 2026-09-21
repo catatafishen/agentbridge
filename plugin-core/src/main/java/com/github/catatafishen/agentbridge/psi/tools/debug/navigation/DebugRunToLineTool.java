@@ -38,7 +38,7 @@ public final class DebugRunToLineTool extends DebugTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.WRITE;
+        return Kind.EXECUTE;
     }
 
     @Override

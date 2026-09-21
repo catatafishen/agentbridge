@@ -35,7 +35,7 @@ public final class DeleteRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EXECUTE;
+        return Kind.DELETE;
     }
 
     @Override

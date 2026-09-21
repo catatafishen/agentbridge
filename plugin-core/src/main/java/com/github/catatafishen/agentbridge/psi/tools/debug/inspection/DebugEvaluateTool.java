@@ -19,7 +19,6 @@ public final class DebugEvaluateTool extends DebugTool {
 
     private static final String PARAM_FRAME_INDEX = "frame_index";
 
-
     public DebugEvaluateTool(Project project) {
         super(project);
     }
@@ -41,12 +40,7 @@ public final class DebugEvaluateTool extends DebugTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.WRITE;
-    }
-
-    @Override
-    public boolean isReadOnly() {
-        return false;
+        return Kind.EXECUTE;
     }
 
     @Override

@@ -11,7 +11,6 @@ public final class DebugSessionStopTool extends DebugTool {
 
     private static final String PARAM_STOP_ALL = "stop_all";
 
-
     public DebugSessionStopTool(Project project) {
         super(project);
     }
@@ -33,7 +32,7 @@ public final class DebugSessionStopTool extends DebugTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.WRITE;
+        return Kind.EXECUTE;
     }
 
     @Override

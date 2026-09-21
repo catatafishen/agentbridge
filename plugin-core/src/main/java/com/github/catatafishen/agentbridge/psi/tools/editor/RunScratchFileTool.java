@@ -60,7 +60,7 @@ public final class RunScratchFileTool extends EditorTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EDIT;
+        return Kind.EXECUTE;
     }
 
     @Override
