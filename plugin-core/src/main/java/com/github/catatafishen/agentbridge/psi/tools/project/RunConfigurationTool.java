@@ -42,7 +42,7 @@ public final class RunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EDIT;
+        return Kind.EXECUTE;
     }
 
     @Override
