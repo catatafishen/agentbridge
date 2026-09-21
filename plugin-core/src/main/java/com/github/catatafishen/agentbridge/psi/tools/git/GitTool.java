@@ -267,7 +267,7 @@ public abstract class GitTool extends Tool {
     }
 
     private void appendWorkingTreeContext(@NotNull StringBuilder ctx, @NotNull String rootDir) {
-        String porcelain = runGitInQuiet(rootDir, "status", "--porcelain");
+        String porcelain = runGitInQuietPreservingLeadingWhitespace(rootDir, "status", "--porcelain");
         if (porcelain == null) return;
         if (porcelain.isEmpty()) {
             ctx.append("Working tree: clean\n");
@@ -437,7 +437,7 @@ public abstract class GitTool extends Tool {
         try {
             String result = runGitIn(rootDir, args);
             if (result == null || result.startsWith(ERR_PREFIX)) return null;
-            return result.trim();
+            return result.stripTrailing();
         } catch (Exception e) {
             return null;
         }
