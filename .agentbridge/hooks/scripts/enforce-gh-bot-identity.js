@@ -30,36 +30,30 @@
 //    the bot token is not configured.
 (function () {
     var command = Hook.arg('command') || '';
-    var lcmd = command.toLowerCase();
+    var ghCalls = parseCommands(command).filter(function (call) {
+        return call.name === 'gh';
+    });
+    if (ghCalls.length === 0) return;
 
-    // gh subcommands that create or modify GitHub content.
-    var writePatterns = [
-        'gh pr create', 'gh pr comment', 'gh pr review', 'gh pr edit', 'gh pr merge', 'gh pr close',
-        'gh issue create', 'gh issue comment', 'gh issue edit', 'gh issue close',
-        'gh discussion create', 'gh discussion comment',
-        'gh release create'
-    ];
+    var needsBot = ghCalls.some(isGhWrite);
 
-    // Explicit method flags (lcmd is already lowercased, so both -X and --method forms appear here).
-    var apiWriteMethods = [
-        '-x post', '-x patch', '-x put', '-x delete',
-        '-method post', '-method patch', '-method put', '-method delete'
-    ];
-
-    // gh api implicitly POSTs when -f/-F fields are present; graphql is always POST. lcmd is
-    // lowercased, so only lowercase -f appears. Detect ' -f ', ' -f=', or a trailing ' -f'.
-    var isGhApiWrite = lcmd.indexOf('gh api ') >= 0 && (
-        apiWriteMethods.some(function (m) {
-            return lcmd.indexOf(m) >= 0;
-        })
-        || lcmd.indexOf('gh api graphql') >= 0
-        || lcmd.indexOf(' -f ') >= 0 || lcmd.indexOf(' -f=') >= 0 || /\s-f$/.test(lcmd)
-    );
-
-    var needsBot = writePatterns.some(function (p) {
-        return lcmd.indexOf(p) >= 0;
-    }) || isGhApiWrite;
-    if (!needsBot) return;
+    function isGhWrite(call) {
+        var subcommand = (call.argv[0] || '').toLowerCase();
+        var action = (call.argv[1] || '').toLowerCase();
+        if ((subcommand === 'pr' && ['create', 'comment', 'review', 'edit', 'merge', 'close'].indexOf(action) >= 0)
+            || (subcommand === 'issue' && ['create', 'comment', 'edit', 'close'].indexOf(action) >= 0)
+            || (subcommand === 'discussion' && ['create', 'comment'].indexOf(action) >= 0)
+            || (subcommand === 'release' && action === 'create')) {
+            return true;
+        }
+        if (subcommand !== 'api') return false;
+        var argumentsLower = call.args.toLowerCase();
+        return argumentsLower.indexOf('graphql') === 0
+            || /(^|\s)(?:-x|--method)\s+(?:post|patch|put|delete)(?:\s|$)/.test(argumentsLower)
+            || /(^|\s)-f(?:=|\s|$)/.test(argumentsLower)
+            || /(^|\s)--raw-field(?:=|\s|$)/.test(argumentsLower)
+            || /(^|\s)--field(?:=|\s|$)/.test(argumentsLower);
+    }
 
     var token = resolveBotToken();
     if (token) {
@@ -75,7 +69,7 @@
             // contain single quotes — single-quoting the value is therefore safe.
             Hook.setCommand("(export GH_TOKEN='" + token + "'; " + command + ')');
         }
-    } else {
+    } else if (needsBot) {
         Hook.error("Identity policy: this command would post GitHub content (PR, comment, issue, "
             + "etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using "
             + "built-in bash, run_in_terminal, or any other tool that bypasses this check. Instead, "
