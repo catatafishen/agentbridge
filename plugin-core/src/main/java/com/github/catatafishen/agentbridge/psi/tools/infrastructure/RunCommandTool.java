@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
-import com.github.catatafishen.agentbridge.psi.tools.testing.RunTestsTool;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.github.catatafishen.agentbridge.ui.renderers.RunCommandRenderer;
 import com.google.gson.JsonObject;
@@ -28,18 +27,13 @@ public final class RunCommandTool extends InfrastructureTool {
     private static final String PARAM_SHELL = "shell";
     private static final String PARAM_OFFSET = "offset";
     private static final String PARAM_TIMEOUT = "timeout";
+    private static final String PARAM_SAVE_DOCUMENTS = "save_documents";
     private static final String PARAM_MAX_CHARS = "max_chars";
     private static final String JSON_TITLE = "title";
     private static final String JAVA_HOME_ENV = "JAVA_HOME";
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 60;
-
-    /**
-     * Default wait for a test command routed to {@link RunTestsTool}. Kept under
-     * {@link McpRequestDeadline#MAX_TIMEOUT_SECONDS} so the common case never trips the clamp.
-     */
-    private static final int DEFAULT_TEST_TIMEOUT_SECONDS = 150;
 
     public RunCommandTool(Project project) {
         super(project);
@@ -102,6 +96,9 @@ public final class RunCommandTool extends InfrastructureTool {
                     + "maximum, because MCP clients abandon a request after roughly 180s and the "
                     + "output would be lost. For work that takes longer, use run_in_terminal + "
                     + "read_terminal_output."),
+            Param.optional(PARAM_SAVE_DOCUMENTS, TYPE_BOOLEAN,
+                "Save unsaved editor documents before starting the command (default: false). Set this only "
+                    + "when the command must read the latest unsaved files from disk."),
             Param.optional(JSON_TITLE, TYPE_STRING, "Human-readable title for the Run panel tab. ALWAYS set this to a short descriptive name"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Character offset to start output from (default: 0). Use for pagination when output is truncated"),
             Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return per page (default: 8000)")
@@ -113,15 +110,6 @@ public final class RunCommandTool extends InfrastructureTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String command = args.get(PARAM_COMMAND).getAsString();
         String abuseType = ToolUtils.detectCommandAbuseType(command);
-        if ("test".equals(abuseType)) {
-            int requestedTestTimeout = args.has(PARAM_TIMEOUT)
-                ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TEST_TIMEOUT_SECONDS;
-            String testTimeoutError = McpRequestDeadline.rejectNonPositive(requestedTestTimeout);
-            if (testTimeoutError != null) return testTimeoutError;
-            int testTimeout = McpRequestDeadline.clamp(requestedTestTimeout);
-            return McpRequestDeadline.prependNotice(McpRequestDeadline.clampNotice(requestedTestTimeout),
-                new RunTestsTool(project).executeFromCommand(command, testTimeout));
-        }
         if ("grep".equals(abuseType) && ToolUtils.grepTargetsOnlyOutsideSourceRoots(project, command)) {
             abuseType = null;
         }
@@ -129,8 +117,13 @@ public final class RunCommandTool extends InfrastructureTool {
             return ToolUtils.getCommandAbuseMessage("grep");
         }
 
-        EdtUtil.invokeAndWait(() ->
-            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
+        // Most commands, including concurrent read-only queries, do not depend on editor buffers.
+        // Avoid serializing every call behind a synchronous EDT document save; callers that need
+        // unsaved editor content on disk can request that expensive operation explicitly.
+        if (shouldSaveDocuments(args)) {
+            EdtUtil.invokeAndWait(() ->
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
+        }
 
         String title = args.has(JSON_TITLE) ? args.get(JSON_TITLE).getAsString() : null;
         String basePath = project.getBasePath();
@@ -161,6 +154,12 @@ public final class RunCommandTool extends InfrastructureTool {
     @Override
     public @NotNull Object resultRenderer() {
         return RunCommandRenderer.INSTANCE;
+    }
+
+    static boolean shouldSaveDocuments(JsonObject args) {
+        return args.has(PARAM_SAVE_DOCUMENTS)
+            && !args.get(PARAM_SAVE_DOCUMENTS).isJsonNull()
+            && args.get(PARAM_SAVE_DOCUMENTS).getAsBoolean();
     }
 
     private static String truncateForTitle(String command) {

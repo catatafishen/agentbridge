@@ -327,6 +327,39 @@ class RunCommandToolStaticMethodsTest {
     }
 
     // ======================================================================================
+    //  shouldSaveDocuments
+    // ======================================================================================
+    @Nested
+    @DisplayName("shouldSaveDocuments")
+    class ShouldSaveDocuments {
+
+        @Test
+        @DisplayName("defaults to false so read-only commands do not wait for the EDT")
+        void defaultsToFalse() {
+            assertFalse(RunCommandTool.shouldSaveDocuments(new JsonObject()));
+        }
+
+        @Test
+        @DisplayName("returns true only when explicitly requested")
+        void respectsExplicitValue() {
+            JsonObject args = new JsonObject();
+            args.addProperty("save_documents", true);
+            assertTrue(RunCommandTool.shouldSaveDocuments(args));
+
+            args.addProperty("save_documents", false);
+            assertFalse(RunCommandTool.shouldSaveDocuments(args));
+        }
+
+        @Test
+        @DisplayName("JSON null is treated as the default")
+        void jsonNullDefaultsToFalse() {
+            JsonObject args = new JsonObject();
+            args.add("save_documents", com.google.gson.JsonNull.INSTANCE);
+            assertFalse(RunCommandTool.shouldSaveDocuments(args));
+        }
+    }
+
+    // ======================================================================================
     //  extractInjectedEnv
     // ======================================================================================
     @Nested
