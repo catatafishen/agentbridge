@@ -27,6 +27,11 @@ var COMMAND_PREFIXES = {
 
 var ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 var GROUPING_TOKENS = {'{': 1, '}': 1, '!': 1};
+var SHELL_CONTROL_KEYWORDS = {
+    'if': 1, 'then': 1, 'elif': 1, 'else': 1, 'fi': 1,
+    'for': 1, 'while': 1, 'until': 1, 'do': 1, 'done': 1,
+    'case': 1, 'esac': 1
+};
 
 /**
  * Splits a command line into segments at unquoted shell separators (`;` `&` `|` `&&` `||`,
@@ -159,7 +164,7 @@ function parseSegment(tokens) {
             argv.push(tok.text);
             continue;
         }
-        if (GROUPING_TOKENS[tok.text]) continue;
+        if (GROUPING_TOKENS[tok.text] || SHELL_CONTROL_KEYWORDS[tok.text]) continue;
         if (!tok.quoted && ASSIGNMENT_RE.test(tok.text)) continue;
         var candidate = baseCommandName(tok.text);
         if (COMMAND_PREFIXES[candidate]) continue;
