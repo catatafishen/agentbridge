@@ -16,6 +16,45 @@
 set -e
 
 AGENTBRIDGE_DIR="${HOME}/.agentbridge"
+CACHE_FILE="${AGENTBRIDGE_DIR}/github-app-token-cache"
+LOCK_DIR="${CACHE_FILE}.lock"
+CACHE_TTL_SECONDS=3000
+
+read_cached_token() {
+    [ -r "$CACHE_FILE" ] || return 1
+    cache_expires=$(sed -n '1p' "$CACHE_FILE")
+    cache_token=$(sed -n '2p' "$CACHE_FILE")
+    case "$cache_expires" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$(date +%s)" -lt "$cache_expires" ] && [ -n "$cache_token" ] || return 1
+    printf '%s' "$cache_token"
+}
+
+if token=$(read_cached_token); then
+    printf '%s' "$token"
+    exit 0
+fi
+
+attempts=0
+until mkdir "$LOCK_DIR" 2>/dev/null; do
+    if token=$(read_cached_token); then
+        printf '%s' "$token"
+        exit 0
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 15 ]; then
+        echo "Error: Timed out waiting for GitHub App token cache" >&2
+        exit 1
+    fi
+    sleep 1
+done
+trap 'rmdir "$LOCK_DIR"' EXIT HUP INT TERM
+
+if token=$(read_cached_token); then
+    printf '%s' "$token"
+    exit 0
+fi
 
 # --- Resolve private key ---
 pem_file="${AGENTBRIDGE_APP_PEM:-${AGENTBRIDGE_DIR}/github-app.pem}"
@@ -96,4 +135,8 @@ if [ -z "$token" ]; then
     exit 1
 fi
 
+umask 077
+cache_temp="${CACHE_FILE}.$$"
+printf '%s\n%s\n' "$(( $(date +%s) + CACHE_TTL_SECONDS ))" "$token" > "$cache_temp"
+mv "$cache_temp" "$CACHE_FILE"
 printf '%s' "$token"

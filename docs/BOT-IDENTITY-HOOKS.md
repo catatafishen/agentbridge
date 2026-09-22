@@ -72,7 +72,7 @@ need a private key to generate short-lived installation tokens on your machine.
 4. **Test it:** run `bash .agentbridge/hooks/scripts/generate-github-app-token.sh`. It should
    print a `ghs_...` token to stdout.
 
-The hooks call this script automatically — no further configuration needed.
+The hooks call this script automatically — no further configuration needed. GitHub App tokens are cached in `~/.agentbridge/github-app-token-cache` for 50 minutes with owner-only permissions; concurrent hooks share the cached token instead of minting one per request.
 
 ---
 
