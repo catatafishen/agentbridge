@@ -933,20 +933,7 @@ public final class RunTestsTool extends TestingTool {
         try {
             var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
             var descriptors = new ArrayList<>(manager.getAllDescriptors());
-
-            com.intellij.execution.ui.RunContentDescriptor target = null;
-            com.intellij.execution.ui.RunContentDescriptor substringFallback = null;
-            for (var descriptor : descriptors) {
-                if (descriptor.getDisplayName() == null) continue;
-                if (descriptor.getDisplayName().equals(configName)) {
-                    target = descriptor;
-                    break;
-                }
-                if (descriptor.getDisplayName().contains(configName)) {
-                    substringFallback = descriptor;
-                }
-            }
-            if (target == null) target = substringFallback;
+            com.intellij.execution.ui.RunContentDescriptor target = findTestRunDescriptor(descriptors, configName);
             if (target == null || target.getExecutionConsole() == null) return "";
 
             Object console = target.getExecutionConsole();
@@ -960,6 +947,20 @@ public final class RunTestsTool extends TestingTool {
             LOG.debug("Failed to collect test run output", e);
             return "";
         }
+    }
+
+    @Nullable
+    private com.intellij.execution.ui.RunContentDescriptor findTestRunDescriptor(
+        List<com.intellij.execution.ui.RunContentDescriptor> descriptors, String configName) {
+        com.intellij.execution.ui.RunContentDescriptor substringFallback = null;
+        for (var descriptor : descriptors) {
+            String displayName = descriptor.getDisplayName();
+            if (displayName != null) {
+                if (displayName.equals(configName)) return descriptor;
+                if (displayName.contains(configName)) substringFallback = descriptor;
+            }
+        }
+        return substringFallback;
     }
 
     @Nullable

@@ -6,77 +6,89 @@ import com.intellij.util.ui.UIUtil
 import java.awt.Font
 import javax.swing.JComponent
 
-/**
- * Renders test results as a status card with pass/fail counts,
- * duration, and a colored list of failures.
- */
 object TestResultRenderer : ToolResultRenderer {
 
-    val SUMMARY_PATTERN = Regex(
-        """Test Results:\s*(\d+)\s+tests?,\s*(\d+)\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+errors?,\s*(\d+)\s+skipped(?:\s*\(([\d.]+)s\))?"""
+    private val summaryPattern = Regex(
+        """Test Results: (\d+) tests?, (\d+) passed, (\d+) failed, (\d+) errors?, (\d+) skipped"""
     )
+    private val durationPattern = Regex("""\(([\d.]+)s\)""")
+
+    private data class TestSummary(
+        val total: Int,
+        val passed: Int,
+        val failed: Int,
+        val errors: Int,
+        val skipped: Int,
+        val duration: String
+    ) {
+        val allPassed get() = failed == 0 && errors == 0
+    }
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
-        if (lines.isEmpty()) return null
+        val summary = lines.firstOrNull()?.let(::parseSummary) ?: return null
+        return ToolRenderers.listPanel().apply {
+            add(createHeader(summary))
+            add(createStats(summary))
+            failureLines(lines).forEach { add(createFailureRow(it)) }
+        }
+    }
 
-        val summary = SUMMARY_PATTERN.find(lines.first()) ?: return null
-        val total = summary.groupValues[1].toInt()
-        val passed = summary.groupValues[2].toInt()
-        val failed = summary.groupValues[3].toInt()
-        val errors = summary.groupValues[4].toInt()
-        val skipped = summary.groupValues[5].toInt()
-        val duration = summary.groupValues[6]
+    private fun parseSummary(line: String): TestSummary? {
+        val match = summaryPattern.find(line) ?: return null
+        return TestSummary(
+            total = match.groupValues[1].toInt(),
+            passed = match.groupValues[2].toInt(),
+            failed = match.groupValues[3].toInt(),
+            errors = match.groupValues[4].toInt(),
+            skipped = match.groupValues[5].toInt(),
+            duration = durationPattern.find(line)?.groupValues?.get(1).orEmpty()
+        )
+    }
 
-        val allPassed = failed == 0 && errors == 0
-        val panel = ToolRenderers.listPanel()
-
-        // Status header
-        val headerRow = ToolRenderers.rowPanel()
-        val statusColor = if (allPassed) ToolRenderers.SUCCESS_COLOR else ToolRenderers.FAIL_COLOR
-        val statusIcon = if (allPassed) ToolIcons.SUCCESS else ToolIcons.FAILURE
-        headerRow.add(JBLabel("$total tests").apply {
-            icon = statusIcon
+    private fun createHeader(summary: TestSummary) = ToolRenderers.rowPanel().apply {
+        val color = if (summary.allPassed) ToolRenderers.SUCCESS_COLOR else ToolRenderers.FAIL_COLOR
+        val icon = if (summary.allPassed) ToolIcons.SUCCESS else ToolIcons.FAILURE
+        add(JBLabel("${summary.total} tests").apply {
+            this.icon = icon
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = statusColor
+            foreground = color
         })
-        if (duration.isNotEmpty()) headerRow.add(ToolRenderers.mutedLabel("${duration}s"))
-        panel.add(headerRow)
+        if (summary.duration.isNotEmpty()) add(ToolRenderers.mutedLabel("${summary.duration}s"))
+    }
 
-        // Stat badges
-        val statsRow = ToolRenderers.rowPanel()
-        if (passed > 0) statsRow.add(JBLabel("$passed passed").apply { foreground = ToolRenderers.SUCCESS_COLOR })
-        if (failed > 0) statsRow.add(JBLabel("$failed failed").apply { foreground = ToolRenderers.FAIL_COLOR })
-        if (errors > 0) statsRow.add(JBLabel("$errors errors").apply { foreground = ToolRenderers.FAIL_COLOR })
-        if (skipped > 0) statsRow.add(JBLabel("$skipped skipped").apply { foreground = ToolRenderers.MUTED_COLOR })
-        panel.add(statsRow)
+    private fun createStats(summary: TestSummary) = ToolRenderers.rowPanel().apply {
+        addStat(summary.passed, "passed", ToolRenderers.SUCCESS_COLOR)
+        addStat(summary.failed, "failed", ToolRenderers.FAIL_COLOR)
+        addStat(summary.errors, "errors", ToolRenderers.FAIL_COLOR)
+        addStat(summary.skipped, "skipped", ToolRenderers.MUTED_COLOR)
+    }
 
-        // Failures — look for "Failures:" section or legacy ❌-prefixed lines
-        val failIdx = lines.indexOfFirst { it.trim() == "Failures:" }
-        val failures = if (failIdx >= 0) {
-            lines.subList(failIdx + 1, lines.size).filter { it.trim().isNotEmpty() }
+    private fun javax.swing.JPanel.addStat(count: Int, label: String, color: java.awt.Color) {
+        if (count > 0) add(JBLabel("$count $label").apply { foreground = color })
+    }
+
+    private fun failureLines(lines: List<String>): List<String> {
+        val failureIndex = lines.indexOfFirst { it.trim() == "Failures:" }
+        return if (failureIndex >= 0) {
+            lines.drop(failureIndex + 1).filter { it.isNotBlank() }
         } else {
-            lines.drop(1).filter { it.trim().startsWith("❌") || it.trim().startsWith("\u274C") }
+            lines.drop(1).filter { it.trim().startsWith("❌") }
         }
-        for (failure in failures) {
-            val trimmed = failure.trim().removePrefix("❌").removePrefix("\u274C").trim()
-            val row = ToolRenderers.rowPanel()
-            row.border = JBUI.Borders.emptyLeft(8)
-            val colonIdx = trimmed.indexOf(':')
-            if (colonIdx > 0) {
-                row.add(JBLabel(trimmed.substring(0, colonIdx).trim()).apply {
-                    font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-                    foreground = ToolRenderers.FAIL_COLOR
-                })
-                row.add(JBLabel(trimmed.substring(colonIdx + 1).trim()).apply {
-                    foreground = ToolRenderers.WARN_COLOR
-                })
-            } else {
-                row.add(JBLabel(trimmed).apply { foreground = ToolRenderers.FAIL_COLOR })
-            }
-            panel.add(row)
-        }
+    }
 
-        return panel
+    private fun createFailureRow(failure: String) = ToolRenderers.rowPanel().apply {
+        border = JBUI.Borders.emptyLeft(8)
+        val text = failure.trim().removePrefix("❌").trim()
+        val separator = text.indexOf(':')
+        if (separator > 0) {
+            add(JBLabel(text.substring(0, separator).trim()).apply {
+                font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+                foreground = ToolRenderers.FAIL_COLOR
+            })
+            add(JBLabel(text.substring(separator + 1).trim()).apply { foreground = ToolRenderers.WARN_COLOR })
+        } else {
+            add(JBLabel(text).apply { foreground = ToolRenderers.FAIL_COLOR })
+        }
     }
 }
