@@ -13,7 +13,7 @@ import javax.swing.JComponent
 object TestResultRenderer : ToolResultRenderer {
 
     val SUMMARY_PATTERN = Regex(
-        """Test Results:\s*(\d+)\s+tests?,\s*(\d+)\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+errors?,\s*(\d+)\s+skipped\s*\(([\d.]+)s\)"""
+        """Test Results:\s*(\d+)\s+tests?,\s*(\d+)\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+errors?,\s*(\d+)\s+skipped(?:\s*\(([\d.]+)s\))?"""
     )
 
     override fun render(output: String): JComponent? {
@@ -40,7 +40,7 @@ object TestResultRenderer : ToolResultRenderer {
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
             foreground = statusColor
         })
-        headerRow.add(ToolRenderers.mutedLabel("${duration}s"))
+        if (duration.isNotEmpty()) headerRow.add(ToolRenderers.mutedLabel("${duration}s"))
         panel.add(headerRow)
 
         // Stat badges

@@ -914,6 +914,22 @@ public final class RunTestsTool extends TestingTool {
     }
 
     private String collectTestRunOutput(String configName) {
+        // Process termination can precede the Run-content model update. Retry briefly so a
+        // completed test run reports the model's pass/fail counts instead of a blank summary.
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String output = collectTestRunOutputOnce(configName);
+            if (!output.isEmpty() || attempt == 9) return output;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "";
+            }
+        }
+        return "";
+    }
+
+    private String collectTestRunOutputOnce(String configName) {
         try {
             var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
             var descriptors = new ArrayList<>(manager.getAllDescriptors());
@@ -959,9 +975,29 @@ public final class RunTestsTool extends TestingTool {
                 var getAllTests = viewer.getClass().getMethod("getAllTests");
                 var tests = (java.util.List<?>) getAllTests.invoke(viewer);
                 if (tests != null && !tests.isEmpty()) {
-                    StringBuilder sb = new StringBuilder("\n=== Test Results ===\n");
+                    List<TestResultData> testResults = new ArrayList<>();
                     for (var test : tests) {
-                        appendTestDetail(test, sb);
+                        if (isLeafTest(test)) testResults.add(readTestResult(test));
+                    }
+                    if (testResults.isEmpty()) return null;
+
+                    int passed = 0;
+                    int failed = 0;
+                    int errors = 0;
+                    int skipped = 0;
+                    for (var result : testResults) {
+                        if (result.ignored()) skipped++;
+                        else if (result.passed()) passed++;
+                        else if (result.error()) errors++;
+                        else if (result.defect()) failed++;
+                    }
+
+                    StringBuilder sb = new StringBuilder(TestResultFormatter.formatTestResults(
+                        testResults.size(), passed, failed, errors, skipped));
+                    sb.append("\n\n=== Test Details ===\n");
+                    for (var result : testResults) {
+                        sb.append(formatTestDetail(result.name(), result.passed(),
+                            result.defect() || result.error(), result.errorMessage(), result.stacktrace()));
                     }
                     return sb.toString();
                 }
@@ -986,25 +1022,49 @@ public final class RunTestsTool extends TestingTool {
         return null;
     }
 
-    private void appendTestDetail(Object test, StringBuilder sb) throws Exception {
+    private static boolean isLeafTest(Object test) {
+        try {
+            Object children = test.getClass().getMethod("getChildren").invoke(test);
+            return children instanceof java.util.Collection<?> collection && collection.isEmpty();
+        } catch (ReflectiveOperationException ignored) {
+            // Older result models do not expose their children; treat the result as a test.
+            return true;
+        }
+    }
+
+    private TestResultData readTestResult(Object test) throws Exception {
         var getName = test.getClass().getMethod("getPresentableName");
         var isPassed = test.getClass().getMethod("isPassed");
         var isDefect = test.getClass().getMethod("isDefect");
         String name = (String) getName.invoke(test);
         boolean passed = (boolean) isPassed.invoke(test);
         boolean defect = (boolean) isDefect.invoke(test);
+        boolean ignored = optionalBoolean(test, "isIgnored");
+        boolean error = optionalBoolean(test, "isError");
 
         String errorMsg = null;
         String stacktrace = null;
-        if (defect) {
+        if (defect || error) {
             try {
                 errorMsg = (String) test.getClass().getMethod("getErrorMessage").invoke(test);
                 stacktrace = (String) test.getClass().getMethod("getStacktrace").invoke(test);
-            } catch (NoSuchMethodException ignored) {
+            } catch (NoSuchMethodException ignoredException) {
                 // Method not available on this test result type
             }
         }
-        sb.append(formatTestDetail(name, passed, defect, errorMsg, stacktrace));
+        return new TestResultData(name, passed, defect, ignored, error, errorMsg, stacktrace);
+    }
+
+    private static boolean optionalBoolean(Object target, String methodName) {
+        try {
+            return (boolean) target.getClass().getMethod(methodName).invoke(target);
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
+    private record TestResultData(String name, boolean passed, boolean defect, boolean ignored,
+                                  boolean error, @Nullable String errorMessage, @Nullable String stacktrace) {
     }
 
     // ── JUnit XML result parsing ─────────────────────────────

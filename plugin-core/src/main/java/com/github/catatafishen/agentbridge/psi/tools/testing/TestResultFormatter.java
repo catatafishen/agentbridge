@@ -23,9 +23,20 @@ final class TestResultFormatter {
     static String formatTestSummary(int exitCode, @NotNull String configName, @NotNull String testOutput) {
         String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
             + " — " + configName;
+        if (testOutput.startsWith(TESTS_PASSED)) {
+            return testOutput + "\n\nRun configuration: " + configName + " (exit code " + exitCode + ")";
+        }
         return testOutput.isEmpty()
             ? summary + RESULTS_IN_RUNNER_PANEL
             : summary + "\n" + testOutput;
+    }
+
+    /**
+     * Formats aggregate counts obtained from the IDE test-results model.
+     */
+    static String formatTestResults(int total, int passed, int failed, int errors, int skipped) {
+        return String.format("Test Results: %d tests, %d passed, %d failed, %d errors, %d skipped",
+            total, passed, failed, errors, skipped);
     }
 
     /**

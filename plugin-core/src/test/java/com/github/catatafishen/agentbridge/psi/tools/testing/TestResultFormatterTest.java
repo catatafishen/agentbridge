@@ -82,6 +82,28 @@ class TestResultFormatterTest {
             assertTrue(result.contains(" — DashTest"),
                 "should use em dash separator between status and config name");
         }
+
+        @Test
+        @DisplayName("counted results remain the first line and retain the exit code")
+        void countedResultsArePreserved() {
+            String counts = TestResultFormatter.formatTestResults(4, 2, 1, 0, 1);
+            String result = TestResultFormatter.formatTestSummary(1, "MyTestConfig", counts);
+
+            assertTrue(result.startsWith("Test Results: 4 tests, 2 passed, 1 failed, 0 errors, 1 skipped"));
+            assertTrue(result.contains("MyTestConfig (exit code 1)"));
+        }
+    }
+
+    @Nested
+    @DisplayName("formatTestResults")
+    class FormatTestResults {
+
+        @Test
+        @DisplayName("includes every result category")
+        void includesAllCounts() {
+            assertEquals("Test Results: 5 tests, 2 passed, 1 failed, 1 errors, 1 skipped",
+                TestResultFormatter.formatTestResults(5, 2, 1, 1, 1));
+        }
     }
 
     @Nested

@@ -86,6 +86,15 @@ class TestResultRendererTest {
         }
 
         @Test
+        void matchesSummaryWithoutDuration() {
+            MatchResult match = R.getSUMMARY_PATTERN().find(
+                "Test Results: 2 tests, 1 passed, 1 failed, 0 errors, 0 skipped", 0);
+
+            assertNotNull(match);
+            assertEquals("", match.getGroupValues().get(6));
+        }
+
+        @Test
         void doesNotMatchPartialSummary() {
             assertNull(R.getSUMMARY_PATTERN().find("Test Results: 15 tests", 0));
         }
