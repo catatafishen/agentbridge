@@ -169,46 +169,67 @@ public final class GetCompilationErrorsTool extends QualityTool {
             });
 
         ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
-        boolean followAgentFiles = settings.getFollowAgentFiles();
-        boolean allowTransientFileOpens = settings.getAllowTransientFileOpens();
-        boolean openedByTool = false;
+        AnalysisOpenState openState = new AnalysisOpenState(
+            settings.getFollowAgentFiles(), settings.getAllowTransientFileOpens());
+        try {
+            return refreshErrorAnalysis(files, explicitFile, daemonFinished, openState);
+        } finally {
+            disconnect.run();
+            closeFileOpenedForAnalysisIfNeeded(explicitFile, openState);
+        }
+    }
+
+    private FreshAnalysisResult refreshErrorAnalysis(Collection<VirtualFile> files, VirtualFile explicitFile,
+                                                     Semaphore daemonFinished, AnalysisOpenState openState) {
         List<VirtualFile> analyzedFiles = new ArrayList<>(files);
         try {
-            if (explicitFile != null) {
-                EditorOpenResult openResult = openExplicitFileForAnalysis(
-                    explicitFile, followAgentFiles, allowTransientFileOpens);
-                if (!openResult.isOpen()) {
-                    return new FreshAnalysisResult(List.of(), allowTransientFileOpens || followAgentFiles
-                        ? formatEditorOpenFailedResult()
-                        : formatTransientOpenDisabledResult());
-                }
-                openedByTool = openResult.openedByTool();
-            }
+            EditorOpenResult openResult = openExplicitFileIfNeeded(
+                explicitFile, openState.followAgentFiles, openState.allowTransientFileOpens);
+            String unavailableResult = unavailableAnalysisResult(
+                openResult, openState.followAgentFiles, openState.allowTransientFileOpens);
+            if (unavailableResult != null) return new FreshAnalysisResult(List.of(), unavailableResult);
+            openState.openedByTool = openResult.openedByTool();
 
             analyzedFiles = restartErrorAnalysis(files);
-            if (analyzedFiles.isEmpty()) return new FreshAnalysisResult(analyzedFiles, null);
-
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ANALYSIS_FRESHNESS_TIMEOUT_SECONDS);
-            while (true) {
-                long remainingNanos = deadline - System.nanoTime();
-                if (remainingNanos <= 0 || !daemonFinished.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
-                    return new FreshAnalysisResult(analyzedFiles, null);
-                }
-                List<VirtualFile> pendingFiles = findFilesWithPendingErrorAnalysis(analyzedFiles);
-                if (pendingFiles.isEmpty()) return new FreshAnalysisResult(pendingFiles, null);
-            }
+            return waitForFreshErrorAnalysis(analyzedFiles, daemonFinished);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.info("Interrupted while waiting for daemon analysis");
         } catch (Exception e) {
             LOG.info("Failed to refresh daemon analysis: " + e.getMessage());
-        } finally {
-            disconnect.run();
-            if (openedByTool && !followAgentFiles) {
-                closeFileOpenedForAnalysis(explicitFile);
-            }
         }
         return new FreshAnalysisResult(analyzedFiles, null);
+    }
+
+    private EditorOpenResult openExplicitFileIfNeeded(VirtualFile explicitFile, boolean followAgentFiles,
+                                                      boolean allowTransientFileOpens) {
+        return explicitFile == null
+            ? new EditorOpenResult(true, false)
+            : openExplicitFileForAnalysis(explicitFile, followAgentFiles, allowTransientFileOpens);
+    }
+
+    private String unavailableAnalysisResult(EditorOpenResult openResult, boolean followAgentFiles,
+                                             boolean allowTransientFileOpens) {
+        if (openResult.isOpen()) return null;
+        return allowTransientFileOpens || followAgentFiles
+            ? formatEditorOpenFailedResult()
+            : formatTransientOpenDisabledResult();
+    }
+
+    private FreshAnalysisResult waitForFreshErrorAnalysis(List<VirtualFile> analyzedFiles,
+                                                          Semaphore daemonFinished) throws InterruptedException {
+        if (analyzedFiles.isEmpty()) return new FreshAnalysisResult(analyzedFiles, null);
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ANALYSIS_FRESHNESS_TIMEOUT_SECONDS);
+        while (true) {
+            long remainingNanos = deadline - System.nanoTime();
+            if (remainingNanos <= 0) return new FreshAnalysisResult(analyzedFiles, null);
+            if (!daemonFinished.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
+                return new FreshAnalysisResult(analyzedFiles, null);
+            }
+            List<VirtualFile> pendingFiles = findFilesWithPendingErrorAnalysis(analyzedFiles);
+            if (pendingFiles.isEmpty()) return new FreshAnalysisResult(pendingFiles, null);
+        }
     }
 
     /**
@@ -248,6 +269,23 @@ public final class GetCompilationErrorsTool extends QualityTool {
 
     private void closeFileOpenedForAnalysis(VirtualFile file) {
         EdtUtil.invokeLater(() -> FileEditorManager.getInstance(project).closeFile(file));
+    }
+
+    private void closeFileOpenedForAnalysisIfNeeded(VirtualFile file, AnalysisOpenState openState) {
+        if (openState.openedByTool && !openState.followAgentFiles) {
+            closeFileOpenedForAnalysis(file);
+        }
+    }
+
+    private static final class AnalysisOpenState {
+        private final boolean followAgentFiles;
+        private final boolean allowTransientFileOpens;
+        private boolean openedByTool;
+
+        private AnalysisOpenState(boolean followAgentFiles, boolean allowTransientFileOpens) {
+            this.followAgentFiles = followAgentFiles;
+            this.allowTransientFileOpens = allowTransientFileOpens;
+        }
     }
 
     private record FreshAnalysisResult(List<VirtualFile> pendingFiles, String unavailableResult) {
