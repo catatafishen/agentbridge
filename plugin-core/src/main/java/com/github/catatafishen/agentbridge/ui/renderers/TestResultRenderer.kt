@@ -8,10 +8,11 @@ import javax.swing.JComponent
 
 object TestResultRenderer : ToolResultRenderer {
 
-    private val summaryPattern = Regex(
-        """Test Results: (\d+) tests?, (\d+) passed, (\d+) failed, (\d+) errors?, (\d+) skipped"""
+    private const val OPTIONAL_DURATION = "(?: \\(([\\d.]+)s\\))?"
+
+    val SUMMARY_PATTERN = Regex(
+        "Test Results: (\\d+) tests?, (\\d+) passed, (\\d+) failed, (\\d+) errors?, (\\d+) skipped" + OPTIONAL_DURATION
     )
-    private val durationPattern = Regex("""\(([\d.]+)s\)""")
 
     private data class TestSummary(
         val total: Int,
@@ -35,14 +36,14 @@ object TestResultRenderer : ToolResultRenderer {
     }
 
     private fun parseSummary(line: String): TestSummary? {
-        val match = summaryPattern.find(line) ?: return null
+        val match = SUMMARY_PATTERN.find(line) ?: return null
         return TestSummary(
             total = match.groupValues[1].toInt(),
             passed = match.groupValues[2].toInt(),
             failed = match.groupValues[3].toInt(),
             errors = match.groupValues[4].toInt(),
             skipped = match.groupValues[5].toInt(),
-            duration = durationPattern.find(line)?.groupValues?.get(1).orEmpty()
+            duration = match.groupValues[6]
         )
     }
 
