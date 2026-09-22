@@ -80,6 +80,8 @@ public final class RunTestsTool extends TestingTool {
      * a transport error rather than the test results.
      */
     private static final int DEFAULT_TIMEOUT_SECONDS = 150;
+    private static final int RESULT_MODEL_POLL_ATTEMPTS = 50;
+    private static final long RESULT_MODEL_POLL_DELAY_MILLIS = 100;
 
     /**
      * Timeout in seconds for {@link #awaitProcessTermination}; set in {@link #execute}.
@@ -916,11 +918,11 @@ public final class RunTestsTool extends TestingTool {
     private String collectTestRunOutput(String configName) {
         // Process termination can precede the Run-content model update. Retry the structured model
         // before falling back to console text, which is usually available earlier than test results.
-        for (int attempt = 0; attempt < 10; attempt++) {
+        for (int attempt = 0; attempt < RESULT_MODEL_POLL_ATTEMPTS; attempt++) {
             String testResults = collectTestRunOutputOnce(configName, false);
             if (!testResults.isEmpty()) return testResults;
             try {
-                Thread.sleep(100);
+                Thread.sleep(RESULT_MODEL_POLL_DELAY_MILLIS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return "";
