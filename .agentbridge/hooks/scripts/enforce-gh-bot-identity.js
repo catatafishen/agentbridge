@@ -24,6 +24,11 @@
 //    the bot token is not configured.
 (function () {
     var command = Hook.arg('command') || '';
+    if (/(?:^|[;&|]\s*)(?:GH_TOKEN\s*=|env(?:\s+-\S+)*\s+-u\s+GH_TOKEN\b)/.test(command)
+        && /\bgh\b/.test(command)) {
+        Hook.error("Identity policy: GH_TOKEN must not be overridden or removed for GitHub CLI commands.");
+        return;
+    }
     var ghCalls = parseCommands(command).filter(function (call) {
         return call.name === 'gh';
     });

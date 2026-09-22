@@ -914,11 +914,11 @@ public final class RunTestsTool extends TestingTool {
     }
 
     private String collectTestRunOutput(String configName) {
-        // Process termination can precede the Run-content model update. Retry briefly so a
-        // completed test run reports the model's pass/fail counts instead of a blank summary.
+        // Process termination can precede the Run-content model update. Retry the structured model
+        // before falling back to console text, which is usually available earlier than test results.
         for (int attempt = 0; attempt < 10; attempt++) {
-            String output = collectTestRunOutputOnce(configName);
-            if (!output.isEmpty() || attempt == 9) return output;
+            String testResults = collectTestRunOutputOnce(configName, false);
+            if (!testResults.isEmpty()) return testResults;
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
@@ -926,44 +926,40 @@ public final class RunTestsTool extends TestingTool {
                 return "";
             }
         }
-        return "";
+        return collectTestRunOutputOnce(configName, true);
     }
 
-    private String collectTestRunOutputOnce(String configName) {
+    private String collectTestRunOutputOnce(String configName, boolean includeConsoleText) {
         try {
             var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
             var descriptors = new ArrayList<>(manager.getAllDescriptors());
 
-            // Prefer exact-name match; if absent fall back to the LAST substring match
-            // (RunManager renames duplicate configs to "Name (1)", "Name (2)" etc. — the
-            // last occurrence in getAllDescriptors is the most recently added one).
             com.intellij.execution.ui.RunContentDescriptor target = null;
             com.intellij.execution.ui.RunContentDescriptor substringFallback = null;
-            for (var d : descriptors) {
-                if (d.getDisplayName() == null) continue;
-                if (d.getDisplayName().equals(configName)) {
-                    target = d;
+            for (var descriptor : descriptors) {
+                if (descriptor.getDisplayName() == null) continue;
+                if (descriptor.getDisplayName().equals(configName)) {
+                    target = descriptor;
                     break;
                 }
-                if (d.getDisplayName().contains(configName)) {
-                    substringFallback = d; // keep scanning — last match wins
+                if (descriptor.getDisplayName().contains(configName)) {
+                    substringFallback = descriptor;
                 }
             }
             if (target == null) target = substringFallback;
-            if (target == null) return "";
+            if (target == null || target.getExecutionConsole() == null) return "";
 
-            var console = target.getExecutionConsole();
-            if (console == null) return "";
-
+            Object console = target.getExecutionConsole();
             String testResults = tryGetTestResults(console);
             if (testResults != null) return testResults;
+            if (!includeConsoleText) return "";
 
             String consoleText = tryGetConsoleText(console);
-            if (consoleText != null) return consoleText;
+            return consoleText != null ? consoleText : "";
         } catch (Exception e) {
             LOG.debug("Failed to collect test run output", e);
+            return "";
         }
-        return "";
     }
 
     @Nullable
