@@ -56,13 +56,22 @@ public abstract class EditingTool extends Tool {
         FileTool.queueAutoFormat(project, vf.getPath());
     }
 
-    /**
-     * Formats and optimizes imports before returning. The shared pipeline performs the processors
-     * off the EDT while keeping the caller blocked until their result is known.
-     */
     protected boolean formatImmediately(VirtualFile vf) {
-        FileTool.queueAutoFormat(project, vf.getPath());
-        return FileTool.flushPendingAutoFormat(project);
+        try {
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project, "Format Replaced Symbol", null, () -> {
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (psiFile == null) {
+                    throw new IllegalStateException("Cannot format unresolved file: " + vf.getPath());
+                }
+                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(psiFile);
+                PsiDocumentManager.getInstance(project).commitAllDocuments();
+                FileDocumentManager.getInstance().saveAllDocuments();
+            });
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("Failed to format replaced symbol", e);
+            return false;
+        }
     }
 
     protected @Nullable SymbolLocation resolveSymbol(String pathStr, String symbolName, @Nullable Integer lineHint) {
