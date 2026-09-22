@@ -277,6 +277,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
      * so that XML-persisted values (if any) win over legacy values.
      */
     private void migrateFromPropertiesComponent() {
+        if (ApplicationManager.getApplication() == null) return;
         var props = com.intellij.ide.util.PropertiesComponent.getInstance();
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
             JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID)) {

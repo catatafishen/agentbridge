@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -81,6 +82,8 @@ public class EditingToolsTest extends BasePlatformTestCase {
             for (VirtualFile openFile : fem.getOpenFiles()) {
                 fem.closeFile(openFile);
             }
+            FileDocumentManager.getInstance().saveAllDocuments();
+            LocalFileSystem.getInstance().refresh(false);
             // Remove temp files created during this test.
             try (var paths = Files.walk(tempDir)) {
                 paths.sorted(java.util.Comparator.reverseOrder())

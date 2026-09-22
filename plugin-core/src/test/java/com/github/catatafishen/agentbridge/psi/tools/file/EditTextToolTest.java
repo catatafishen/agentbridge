@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -57,6 +58,8 @@ public class EditTextToolTest extends BasePlatformTestCase {
             for (VirtualFile openFile : fem.getOpenFiles()) {
                 fem.closeFile(openFile);
             }
+            FileDocumentManager.getInstance().saveAllDocuments();
+            LocalFileSystem.getInstance().refresh(false);
             deleteDir(tempDir);
         } finally {
             super.tearDown();
