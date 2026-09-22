@@ -151,7 +151,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
     /**
      * Replacing the body of an existing {@code hello()} method must succeed and
      * return a response that starts with {@code "Replaced lines"}, contains the
-     * file path, and ends with the formatted-imports suffix.
+     * file path, and ends with the queued-formatting/imports suffix.
      */
     public void testReplaceSymbolBodySuccess() throws Exception {
         String path = createTestFile("ReplaceSuccess.java",
@@ -175,8 +175,8 @@ public class EditingToolsTest extends BasePlatformTestCase {
             result.startsWith("Replaced lines"));
         assertTrue("Expected file path in result, got: " + result,
             result.contains(path));
-        assertTrue("Expected formatted-imports suffix, got: " + result,
-            result.contains("formatted & imports queued"));
+        assertTrue("Expected queued-formatting/imports suffix, got: " + result,
+            result.contains("formatting & imports queued"));
     }
 
     /**

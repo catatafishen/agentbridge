@@ -306,11 +306,14 @@ public final class SearchTextTool extends NavigationTool {
         while (matcher.find() && p.results().size() < p.maxResults() && !p.outputTruncated().get()) {
             if (p.totalSeen().getAndIncrement() >= p.offset()) {
                 int matchLine = doc.getLineNumber(matcher.start()) + 1;
+                int lineStartOffset = doc.getLineStartOffset(matchLine - 1);
                 String lineText = ToolUtils.getLineText(doc, matchLine - 1);
+                int matchStartInLine = matcher.start() - lineStartOffset;
+                int matchEndInLine = Math.min(lineText.length(), matcher.end() - lineStartOffset);
                 String entry = p.contextLines() <= 0
-                    ? formatLineReference(relPath, matchLine, lineText)
-                    : buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
-                entry = truncateUtf8(entry, MAX_ENTRY_BYTES);
+                    ? formatMatchLineReference(relPath, matchLine, lineText, matchStartInLine, matchEndInLine)
+                    : buildMatchWithContext(doc, relPath, matchLine, lineText, matchStartInLine, matchEndInLine,
+                    p.contextLines());
 
                 int separatorBytes = p.results().isEmpty() ? 0 : utf8Length(p.entrySeparator());
                 int entryBytes = utf8Length(entry);
@@ -328,24 +331,104 @@ public final class SearchTextTool extends NavigationTool {
         }
     }
 
-    private static String buildMatchWithContext(Document doc, String relPath,
-                                                int matchLine, String lineText, int contextLines) {
-        int lineCount = doc.getLineCount();
-        StringBuilder entry = new StringBuilder();
+    private static String buildMatchWithContext(Document doc, String relPath, int matchLine, String lineText,
+                                                int matchStartInLine, int matchEndInLine, int contextLines) {
+        List<String> before = new ArrayList<>();
         int beforeStart = Math.max(1, matchLine - contextLines);
         for (int l = beforeStart; l < matchLine; l++) {
-            entry.append(formatContextLine(relPath, l, ToolUtils.getLineText(doc, l - 1))).append('\n');
+            before.add(formatContextLine(relPath, l, ToolUtils.getLineText(doc, l - 1)));
         }
-        entry.append(formatLineReference(relPath, matchLine, lineText));
-        int afterEnd = Math.min(lineCount, matchLine + contextLines);
+
+        List<String> after = new ArrayList<>();
+        int afterEnd = Math.min(doc.getLineCount(), matchLine + contextLines);
         for (int l = matchLine + 1; l <= afterEnd; l++) {
-            entry.append('\n').append(formatContextLine(relPath, l, ToolUtils.getLineText(doc, l - 1)));
+            after.add(formatContextLine(relPath, l, ToolUtils.getLineText(doc, l - 1)));
+        }
+
+        String primary = formatMatchLineReference(relPath, matchLine, lineText, matchStartInLine, matchEndInLine);
+        return combinePrimaryWithContext(primary, before, after, MAX_ENTRY_BYTES);
+    }
+
+    /**
+     * Keeps the match in a long line visible by trimming the line around, rather than before, the match.
+     */
+    private static String formatMatchLineReference(String relPath, int line, String lineText,
+                                                   int matchStartInLine, int matchEndInLine) {
+        String prefix = String.format(FORMAT_LINE_REF, relPath, line, "");
+        int lineBudget = MAX_LINE_BYTES - utf8Length(prefix);
+        if (lineBudget <= 0) return truncateUtf8(prefix, MAX_LINE_BYTES);
+        return prefix + truncateUtf8AroundMatch(lineText, matchStartInLine, matchEndInLine, lineBudget);
+    }
+
+    /**
+     * Adds context only from the byte budget left after the primary matching line. Nearest preceding context
+     * is retained first, while the primary line is always retained in full.
+     */
+    private static String combinePrimaryWithContext(String primary, List<String> before, List<String> after,
+                                                    int maxBytes) {
+        int remaining = maxBytes - utf8Length(primary);
+        if (remaining <= 0) return primary;
+
+        StringBuilder prefix = new StringBuilder();
+        for (int i = before.size() - 1; i >= 0 && remaining > 1; i--) {
+            String context = before.get(i);
+            int contextBudget = remaining - 1;
+            String included = utf8Length(context) <= contextBudget ? context : truncateUtf8(context, contextBudget);
+            prefix.insert(0, included + "\n");
+            remaining -= utf8Length(included) + 1;
+        }
+
+        StringBuilder entry = prefix.append(primary);
+        for (String context : after) {
+            if (remaining <= 1) break;
+            int contextBudget = remaining - 1;
+            String included = utf8Length(context) <= contextBudget ? context : truncateUtf8(context, contextBudget);
+            entry.append('\n').append(included);
+            remaining -= utf8Length(included) + 1;
         }
         return entry.toString();
     }
 
-    private static String formatLineReference(String relPath, int line, String lineText) {
-        return truncateUtf8(String.format(FORMAT_LINE_REF, relPath, line, lineText), MAX_LINE_BYTES);
+    private static String truncateUtf8AroundMatch(String text, int matchStart, int matchEnd, int maxBytes) {
+        if (utf8Length(text) <= maxBytes) return text;
+        matchStart = Math.max(0, Math.min(matchStart, text.length()));
+        matchEnd = Math.max(matchStart, Math.min(matchEnd, text.length()));
+        if (matchStart == matchEnd) return truncateUtf8(text, maxBytes);
+
+        String match = text.substring(matchStart, matchEnd);
+        int matchBytes = utf8Length(match);
+        if (matchBytes >= maxBytes) return match;
+
+        String before = text.substring(0, matchStart);
+        String after = text.substring(matchEnd);
+        int markerBytes = utf8Length(TRUNCATION_SUFFIX);
+        boolean markBefore = !before.isEmpty() && matchBytes + markerBytes < maxBytes;
+        boolean markAfter = !after.isEmpty() && matchBytes + markerBytes * (markBefore ? 2 : 1) < maxBytes;
+        int contextBudget = maxBytes - matchBytes - (markBefore ? markerBytes : 0) - (markAfter ? markerBytes : 0);
+        String beforeContext = truncateUtf8FromEnd(before, contextBudget / 2);
+        String afterContext = truncateUtf8(after, contextBudget - utf8Length(beforeContext));
+
+        StringBuilder result = new StringBuilder();
+        if (markBefore) result.append(TRUNCATION_SUFFIX);
+        result.append(beforeContext).append(match).append(afterContext);
+        if (markAfter) result.append(TRUNCATION_SUFFIX);
+        return result.toString();
+    }
+
+    private static String truncateUtf8FromEnd(String text, int maxBytes) {
+        if (utf8Length(text) <= maxBytes) return text;
+        StringBuilder result = new StringBuilder();
+        int usedBytes = 0;
+        for (int offset = text.length(); offset > 0; ) {
+            int codePoint = text.codePointBefore(offset);
+            String character = new String(Character.toChars(codePoint));
+            int characterBytes = utf8Length(character);
+            if (usedBytes + characterBytes > maxBytes) break;
+            result.insert(0, character);
+            usedBytes += characterBytes;
+            offset -= Character.charCount(codePoint);
+        }
+        return result.toString();
     }
 
     private static String formatContextLine(String relPath, int line, String lineText) {

@@ -231,6 +231,29 @@ public class QualityToolsTest extends BasePlatformTestCase {
             result.contains("build_project"));
     }
 
+    /**
+     * A closed, explicitly requested source file cannot produce daemon events when transient
+     * editor opens are disabled. The tool must report unavailable diagnostics immediately rather
+     * than wait for a daemon event and then claim that no compilation errors were found.
+     */
+    public void testGetCompilationErrorsClosedFileWithTransientOpensDisabledIsUnavailable() throws Exception {
+        PropertiesComponent.getInstance(getProject())
+            .setValue(ToolLayerSettings.ALLOW_TRANSIENT_FILE_OPENS_KEY, "false");
+        VirtualFile vf = myFixture.addFileToProject("quality/ClosedForCompilation.java", """
+            class ClosedForCompilation {
+                void test() {}
+            }
+            """).getVirtualFile();
+        FileEditorManager.getInstance(getProject()).closeFile(vf);
+
+        String result = executeSync(() -> compilationErrorsTool.execute(args("path", vf.getPath())));
+
+        assertEquals("Closed files must not be reported clean when transient opens are disabled",
+            GetCompilationErrorsTool.formatTransientOpenDisabledResult(), result);
+        assertFalse("Unavailable diagnostics must not be reported as clean, got: " + result,
+            result.contains("No compilation errors"));
+    }
+
     // ── GetProblemsTool ───────────────────────────────────────────────────────────
 
     /**

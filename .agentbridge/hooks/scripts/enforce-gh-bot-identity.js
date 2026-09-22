@@ -35,7 +35,7 @@
     });
     if (ghCalls.length === 0) return;
 
-    var needsBot = ghCalls.some(isGhWrite);
+    var needsBot = ghCalls.length > 0;
 
     function isGhWrite(call) {
         var subcommand = (call.argv[0] || '').toLowerCase();

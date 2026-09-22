@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -254,6 +255,47 @@ class SearchTextToolStaticMethodsTest {
             assertTrue(truncated.startsWith("src/Unicode.java:42: "));
             assertTrue(truncated.endsWith("… [truncated]"));
             assertTrue(truncated.getBytes(StandardCharsets.UTF_8).length <= 64);
+        }
+
+        @Test
+        @DisplayName("a match after the first 4 KiB remains visible in a truncated primary line")
+        void longPrimaryLinePreservesMatch() throws ReflectiveOperationException {
+            Method formatMatchLine = SearchTextTool.class.getDeclaredMethod("formatMatchLineReference",
+                String.class, int.class, String.class, int.class, int.class);
+            formatMatchLine.setAccessible(true);
+            var maxLineBytes = SearchTextTool.class.getDeclaredField("MAX_LINE_BYTES");
+            maxLineBytes.setAccessible(true);
+            String match = "needle";
+            String line = "x".repeat(5_000) + match + "🙂".repeat(1_000);
+
+            String formatted = (String) formatMatchLine.invoke(null, "src/LongLine.java", 42, line,
+                5_000, 5_000 + match.length());
+
+            assertTrue(formatted.startsWith("src/LongLine.java:42: "));
+            assertTrue(formatted.contains(match));
+            assertTrue(formatted.getBytes(StandardCharsets.UTF_8).length <= maxLineBytes.getInt(null));
+        }
+
+        @Test
+        @DisplayName("preceding context cannot consume the primary match line budget")
+        void contextBudgetPreservesPrimaryMatch() throws ReflectiveOperationException {
+            Method combine = SearchTextTool.class.getDeclaredMethod("combinePrimaryWithContext",
+                String.class, List.class, List.class, int.class);
+            combine.setAccessible(true);
+            var maxEntryBytes = SearchTextTool.class.getDeclaredField("MAX_ENTRY_BYTES");
+            maxEntryBytes.setAccessible(true);
+            String primary = "src/Context.java:100: needle";
+            List<String> before = List.of(
+                "  src/Context.java:96:   " + "a".repeat(4_000),
+                "  src/Context.java:97:   " + "b".repeat(4_000),
+                "  src/Context.java:98:   " + "c".repeat(4_000),
+                "  src/Context.java:99:   " + "d".repeat(4_000));
+
+            String entry = (String) combine.invoke(null, primary, before, List.of(), maxEntryBytes.getInt(null));
+
+            assertTrue(entry.endsWith(primary));
+            assertTrue(entry.contains("needle"));
+            assertTrue(entry.getBytes(StandardCharsets.UTF_8).length <= maxEntryBytes.getInt(null));
         }
     }
 
