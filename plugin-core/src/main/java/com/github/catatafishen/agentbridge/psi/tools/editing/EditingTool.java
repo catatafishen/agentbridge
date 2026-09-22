@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -29,6 +30,8 @@ import java.util.List;
  * PSI-aware structural edits (symbol resolution, formatting, validation).
  */
 public abstract class EditingTool extends Tool {
+
+    private static final Logger LOG = Logger.getInstance(EditingTool.class);
 
     protected static final String PARAM_PATH = "path";
     protected static final String PARAM_SYMBOL = "symbol";
