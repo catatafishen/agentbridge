@@ -56,6 +56,15 @@ public abstract class EditingTool extends Tool {
         FileTool.queueAutoFormat(project, vf.getPath());
     }
 
+    /**
+     * Formats and optimizes imports before returning. The shared pipeline performs the processors
+     * off the EDT while keeping the caller blocked until their result is known.
+     */
+    protected boolean formatImmediately(VirtualFile vf) {
+        FileTool.queueAutoFormat(project, vf.getPath());
+        return FileTool.flushPendingAutoFormat(project);
+    }
+
     protected @Nullable SymbolLocation resolveSymbol(String pathStr, String symbolName, @Nullable Integer lineHint) {
         // Sync PSI with any pending document edits before reading symbol offsets.
         // Without this, PSI-derived line numbers can be stale relative to the

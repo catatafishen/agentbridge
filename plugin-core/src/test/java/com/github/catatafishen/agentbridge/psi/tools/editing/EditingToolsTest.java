@@ -151,7 +151,7 @@ public class EditingToolsTest extends BasePlatformTestCase {
     /**
      * Replacing the body of an existing {@code hello()} method must succeed and
      * return a response that starts with {@code "Replaced lines"}, contains the
-     * file path, and ends with the queued-formatting/imports suffix.
+     * file path, and ends with the completed-formatting/imports suffix.
      */
     public void testReplaceSymbolBodySuccess() throws Exception {
         String path = createTestFile("ReplaceSuccess.java",
@@ -175,8 +175,37 @@ public class EditingToolsTest extends BasePlatformTestCase {
             result.startsWith("Replaced lines"));
         assertTrue("Expected file path in result, got: " + result,
             result.contains(path));
-        assertTrue("Expected queued-formatting/imports suffix, got: " + result,
-            result.contains("formatting & imports queued"));
+        assertTrue("Expected completed-formatting/imports suffix, got: " + result,
+            result.contains("formatting & imports completed"));
+    }
+
+    /**
+     * Formatting must finish before a successful result is returned, so a replacement supplied
+     * flush-left is immediately indented as a member of its enclosing class.
+     */
+    public void testReplaceSymbolBodyFormatsBeforeReturning() throws Exception {
+        String path = createTestFile("ReplaceFormatted.java",
+            String.format(SIMPLE_CLASS_TEMPLATE, "ReplaceFormatted"));
+
+        String result = executeSync(replaceSymbolBodyTool, args(
+            "path", path,
+            "symbol", "hello",
+            "new_body", """
+                public String hello(){
+                return "updated";
+                }
+                """
+        ));
+
+        assertFalse("Expected formatting to complete successfully, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        String formatted = Files.readString(Path.of(path));
+        assertTrue("Expected replacement method to be indented and formatted: " + formatted,
+            formatted.contains("""
+                    public String hello() {
+                        return "updated";
+                    }
+                """));
     }
 
     /**

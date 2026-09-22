@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Replaces the entire definition of a symbol (method, class, field) by name.
- * Queues formatting and import optimization after every call.
+ * Formats and optimizes imports before reporting success.
  */
 public final class ReplaceSymbolBodyTool extends EditingTool {
 
@@ -43,7 +43,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
     @Override
     public @NotNull String description() {
         return "Replace the entire definition of a symbol (method, class, field) by name -- no line numbers needed. "
-            + "Queues formatting and import optimization after every call.";
+            + "Auto-formats and optimizes imports before returning.";
     }
 
     @Override
@@ -126,15 +126,19 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                 }
 
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
-                formatInline(vf);
                 FileDocumentManager.getInstance().saveDocument(doc);
+                if (!formatImmediately(vf)) {
+                    result.complete(ToolUtils.ERROR_PREFIX + "Replacement was saved, but formatting and import "
+                        + "optimization did not complete for " + pathStr);
+                    return;
+                }
 
                 int replacedLines = loc.endLine() - loc.startLine() + 1;
                 int newLineCount = (int) fNew.chars().filter(c -> c == '\n').count() + 1;
                 CodeChangeTracker.recordChange(newLineCount, replacedLines);
                 result.complete("Replaced lines " + loc.startLine() + "-" + loc.endLine()
                     + " (" + replacedLines + " lines) with " + (newLineCount - 1) + " lines in " + pathStr
-                    + FORMATTED_SUFFIX);
+                    + " (formatting & imports completed)");
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
