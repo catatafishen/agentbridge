@@ -553,6 +553,7 @@ hook are configured and chained identically.
 | `Hook.append(text)`         | Append text to the tool output (success/failure hooks).                                                                                                                                |
 | `Hook.error(message)`       | Block execution with an error (pre hooks).                                                                                                                                             |
 | `Hook.setCommand(command)`  | Rewrite the `command` argument before the tool runs (pre hooks).                                                                                                                       |
+| `Hook.setEnv(name, value)`  | Inject a process environment variable for `run_command` without rewriting or quoting the command string.                                                                               |
 | `Hook.log(message)`         | Write a diagnostic line to the IDE log.                                                                                                                                                |
 
 The script records at most one outcome; the last recording call wins. Recording nothing means

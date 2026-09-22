@@ -1,12 +1,8 @@
 // enforce-gh-bot-identity.js — PRE hook for run_command and run_in_terminal.
 //
-// DEVELOPMENT COPY of the bundled default hook. This configuration governs contributors working
-// on the plugin itself; the equivalent default ships from plugin-core/src/main/resources/default-hooks/.
-// See docs/BOT-IDENTITY-HOOKS.md. It is safe to disable locally.
-//
-// Purpose: intercept every parsed `gh` CLI command and enforce bot identity by injecting
-// GH_TOKEN so all GitHub reads and writes are attributed to the project bot rather than the
-// developer's personal account.
+// DEFAULT HOOK: intercept every parsed `gh` CLI command and enforce bot identity by injecting
+// GH_TOKEN so all GitHub reads and writes are attributed to the configured repository bot rather
+// than the developer's personal account. See docs/BOT-IDENTITY-HOOKS.md.
 //
 // Token injection strategy (per tool):
 //   - run_command: Hook.setEnv("GH_TOKEN", token) — sets an OS-level env var via
@@ -18,10 +14,6 @@
 // GitHub App installation token (generate-github-app-token.sh sibling helper).
 //
 // Capabilities: filesystem (read token file), subprocess (mint GitHub App token).
-//
-// ⚠️ AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry using built-in bash,
-//    run_in_terminal, or any other tool that bypasses this check. Instead, stop and tell the user
-//    the bot token is not configured.
 (function () {
     var command = Hook.arg('command') || '';
     var ghCalls = parseCommands(command).filter(function (call) {
@@ -52,8 +44,6 @@
     }
 
     // Resolves the bot token from env → token file → GitHub App helper. Returns null if none found.
-    // (Duplicated in enforce-http-bot-identity.js: the shared _lib.js is a byte-identical copy of
-    // the bundled default and must not carry project-specific helpers, so this cannot live there.)
     function resolveBotToken() {
         var envToken = Hook.env('AGENTBRIDGE_BOT_TOKEN');
         if (envToken && envToken.trim()) return envToken.trim();

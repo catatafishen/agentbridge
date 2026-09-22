@@ -12,7 +12,12 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests for the bundled hook resources shipped under {@code /default-hooks/}.
@@ -84,6 +89,27 @@ class DefaultHookProvisionerTest {
             assertTrue(obj.has("success"));
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"run_command.json", "run_in_terminal.json"})
+        void ghIdentityPreHookProtectsEveryGhCommand(String configName) {
+            JsonObject obj = JsonParser.parseString(loadConfig(configName)).getAsJsonObject();
+            assertTrue(obj.has("pre"));
+            JsonArray hooks = obj.getAsJsonArray("pre");
+            assertEquals(1, hooks.size());
+            JsonObject hook = hooks.get(0).getAsJsonObject();
+            assertEquals("scripts/enforce-gh-bot-identity.js", hook.get("script").getAsString());
+            assertFalse(hook.get("failSilently").getAsBoolean());
+            assertEquals(15, hook.get("timeout").getAsInt());
+            assertEquals(2, hook.getAsJsonArray("capabilities").size());
+        }
+
+        @Test
+        void ghIdentityScriptRequiresBotIdentityForEveryGhCommand() {
+            String script = loadConfig("scripts/enforce-gh-bot-identity.js");
+            assertTrue(script.contains("every parsed `gh` CLI command"));
+            assertTrue(script.contains("every GitHub CLI command must use the repository bot identity"));
+        }
+
         @Test
         void writeFileHasSuccessHook() {
             JsonObject obj = JsonParser.parseString(loadConfig("write_file.json")).getAsJsonObject();
@@ -107,6 +133,7 @@ class DefaultHookProvisionerTest {
             for (String name : JSON_CONFIGS) {
                 JsonObject obj = JsonParser.parseString(loadConfig(name)).getAsJsonObject();
                 assertScriptsInScriptsDir(obj, "permission");
+                assertScriptsInScriptsDir(obj, "pre");
                 assertScriptsInScriptsDir(obj, "success");
             }
         }

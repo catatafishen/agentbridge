@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
@@ -165,6 +167,28 @@ class JsHookEngineTest {
     void terminalAllowsGitMentionedInsideAnArgument(@TempDir Path dir) throws IOException {
         assertEquals("", run(dir, "run-in-terminal-abort.js", command("run_in_terminal",
             "echo 'the git tools are preferred here'")));
+    }
+
+    // ---- enforce-gh-bot-identity.js (pre) ----
+
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void ghReadInjectsBotToken(@TempDir Path dir) throws IOException {
+        Path home = dir.resolve("home");
+        Files.createDirectories(home.resolve(".agentbridge"));
+        Files.writeString(home.resolve(".agentbridge/bot-token"), "bot-token\n");
+        String originalHome = System.getProperty("user.home");
+        try {
+            System.setProperty("user.home", home.toString());
+            Path script = copy(dir, "enforce-gh-bot-identity.js");
+            String json = JsHookEngine.evaluate(mockProject(dir), script,
+                entry(java.util.Set.of(HookCapability.FILESYSTEM)),
+                command("run_command", "gh pr list && gh issue list"));
+            assertTrue(json.contains("\"_env.GH_TOKEN\":\"bot-token\""), json);
+        } finally {
+            if (originalHome == null) System.clearProperty("user.home");
+            else System.setProperty("user.home", originalHome);
+        }
     }
 
     // ---- command-reprimand.js (success) ----

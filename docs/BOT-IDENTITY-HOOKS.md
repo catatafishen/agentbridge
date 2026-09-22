@@ -1,25 +1,25 @@
 # Bot Identity Hooks
 
-The AgentBridge plugin repository ships three internal hooks that enforce **bot identity** when
-an AI agent creates GitHub content (PRs, issues, comments, API calls, commits). This ensures that
-agent-authored actions are attributed to a dedicated bot account rather than the developer's
-personal GitHub account.
+AgentBridge bundles `enforce-gh-bot-identity.js` as a default hook for `run_command` and
+`run_in_terminal`. Every parsed `gh` invocation — including read-only commands — receives the
+configured bot token or is blocked with a clear identity-policy error. This prevents GitHub CLI
+reads from silently falling back to the developer's personal login.
 
-These hooks live in `.agentbridge/hooks/` alongside the plugin's own hook configuration and are
-**not distributed to end users** (see `DefaultHookProvisioner`).
+The plugin repository also configures `enforce-http-bot-identity.js` and `enforce-commit-author.js`
+under `.agentbridge/hooks/` for its own development workflow.
 
 ## What the hooks do
 
 | Hook script | Trigger | Effect |
 |-------------|---------|--------|
-| `enforce-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Intercepts `gh pr create`, `gh issue create`, `gh api` write calls, etc. and injects `GH_TOKEN=<bot token>` |
+| `enforce-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Bundled default: injects `GH_TOKEN=<bot token>` for every parsed `gh` command, or blocks the command when bot credentials are unavailable |
 | `enforce-http-bot-identity.js` | `http_request` pre-hook | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>` |
 | `enforce-commit-author.js` | `git_commit` pre-hook | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
 
 All three hooks are **embedded JavaScript** that runs in-process on the plugin's Rhino engine —
 no shell, PowerShell, or Node runtime is required, so a single `.js` file works identically on
-every OS and JetBrains IDE. Each declares the host capabilities it needs in its JSON config via a
-`"capabilities"` array (see [MCP-TOOL-HOOKS.md](MCP-TOOL-HOOKS.md#capabilities)):
+every OS and JetBrains IDE. The authentication hooks declare the host capabilities they need in
+their JSON config via a `"capabilities"` array (see [MCP-TOOL-HOOKS.md](MCP-TOOL-HOOKS.md#capabilities)):
 
 - `enforce-gh-bot-identity.js` and `enforce-http-bot-identity.js` declare
   `["filesystem", "subprocess"]` — *filesystem* to read `~/.agentbridge/bot-token`, *subprocess*
@@ -31,22 +31,21 @@ every OS and JetBrains IDE. Each declares the host capabilities it needs in its 
 `curl`); the embedded hooks invoke it through their *subprocess* capability when no static token is
 configured.
 
-Token resolution (all three hooks try these in order):
+Token resolution (the authentication hooks try these in order):
 
 1. `AGENTBRIDGE_BOT_TOKEN` environment variable (static PAT — simplest option)
 2. `~/.agentbridge/bot-token` file (static PAT stored locally)
 3. `~/.agentbridge/github-app.pem` + `~/.agentbridge/github-app-id` (GitHub App — short-lived
    tokens, preferred for security)
 
-## These hooks are optional
+## Configuring or disabling the default hook
 
-> **You do not have to configure this.** The hooks are a convenience for contributors who want
-> agent-authored GitHub content attributed to a bot rather than their personal account. If you
-> prefer to skip the setup, you can disable or delete the hooks locally — they are never enforced
-> on other contributors and will not affect CI.
+> **GitHub CLI calls require a configured bot token by default.** The bundled hook injects that
+> token for every parsed `gh` command and blocks the command instead of falling back to a personal
+> GitHub CLI login. To opt out locally, delete or empty `run_command.json` and
+> `run_in_terminal.json`, or remove `enforce-gh-bot-identity.js` from their `pre` hook lists.
 >
-> To disable: delete or empty any of the `.agentbridge/hooks/*.json` files, or remove the hook
-> scripts you don't want.
+> The repository-local HTTP and commit hooks remain optional development configuration.
 
 ---
 

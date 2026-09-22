@@ -6,6 +6,17 @@
       "timeout": 10
     }
   ],
+  "pre": [
+    {
+      "script": "scripts/enforce-gh-bot-identity.js",
+      "failSilently": false,
+      "timeout": 15,
+      "capabilities": [
+        "filesystem",
+        "subprocess"
+      ]
+    }
+  ],
   "success": [
     {
       "script": "scripts/command-reprimand.js",
