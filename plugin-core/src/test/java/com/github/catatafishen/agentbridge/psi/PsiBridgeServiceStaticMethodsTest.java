@@ -422,9 +422,10 @@ class PsiBridgeServiceStaticMethodsTest {
 
         @ParameterizedTest
         @ValueSource(strings = {"write_file", "edit_text", "insert_before_symbol", "insert_after_symbol"})
-        void otherWriteToolsKeepTheirExistingHighlightBehavior(String toolName) {
-            assertFalse(PsiBridgeService.requiresFreshAutoHighlights(toolName));
-            assertTrue(PsiBridgeService.shouldAppendAutoHighlights(toolName, false));
+        void allWriteToolsRequireFreshHighlights(String toolName) {
+            assertTrue(PsiBridgeService.requiresFreshAutoHighlights(toolName));
+            assertFalse(PsiBridgeService.shouldAppendAutoHighlights(toolName, false));
+            assertTrue(PsiBridgeService.shouldAppendAutoHighlights(toolName, true));
         }
     }
 

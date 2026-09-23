@@ -912,7 +912,7 @@ public final class PsiBridgeService implements Disposable {
     }
 
     static boolean requiresFreshAutoHighlights(String toolName) {
-        return TOOL_REPLACE_SYMBOL_BODY.equals(toolName);
+        return isWriteToolName(toolName);
     }
 
     static boolean shouldAppendAutoHighlights(String toolName, boolean analysisFinished) {
