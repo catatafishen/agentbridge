@@ -425,6 +425,17 @@ class GitRebaseToolTest {
         }
 
         @Test
+        void blankGitOutputReportsSuccessfulRebase() {
+            assertEquals("Rebase completed successfully.\n", GitRebaseTool.formatPlainRebaseSuccess(""));
+        }
+
+        @Test
+        void gitOutputIsPreservedWithTrailingNewline() {
+            assertEquals("Current branch is up to date.\n",
+                GitRebaseTool.formatPlainRebaseSuccess("Current branch is up to date."));
+        }
+
+        @Test
         void ontoAddsOntoAndValue() {
             var args = new JsonObject();
             args.addProperty("branch", "main");

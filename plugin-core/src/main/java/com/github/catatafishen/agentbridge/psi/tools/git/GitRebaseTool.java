@@ -174,7 +174,7 @@ public final class GitRebaseTool extends GitTool {
         if (result.startsWith(ERR_PREFIX)) return fetchNote + enrichRebaseError(result, root);
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase");
-        return fetchNote + result + getBranchContextIn(root);
+        return fetchNote + formatPlainRebaseSuccess(result) + getBranchContextIn(root);
     }
 
     static @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
@@ -195,6 +195,11 @@ public final class GitRebaseTool extends GitTool {
             cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
         }
         return cmdArgs;
+    }
+
+    static @NotNull String formatPlainRebaseSuccess(@NotNull String output) {
+        if (output.isBlank()) return "Rebase completed successfully.\n";
+        return output.endsWith("\n") ? output : output + "\n";
     }
 
     static @Nullable String validateAutosquash(@NotNull JsonObject args) {
