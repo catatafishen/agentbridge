@@ -159,12 +159,13 @@ public final class ListTestsTool extends TestingTool {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         List<String> methods = new ArrayList<>();
         List<String> classes = new ArrayList<>();
+        TestFileEntries entries = new TestFileEntries(doc, vf, basePath, methods, classes, frameworks);
 
         psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
             @Override
             public void visitElement(@NotNull PsiElement element) {
                 if (element instanceof PsiNamedElement named) {
-                    addTestEntry(element, named, doc, vf, basePath, methods, classes, frameworks);
+                    addTestEntry(element, named, entries);
                 }
                 super.visitElement(element);
             }
@@ -172,20 +173,24 @@ public final class ListTestsTool extends TestingTool {
         appendTestEntries(methods, classes, tests);
     }
 
-    private void addTestEntry(PsiElement element, PsiNamedElement named, Document doc,
-                              VirtualFile vf, String basePath, List<String> methods,
-                              List<String> classes, List<TestFramework> frameworks) {
+    private void addTestEntry(PsiElement element, PsiNamedElement named, TestFileEntries entries) {
         String type = ToolUtils.classifyElement(element);
         boolean isMethod = ToolUtils.ELEMENT_TYPE_METHOD.equals(type)
             || ToolUtils.ELEMENT_TYPE_FUNCTION.equals(type);
-        if (isMethod && isTestElement(element, frameworks)) {
-            String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getPath();
-            int line = doc != null ? doc.getLineNumber(element.getTextOffset()) + 1 : 0;
-            methods.add(String.format("%s.%s (%s:%d)",
+        if (isMethod && isTestElement(element, entries.frameworks())) {
+            String relPath = entries.basePath() != null
+                ? relativize(entries.basePath(), entries.file().getPath()) : entries.file().getPath();
+            int line = entries.document() != null ? entries.document().getLineNumber(element.getTextOffset()) + 1 : 0;
+            entries.methods().add(String.format("%s.%s (%s:%d)",
                 getContainingClassName(element), named.getName(), relPath, line));
-        } else if (ToolUtils.ELEMENT_TYPE_CLASS.equals(type) && isTestClass(element, frameworks)) {
-            classes.add(testClassName(element));
+        } else if (ToolUtils.ELEMENT_TYPE_CLASS.equals(type) && isTestClass(element, entries.frameworks())) {
+            entries.classes().add(testClassName(element));
         }
+    }
+
+    private record TestFileEntries(Document document, VirtualFile file, String basePath,
+                                   List<String> methods, List<String> classes,
+                                   List<TestFramework> frameworks) {
     }
 
     static void appendTestEntries(List<String> methods, List<String> classes, List<String> tests) {
