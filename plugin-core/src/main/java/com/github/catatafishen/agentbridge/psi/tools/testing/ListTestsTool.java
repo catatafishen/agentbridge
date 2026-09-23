@@ -157,29 +157,63 @@ public final class ListTestsTool extends TestingTool {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
+        List<String> methods = new ArrayList<>();
+        List<String> classes = new ArrayList<>();
 
         psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
             @Override
             public void visitElement(@NotNull PsiElement element) {
                 if (element instanceof PsiNamedElement named) {
-                    addTestEntry(element, named, doc, vf, basePath, tests, frameworks);
+                    addTestEntry(element, named, doc, vf, basePath, methods, classes, frameworks);
                 }
                 super.visitElement(element);
             }
         });
+        appendTestEntries(methods, classes, tests);
     }
 
     private void addTestEntry(PsiElement element, PsiNamedElement named, Document doc,
-                              VirtualFile vf, String basePath, List<String> tests,
-                              List<TestFramework> frameworks) {
+                              VirtualFile vf, String basePath, List<String> methods,
+                              List<String> classes, List<TestFramework> frameworks) {
         String type = ToolUtils.classifyElement(element);
         boolean isMethod = ToolUtils.ELEMENT_TYPE_METHOD.equals(type)
             || ToolUtils.ELEMENT_TYPE_FUNCTION.equals(type);
-        if (!isMethod || !isTestElement(element, frameworks)) return;
-        String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getPath();
-        int line = doc != null ? doc.getLineNumber(element.getTextOffset()) + 1 : 0;
-        tests.add(String.format("%s.%s (%s:%d)",
-            getContainingClassName(element), named.getName(), relPath, line));
+        if (isMethod && isTestElement(element, frameworks)) {
+            String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getPath();
+            int line = doc != null ? doc.getLineNumber(element.getTextOffset()) + 1 : 0;
+            methods.add(String.format("%s.%s (%s:%d)",
+                getContainingClassName(element), named.getName(), relPath, line));
+        } else if (ToolUtils.ELEMENT_TYPE_CLASS.equals(type) && isTestClass(element, frameworks)) {
+            classes.add(testClassName(element));
+        }
+    }
+
+    static void appendTestEntries(List<String> methods, List<String> classes, List<String> tests) {
+        tests.addAll(methods.isEmpty() ? classes : methods);
+    }
+
+    private static boolean isTestClass(PsiElement element, List<TestFramework> frameworks) {
+        for (TestFramework framework : frameworks) {
+            try {
+                if (framework.isTestClass(element)) return true;
+            } catch (ProcessCanceledException e) {
+                throw e;
+            } catch (Exception ignored) {
+                // Framework may not support this element type
+            }
+        }
+        return false;
+    }
+
+    private static String testClassName(PsiElement element) {
+        if (element instanceof com.intellij.psi.PsiClass psiClass
+            && psiClass.getQualifiedName() != null) {
+            return psiClass.getQualifiedName();
+        }
+        if (element instanceof PsiNamedElement named && named.getName() != null) {
+            return named.getName();
+        }
+        return vf(element);
     }
 
     private static boolean isTestElement(PsiElement element, List<TestFramework> frameworks) {
@@ -198,9 +232,8 @@ public final class ListTestsTool extends TestingTool {
     private String getContainingClassName(PsiElement element) {
         PsiElement parent = element.getParent();
         while (parent != null) {
-            if (parent instanceof PsiNamedElement named) {
-                String type = ToolUtils.classifyElement(parent);
-                if (ToolUtils.ELEMENT_TYPE_CLASS.equals(type)) return named.getName();
+            if (ToolUtils.ELEMENT_TYPE_CLASS.equals(ToolUtils.classifyElement(parent))) {
+                return testClassName(parent);
             }
             parent = parent.getParent();
         }

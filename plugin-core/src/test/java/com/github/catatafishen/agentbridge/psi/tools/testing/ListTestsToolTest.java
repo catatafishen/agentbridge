@@ -93,4 +93,26 @@ public class ListTestsToolTest extends BasePlatformTestCase {
         var frameworks = ListTestsTool.safeGetTestFrameworks();
         assertNotNull(frameworks);
     }
+
+    public void testUsesClassEntryWhenFrameworkDoesNotExposeMethods() {
+        var tests = new java.util.ArrayList<String>();
+
+        ListTestsTool.appendTestEntries(
+            java.util.List.of(),
+            java.util.List.of("com.example.LegacyPlatformTest"),
+            tests);
+
+        assertEquals(java.util.List.of("com.example.LegacyPlatformTest"), tests);
+    }
+
+    public void testPrefersMethodEntriesOverClassFallback() {
+        var tests = new java.util.ArrayList<String>();
+
+        ListTestsTool.appendTestEntries(
+            java.util.List.of("com.example.SampleTest.testBehavior (SampleTest.java:12)"),
+            java.util.List.of("com.example.SampleTest"),
+            tests);
+
+        assertEquals(java.util.List.of("com.example.SampleTest.testBehavior (SampleTest.java:12)"), tests);
+    }
 }
