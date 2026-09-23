@@ -406,22 +406,14 @@ class GitRebaseToolTest {
         }
 
         @Test
-        void autosquashAddsFlag() {
+        void autosquashIsNotAddedToPlainArguments() {
             var args = new JsonObject();
             args.addProperty("branch", "main");
             args.addProperty("autosquash", true);
-            var result = GitRebaseTool.buildPlainRebaseArgs(args);
-            assertTrue(result.contains("--autosquash"));
-            assertTrue(result.contains("main"));
-        }
 
-        @Test
-        void autosquashFalseOmitsFlag() {
-            var args = new JsonObject();
-            args.addProperty("branch", "main");
-            args.addProperty("autosquash", false);
             var result = GitRebaseTool.buildPlainRebaseArgs(args);
-            assertFalse(result.contains("--autosquash"));
+
+            assertEquals(List.of("rebase", "main"), result);
         }
 
         @Test
@@ -482,21 +474,15 @@ class GitRebaseToolTest {
         }
 
         @Test
-        void allOptionsProducesCorrectOrder() {
+        void supportedOptionsProduceCorrectOrder() {
             var args = new JsonObject();
-            args.addProperty("autosquash", true);
             args.addProperty("onto", "target");
             args.addProperty("exec", "npm test");
             args.addProperty("branch", "feature");
+
             var result = GitRebaseTool.buildPlainRebaseArgs(args);
-            // Order: rebase --autosquash --onto target --exec "npm test" feature
-            assertEquals("rebase", result.get(0));
-            assertEquals("--autosquash", result.get(1));
-            assertEquals("--onto", result.get(2));
-            assertEquals("target", result.get(3));
-            assertEquals("--exec", result.get(4));
-            assertEquals("npm test", result.get(5));
-            assertEquals("feature", result.get(6));
+
+            assertEquals(List.of("rebase", "--onto", "target", "--exec", "npm test", "feature"), result);
         }
     }
 }

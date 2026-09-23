@@ -180,9 +180,6 @@ public final class GitRebaseTool extends GitTool {
     static @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add(CMD_REBASE);
-        if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
-            cmdArgs.add("--autosquash");
-        }
         if (args.has("onto") && !args.get("onto").getAsString().isEmpty()) {
             cmdArgs.add("--onto");
             cmdArgs.add(args.get("onto").getAsString());
