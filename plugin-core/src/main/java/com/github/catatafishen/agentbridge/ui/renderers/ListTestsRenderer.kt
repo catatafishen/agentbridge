@@ -14,7 +14,11 @@ object ListTestsRenderer : ToolResultRenderer {
     private val ENTRY_PATTERN = Regex("""^(\S+)\.(\S+)\s+\((.+?):(\d+)\)$""")
     private val COUNT_HEADER = Regex("""^(\d+)\s+tests?:""")
 
+    private val CLASS_ENTRY_PATTERN = Regex("""^(\S+)$""")
+
     override fun render(output: String): JComponent? {
+        data class TestEntry(val className: String, val method: String, val line: String)
+
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -26,16 +30,18 @@ object ListTestsRenderer : ToolResultRenderer {
             return panel
         }
 
-        val entries = lines.mapNotNull { ENTRY_PATTERN.find(it.trim()) }
+        val entries = lines.mapNotNull { line ->
+            ENTRY_PATTERN.find(line.trim())?.let {
+                TestEntry(it.groupValues[1], it.groupValues[2], it.groupValues[4])
+            } ?: CLASS_ENTRY_PATTERN.find(line.trim())?.let {
+                TestEntry(it.groupValues[1], "", "")
+            }
+        }
         if (entries.isEmpty()) return null
 
         val countMatch = COUNT_HEADER.find(lines.first())
         val count = countMatch?.groupValues?.get(1)?.toIntOrNull() ?: entries.size
-
-        data class TestEntry(val className: String, val method: String, val line: String)
-
-        val tests = entries.map { TestEntry(it.groupValues[1], it.groupValues[2], it.groupValues[4]) }
-        val grouped = tests.groupBy { it.className }
+        val grouped = entries.groupBy { it.className }
 
         val panel = ToolRenderers.listPanel()
         panel.add(ToolRenderers.headerPanel(ToolIcons.TEST, count, "tests"))
@@ -52,11 +58,12 @@ object ListTestsRenderer : ToolResultRenderer {
             classHeader.add(ToolRenderers.mutedLabel("${methods.size}"))
             section.add(classHeader)
 
-            for (t in methods) {
+            for (test in methods) {
+                if (test.method.isEmpty()) continue
                 val row = ToolRenderers.rowPanel()
                 row.border = JBUI.Borders.emptyLeft(8)
-                row.add(ToolRenderers.mutedLabel(":${t.line}"))
-                row.add(JBLabel(t.method))
+                row.add(ToolRenderers.mutedLabel(":${test.line}"))
+                row.add(JBLabel(test.method))
                 section.add(row)
             }
             panel.add(section)

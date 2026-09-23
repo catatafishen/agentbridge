@@ -7,6 +7,7 @@ import java.awt.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -22,7 +23,7 @@ class ToolResultRendererTest {
         @Test
         void parsesFullDiffStatLine() {
             ToolRenderers.DiffStats stats =
-                    ToolRenderers.INSTANCE.parseDiffStats(" 3 files changed, 42 insertions(+), 7 deletions(-)");
+                ToolRenderers.INSTANCE.parseDiffStats(" 3 files changed, 42 insertions(+), 7 deletions(-)");
 
             assertEquals("3 files changed", stats.getFiles());
             assertEquals("42", stats.getInsertions());
@@ -32,7 +33,7 @@ class ToolResultRendererTest {
         @Test
         void parsesInsertionsOnly() {
             ToolRenderers.DiffStats stats =
-                    ToolRenderers.INSTANCE.parseDiffStats(" 1 file changed, 10 insertions(+)");
+                ToolRenderers.INSTANCE.parseDiffStats(" 1 file changed, 10 insertions(+)");
 
             assertEquals("1 file changed", stats.getFiles());
             assertEquals("10", stats.getInsertions());
@@ -42,7 +43,7 @@ class ToolResultRendererTest {
         @Test
         void parsesDeletionsOnly() {
             ToolRenderers.DiffStats stats =
-                    ToolRenderers.INSTANCE.parseDiffStats(" 1 file changed, 5 deletions(-)");
+                ToolRenderers.INSTANCE.parseDiffStats(" 1 file changed, 5 deletions(-)");
 
             assertEquals("1 file changed", stats.getFiles());
             assertEquals("", stats.getInsertions());
@@ -52,7 +53,7 @@ class ToolResultRendererTest {
         @Test
         void fallsBackToFullLineWhenNoMatch() {
             ToolRenderers.DiffStats stats =
-                    ToolRenderers.INSTANCE.parseDiffStats("no match text");
+                ToolRenderers.INSTANCE.parseDiffStats("no match text");
 
             assertEquals("no match text", stats.getFiles());
             assertEquals("", stats.getInsertions());
@@ -62,7 +63,7 @@ class ToolResultRendererTest {
         @Test
         void parsesLargeNumbers() {
             ToolRenderers.DiffStats stats =
-                    ToolRenderers.INSTANCE.parseDiffStats(" 12 files changed, 100 insertions(+), 50 deletions(-)");
+                ToolRenderers.INSTANCE.parseDiffStats(" 12 files changed, 100 insertions(+), 50 deletions(-)");
 
             assertEquals("12 files changed", stats.getFiles());
             assertEquals("100", stats.getInsertions());
@@ -175,6 +176,11 @@ class ToolResultRendererTest {
         @Test
         void todoWriteCapitalizedHasRenderer() {
             assertTrue(ToolRenderers.INSTANCE.hasRenderer("TodoWrite", null));
+        }
+
+        @Test
+        void classOnlyListTestsHaveRenderer() {
+            assertNotNull(ListTestsRenderer.INSTANCE.render("1 tests:\ncom.example.LegacyPlatformTest"));
         }
 
         @Test
