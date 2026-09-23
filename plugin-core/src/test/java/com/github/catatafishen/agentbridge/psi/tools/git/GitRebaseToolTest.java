@@ -86,6 +86,17 @@ class GitRebaseToolTest {
         }
 
         @Test
+        void rejectsAutosquashForPlainRebase() {
+            var args = new JsonObject();
+            args.addProperty("autosquash", true);
+
+            String error = GitRebaseTool.validateAutosquash(args);
+
+            assertNotNull(error);
+            assertTrue(error.contains("operations"));
+        }
+
+        @Test
         void ignoresEmptyOnto() {
             var args = new JsonObject();
             args.addProperty("onto", "");

@@ -86,6 +86,8 @@ public final class GitRebaseTool extends GitTool {
             reword, edit. Commits not listed in operations keep their default 'pick' action. \
             'branch' is required when interactive is true. \
             The 'reword' action requires a 'message' field with the new commit message. \
+            Autosquash is not supported because operations are applied explicitly; mark each \
+            fixup!/squash! commit with the appropriate action in 'operations'. \
             Example: operations: [{commit: 'abc1234', action: 'squash'}, {commit: 'def5678', action: 'drop'}, \
             {commit: 'ghi9012', action: 'reword', message: 'Better commit message'}]""";
     }
@@ -117,8 +119,6 @@ public final class GitRebaseTool extends GitTool {
                     + "Each 'commit' is a short SHA prefix; 'action' is pick/drop/squash/fixup/reword/edit. "
                     + "Commits not listed keep their default 'pick' action. "
                     + "The 'reword' action requires a 'message' field with the new commit message."),
-            Param.optional(PARAM_AUTOSQUASH, TYPE_BOOLEAN,
-                "Automatically squash fixup! and squash! commits (requires interactive)"),
             Param.optional(PARAM_EXEC, TYPE_STRING,
                 "Shell command to run after each rebase step (e.g. 'make test')"),
             Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress rebase"),
@@ -146,6 +146,9 @@ public final class GitRebaseTool extends GitTool {
 
         String controlResult = handleControlArgs(args, root);
         if (controlResult != null) return controlResult;
+
+        String autosquashError = validateAutosquash(args);
+        if (autosquashError != null) return autosquashError;
 
         boolean interactive = args.has(PARAM_INTERACTIVE) && args.get(PARAM_INTERACTIVE).getAsBoolean();
         if (interactive) {
@@ -192,6 +195,15 @@ public final class GitRebaseTool extends GitTool {
             cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
         }
         return cmdArgs;
+    }
+
+    static @Nullable String validateAutosquash(@NotNull JsonObject args) {
+        if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
+            return "Error: 'autosquash' is not supported. Programmatic interactive rebases apply "
+                + "operations explicitly — mark fixup!/squash! commits with the appropriate action "
+                + "in the 'operations' list.";
+        }
+        return null;
     }
 
     // ── Interactive rebase (programmatic, no UI dialog) ──────
@@ -310,10 +322,8 @@ public final class GitRebaseTool extends GitTool {
     }
 
     static @Nullable String validateInteractiveArgs(@NotNull JsonObject args) {
-        if (args.has(PARAM_AUTOSQUASH) && args.get(PARAM_AUTOSQUASH).getAsBoolean()) {
-            return "Error: 'autosquash' is not supported in programmatic interactive rebase. "
-                + "Operations are applied explicitly — mark fixup!/squash! commits manually in the operations list.";
-        }
+        String autosquashError = validateAutosquash(args);
+        if (autosquashError != null) return autosquashError;
         if (args.has("onto") && !args.get("onto").getAsString().isBlank()) {
             return "Error: 'onto' is not supported in interactive rebase mode. "
                 + "Use plain rebase (without interactive: true) for --onto.";
