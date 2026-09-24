@@ -1,13 +1,13 @@
 package com.github.catatafishen.agentbridge.psi.tools.testing;
 
+import com.intellij.execution.configurations.RunProfile;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-
-import com.intellij.execution.configurations.RunProfile;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 
 /**
  * Covers the decisions that made {@code run_tests} give up on a running test suite: which execution
@@ -35,12 +35,12 @@ class TestExecutionTrackerTest {
     }
 
     @Test
-    @DisplayName("a run that reused our configuration name still matches when profiles differ")
-    void fallsBackToConfigurationName() {
+    @DisplayName("an unrelated run reusing our configuration name is ignored once the profile is known")
+    void ignoresReusedConfigurationNameWhenProfileIsKnown() {
         RunProfile launched = mock(RunProfile.class);
         RunProfile other = mock(RunProfile.class);
 
-        assertTrue(TestExecutionTracker.matchesLaunch(launched, other, CONFIG, CONFIG));
+        assertFalse(TestExecutionTracker.matchesLaunch(launched, other, CONFIG, CONFIG));
     }
 
     @Test

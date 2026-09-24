@@ -75,19 +75,11 @@ final class TestExecutionTracker {
             settings == null ? null : settings.getName());
     }
 
-    /**
-     * Decides whether an execution event belongs to the run this tracker launched.
-     *
-     * <p>Identity of the launched profile is authoritative. The configuration name is only a
-     * fallback for launches that never published a profile, because {@code RunManager} may rename
-     * a temporary configuration when one of the same name already exists — the original cause of
-     * runs being missed and reported as "could not capture process handle".</p>
-     */
     static boolean matchesLaunch(@Nullable RunProfile expected,
                                  @Nullable RunProfile actual,
                                  @NotNull String configName,
                                  @Nullable String actualConfigName) {
-        if (expected != null && actual == expected) return true;
+        if (expected != null) return actual == expected;
         return configName.equals(actualConfigName);
     }
 
