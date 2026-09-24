@@ -108,7 +108,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                     return;
                 }
 
-                int startOffset = doc.getLineStartOffset(loc.startLine() - 1);
+                int startOffset = loc.startOffset();
                 int endOffset = calculateEndOffset(doc, loc);
                 String normalized = prepareNormalizedBody(newBody);
 

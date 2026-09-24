@@ -213,6 +213,34 @@ public class EditingToolsTest extends BasePlatformTestCase {
             replaced.contains("return \"updated\";"));
     }
 
+    public void testReplaceSymbolBodyPreservesSameLineJavadoc() throws Exception {
+        String path = createTestFile("ReplacePreservesSameLineJavadoc.java", """
+            public class ReplacePreservesSameLineJavadoc {
+                /** Documents hello. */ public String hello() {
+                    return "world";
+                }
+            }
+            """);
+
+        String result = executeSync(replaceSymbolBodyTool, args(
+            "path", path,
+            "symbol", "hello",
+            "new_body", """
+                    public String hello() {
+                        return "updated";
+                    }
+                """
+        ));
+
+        assertFalse("Expected documented method replacement to succeed, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        String replaced = Files.readString(Path.of(path));
+        assertTrue("Expected the same-line Javadoc to be preserved: " + replaced,
+            replaced.contains("Documents hello."));
+        assertTrue("Expected the method replacement to be applied: " + replaced,
+            replaced.contains("return \"updated\";"));
+    }
+
     /**
      * Formatting must finish before a successful result is returned, so a replacement supplied
      * flush-left is immediately indented as a member of its enclosing class.

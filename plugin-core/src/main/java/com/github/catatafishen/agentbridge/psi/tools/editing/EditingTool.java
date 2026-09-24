@@ -40,7 +40,7 @@ public abstract class EditingTool extends Tool {
     protected static final String FORMATTED_SUFFIX = " (formatting & imports queued)";
     protected static final String SYMBOL_PREFIX = "Symbol '";
 
-    protected record SymbolLocation(int startLine, int endLine, String type, String name) {
+    protected record SymbolLocation(int startOffset, int startLine, int endLine, String type, String name) {
     }
 
     protected EditingTool(Project project) {
@@ -142,7 +142,7 @@ public abstract class EditingTool extends Tool {
                             int startOffset = getDeclarationStartOffset(element, doc, range);
                             int startLine = doc.getLineNumber(startOffset) + 1;
                             int endLine = doc.getLineNumber(range.getEndOffset()) + 1;
-                            matches.add(new SymbolLocation(startLine, endLine, type, name));
+                            matches.add(new SymbolLocation(startOffset, startLine, endLine, type, name));
                         }
                     }
                 }
