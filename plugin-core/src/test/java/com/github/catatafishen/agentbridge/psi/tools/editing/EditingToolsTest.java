@@ -182,6 +182,37 @@ public class EditingToolsTest extends BasePlatformTestCase {
             result.contains("formatting & imports completed"));
     }
 
+    public void testReplaceSymbolBodyPreservesJavadoc() throws Exception {
+        String path = createTestFile("ReplacePreservesJavadoc.java", """
+            public class ReplacePreservesJavadoc {
+                /**
+                 * Documents hello.
+                 */
+                public String hello() {
+                    return "world";
+                }
+            }
+            """);
+
+        String result = executeSync(replaceSymbolBodyTool, args(
+            "path", path,
+            "symbol", "hello",
+            "new_body", """
+                    public String hello() {
+                        return "updated";
+                    }
+                """
+        ));
+
+        assertFalse("Expected documented method replacement to succeed, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        String replaced = Files.readString(Path.of(path));
+        assertTrue("Expected the existing Javadoc to be preserved: " + replaced,
+            replaced.contains("Documents hello."));
+        assertTrue("Expected the method replacement to be applied: " + replaced,
+            replaced.contains("return \"updated\";"));
+    }
+
     /**
      * Formatting must finish before a successful result is returned, so a replacement supplied
      * flush-left is immediately indented as a member of its enclosing class.

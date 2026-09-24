@@ -139,7 +139,8 @@ public abstract class EditingTool extends Tool {
                         String type = ToolUtils.classifyElement(element);
                         if (type != null) {
                             TextRange range = element.getTextRange();
-                            int startLine = doc.getLineNumber(range.getStartOffset()) + 1;
+                            int startOffset = getDeclarationStartOffset(element, doc, range);
+                            int startLine = doc.getLineNumber(startOffset) + 1;
                             int endLine = doc.getLineNumber(range.getEndOffset()) + 1;
                             matches.add(new SymbolLocation(startLine, endLine, type, name));
                         }
@@ -149,6 +150,24 @@ public abstract class EditingTool extends Tool {
             }
         });
         return matches;
+    }
+
+    private static int getDeclarationStartOffset(PsiElement element, Document doc, TextRange range) {
+        if (!(element instanceof com.intellij.psi.PsiDocCommentOwner documented)) {
+            return range.getStartOffset();
+        }
+
+        PsiElement docComment = documented.getDocComment();
+        if (docComment == null || docComment.getTextRange().getStartOffset() != range.getStartOffset()) {
+            return range.getStartOffset();
+        }
+
+        int offset = docComment.getTextRange().getEndOffset();
+        CharSequence text = doc.getCharsSequence();
+        while (offset < range.getEndOffset() && Character.isWhitespace(text.charAt(offset))) {
+            offset++;
+        }
+        return offset;
     }
 
     @NotNull
