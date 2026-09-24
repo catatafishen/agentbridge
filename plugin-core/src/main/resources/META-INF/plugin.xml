@@ -38,8 +38,8 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
 <p>The plugin runs locally and does not collect or send telemetry.</p>
 ]]></description>
 
-  <!-- Change-notes are generated at build time by scripts/generate-changelog.sh.
-       This static content is used only for local dev builds without CHANGELOG_FILE. -->
+  <!-- The Marketplace publishing workflow replaces these notes with the reviewed,
+       GitHub-generated changelog for all changes since the last Marketplace publish. -->
   <change-notes><![CDATA[
     <p><b>AgentBridge</b> connects AI coding agents to your IDE via 100+ MCP tools
     for code intelligence, navigation, editing, debugging, and git.</p>

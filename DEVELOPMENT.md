@@ -645,7 +645,8 @@ feat!: drop support for IntelliJ 2025.1
 | Trigger             | Workflow      | What it does                                                          |
 |---------------------|---------------|-----------------------------------------------------------------------|
 | Pull request opened | `ci.yml`      | Build, test (MCP + plugin), verify plugin compatibility               |
-| PR merged to master | `release.yml` | Calculate next semver, tag, build release ZIP, publish GitHub Release |
+| PR merged to master | `release.yml` | Calculate next semver, generate categorized GitHub release notes, tag, build release ZIP, and publish the release |
+| Marketplace publish requested | `publish-marketplace.yml` | Generate full categorized notes from the last Marketplace publish to the selected release, allow review, then upload the patched ZIP |
 
 ---
 

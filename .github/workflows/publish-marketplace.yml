@@ -84,32 +84,61 @@ jobs:
     needs: resolve-tag
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: audit
 
-      - name: Display release notes for review
+      - name: Generate Marketplace release notes for review
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
           CHANNEL: ${{ inputs.channel }}
         run: |
-          # Fetch the release body (markdown) — editable on GitHub before approval.
-          # The publish job will re-fetch the final version after any edits.
           gh release view "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --json body --jq '.body' > release-body.md
+
+          GENERATE_NOTES_ARGS=(
+            --method POST
+            "repos/$GITHUB_REPOSITORY/releases/generate-notes"
+            -f "tag_name=$RELEASE_TAG"
+            -f "target_commitish=$RELEASE_TAG"
+          )
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/marketplace-latest" --silent >/dev/null; then
+            GENERATE_NOTES_ARGS+=(-f "previous_tag_name=marketplace-latest")
+          fi
+          gh api "${GENERATE_NOTES_ARGS[@]}" --jq '.body' > marketplace-notes.md
+
+          python3 - <<'PYEOF'
+          import re
+
+          with open('release-body.md') as file:
+              release_body = file.read()
+          with open('marketplace-notes.md') as file:
+              marketplace_notes = file.read().strip()
+
+          marketplace_section = '''\n---\n\n<details><summary>All changes since last Marketplace publish</summary>\n\n.*?\n\n</details>\n*'''
+          release_body = re.sub(marketplace_section, '\n', release_body, flags=re.DOTALL).rstrip()
+          with open('release-body.md', 'w') as file:
+              file.write(
+                  f'{release_body}\n\n---\n\n'
+                  '<details><summary>All changes since last Marketplace publish</summary>\n\n'
+                  f'{marketplace_notes}\n\n</details>\n'
+              )
+          PYEOF
+
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-body.md
 
           EDIT_URL="https://github.com/$GITHUB_REPOSITORY/releases/edit/$RELEASE_TAG"
 
           {
             echo "### 📝 Marketplace change notes for $RELEASE_TAG"
             echo ""
-            echo "The release notes below will be converted to HTML and published"
-            echo "as the marketplace change notes."
+            echo "The full notes below cover changes since the last Marketplace publish."
+            echo "They will be converted to HTML and published as the Marketplace change notes."
             echo ""
             echo "---"
             echo ""
@@ -122,7 +151,7 @@ jobs:
             echo "### ✏️ Want to edit before publishing?"
             echo ""
             echo "1. [**Edit the release notes on GitHub**]($EDIT_URL)"
-            echo "2. Modify the body — it will be converted to HTML for the marketplace"
+            echo "2. Modify the **All changes since last Marketplace publish** section"
             echo "3. Save your changes"
             echo "4. Then approve the **marketplace** environment below"
             echo ""
@@ -407,9 +436,8 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           gh auth setup-git
-          # Move the marketplace-latest tag to the commit of the published release.
-          # This tag is used by generate-changelog.sh to determine which commits
-          # have not yet been published to the marketplace.
+          # Move marketplace-latest to the published release. The next Marketplace
+          # publication uses this tag as the baseline for GitHub-generated notes.
           TARGET_SHA=$(git rev-list -n1 "$RELEASE_TAG")
           git tag -f marketplace-latest "$TARGET_SHA"
           git push origin marketplace-latest --force

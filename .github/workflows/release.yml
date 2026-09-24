@@ -112,57 +112,10 @@ jobs:
           echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Generate changelog
-        if: steps.version.outputs.skip != 'true'
-        env:
-          PLUGIN_VERSION: ${{ steps.version.outputs.version }}
-          GH_MODELS_TOKEN: ${{ secrets.GH_MODELS_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          mkdir -p build
-
-          # HTML changelog for plugin.xml: all changes since marketplace-latest
-          # (accumulates across releases until next marketplace publish)
-          bash scripts/generate-changelog.sh > build/changelog.html
-
-          # Markdown: what changed in THIS release (since last v* tag)
-          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
-          CHANGELOG_BASELINE="${LATEST_TAG:-}" CHANGELOG_FORMAT=md \
-            bash scripts/generate-changelog.sh > build/this-release.md
-
-          # Markdown: accumulated changes since last marketplace publish
-          CHANGELOG_FORMAT=md \
-            bash scripts/generate-changelog.sh > build/since-marketplace.md
-
-          # Assemble GitHub release body with both sections
-          {
-            cat build/this-release.md
-            echo ""
-            # Only add the "since marketplace" section if the baselines differ
-            # (i.e., marketplace-latest is behind the latest v* tag)
-            if ! diff -q build/this-release.md build/since-marketplace.md >/dev/null 2>&1; then
-              echo "---"
-              echo ""
-              echo "<details><summary>All changes since last Marketplace publish</summary>"
-              echo ""
-              cat build/since-marketplace.md
-              echo ""
-              echo "</details>"
-            fi
-          } > build/release-notes.md
-
-          echo "### Plugin Changelog (HTML for marketplace)" >> "$GITHUB_STEP_SUMMARY"
-          echo '```html' >> "$GITHUB_STEP_SUMMARY"
-          cat build/changelog.html >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "### Release Notes (Markdown)" >> "$GITHUB_STEP_SUMMARY"
-          cat build/release-notes.md >> "$GITHUB_STEP_SUMMARY"
-
       - name: Build release ZIPs
         if: steps.version.outputs.skip != 'true'
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
-          CHANGELOG_FILE: build/changelog.html
         run: gradle :plugin-core:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
 
       - name: Collect release artifacts
@@ -223,7 +176,7 @@ jobs:
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
             --title "Release $TAG" \
-            --notes-file build/release-notes.md \
+            --generate-notes \
             "$ARTIFACTS_DIR"/*.zip \
             "$ARTIFACTS_DIR"/*.sigstore.json \
             "$ARTIFACTS_DIR"/provenance.intoto.jsonl
@@ -232,7 +185,6 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
-          CHANGELOG_FILE: build/changelog.html
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
