@@ -657,7 +657,7 @@ public final class OpenCodeClientExporter {
         JsonObject result = new JsonObject();
         result.addProperty("type", "tool");
         result.addProperty("callID", toolCall.getEntryId());
-        result.addProperty("tool", toolCall.getTitle());
+        result.addProperty("tool", ExportUtils.exportMcpToolName(toolCall, ExportUtils.OPENCODE_MCP_PREFIX));
 
         boolean completed = toolCall.getResult() != null;
 

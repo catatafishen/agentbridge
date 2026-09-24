@@ -322,6 +322,23 @@ class CopilotClientExporterTest {
     }
 
     @Test
+    void agentBridgeToolUsesCopilotMcpNamespace() throws IOException {
+        EntryData.ToolCall toolCall = toolCall("Viewing project settings", "{\"path\":\"/f\"}", "data");
+        toolCall.setPluginTool("read_file");
+        List<JsonObject> events = exportAndParse(List.of(prompt("Go"), toolCall));
+
+        JsonObject assistantMsg = events.stream()
+            .filter(e -> "assistant.message".equals(safeType(e)))
+            .filter(e -> e.getAsJsonObject("data").has("toolRequests"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("assistant.message with toolRequests not found"));
+        JsonObject toolReq = assistantMsg.getAsJsonObject("data").getAsJsonArray("toolRequests")
+            .get(0).getAsJsonObject();
+
+        assertEquals("agentbridge-read_file", toolReq.get("name").getAsString());
+    }
+
+    @Test
     void executionCompleteHasMatchingToolCallId() throws IOException {
         List<JsonObject> events = exportAndParse(
             List.of(prompt("Go"), toolCall("my_tool", "{}", "result")));

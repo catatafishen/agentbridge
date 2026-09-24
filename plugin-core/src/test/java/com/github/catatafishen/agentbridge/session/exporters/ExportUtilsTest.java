@@ -137,6 +137,12 @@ class ExportUtilsTest {
         assertEquals(canonical, ExportUtils.normalizeToolNameForCodex(canonical));
     }
 
+    @Test
+    void kiroNormalizesOtherMcpPrefixes() {
+        assertEquals("@agentbridge/read_file",
+            ExportUtils.normalizeToolNameForKiro("agentbridge-read_file"));
+    }
+
     // ── sessionsDir (deprecated overloads — tests kept to verify backward compat during migration) ──
 
     @SuppressWarnings("deprecation")

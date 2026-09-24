@@ -247,8 +247,7 @@ public final class CopilotClientExporter {
         @NotNull String interactionId) {
 
         String toolCallId = UUID.randomUUID().toString();
-        String toolName = toolCall.getTitle();
-        if (toolName.isEmpty()) toolName = "unknown";
+        String toolName = ExportUtils.exportMcpToolName(toolCall, ExportUtils.ACP_MCP_PREFIX);
         String argsStr = toolCall.getArguments();
 
         JsonObject toolReq = new JsonObject();

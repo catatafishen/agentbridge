@@ -169,6 +169,18 @@ class KiroClientExporterTest {
     }
 
     @Test
+    void agentBridgeToolUsesKiroMcpNamespace() {
+        EntryData.ToolCall toolCall = toolCall("Viewing project settings", "{}", "result");
+        toolCall.setPluginTool("read_file");
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userPrompt("read it"), assistantText("Let me read that."), toolCall));
+
+        JsonObject toolUse = kiroMessages.get(1).getAsJsonObject("data").getAsJsonArray("content")
+            .get(1).getAsJsonObject().getAsJsonObject("data");
+        assertEquals("@agentbridge/read_file", toolUse.get("name").getAsString());
+    }
+
+    @Test
     void multipleToolCallsStayInSameTurn() {
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
             List.of(

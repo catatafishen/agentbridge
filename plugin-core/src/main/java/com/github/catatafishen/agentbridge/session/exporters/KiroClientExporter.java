@@ -217,7 +217,10 @@ public final class KiroClientExporter {
 
             } else if (entry instanceof EntryData.ToolCall toolCall) {
                 String toolCallId = UUID.randomUUID().toString();
-                String toolName = ExportUtils.sanitizeToolName(toolCall.getTitle());
+                String canonicalToolName = ExportUtils.canonicalToolName(toolCall);
+                String toolName = ExportUtils.isAgentBridgeTool(toolCall)
+                    ? ExportUtils.normalizeToolNameForKiro(canonicalToolName)
+                    : ExportUtils.sanitizeToolName(canonicalToolName);
                 String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
                 String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
 

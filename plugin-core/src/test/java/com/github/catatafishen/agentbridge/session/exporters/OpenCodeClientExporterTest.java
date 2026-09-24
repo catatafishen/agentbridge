@@ -253,6 +253,17 @@ class OpenCodeClientExporterTest {
     }
 
     @Test
+    void buildToolInvocationPart_agentBridgeToolUsesOpenCodeMcpNamespace() throws Exception {
+        EntryData.ToolCall tc = new EntryData.ToolCall("Viewing project settings");
+        tc.setPluginTool("read_file");
+        tc.setResult("file contents here");
+
+        JsonObject part = invokeBuildToolInvocationPart(tc, 5000L);
+
+        assertEquals("agentbridge_read_file", part.get("tool").getAsString());
+    }
+
+    @Test
     void buildToolInvocationPart_runningToolCall_statusRunning() throws Exception {
         EntryData.ToolCall tc = new EntryData.ToolCall("bash");
         // result is null by default → running

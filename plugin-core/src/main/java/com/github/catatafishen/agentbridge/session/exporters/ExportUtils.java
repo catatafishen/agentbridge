@@ -89,6 +89,17 @@ public final class ExportUtils {
     }
 
     /**
+     * Normalizes an AgentBridge MCP tool name for Kiro's {@code @agentbridge/} namespace.
+     *
+     * <p>The prefix intentionally is not passed through {@link #sanitizeToolName(String)}:
+     * Kiro uses its slash-delimited namespace verbatim.</p>
+     */
+    @NotNull
+    public static String normalizeToolNameForKiro(@NotNull String rawName) {
+        return AGENTBRIDGE_KIRO + sanitizeToolName(stripKnownMcpPrefix(rawName));
+    }
+
+    /**
      * MCP namespace prefix Claude Code applies to AgentBridge tools
      * (e.g. {@code mcp__agentbridge__read_file}).
      */
@@ -99,6 +110,11 @@ public final class ExportUtils {
      * AgentBridge tools (e.g. {@code agentbridge-read_file}).
      */
     public static final String ACP_MCP_PREFIX = AGENTBRIDGE_DASH;
+
+    /**
+     * MCP namespace prefix OpenCode applies to AgentBridge tools.
+     */
+    public static final String OPENCODE_MCP_PREFIX = AGENTBRIDGE_UNDERSCORE;
 
     /**
      * Known AgentBridge MCP namespace prefixes across all supported clients, longest
