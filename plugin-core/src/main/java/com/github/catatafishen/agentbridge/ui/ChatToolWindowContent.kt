@@ -1441,7 +1441,6 @@ class ChatToolWindowContent(
         } else null
         val bubbleHtml = buildBubbleHtml(rawText, contextItems)
         val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
-        persistenceManager.appendNewEntries()
         promptTextArea.text = ""
 
         val selectedModelId = modelSelector.resolveSelectedModelId()
@@ -1449,7 +1448,7 @@ class ChatToolWindowContent(
         // unblocked regardless of whether the pause feature is currently enabled in settings.
         pausedByTyping = false
         McpPauseService.getInstance(project).setPaused(false)
-        ApplicationManager.getApplication().executeOnPooledThread {
+        dispatchAfterPromptPersisted(rawText, entryId) {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId)
         }
     }
@@ -2736,7 +2735,30 @@ class ChatToolWindowContent(
         sendPromptDirectly(text)
     }
 
-    /** Send a prompt string directly, bypassing the text area (used for quick-replies). */
+    private fun dispatchAfterPromptPersisted(
+        rawText: String,
+        promptEntryId: String,
+        dispatch: () -> Unit
+    ) {
+        persistenceManager.appendNewEntriesAsync()
+            .thenRunAsync(
+                {
+                    if (isSending) dispatch()
+                },
+                com.intellij.util.concurrency.AppExecutorUtil.getAppExecutorService()
+            )
+            .exceptionally { error ->
+                LOG.warn("Failed to persist prompt before dispatch", error)
+                ApplicationManager.getApplication().invokeLater {
+                    consolePanel.removePromptEntry(promptEntryId)
+                    promptTextArea.text = rawText
+                    setSendingState(false)
+                    statusBanner?.showError("Could not save your message, so it was not sent.")
+                }
+                null
+            }
+    }
+
     private fun sendPromptDirectly(prompt: String) {
         val trimmed = prompt.trim()
         if (trimmed.isEmpty()) return
@@ -2749,9 +2771,8 @@ class ChatToolWindowContent(
         if (client is KiroClient && trimmed.startsWith("/")) {
             statusBanner?.dismissCurrent()
             setSendingState(true)
-            consolePanel.addPromptEntry(trimmed, null)
-            persistenceManager.appendNewEntries()
-            ApplicationManager.getApplication().executeOnPooledThread {
+            val entryId = consolePanel.addPromptEntry(trimmed, null)
+            dispatchAfterPromptPersisted(trimmed, entryId) {
                 client.executeSlashCommand(trimmed) { _ ->
                     ApplicationManager.getApplication().invokeLater {
                         setSendingState(false)
@@ -2764,13 +2785,12 @@ class ChatToolWindowContent(
         statusBanner?.dismissCurrent()
         setSendingState(true)
         val entryId = consolePanel.addPromptEntry(trimmed, null)
-        persistenceManager.appendNewEntries()
         val selectedModelId = modelSelector.resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
         // unblocked regardless of whether the pause feature is currently enabled in settings.
         pausedByTyping = false
         McpPauseService.getInstance(project).setPaused(false)
-        ApplicationManager.getApplication().executeOnPooledThread {
+        dispatchAfterPromptPersisted(trimmed, entryId) {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId, trimmed, entryId)
         }
     }

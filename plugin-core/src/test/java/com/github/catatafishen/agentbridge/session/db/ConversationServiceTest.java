@@ -14,6 +14,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -264,6 +267,48 @@ class ConversationServiceTest {
         assertEquals(2, promptCount, "both prompts should be stored");
     }
 
+    @Test
+    @DisplayName("appendEntriesAsync completes only after the prompt is readable from SQLite")
+    void appendEntriesAsync_completesAfterCommit() throws Exception {
+        ConversationService service = newService();
+        EntryData.Prompt prompt = new EntryData.Prompt(
+            "Persist before dispatch", "2026-09-24T18:00:00Z", null, "async-p1", "async-p1");
+
+        service.appendEntriesAsync(tempDir.toString(), List.of(prompt)).get(2, TimeUnit.SECONDS);
+
+        List<EntryData> loaded = service.loadEntries(tempDir.toString());
+        assertNotNull(loaded);
+        assertTrue(loaded.stream().anyMatch(entry ->
+            entry instanceof EntryData.Prompt loadedPrompt
+                && "Persist before dispatch".equals(loadedPrompt.getText())));
+    }
+
+    @Test
+    @DisplayName("a failed async append does not poison later writes")
+    void appendEntriesAsync_recoversAfterFailedWrite() throws Exception {
+        ConversationService service = newService();
+        database.dispose();
+        EntryData.Prompt failedPrompt = new EntryData.Prompt(
+            "First attempt", "2026-09-24T18:00:00Z", null, "failed-p1", "failed-p1");
+
+        assertThrows(ExecutionException.class, () ->
+            service.appendEntriesAsync(tempDir.toString(), List.of(failedPrompt))
+                .get(2, TimeUnit.SECONDS));
+
+        Connection replacement = DriverManager.getConnection("jdbc:sqlite::memory:");
+        database.initializeWithConnection(replacement);
+        EntryData.Prompt retryPrompt = new EntryData.Prompt(
+            "Retry succeeds", "2026-09-24T18:00:01Z", null, "retry-p2", "retry-p2");
+        service.appendEntriesAsync(tempDir.toString(), List.of(retryPrompt))
+            .get(2, TimeUnit.SECONDS);
+
+        List<EntryData> loaded = service.loadEntries(tempDir.toString());
+        assertNotNull(loaded);
+        assertTrue(loaded.stream().anyMatch(entry ->
+            entry instanceof EntryData.Prompt loadedPrompt
+                && loadedPrompt.getText().equals("Retry succeeds")));
+    }
+
     // ── sessions metadata via appendEntries ───────────────────────────────
 
     @Test
@@ -445,8 +490,6 @@ class ConversationServiceTest {
         assertFalse(result.entries().isEmpty());
     }
 
-
-
     @Test
     @DisplayName("runAfterPendingSave runs action immediately when no save is pending")
     void runAfterPendingSave_runsImmediatelyWhenNoPendingSave() throws Exception {
@@ -455,7 +498,7 @@ class ConversationServiceTest {
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         service.runAfterPendingSave(latch::countDown);
 
-        assertTrue(latch.await(2, java.util.concurrent.TimeUnit.SECONDS),
+        assertTrue(latch.await(2, TimeUnit.SECONDS),
             "action should have run after the (empty) pending save chain");
     }
 
@@ -471,7 +514,7 @@ class ConversationServiceTest {
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         service.runAfterPendingSave(latch::countDown);
 
-        assertTrue(latch.await(2, java.util.concurrent.TimeUnit.SECONDS),
+        assertTrue(latch.await(2, TimeUnit.SECONDS),
             "action should run after the synchronous append has completed");
     }
 }

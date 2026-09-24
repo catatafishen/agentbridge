@@ -39,9 +39,9 @@ class ConversationPersistenceManager(
         entryStore = store
     }
 
-    /** Number of entries already persisted to disk for the current session (deferred + panel). */
-    @Volatile
-    private var persistedEntryCount = 0
+    private val persistenceLock = Any()
+    private val persistedEntryIds = mutableSetOf<String>()
+    private val queuedEntryIds = mutableSetOf<String>()
 
     private var callbacks: Callbacks? = null
 
@@ -105,22 +105,35 @@ class ConversationPersistenceManager(
     // Incremental save
     // ------------------------------------------------------------------
 
-    /**
-     * Persists any new entries that have not yet been written to disk.
-     *
-     * Reads directly from [entryStore] — the thread-safe data layer — with no dependency
-     * on the UI panel. This ensures persistence works even when the UI is frozen.
-     *
-     * Deferred entries loaded from disk on restore are already persisted — they must not
-     * be included here because "Load More" shrinks the deferred list during a session, which
-     * would shift the offset and cause new entries to be silently skipped.
-     */
     fun appendNewEntries() {
-        val entries = entryStore?.getEntries() ?: emptyList()
-        val newEntries = entries.drop(persistedEntryCount)
-        if (newEntries.isEmpty()) return
-        conversationStore.appendEntriesAsync(project.basePath, newEntries)
-        persistedEntryCount = entries.size
+        appendNewEntriesAsync()
+    }
+
+    /**
+     * Queues every entry that has not already been committed or queued, and completes only after
+     * SQLite commits the batch. Failed entries become eligible for the next save attempt.
+     */
+    fun appendNewEntriesAsync(): java.util.concurrent.CompletableFuture<Void> {
+        val entries = entryStore?.getEntries().orEmpty()
+        val newEntries = synchronized(persistenceLock) {
+            entries.filter { entry ->
+                entry.entryId !in persistedEntryIds && queuedEntryIds.add(entry.entryId)
+            }
+        }
+        if (newEntries.isEmpty()) {
+            return java.util.concurrent.CompletableFuture.completedFuture(null)
+        }
+
+        val entryIds = newEntries.map { it.entryId }.toSet()
+        return conversationStore.appendEntriesAsync(project.basePath, newEntries)
+            .whenComplete { _, error ->
+                synchronized(persistenceLock) {
+                    queuedEntryIds.removeAll(entryIds)
+                    if (error == null) {
+                        persistedEntryIds.addAll(entryIds)
+                    }
+                }
+            }
     }
 
     // ------------------------------------------------------------------
@@ -177,7 +190,11 @@ class ConversationPersistenceManager(
         )
         showDeferredRestoreCount()
         restoreTurnStats(entries.filterIsInstance<EntryData.TurnStats>())
-        persistedEntryCount = 0
+        synchronized(persistenceLock) {
+            persistedEntryIds.clear()
+            queuedEntryIds.clear()
+            persistedEntryIds.addAll(entries.map { it.entryId })
+        }
     }
 
     private fun showDeferredRestoreCount() {
@@ -259,7 +276,10 @@ class ConversationPersistenceManager(
             }
         }
         conversationStore.archive()
-        persistedEntryCount = 0
+        synchronized(persistenceLock) {
+            persistedEntryIds.clear()
+            queuedEntryIds.clear()
+        }
     }
 
     // ------------------------------------------------------------------

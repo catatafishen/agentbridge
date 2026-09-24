@@ -144,33 +144,60 @@ public final class ConversationService implements Disposable {
     // ── Write operations ─────────────────────────────────────────────────────
 
     /**
-     * Appends entries to the current session synchronously via SQLite.
+     * Appends entries synchronously via SQLite.
      */
     public void appendEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
         if (entries.isEmpty()) return;
+        appendEntriesChecked(basePath, entries);
+    }
+
+    /**
+     * Appends entries on the serialized write queue.
+     *
+     * @return a future that completes only after SQLite commits the batch; failures complete it exceptionally
+     */
+    public @NotNull CompletableFuture<Void> appendEntriesAsync(
+        @Nullable String basePath,
+        @NotNull List<EntryData> entries
+    ) {
+        if (entries.isEmpty()) return CompletableFuture.completedFuture(null);
+        List<EntryData> snapshot = List.copyOf(entries);
+        return enqueueWrite("append conversation entries", () -> {
+            if (!appendEntriesChecked(basePath, snapshot)) {
+                throw new IllegalStateException("Conversation entries were not committed to SQLite");
+            }
+        });
+    }
+
+    private boolean appendEntriesChecked(@Nullable String basePath, @NotNull List<EntryData> entries) {
         try {
             String agent = currentAgent;
             String sessionId = getCurrentSessionId(basePath);
             ConversationWriter writer = getOrCreateWriter();
             if (writer == null) {
                 LOG.warn("Failed to append entries: ConversationWriter not available");
-                return;
+                return false;
             }
-            writer.recordEntries(sessionId, agent, "", entries);
+            return writer.recordEntries(sessionId, agent, "", entries);
         } catch (Exception e) {
             LOG.warn("Failed to append entries to SQLite session store", e);
+            return false;
         }
     }
 
-    /**
-     * Appends entries on a pooled thread (non-blocking).
-     */
-    public void appendEntriesAsync(@Nullable String basePath, @NotNull List<EntryData> entries) {
-        List<EntryData> snapshot = List.copyOf(entries);
+    private @NotNull CompletableFuture<Void> enqueueWrite(
+        @NotNull String description,
+        @NotNull Runnable write
+    ) {
         synchronized (saveLock) {
-            pendingSave = pendingSave.thenRunAsync(
-                () -> appendEntries(basePath, snapshot),
+            CompletableFuture<Void> operation = pendingSave.thenRunAsync(
+                write,
                 AppExecutorUtil.getAppExecutorService());
+            pendingSave = operation.exceptionally(error -> {
+                LOG.warn("Failed to " + description, error);
+                return null;
+            });
+            return operation;
         }
     }
 
@@ -188,9 +215,10 @@ public final class ConversationService implements Disposable {
     /**
      * Updates a tool call's completion state (result, status) asynchronously.
      *
-     * <p>Chained through {@link #pendingSave} to guarantee it runs after any pending INSERT.
-     * This fixes the race where a tool call is persisted early (while running) and its
-     * result is lost because {@code INSERT OR IGNORE} skips the re-insert attempt.
+     * <p>Chained through the serialized write queue to guarantee it runs after any pending INSERT.
+     * This fixes the race where a tool call is persisted early (while running) and its result is
+     * lost because {@code INSERT OR IGNORE} skips the re-insert attempt. A failed update is logged
+     * without preventing later queued writes from running.
      */
     public void updateToolCallCompletionAsync(
         @NotNull String eventId,
@@ -199,22 +227,16 @@ public final class ConversationService implements Disposable {
         boolean autoDenied,
         @Nullable String denialReason
     ) {
-        synchronized (saveLock) {
-            pendingSave = pendingSave.thenRunAsync(
-                () -> {
-                    ConversationWriter writer = getOrCreateWriter();
-                    if (writer != null) {
-                        writer.updateToolCallCompletion(eventId, result, status, autoDenied, denialReason);
-                    }
-                },
-                AppExecutorUtil.getAppExecutorService());
-        }
+        enqueueWrite("update tool call completion", () -> {
+            ConversationWriter writer = getOrCreateWriter();
+            if (writer != null) {
+                writer.updateToolCallCompletion(eventId, result, status, autoDenied, denialReason);
+            }
+        });
     }
 
     /**
-     * Updates a sub-agent's completion state (result, status) asynchronously.
-     *
-     * <p>Same ordering guarantee as {@link #updateToolCallCompletionAsync}.
+     * Updates a sub-agent after any queued insert.
      */
     public void updateSubAgentCompletionAsync(
         @NotNull String eventId,
@@ -223,34 +245,24 @@ public final class ConversationService implements Disposable {
         boolean autoDenied,
         @Nullable String denialReason
     ) {
-        synchronized (saveLock) {
-            pendingSave = pendingSave.thenRunAsync(
-                () -> {
-                    ConversationWriter writer = getOrCreateWriter();
-                    if (writer != null) {
-                        writer.updateSubAgentCompletion(eventId, result, status, autoDenied, denialReason);
-                    }
-                },
-                AppExecutorUtil.getAppExecutorService());
-        }
+        enqueueWrite("update sub-agent completion", () -> {
+            ConversationWriter writer = getOrCreateWriter();
+            if (writer != null) {
+                writer.updateSubAgentCompletion(eventId, result, status, autoDenied, denialReason);
+            }
+        });
     }
 
     /**
-     * Overwrites the display_name of the given session with the agent-pushed title.
-     * Chained through {@link #pendingSave} to guarantee it runs after any pending INSERT
-     * (prevents UPDATE-before-INSERT race with appendEntriesAsync).
+     * Updates the session title after any queued insert.
      */
     public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
-        synchronized (saveLock) {
-            pendingSave = pendingSave.thenRunAsync(
-                () -> {
-                    ConversationWriter writer = getOrCreateWriter();
-                    if (writer != null) {
-                        writer.updateSessionTitle(sessionId, title);
-                    }
-                },
-                AppExecutorUtil.getAppExecutorService());
-        }
+        enqueueWrite("update session title", () -> {
+            ConversationWriter writer = getOrCreateWriter();
+            if (writer != null) {
+                writer.updateSessionTitle(sessionId, title);
+            }
+        });
     }
 
     /**

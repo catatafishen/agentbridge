@@ -73,29 +73,33 @@ public final class ConversationWriter {
      * @param agentName display name of the writing agent (e.g. "GitHub Copilot")
      * @param clientId  ACP client identifier (e.g. "copilot", "opencode"); may be empty
      * @param entries   batch of entries in chronological order
+     * @return {@code true} when the transaction committed, or {@code false} when it could not be written
      */
-    public void recordEntries(
+    public boolean recordEntries(
         @NotNull String sessionId,
         @NotNull String agentName,
         @NotNull String clientId,
         @NotNull List<EntryData> entries
     ) {
         synchronized (database) {
-            if (entries.isEmpty()) return;
+            if (entries.isEmpty()) return true;
             Connection conn = database.getConnection();
             if (conn == null) {
-                LOG.debug("ConversationDatabase not initialised — skipping write of "
+                LOG.warn("ConversationDatabase not initialised — failed to write "
                     + entries.size() + " entries");
-                return;
+                return false;
             }
             try {
                 writeEntriesInTransaction(conn, sessionId, agentName, clientId, entries);
+                return true;
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record " + entries.size()
                     + " entries for session " + sessionId, e);
+                return false;
             } catch (IllegalArgumentException e) {
                 LOG.error("ConversationWriter: invalid entry data for session " + sessionId
                     + " — " + e.getMessage(), e);
+                return false;
             }
         }
     }

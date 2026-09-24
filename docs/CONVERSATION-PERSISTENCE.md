@@ -13,8 +13,8 @@ flowchart TD
     PO --> BCP["BroadcastChatPanel<br/>(single write gate)"]
     BCP --> Store["ConversationEntryStore<br/>(in-memory, mutable)"]
     BCP --> UI["NativeChatPanel<br/>(UI rendering)"]
-    Store --> PM["ConversationPersistenceManager<br/>(persistedEntryCount watermark)"]
-    PM -->|"appendNewEntries()"| CS["ConversationService<br/>(pendingSave async chain)"]
+    Store --> PM["ConversationPersistenceManager<br/>(persisted/queued entry IDs)"]
+    PM -->|"appendNewEntries[Async]()"| CS["ConversationService<br/>(serialized async write queue)"]
     BCP -->|"updateToolCallCompletionAsync()<br/>updateSubAgentCompletionAsync()"| CS
     CS --> CW["ConversationWriter<br/>(synchronized SQLite writes)"]
     CW --> DB[("SQLite Database")]
@@ -67,12 +67,13 @@ as primary keys in the database and must never change after creation.
 
 **What it does:**
 1. Reads all entries from `ConversationEntryStore.getEntries()` (thread-safe snapshot)
-2. Drops the first `persistedEntryCount` entries (already saved)
+2. Selects entries whose stable IDs are neither committed nor already queued
 3. Passes the remaining entries to `ConversationService.appendEntriesAsync()`
-4. Advances `persistedEntryCount` to the current size
+4. Marks their IDs committed only after the SQLite transaction completes
+5. Removes failed IDs from the queued set so a later save retries them
 
-**Guarantee:** All entries at indices `[0, persistedEntryCount)` have been queued
-for database write. Entries are written in a single transaction per batch.
+**Guarantee:** A completed future means the batch transaction committed. Removing an earlier
+in-memory entry cannot shift a positional watermark and cause later prompts to be skipped.
 
 **Risk:** If an entry is persisted while still in a "running" state (result=null),
 and later mutated in-place, the mutation is NOT automatically reflected in the DB.
@@ -241,9 +242,13 @@ This guarantees:
 for pending writes to flush. This is sufficient for normal shutdown since individual
 SQLite writes are fast (< 100ms typically).
 
-**Risk:** If the plugin is forcibly killed (kill -9, crash), any writes still in the
-`pendingSave` queue are lost. This is acceptable — the same data would be lost in any
-asynchronous write system.
+User prompts are a special durability boundary: prompt dispatch is chained to the append
+future, so the agent does not receive the prompt until SQLite has committed it. Other streamed
+entries remain asynchronous and are flushed during normal disposal.
+
+**Risk:** If the plugin is forcibly killed while an assistant text block is still streaming,
+content since the last block boundary may still be lost. A submitted user prompt is already
+committed before agent execution begins.
 
 ---
 
@@ -251,8 +256,9 @@ asynchronous write system.
 
 | Scenario                              | Data Loss?    | Why                                                              |
 |---------------------------------------|---------------|------------------------------------------------------------------|
-| Plugin crashes mid-text-stream        | Partial text  | Accepted: current text entry not yet saved                       |
-| Plugin crashes after tool completion  | No            | UPDATE is queued immediately; `awaitPendingSave` on dispose       |
+| Plugin crashes after prompt dispatch  | No            | Prompt transaction commits before agent execution begins          |
+| Plugin crashes mid-text-stream        | Partial text  | Current response block may not have reached its next save boundary |
+| Plugin crashes after tool completion  | Possible      | Completion update may still be queued during an abrupt crash       |
 | IDE force-killed during write         | Possible      | SQLite journal provides crash recovery for committed transactions |
 | Two tool calls racing                 | No            | UPDATE fires for EACH completion independently                   |
 | Sub-agent with 50 internal tools      | No            | UPDATE fires when sub-agent completes, after all INSERTs         |
