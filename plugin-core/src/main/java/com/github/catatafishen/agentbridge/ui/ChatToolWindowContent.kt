@@ -2843,7 +2843,8 @@ class ChatToolWindowContent(
         ApplicationManager.getApplication().invokeLater {
             val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return@invokeLater
             if (frame.isActive) return@invokeLater
-            val title = "Copilot Response Ready"
+            val agentName = agentManager.activeProfile.displayName
+            val title = "${agentName} Response Ready"
             val content =
                 if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
                 else "Turn completed"
