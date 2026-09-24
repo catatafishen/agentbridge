@@ -69,6 +69,7 @@ public final class GitCommitTool extends GitTool {
             Param.optional(PARAM_ASYNC, TYPE_BOOLEAN,
                 "Run commit in background and return job_id immediately; use git_job_status to read the result"),
             Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing (equivalent to 'git add -A && git commit'). Default: false — commits only already-staged changes."),
+            Param.optional("add_all", TYPE_BOOLEAN, "Deprecated alias for all; retained for compatibility."),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
@@ -352,11 +353,13 @@ public final class GitCommitTool extends GitTool {
         return hint.toString();
     }
 
-    /**
-     * Resolves the "all" parameter: defaults to false (commit only staged changes) unless explicitly set to true.
-     */
     static boolean resolveCommitAll(JsonObject args) {
-        return args.has("all") && args.get("all").getAsBoolean();
+        return isTrue(args, "all") || isTrue(args, "add_all");
+    }
+
+    private static boolean isTrue(JsonObject args, String parameter) {
+        return args.has(parameter) && !args.get(parameter).isJsonNull()
+            && args.get(parameter).getAsBoolean();
     }
 
     @Override

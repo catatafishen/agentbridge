@@ -72,6 +72,14 @@ class GitCommitToolStaticMethodsTest {
         }
 
         @Test
+        @DisplayName("returns true when legacy 'add_all' is explicitly true")
+        void legacyAliasExplicitlyTrue() {
+            JsonObject args = new JsonObject();
+            args.addProperty("add_all", true);
+            assertTrue(GitCommitTool.resolveCommitAll(args));
+        }
+
+        @Test
         @DisplayName("returns false when 'all' is explicitly false")
         void explicitlyFalse() {
             JsonObject args = new JsonObject();
