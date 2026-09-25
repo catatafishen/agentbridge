@@ -94,6 +94,20 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Optimizes imports for a single PSI file synchronously.
+     *
+     * <p><b>Why extracted:</b> {@code AbstractLayoutCodeProcessor.run()} is available in the
+     * supported target SDKs but is absent from the development IDE's bundled API, which causes a
+     * false-positive "cannot resolve method" error in business code even though Gradle compiles it.</p>
+     *
+     * @param project the project containing the file
+     * @param psiFile the file whose imports should be optimized
+     */
+    public static void optimizeImports(@NotNull Project project, @NotNull com.intellij.psi.PsiFile psiFile) {
+        new com.intellij.codeInsight.actions.OptimizeImportsProcessor(project, psiFile).run();
+    }
+
+    /**
      * Returns {@code true} when the IDE is running as the JetBrains thin client (Gateway remote-dev
      * client side, i.e., the laptop side of a remote-development session).
      *
@@ -2057,7 +2071,7 @@ public final class PlatformApiCompat {
      * equivalent across all supported versions. This wrapper centralises the usage so it can be
      * migrated in one place once the replacement stabilises.</p>
      */
-    @SuppressWarnings("UnstableApiUsage")
+    @SuppressWarnings({"UnstableApiUsage", "removal"})
     // NameUtil.buildMatcher(String, MatchingCaseSensitivity) is @ScheduledForRemoval; no stable replacement yet
     public static @NotNull com.intellij.psi.codeStyle.MinusculeMatcher buildFilenameMatcher(@NotNull String pattern) {
         return com.intellij.psi.codeStyle.NameUtil.buildMatcher(pattern,

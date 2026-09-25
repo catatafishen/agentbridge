@@ -270,6 +270,44 @@ public class EditingToolsTest extends BasePlatformTestCase {
                 """));
     }
 
+    public void testReplaceSymbolBodyFormatsTextBlockBeforeSaving() throws Exception {
+        String path = createTestFile("ReplaceTextBlock.java", String.join("\n",
+            "public class ReplaceTextBlock {",
+            "    static String instructions() {",
+            "        return \"\"\"",
+            "            original",
+            "            instructions",
+            "            \"\"\";",
+            "    }",
+            "}",
+            ""));
+
+        String result = executeSync(replaceSymbolBodyTool, args(
+            "path", path,
+            "symbol", "instructions",
+            "new_body", String.join("\n",
+                "static String instructions(){",
+                "return \"\"\"",
+                "updated",
+                "instructions",
+                "\"\"\";",
+                "}",
+                "")
+        ));
+
+        assertFalse("Expected text-block formatting to complete successfully, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        String formatted = Files.readString(Path.of(path));
+        assertTrue("Expected the text-block method to be indented and formatted: " + formatted,
+            formatted.contains(String.join("\n",
+                "    static String instructions() {",
+                "        return \"\"\"",
+                "                updated",
+                "                instructions",
+                "                \"\"\";",
+                "    }")));
+    }
+
     /**
      * When the named symbol does not exist in the file, the tool must return a
      * message beginning with {@code "Symbol '"} that names the missing symbol.
