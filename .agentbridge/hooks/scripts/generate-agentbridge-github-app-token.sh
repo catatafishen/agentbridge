@@ -9,12 +9,12 @@
 # default-hooks/ (see DefaultHookProvisioner). This file is intentionally absent
 # from that manifest.
 #
-# Purpose: helper used by enforce-gh-bot-identity.js and enforce-http-bot-identity.sh
+# Purpose: helper used by enforce-agentbridge-gh-bot-identity.js and enforce-http-bot-identity.js
 # to generate a short-lived GitHub App installation access token. Requires a GitHub
 # App PEM key and App ID configured in ~/.agentbridge/ or via env vars.
 # =============================================================================
 #
-# generate-github-app-token.sh — Generate a GitHub App installation access token.
+# generate-agentbridge-github-app-token.sh — Generate a GitHub App installation access token.
 # See docs/BOT-IDENTITY-HOOKS.md for setup instructions (main repo vs fork, GitHub App vs PAT).
 # These hooks are optional — safe to disable or delete locally.
 #

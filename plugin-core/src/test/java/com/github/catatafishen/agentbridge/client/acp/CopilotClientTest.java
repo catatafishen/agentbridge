@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,6 +47,30 @@ class CopilotClientTest {
     void buildAgentDefinition_emptyTools() throws Exception {
         String result = invokeBuildAgentDefinition("agent", "desc", List.of(), "prompt");
         assertTrue(result.contains("tools:\n---\n"));
+    }
+
+    @Test
+    void defaultAgentInstructionsContainNoRepositoryOnlyHookPolicy() {
+        String instructions = CopilotClient.defaultAgentInstructions();
+        assertTrue(instructions.contains("project's configured AgentBridge hooks"));
+        for (String repositoryOnlyMarker : List.of(
+            "bot identity",
+            "AGENTBRIDGE_BOT_TOKEN",
+            "github-app.pem",
+            "agentbridge-fixer",
+            "pr-creation-tip",
+            "pr-description-reminder",
+            "bot-identity-reminder",
+            "enforce-commit-author",
+            "build-project-clear-cache",
+            "enforce-http-bot-identity",
+            "commit-message-quality-reminder",
+            "enforce-agentbridge-gh-bot-identity",
+            "generate-agentbridge-github-app-token",
+            ".agentbridge/hooks/scripts"
+        )) {
+            assertFalse(instructions.contains(repositoryOnlyMarker), repositoryOnlyMarker);
+        }
     }
 
     // ── merge (private static) ──────────────────────────────────────────

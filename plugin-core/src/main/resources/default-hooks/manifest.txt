@@ -10,8 +10,6 @@ scripts/_lib.js
 scripts/run-command-abuse.js
 scripts/run-in-terminal-abort.js
 scripts/command-reprimand.js
-scripts/enforce-gh-bot-identity.js
-scripts/generate-github-app-token.sh
 scripts/check-stale-naming.js
 run_command.json
 run_in_terminal.json

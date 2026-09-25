@@ -14,8 +14,9 @@ never sees the hook — it only sees the final result.
 ## Quick Start
 
 The plugin ships with **built-in default hooks** that are automatically provisioned when
-you first open a project (if no hook configs exist yet). These defaults include identity
-enforcement, command safety gates, and post-execution tips.
+you first open a project (if no hook configs exist yet). These defaults contain only generic
+command safety gates and post-execution quality tips. Project-specific policies such as bot
+identity enforcement must be configured separately for each project.
 
 To customize: edit the files in `<project>/.agentbridge/hooks/`.
 To reset: use **Settings → Tools → Restore Default Hooks**.
@@ -603,7 +604,7 @@ Declare them per hook entry:
 {
   "pre": [
     {
-      "script": "scripts/enforce-gh-bot-identity.js",
+      "script": "scripts/check-project-policy.js",
       "timeout": 15,
       "capabilities": ["filesystem", "subprocess"]
     }
@@ -703,10 +704,11 @@ esac
 
 ## Identity Enforcement Example
 
-A common use case is preventing the agent from posting GitHub content (PRs, comments, issues)
-as the repository owner. The built-in hooks use `AGENTBRIDGE_AGENT_NAME` — automatically set
-from the MCP `initialize` handshake — so commits and content are attributed to whichever
-agent is actually connected (Copilot, Claude Code, etc.) rather than a hardcoded name.
+A project can prevent the agent from posting GitHub content (PRs, comments, issues) as the
+repository owner by adding its own identity hooks. Such hooks can use `AGENTBRIDGE_AGENT_NAME` —
+automatically set from the MCP `initialize` handshake — so commits and content are attributed to
+whichever agent is actually connected (Copilot, Claude Code, etc.) rather than a hardcoded name.
+These hooks are examples, not plugin defaults.
 
 ### `git_commit.json` — Silent Author Fix
 
@@ -731,7 +733,7 @@ arguments. The agent never knows the author was changed.
 {
   "pre": [
     {
-      "script": "scripts/enforce-gh-bot-identity.sh",
+      "script": "scripts/enforce-agentbridge-gh-bot-identity.js",
       "failSilently": false,
       "timeout": 5
     }
@@ -880,7 +882,8 @@ If you've customized hooks and want to reset to the original bundled versions:
 
 **Settings → Tools → Restore Default Hooks**
 
-This overwrites all existing hook configs and scripts with the bundled originals.
+This restores the files managed by the bundled manifest and removes retired default filenames.
+Custom hook files outside the managed and retired lists are preserved.
 
 ## Comparison with GitHub Copilot Hooks
 

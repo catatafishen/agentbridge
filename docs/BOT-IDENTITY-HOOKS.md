@@ -1,18 +1,17 @@
-# Bot Identity Hooks
+# Project Bot Identity Hooks
 
-AgentBridge bundles `enforce-gh-bot-identity.js` as a default hook for `run_command` and
-`run_in_terminal`. Every parsed `gh` invocation — including read-only commands — receives the
-configured bot token or is blocked with a clear identity-policy error. This prevents GitHub CLI
-reads from silently falling back to the developer's personal login.
+The AgentBridge repository configures bot-identity enforcement under `.agentbridge/hooks/` for its
+own development workflow. These hooks are project-specific and are **not bundled with the plugin's
+default hooks**. Projects using AgentBridge receive only generic safety and quality hooks unless
+they add an identity policy themselves.
 
-The plugin repository also configures `enforce-http-bot-identity.js` and `enforce-commit-author.js`
-under `.agentbridge/hooks/` for its own development workflow.
+The repository hooks cover GitHub CLI commands, GitHub API writes, and commit authorship.
 
 ## What the hooks do
 
 | Hook script | Trigger | Effect |
 |-------------|---------|--------|
-| `enforce-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Bundled default: injects `GH_TOKEN=<bot token>` for every parsed `gh` command, or blocks the command when bot credentials are unavailable |
+| `enforce-agentbridge-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Repository policy: injects `GH_TOKEN=<bot token>` for every parsed `gh` command, or blocks the command when bot credentials are unavailable |
 | `enforce-http-bot-identity.js` | `http_request` pre-hook | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>` |
 | `enforce-commit-author.js` | `git_commit` pre-hook | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
 
@@ -21,13 +20,13 @@ no shell, PowerShell, or Node runtime is required, so a single `.js` file works 
 every OS and JetBrains IDE. The authentication hooks declare the host capabilities they need in
 their JSON config via a `"capabilities"` array (see [MCP-TOOL-HOOKS.md](MCP-TOOL-HOOKS.md#capabilities)):
 
-- `enforce-gh-bot-identity.js` and `enforce-http-bot-identity.js` declare
+- `enforce-agentbridge-gh-bot-identity.js` and `enforce-http-bot-identity.js` declare
   `["filesystem", "subprocess"]` — *filesystem* to read `~/.agentbridge/bot-token`, *subprocess*
-  to mint a GitHub App token via `generate-github-app-token.sh`.
+  to mint a GitHub App token via `generate-agentbridge-github-app-token.sh`.
 - `enforce-commit-author.js` declares no capabilities — it only reads the connected agent name and
   rewrites the `author` argument, both of which are core host APIs.
 
-`generate-github-app-token.sh` remains a POSIX shell helper (it needs `openssl` RS256 signing and
+`generate-agentbridge-github-app-token.sh` remains a POSIX shell helper (it needs `openssl` RS256 signing and
 `curl`); the embedded hooks invoke it through their *subprocess* capability when no static token is
 configured.
 
@@ -38,14 +37,13 @@ Token resolution (the authentication hooks try these in order):
 3. `~/.agentbridge/github-app.pem` + `~/.agentbridge/github-app-id` (GitHub App — short-lived
    tokens, preferred for security)
 
-## Configuring or disabling the default hook
+## Configuring or disabling the repository hook
 
-> **GitHub CLI calls require a configured bot token by default.** The bundled hook injects that
-> token for every parsed `gh` command and blocks the command instead of falling back to a personal
-> GitHub CLI login. To opt out locally, delete or empty `run_command.json` and
-> `run_in_terminal.json`, or remove `enforce-gh-bot-identity.js` from their `pre` hook lists.
->
-> The repository-local HTTP and commit hooks remain optional development configuration.
+> Within this repository, GitHub CLI calls require a configured bot token. The project hook injects
+> that token for every parsed `gh` command and blocks the command instead of falling back to a
+> personal GitHub CLI login. To opt out locally, remove
+> `enforce-agentbridge-gh-bot-identity.js` from the `pre` hook lists in `run_command.json` and
+> `run_in_terminal.json`. This policy does not apply to other projects using the plugin.
 
 ---
 
@@ -69,7 +67,7 @@ need a private key to generate short-lived installation tokens on your machine.
    chmod 600 ~/.agentbridge/github-app.pem
    ```
 
-4. **Test it:** run `bash .agentbridge/hooks/scripts/generate-github-app-token.sh`. It should
+4. **Test it:** run `bash .agentbridge/hooks/scripts/generate-agentbridge-github-app-token.sh`. It should
    print a `ghs_...` token to stdout.
 
 The hooks call this script automatically — no further configuration needed. GitHub App tokens are cached in `~/.agentbridge/github-app-token-cache` for 50 minutes with owner-only permissions; concurrent hooks share the cached token instead of minting one per request.
@@ -114,7 +112,7 @@ Simpler setup, no GitHub App required. The token is static (doesn't expire unles
    chmod 600 ~/.agentbridge/bot-token
    ```
 
-The `enforce-gh-bot-identity.js` and `enforce-http-bot-identity.js` hooks will pick it up
+The `enforce-agentbridge-gh-bot-identity.js` and `enforce-http-bot-identity.js` hooks will pick it up
 automatically. Note: PAT actions are attributed to your personal account, not a bot.
 
 ---

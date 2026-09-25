@@ -22,7 +22,7 @@ import java.util.Set;
  * them as "Available tools". This conflicts with the plugin's instruction that
  * agents should use AgentBridge MCP tools instead, because:
  * <ul>
- *     <li><b>Tool hooks</b> (bot identity tokens, audit trails) are bypassed
+ *     <li><b>Tool hooks</b> (project policies, audit trails) are bypassed
  *         when the agent uses native CLI tools directly.</li>
  *     <li><b>Follow-agent mode</b> (making terminal output visible to the user)
  *         does not work with native tools.</li>

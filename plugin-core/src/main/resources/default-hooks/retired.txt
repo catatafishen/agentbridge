@@ -1,0 +1,4 @@
+# Previously bundled hook files that must be removed during upgrade when they are unchanged.
+# Customized copies are preserved, but they are no longer managed or distributed by the plugin.
+scripts/enforce-gh-bot-identity.js
+scripts/generate-github-app-token.sh

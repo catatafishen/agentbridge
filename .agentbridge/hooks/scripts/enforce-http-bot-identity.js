@@ -9,7 +9,7 @@
 // than the developer's personal account.
 //
 // Token resolution (in order): AGENTBRIDGE_BOT_TOKEN env → ~/.agentbridge/bot-token file →
-// GitHub App installation token (generate-github-app-token.sh sibling helper).
+// GitHub App installation token (generate-agentbridge-github-app-token.sh sibling helper).
 //
 // Capabilities: filesystem (read token file), subprocess (mint GitHub App token).
 // Output: Hook.setArgument("auth", "bearer <token>") or Hook.error(...) when no token is configured.
@@ -31,7 +31,7 @@
     }
 
     // Resolves the bot token from env → token file → GitHub App helper. Returns null if none found.
-    // (Duplicated in enforce-gh-bot-identity.js: the shared _lib.js is a byte-identical copy of the
+    // (Duplicated in enforce-agentbridge-gh-bot-identity.js: the shared _lib.js is a byte-identical copy of the
     // bundled default and must not carry project-specific helpers, so this logic cannot live there.)
     function resolveBotToken() {
         var envToken = Hook.env('AGENTBRIDGE_BOT_TOKEN');
@@ -44,7 +44,7 @@
             if (stripped) return stripped;
         }
 
-        var genScript = Hook.hooksDir() + '/scripts/generate-github-app-token.sh';
+        var genScript = Hook.hooksDir() + '/scripts/generate-agentbridge-github-app-token.sh';
         if (Hook.exists(genScript)) {
             try {
                 var res = JSON.parse(Hook.exec(JSON.stringify(['sh', genScript])));
