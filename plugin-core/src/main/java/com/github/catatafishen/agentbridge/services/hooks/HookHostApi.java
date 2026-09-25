@@ -129,7 +129,7 @@ public final class HookHostApi {
 
     /**
      * Returns the value of an environment variable visible to the IDE process, or {@code null}.
-     * Useful for hooks that read user-provided secrets (e.g. {@code AGENTBRIDGE_BOT_TOKEN}).
+     * Useful for hooks that read user-provided secrets (e.g. {@code SERVICE_API_TOKEN}).
      */
     public @Nullable String env(@NotNull String name) {
         return System.getenv(name);

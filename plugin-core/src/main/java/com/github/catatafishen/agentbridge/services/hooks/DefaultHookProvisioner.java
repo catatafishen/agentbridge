@@ -28,8 +28,9 @@ import java.util.Map;
  *       with the new bundled version.</li>
  *   <li>If the file on disk differs from the stored hash → user has edited it → do not overwrite;
  *       show a balloon notification so the user can choose.</li>
- *   <li>If no hash file exists (old install predating this feature) → wipe and re-provision
- *       everything from scratch, then record hashes for all files written.</li>
+ *   <li>If no hash file exists (an installation predating this feature) → reset only files in
+ *       the current manifest. Retired and unknown files are preserved because ownership cannot
+ *       be established safely.</li>
  * </ul>
  *
  * <p><b>Hook scripts</b> are JavaScript ({@code scripts/*.js}) executed in-process via the
@@ -41,6 +42,7 @@ public final class DefaultHookProvisioner {
     private static final Logger LOG = Logger.getInstance(DefaultHookProvisioner.class);
     private static final String RESOURCE_BASE = "/default-hooks/";
     private static final String MANIFEST_RESOURCE = RESOURCE_BASE + "manifest.txt";
+    private static final String RETIRED_RESOURCE = RESOURCE_BASE + "retired.txt";
 
     private DefaultHookProvisioner() {
     }
@@ -60,12 +62,12 @@ public final class DefaultHookProvisioner {
         if (manifestEntries == null) return;
 
         if (!HookHashRegistry.exists(hooksDir)) {
-            // Old install: no hash history, can't detect user edits — wipe and start fresh.
+            // Ownership is unknown on old installs, so only reset files still in the current manifest.
             wipeThenProvision(hooksDir, manifestEntries);
             return;
         }
 
-        provisionWithHashCheck(project, hooksDir, manifestEntries);
+        provisionWithHashCheck(project, hooksDir, manifestEntries, readRetiredEntries());
     }
 
     /**
@@ -81,6 +83,7 @@ public final class DefaultHookProvisioner {
         List<String> manifestEntries = requireManifest();
         if (manifestEntries == null) return false;
 
+        deleteEntries(hooksDir, readRetiredEntries());
         return wipeThenProvision(hooksDir, manifestEntries);
     }
 
@@ -93,8 +96,9 @@ public final class DefaultHookProvisioner {
         return entries;
     }
 
-    private static boolean wipeThenProvision(@NotNull Path hooksDir, @NotNull List<String> manifestEntries) {
-        deleteScriptEntries(hooksDir, manifestEntries);
+    static boolean wipeThenProvision(@NotNull Path hooksDir,
+                                     @NotNull List<String> manifestEntries) {
+        deleteEntries(hooksDir, manifestEntries);
         ensureScriptsDir(hooksDir);
 
         Map<String, String> newHashes = new HashMap<>();
@@ -123,13 +127,15 @@ public final class DefaultHookProvisioner {
      */
     private static void provisionWithHashCheck(@NotNull Project project,
                                                @NotNull Path hooksDir,
-                                               @NotNull List<String> manifestEntries) {
+                                               @NotNull List<String> manifestEntries,
+                                               @NotNull List<String> retiredEntries) {
         Map<String, String> storedHashes = HookHashRegistry.load(hooksDir);
         Map<String, String> bundledHashes = HookHashRegistry.loadBundledHashes();
         Map<String, String> updatedHashes = new HashMap<>(storedHashes);
         List<HookUpdateNotifier.Conflict> conflicts = new ArrayList<>();
 
         ensureScriptsDir(hooksDir);
+        removeRetiredEntries(hooksDir, retiredEntries, storedHashes, updatedHashes);
 
         for (String entry : manifestEntries) {
             processScriptEntry(entry, hooksDir, storedHashes, bundledHashes, updatedHashes, conflicts);
@@ -170,6 +176,32 @@ public final class DefaultHookProvisioner {
             }
         }
         // else: bundledHash == storedHash but disk differs → user edited, no new version to offer.
+    }
+
+    /**
+     * Removes files that were provisioned by an older plugin version but are no longer bundled.
+     * Customized copies are preserved and released from provisioner ownership.
+     */
+    static void removeRetiredEntries(@NotNull Path hooksDir,
+                                     @NotNull List<String> retiredEntries,
+                                     @NotNull Map<String, String> storedHashes,
+                                     @NotNull Map<String, String> updatedHashes) {
+        for (String entry : retiredEntries) {
+            Path diskPath = hooksDir.resolve(entry);
+            String diskHash = HookHashRegistry.computeFileHash(diskPath);
+            String storedHash = storedHashes.get(entry);
+
+            if (diskHash == null || !diskHash.equals(storedHash)) {
+                updatedHashes.remove(entry);
+            } else {
+                try {
+                    Files.delete(diskPath);
+                    updatedHashes.remove(entry);
+                } catch (IOException e) {
+                    LOG.warn("Failed to remove retired hook file: " + entry, e);
+                }
+            }
+        }
     }
 
     /**
@@ -241,12 +273,11 @@ public final class DefaultHookProvisioner {
     }
 
     /**
-     * Deletes only the manifest-managed script entries from the hooks directory.
-     * Custom scripts placed alongside the managed ones (e.g. project-specific bot-identity
-     * hooks) are intentionally preserved — they are outside the provisioner's scope.
+     * Deletes only entries explicitly managed by the supplied resource list.
+     * Files outside that list remain untouched.
      */
-    private static void deleteScriptEntries(@NotNull Path hooksDir, @NotNull List<String> manifestEntries) {
-        for (String entry : manifestEntries) {
+    private static void deleteEntries(@NotNull Path hooksDir, @NotNull List<String> entries) {
+        for (String entry : entries) {
             Path file = hooksDir.resolve(entry);
             try {
                 Files.deleteIfExists(file);
@@ -265,10 +296,19 @@ public final class DefaultHookProvisioner {
     }
 
     private static @NotNull List<String> readManifest() {
+        return readResourceEntries(MANIFEST_RESOURCE, "default hooks manifest");
+    }
+
+    private static @NotNull List<String> readRetiredEntries() {
+        return readResourceEntries(RETIRED_RESOURCE, "retired hooks list");
+    }
+
+    private static @NotNull List<String> readResourceEntries(@NotNull String resourcePath,
+                                                             @NotNull String description) {
         List<String> entries = new ArrayList<>();
-        try (InputStream is = DefaultHookProvisioner.class.getResourceAsStream(MANIFEST_RESOURCE)) {
+        try (InputStream is = DefaultHookProvisioner.class.getResourceAsStream(resourcePath)) {
             if (is == null) {
-                LOG.warn("Default hooks manifest resource not found: " + MANIFEST_RESOURCE);
+                LOG.warn("Bundled " + description + " resource not found: " + resourcePath);
                 return entries;
             }
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
@@ -281,7 +321,7 @@ public final class DefaultHookProvisioner {
                 }
             }
         } catch (IOException e) {
-            LOG.warn("Failed to read default hooks manifest", e);
+            LOG.warn("Failed to read " + description, e);
         }
         return entries;
     }

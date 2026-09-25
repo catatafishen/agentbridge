@@ -343,7 +343,9 @@ val generateHookHashes by tasks.registering {
         fun recordHash(name: String, newHash: String) {
             currentHashes[name] = newHash
             val oldHash = existingCurrent[name]
-            val history = (existingHistory[name] ?: mutableListOf()).toMutableList()
+            val history = (existingHistory[name] ?: mutableListOf())
+                .filterNot(newHash::equals)
+                .toMutableList()
             if (oldHash != null && oldHash != newHash && !history.contains(oldHash)) {
                 history.add(0, oldHash) // most recent first
             }

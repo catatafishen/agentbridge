@@ -190,7 +190,7 @@ personal email. The commit hook enforces this automatically via `enforce-commit-
 commits to substitute a human email for AI-authored changes.
 
 **PR opener** — Pull requests created by agents must be opened using the bot identity (e.g. `agentbridge-fixer[bot]`),
-not the repository owner's personal account. Use the `GH_TOKEN` injection hook (`enforce-gh-bot-identity.js`) which
+not the repository owner's personal account. Use the `GH_TOKEN` injection hook (`enforce-agentbridge-gh-bot-identity.js`) which
 replaces the token with a short-lived bot installation token before any `gh pr create` or `gh pr comment` call. If the
 bot token is unavailable, the hook blocks the call and surfaces an error rather than silently falling back to the owner
 identity.

@@ -8,7 +8,7 @@
   ],
   "pre": [
     {
-      "script": "scripts/enforce-gh-bot-identity.js",
+      "script": "scripts/enforce-agentbridge-gh-bot-identity.js",
       "failSilently": false,
       "timeout": 15,
       "capabilities": [

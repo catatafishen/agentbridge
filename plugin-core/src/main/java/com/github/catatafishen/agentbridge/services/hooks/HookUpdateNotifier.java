@@ -65,12 +65,12 @@ public final class HookUpdateNotifier {
             Notification notification = PlatformApiCompat.createNotification(
                 "AgentBridge hook update", content, NotificationType.WARNING);
 
-            notification.addAction(buildAction("Update all (overwrite my edits)", e -> {
+            notification.addAction(buildAction("Update all (overwrite my edits)", ignored -> {
                 overwriteAll(conflicts, hashes, hooksDir);
                 notification.expire();
             }));
 
-            notification.addAction(buildAction("Keep all (skip update)", e -> {
+            notification.addAction(buildAction("Keep all (skip update)", ignored -> {
                 keepAll(conflicts, hashes, hooksDir);
                 notification.expire();
             }));
@@ -108,15 +108,13 @@ public final class HookUpdateNotifier {
         HookHashRegistry.save(hooksDir, hashes);
     }
 
-    private static void keepAll(@NotNull List<Conflict> conflicts,
-                                @NotNull Map<String, String> hashes,
-                                @NotNull Path hooksDir) {
-        // Record the current disk hash so we stop asking until the plugin ships yet another version.
+    static void keepAll(@NotNull List<Conflict> conflicts,
+                        @NotNull Map<String, String> hashes,
+                        @NotNull Path hooksDir) {
+        // Record the bundled version the user declined. The custom disk hash must remain different
+        // so the provisioner preserves it until a later plugin version offers another update.
         for (Conflict conflict : conflicts) {
-            String diskHash = HookHashRegistry.computeFileHash(conflict.diskPath());
-            if (diskHash != null) {
-                hashes.put(conflict.relativePath(), diskHash);
-            }
+            hashes.put(conflict.relativePath(), conflict.newHash());
         }
         HookHashRegistry.save(hooksDir, hashes);
         LOG.info("User chose to keep their edits for " + conflicts.size() + " hook file(s)");
