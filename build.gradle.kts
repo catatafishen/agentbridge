@@ -2,15 +2,15 @@ buildscript {
     dependencies {
         // SonarQube scanner uses SLF4J 2.x but bundles no logging provider.
         // Adding slf4j-simple makes scanner log output visible in CI.
-        classpath("org.slf4j:slf4j-simple:2.0.18")
+        classpath("org.slf4j:slf4j-simple:2.0.19")
     }
 }
 
 plugins {
     id("java")
-    id("org.sonarqube") version "7.4.0.8496"
-    id("org.jetbrains.kotlin.jvm") version "2.4.10" apply false
-    id("org.jetbrains.intellij.platform") version "2.18.1" apply false
+    id("org.sonarqube") version "7.5.0.8588"
+    id("org.jetbrains.kotlin.jvm") version "2.4.20" apply false
+    id("org.jetbrains.intellij.platform") version "2.19.0" apply false
     idea
 }
 
