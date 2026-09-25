@@ -1,11 +1,13 @@
 package com.github.catatafishen.agentbridge.psi.tools.editing;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -19,6 +21,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
+import com.intellij.psi.codeStyle.CodeStyleManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -61,15 +64,30 @@ public abstract class EditingTool extends Tool {
 
     protected boolean formatImmediately(VirtualFile vf) {
         try {
-            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project, "Format Replaced Symbol", null, () -> {
-                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                if (psiFile == null) {
-                    throw new IllegalStateException("Cannot format unresolved file: " + vf.getPath());
-                }
-                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(psiFile);
-                PsiDocumentManager.getInstance(project).commitAllDocuments();
-                FileDocumentManager.getInstance().saveAllDocuments();
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (psiFile == null) {
+                throw new IllegalStateException("Cannot format unresolved file: " + vf.getPath());
+            }
+            Document document = FileDocumentManager.getInstance().getDocument(vf);
+            if (document == null) {
+                throw new IllegalStateException(ERROR_CANNOT_OPEN_DOC + vf.getPath());
+            }
+            PsiDocumentManager documentManager = PsiDocumentManager.getInstance(project);
+
+            // Reformatting can postpone PSI changes; unblock before save listeners modify the document.
+            WriteCommandAction.runWriteCommandAction(
+                project, "Format Replaced Symbol", null, () -> {
+                    CodeStyleManager.getInstance(project).reformat(psiFile);
+                    documentManager.doPostponedOperationsAndUnblockDocument(document);
+                    documentManager.commitDocument(document);
+                });
+
+            PlatformApiCompat.optimizeImports(project, psiFile);
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                documentManager.doPostponedOperationsAndUnblockDocument(document);
+                documentManager.commitDocument(document);
             });
+            FileDocumentManager.getInstance().saveDocument(document);
             return true;
         } catch (RuntimeException e) {
             LOG.warn("Failed to format replaced symbol", e);
