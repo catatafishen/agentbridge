@@ -74,6 +74,23 @@ class ChatToolWindowContent(
         }
     }
 
+    /**
+     * True if a context chip for [path] is already present in the prompt — used by
+     * editor context-menu attach actions to mirror [PromptContextManager.handleAddCurrentFile]'s
+     * duplicate guard. Returns false when the chat session (and thus the prompt editor)
+     * has not been created yet.
+     *
+     * For selection chips, pass the selection's line range: the check then matches only
+     * the exact path + range combination, so attaching a second, different selection from
+     * the same file stays allowed while attaching the identical range twice is deduplicated.
+     */
+    fun hasContextChipFor(path: String, startLine: Int = 0, endLine: Int = 0): Boolean {
+        if (!::contextManager.isInitialized) return false
+        return contextManager.collectInlineContextItems().any {
+            it.path == path && (!it.isSelection || (it.startLine == startLine && it.endLine == endLine))
+        }
+    }
+
     private val cardLayout = CardLayout()
     private val mainPanel = JBPanel<JBPanel<*>>(cardLayout)
 
