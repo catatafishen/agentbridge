@@ -420,6 +420,19 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
             description="Stop the currently running agent session">
       <keyboard-shortcut keymap="$default" first-keystroke="ESCAPE"/>
     </action>
+    <group id="AgentBridge.Editor.Menu" popup="true" text="AgentBridge"
+           description="Send the selected code to the AgentBridge chat"
+           icon="/icons/expui/agentbridge.svg">
+      <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+      <action id="AgentBridge.Editor.AttachSelection"
+              class="com.github.catatafishen.agentbridge.ui.AttachSelectionToChatAction"
+              text="Add Selection"
+              description="Attach the selected code to the AgentBridge chat prompt as a context chip"/>
+      <action id="AgentBridge.Editor.AttachFile"
+              class="com.github.catatafishen.agentbridge.ui.AttachFileToChatAction"
+              text="Add File"
+              description="Attach the whole file to the AgentBridge chat prompt as a context chip"/>
+    </group>
     <action id="AgentBridge.Review.RevertAgentEdits"
             class="com.github.catatafishen.agentbridge.psi.review.RevertAgentEditsAction"
             text="Revert Agent Edits"
