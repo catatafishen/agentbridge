@@ -177,9 +177,11 @@
                 continue;
             }
             if (COMMAND_PREFIXES[name]) continue;
-            if (name === 'unset') {
+            if (name === 'export' || name === 'unset') {
                 for (var j = i + 1; j < tokens.length; j++) {
-                    if (!tokens[j].op && tokens[j].text === 'GH_TOKEN') return true;
+                    if (tokens[j].op) continue;
+                    if (name === 'export' && /^GH_TOKEN=/.test(tokens[j].text)) return true;
+                    if (name === 'unset' && tokens[j].text === 'GH_TOKEN') return true;
                 }
             }
             return false;

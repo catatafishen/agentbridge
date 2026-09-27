@@ -33,17 +33,13 @@ class RepositoryBotIdentityHookTest {
     @ValueSource(strings = {
         "bash .agents/skills/pr-review/pr-ci.sh 1084",
         "sh ./.agents/skills/pr-review/pr-threads.sh 1084",
-        ".agents/skills/pr-review/pr-issues.sh view 1085"
+        ".agents/skills/pr-review/pr-issues.sh view 1085",
+        "gh issue view 1085",
+        "gh issue comment 1085 --body \"GH_TOKEN=example\"",
+        "gh issue comment 1085 --body \"env -u GH_TOKEN\""
     })
-    void trustedPrHelperReceivesBotToken(String command, @TempDir Path dir) throws IOException {
+    void githubCommandsReceiveBotToken(String command, @TempDir Path dir) throws IOException {
         String json = runHook(dir, "run_command", command);
-
-        assertTrue(json.contains("\"_env.GH_TOKEN\":\"" + TEST_TOKEN + "\""), json);
-    }
-
-    @Test
-    void directGitHubCliStillReceivesBotToken(@TempDir Path dir) throws IOException {
-        String json = runHook(dir, "run_command", "gh issue view 1085");
 
         assertTrue(json.contains("\"_env.GH_TOKEN\":\"" + TEST_TOKEN + "\""), json);
     }
@@ -67,6 +63,8 @@ class RepositoryBotIdentityHookTest {
         "FOO=1 GH_TOKEN=personal gh issue view 1085",
         "FOO=1 GH_TOKEN=personal bash .agents/skills/pr-review/pr-ci.sh 1084",
         "FOO=1 GH_TOKEN=personal .agents/skills/pr-review/pr-threads.sh 1084",
+        "GH_TOKEN=personal; gh issue view 1085",
+        "export GH_TOKEN=personal; gh issue view 1085",
         "env -u GH_TOKEN gh issue view 1085",
         "env -uGH_TOKEN gh issue view 1085"
     })
@@ -74,17 +72,6 @@ class RepositoryBotIdentityHookTest {
         String json = runHook(dir, "run_command", command);
 
         assertTrue(json.contains("GH_TOKEN must not be overridden"), json);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {
-        "gh issue comment 1085 --body \"GH_TOKEN=example\"",
-        "gh issue comment 1085 --body \"env -u GH_TOKEN\""
-    })
-    void githubCommandArgumentsCanMentionTokenOperations(String command, @TempDir Path dir) throws IOException {
-        String json = runHook(dir, "run_command", command);
-
-        assertTrue(json.contains("\"_env.GH_TOKEN\":\"" + TEST_TOKEN + "\""), json);
     }
 
     private static String runHook(Path dir, String tool, String command) throws IOException {
