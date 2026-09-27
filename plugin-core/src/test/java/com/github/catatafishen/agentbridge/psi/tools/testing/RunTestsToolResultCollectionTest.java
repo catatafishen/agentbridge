@@ -31,11 +31,11 @@ class RunTestsToolResultCollectionTest {
     }
 
     @Test
-    void failedGradleRunUsesCurrentCapturedOutputWithoutReadingStaleStructuredResults() {
+    void failedRunUsesCurrentCapturedOutputWithoutReadingStaleStructuredResults() {
         java.util.concurrent.atomic.AtomicBoolean structuredRead =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        String output = RunTestsTool.selectGradleTestOutput(1, () -> {
+        String output = RunTestsTool.selectTestOutput(1, () -> {
             structuredRead.set(true);
             return "Test Results: 29 tests, 29 passed";
         }, "current run failed to compile");
@@ -46,8 +46,8 @@ class RunTestsToolResultCollectionTest {
     }
 
     @Test
-    void successfulGradleRunStillPrefersStructuredResults() {
-        String output = RunTestsTool.selectGradleTestOutput(0,
+    void successfulRunStillPrefersStructuredResults() {
+        String output = RunTestsTool.selectTestOutput(0,
             () -> "Test Results: 2 tests, 2 passed", "current console output");
 
         assertTrue(output.startsWith("Test Results: 2 tests, 2 passed"));

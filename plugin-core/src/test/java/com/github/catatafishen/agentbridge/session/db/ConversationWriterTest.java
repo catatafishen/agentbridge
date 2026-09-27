@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -412,6 +413,99 @@ class ConversationWriterTest {
             assertTrue(rs.next());
             assertEquals(0, rs.getInt(1));
             assertEquals("timeout expired", rs.getString(2));
+        }
+    }
+
+    @Test
+    void enrichToolCallStatsWaitsForDelayedToolCallRow() throws Exception {
+        writer.enrichToolCallStats(new ToolCallStatsEnrichment(
+            "ev-delayed-stats", 512, 2048, 275, true, null, "file", "Read File", "1.2.3", "a.txt"));
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("agentbridge-read_file", null, "fs", null, null, null, null,
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-delayed-stats")
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery("""
+                 SELECT input_size_bytes, output_size_bytes, duration_ms, success, category,
+                        display_name, plugin_version, file_path, is_mcp
+                 FROM tool_call_events WHERE event_id = 'ev-delayed-stats'
+                 """)) {
+            assertTrue(rs.next());
+            assertEquals(512, rs.getLong(1));
+            assertEquals(2048, rs.getLong(2));
+            assertEquals(275, rs.getLong(3));
+            assertEquals(1, rs.getInt(4));
+            assertEquals("file", rs.getString(5));
+            assertEquals("Read File", rs.getString(6));
+            assertEquals("1.2.3", rs.getString(7));
+            assertEquals("a.txt", rs.getString(8));
+            assertEquals(1, rs.getInt(9));
+        }
+    }
+
+    @Test
+    void pendingToolCallStatsEvictTheOldestMissingParent() throws Exception {
+        for (int i = 0; i <= ConversationWriter.MAX_PENDING_TOOL_STATS; i++) {
+            long measuredValue = i + 1L;
+            writer.enrichToolCallStats(new ToolCallStatsEnrichment(
+                "ev-stats-" + i, measuredValue, measuredValue, measuredValue,
+                true, null, null, null, null, null));
+        }
+        String newestEventId = "ev-stats-" + ConversationWriter.MAX_PENDING_TOOL_STATS;
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("read_file", null, "file", null, null, null, null,
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-stats-0"),
+            new EntryData.ToolCall("read_file", null, "file", null, null, null, null,
+                false, null, null, "2026-01-01T10:00:02Z", "", "", newestEventId)
+        ));
+
+        try (PreparedStatement ps = conn.prepareStatement("""
+            SELECT event_id, input_size_bytes FROM tool_call_events
+            WHERE event_id IN (?, ?) ORDER BY event_id
+            """)) {
+            ps.setString(1, "ev-stats-0");
+            ps.setString(2, newestEventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals("ev-stats-0", rs.getString(1));
+                assertEquals(0, rs.getLong(2), "The oldest orphaned pending stats should be evicted");
+                assertTrue(rs.next());
+                assertEquals(newestEventId, rs.getString(1));
+                assertEquals(ConversationWriter.MAX_PENDING_TOOL_STATS + 1L, rs.getLong(2));
+            }
+        }
+    }
+
+    @Test
+    void closeClearsAndRejectsPendingToolCallStats() throws Exception {
+        writer.enrichToolCallStats(new ToolCallStatsEnrichment(
+            "ev-stats-before-close", 1, 1, 1, true, null, null, null, null, null));
+        writer.close();
+        writer.enrichToolCallStats(new ToolCallStatsEnrichment(
+            "ev-stats-after-close", 2, 2, 2, true, null, null, null, null, null));
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("read_file", null, "file", null, null, null, null,
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-stats-before-close"),
+            new EntryData.ToolCall("read_file", null, "file", null, null, null, null,
+                false, null, null, "2026-01-01T10:00:02Z", "", "", "ev-stats-after-close")
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery("""
+                 SELECT input_size_bytes FROM tool_call_events
+                 WHERE event_id IN ('ev-stats-before-close', 'ev-stats-after-close')
+                 """)) {
+            assertTrue(rs.next());
+            assertEquals(0, rs.getLong(1));
+            assertTrue(rs.next());
+            assertEquals(0, rs.getLong(1));
         }
     }
 

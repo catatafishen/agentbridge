@@ -723,8 +723,8 @@ public final class RunTestsTool extends TestingTool {
         int exitCode = awaitProcessTermination(handler);
         if (exitCode == Integer.MIN_VALUE) return "Tests timed out after " + timeoutSec + " seconds: " + configName;
 
-        String testOutput = TestResultFormatter.withConsoleFallback(
-            collectTestRunOutput(configName), tracker.capturedOutput());
+        String testOutput = selectTestOutput(
+            exitCode, () -> collectTestRunOutput(configName), tracker.capturedOutput());
         return formatTestSummary(exitCode, configName, testOutput);
     }
 
@@ -763,12 +763,12 @@ public final class RunTestsTool extends TestingTool {
             if (shouldUseXmlResults(exitCode, xmlResults)) return xmlResults;
         }
 
-        String testOutput = selectGradleTestOutput(
+        String testOutput = selectTestOutput(
             exitCode, () -> collectTestRunOutput(configName), tracker.capturedOutput());
         return formatTestSummary(exitCode, configName, testOutput);
     }
 
-    static @NotNull String selectGradleTestOutput(
+    static @NotNull String selectTestOutput(
         int exitCode,
         @NotNull java.util.function.Supplier<String> structuredOutput,
         @NotNull String capturedOutput

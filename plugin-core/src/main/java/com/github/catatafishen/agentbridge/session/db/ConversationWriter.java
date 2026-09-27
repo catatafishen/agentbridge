@@ -57,6 +57,7 @@ public final class ConversationWriter implements AutoCloseable {
 
     static final int MAX_PENDING_HOOK_EVENTS = 256;
     static final int MAX_PENDING_HOOK_STAGES_PER_EVENT = 32;
+    static final int MAX_PENDING_TOOL_STATS = 256;
 
     private static final String INSERT_CONTEXT_FILE_SQL =
         "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) VALUES (?, ?, ?, ?)";
@@ -67,9 +68,10 @@ public final class ConversationWriter implements AutoCloseable {
      * Per-session cursor: tracks the most recently opened turn for sequencing.
      */
     private final Map<String, SessionCursor> cursors = new HashMap<>();
-    // MCP completion can arrive before the ACP tool-call entry is committed. Insertion order
+    // MCP metadata can arrive before the ACP tool-call entry is committed. Insertion order
     // supports deterministic eviction when orphaned parent IDs never reach the database.
     private final Map<String, List<HookStageResult>> pendingHookStages = new LinkedHashMap<>();
+    private final Map<String, ToolCallStatsEnrichment> pendingToolCallStats = new LinkedHashMap<>();
     private boolean closed;
 
     public ConversationWriter(@NotNull ConversationDatabase database) {
@@ -101,6 +103,7 @@ public final class ConversationWriter implements AutoCloseable {
             }
             try {
                 writeEntriesInTransaction(conn, sessionId, agentName, clientId, entries);
+                flushPendingToolCallStats(conn, entries);
                 flushPendingHookStages(conn, entries);
                 return true;
             } catch (SQLException e) {
@@ -640,37 +643,62 @@ public final class ConversationWriter implements AutoCloseable {
 
     public void enrichToolCallStats(@NotNull ToolCallStatsEnrichment stats) {
         synchronized (database) {
+            if (closed) return;
             Connection conn = database.getConnection();
             if (conn == null) return;
-            try (PreparedStatement ps = conn.prepareStatement("""
-                UPDATE tool_call_events SET
-                    input_size_bytes  = ?,
-                    output_size_bytes = ?,
-                    duration_ms       = ?,
-                    success           = ?,
-                    error_message     = COALESCE(?, error_message),
-                    category          = COALESCE(?, category),
-                    display_name      = COALESCE(?, display_name),
-                    plugin_version    = COALESCE(?, plugin_version),
-                    file_path         = COALESCE(?, file_path),
-                    is_mcp            = 1
-                WHERE event_id = ?
-                """)) {
-                ps.setLong(1, stats.inputSizeBytes());
-                ps.setLong(2, stats.outputSizeBytes());
-                ps.setLong(3, stats.durationMs());
-                ps.setInt(4, stats.success() ? 1 : 0);
-                ps.setString(5, stats.errorMessage());
-                ps.setString(6, stats.category());
-                ps.setString(7, stats.displayName());
-                ps.setString(8, stats.pluginVersion());
-                ps.setString(9, stats.filePath());
-                ps.setString(10, stats.dbEventId());
-                ps.executeUpdate();
+            try {
+                if (!applyToolCallStats(conn, stats)) {
+                    bufferPendingToolCallStats(stats);
+                }
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to enrich stats for event " + stats.dbEventId(), e);
             }
         }
+    }
+
+    private static boolean applyToolCallStats(
+        @NotNull Connection conn,
+        @NotNull ToolCallStatsEnrichment stats
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            UPDATE tool_call_events SET
+                input_size_bytes  = ?,
+                output_size_bytes = ?,
+                duration_ms       = ?,
+                success           = ?,
+                error_message     = COALESCE(?, error_message),
+                category          = COALESCE(?, category),
+                display_name      = COALESCE(?, display_name),
+                plugin_version    = COALESCE(?, plugin_version),
+                file_path         = COALESCE(?, file_path),
+                is_mcp            = 1
+            WHERE event_id = ?
+            """)) {
+            ps.setLong(1, stats.inputSizeBytes());
+            ps.setLong(2, stats.outputSizeBytes());
+            ps.setLong(3, stats.durationMs());
+            ps.setInt(4, stats.success() ? 1 : 0);
+            ps.setString(5, stats.errorMessage());
+            ps.setString(6, stats.category());
+            ps.setString(7, stats.displayName());
+            ps.setString(8, stats.pluginVersion());
+            ps.setString(9, stats.filePath());
+            ps.setString(10, stats.dbEventId());
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    private void bufferPendingToolCallStats(@NotNull ToolCallStatsEnrichment stats) {
+        String eventId = stats.dbEventId();
+        if (!pendingToolCallStats.containsKey(eventId)
+            && pendingToolCallStats.size() >= MAX_PENDING_TOOL_STATS) {
+            Iterator<String> oldest = pendingToolCallStats.keySet().iterator();
+            if (oldest.hasNext()) {
+                oldest.next();
+                oldest.remove();
+            }
+        }
+        pendingToolCallStats.put(eventId, stats);
     }
 
     public void markToolCallNonMcp(@NotNull String eventId) {
@@ -838,6 +866,25 @@ public final class ConversationWriter implements AutoCloseable {
         }
     }
 
+    private void flushPendingToolCallStats(
+        @NotNull Connection conn,
+        @NotNull List<EntryData> entries
+    ) {
+        for (EntryData entry : entries) {
+            if (!(entry instanceof EntryData.ToolCall toolCall)) continue;
+            String eventId = toolCall.getEntryId();
+            ToolCallStatsEnrichment stats = pendingToolCallStats.get(eventId);
+            if (stats == null) continue;
+            try {
+                if (applyToolCallStats(conn, stats)) {
+                    pendingToolCallStats.remove(eventId);
+                }
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to flush pending stats for " + eventId, e);
+            }
+        }
+    }
+
     private static boolean toolCallEventExists(
         @NotNull Connection conn,
         @NotNull String eventId
@@ -967,6 +1014,7 @@ public final class ConversationWriter implements AutoCloseable {
         synchronized (database) {
             closed = true;
             pendingHookStages.clear();
+            pendingToolCallStats.clear();
             cursors.clear();
         }
     }
