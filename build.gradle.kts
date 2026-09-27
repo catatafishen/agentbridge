@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+
 buildscript {
     dependencies {
         // SonarQube scanner uses SLF4J 2.x but bundles no logging provider.
@@ -178,6 +181,10 @@ subprojects {
     tasks.withType<JavaCompile> {
         options.encoding = "UTF-8"
         options.compilerArgs.add("-parameters")
+    }
+
+    tasks.withType<KotlinJvmCompile> {
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
     }
 
     tasks.withType<Test> {

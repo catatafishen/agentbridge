@@ -14,7 +14,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,9 +51,12 @@ import java.util.Map;
  * never propagate, mirroring the JSONL writer's behaviour. The writer is
  * thread-safe — every public entry point synchronises on the connection.
  */
-public final class ConversationWriter {
+public final class ConversationWriter implements AutoCloseable {
 
     private static final Logger LOG = Logger.getInstance(ConversationWriter.class);
+
+    static final int MAX_PENDING_HOOK_EVENTS = 256;
+    static final int MAX_PENDING_HOOK_STAGES_PER_EVENT = 32;
 
     private static final String INSERT_CONTEXT_FILE_SQL =
         "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) VALUES (?, ?, ?, ?)";
@@ -61,8 +67,10 @@ public final class ConversationWriter {
      * Per-session cursor: tracks the most recently opened turn for sequencing.
      */
     private final Map<String, SessionCursor> cursors = new HashMap<>();
-    // MCP completion can arrive before the ACP tool-call entry is committed.
-    private final Map<String, List<HookStageResult>> pendingHookStages = new HashMap<>();
+    // MCP completion can arrive before the ACP tool-call entry is committed. Insertion order
+    // supports deterministic eviction when orphaned parent IDs never reach the database.
+    private final Map<String, List<HookStageResult>> pendingHookStages = new LinkedHashMap<>();
+    private boolean closed;
 
     public ConversationWriter(@NotNull ConversationDatabase database) {
         this.database = database;
@@ -776,19 +784,38 @@ public final class ConversationWriter {
         @NotNull List<HookStageResult> stages
     ) {
         synchronized (database) {
-            if (stages.isEmpty()) return;
+            if (closed || stages.isEmpty()) return;
             Connection conn = database.getConnection();
             if (conn == null) return;
             try {
                 if (!toolCallEventExists(conn, toolEventId)) {
-                    pendingHookStages.computeIfAbsent(toolEventId, ignored -> new java.util.ArrayList<>())
-                        .addAll(stages);
+                    bufferPendingHookStages(toolEventId, stages);
                     return;
                 }
                 insertHookStages(conn, toolEventId, stages);
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record hook stages for " + toolEventId, e);
             }
+        }
+    }
+
+    private void bufferPendingHookStages(@NotNull String toolEventId,
+                                         @NotNull List<HookStageResult> stages) {
+        List<HookStageResult> pending = pendingHookStages.get(toolEventId);
+        if (pending == null) {
+            if (pendingHookStages.size() >= MAX_PENDING_HOOK_EVENTS) {
+                Iterator<String> oldest = pendingHookStages.keySet().iterator();
+                if (oldest.hasNext()) {
+                    oldest.next();
+                    oldest.remove();
+                }
+            }
+            pending = new ArrayList<>();
+            pendingHookStages.put(toolEventId, pending);
+        }
+        int remaining = MAX_PENDING_HOOK_STAGES_PER_EVENT - pending.size();
+        if (remaining > 0) {
+            pending.addAll(stages.subList(0, Math.min(remaining, stages.size())));
         }
     }
 
@@ -800,12 +827,13 @@ public final class ConversationWriter {
             if (!(entry instanceof EntryData.ToolCall toolCall)) continue;
             String eventId = toolCall.getEntryId();
             List<HookStageResult> stages = pendingHookStages.get(eventId);
-            if (stages == null) continue;
-            try {
-                insertHookStages(conn, eventId, stages);
-                pendingHookStages.remove(eventId);
-            } catch (SQLException e) {
-                LOG.warn("ConversationWriter: failed to flush pending hook stages for " + eventId, e);
+            if (stages != null) {
+                try {
+                    insertHookStages(conn, eventId, stages);
+                    pendingHookStages.remove(eventId);
+                } catch (SQLException e) {
+                    LOG.warn("ConversationWriter: failed to flush pending hook stages for " + eventId, e);
+                }
             }
         }
     }
@@ -931,6 +959,15 @@ public final class ConversationWriter {
 
         int nextSequence() {
             return sequenceNum++;
+        }
+    }
+
+    @Override
+    public void close() {
+        synchronized (database) {
+            closed = true;
+            pendingHookStages.clear();
+            cursors.clear();
         }
     }
 

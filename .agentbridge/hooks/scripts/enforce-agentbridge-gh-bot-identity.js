@@ -27,7 +27,7 @@
     var requiresBotIdentity = invokesGitHubCli(command) || invokesTrustedProjectHelper(command);
     if (!requiresBotIdentity) return;
 
-    if (/(?:^|[;&|]\s*)(?:GH_TOKEN\s*=|env(?:\s+-\S+)*\s+(?:-u\s+GH_TOKEN\b|GH_TOKEN\s*=))/.test(command)) {
+    if (overridesGitHubToken(command)) {
         Hook.error("Identity policy: GH_TOKEN must not be overridden or removed for GitHub CLI commands.");
         return;
     }
@@ -55,7 +55,7 @@
     }
 
     function invokesGitHubCli(value) {
-        var calls = parseCommands(value);
+        var calls = parsePolicyCommands(value);
         for (var i = 0; i < calls.length; i++) {
             if (calls[i].name === 'gh') return true;
         }
@@ -68,16 +68,123 @@
             '.agents/skills/pr-review/pr-issues.sh': true,
             '.agents/skills/pr-review/pr-threads.sh': true
         };
-        var calls = parseCommands(value);
+        var calls = parsePolicyCommands(value);
         for (var i = 0; i < calls.length; i++) {
             var call = calls[i];
-            if (call.name !== 'bash' && call.name !== 'sh') continue;
-            for (var j = 0; j < call.argv.length; j++) {
-                var path = call.argv[j].replace(/\\/g, '/').replace(/^\.\//, '');
-                if (trustedScripts[path]) return true;
+            if (isTrustedScript(call.executable, trustedScripts)) return true;
+            if (call.name === 'bash' || call.name === 'sh') {
+                for (var j = 0; j < call.argv.length; j++) {
+                    if (isTrustedScript(call.argv[j], trustedScripts)) return true;
+                }
             }
         }
-        return /(?:^|[;&|]\s*)(?:\.\/)?\.agents\/skills\/pr-review\/(?:pr-ci|pr-issues|pr-threads)\.sh(?:\s|$)/.test(value);
+        return false;
+    }
+
+    function parsePolicyCommands(value) {
+        var segments = shellSegments(value);
+        var calls = [];
+        for (var i = 0; i < segments.length; i++) calls.push(parsePolicySegment(segments[i]));
+        return calls;
+    }
+
+    function parsePolicySegment(tokens) {
+        for (var i = 0; i < tokens.length; i++) {
+            var token = tokens[i];
+            if (token.op) {
+                i++;
+                continue;
+            }
+            if (GROUPING_TOKENS[token.text] || SHELL_CONTROL_KEYWORDS[token.text]) continue;
+            if (!token.quoted && ASSIGNMENT_RE.test(token.text)) continue;
+            var name = baseCommandName(token.text);
+            if (name === 'env') {
+                i = skipEnvOptions(tokens, i + 1) - 1;
+                continue;
+            }
+            if (COMMAND_PREFIXES[name]) continue;
+            var argv = [];
+            for (var j = i + 1; j < tokens.length; j++) {
+                if (!tokens[j].op) argv.push(tokens[j].text);
+                else j++;
+            }
+            return {name: name, executable: token.text, argv: argv};
+        }
+        return {name: '', executable: '', argv: []};
+    }
+
+    function skipEnvOptions(tokens, start) {
+        return inspectEnvOptions(tokens, start).next;
+    }
+
+    function inspectEnvOptions(tokens, start) {
+        var i = start;
+        while (i < tokens.length) {
+            var text = tokens[i].text;
+            if (ASSIGNMENT_RE.test(text)) {
+                if (/^GH_TOKEN=/.test(text)) return {next: i + 1, overrides: true};
+                i++;
+            } else if (text === '-u' || text === '--unset') {
+                if (i + 1 < tokens.length && tokens[i + 1].text === 'GH_TOKEN') {
+                    return {next: i + 2, overrides: true};
+                }
+                i += 2;
+            } else if (text === '-uGH_TOKEN' || text === '--unset=GH_TOKEN') {
+                return {next: i + 1, overrides: true};
+            } else if (text === '-C' || text === '--chdir'
+                || text === '-S' || text === '--split-string') {
+                i += 2;
+            } else if (text.charAt(0) === '-') {
+                i++;
+            } else {
+                break;
+            }
+        }
+        return {next: i, overrides: false};
+    }
+
+    function isTrustedScript(value, trustedScripts) {
+        var path = value.replace(/\\/g, '/').replace(/^\.\//, '');
+        return trustedScripts[path] === true;
+    }
+
+    function overridesGitHubToken(value) {
+        var segments = shellSegments(value);
+        for (var i = 0; i < segments.length; i++) {
+            if (segmentOverridesGitHubToken(segments[i])) return true;
+        }
+        return false;
+    }
+
+    function segmentOverridesGitHubToken(tokens) {
+        for (var i = 0; i < tokens.length; i++) {
+            var token = tokens[i];
+            if (token.op) {
+                i++;
+                continue;
+            }
+            if (GROUPING_TOKENS[token.text] || SHELL_CONTROL_KEYWORDS[token.text]) continue;
+            if (!token.quoted && ASSIGNMENT_RE.test(token.text)) {
+                if (/^GH_TOKEN=/.test(token.text)) return true;
+                continue;
+            }
+
+            var name = baseCommandName(token.text);
+            if (name === 'env') {
+                var envOptions = inspectEnvOptions(tokens, i + 1);
+                if (envOptions.overrides) return true;
+                i = envOptions.next - 1;
+                continue;
+            }
+            if (COMMAND_PREFIXES[name]) continue;
+            if (name === 'unset') {
+                for (var j = i + 1; j < tokens.length; j++) {
+                    if (!tokens[j].op && tokens[j].text === 'GH_TOKEN') return true;
+                }
+            }
+            return false;
+        }
+        return false;
     }
 
     // Resolves the bot token from env → token file → GitHub App helper. Returns null if none found.

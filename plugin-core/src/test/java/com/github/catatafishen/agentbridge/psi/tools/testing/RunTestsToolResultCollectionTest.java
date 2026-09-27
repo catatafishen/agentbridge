@@ -31,6 +31,29 @@ class RunTestsToolResultCollectionTest {
     }
 
     @Test
+    void failedGradleRunUsesCurrentCapturedOutputWithoutReadingStaleStructuredResults() {
+        java.util.concurrent.atomic.AtomicBoolean structuredRead =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        String output = RunTestsTool.selectGradleTestOutput(1, () -> {
+            structuredRead.set(true);
+            return "Test Results: 29 tests, 29 passed";
+        }, "current run failed to compile");
+
+        assertTrue(output.contains("current run failed to compile"));
+        assertFalse(output.contains("29 tests, 29 passed"));
+        assertFalse(structuredRead.get());
+    }
+
+    @Test
+    void successfulGradleRunStillPrefersStructuredResults() {
+        String output = RunTestsTool.selectGradleTestOutput(0,
+            () -> "Test Results: 2 tests, 2 passed", "current console output");
+
+        assertTrue(output.startsWith("Test Results: 2 tests, 2 passed"));
+    }
+
+    @Test
     void lifecycleTasksAreNotSelectedAsCustomTestTasks() {
         assertFalse(RunTestsTool.isCustomTestTask("test", true));
         assertFalse(RunTestsTool.isCustomTestTask("check", true));

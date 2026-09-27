@@ -45,6 +45,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     private static final String PARAM_UNTIL = "until";
     private static final String PARAM_OFFSET = "offset";
     private static final String PARAM_MAX_CHARS = "max_chars";
+    static final int MAX_LINES = 10_000;
     private static final int MAX_PAGE_CHARS = 12_000;
 
     // Matches: 2026-03-22 16:58:04,345 [  49065]   INFO - #com.example.Foo - message
@@ -116,7 +117,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        JsonObject result = schema(
             Param.optional(PARAM_FILTER, TYPE_STRING,
                 "Case-insensitive regex. Use | for OR: \"ToolCallTracker|git_diff\""),
             Param.optional(PARAM_SINCE, TYPE_STRING,
@@ -126,18 +127,33 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             Param.optional(PARAM_LEVEL, TYPE_STRING,
                 "Filter by level: INFO, WARN, ERROR (comma-separated). Default: all levels."),
             Param.optional(PARAM_LINES, TYPE_INTEGER,
-                "Max matching entries to retain from the end (default: 200)."),
+                "Max matching entries to retain from the end (default: 200, maximum: " + MAX_LINES + ")."),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER,
                 "Character offset into the compact result (default: 0). Use the next offset from a paginated response to continue"),
             Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER,
                 "Maximum log-content characters per page (default and maximum: " + MAX_PAGE_CHARS + ")")
         );
+        JsonObject linesSchema = result.getAsJsonObject("properties").getAsJsonObject(PARAM_LINES);
+        linesSchema.addProperty("minimum", 1);
+        linesSchema.addProperty("maximum", MAX_LINES);
+        return result;
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws IOException {
-        int maxLines = args.has(PARAM_LINES) ? args.get(PARAM_LINES).getAsInt() : 200;
-        if (maxLines <= 0) return "Error: lines must be greater than zero.";
+        int maxLines = 200;
+        if (args.has(PARAM_LINES)) {
+            long requestedLines;
+            try {
+                requestedLines = args.get(PARAM_LINES).getAsLong();
+            } catch (RuntimeException e) {
+                return "Error: lines must be between 1 and " + MAX_LINES + ".";
+            }
+            if (requestedLines < 1 || requestedLines > MAX_LINES) {
+                return "Error: lines must be between 1 and " + MAX_LINES + ".";
+            }
+            maxLines = (int) requestedLines;
+        }
 
         ToolResultPaginator.PageRequest pageRequest;
         try {

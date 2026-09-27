@@ -229,10 +229,31 @@ class ReadIdeLogToolTest {
     }
 
     @Test
-    @DisplayName("schema exposes character pagination parameters")
-    void schemaExposesPaginationParameters() {
+    @DisplayName("lines accepts the minimum and configured maximum")
+    void linesAcceptsBoundaries() throws IOException {
+        Files.writeString(logFile,
+            logLine("10:00:00", "INFO", "com.Foo", "first") + "\n" +
+                logLine("10:00:01", "INFO", "com.Foo", "last") + "\n");
+
+        String minimum = execute(args("lines", "1"));
+        String maximum = execute(args("lines", String.valueOf(ReadIdeLogTool.MAX_LINES)));
+
+        assertFalse(minimum.contains("first"), minimum);
+        assertTrue(minimum.contains("last"), minimum);
+        assertTrue(maximum.contains("first"), maximum);
+        assertTrue(maximum.contains("last"), maximum);
+    }
+
+    @Test
+    @DisplayName("schema exposes line limit and character pagination parameters")
+    void schemaExposesLimitsAndPaginationParameters() {
         JsonObject properties = tool.inputSchema().getAsJsonObject("properties");
 
+        JsonObject lines = properties.getAsJsonObject("lines");
+        assertTrue(lines.get("description").getAsString()
+            .contains("maximum: " + ReadIdeLogTool.MAX_LINES));
+        assertEquals(1, lines.get("minimum").getAsInt());
+        assertEquals(ReadIdeLogTool.MAX_LINES, lines.get("maximum").getAsInt());
         assertTrue(properties.has("offset"));
         assertTrue(properties.has("max_chars"));
     }
@@ -277,7 +298,11 @@ class ReadIdeLogToolTest {
 
         assertEquals("Error: offset must be zero or greater.", execute(args("offset", "-1")));
         assertEquals("Error: max_chars must be between 1 and 12000.", execute(args("max_chars", "12001")));
-        assertEquals("Error: lines must be greater than zero.", execute(args("lines", "0")));
+        assertEquals("Error: lines must be between 1 and 10000.", execute(args("lines", "0")));
+        assertEquals("Error: lines must be between 1 and 10000.",
+            execute(args("lines", String.valueOf(ReadIdeLogTool.MAX_LINES + 1))));
+        assertEquals("Error: lines must be between 1 and 10000.",
+            execute(args("lines", String.valueOf(Long.MAX_VALUE))));
     }
 
     // ── Multi-line entries ────────────────────────────────────────────────────

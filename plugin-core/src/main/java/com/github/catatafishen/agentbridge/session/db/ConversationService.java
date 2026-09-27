@@ -567,6 +567,10 @@ public final class ConversationService implements Disposable {
     @Override
     public void dispose() {
         awaitPendingSave(3_000);
+        ConversationWriter writer = conversationWriter;
+        if (writer != null) {
+            writer.close();
+        }
     }
 
     // ── Private ──────────────────────────────────────────────────────────────

@@ -12,9 +12,11 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -479,6 +481,74 @@ class ConversationWriterTest {
             assertTrue(rs.next());
             assertEquals("post", rs.getString(1));
             assertEquals("completed", rs.getString(2));
+        }
+    }
+
+    @Test
+    void pendingHookStagesEvictTheOldestMissingParent() throws Exception {
+        HookStageResult stage = new HookStageResult("pre", "audit.sh", "completed", 9, null);
+        for (int i = 0; i <= ConversationWriter.MAX_PENDING_HOOK_EVENTS; i++) {
+            writer.recordHookStages("ev-pending-" + i, List.of(stage));
+        }
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.ToolCall("run_command", null, "shell", null, "completed",
+                null, null, false, null, null,
+                "2026-01-01T10:00:01Z", "", "", "ev-pending-0"),
+            new EntryData.ToolCall("run_command", null, "shell", null, "completed",
+                null, null, false, null, null,
+                "2026-01-01T10:00:02Z", "", "",
+                "ev-pending-" + ConversationWriter.MAX_PENDING_HOOK_EVENTS)
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT tool_event_id FROM hook_executions ORDER BY tool_event_id")) {
+            assertTrue(rs.next());
+            assertEquals("ev-pending-" + ConversationWriter.MAX_PENDING_HOOK_EVENTS, rs.getString(1));
+            assertFalse(rs.next(), "The oldest orphaned pending hook stages should be evicted");
+        }
+    }
+
+    @Test
+    void pendingHookStagesAreCappedForOneMissingParent() throws Exception {
+        List<HookStageResult> stages = new ArrayList<>();
+        for (int i = 0; i < ConversationWriter.MAX_PENDING_HOOK_STAGES_PER_EVENT + 5; i++) {
+            stages.add(new HookStageResult("pre", "audit-" + i, "completed", i, null));
+        }
+        writer.recordHookStages("ev-pending-capped", stages);
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.ToolCall("run_command", null, "shell", null, "completed",
+                null, null, false, null, null,
+                "2026-01-01T10:00:01Z", "", "", "ev-pending-capped")
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM hook_executions")) {
+            assertTrue(rs.next());
+            assertEquals(ConversationWriter.MAX_PENDING_HOOK_STAGES_PER_EVENT, rs.getInt(1));
+        }
+    }
+
+    @Test
+    void closeClearsPendingHookStages() throws Exception {
+        writer.recordHookStages("ev-pending-close", List.of(
+            new HookStageResult("pre", "audit.sh", "completed", 9, null)));
+
+        writer.close();
+        writer.recordHookStages("ev-pending-close", List.of(
+            new HookStageResult("post", "late.sh", "completed", 3, null)));
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.ToolCall("run_command", null, "shell", null, "completed",
+                null, null, false, null, null,
+                "2026-01-01T10:00:01Z", "", "", "ev-pending-close")
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM hook_executions")) {
+            assertTrue(rs.next());
+            assertEquals(0, rs.getInt(1));
         }
     }
 

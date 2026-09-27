@@ -12,7 +12,6 @@ import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolResult;
 import com.github.catatafishen.agentbridge.psi.ToolTimeoutDialog;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
-import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService;
 import com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic;
 import com.github.catatafishen.agentbridge.services.hooks.HookExecutor;
@@ -22,6 +21,7 @@ import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
@@ -832,7 +832,7 @@ public final class McpProtocolHandler {
         if (callRecord == null) {
             callRecord = tracker.findByMcpCall(data.toolName(), data.arguments());
         }
-        String dbEventId = callRecord != null ? callRecord.getRecordId() : data.toolUseId();
+        String dbEventId = resolveDbEventId(callRecord, data.toolUseId());
         if (dbEventId == null) return;
         if (callRecord == null) {
             LOG.debug("[MCP] No tracker record for tool '" + data.toolName()
@@ -850,11 +850,16 @@ public final class McpProtocolHandler {
             dbEventId, inputSize, outputSize, data.durationMs(),
             data.success(), data.errorMessage(), data.category(), data.displayName(), pluginVersion,
             filePath));
-        // Only record hook stages for a confirmed tracker record. ConversationWriter retains
-        // them until the matching tool-call row commits, because ACP persistence may lag MCP completion.
-        if (!data.hookStages().isEmpty() && callRecord != null) {
+        // ConversationWriter retains hook stages until the matching tool-call row commits, so the
+        // toolUseId fallback remains safe when ACP tracker correlation has not happened yet.
+        if (!data.hookStages().isEmpty()) {
             service.recordHookStages(dbEventId, data.hookStages());
         }
+    }
+
+    static @Nullable String resolveDbEventId(@Nullable ToolCallRecord callRecord,
+                                             @Nullable String toolUseId) {
+        return callRecord != null ? callRecord.getRecordId() : toolUseId;
     }
 
     private static final List<String> FILE_PATH_KEYS = List.of("path", "file", "paths", "target", "old_str_file");
@@ -1063,7 +1068,8 @@ public final class McpProtocolHandler {
         int removed = text.length() - MAX_RESULT_CHARS;
         return text.substring(0, MAX_RESULT_CHARS)
             + "\n\n[Output truncated: " + removed + " characters omitted."
-            + " Narrow the request with the tool's filtering, range, or scope parameters.]";
+            + " If the tool reported a continuation offset, retry with that offset; otherwise narrow"
+            + " the request with the tool's filtering, range, or scope parameters.]";
     }
 
     static JsonObject respondResult(JsonObject request, JsonObject result) {

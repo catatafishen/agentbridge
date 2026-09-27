@@ -763,9 +763,20 @@ public final class RunTestsTool extends TestingTool {
             if (shouldUseXmlResults(exitCode, xmlResults)) return xmlResults;
         }
 
-        String testOutput = TestResultFormatter.withConsoleFallback(
-            collectTestRunOutput(configName), tracker.capturedOutput());
+        String testOutput = selectGradleTestOutput(
+            exitCode, () -> collectTestRunOutput(configName), tracker.capturedOutput());
         return formatTestSummary(exitCode, configName, testOutput);
+    }
+
+    static @NotNull String selectGradleTestOutput(
+        int exitCode,
+        @NotNull java.util.function.Supplier<String> structuredOutput,
+        @NotNull String capturedOutput
+    ) {
+        if (exitCode != 0) {
+            return TestResultFormatter.withConsoleFallback("", capturedOutput);
+        }
+        return TestResultFormatter.withConsoleFallback(structuredOutput.get(), capturedOutput);
     }
 
     /**
