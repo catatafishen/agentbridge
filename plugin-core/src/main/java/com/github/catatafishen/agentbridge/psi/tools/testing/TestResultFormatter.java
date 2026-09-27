@@ -31,6 +31,13 @@ final class TestResultFormatter {
             : summary + "\n" + testOutput;
     }
 
+    static @NotNull String withConsoleFallback(@NotNull String testOutput,
+                                                @Nullable String capturedOutput) {
+        if (!testOutput.isEmpty()) return testOutput;
+        String consoleSection = formatConsoleSection(capturedOutput);
+        return consoleSection != null ? consoleSection : "";
+    }
+
     /**
      * Formats aggregate counts obtained from the IDE test-results model.
      */

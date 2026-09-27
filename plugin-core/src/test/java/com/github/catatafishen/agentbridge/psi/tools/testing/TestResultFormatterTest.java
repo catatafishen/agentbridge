@@ -66,6 +66,23 @@ class TestResultFormatterTest {
         }
 
         @Test
+        @DisplayName("captured console output fills an unavailable result model")
+        void capturedConsoleFallback() {
+            String output = TestResultFormatter.withConsoleFallback("", "AssertionError: expected true");
+
+            assertTrue(output.contains("=== Console Output ==="));
+            assertTrue(output.contains("AssertionError: expected true"));
+        }
+
+        @Test
+        @DisplayName("structured results take precedence over captured console output")
+        void structuredResultsTakePrecedence() {
+            assertEquals("Test Results: 1 tests, 1 passed",
+                TestResultFormatter.withConsoleFallback(
+                    "Test Results: 1 tests, 1 passed", "stale console text"));
+        }
+
+        @Test
         @DisplayName("negative exit code is formatted correctly")
         void negativeExitCode() {
             String result = TestResultFormatter.formatTestSummary(-1, "CrashConfig", "");

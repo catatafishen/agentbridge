@@ -32,6 +32,7 @@ final class TestExecutionTracker {
     private final String configName;
     private final CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
     private final AtomicReference<RunProfile> expectedProfile = new AtomicReference<>();
+    private final TestProcessOutputCapture outputCapture = new TestProcessOutputCapture();
     private final AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
     });
 
@@ -47,6 +48,7 @@ final class TestExecutionTracker {
                                        @NotNull ExecutionEnvironment env,
                                        @NotNull ProcessHandler handler) {
                 if (!matches(env)) return;
+                handler.addProcessListener(outputCapture);
                 handlerFuture.complete(handler);
                 disconnect();
             }
@@ -100,6 +102,10 @@ final class TestExecutionTracker {
         } catch (java.util.concurrent.ExecutionException e) {
             throw new IllegalStateException("Execution tracker for " + configName + " failed", e);
         }
+    }
+
+    @NotNull String capturedOutput() {
+        return outputCapture.content();
     }
 
     void disconnect() {
