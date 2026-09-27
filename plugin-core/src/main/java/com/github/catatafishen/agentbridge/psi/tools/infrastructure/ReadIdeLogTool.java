@@ -48,6 +48,8 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     static final int MAX_LINES = 10_000;
     private static final int MAX_PAGE_CHARS = 12_000;
 
+    private static final String ERROR_PREFIX = "Error: ";
+
     // Matches: 2026-03-22 16:58:04,345 [  49065]   INFO - #com.example.Foo - message
     private static final Pattern LOG_LINE_PATTERN = Pattern.compile(
         "^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2}),(\\d{3}) \\[[^]]++]\\s++(\\w+)\\s++- #?([^\\s-][^-]*+)\\s*+-\\s*+(.*)$"
@@ -145,14 +147,14 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         try {
             maxLines = parseMaxLines(args);
         } catch (IllegalArgumentException e) {
-            return "Error: " + e.getMessage();
+            return ERROR_PREFIX + e.getMessage();
         }
 
         ToolResultPaginator.PageRequest pageRequest;
         try {
             pageRequest = ToolResultPaginator.parsePageRequest(args, MAX_PAGE_CHARS);
         } catch (IllegalArgumentException e) {
-            return "Error: " + e.getMessage();
+            return ERROR_PREFIX + e.getMessage();
         }
 
         String filterStr = optionalString(args, PARAM_FILTER);
@@ -175,7 +177,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             since = parseTimeArgOrError(sinceStr);
             until = parseTimeArgOrError(untilStr);
         } catch (IllegalArgumentException e) {
-            return "Error: " + e.getMessage();
+            return ERROR_PREFIX + e.getMessage();
         }
 
         List<String> levels = parseLevels(levelParam);

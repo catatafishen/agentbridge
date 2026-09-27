@@ -871,16 +871,18 @@ public final class ConversationWriter implements AutoCloseable {
         @NotNull List<EntryData> entries
     ) {
         for (EntryData entry : entries) {
-            if (!(entry instanceof EntryData.ToolCall toolCall)) continue;
-            String eventId = toolCall.getEntryId();
-            ToolCallStatsEnrichment stats = pendingToolCallStats.get(eventId);
-            if (stats == null) continue;
-            try {
-                if (applyToolCallStats(conn, stats)) {
-                    pendingToolCallStats.remove(eventId);
+            if (entry instanceof EntryData.ToolCall toolCall) {
+                String eventId = toolCall.getEntryId();
+                ToolCallStatsEnrichment stats = pendingToolCallStats.get(eventId);
+                if (stats != null) {
+                    try {
+                        if (applyToolCallStats(conn, stats)) {
+                            pendingToolCallStats.remove(eventId);
+                        }
+                    } catch (SQLException e) {
+                        LOG.warn("ConversationWriter: failed to flush pending stats for " + eventId, e);
+                    }
                 }
-            } catch (SQLException e) {
-                LOG.warn("ConversationWriter: failed to flush pending stats for " + eventId, e);
             }
         }
     }
