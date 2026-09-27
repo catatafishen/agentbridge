@@ -135,8 +135,9 @@ for nullable fields.
 ### 6. `recordHookStages()` / `recordHookExecution()` — Hook audit records
 
 **Called by:** Hook execution pipeline after tool permission/pre/post hooks run.
-**What it does:** INSERT rows into `hook_executions` table, linked to the tool call's
-`event_id`.
+**What it does:** INSERT rows into `hook_executions`, linked to the tool call's `event_id`.
+If hook results arrive before the parent `tool_call_events` row commits, the writer retains
+and flushes them immediately after that tool call is persisted.
 
 ---
 

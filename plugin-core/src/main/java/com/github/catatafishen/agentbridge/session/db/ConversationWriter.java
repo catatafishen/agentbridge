@@ -61,6 +61,8 @@ public final class ConversationWriter {
      * Per-session cursor: tracks the most recently opened turn for sequencing.
      */
     private final Map<String, SessionCursor> cursors = new HashMap<>();
+    // MCP completion can arrive before the ACP tool-call entry is committed.
+    private final Map<String, List<HookStageResult>> pendingHookStages = new HashMap<>();
 
     public ConversationWriter(@NotNull ConversationDatabase database) {
         this.database = database;
@@ -91,6 +93,7 @@ public final class ConversationWriter {
             }
             try {
                 writeEntriesInTransaction(conn, sessionId, agentName, clientId, entries);
+                flushPendingHookStages(conn, entries);
                 return true;
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record " + entries.size()
@@ -776,30 +779,76 @@ public final class ConversationWriter {
             if (stages.isEmpty()) return;
             Connection conn = database.getConnection();
             if (conn == null) return;
-            try (PreparedStatement ps = conn.prepareStatement("""
-                INSERT INTO hook_executions (
-                    tool_event_id, trigger_kind, entry_id, command,
-                    duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """)) {
-                String now = Instant.now().toString();
-                ps.setString(1, toolEventId);
-                ps.setString(10, now);
-                ps.setNull(6, Types.VARCHAR);
-                ps.setNull(7, Types.VARCHAR);
-                for (HookStageResult stage : stages) {
-                    ps.setString(2, stage.trigger());
-                    ps.setString(3, stage.scriptName());
-                    ps.setString(4, stage.scriptName());
-                    ps.setLong(5, stage.durationMs());
-                    ps.setString(8, stage.outcome());
-                    ps.setString(9, stage.detail());
-                    ps.addBatch();
+            try {
+                if (!toolCallEventExists(conn, toolEventId)) {
+                    pendingHookStages.computeIfAbsent(toolEventId, ignored -> new java.util.ArrayList<>())
+                        .addAll(stages);
+                    return;
                 }
-                ps.executeBatch();
+                insertHookStages(conn, toolEventId, stages);
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record hook stages for " + toolEventId, e);
             }
+        }
+    }
+
+    private void flushPendingHookStages(
+        @NotNull Connection conn,
+        @NotNull List<EntryData> entries
+    ) {
+        for (EntryData entry : entries) {
+            if (!(entry instanceof EntryData.ToolCall toolCall)) continue;
+            String eventId = toolCall.getEntryId();
+            List<HookStageResult> stages = pendingHookStages.get(eventId);
+            if (stages == null) continue;
+            try {
+                insertHookStages(conn, eventId, stages);
+                pendingHookStages.remove(eventId);
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to flush pending hook stages for " + eventId, e);
+            }
+        }
+    }
+
+    private static boolean toolCallEventExists(
+        @NotNull Connection conn,
+        @NotNull String eventId
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT 1 FROM tool_call_events WHERE event_id = ? LIMIT 1")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static void insertHookStages(
+        @NotNull Connection conn,
+        @NotNull String toolEventId,
+        @NotNull List<HookStageResult> stages
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO hook_executions (
+                tool_event_id, trigger_kind, entry_id, command,
+                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            String now = Instant.now().toString();
+            ps.setString(1, toolEventId);
+            ps.setString(10, now);
+            ps.setNull(6, Types.VARCHAR);
+            ps.setNull(7, Types.VARCHAR);
+            for (HookStageResult stage : stages) {
+                ps.setString(2, stage.trigger());
+                ps.setString(3, stage.scriptName());
+                ps.setString(4, stage.scriptName());
+                ps.setLong(5, stage.durationMs());
+                ps.setString(8, stage.outcome());
+                ps.setString(9, stage.detail());
+                ps.addBatch();
+            }
+            ps.executeBatch();
         }
     }
 

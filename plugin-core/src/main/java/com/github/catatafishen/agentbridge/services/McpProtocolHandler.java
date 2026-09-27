@@ -850,10 +850,8 @@ public final class McpProtocolHandler {
             dbEventId, inputSize, outputSize, data.durationMs(),
             data.success(), data.errorMessage(), data.category(), data.displayName(), pluginVersion,
             filePath));
-        // Only record hook stages when we have a confirmed tracker record — the FK on
-        // hook_executions.tool_event_id requires the events row to already exist.
-        // When callRecord is null we're falling back to a raw toolUseId that may not be
-        // in the events table yet, which would cause a SQLITE_CONSTRAINT_FOREIGNKEY error.
+        // Only record hook stages for a confirmed tracker record. ConversationWriter retains
+        // them until the matching tool-call row commits, because ACP persistence may lag MCP completion.
         if (!data.hookStages().isEmpty() && callRecord != null) {
             service.recordHookStages(dbEventId, data.hookStages());
         }

@@ -449,6 +449,40 @@ class ConversationWriterTest {
     }
 
     @Test
+    void recordHookStagesWaitsForParentToolCall() throws Exception {
+        List<HookStageResult> stages = List.of(
+            new HookStageResult("permission", "check-auth.sh", "allowed", 5, null),
+            new HookStageResult("post", "audit.sh", "completed", 9, "recorded")
+        );
+
+        writer.recordHookStages("ev-delayed-hooks", stages);
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM hook_executions")) {
+            assertTrue(rs.next());
+            assertEquals(0, rs.getInt(1));
+        }
+
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("agentbridge-run_command", null, "shell", null, null, null, null,
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-delayed-hooks")
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT trigger_kind, outcome FROM hook_executions "
+                     + "WHERE tool_event_id = 'ev-delayed-hooks' ORDER BY trigger_kind")) {
+            assertTrue(rs.next());
+            assertEquals("permission", rs.getString(1));
+            assertEquals("allowed", rs.getString(2));
+            assertTrue(rs.next());
+            assertEquals("post", rs.getString(1));
+            assertEquals("completed", rs.getString(2));
+        }
+    }
+
+    @Test
     void updateToolCallCompletionPersistsResultAfterEarlyInsert() throws Exception {
         // Simulate the race: tool call inserted early with null result
         EntryData.ToolCall tc = new EntryData.ToolCall(
