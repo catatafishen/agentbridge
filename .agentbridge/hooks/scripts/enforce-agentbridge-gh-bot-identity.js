@@ -4,9 +4,9 @@
 // policy is committed under .agentbridge/hooks/ and is not distributed in the plugin release.
 // See docs/BOT-IDENTITY-HOOKS.md. It is safe to disable locally.
 //
-// Purpose: intercept every parsed `gh` CLI command and trusted repository PR helper, then enforce
-// bot identity by injecting GH_TOKEN so GitHub reads and writes are attributed to the project bot
-// rather than the developer's personal account.
+// Purpose: best-effort detection of direct `gh` CLI commands, common shell wrappers, and trusted
+// repository PR helpers, then injection of GH_TOKEN so routine GitHub operations use the project
+// bot. This contributor convenience is intentionally not a complete shell sandbox.
 //
 // Token injection strategy (per tool):
 //   - run_command: Hook.setEnv("GH_TOKEN", token) — sets an OS-level env var via
@@ -82,9 +82,25 @@
     }
 
     function parsePolicyCommands(value) {
+        return collectPolicyCommands(value, 0);
+    }
+
+    // This development convenience hook intentionally supports common wrappers rather than
+    // attempting to implement a complete shell parser.
+    function collectPolicyCommands(value, depth) {
         var segments = shellSegments(value);
         var calls = [];
-        for (var i = 0; i < segments.length; i++) calls.push(parsePolicySegment(segments[i]));
+        for (var i = 0; i < segments.length; i++) {
+            var call = parsePolicySegment(segments[i]);
+            calls.push(call);
+            if (depth < 2) {
+                var payload = shellCommandPayload(call);
+                if (payload !== null) {
+                    var nestedCalls = collectPolicyCommands(payload, depth + 1);
+                    for (var j = 0; j < nestedCalls.length; j++) calls.push(nestedCalls[j]);
+                }
+            }
+        }
         return calls;
     }
 
@@ -102,6 +118,10 @@
                 i = skipEnvOptions(tokens, i + 1) - 1;
                 continue;
             }
+            if (name === 'sudo') {
+                i = skipSudoOptions(tokens, i + 1) - 1;
+                continue;
+            }
             if (COMMAND_PREFIXES[name]) continue;
             var argv = [];
             for (var j = i + 1; j < tokens.length; j++) {
@@ -111,6 +131,32 @@
             return {name: name, executable: token.text, argv: argv};
         }
         return {name: '', executable: '', argv: []};
+    }
+
+    function skipSudoOptions(tokens, start) {
+        var optionsWithArgument = {
+            '-C': true, '--chdir': true, '-D': true, '--chroot': true,
+            '-g': true, '--group': true, '-h': true, '--host': true,
+            '-p': true, '--prompt': true, '-r': true, '--role': true,
+            '-t': true, '--type': true, '-u': true, '--user': true
+        };
+        var i = start;
+        while (i < tokens.length) {
+            var text = tokens[i].text;
+            if (text === '--') return i + 1;
+            if (text.charAt(0) !== '-') return i;
+            i += optionsWithArgument[text] ? 2 : 1;
+        }
+        return i;
+    }
+
+    function shellCommandPayload(call) {
+        if (call.name !== 'bash' && call.name !== 'sh') return null;
+        for (var i = 0; i + 1 < call.argv.length; i++) {
+            var option = call.argv[i];
+            if (option === '-c' || (/^-[^-]*c/.test(option))) return call.argv[i + 1];
+        }
+        return null;
     }
 
     function skipEnvOptions(tokens, start) {
@@ -149,9 +195,17 @@
     }
 
     function overridesGitHubToken(value) {
+        return hasGitHubTokenOverride(value, 0);
+    }
+
+    function hasGitHubTokenOverride(value, depth) {
         var segments = shellSegments(value);
         for (var i = 0; i < segments.length; i++) {
             if (segmentOverridesGitHubToken(segments[i])) return true;
+            if (depth < 2) {
+                var payload = shellCommandPayload(parsePolicySegment(segments[i]));
+                if (payload !== null && hasGitHubTokenOverride(payload, depth + 1)) return true;
+            }
         }
         return false;
     }
@@ -174,6 +228,10 @@
                 var envOptions = inspectEnvOptions(tokens, i + 1);
                 if (envOptions.overrides) return true;
                 i = envOptions.next - 1;
+                continue;
+            }
+            if (name === 'sudo') {
+                i = skipSudoOptions(tokens, i + 1) - 1;
                 continue;
             }
             if (COMMAND_PREFIXES[name]) continue;

@@ -322,17 +322,19 @@ class ReadIdeLogToolTest {
     }
 
     @Test
-    @DisplayName("caps the complete entry after appending continuation lines")
+    @DisplayName("caps continuation data while preserving the omitted character count")
     void multilineEntryIsCappedAfterContinuations() throws IOException {
+        String entryPrefix = "10:00:00.000  INFO  Foo: request payload";
         String oversizedContinuation = "payload".repeat(500);
         Files.writeString(logFile,
             logLine("10:00:00", "INFO", "com.Foo", "request payload") + "\n"
                 + oversizedContinuation + "\n");
 
         String result = execute(new JsonObject());
+        int omittedChars = entryPrefix.length() + "\n  ".length() + oversizedContinuation.length() - 2_000;
 
-        assertTrue(result.length() < 2100, "Complete logical entry should be compact: " + result.length());
-        assertTrue(result.contains("... [+"), "Should report omitted characters: " + result);
+        assertTrue(result.length() < 2_100, "Complete logical entry should be compact: " + result.length());
+        assertTrue(result.endsWith("... [+" + omittedChars + " chars]"), result);
         assertFalse(result.endsWith(oversizedContinuation), "Continuation payload should be truncated");
     }
 

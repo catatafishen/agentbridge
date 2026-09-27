@@ -223,6 +223,8 @@ public final class ReadIdeLogTool extends InfrastructureTool {
      * Bundles all filter criteria and output state for the line loop.
      */
     private static final class LineProcessor {
+        private static final int MAX_ENTRY_CHARS = 2000;
+
         @Nullable
         final Pattern filterPattern;
         @Nullable
@@ -234,6 +236,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         final Deque<String> outputBuffer;
         final int maxLines;
         StringBuilder pending = null;
+        long omittedChars;
 
         LineProcessor(
             @Nullable Pattern filterPattern,
@@ -254,27 +257,39 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         void accept(String raw) {
             Matcher m = LOG_LINE_PATTERN.matcher(raw);
             if (!m.matches()) {
-                if (pending != null) pending.append("\n  ").append(raw);
+                if (pending != null) {
+                    appendToPending("\n  ");
+                    appendToPending(raw);
+                }
                 return;
             }
             flush();
             String compact = buildCompact(m);
-            if (compact != null) pending = new StringBuilder(compact);
+            if (compact != null) {
+                pending = new StringBuilder(Math.min(compact.length(), MAX_ENTRY_CHARS));
+                omittedChars = 0;
+                appendToPending(compact);
+            }
         }
 
         void flush() {
             if (pending == null) return;
             if (outputBuffer.size() >= maxLines) outputBuffer.removeFirst();
-            outputBuffer.addLast(compactEntry(pending.toString()));
+            outputBuffer.addLast(compactPendingEntry());
             pending = null;
+            omittedChars = 0;
         }
 
-        private static final int MAX_ENTRY_CHARS = 2000;
+        private void appendToPending(@NotNull String text) {
+            int remaining = MAX_ENTRY_CHARS - pending.length();
+            int retained = Math.min(remaining, text.length());
+            if (retained > 0) pending.append(text, 0, retained);
+            omittedChars += text.length() - retained;
+        }
 
-        private static @NotNull String compactEntry(@NotNull String entry) {
-            if (entry.length() <= MAX_ENTRY_CHARS) return entry;
-            return entry.substring(0, MAX_ENTRY_CHARS)
-                + "... [+" + (entry.length() - MAX_ENTRY_CHARS) + " chars]";
+        private @NotNull String compactPendingEntry() {
+            if (omittedChars == 0) return pending.toString();
+            return pending + "... [+" + omittedChars + " chars]";
         }
 
         private @Nullable String buildCompact(Matcher m) {

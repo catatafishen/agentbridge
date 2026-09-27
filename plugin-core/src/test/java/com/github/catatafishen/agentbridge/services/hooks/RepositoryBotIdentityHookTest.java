@@ -35,6 +35,9 @@ class RepositoryBotIdentityHookTest {
         "sh ./.agents/skills/pr-review/pr-threads.sh 1084",
         ".agents/skills/pr-review/pr-issues.sh view 1085",
         "gh issue view 1085",
+        "sudo -u alice gh issue view 1085",
+        "bash -c \"gh issue view 1085\"",
+        "bash -lc \"gh issue view 1085\"",
         "gh issue comment 1085 --body \"GH_TOKEN=example\"",
         "gh issue comment 1085 --body \"env -u GH_TOKEN\""
     })
@@ -44,9 +47,14 @@ class RepositoryBotIdentityHookTest {
         assertTrue(json.contains("\"_env.GH_TOKEN\":\"" + TEST_TOKEN + "\""), json);
     }
 
-    @Test
-    void untrustedShellScriptDoesNotReceiveBotToken(@TempDir Path dir) throws IOException {
-        assertEquals("", runHook(dir, "run_command", "bash scripts/local.sh"));
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "bash scripts/local.sh",
+        "bash -c \"printf gh\"",
+        "sudo -u alice printf gh"
+    })
+    void untrustedShellScriptDoesNotReceiveBotToken(String command, @TempDir Path dir) throws IOException {
+        assertEquals("", runHook(dir, "run_command", command));
     }
 
     @Test
@@ -66,7 +74,10 @@ class RepositoryBotIdentityHookTest {
         "GH_TOKEN=personal; gh issue view 1085",
         "export GH_TOKEN=personal; gh issue view 1085",
         "env -u GH_TOKEN gh issue view 1085",
-        "env -uGH_TOKEN gh issue view 1085"
+        "env -uGH_TOKEN gh issue view 1085",
+        "sudo -u alice env -u GH_TOKEN gh issue view 1085",
+        "bash -c \"GH_TOKEN=personal gh issue view 1085\"",
+        "bash -lc \"export GH_TOKEN=personal; gh issue view 1085\""
     })
     void githubCommandsCannotOverrideOrRemoveBotToken(String command, @TempDir Path dir) throws IOException {
         String json = runHook(dir, "run_command", command);
