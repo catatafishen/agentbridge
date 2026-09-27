@@ -88,6 +88,22 @@ it, decide whether it belongs here at all. Never build custom implementations (r
 substitutes for IDE-level features. If a feature isn't available in the user's IDE installation, disable the tool
 gracefully — the agent can use a specialist MCP server instead.
 
+# Instruction Scope
+
+Keep instructions at the narrowest scope where their assumptions are guaranteed:
+
+- **Bundled plugin instructions are product-facing.** They run in end-user projects and must be repository-, machine-,
+  and environment-agnostic. Do not assume optional executables such as `gh`, repository-local scripts, AgentBridge's
+  development hooks, bot identities, contributor credentials, or this repository's workflow.
+- **Repository development instructions belong here.** Put contributor-only commands, local helper scripts, CI/PR
+  procedures, and repository-specific authentication details in `AGENTS.md`, `.agents/skills/`, or other development
+  documentation that is not bundled into the plugin.
+- **Tool guidance must match the guaranteed runtime.** Bundled guidance may recommend tools shipped by AgentBridge;
+  repository guidance may additionally use tools and scripts provisioned specifically for this checkout.
+
+Before changing a bundled instruction, review it from the perspective of a user who installed the plugin into an
+unrelated project on a clean machine. If the instruction depends on this repository or its setup, keep it local instead.
+
 # Development Workflow
 
 Each feature or bug fix must be done in its own branch and a PR created when the work is done.
