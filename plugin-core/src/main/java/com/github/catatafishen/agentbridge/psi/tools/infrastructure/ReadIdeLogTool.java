@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
+import com.github.catatafishen.agentbridge.psi.tools.ToolResultPaginator;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -42,6 +43,9 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     private static final String PARAM_LEVEL = "level";
     private static final String PARAM_SINCE = "since";
     private static final String PARAM_UNTIL = "until";
+    private static final String PARAM_OFFSET = "offset";
+    private static final String PARAM_MAX_CHARS = "max_chars";
+    private static final int MAX_PAGE_CHARS = 12_000;
 
     // Matches: 2026-03-22 16:58:04,345 [  49065]   INFO - #com.example.Foo - message
     private static final Pattern LOG_LINE_PATTERN = Pattern.compile(
@@ -82,7 +86,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     @Override
     public @NotNull String description() {
         return """
-            Read recent IntelliJ IDE log entries with compact output.
+            Read recent IntelliJ IDE log entries with compact, paginated output.
 
             FILTER is always a case-insensitive regex - use | for OR:
               filter="ToolCallTracker|git_diff"
@@ -96,6 +100,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
 
             Output format: HH:mm:ss.SSS  LEVEL  ShortClass: message
             (date and thread-id stripped; logger shortened to simple class name)
+            Use offset from a paginated response to continue the same query.
             """;
     }
 
@@ -121,13 +126,26 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             Param.optional(PARAM_LEVEL, TYPE_STRING,
                 "Filter by level: INFO, WARN, ERROR (comma-separated). Default: all levels."),
             Param.optional(PARAM_LINES, TYPE_INTEGER,
-                "Max matching lines to return from the end (default: 200).")
+                "Max matching entries to retain from the end (default: 200)."),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER,
+                "Character offset into the compact result (default: 0). Use the next offset from a paginated response to continue"),
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER,
+                "Maximum log-content characters per page (default and maximum: " + MAX_PAGE_CHARS + ")")
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws IOException {
         int maxLines = args.has(PARAM_LINES) ? args.get(PARAM_LINES).getAsInt() : 200;
+        if (maxLines <= 0) return "Error: lines must be greater than zero.";
+
+        ToolResultPaginator.PageRequest pageRequest;
+        try {
+            pageRequest = ToolResultPaginator.parsePageRequest(args, MAX_PAGE_CHARS);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
+        }
+
         String filterStr = args.has(PARAM_FILTER) ? args.get(PARAM_FILTER).getAsString() : null;
         String sinceStr = args.has(PARAM_SINCE) ? args.get(PARAM_SINCE).getAsString() : null;
         String untilStr = args.has(PARAM_UNTIL) ? args.get(PARAM_UNTIL).getAsString() : null;
@@ -163,7 +181,8 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         processor.flush();
 
         if (outputBuffer.isEmpty()) return "No matching log entries found.";
-        return String.join("\n", outputBuffer);
+        return ToolResultPaginator.paginate(
+            id(), String.join("\n", outputBuffer), pageRequest.offset(), pageRequest.maxChars());
     }
 
     // ── Per-line processing ───────────────────────────────────────────────────

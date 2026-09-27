@@ -228,6 +228,58 @@ class ReadIdeLogToolTest {
         assertTrue(result.contains("message 9"), "Should contain last message: " + result);
     }
 
+    @Test
+    @DisplayName("schema exposes character pagination parameters")
+    void schemaExposesPaginationParameters() {
+        JsonObject properties = tool.inputSchema().getAsJsonObject("properties");
+
+        assertTrue(properties.has("offset"));
+        assertTrue(properties.has("max_chars"));
+    }
+
+    @Test
+    @DisplayName("large result is bounded and advertises a continuation offset")
+    void largeResultIsPaginated() throws IOException {
+        StringBuilder content = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            content.append(logLine("10:00:" + String.format("%02d", i), "INFO", "com.Foo",
+                    "payload-" + i + "-" + "x".repeat(900)))
+                .append('\n');
+        }
+        Files.writeString(logFile, content.toString());
+
+        String result = execute(new JsonObject());
+
+        assertTrue(result.length() < 12_500, "Result should stay below the global MCP cap: " + result.length());
+        assertTrue(result.contains("Use offset=12000 to continue."), result);
+        assertFalse(result.contains("/tmp"), result);
+    }
+
+    @Test
+    @DisplayName("offset returns the requested continuation page")
+    void offsetReturnsContinuationPage() throws IOException {
+        Files.writeString(logFile,
+            logLine("10:00:00", "INFO", "com.Foo", "x".repeat(1_500)) + "\n");
+        JsonObject pageArgs = new JsonObject();
+        pageArgs.addProperty("max_chars", 500);
+        pageArgs.addProperty("offset", 500);
+
+        String result = execute(pageArgs);
+
+        assertTrue(result.startsWith("[Showing characters 500-1000 of "), result);
+        assertTrue(result.contains("Use offset=1000 to continue."), result);
+    }
+
+    @Test
+    @DisplayName("invalid pagination values return actionable errors")
+    void invalidPaginationValuesReturnErrors() throws IOException {
+        Files.writeString(logFile, logLine("10:00:00", "INFO", "com.Foo", "message") + "\n");
+
+        assertEquals("Error: offset must be zero or greater.", execute(args("offset", "-1")));
+        assertEquals("Error: max_chars must be between 1 and 12000.", execute(args("max_chars", "12001")));
+        assertEquals("Error: lines must be greater than zero.", execute(args("lines", "0")));
+    }
+
     // ── Multi-line entries ────────────────────────────────────────────────────
 
     @Test

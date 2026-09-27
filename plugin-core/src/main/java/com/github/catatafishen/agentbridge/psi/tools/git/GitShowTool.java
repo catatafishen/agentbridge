@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.tools.ToolResultPaginator;
 import com.github.catatafishen.agentbridge.ui.renderers.GitShowRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -65,11 +66,11 @@ public final class GitShowTool extends GitTool {
         String root = resolveRepoRootOrError(repoParam);
         if (root.startsWith("Error")) return root;
 
-        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
-        if (offset < 0) return "Error: offset must be zero or greater.";
-        int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : MAX_PAGE_CHARS;
-        if (maxChars <= 0 || maxChars > MAX_PAGE_CHARS) {
-            return "Error: max_chars must be between 1 and " + MAX_PAGE_CHARS + ".";
+        ToolResultPaginator.PageRequest pageRequest;
+        try {
+            pageRequest = ToolResultPaginator.parsePageRequest(args, MAX_PAGE_CHARS);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
         }
 
         List<String> cmdArgs = new ArrayList<>();
@@ -90,32 +91,11 @@ public final class GitShowTool extends GitTool {
 
         String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         showFirstCommitInLog(root, result);
-        return paginate(result, offset, maxChars);
+        return paginate(result, pageRequest.offset(), pageRequest.maxChars());
     }
 
     static @NotNull String paginate(@NotNull String text, int offset, int maxChars) {
-        if (text.isEmpty()) return text;
-        int totalLength = text.length();
-        if (offset >= totalLength) {
-            return "No git_show output at offset " + offset
-                + " (total length: " + totalLength + " characters).";
-        }
-
-        int end = (int) Math.min(totalLength, (long) offset + maxChars);
-        if (offset == 0 && end == totalLength) return text;
-
-        StringBuilder page = new StringBuilder(maxChars + 160);
-        if (offset > 0) {
-            page.append("[Showing characters ").append(offset).append('-').append(end)
-                .append(" of ").append(totalLength).append("]\n\n");
-        }
-        page.append(text, offset, end);
-        if (end < totalLength) {
-            page.append("\n\n[Output paginated: showing characters ").append(offset).append('-').append(end)
-                .append(" of ").append(totalLength).append(". Use offset=").append(end)
-                .append(" to continue.]");
-        }
-        return page.toString();
+        return ToolResultPaginator.paginate("git_show", text, offset, maxChars);
     }
 
     @Override
