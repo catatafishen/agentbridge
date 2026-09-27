@@ -4,9 +4,9 @@
 // policy is committed under .agentbridge/hooks/ and is not distributed in the plugin release.
 // See docs/BOT-IDENTITY-HOOKS.md. It is safe to disable locally.
 //
-// Purpose: intercept every parsed `gh` CLI command and enforce bot identity by injecting
-// GH_TOKEN so all GitHub reads and writes are attributed to the project bot rather than the
-// developer's personal account.
+// Purpose: intercept every parsed `gh` CLI command and trusted repository PR helper, then enforce
+// bot identity by injecting GH_TOKEN so GitHub reads and writes are attributed to the project bot
+// rather than the developer's personal account.
 //
 // Token injection strategy (per tool):
 //   - run_command: Hook.setEnv("GH_TOKEN", token) — sets an OS-level env var via
@@ -24,15 +24,13 @@
 //    the bot token is not configured.
 (function () {
     var command = Hook.arg('command') || '';
-    if (/(?:^|[;&|]\s*)(?:GH_TOKEN\s*=|env(?:\s+-\S+)*\s+-u\s+GH_TOKEN\b)/.test(command)
-        && /\bgh\b/.test(command)) {
+    var requiresBotIdentity = invokesGitHubCli(command) || invokesTrustedProjectHelper(command);
+    if (!requiresBotIdentity) return;
+
+    if (/(?:^|[;&|]\s*)(?:GH_TOKEN\s*=|env(?:\s+-\S+)*\s+(?:-u\s+GH_TOKEN\b|GH_TOKEN\s*=))/.test(command)) {
         Hook.error("Identity policy: GH_TOKEN must not be overridden or removed for GitHub CLI commands.");
         return;
     }
-    var ghCalls = parseCommands(command).filter(function (call) {
-        return call.name === 'gh';
-    });
-    if (ghCalls.length === 0) return;
 
     var token = resolveBotToken();
     if (token) {
@@ -56,9 +54,35 @@
             + "GitHub App private key (~/.agentbridge/github-app.pem) is configured.'");
     }
 
+    function invokesGitHubCli(value) {
+        var calls = parseCommands(value);
+        for (var i = 0; i < calls.length; i++) {
+            if (calls[i].name === 'gh') return true;
+        }
+        return false;
+    }
+
+    function invokesTrustedProjectHelper(value) {
+        var trustedScripts = {
+            '.agents/skills/pr-review/pr-ci.sh': true,
+            '.agents/skills/pr-review/pr-issues.sh': true,
+            '.agents/skills/pr-review/pr-threads.sh': true
+        };
+        var calls = parseCommands(value);
+        for (var i = 0; i < calls.length; i++) {
+            var call = calls[i];
+            if (call.name !== 'bash' && call.name !== 'sh') continue;
+            for (var j = 0; j < call.argv.length; j++) {
+                var path = call.argv[j].replace(/\\/g, '/').replace(/^\.\//, '');
+                if (trustedScripts[path]) return true;
+            }
+        }
+        return /(?:^|[;&|]\s*)(?:\.\/)?\.agents\/skills\/pr-review\/(?:pr-ci|pr-issues|pr-threads)\.sh(?:\s|$)/.test(value);
+    }
+
     // Resolves the bot token from env → token file → GitHub App helper. Returns null if none found.
     // (Duplicated in enforce-http-bot-identity.js: the shared _lib.js is a byte-identical copy of
-    // the bundled default and must not carry project-specific helpers, so this cannot live there.)
+    // the bundled default and must not carry project-specific helpers, so this logic cannot live there.)
     function resolveBotToken() {
         var envToken = Hook.env('AGENTBRIDGE_BOT_TOKEN');
         if (envToken && envToken.trim()) return envToken.trim();

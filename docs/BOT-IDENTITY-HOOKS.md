@@ -11,7 +11,7 @@ The repository hooks cover GitHub CLI commands, GitHub API writes, and commit au
 
 | Hook script | Trigger | Effect |
 |-------------|---------|--------|
-| `enforce-agentbridge-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Repository policy: injects `GH_TOKEN=<bot token>` for every parsed `gh` command, or blocks the command when bot credentials are unavailable |
+| `enforce-agentbridge-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Repository policy: injects `GH_TOKEN=<bot token>` for every parsed `gh` command and trusted `.agents/skills/pr-review/` helper, or blocks the command when bot credentials are unavailable |
 | `enforce-http-bot-identity.js` | `http_request` pre-hook | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>` |
 | `enforce-commit-author.js` | `git_commit` pre-hook | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
 
@@ -40,8 +40,9 @@ Token resolution (the authentication hooks try these in order):
 ## Configuring or disabling the repository hook
 
 > Within this repository, GitHub CLI calls require a configured bot token. The project hook injects
-> that token for every parsed `gh` command and blocks the command instead of falling back to a
-> personal GitHub CLI login. To opt out locally, remove
+> that token for every parsed `gh` command and the trusted PR helper scripts under
+> `.agents/skills/pr-review/`, then blocks the command instead of falling back to a personal GitHub
+> CLI login. Arbitrary shell scripts do not receive the token. To opt out locally, remove
 > `enforce-agentbridge-gh-bot-identity.js` from the `pre` hook lists in `run_command.json` and
 > `run_in_terminal.json`. This policy does not apply to other projects using the plugin.
 
