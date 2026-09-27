@@ -201,18 +201,13 @@ function isGradleLauncher(name) {
     return name === 'gradle' || name === 'gradlew';
 }
 
-// True for Gradle compile-ONLY tasks (which have a dedicated tool, build_project), but NOT when
-// the same invocation also runs tests/build/check/assemble.
-function isGradleCompileOnly(cmd) {
-    var parsed = parseCommands(cmd);
-    for (var i = 0; i < parsed.length; i++) {
-        if (!isGradleLauncher(parsed[i].name)) continue;
-        var args = parsed[i].args;
-        var compileTask = args.indexOf('compilejava') >= 0 || args.indexOf('compilekotlin') >= 0
-            || args.indexOf(':classes') >= 0 || args.indexOf(':testclasses') >= 0;
-        if (!compileTask) continue;
-        if (args.indexOf('test') < 0 && args.indexOf('check') < 0
-            && args.indexOf('build') < 0 && args.indexOf('assemble') < 0) return true;
+function hasGradleCompileTask(args) {
+    var tokens = args.split(/\s+/);
+    for (var i = 0; i < tokens.length; i++) {
+        var task = tokens[i];
+        var lastColon = task.lastIndexOf(':');
+        if (lastColon >= 0) task = task.substring(lastColon + 1);
+        if (task === 'classes' || task === 'testclasses' || task.indexOf('compile') === 0) return true;
     }
     return false;
 }
@@ -298,11 +293,6 @@ function gitDeny() {
         + 'git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.';
 }
 
-function gradleDeny() {
-    return 'Gradle compile tasks are not allowed via ' + Hook.tool() + '. '
-        + 'Use build_project to compile via the IntelliJ incremental compiler instead.';
-}
-
 function sourceWriteDeny(path) {
     return "Writing directly to the source/test file '" + path + "' via " + Hook.tool()
         + ' bypasses the IntelliJ editor buffers and desyncs the IDE. Use edit_text '
@@ -343,7 +333,7 @@ function nudgeForCommand(parsed) {
     var direct = NUDGE_BY_COMMAND[parsed.name];
     if (direct) return direct;
     if (isTestRunnerCommand(parsed)) return TEST_NUDGE;
-    if (isGradleLauncher(parsed.name) && /(^|\s)(compile|classes)/.test(parsed.args)) return COMPILE_NUDGE;
+    if (isGradleLauncher(parsed.name) && hasGradleCompileTask(parsed.args)) return COMPILE_NUDGE;
     if (parsed.name === 'mvn' && /(^|\s)compile(\s|$)/.test(parsed.args)) return COMPILE_NUDGE;
     return null;
 }

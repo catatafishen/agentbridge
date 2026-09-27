@@ -90,10 +90,9 @@ class JsHookEngineTest {
     }
 
     @Test
-    void runCommandDeniesGradleCompileOnly(@TempDir Path dir) throws IOException {
-        String json = run(dir, "run-command-abuse.js", command("run_command", "./gradlew compileJava"));
-        assertTrue(json.contains("\"decision\":\"deny\""), json);
-        assertTrue(json.contains("Gradle compile tasks are not allowed"), json);
+    void runCommandAllowsGradleCompileFallback(@TempDir Path dir) throws IOException {
+        assertEquals("", run(dir, "run-command-abuse.js",
+            command("run_command", "./gradlew :plugin-core:compileKotlin")));
     }
 
     @Test
@@ -188,6 +187,13 @@ class JsHookEngineTest {
     void reprimandNudgesCat(@TempDir Path dir) throws IOException {
         String json = run(dir, "command-reprimand.js", commandResult("cat file.txt", "out", false));
         assertTrue(json.contains("read_file"), json);
+    }
+
+    @Test
+    void reprimandNudgesGradleCompileFallback(@TempDir Path dir) throws IOException {
+        String json = run(dir, "command-reprimand.js",
+            commandResult("./gradlew :plugin-core:compileKotlin", "out", false));
+        assertTrue(json.contains("build_project"), json);
     }
 
     @Test

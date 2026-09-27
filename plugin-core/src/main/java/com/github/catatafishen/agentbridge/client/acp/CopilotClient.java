@@ -513,7 +513,8 @@ public final class CopilotClient extends AcpClient {
             - File editing: use write_file, edit_text, replace_symbol_body, etc., not sed via run_command.
             - Text search: use search_text and search_symbols, not grep/rg via run_command.
             - File search: use list_project_files, not find via run_command.
-            - Build/test: use build_project and run_tests, not Gradle tasks via run_command.
+            - Build/test: prefer build_project and run_tests. Use run_command as a fallback when
+              the dedicated IDE action cannot complete the required build or test.
             - HTTP/API calls: use http_request, not curl/gh/wget via run_command.
               It applies the project's configured AgentBridge hooks and keeps requests visible in the IDE.
             """;
@@ -565,7 +566,7 @@ public final class CopilotClient extends AcpClient {
                 - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
                 - File editing: use edit_text, write_file, replace_symbol_body.
                 - Search: use search_text, search_symbols, not grep via run_command.
-                - Build/test: use build_project and run_tests.
+                - Build/test: prefer build_project and run_tests; use run_command as a fallback when needed.
                 - HTTP/API calls: use http_request, not curl/gh via run_command.
                 """
         );
