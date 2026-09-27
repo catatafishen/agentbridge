@@ -11,6 +11,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class FileToolStaticMethodsTest {
 
     @Nested
+    class StripGitStatusLineEnding {
+
+        @Test
+        void preservesLeadingWorkTreeStatusColumn() {
+            assertEquals(" M file.txt", FileTool.stripGitStatusLineEnding(" M file.txt\n"));
+        }
+
+        @Test
+        void removesWindowsLineEndingOnly() {
+            assertEquals("M  file.txt", FileTool.stripGitStatusLineEnding("M  file.txt\r\n"));
+        }
+    }
+
+    @Nested
     class ParseGitPorcelainLine {
 
         @Test

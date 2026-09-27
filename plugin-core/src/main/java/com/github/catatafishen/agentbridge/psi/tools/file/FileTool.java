@@ -940,6 +940,16 @@ public abstract class FileTool extends Tool {
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
+    static @NotNull String stripGitStatusLineEnding(@NotNull String output) {
+        int end = output.length();
+        while (end > 0) {
+            char last = output.charAt(end - 1);
+            if (last != '\n' && last != '\r') break;
+            end--;
+        }
+        return output.substring(0, end);
+    }
+
     /**
      * Parses a single line of git porcelain status output into a human-readable annotation.
      * The first char is the index (staging area) status, the second is the work-tree status.
@@ -1000,7 +1010,8 @@ public abstract class FileTool extends Tool {
             pb.redirectErrorStream(true);
             pb.environment().put("GIT_TERMINAL_PROMPT", "0");
             Process p = pb.start();
-            String output = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+            String output = stripGitStatusLineEnding(
+                new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
             if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
                 p.destroyForcibly();
                 return "";
