@@ -10,7 +10,8 @@ import org.jetbrains.annotations.Nullable;
  */
 final class TestResultFormatter {
 
-    private static final String TESTS_PASSED = "Test Results: ";
+    private static final String TEST_RESULT_COUNTS_PREFIX = "Test Results: ";
+    private static final String TESTS_PASSED = "Tests PASSED";
     private static final String TESTS_FAILED_PREFIX = "Tests FAILED (exit code ";
     private static final String RESULTS_IN_RUNNER_PANEL = "\n(See detailed results in the IDE's Run panel)";
 
@@ -23,7 +24,7 @@ final class TestResultFormatter {
     static String formatTestSummary(int exitCode, @NotNull String configName, @NotNull String testOutput) {
         String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
             + " — " + configName;
-        if (testOutput.startsWith(TESTS_PASSED)) {
+        if (testOutput.startsWith(TEST_RESULT_COUNTS_PREFIX)) {
             return testOutput + "\n\nRun configuration: " + configName + " (exit code " + exitCode + ")";
         }
         return testOutput.isEmpty()
@@ -32,7 +33,7 @@ final class TestResultFormatter {
     }
 
     static @NotNull String withConsoleFallback(@NotNull String testOutput,
-                                                @Nullable String capturedOutput) {
+                                               @Nullable String capturedOutput) {
         if (!testOutput.isEmpty()) return testOutput;
         String consoleSection = formatConsoleSection(capturedOutput);
         return consoleSection != null ? consoleSection : "";

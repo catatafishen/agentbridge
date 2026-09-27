@@ -21,14 +21,14 @@ class TestResultFormatterTest {
     class FormatTestSummary {
 
         @Test
-        @DisplayName("exit code 0 with empty output shows result header and runner panel message")
+        @DisplayName("exit code 0 with empty output reports an explicit passing state")
         void passedEmptyOutput() {
             String result = TestResultFormatter.formatTestSummary(0, "MyTestConfig", "");
 
-            assertTrue(result.contains("MyTestConfig"), "should contain config name");
+            assertTrue(result.startsWith("Tests PASSED — MyTestConfig"), result);
             assertTrue(result.contains("Run panel"),
                 "should contain runner panel message when output is empty");
-            assertFalse(result.contains("FAILED"), "should not contain FAILED");
+            assertFalse(result.startsWith("Test Results:  —"), result);
         }
 
         @Test
