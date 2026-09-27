@@ -89,10 +89,7 @@ public final class GitDiffTool extends GitTool {
             cmdArgs.add(1, "--stat");
         }
 
-        if (args.has("path") && !args.get("path").getAsString().isEmpty()) {
-            cmdArgs.add("--");
-            cmdArgs.add(args.get("path").getAsString());
-        }
+        appendPathSpec(cmdArgs, args);
 
         return fetchNote + runGitIn(root, cmdArgs.toArray(String[]::new));
     }

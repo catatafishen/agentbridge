@@ -10,6 +10,7 @@ import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.ui.renderers.GitOperationRenderer;
+import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -151,6 +152,12 @@ public abstract class GitTool extends Tool {
 
     protected static boolean hasText(@Nullable String value) {
         return value != null && !value.isEmpty();
+    }
+
+    protected static void appendPathSpec(@NotNull List<String> commandArgs, @NotNull JsonObject args) {
+        if (!args.has("path") || args.get("path").getAsString().isEmpty()) return;
+        commandArgs.add("--");
+        commandArgs.add(args.get("path").getAsString());
     }
 
     private List<String> detectedGitRoots() {
