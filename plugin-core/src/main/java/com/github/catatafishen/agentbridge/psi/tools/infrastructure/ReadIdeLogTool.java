@@ -214,11 +214,17 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         void flush() {
             if (pending == null) return;
             if (outputBuffer.size() >= maxLines) outputBuffer.removeFirst();
-            outputBuffer.addLast(pending.toString());
+            outputBuffer.addLast(compactEntry(pending.toString()));
             pending = null;
         }
 
-        private static final int MAX_LINE_CHARS = 2000;
+        private static final int MAX_ENTRY_CHARS = 2000;
+
+        private static @NotNull String compactEntry(@NotNull String entry) {
+            if (entry.length() <= MAX_ENTRY_CHARS) return entry;
+            return entry.substring(0, MAX_ENTRY_CHARS)
+                + "... [+" + (entry.length() - MAX_ENTRY_CHARS) + " chars]";
+        }
 
         private @Nullable String buildCompact(Matcher m) {
             String level = m.group(4);
@@ -230,11 +236,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
                 + "  " + level
                 + "  " + shortLogger(m.group(5).trim())
                 + ": " + message;
-            if (filterPattern != null && !filterPattern.matcher(compact).find()) return null;
-            if (compact.length() > MAX_LINE_CHARS) {
-                compact = compact.substring(0, MAX_LINE_CHARS) + "... [+" + (compact.length() - MAX_LINE_CHARS) + "]";
-            }
-            return compact;
+            return filterPattern == null || filterPattern.matcher(compact).find() ? compact : null;
         }
 
         private boolean isInTimeRange(String date, String time) {

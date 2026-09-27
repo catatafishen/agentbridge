@@ -244,6 +244,21 @@ class ReadIdeLogToolTest {
         assertTrue(result.contains("Main.java:10"), "Stack trace line 2: " + result);
     }
 
+    @Test
+    @DisplayName("caps the complete entry after appending continuation lines")
+    void multilineEntryIsCappedAfterContinuations() throws IOException {
+        String oversizedContinuation = "payload".repeat(500);
+        Files.writeString(logFile,
+            logLine("10:00:00", "INFO", "com.Foo", "request payload") + "\n"
+                + oversizedContinuation + "\n");
+
+        String result = execute(new JsonObject());
+
+        assertTrue(result.length() < 2100, "Complete logical entry should be compact: " + result.length());
+        assertTrue(result.contains("... [+"), "Should report omitted characters: " + result);
+        assertFalse(result.endsWith(oversizedContinuation), "Continuation payload should be truncated");
+    }
+
     // ── No-prefix logger ─────────────────────────────────────────────────────
 
     @Test
