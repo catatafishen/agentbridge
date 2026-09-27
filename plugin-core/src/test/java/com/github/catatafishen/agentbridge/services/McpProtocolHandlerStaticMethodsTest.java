@@ -220,11 +220,13 @@ class McpProtocolHandlerStaticMethodsTest {
             assertTrue(result.length() < text.length());
             assertTrue(result.contains("[Output truncated:"));
             assertTrue(result.contains("characters omitted"));
+            assertTrue(result.contains("filtering, range, or scope parameters"));
+            assertFalse(result.contains("/tmp"));
         }
 
         @Test
         void exactLimitNotTruncated() {
-            String text = "a".repeat(80_000);
+            String text = "a".repeat(16_000);
             assertSame(text, McpProtocolHandler.truncateIfNeeded(text));
         }
     }

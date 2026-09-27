@@ -545,6 +545,8 @@ class McpProtocolHandlerTest {
         assertTrue(result.length() < longText.length());
         assertTrue(result.contains("[Output truncated:"));
         assertTrue(result.contains("characters omitted"));
+        assertTrue(result.contains("filtering, range, or scope parameters"));
+        assertFalse(result.contains("/tmp"));
     }
 
     // ── respondResult ────────────────────────────────────────────────────────
@@ -843,8 +845,8 @@ class McpProtocolHandlerTest {
 
     @Test
     void truncateIfNeeded_exactBoundaryNotTruncated() throws Exception {
-        // Text exactly at MAX_RESULT_CHARS (80_000) should NOT be truncated
-        String exactText = "x".repeat(80_000);
+        // Text exactly at MAX_RESULT_CHARS should not be truncated.
+        String exactText = "x".repeat(16_000);
         String result = invokeTruncateIfNeeded(exactText);
         assertEquals(exactText, result);
     }

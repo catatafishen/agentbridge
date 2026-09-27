@@ -79,7 +79,7 @@ public final class McpProtocolHandler {
     /**
      * Hard cap on tool result size. Keeps output below client-side truncation thresholds.
      */
-    private static final int MAX_RESULT_CHARS = 80_000;
+    private static final int MAX_RESULT_CHARS = 16_000;
     private static final int RESOURCE_PAGE_SIZE = 200;
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
 
@@ -1065,8 +1065,7 @@ public final class McpProtocolHandler {
         int removed = text.length() - MAX_RESULT_CHARS;
         return text.substring(0, MAX_RESULT_CHARS)
             + "\n\n[Output truncated: " + removed + " characters omitted."
-            + " Use the tool's pagination parameters (e.g. start_line/end_line, offset/max_chars)"
-            + " to read specific sections.]";
+            + " Narrow the request with the tool's filtering, range, or scope parameters.]";
     }
 
     static JsonObject respondResult(JsonObject request, JsonObject result) {
