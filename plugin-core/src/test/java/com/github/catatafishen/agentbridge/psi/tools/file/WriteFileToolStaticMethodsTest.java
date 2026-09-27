@@ -14,6 +14,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WriteFileToolStaticMethodsTest {
 
+    @Nested
+    class BuildWriteTimeoutMessage {
+
+        @Test
+        void explainsConflictModalAndRecovery() {
+            String result = WriteFileTool.buildWriteTimeoutMessage(
+                "src/Test.java", " Modal dialog blocking: 'Conflicts'");
+
+            assertTrue(result.contains("in-memory document and file on disk have diverged"));
+            assertTrue(result.contains("interact_with_modal"));
+            assertTrue(result.contains("reload_from_disk"));
+        }
+
+        @Test
+        void reportsMissingVisibleModal() {
+            String result = WriteFileTool.buildWriteTimeoutMessage("src/Test.java", "");
+
+            assertTrue(result.contains("possible phantom modality leak"));
+        }
+    }
+
     // ── closestMatchHint ────────────────────────────────────
 
     @Nested

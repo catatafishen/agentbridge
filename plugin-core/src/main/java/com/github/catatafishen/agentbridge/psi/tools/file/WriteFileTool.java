@@ -54,6 +54,7 @@ public class WriteFileTool extends FileTool {
     private static final String PARAM_AUTO_FORMAT_LEGACY = "auto_format";
     private static final String MSG_CANNOT_OPEN = "Cannot open document: ";
     private static final String MSG_EDITED_PREFIX = "Edited: ";
+    private static final int WRITE_TIMEOUT_SECONDS = 15;
 
     public WriteFileTool(Project project) {
         super(project);
@@ -184,7 +185,7 @@ public class WriteFileTool extends FileTool {
                 () -> resolveVirtualFile(pathStr));
             if (existingVf == null) {
                 createNewFile(pathStr, args.get(PARAM_CONTENT).getAsString(), resultFuture);
-                String result = resultFuture.get(15, TimeUnit.SECONDS);
+                String result = resultFuture.get(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 if (autoFormat && !result.startsWith("Error")) queueAutoFormat(project, pathStr);
                 followRange[0] = 1;
                 followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
@@ -219,7 +220,7 @@ public class WriteFileTool extends FileTool {
         });
 
         try {
-            String result = resultFuture.get(15, TimeUnit.SECONDS);
+            String result = resultFuture.get(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
                 HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
             FileAccessTracker.recordWrite(project, pathStr);
@@ -227,11 +228,21 @@ public class WriteFileTool extends FileTool {
         } catch (TimeoutException e) {
             cancelled.set(true);
             String detail = EdtUtil.describeModalBlocker();
-            var te = new TimeoutException("EDT did not process write within 15s for " + pathStr + "."
-                + (detail.isEmpty() ? " No visible modal dialog — possible phantom modality leak." : detail));
+            var te = new TimeoutException(buildWriteTimeoutMessage(pathStr, detail));
             te.initCause(e);
             throw te;
         }
+    }
+
+    static @NotNull String buildWriteTimeoutMessage(@NotNull String pathStr, @NotNull String detail) {
+        String message = "EDT did not process write within " + WRITE_TIMEOUT_SECONDS + "s for " + pathStr + ".";
+        if (detail.isEmpty()) return message + " No visible modal dialog — possible phantom modality leak.";
+        if (detail.contains("Modal dialog blocking: 'Conflicts'")) {
+            return message + detail + " IntelliJ opens this dialog when the in-memory document and file on disk "
+                + "have diverged. Inspect and resolve it with interact_with_modal, then use reload_from_disk if "
+                + "the disk version was accepted before retrying the edit.";
+        }
+        return message + detail + " Resolve the dialog with interact_with_modal before retrying the edit.";
     }
 
     private void writeFileFullContent(VirtualFile vf, String pathStr, String newContent,
