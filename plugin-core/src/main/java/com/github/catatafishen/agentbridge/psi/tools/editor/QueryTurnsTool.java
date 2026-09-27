@@ -47,6 +47,7 @@ public final class QueryTurnsTool extends EditorTool {
     private static final String PARAM_INCLUDE_THINKING = "include_thinking";
     private static final String PARAM_INCLUDE_TOOL_CALLS = "include_tool_calls";
     private static final String PARAM_MAX_CHARS = "max_chars";
+    static final int MAX_RESPONSE_CHARS = 12_000;
 
     private static final DateTimeFormatter DISPLAY_FMT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -91,7 +92,7 @@ public final class QueryTurnsTool extends EditorTool {
             Output control (all off by default):
             - include_thinking: include model reasoning blocks
             - include_tool_calls: include tool name, arguments, and output size
-            - max_chars: total character budget (default 8000)
+            - max_chars: total character budget (default 8000, maximum 12000)
 
             Navigation: each result includes prev_turn_id (UUID of the next-older exchange).
             To drill into an exchange: query_conversation_history(turn_id="uuid", include_tool_calls=true)
@@ -140,7 +141,8 @@ public final class QueryTurnsTool extends EditorTool {
             Param.optional(PARAM_INCLUDE_TOOL_CALLS, TYPE_BOOLEAN,
                 "Include tool names, arguments, and output sizes (default false)."),
             Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER,
-                "Total character budget for the response (default 8000).")
+                "Total character budget for the response (default 8000, maximum "
+                    + MAX_RESPONSE_CHARS + ").")
         );
     }
 
@@ -165,7 +167,7 @@ public final class QueryTurnsTool extends EditorTool {
         String agentName = stringOrNull(args, PARAM_AGENT_NAME);
         boolean includeThinking = boolOrDefault(args, PARAM_INCLUDE_THINKING, false);
         boolean includeToolCalls = boolOrDefault(args, PARAM_INCLUDE_TOOL_CALLS, false);
-        int maxChars = Math.max(10, intOrDefault(args, PARAM_MAX_CHARS, 8000));
+        int maxChars = normalizeMaxChars(intOrDefault(args, PARAM_MAX_CHARS, 8000));
 
         Instant since;
         Instant until;
@@ -228,6 +230,10 @@ public final class QueryTurnsTool extends EditorTool {
             result = result.substring(0, maxChars - 3) + "...";
         }
         return result;
+    }
+
+    static int normalizeMaxChars(int requestedMaxChars) {
+        return Math.clamp(requestedMaxChars, 10, MAX_RESPONSE_CHARS);
     }
 
     private static void appendTurnHeader(@NotNull StringBuilder sb, @NotNull ConversationQuery.TurnSummary turn) {

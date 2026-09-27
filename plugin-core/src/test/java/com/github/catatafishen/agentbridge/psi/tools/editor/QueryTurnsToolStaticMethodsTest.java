@@ -6,7 +6,11 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QueryTurnsToolStaticMethodsTest {
 
@@ -141,6 +145,24 @@ class QueryTurnsToolStaticMethodsTest {
             var args = new JsonObject();
             args.addProperty("flag", false);
             assertFalse(QueryTurnsTool.boolOrDefault(args, "flag", true));
+        }
+    }
+
+    @Nested
+    class NormalizeMaxChars {
+        @Test
+        void preservesValuesWithinSafeRange() {
+            assertEquals(8_000, QueryTurnsTool.normalizeMaxChars(8_000));
+        }
+
+        @Test
+        void enforcesMinimumResponseSize() {
+            assertEquals(10, QueryTurnsTool.normalizeMaxChars(-1));
+        }
+
+        @Test
+        void capsResponsesBelowClientSpillThreshold() {
+            assertEquals(QueryTurnsTool.MAX_RESPONSE_CHARS, QueryTurnsTool.normalizeMaxChars(30_000));
         }
     }
 }
