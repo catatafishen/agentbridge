@@ -203,9 +203,9 @@ class McpProtocolHandlerStaticMethodsTest {
 
         @Test
         void usesTrackerRecordIdWhenAvailable() {
-            ToolCallRecord record = new ToolCallRecord("db-event", null);
+            ToolCallRecord callRecord = new ToolCallRecord("db-event", null);
 
-            assertEquals("db-event", McpProtocolHandler.resolveDbEventId(record, "tool-use"));
+            assertEquals("db-event", McpProtocolHandler.resolveDbEventId(callRecord, "tool-use"));
         }
 
         @Test
@@ -241,9 +241,10 @@ class McpProtocolHandlerStaticMethodsTest {
             String result = McpProtocolHandler.truncateIfNeeded(text);
             assertNotNull(result);
             assertTrue(result.length() < text.length());
-            assertTrue(result.endsWith("\n\n[Output truncated: 74000 characters omitted."
-                + " If the tool reported a continuation offset, retry with that offset; otherwise narrow"
-                + " the request with the tool's filtering, range, or scope parameters.]"));
+            assertTrue(result.endsWith("""
+
+
+                [Output truncated: 74000 characters omitted. If the tool reported a continuation offset, retry with that offset; otherwise narrow the request with the tool's filtering, range, or scope parameters.]"""));
             assertFalse(result.contains("/tmp"));
         }
 

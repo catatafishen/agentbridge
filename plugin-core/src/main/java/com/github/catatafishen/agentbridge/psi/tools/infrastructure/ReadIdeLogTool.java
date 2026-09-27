@@ -141,18 +141,11 @@ public final class ReadIdeLogTool extends InfrastructureTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws IOException {
-        int maxLines = 200;
-        if (args.has(PARAM_LINES)) {
-            long requestedLines;
-            try {
-                requestedLines = args.get(PARAM_LINES).getAsLong();
-            } catch (RuntimeException e) {
-                return "Error: lines must be between 1 and " + MAX_LINES + ".";
-            }
-            if (requestedLines < 1 || requestedLines > MAX_LINES) {
-                return "Error: lines must be between 1 and " + MAX_LINES + ".";
-            }
-            maxLines = (int) requestedLines;
+        int maxLines;
+        try {
+            maxLines = parseMaxLines(args);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
         }
 
         ToolResultPaginator.PageRequest pageRequest;
@@ -162,10 +155,11 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             return "Error: " + e.getMessage();
         }
 
-        String filterStr = args.has(PARAM_FILTER) ? args.get(PARAM_FILTER).getAsString() : null;
-        String sinceStr = args.has(PARAM_SINCE) ? args.get(PARAM_SINCE).getAsString() : null;
-        String untilStr = args.has(PARAM_UNTIL) ? args.get(PARAM_UNTIL).getAsString() : null;
-        String levelParam = args.has(PARAM_LEVEL) ? args.get(PARAM_LEVEL).getAsString().toUpperCase() : null;
+        String filterStr = optionalString(args, PARAM_FILTER);
+        String sinceStr = optionalString(args, PARAM_SINCE);
+        String untilStr = optionalString(args, PARAM_UNTIL);
+        String level = optionalString(args, PARAM_LEVEL);
+        String levelParam = level != null ? level.toUpperCase() : null;
 
         Path logFile = findIdeLogFile();
         if (logFile == null) return err("Could not locate idea.log");
@@ -199,6 +193,26 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         if (outputBuffer.isEmpty()) return "No matching log entries found.";
         return ToolResultPaginator.paginate(
             id(), String.join("\n", outputBuffer), pageRequest.offset(), pageRequest.maxChars());
+    }
+
+    private static int parseMaxLines(@NotNull JsonObject args) {
+        if (!args.has(PARAM_LINES)) return 200;
+
+        long requestedLines;
+        try {
+            requestedLines = args.get(PARAM_LINES).getAsLong();
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("lines must be between 1 and " + MAX_LINES + ".", e);
+        }
+        if (requestedLines < 1 || requestedLines > MAX_LINES) {
+            throw new IllegalArgumentException("lines must be between 1 and " + MAX_LINES + ".");
+        }
+        return (int) requestedLines;
+    }
+
+    @Nullable
+    private static String optionalString(@NotNull JsonObject args, @NotNull String parameter) {
+        return args.has(parameter) ? args.get(parameter).getAsString() : null;
     }
 
     // ── Per-line processing ───────────────────────────────────────────────────
