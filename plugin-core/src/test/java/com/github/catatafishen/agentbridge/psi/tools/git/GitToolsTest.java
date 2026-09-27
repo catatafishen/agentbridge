@@ -673,6 +673,45 @@ public class GitToolsTest extends BasePlatformTestCase {
         }
     }
 
+    public void testGitPushAsyncOmitsStalePrePushDivergenceWarningAfterSuccess() throws Exception {
+        try {
+            Path remote = Path.of(basePath, "remote.git");
+            git("init", "--bare", remote.toString());
+            git("remote", "add", "origin", remote.toString());
+            git("push", "--set-upstream", "origin", currentBranch);
+
+            String fetchResult = new GitFetchTool(getProject()).execute(args("remote", "origin"));
+            assertFalse("Initial fetch must succeed: " + fetchResult, fetchResult.startsWith("Error"));
+
+            String staleTrackingCommit = gitOutput(
+                "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "stale tracking commit"
+            ).trim();
+            git("update-ref", "refs/remotes/origin/" + currentBranch, staleTrackingCommit);
+            assertEquals("1", gitOutput("rev-list", "--count", "HEAD..@{upstream}").trim());
+
+            Path file = Path.of(basePath, "async-push-after-stale-tracking.txt");
+            Files.writeString(file, "background push after stale tracking\n");
+            git("add", file.getFileName().toString());
+            git("commit", "-m", "test: push after stale tracking");
+
+            String startResult = new GitPushTool(getProject()).execute(args(
+                "async", "true",
+                "set_upstream", "true"
+            ));
+            String status = awaitGitJobStatus(
+                startResult,
+                "Started background git_push job: ",
+                "succeeded"
+            );
+
+            assertFalse("Successful push must not retain a pre-push divergence warning: " + status,
+                status.contains("Remote is"));
+            assertEquals("0", gitOutput("rev-list", "--count", "HEAD..@{upstream}").trim());
+        } finally {
+            disposeAsyncGitServices();
+        }
+    }
+
     public void testGitPushAsyncReportsPushFailure() throws Exception {
         try {
             Path missingRemote = Path.of(basePath, "missing-remote.git");

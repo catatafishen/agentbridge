@@ -118,7 +118,7 @@ public final class GitPushTool extends GitTool {
 
         String result = runGitIn(root, pushCommandArgs(args, forceFlag, target));
         if (result.startsWith(ERR_PREFIX)) return fetchNote + result + divergenceWarning;
-        return buildPushResponse(result, fetchNote, divergenceWarning, target, root);
+        return buildPushResponse(result, fetchNote, target, root);
     }
 
     private @NotNull String startBackgroundPush(
@@ -156,7 +156,7 @@ public final class GitPushTool extends GitTool {
             return GitJobRegistry.JobResult.failure(fetchNote + result + divergenceWarning);
         }
         return GitJobRegistry.JobResult.success(
-            buildPushResponse(result, fetchNote, divergenceWarning, target, root)
+            buildPushResponse(result, fetchNote, target, root)
         );
     }
 
@@ -212,13 +212,11 @@ public final class GitPushTool extends GitTool {
     private String buildPushResponse(
         @NotNull String result,
         @NotNull String fetchNote,
-        @NotNull String divergenceWarning,
         @NotNull PushTarget target,
         @NotNull String root
     ) {
         StringBuilder ctx = new StringBuilder(result);
         if (!fetchNote.isEmpty()) ctx.insert(0, fetchNote);
-        if (!divergenceWarning.isEmpty()) ctx.append(divergenceWarning);
         appendPushContext(ctx, target, root);
         return ctx.toString();
     }
