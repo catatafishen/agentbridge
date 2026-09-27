@@ -613,11 +613,16 @@ public final class RunTestsTool extends TestingTool {
             for (var taskNode : taskNodes) {
                 TaskData task = taskNode.getData();
                 String name = task.getName();
-                if (!"test".equals(name) && task.isTest()) return name;
+                if (isCustomTestTask(name, task.isTest())) return name;
             }
         }
 
         return GradleBuildFileScanner.detectTestTask(basePath);
+    }
+
+    static boolean isCustomTestTask(@NotNull String name, boolean markedAsTest) {
+        if (!markedAsTest || "test".equals(name)) return false;
+        return !List.of("check", "build", "assemble", "classes", "testClasses").contains(name);
     }
 
     /**
@@ -755,7 +760,7 @@ public final class RunTestsTool extends TestingTool {
         String basePath = project.getBasePath();
         if (basePath != null) {
             String xmlResults = parseJunitXmlResults(basePath, module);
-            if (!xmlResults.isEmpty()) return xmlResults;
+            if (shouldUseXmlResults(exitCode, xmlResults)) return xmlResults;
         }
 
         String testOutput = TestResultFormatter.withConsoleFallback(
@@ -1069,6 +1074,10 @@ public final class RunTestsTool extends TestingTool {
     }
 
     // ── JUnit XML result parsing ─────────────────────────────
+
+    static boolean shouldUseXmlResults(int exitCode, @NotNull String xmlResults) {
+        return exitCode == 0 && !xmlResults.isEmpty();
+    }
 
     private String parseJunitXmlResults(String basePath, String module) {
         return JunitXmlParser.parseJunitXmlResults(basePath, module);

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RunTestsToolResultCollectionTest {
@@ -20,6 +21,22 @@ class RunTestsToolResultCollectionTest {
         assertTrue(output.contains("=== Test Details ==="));
         assertTrue(output.contains("PASSED passes"));
         assertTrue(output.contains("FAILED fails"));
+    }
+
+    @Test
+    void failedRunNeverUsesExistingXmlResults() {
+        assertFalse(RunTestsTool.shouldUseXmlResults(1, "Test Results: 29 tests, 29 passed"));
+        assertTrue(RunTestsTool.shouldUseXmlResults(0, "Test Results: 29 tests, 29 passed"));
+        assertFalse(RunTestsTool.shouldUseXmlResults(0, ""));
+    }
+
+    @Test
+    void lifecycleTasksAreNotSelectedAsCustomTestTasks() {
+        assertFalse(RunTestsTool.isCustomTestTask("test", true));
+        assertFalse(RunTestsTool.isCustomTestTask("check", true));
+        assertFalse(RunTestsTool.isCustomTestTask("build", true));
+        assertTrue(RunTestsTool.isCustomTestTask("integrationTest", true));
+        assertFalse(RunTestsTool.isCustomTestTask("integrationTest", false));
     }
 
     public static final class FakeConsole {
