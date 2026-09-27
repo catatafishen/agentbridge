@@ -11,6 +11,7 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -82,7 +83,20 @@ public final class GitStageTool extends GitTool {
             return "Error: provide 'path', 'paths', or 'all' parameter";
         }
 
-        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
+        boolean stageAll = args.has("all") && args.get("all").getAsBoolean();
+        if (!stageAll) {
+            List<String> pathsToStage = stagedFiles.stream()
+                .filter(path -> !isAlreadyStagedDeletion(root, path))
+                .toList();
+            cmdArgs.clear();
+            cmdArgs.add("add");
+            if (!pathsToStage.isEmpty()) {
+                cmdArgs.add("--");
+                cmdArgs.addAll(pathsToStage);
+            }
+        }
+
+        String result = cmdArgs.size() == 1 ? "" : runGitIn(root, cmdArgs.toArray(String[]::new));
 
         refreshAndActivateCommitPanel();
 
@@ -96,6 +110,18 @@ public final class GitStageTool extends GitTool {
         if (base.startsWith("Error")) return base;
 
         return base + getBranchSummaryIn(root);
+    }
+
+    private boolean isAlreadyStagedDeletion(@NotNull String root, @NotNull String path) {
+        File requestedFile = new File(path);
+        File resolvedFile = requestedFile.isAbsolute()
+            ? requestedFile
+            : new File(root, path);
+        if (resolvedFile.exists()) return false;
+
+        String stagedDeletion = runGitInQuiet(
+            root, "diff", "--cached", "--name-only", "--diff-filter=D", "--", path);
+        return stagedDeletion != null && !stagedDeletion.isBlank();
     }
 
     /**

@@ -8,6 +8,7 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -120,6 +121,19 @@ public class GitToolsTest extends BasePlatformTestCase {
         // Drain stdout/stderr to prevent the subprocess from blocking on a full pipe buffer.
         p.getInputStream().readAllBytes();
         p.waitFor();
+    }
+
+    private String gitOutput(String... args) throws Exception {
+        List<String> cmd = new ArrayList<>();
+        cmd.add(gitExec);
+        cmd.addAll(List.of(args));
+        Process process = new ProcessBuilder(cmd)
+            .directory(new File(basePath))
+            .redirectErrorStream(true)
+            .start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertEquals("git command failed: " + output, 0, process.waitFor());
+        return output;
     }
 
     /**
@@ -487,6 +501,30 @@ public class GitToolsTest extends BasePlatformTestCase {
         // Must not be a raw Java exception dump
         assertFalse("Result must not contain a Java exception class, got: " + result,
             result.contains("Exception"));
+    }
+
+    public void testGitStageIgnoresAlreadyStagedDeletionInPathBatch() throws Exception {
+        Path deletedFile = Path.of(basePath, "README.md");
+        Files.delete(deletedFile);
+        git("add", "--all", "--", "README.md");
+        assertTrue(gitOutput("status", "--porcelain").contains("D  README.md"));
+
+        Path liveFile = Path.of(basePath, "new-file.txt");
+        Files.writeString(liveFile, "new content\n");
+
+        JsonObject stageArgs = new JsonObject();
+        JsonArray paths = new JsonArray();
+        paths.add("README.md");
+        paths.add("new-file.txt");
+        stageArgs.add("paths", paths);
+
+        String result = new GitStageTool(getProject()).execute(stageArgs);
+
+        assertFalse("Already-staged deletion must not abort the batch: " + result,
+            result.startsWith("Error"));
+        String staged = gitOutput("diff", "--cached", "--name-status");
+        assertTrue(staged.contains("D\tREADME.md"));
+        assertTrue(staged.contains("A\tnew-file.txt"));
     }
 
     /**
