@@ -4,10 +4,16 @@ import com.github.catatafishen.agentbridge.psi.tools.RunPanelExecutor;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.intellij.execution.ExecutionListener;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
+import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
+import com.intellij.execution.process.ProcessEvent;
+import com.intellij.execution.process.ProcessHandler;
+import com.intellij.execution.process.ProcessListener;
+import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
@@ -16,13 +22,17 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -134,7 +144,7 @@ public final class RunConfigurationService {
                 ExecutionManager.getInstance(project).restartRunProfile(buildExecutionEnv(settings));
                 resultFuture.complete("Started run configuration: " + name
                     + " [" + settings.getType().getDisplayName() + "]"
-                    + "\nResults will appear in the IntelliJ Run panel.");
+                    + "\nResults will appear in the IntelliJ Run panel or Terminal tool window, according to the configuration.");
             } catch (Exception e) {
                 resultFuture.complete("Error running configuration: " + e.getMessage());
             }
@@ -147,18 +157,19 @@ public final class RunConfigurationService {
         String name = args.get("name").getAsString();
         int waitSeconds = args.has("wait_seconds") ? args.get("wait_seconds").getAsInt() : 30;
 
-        var settingsRef = new java.util.concurrent.atomic.AtomicReference<com.intellij.execution.RunnerAndConfigurationSettings>();
+        var settingsRef = new AtomicReference<RunnerAndConfigurationSettings>();
         CompletableFuture<Void> launchFuture = new CompletableFuture<>();
         CompletableFuture<Integer> exitFuture = new CompletableFuture<>();
+        BoundedProcessOutputCapture outputCapture = new BoundedProcessOutputCapture();
 
         // Subscribe before launching so we don't miss the processStarted event.
         Runnable disconnect = PlatformApiCompat.subscribeExecutionListener(project,
-            new com.intellij.execution.ExecutionListener() {
+            new ExecutionListener() {
                 @Override
-                public void processStarted(@org.jetbrains.annotations.NotNull String executorId,
-                                           @org.jetbrains.annotations.NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                           @org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessHandler handler) {
-                    attachExitListener(settingsRef.get(), env, handler, exitFuture);
+                public void processStarted(@NotNull String executorId,
+                                           @NotNull ExecutionEnvironment env,
+                                           @NotNull ProcessHandler handler) {
+                    attachExitListener(settingsRef.get(), env, handler, exitFuture, outputCapture);
                 }
             });
 
@@ -180,33 +191,35 @@ public final class RunConfigurationService {
 
         try {
             launchFuture.get(10, TimeUnit.SECONDS);
-        } catch (java.util.concurrent.ExecutionException e) {
+        } catch (ExecutionException e) {
             disconnect.run();
             return e.getCause().getMessage();
         }
 
         try {
             int exitCode = exitFuture.get(waitSeconds, TimeUnit.SECONDS);
-            return formatRunCompletionMessage(name, exitCode);
-        } catch (java.util.concurrent.TimeoutException e) {
-            return formatRunTimeoutMessage(name, waitSeconds);
+            return formatRunCompletionMessage(name, exitCode, outputCapture.content());
+        } catch (TimeoutException e) {
+            return formatRunTimeoutMessage(name, waitSeconds, outputCapture.content());
         } finally {
             disconnect.run();
         }
     }
 
     private static void attachExitListener(
-        com.intellij.execution.RunnerAndConfigurationSettings settings,
-        @org.jetbrains.annotations.NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-        @org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessHandler handler,
-        CompletableFuture<Integer> exitFuture) {
+        RunnerAndConfigurationSettings settings,
+        @NotNull ExecutionEnvironment env,
+        @NotNull ProcessHandler handler,
+        CompletableFuture<Integer> exitFuture,
+        @NotNull BoundedProcessOutputCapture outputCapture) {
         var envSettings = env.getRunnerAndConfigurationSettings();
         if (settings == null || envSettings == null || !settings.getName().equals(envSettings.getName())) {
             return;
         }
-        handler.addProcessListener(new com.intellij.execution.process.ProcessListener() {
+        handler.addProcessListener(outputCapture);
+        handler.addProcessListener(new ProcessListener() {
             @Override
-            public void processTerminated(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent event) {
+            public void processTerminated(@NotNull ProcessEvent event) {
                 exitFuture.complete(event.getExitCode());
             }
         });
@@ -1061,17 +1074,42 @@ public final class RunConfigurationService {
     /**
      * Formats the message returned when a run configuration completes.
      */
-    static String formatRunCompletionMessage(String name, int exitCode) {
+    static @NotNull String formatRunCompletionMessage(@NotNull String name, int exitCode) {
+        return formatRunCompletionMessage(name, exitCode, "");
+    }
+
+    static @NotNull String formatRunCompletionMessage(@NotNull String name,
+                                                      int exitCode,
+                                                      @NotNull String capturedOutput) {
         String status = exitCode == 0 ? "PASSED" : "FAILED (exit code " + exitCode + ")";
-        return "Run configuration '" + name + "' " + status + ". "
-            + "Use read_run_output with tab_name='" + name + "' to see full output.";
+        return appendRunOutputAndFollowUp("Run configuration '" + name + "' " + status + ".", capturedOutput, name);
     }
 
     /**
      * Formats the message returned when a run configuration times out.
      */
-    static String formatRunTimeoutMessage(String name, int waitSeconds) {
-        return "Run configuration '" + name + "' did not complete within " + waitSeconds + "s. "
-            + "Use read_run_output with tab_name='" + name + "' to see current output.";
+    static @NotNull String formatRunTimeoutMessage(@NotNull String name, int waitSeconds) {
+        return formatRunTimeoutMessage(name, waitSeconds, "");
+    }
+
+    static @NotNull String formatRunTimeoutMessage(@NotNull String name,
+                                                   int waitSeconds,
+                                                   @NotNull String capturedOutput) {
+        String message = "Run configuration '" + name + "' did not complete within " + waitSeconds +
+            "s. It may still be running.";
+        return appendRunOutputAndFollowUp(message, capturedOutput, name);
+    }
+
+    private static @NotNull String appendRunOutputAndFollowUp(@NotNull String message,
+                                                              @NotNull String capturedOutput,
+                                                              @NotNull String name) {
+        StringBuilder result = new StringBuilder(message);
+        if (!capturedOutput.isBlank()) {
+            result.append("\n\nCurrent process output:\n").append(capturedOutput.stripTrailing());
+        }
+        return result.append("\n\nUse list_run_tabs and read_run_output with tab_name='")
+            .append(name)
+            .append("' for Run-panel output. Terminal-attached configurations appear in list_terminals and can be read with read_terminal_output.")
+            .toString();
     }
 }

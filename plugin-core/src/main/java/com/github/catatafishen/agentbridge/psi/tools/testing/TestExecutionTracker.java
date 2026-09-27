@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.testing;
 
+import com.github.catatafishen.agentbridge.psi.BoundedProcessOutputCapture;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.execution.ExecutionListener;
 import com.intellij.execution.RunnerAndConfigurationSettings;
@@ -32,7 +33,7 @@ final class TestExecutionTracker {
     private final String configName;
     private final CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
     private final AtomicReference<RunProfile> expectedProfile = new AtomicReference<>();
-    private final TestProcessOutputCapture outputCapture = new TestProcessOutputCapture();
+    private final BoundedProcessOutputCapture outputCapture = new BoundedProcessOutputCapture();
     private final AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
     });
 

@@ -54,7 +54,7 @@ public final class RunConfigurationTool extends ProjectTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("name", TYPE_STRING, "Exact name of the run configuration"),
-            Param.optional("wait_seconds", TYPE_INTEGER, "(Optional) Wait up to this many seconds for the run to complete (default: fire-and-forget). Use read_run_output after to get full output.")
+            Param.optional("wait_seconds", TYPE_INTEGER, "(Optional) Wait up to this many seconds for the run to complete (default: fire-and-forget). The result includes bounded process output. For more, inspect the Run panel with list_run_tabs/read_run_output or terminal-attached configurations with list_terminals/read_terminal_output.")
         );
     }
 

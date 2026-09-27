@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.psi.tools.testing;
+package com.github.catatafishen.agentbridge.psi;
 
 import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessListener;
@@ -6,11 +6,11 @@ import com.intellij.openapi.util.Key;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Retains the tail of a test process's stdout and stderr for result fallbacks.
+ * Retains a bounded tail of a process's stdout and stderr for tool-result fallbacks.
  */
-final class TestProcessOutputCapture implements ProcessListener {
+public final class BoundedProcessOutputCapture implements ProcessListener {
 
-    private static final int MAX_CHARS = 16_000;
+    private static final int MAX_CHARS = 12_000;
     private static final String TRUNCATED_PREFIX = "[Earlier process output omitted]\n";
 
     private final StringBuilder output = new StringBuilder();
@@ -21,7 +21,7 @@ final class TestProcessOutputCapture implements ProcessListener {
         append(event.getText());
     }
 
-    synchronized void append(@NotNull String text) {
+    public synchronized void append(@NotNull String text) {
         output.append(text);
         int excess = output.length() - MAX_CHARS;
         if (excess > 0) {
@@ -30,7 +30,7 @@ final class TestProcessOutputCapture implements ProcessListener {
         }
     }
 
-    synchronized @NotNull String content() {
+    public synchronized @NotNull String content() {
         if (output.isEmpty()) return "";
         return truncated ? TRUNCATED_PREFIX + output : output.toString();
     }

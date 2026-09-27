@@ -203,10 +203,21 @@ class RunConfigurationServiceExtractedMethodsTest {
         }
 
         @Test
-        void includesReadRunOutputHint() {
+        void includesRunPanelAndTerminalOutputHints() {
             String msg = RunConfigurationService.formatRunTimeoutMessage("Build", 60);
             assertTrue(msg.contains("read_run_output"));
             assertTrue(msg.contains("tab_name='Build'"));
+            assertTrue(msg.contains("list_terminals"));
+            assertTrue(msg.contains("read_terminal_output"));
+        }
+
+        @Test
+        void includesCapturedOutput() {
+            String msg = RunConfigurationService.formatRunTimeoutMessage(
+                "Build", 60, "compiling\nstill working\n");
+
+            assertTrue(msg.contains("Current process output:"));
+            assertTrue(msg.contains("compiling\nstill working"));
         }
     }
 }
