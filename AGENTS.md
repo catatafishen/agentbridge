@@ -104,6 +104,13 @@ Keep instructions at the narrowest scope where their assumptions are guaranteed:
 Before changing a bundled instruction, review it from the perspective of a user who installed the plugin into an
 unrelated project on a clean machine. If the instruction depends on this repository or its setup, keep it local instead.
 
+# Repository Code Search
+
+Use AgentBridge's indexed `search_text`, `search_symbols`, `find_references`, and `read_file` tools for implementation
+traces in this repository. Do not use the host-provided `search_code_subagent` for multi-issue inventories or exact
+symbol/file discovery: its summarized retrieval can omit requested implementation paths. If delegated exploration is
+necessary, use an IntelliJ-specific explore agent and require it to use the indexed AgentBridge search tools.
+
 # Development Workflow
 
 Each feature or bug fix must be done in its own branch and a PR created when the work is done.
