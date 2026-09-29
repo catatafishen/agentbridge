@@ -102,6 +102,8 @@ public abstract class AcpClient extends AbstractClient {
     private static final String KEY_TOOL_CALL_ID = "toolCallId";
     private static final String VALUE_SELECTED = "selected";
     private static final String VALUE_ALLOW_ONCE = "allow_once";
+    private static final String VALUE_ALLOW_SESSION = "allow_session";
+    private static final String VALUE_ALLOW_ALWAYS = "allow_always";
     private static final String VALUE_DENY_ONCE = "deny_once";
     private static final String VALUE_REJECT_ONCE = "reject_once";
     private static final String KEY_TOOL_CALL = "toolCall";
@@ -2053,7 +2055,7 @@ public abstract class AcpClient extends AbstractClient {
 
     protected void handleAgentRequest(JsonElement id, JsonRpcTransport.IncomingRequest request) {
         switch (request.method()) {
-            case "session/request_permission" -> handlePermissionRequest(id, request.params());
+            case "session/request_permission" -> dispatchPermissionRequest(id, request.params());
             case "fs/read_text_file" -> handleFsRequest(id, () -> fsHandler.readTextFile(request.params()));
             case "fs/write_text_file" -> handleFsRequest(id, () -> {
                 fsHandler.writeTextFile(request.params());
@@ -2070,6 +2072,22 @@ public abstract class AcpClient extends AbstractClient {
                 transport.sendError(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: " + request.method());
             }
         }
+    }
+
+    private void dispatchPermissionRequest(@NotNull JsonElement requestId, @Nullable JsonObject params) {
+        String requestKey = requestId.toString();
+        PendingPermissionRequest pending = new PendingPermissionRequest(requestId);
+        pendingPermissionRequests.put(requestKey, pending);
+        // The transport delivers requests on its single reader thread; waiting for the user there
+        // would stall every later response and notification, so hand the wait to a worker.
+        permissionRequestExecutor().execute(() -> handlePermissionRequest(requestKey, pending, params));
+    }
+
+    /**
+     * Executor that runs interactive permission handling off the JSON-RPC reader thread.
+     */
+    protected java.util.concurrent.Executor permissionRequestExecutor() {
+        return AppExecutorUtil.getAppExecutorService();
     }
 
     /**
@@ -2126,11 +2144,8 @@ public abstract class AcpClient extends AbstractClient {
         }
     }
 
-    private void handlePermissionRequest(@NotNull JsonElement requestId, @Nullable JsonObject params) {
-        String requestKey = requestId.toString();
-        PendingPermissionRequest pending = new PendingPermissionRequest(requestId);
-        pendingPermissionRequests.put(requestKey, pending);
-
+    private void handlePermissionRequest(String requestKey, PendingPermissionRequest pending,
+                                         @Nullable JsonObject params) {
         try {
             JsonObject toolCall = params != null && params.has(KEY_TOOL_CALL)
                 && params.get(KEY_TOOL_CALL).isJsonObject()
@@ -2150,7 +2165,9 @@ public abstract class AcpClient extends AbstractClient {
                 chosenOption = findAllowOption(params, VALUE_ALLOW_ONCE);
             } else {
                 chosenOption = requestPermissionFromUser(pending, requestKey, toolCallId, toolTitle, toolCall, params);
-                if (isAllowOption(chosenOption) && shouldSynthesizeApprovedToolCompletion(toolTitle)) {
+                if (isAllowOption(chosenOption)
+                    && shouldSynthesizeApprovedToolCompletion()
+                    && !isMcpToolTitle(toolTitle)) {
                     notifyApprovedToolCompleted(toolCallId);
                 }
             }
@@ -2219,8 +2236,8 @@ public abstract class AcpClient extends AbstractClient {
             promptProvider.showPermissionPrompt(promptId, displayName, arguments, response -> {
                 switch (response) {
                     case ALLOW_ONCE -> prompt.allow(VALUE_ALLOW_ONCE);
-                    case ALLOW_SESSION -> prompt.allow("allow_session");
-                    case ALLOW_ALWAYS -> prompt.allow("allow_always");
+                    case ALLOW_SESSION -> prompt.allow(VALUE_ALLOW_SESSION);
+                    case ALLOW_ALWAYS -> prompt.allow(VALUE_ALLOW_ALWAYS);
                     case DENY -> prompt.deny("Denied by user");
                 }
             });
@@ -2261,7 +2278,7 @@ public abstract class AcpClient extends AbstractClient {
             String optionId = permissionOptionId(option);
             kind = optionId != null ? optionId : "";
         }
-        return kind.startsWith("allow");
+        return canonicalPermissionKind(kind).startsWith("allow");
     }
 
     private void notifyApprovedToolCompleted(String toolCallId) {
@@ -2273,11 +2290,22 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     /**
-     * Whether an approved non-AgentBridge permission request needs a synthetic completed update.
+     * Whether an approved non-MCP permission request needs a synthetic completed update.
      * Most agents emit their own update; subclasses override only for known protocol gaps.
      */
-    protected boolean shouldSynthesizeApprovedToolCompletion(@NotNull String protocolTitle) {
+    protected boolean shouldSynthesizeApprovedToolCompletion() {
         return false;
+    }
+
+    /**
+     * Normalizes a permission option kind so snake_case ({@code allow_once}) and PascalCase
+     * ({@code AllowOnce}, used by kotlinx-serialized agents such as Junie) compare equal.
+     */
+    private static String canonicalPermissionKind(@Nullable String kind) {
+        if (kind == null) {
+            return "";
+        }
+        return kind.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
     }
 
     private void respondToPermissionRequest(String requestKey, PendingPermissionRequest pending,
@@ -2375,7 +2403,8 @@ public abstract class AcpClient extends AbstractClient {
                 continue;
             }
             JsonObject option = element.getAsJsonObject();
-            if (kind.equals(getStringOrEmpty(option, "kind"))
+            String wanted = canonicalPermissionKind(kind);
+            if (wanted.equals(canonicalPermissionKind(getStringOrEmpty(option, "kind")))
                 || kind.equals(permissionOptionId(option))) {
                 return option;
             }
@@ -2403,20 +2432,17 @@ public abstract class AcpClient extends AbstractClient {
             return requested;
         }
 
-        if ("allow_session".equals(requestedKind)) {
-            JsonObject persistent = findOptionByKind(params, "allow_always");
-            if (persistent != null) {
-                return persistent;
-            }
-        } else if ("allow_always".equals(requestedKind)) {
-            JsonObject session = findOptionByKind(params, "allow_session");
+        // Fall back only toward narrower grants: always -> session -> once. A session approval
+        // must never be widened into a persistent one.
+        if (VALUE_ALLOW_ALWAYS.equals(canonicalPermissionKind(requestedKind))) {
+            JsonObject session = findOptionByKind(params, VALUE_ALLOW_SESSION);
             if (session != null) {
                 return session;
             }
         }
 
-        JsonObject once = findOptionByKind(params, VALUE_ALLOW_ONCE);
-        return once != null ? once : findFirstOptionWithKindPrefix(params, "allow_");
+        // Narrowest option only: an unmatched request never selects a broader (session/always) grant.
+        return findOptionByKind(params, VALUE_ALLOW_ONCE);
     }
 
     @Nullable
