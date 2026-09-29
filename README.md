@@ -11,10 +11,20 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12428/badge?v=2)](https://www.bestpractices.dev/projects/12428)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github-sponsors)](https://github.com/sponsors/catatafishen)
 
-A JetBrains IDE plugin that bridges AI coding agents to IntelliJ platform APIs through
-**120+ native MCP tools**. Agents work through inspections, refactorings, the test runner,
-the build system, and Git — the same tools you use — instead of operating through a terminal
-or generating diffs in isolation.
+**Use Claude Code, Codex, GitHub Copilot, OpenCode and other coding agents with the full
+capabilities of a JetBrains IDE.**
+
+AgentBridge connects external AI coding agents to the IntelliJ Platform through MCP and ACP.
+Agents get the IDE's code intelligence, inspections, refactorings, builds, tests, run
+configurations and Git tools — through **120+ native MCP tools** — instead of operating through
+a terminal or generating diffs in isolation.
+
+[**Install from JetBrains Marketplace**](https://plugins.jetbrains.com/plugin/30415-agentbridge) ·
+[Quick start](QUICK-START.md) · [Supported agents](#supported-agents)
+
+**How the IDE feedback loop helps:** after every edit the agent receives the IDE's errors,
+warnings and inspection results (for example from SonarLint) and can fix them immediately,
+instead of discovering problems several changes later.
 
 **Key highlights:**
 
@@ -49,10 +59,8 @@ I am also glad there are now actionable issues reported on GitHub. That feedback
 work and confirms that the effort I spend on this project is worthwhile.
 
 If you use the plugin and find it useful, an honest rating or review on the
-[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30415-agentbridge) would help other
-users decide whether to try it. The plugin is approaching 2,000 downloads, and Marketplace update
-stats suggest hundreds of active installs, but I understand why someone might hesitate to install
-a plugin with no reviews.
+[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30415-agentbridge) helps other
+users decide whether to try it.
 
 ## Supported Agents
 
@@ -362,26 +370,18 @@ agentbridge/
 | [docs/SESSION-RESUME.md](docs/SESSION-RESUME.md)                 | Cross-client session migration                        |
 | [docs/PERMISSIONS.md](docs/PERMISSIONS.md)                       | ACP and AgentBridge MCP permission architecture        |
 
-## Supporting the Project
-
-If you find AgentBridge useful, you can sponsor its development:
-
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github-sponsors)](https://github.com/sponsors/catatafishen)
-
-AgentBridge is a one-person evening project. A significant part of the development is done
-using AI coding agents, and recent usage-based billing changes (e.g. Copilot UBB) have made
-that significantly more expensive. Sponsorships effectively fund AI credits, which directly
-impacts how fast development and maintenance can continue. I'm happy to keep working on it,
-but the pace will reflect how sustainable that cost is over time.
-
-Contributions are also very welcome — bug reports, issue triage, feature feedback, and pull
-requests. If you're interested in becoming a more regular contributor, feel free to reach out.
-I'm open to adding collaborators to the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for
-how to get involved.
-
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome — bug reports, issue triage, feature feedback, and pull requests,
+including new agent integrations. If you're interested in becoming a more regular contributor,
+feel free to reach out; I'm open to adding collaborators. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for how to get involved.
+
+## Supporting the Project
+
+If AgentBridge is useful to you, you can support its development through GitHub Sponsors.
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github-sponsors)](https://github.com/sponsors/catatafishen)
 
 ## Security
 
