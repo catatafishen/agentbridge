@@ -8,15 +8,16 @@
   <category>AI Assistant</category>
 
   <description><![CDATA[
-<p><b>AgentBridge — Bring IntelliJ Code Intelligence to Coding Agents</b></p>
+<p><b>Connect coding agents to JetBrains IDEs with MCP and ACP.</b></p>
 
-<p>AgentBridge connects coding agents to your JetBrains IDE using MCP and ACP, giving them access to the same tools and feedback that human developers rely on.</p>
+<p>AgentBridge lets AI coding agents such as Claude Code, Codex, GitHub Copilot and OpenCode work through IntelliJ IDEA and other JetBrains IDEs, using the same tools and feedback that human developers rely on.</p>
 
-<p>Instead of working blindly through a terminal, agents can operate directly through the IDE:</p>
+<p>Instead of working blindly through a terminal, external coding agents can operate directly through the IDE:</p>
 <ul>
   <li>Edit files with full undo, formatting, and VCS integration</li>
   <li>Navigate code using IntelliJ’s code intelligence (PSI)</li>
-  <li>Run builds, tests, and git operations through the IDE</li>
+  <li>Run inspections and IDE refactorings</li>
+  <li>Run builds, tests, run configurations, and git operations through the IDE</li>
   <li>You see files open and update in real time while they work</li>
 </ul>
 
@@ -27,11 +28,11 @@
 <p>This leads to more stable and maintainable code over longer sessions.</p>
 
 <p><b>Supported agents</b><br>
-GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCode, and Hermes Agent</p>
+GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCode, Hermes Agent, Mistral Vibe, and Goose. Several of these integrations were contributed by the community.</p>
 
 <p><b>Modes</b></p>
 <ul>
-  <li>MCP server: connect any external agent</li>
+  <li>MCP server: connect any external MCP-capable AI coding agent to the IDE</li>
   <li>ACP client: run supported agents directly inside the IDE</li>
 </ul>
 
