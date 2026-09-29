@@ -31,7 +31,7 @@ the app-server is shown in the tool window; run `codex login` and try again. See
 ## Using another MCP-capable setup
 
 If you prefer to run your agent yourself, start the AgentBridge MCP server in
-**Settings → Tools → AgentBridge → MCP Server → General** and connect any MCP client that supports Streamable HTTP to
+**Settings → Tools → AgentBridge → MCP** and connect any MCP client that supports Streamable HTTP to
 `http://127.0.0.1:<port>/mcp`. See [MCP vs ACP](../concepts/mcp-vs-acp.md).
 
 ## Limitations

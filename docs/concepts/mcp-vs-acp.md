@@ -15,7 +15,7 @@ AgentBridge implements 120+ MCP tools on top of IntelliJ Platform APIs. Any MCP-
 There are two ways an agent reaches them:
 
 - **Standalone HTTP server** — a local server on `127.0.0.1` (Streamable HTTP at `/mcp`, or SSE at `/sse` and
-  `/message`), configured in **Settings → Tools → AgentBridge → MCP Server → General**. Use this to connect an agent
+  `/message`), configured in **Settings → Tools → AgentBridge → MCP**. Use this to connect an agent
   you run yourself. See [MCP architecture](../MCP-ARCHITECTURE.md).
 - **Injected by AgentBridge** — when AgentBridge launches an agent itself, it passes the MCP server to the agent as
   part of the session setup.
