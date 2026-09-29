@@ -79,6 +79,19 @@ users decide whether to try it.
 Switch between agents with one click. Each agent has its own connection settings and custom instructions.
 AgentBridge MCP tool permissions are shared project-wide so the same IntelliJ tool policy applies after switching agents.
 
+### Community integrations
+
+Several agent integrations were contributed by the community:
+
+- **Mistral Vibe** — [#956](https://github.com/catatafishen/agentbridge/pull/956) by
+  [@Strobotti](https://github.com/Strobotti)
+- **Kiro** (v3 agent support and follow-up fixes) — [#1021](https://github.com/catatafishen/agentbridge/pull/1021) by
+  [@Strobotti](https://github.com/Strobotti)
+- **Goose** — [#1009](https://github.com/catatafishen/agentbridge/pull/1009) by
+  [@jelloeater-agent](https://github.com/jelloeater-agent)
+
+Want to add another agent? See [Adding a new agent](docs/ADDING-A-NEW-AGENT.md).
+
 ## What Agents Can Do
 
 Every action goes through IntelliJ platform APIs — nothing happens behind your back.
