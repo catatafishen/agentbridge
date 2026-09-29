@@ -20,7 +20,7 @@ configurations and Git tools — through **120+ native MCP tools** — instead o
 a terminal or generating diffs in isolation.
 
 [**Install from JetBrains Marketplace**](https://plugins.jetbrains.com/plugin/30415-agentbridge) ·
-[Quick start](QUICK-START.md) · [Supported agents](#supported-agents)
+[Setup guides](#documentation) · [Supported agents](#supported-agents)
 
 **How the IDE feedback loop helps:** after every edit the agent receives the IDE's errors,
 warnings and inspection results (for example from SonarLint) and can fix them immediately,
@@ -362,6 +362,12 @@ agentbridge/
 | Document                                                         | Description                                           |
 |------------------------------------------------------------------|-------------------------------------------------------|
 | [QUICK-START.md](QUICK-START.md)                                 | Fast setup instructions                               |
+| [Claude Code](docs/getting-started/claude-code.md)               | Set up Claude Code with AgentBridge                   |
+| [Codex](docs/getting-started/codex.md)                           | Set up Codex with AgentBridge                         |
+| [OpenCode](docs/getting-started/opencode.md)                     | Set up OpenCode with AgentBridge                      |
+| [GitHub Copilot](docs/getting-started/github-copilot.md)         | Set up the Copilot CLI with AgentBridge               |
+| [docs/concepts/mcp-vs-acp.md](docs/concepts/mcp-vs-acp.md)       | How AgentBridge uses MCP and ACP                      |
+| [docs/concepts/ide-feedback-loop.md](docs/concepts/ide-feedback-loop.md) | How IDE inspections and errors reach the agent |
 | [FEATURES.md](FEATURES.md)                                       | Complete MCP tool reference                           |
 | [DEVELOPMENT.md](DEVELOPMENT.md)                                 | Build, deploy, architecture, extending for new agents |
 | [INSTALLATION.md](INSTALLATION.md)                               | Detailed installation for all platforms               |
