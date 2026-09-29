@@ -66,7 +66,8 @@ filesystem/OS operation that the plugin shouldn't perform silently. For those cl
 
 ## Adding a new agent
 
-When integrating a new agent client:
+When integrating a new agent client (see [Adding a new agent](ADDING-A-NEW-AGENT.md) for the full checklist), the
+authentication rules are:
 
 1. **Do not** add code that reads any local credential file or OS credential store.
 2. Translate the client's auth-failure response (HTTP 401, JSON-RPC error code, ACP error event,

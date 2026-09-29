@@ -366,6 +366,7 @@ agentbridge/
 | [Codex](docs/getting-started/codex.md)                           | Set up Codex with AgentBridge                         |
 | [OpenCode](docs/getting-started/opencode.md)                     | Set up OpenCode with AgentBridge                      |
 | [GitHub Copilot](docs/getting-started/github-copilot.md)         | Set up the Copilot CLI with AgentBridge               |
+| [docs/ADDING-A-NEW-AGENT.md](docs/ADDING-A-NEW-AGENT.md)         | Steps for adding a new agent integration              |
 | [docs/concepts/mcp-vs-acp.md](docs/concepts/mcp-vs-acp.md)       | How AgentBridge uses MCP and ACP                      |
 | [docs/concepts/ide-feedback-loop.md](docs/concepts/ide-feedback-loop.md) | How IDE inspections and errors reach the agent |
 | [FEATURES.md](FEATURES.md)                                       | Complete MCP tool reference                           |
@@ -379,7 +380,7 @@ agentbridge/
 ## Contributing
 
 Contributions are welcome — bug reports, issue triage, feature feedback, and pull requests,
-including new agent integrations. If you're interested in becoming a more regular contributor,
+including new agent integrations (see [Adding a new agent](docs/ADDING-A-NEW-AGENT.md)). If you're interested in becoming a more regular contributor,
 feel free to reach out; I'm open to adding collaborators. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for how to get involved.
 

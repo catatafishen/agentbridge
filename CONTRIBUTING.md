@@ -80,6 +80,13 @@ Example: `feat/opencode-agent-support`
 
 ---
 
+### Adding support for a new agent
+
+New agent integrations are very welcome. See [`docs/ADDING-A-NEW-AGENT.md`](docs/ADDING-A-NEW-AGENT.md) for the
+steps, the files to touch, and the tests to add.
+
+---
+
 ## Pull requests
 
 - **Keep PRs focused** on a single logical change. Separate refactors from features.
