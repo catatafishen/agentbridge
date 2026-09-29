@@ -775,6 +775,63 @@ class AcpClientProtocolTest {
             assertEquals("reject-call", outcome.get("optionId").getAsString());
         }
 
+        @Test
+        void permissionWaitDoesNotBlockTheCallingReaderThread() throws Exception {
+            java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                client.setPermissionExecutor(worker);
+                CountDownLatch promptShown = new CountDownLatch(1);
+                client.setPermissionRequestListener(prompt -> promptShown.countDown());
+                JsonElement requestId = JsonParser.parseString("\"req-async\"");
+
+                // Must return immediately even though nobody has answered the prompt yet.
+                client.handleAgentRequest(requestId,
+                    new JsonRpcTransport.IncomingRequest("session/request_permission",
+                        permissionRequest("bash", "tc-async")));
+
+                assertTrue(promptShown.await(1, TimeUnit.SECONDS));
+                client.cancelSession("s1");
+                verify(mockTransport, org.mockito.Mockito.timeout(1000)).sendResponse(eq(requestId), any());
+            } finally {
+                worker.shutdownNow();
+            }
+        }
+
+        @Test
+        void acceptsPascalCaseOptionKinds() {
+            JsonObject params = JsonParser.parseString("""
+                {
+                  "toolCall": {"title": "agentbridge-read_file", "toolCallId": "tc-pascal"},
+                  "options": [
+                    {"optionId": "opt-allow", "kind": "AllowOnce"},
+                    {"optionId": "opt-deny", "kind": "RejectOnce"}
+                  ]
+                }""").getAsJsonObject();
+
+            JsonObject outcome = dispatchPermissionRequest("req-pascal", params);
+
+            assertEquals("selected", outcome.get("outcome").getAsString());
+            assertEquals("opt-allow", outcome.get("optionId").getAsString());
+        }
+
+        @Test
+        void sessionApprovalNeverWidensToAlwaysWhenSessionScopeMissing() {
+            client.setPermissionRequestListener(prompt -> prompt.allow("allow_session"));
+            JsonObject params = JsonParser.parseString("""
+                {
+                  "toolCall": {"title": "bash", "toolCallId": "tc-scope"},
+                  "options": [
+                    {"optionId": "opt-always", "kind": "allow_always"},
+                    {"optionId": "opt-once", "kind": "allow_once"},
+                    {"optionId": "opt-deny", "kind": "reject_once"}
+                  ]
+                }""").getAsJsonObject();
+
+            JsonObject outcome = dispatchPermissionRequest("req-scope", params);
+
+            assertEquals("opt-once", outcome.get("optionId").getAsString());
+        }
+
         private JsonObject dispatchPermissionRequest(String requestIdValue, JsonObject params) {
             JsonElement requestId = JsonParser.parseString("\"" + requestIdValue + "\"");
             client.handleAgentRequest(requestId,
@@ -891,8 +948,19 @@ class AcpClientProtocolTest {
         }
 
         @Override
-        protected boolean shouldSynthesizeApprovedToolCompletion(@NotNull String protocolTitle) {
-            return "bash".equals(protocolTitle);
+        protected boolean shouldSynthesizeApprovedToolCompletion() {
+            return true;
+        }
+
+        private volatile java.util.concurrent.Executor permissionExecutor = Runnable::run;
+
+        void setPermissionExecutor(java.util.concurrent.Executor executor) {
+            this.permissionExecutor = executor;
+        }
+
+        @Override
+        protected java.util.concurrent.Executor permissionRequestExecutor() {
+            return permissionExecutor;
         }
 
         @Override

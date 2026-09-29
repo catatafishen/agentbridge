@@ -384,8 +384,8 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
-    protected boolean shouldSynthesizeApprovedToolCompletion(@NotNull String protocolTitle) {
-        return !isMcpToolTitle(protocolTitle);
+    protected boolean shouldSynthesizeApprovedToolCompletion() {
+        return true;
     }
 
     /**
@@ -603,12 +603,10 @@ public final class CopilotClient extends AcpClient {
 
     private static List<String> merge(List<String> mcpTools, List<String> builtinTools) {
         // MCP tools use agentbridge/ prefix; built-in Copilot tools have no prefix
-        List<String> result = new java.util.ArrayList<>();
-        for (String tool : mcpTools) {
-            result.add("agentbridge/" + tool);
-        }
-        result.addAll(builtinTools);
-        return result;
+        return java.util.stream.Stream.concat(
+            mcpTools.stream().map(tool -> "agentbridge/" + tool),
+            builtinTools.stream()
+        ).toList();
     }
 
     /**
