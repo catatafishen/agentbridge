@@ -3,8 +3,12 @@
 ## The Problem
 
 **Junie Issue:** No open issue — feature not yet requested  
-**Status:** Built-in tool filtering not supported in ACP mode  
-**Affects:** Junie CLI v888.195+ (all versions)
+**Status:** Junie native actions are restricted with `.junie/allowlist.json`  
+**Affects:** Junie CLI ACP integrations that may execute tools without permission requests
+
+> **Current implementation:** `JunieClient` writes a project allowlist at launch. The plugin does not use centralized
+> runtime auto-denial. If Junie emits `session/request_permission`, AgentBridge shows it to the user; see
+> [Tool Permissions](PERMISSIONS.md).
 
 ### Description
 
@@ -25,9 +29,8 @@ Junie is **fully spec-compliant** but provided no mechanism to filter tools unti
 > configuration profiles with allow/deny lists are now supported. This should allow for a native mechanism to exclude
 > tools at launch time.
 
-> **UPDATE (March 19, 2026):** Starting from Junie v888.212, the `excludedTools` parameter in `session/new` is now
-> respected. The plugin has been updated to send this parameter automatically when the profile has
-`excludeAgentBuiltInTools` enabled.
+> **Historical note (March 19, 2026):** `excludedTools` support was reported during testing, but the current plugin does
+> not depend on that non-standard session parameter. The maintained guard is `.junie/allowlist.json`.
 
 **Result (prior to fix):** Junie used its built-in tools (Edit, View, Read, Write, Bash, etc.) instead of IntelliJ MCP
 tools, bypassing
@@ -62,11 +65,9 @@ ACP[a2uxToAcp]: emitting ToolCallUpdate id=... title='Edit' kind=EDIT status=COM
 
 **No `request_permission` step** — tools go directly from `ToolCall(IN_PROGRESS)` → `ToolCallUpdate(COMPLETED)`.
 
-> **UPDATE (March 22, 2026):** Native guards and Runtime Denial have been implemented.
-> 1. **Junie:** The plugin now automatically creates `.junie/allowlist.json` at launch to deny all built-in tools.
-> 2. **Kiro:** The plugin creates an agent definition in `.agent-work/.kiro/agents/intellij-task.json` to filter tools.
-> 3. **AcpClient:** A centralized "Runtime Denial" in `handlePermissionRequest` intercepts and rejects unauthorized built-in tool calls for all agents.
-> 4. **Exceptions:** `web_fetch` and `web_search` are now allowed built-in tools as the IDE has no equivalent.
+> **UPDATE (September 29, 2026):** The Junie and Kiro launch-time guards remain, but centralized ACP runtime denial has
+> been removed. AgentBridge MCP requests are approved at the ACP boundary and checked by the MCP execution layer; all
+> other ACP permission requests are shown to the user.
 
 ## Current Solution: Multi-Layered Enforcement
 

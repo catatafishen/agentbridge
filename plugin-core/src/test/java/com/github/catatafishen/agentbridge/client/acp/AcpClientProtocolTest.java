@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -675,45 +677,129 @@ class AcpClientProtocolTest {
     class PermissionHandling {
 
         @Test
-        void autoDeniesBlockedBuiltInTool() {
-            JsonObject params = JsonParser.parseString("""
-                {
-                  "toolCall": {
-                    "title": "bash",
-                    "toolCallId": "tc-1"
-                  },
-                  "options": [
-                    {"id": "allow_once", "label": "Allow"},
-                    {"id": "deny_once", "label": "Deny"}
-                  ]
-                }""").getAsJsonObject();
+        void autoApprovesAgentBridgeMcpToolWithoutPrompting() {
+            AtomicReference<com.github.catatafishen.agentbridge.client.AbstractClient.PermissionPrompt> prompt =
+                new AtomicReference<>();
+            client.setPermissionRequestListener(prompt::set);
 
-            JsonElement requestId = JsonParser.parseString("\"req-1\"");
-            client.handleAgentRequest(requestId,
-                new JsonRpcTransport.IncomingRequest("session/request_permission", params));
+            JsonObject outcome = dispatchPermissionRequest("req-agentbridge",
+                permissionRequest("agentbridge-read_file", "tc-agentbridge"));
 
-            verify(mockTransport).sendResponse(eq(requestId), any(JsonObject.class));
+            assertNull(prompt.get());
+            assertEquals("selected", outcome.get("outcome").getAsString());
+            assertEquals("allow-call", outcome.get("optionId").getAsString());
         }
 
         @Test
-        void allowsMcpToolsWithoutBlocking() {
-            JsonObject params = JsonParser.parseString("""
-                {
-                  "toolCall": {
-                    "title": "agentbridge-read_file",
-                    "toolCallId": "tc-2"
-                  },
-                  "options": [
-                    {"id": "allow_once", "label": "Allow"},
-                    {"id": "deny_once", "label": "Deny"}
-                  ]
-                }""").getAsJsonObject();
+        void forwardsNativeToolPermissionToUser() {
+            AtomicReference<com.github.catatafishen.agentbridge.client.AbstractClient.PermissionPrompt> captured =
+                new AtomicReference<>();
+            List<SessionUpdate> updates = new ArrayList<>();
+            client.setUpdateConsumer(updates::add);
+            client.setPermissionRequestListener(prompt -> {
+                captured.set(prompt);
+                prompt.allow("allow_session");
+            });
 
-            JsonElement requestId = JsonParser.parseString("\"req-2\"");
+            JsonObject outcome = dispatchPermissionRequest("req-native",
+                permissionRequest("bash", "tc-native"));
+
+            assertNotNull(captured.get());
+            assertEquals("bash", captured.get().toolName());
+            assertEquals(List.of("allow_once", "allow_session", "reject_once"), captured.get().options());
+            assertTrue(captured.get().arguments().contains("dangerous"));
+            assertEquals("allow-session", outcome.get("optionId").getAsString());
+            assertEquals(1, updates.size());
+            SessionUpdate.ToolCallUpdate update = (SessionUpdate.ToolCallUpdate) updates.getFirst();
+            assertEquals("tc-native", update.toolCallId());
+            assertEquals(SessionUpdate.ToolCallStatus.COMPLETED, update.status());
+        }
+
+        @Test
+        void forwardsThirdPartyMcpPermissionToUser() {
+            AtomicReference<com.github.catatafishen.agentbridge.client.AbstractClient.PermissionPrompt> captured =
+                new AtomicReference<>();
+            List<SessionUpdate> updates = new ArrayList<>();
+            client.setUpdateConsumer(updates::add);
+            client.setPermissionRequestListener(prompt -> {
+                captured.set(prompt);
+                prompt.deny("Denied by user");
+            });
+
+            JsonObject outcome = dispatchPermissionRequest("req-third-party",
+                permissionRequest("github-create_issue", "tc-third-party"));
+
+            assertNotNull(captured.get());
+            assertEquals("github-create_issue", captured.get().toolName());
+            assertEquals("reject-call", outcome.get("optionId").getAsString());
+            assertTrue(updates.isEmpty(), "Third-party MCP calls must not receive synthetic completion updates");
+        }
+
+        @Test
+        void cancellingTurnUnblocksPendingPermissionPrompt() throws Exception {
+            CountDownLatch promptShown = new CountDownLatch(1);
+            client.setPermissionRequestListener(prompt -> promptShown.countDown());
+            JsonElement requestId = JsonParser.parseString("\"req-cancelled\"");
+
+            CompletableFuture<Void> handling = CompletableFuture.runAsync(() ->
+                client.handleAgentRequest(requestId,
+                    new JsonRpcTransport.IncomingRequest("session/request_permission",
+                        permissionRequest("bash", "tc-cancelled"))));
+
+            assertTrue(promptShown.await(1, TimeUnit.SECONDS));
+            client.cancelSession("s1");
+            handling.get(1, TimeUnit.SECONDS);
+
+            org.mockito.ArgumentCaptor<JsonObject> response = org.mockito.ArgumentCaptor.forClass(JsonObject.class);
+            verify(mockTransport).sendResponse(eq(requestId), response.capture());
+            assertEquals("cancelled",
+                response.getValue().getAsJsonObject("outcome").get("outcome").getAsString());
+            verify(mockTransport).sendNotification(eq("session/cancel"), any(JsonObject.class));
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "C:\\project\\src\\Main.java",
+            "C:/project/src/Main.java"
+        })
+        void pathShapedTitlesUseTheSameUserPermissionFlow(String title) {
+            AtomicReference<String> promptedTitle = new AtomicReference<>();
+            client.setPermissionRequestListener(prompt -> {
+                promptedTitle.set(prompt.toolName());
+                prompt.deny("Denied by user");
+            });
+
+            JsonObject outcome = dispatchPermissionRequest("req-path", permissionRequest(title, "tc-path"));
+
+            assertEquals(title, promptedTitle.get());
+            assertEquals("reject-call", outcome.get("optionId").getAsString());
+        }
+
+        private JsonObject dispatchPermissionRequest(String requestIdValue, JsonObject params) {
+            JsonElement requestId = JsonParser.parseString("\"" + requestIdValue + "\"");
             client.handleAgentRequest(requestId,
                 new JsonRpcTransport.IncomingRequest("session/request_permission", params));
 
-            verify(mockTransport).sendResponse(eq(requestId), any(JsonObject.class));
+            org.mockito.ArgumentCaptor<JsonObject> response = org.mockito.ArgumentCaptor.forClass(JsonObject.class);
+            verify(mockTransport).sendResponse(eq(requestId), response.capture());
+            return response.getValue().getAsJsonObject("outcome");
+        }
+
+        private JsonObject permissionRequest(String title, String toolCallId) {
+            return JsonParser.parseString("""
+                {
+                  "toolCall": {
+                    "title": "%s",
+                    "toolCallId": "%s",
+                    "arguments": {"command": "dangerous"}
+                  },
+                  "options": [
+                    {"optionId": "allow-call", "kind": "allow_once", "name": "Allow once"},
+                    {"optionId": "allow-session", "kind": "allow_session", "name": "Allow for session"},
+                    {"optionId": "reject-call", "kind": "reject_once", "name": "Reject"}
+                  ]
+                }
+                """.formatted(title.replace("\\", "\\\\"), toolCallId)).getAsJsonObject();
         }
     }
 
@@ -796,7 +882,17 @@ class AcpClientProtocolTest {
 
         @Override
         protected boolean isMcpToolTitle(@NotNull String protocolTitle) {
-            return protocolTitle.startsWith("agentbridge");
+            return protocolTitle.contains("-");
+        }
+
+        @Override
+        protected boolean isAgentBridgeMcpToolTitle(@NotNull String protocolTitle) {
+            return protocolTitle.startsWith("agentbridge-");
+        }
+
+        @Override
+        protected boolean shouldSynthesizeApprovedToolCompletion(@NotNull String protocolTitle) {
+            return "bash".equals(protocolTitle);
         }
 
         @Override

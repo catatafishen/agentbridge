@@ -103,10 +103,10 @@ Excluded tools never appear in the agent's tool list, so the agent cannot call
 them at all — this is the most reliable layer.
 
 **Status:** Working. Copilot CLI now honors `--excluded-tools` / `--available-tools`
-in ACP mode (upstream bug #556 is fixed). Because overlapping built-in tools are
-excluded outright, there is no longer any need for a runtime "reprimand" that
-detected and corrected native-tool usage after the fact — that mechanism has been
-removed.
+in ACP mode (upstream bug #556 is fixed). Runtime automatic denial is not used as a
+fallback guardrail. If a native or third-party tool still sends `session/request_permission`,
+AgentBridge shows that request to the user; AgentBridge MCP tools are auto-approved only at
+the ACP boundary and retain their own execution-time permission check.
 
 **Implementation:** `CopilotClient.buildCommand()`
 
@@ -129,8 +129,9 @@ Agent session starts
   ▼
 Agent makes tool calls
   │
-  ├─ Uses MCP tool → ✓ hooks fire, follow-agent works, buffers sync
-  └─ Built-in tools were excluded at launch → not offered, can't be called
+  ├─ Uses AgentBridge MCP tool → ACP outer approval, then plugin permission check
+  ├─ Other tool sends ACP permission request → user decides in chat
+  └─ Copilot built-in tools were excluded at launch → not offered, can't be called
 ```
 
 No single layer is sufficient on its own. Each addresses a different failure mode:

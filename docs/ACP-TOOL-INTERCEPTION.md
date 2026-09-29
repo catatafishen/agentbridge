@@ -13,9 +13,11 @@ The premise of this postmortem — that `--available-tools`/`--excluded-tools` s
 (bugs [#556](https://github.com/github/copilot-cli/issues/556) and
 [#2948](https://github.com/github/copilot-cli/issues/2948)) — is **no longer true**. Copilot CLI now honors
 `--excluded-tools` in ACP mode (see `CopilotClient.buildCommand()` and
-`docs/TOOL-GUARDRAILS.md`, Layer 4). Read-only built-in tools (`view`, `grep`, `glob`) are now excluded from the model's
-tool list entirely via that flag, which makes the whole PATH-shim / notification-interception investigation below
-unnecessary — there's nothing left to intercept because the tools are never offered to the model in the first place.
+`docs/TOOL-GUARDRAILS.md`, Layer 4). Read-only built-in tools (`view`, `grep`, `glob`) are excluded from the model's tool
+list entirely via that flag, so the PATH-shim / notification-interception experiments below are unnecessary.
+
+Current runtime policy is documented in `docs/PERMISSIONS.md`: AgentBridge MCP requests are approved only at the ACP
+boundary and checked again by `PsiBridgeService`; native and third-party ACP permission requests are shown to the user.
 
 Also note: `BUILTIN_TOOLS_TO_SUPPRESS`, referenced below as the current suppression list, was since renamed to
 `CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS`. The rest of this document is kept as a historical record of the
@@ -139,16 +141,11 @@ CLI spawns bash shell (uses agent PATH)
 
 ---
 
-## Conclusion
+## Historical conclusion (April 2026)
 
-There is no viable interception hook for read-only native tools (`view`, `grep`, `glob`) in the current CLI
-architecture. The only reliable path is CLI-side filtering once bug #2948 is fixed.
+At the time of this investigation, there was no viable interception hook for read-only native tools (`view`, `grep`,
+`glob`), so CLI-side filtering was the only reliable solution. That upstream filtering now works and the temporary
+runtime-denial experiments were removed.
 
-Until then:
-
-- Write/execute tools are blocked via `--deny-tool` (forces agent to use MCP alternatives)
-- Read-only tools remain unblockable (results come from disk, not IntelliJ buffers)
-- For saved files this is acceptable (disk = buffer for committed files)
-- For unsaved buffers it remains a known limitation
-
-See `docs/bugs/CLI-BUG-556-WORKAROUND.md` for the full workaround history.
+Current ACP requests are handled as user decisions rather than as a tool-redirection mechanism. See
+`docs/PERMISSIONS.md` for current behavior and `docs/bugs/CLI-BUG-556-WORKAROUND.md` for the full workaround history.

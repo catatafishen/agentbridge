@@ -186,20 +186,33 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
+    participant User
     participant CLI as Agent CLI
     participant Plugin
-    participant MCP as MCP Server
-    participant PSI as PSI Bridge
-    
-    CLI->>Plugin: request_permission (kind="edit")
-    Plugin-->>CLI: DENY (forces MCP tool)
-    CLI->>MCP: tools/call write_file
-    MCP->>PSI: HTTP POST /write_file
-    PSI->>PSI: Document API write
-    PSI->>PSI: Auto-format
-    PSI-->>MCP: Success
-    MCP-->>CLI: Result
+    participant MCP as AgentBridge MCP
+    participant PSI as PsiBridgeService
+
+    CLI->>Plugin: session/request_permission
+    alt AgentBridge MCP tool
+        Plugin-->>CLI: Select allow option at ACP boundary
+        CLI->>MCP: tools/call
+        MCP->>PSI: Execute IntelliJ tool
+        opt MCP permission is ASK
+            PSI->>User: Show AgentBridge permission bubble
+            User-->>PSI: Allow or deny
+        end
+        PSI-->>MCP: Result or permission error
+        MCP-->>CLI: Result or error
+    else Native or third-party tool
+        Plugin->>User: Show ACP permission bubble
+        User-->>Plugin: Allow or deny
+        Plugin-->>CLI: Return selected ACP option
+    end
 ```
+
+AgentBridge MCP tools are approved only at the outer ACP boundary because `PsiBridgeService` performs the real
+`ALLOW` / `ASK` / `DENY` check before execution. Other ACP permission requests are shown to the user. Tool exposure and
+launch-time native-tool filtering remain separate; see [Tool Permissions](PERMISSIONS.md).
 
 ---
 
@@ -222,18 +235,13 @@ sequenceDiagram
 
 ### Tool Permissions
 
-- **deny**: Never execute (fail immediately)
-- **ask**: Prompt user for approval
-- **allow**: Execute without prompt
+- AgentBridge MCP tools use project-global **Allow / Ask / Deny** settings enforced immediately before execution.
+- Path-aware tools also apply the project-wide outside-project policy; the stricter permission wins.
+- Native and third-party ACP requests are shown to the user whenever the agent emits `session/request_permission`.
+- Launch-time tool filtering remains necessary because some agents execute tools without an ACP permission request.
 
-### Sensitive Operations
-
-Always require approval:
-- `git_push --force`
-- `run_command` (shell commands)
-- File deletions
-- Operations outside project root
+See [Tool Permissions](PERMISSIONS.md) for the complete flow and per-agent title formats.
 
 ---
 
-*Last Updated: 2026-03-22*
+*Last Updated: 2026-09-29*

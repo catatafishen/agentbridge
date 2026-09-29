@@ -8,7 +8,7 @@
 **This is confirmed fixed.** `CopilotClient.buildCommand()` passes `--excluded-tools <list>`
 (see `DEFAULT_EXCLUDED_BUILT_IN_TOOLS`) and the class javadoc states this is honored by Copilot CLI in ACP mode —
 overlapping built-in tools are excluded outright and never offered to the model. See `docs/TOOL-GUARDRAILS.md` (Layer 4)
-for the current, authoritative description.
+for current exposure guardrails and `docs/PERMISSIONS.md` for current ACP and MCP permission handling.
 
 As a direct result, the runtime permission-denial workaround described in the rest of this document
 (`DENIED_PERMISSION_KINDS`, the pre-rejection retry message, sub-agent write blocking, the `--deny-tool` dual-flag
@@ -363,26 +363,23 @@ Non-interactive path (Cul):
 A later Copilot CLI release closed this gap — the ACP path now applies `excludedTools` the same way the
 interactive/non-interactive paths do, which is why `--excluded-tools` is honored today.
 
-### What `--deny-tool` Does (Different Mechanism — still current)
+### What `--deny-tool` Does (compatibility mechanism)
 
-`--deny-tool` operates at the **permission layer** (`rules.denied`), not the tool filtering layer. It auto-denies
-`session/request_permission` requests before they reach the ACP client.
+`--deny-tool` operates at the agent's permission layer, not the tool-filtering layer. `ProfileBasedAgentConfig` still
+supports `CLI_FLAGS` and `CONFIG_JSON` injection for custom-profile compatibility, but current built-in profiles use
+`PermissionInjectionMethod.NONE`.
 
-This is unrelated to the fix above and remains in active use today (`ProfileBasedAgentConfig`)
-for a different purpose: per-tool ALLOW/DENY/ASK permission settings that users configure for our own MCP tools in
-plugin settings — not for suppressing built-in tools. When tools have a permission step (`bash`, `edit`, `create`),
-`--deny-tool` blocks them at the permission layer; it does not hide them from the model's tool list. See the
-"Experiment: `--deny-tool` Flag" section above for the history of why it appeared broken in early tests (wrong argument
-ordering, not a bug in the mechanism itself).
+The active AgentBridge MCP permission mechanism is inside the plugin: ACP-level requests for AgentBridge tools are
+allowed to continue, then `PsiBridgeService` applies the project-global `ALLOW` / `ASK` / `DENY` setting immediately
+before execution. Native and third-party ACP permission requests are shown to the user instead of being automatically
+denied. See `docs/PERMISSIONS.md`.
 
 ### Current State
 
 `CopilotClient.buildCommand()` passes `--excluded-tools` with the built-in tool list
-(`CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS` — note: this constant was previously named
-`BUILTIN_TOOLS_TO_SUPPRESS` in earlier drafts of this document; it has since been renamed). This now hides the listed
-built-in tools from the model entirely, confirmed working — the
-`--deny-tool` dual-flag belt-and-braces approach described above is no longer necessary for built-in tool suppression,
-though `--deny-tool`/`--allow-tool` remain in use for the unrelated per-MCP-tool permission mechanism.
+(`CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS` — previously named `BUILTIN_TOOLS_TO_SUPPRESS`). This hides the listed
+built-in tools from the model entirely. Permission prompts are a separate runtime concern and do not alter the tools
+provided to the agent.
 
 ## References
 

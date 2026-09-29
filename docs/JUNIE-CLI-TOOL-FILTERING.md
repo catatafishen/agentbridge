@@ -1,6 +1,11 @@
 # Junie CLI Tool Filtering
 
-## Status: Protocol-level filtering NOT supported
+## Status: Protocol-level filtering NOT used
+
+The current plugin writes `.junie/allowlist.json` at launch to restrict Junie's native actions and injects only the
+AgentBridge MCP server through `session/new`. It does not rely on `excludedTools` or runtime automatic denial. If Junie
+emits `session/request_permission`, the request follows the normal user prompt flow described in
+[Tool Permissions](PERMISSIONS.md).
 
 As of Junie v888.212, there is **NO verified support** for filtering tools via parameters in the ACP `session/new`
 payload.
@@ -62,26 +67,12 @@ types.
 
 ---
 
-## Workaround: Runtime Permission Denial
+## Current workaround: launch-time allowlist
 
-Since protocol-level filtering is unavailable, the current strategy for the IntelliJ plugin is to **deny tool execution
-at runtime** when Junie attempts to call a built-in tool that should be handled by the IDE's MCP server.
-
-1. **Deny in `call_tool`**: The `AcpClient` (or `JunieAcpClient`) should return an error or a "permission denied"
-   message if a built-in tool is requested.
-2. **Prompt Guidance**: When initializing the session, include instructions in the initial prompt or guidelines to
-   prefer `agentbridge` tools over built-in ones.
-
-```java
-// Example of runtime denial in JunieAcpClient
-if(isBuiltInTool(toolName)){
-        return CompletableFuture.
-
-completedFuture(
-        new ToolCallResult("Error: This tool is disabled. Please use the equivalent 'agentbridge' tool instead.")
-    );
-            }
-```
+Because Junie may execute actions without an ACP permission request, the plugin creates `.junie/allowlist.json` before
+launch. The allowlist permits AgentBridge MCP tools and denies native terminal and file-editing actions. Startup
+instructions remain a secondary guide, while any ACP permission request that does arrive is shown to the user rather
+than automatically denied.
 
 ---
 
