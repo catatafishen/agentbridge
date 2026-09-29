@@ -374,6 +374,20 @@ public final class CopilotClient extends AcpClient {
         return registry.findByDisplayName(protocolTitle) != null;
     }
 
+    @Override
+    protected boolean isAgentBridgeMcpToolTitle(@NotNull String protocolTitle) {
+        if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
+            return true;
+        }
+        ToolRegistry registry = ToolRegistry.getInstance(project);
+        return registry.findByDisplayName(protocolTitle) != null;
+    }
+
+    @Override
+    protected boolean shouldSynthesizeApprovedToolCompletion(@NotNull String protocolTitle) {
+        return !isMcpToolTitle(protocolTitle);
+    }
+
     /**
      * Returns {@code true} if {@code title} starts with a {@code <server>-} prefix,
      * indicating a tool from any MCP server (e.g. {@code agentbridge-}, {@code github-},
@@ -607,23 +621,4 @@ public final class CopilotClient extends AcpClient {
         return request;
     }
 
-    /**
-     * Auto-deny is disabled for Copilot CLI in ACP mode.
-     * <p>
-     * Copilot CLI ends the current agent turn whenever a {@code session/request_permission}
-     * response uses {@code deny_once} or {@code reject_once} — the agent sees
-     * "The user rejected this tool call" and performs {@code end_turn} without retrying.
-     * This makes auto-deny counterproductive: the agent can't recover and use the correct
-     * MCP tool within the same turn.
-     * <p>
-     * With auto-deny off, any built-in tool the CLI still offers is auto-approved instead of
-     * ending the turn.
-     * <p>
-     * Re-enable when Copilot CLI fixes in-turn recovery after ACP tool denial.
-     * Tracked: https://github.com/NousResearch/hermes-agent/issues/17284
-     */
-    @Override
-    protected boolean isAutoDenyEnabled() {
-        return false;
-    }
 }

@@ -106,12 +106,6 @@ public abstract class AcpClient extends AbstractClient {
     private static final String VALUE_REJECT_ONCE = "reject_once";
     private static final String KEY_TOOL_CALL = "toolCall";
     private static final String ERR_PROMPT_FAILED_PREFIX = "Prompt failed for ";
-    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of(
-        "web_fetch", "web_search", "task_complete",
-        // Copilot CLI meta-tools: sub-agent spawner, skill invoker, SQL runner, intent reporter —
-        // no MCP equivalents exist, so these are passed through rather than denied.
-        "task", "skill", "sql", "report_intent"
-    );
 
     protected final Gson gson = new GsonBuilder()
         .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
@@ -147,6 +141,7 @@ public abstract class AcpClient extends AbstractClient {
     protected @Nullable String resolvedBinaryPath() {
         return resolvedBinaryPath;
     }
+
     /**
      * Tracks the resume session ID requested in the current launch cycle.
      * Set at the start of {@link #createSession}, used by {@link #loadSession},
@@ -200,18 +195,46 @@ public abstract class AcpClient extends AbstractClient {
     private final AtomicReference<List<SessionUpdate>> loadedSessionHistory = new AtomicReference<>();
     /**
      * True while {@link #sendLoadSessionRequest} is replaying historical permission requests.
-     * Prevents {@link #onBuiltInToolApproved} from firing reprimands for historical tool calls
-     * that are outside the agent's current context window.
+     * Replayed requests are acknowledged without prompting because they do not represent a new execution decision.
      */
     private volatile boolean restoringHistory = false;
     /**
-     * Tracks pending {@code session/request_permission} request IDs so we can respond with
-     * {@code {outcome: "cancelled"}} when {@link #cancelSession} is called.
-     * Per ACP spec, the Client MUST respond to all pending permission requests with the
-     * cancelled outcome when a turn is cancelled.
+     * Tracks pending {@code session/request_permission} requests and their user decisions.
+     * Cancelling a turn atomically claims each request, responds with {@code cancelled}, and
+     * releases the request handler if it is waiting for the permission UI.
      */
-    private final java.util.concurrent.ConcurrentHashMap<String, JsonElement> pendingPermissionRequests =
+    private final java.util.concurrent.ConcurrentHashMap<String, PendingPermissionRequest> pendingPermissionRequests =
         new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final class PendingPermissionRequest {
+        private final JsonElement requestId;
+        private CompletableFuture<JsonObject> decision;
+        private boolean cancelled;
+
+        private PendingPermissionRequest(JsonElement requestId) {
+            this.requestId = requestId;
+        }
+
+        private synchronized CompletableFuture<JsonObject> createDecision() {
+            if (decision != null) {
+                throw new IllegalStateException("Permission decision already registered");
+            }
+            decision = new CompletableFuture<>();
+            if (cancelled) {
+                decision.complete(null);
+            }
+            return decision;
+        }
+
+        private synchronized void cancel() {
+            cancelled = true;
+            if (decision != null) {
+                decision.complete(null);
+            }
+        }
+    }
+
+    private final AtomicReference<Consumer<PermissionPrompt>> permissionRequestListener = new AtomicReference<>();
     /**
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
@@ -1826,7 +1849,7 @@ public abstract class AcpClient extends AbstractClient {
      * supplied, even though the same {@code McpHttpServer} backs both transports.</p>
      *
      * @param serverName the MCP server name advertised to the agent
-     * @param mcpPort     the port of the running in-IDE HTTP MCP server; must be positive
+     * @param mcpPort    the port of the running in-IDE HTTP MCP server; must be positive
      * @return the HTTP MCP server JSON object
      * @throws IllegalStateException if {@code mcpPort} is not a valid running port
      */
@@ -2088,98 +2111,160 @@ public abstract class AcpClient extends AbstractClient {
      */
     private void cancelPendingPermissionRequests() {
         for (var entry : pendingPermissionRequests.entrySet()) {
-            JsonElement requestId = entry.getValue();
+            PendingPermissionRequest pending = entry.getValue();
+            if (!pendingPermissionRequests.remove(entry.getKey(), pending)) {
+                continue;
+            }
+
+            pending.cancel();
             JsonObject cancelledOutcome = new JsonObject();
             cancelledOutcome.addProperty(KEY_OUTCOME, "cancelled");
             JsonObject result = new JsonObject();
             result.add(KEY_OUTCOME, cancelledOutcome);
-            transport.sendResponse(requestId, result);
+            transport.sendResponse(pending.requestId, result);
             LOG.info(displayName() + ": responded cancelled to pending permission request " + entry.getKey());
         }
-        pendingPermissionRequests.clear();
     }
 
-    private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
-        String requestKey = id != null ? id.toString() : "";
-        if (!requestKey.isEmpty()) {
-            pendingPermissionRequests.put(requestKey, id);
-        }
+    private void handlePermissionRequest(@NotNull JsonElement requestId, @Nullable JsonObject params) {
+        String requestKey = requestId.toString();
+        PendingPermissionRequest pending = new PendingPermissionRequest(requestId);
+        pendingPermissionRequests.put(requestKey, pending);
 
-        String toolCallId = "";
-        String toolId = "";
-        if (params != null && params.has(KEY_TOOL_CALL)) {
-            JsonObject toolCallObj = params.getAsJsonObject(KEY_TOOL_CALL);
-            String protocolTitle = getStringOrEmpty(toolCallObj, "title");
-            toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
-            toolId = resolveToolId(protocolTitle);
-            if (!toolCallId.isEmpty()) {
-                onPermissionRequest(toolCallId, toolCallObj);
+        try {
+            JsonObject toolCall = params != null && params.has(KEY_TOOL_CALL)
+                && params.get(KEY_TOOL_CALL).isJsonObject()
+                ? params.getAsJsonObject(KEY_TOOL_CALL) : null;
+            String toolTitle = toolCall != null ? getStringOrEmpty(toolCall, "title") : "";
+            String toolCallId = toolCall != null ? getStringOrEmpty(toolCall, KEY_TOOL_CALL_ID) : "";
+            if (toolCall != null) {
+                onPermissionRequest(toolCallId, toolCall);
             }
+
+            JsonObject chosenOption;
+            if (isAgentBridgeMcpToolTitle(toolTitle)) {
+                LOG.info(displayName() + ": auto-approving AgentBridge MCP tool '" + toolTitle + "' at ACP level");
+                chosenOption = findAllowOption(params, VALUE_ALLOW_ONCE);
+            } else if (restoringHistory) {
+                LOG.info(displayName() + ": auto-approving replayed permission request for '" + toolTitle + "'");
+                chosenOption = findAllowOption(params, VALUE_ALLOW_ONCE);
+            } else {
+                chosenOption = requestPermissionFromUser(pending, requestKey, toolCallId, toolTitle, toolCall, params);
+                if (isAllowOption(chosenOption) && shouldSynthesizeApprovedToolCompletion(toolTitle)) {
+                    notifyApprovedToolCompleted(toolCallId);
+                }
+            }
+
+            respondToPermissionRequest(requestKey, pending, chosenOption);
+        } catch (Exception e) {
+            LOG.warn(displayName() + ": failed to handle permission request; cancelling it", e);
+            respondToPermissionRequest(requestKey, pending, null);
         }
-
-        String protocolTitle = params != null && params.has(KEY_TOOL_CALL)
-            ? getStringOrEmpty(params.getAsJsonObject(KEY_TOOL_CALL), "title")
-            : "";
-
-        JsonObject chosenOption = resolvePermissionOption(params, protocolTitle, toolId, toolCallId);
-
-        sendPermissionResponse(id, requestKey, chosenOption);
     }
 
-    /**
-     * Determines the permission option to respond with based on the tool type and blocking rules.
-     */
-    private @Nullable JsonObject resolvePermissionOption(
-        @Nullable JsonObject params, String protocolTitle, String toolId, String toolCallId
-    ) {
-        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
-            return handleBlockedTool(toolId, toolCallId, params);
+    @Nullable
+    private JsonObject requestPermissionFromUser(PendingPermissionRequest pending, String requestKey,
+                                                 String toolCallId, String toolTitle,
+                                                 @Nullable JsonObject toolCall, @Nullable JsonObject params) {
+        CompletableFuture<JsonObject> decision = pending.createDecision();
+        if (decision.isDone()) {
+            return null;
         }
-        if (isBuiltInTool(protocolTitle)) {
-            return resolveBuiltInToolOption(params, toolId, toolCallId);
+
+        String promptId = toolCallId.isBlank() ? requestKey : toolCallId;
+        String displayName = toolTitle.isBlank() ? "Unknown tool" : toolTitle;
+        String arguments = permissionRequestArguments(toolCall);
+
+        PermissionPrompt prompt = new PermissionPrompt() {
+            @Override
+            public String toolCallId() {
+                return promptId;
+            }
+
+            @Override
+            public String toolName() {
+                return displayName;
+            }
+
+            @Override
+            public @Nullable String arguments() {
+                return arguments;
+            }
+
+            @Override
+            public List<String> options() {
+                return permissionOptionKinds(params);
+            }
+
+            @Override
+            public void allow(String optionKind) {
+                decision.complete(findAllowOption(params, optionKind));
+            }
+
+            @Override
+            public void deny(String reason) {
+                decision.complete(findDenyOption(params));
+            }
+        };
+
+        Consumer<PermissionPrompt> listener = permissionRequestListener.get();
+        if (listener != null) {
+            listener.accept(prompt);
+        } else if (project != null && !project.isDisposed()) {
+            var promptProvider = com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+            if (promptProvider == null) {
+                LOG.warn(displayName() + ": no permission prompt provider is registered; rejecting '" + displayName + "'");
+                return findDenyOption(params);
+            }
+            promptProvider.showPermissionPrompt(promptId, displayName, arguments, response -> {
+                switch (response) {
+                    case ALLOW_ONCE -> prompt.allow(VALUE_ALLOW_ONCE);
+                    case ALLOW_SESSION -> prompt.allow("allow_session");
+                    case ALLOW_ALWAYS -> prompt.allow("allow_always");
+                    case DENY -> prompt.deny("Denied by user");
+                }
+            });
+        } else {
+            LOG.warn(displayName() + ": no permission UI is available; rejecting '" + displayName + "'");
+            return findDenyOption(params);
         }
-        LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
-        return findAllowOnceOrFirstOption(params);
+
+        try {
+            return decision.get(120, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn(displayName() + ": interrupted while waiting for permission for '" + displayName + "'", e);
+        } catch (ExecutionException | TimeoutException e) {
+            LOG.warn(displayName() + ": permission prompt failed for '" + displayName + "'", e);
+        }
+        return findDenyOption(params);
     }
 
-    /**
-     * Handles the permission decision for a built-in tool: either auto-deny or auto-approve.
-     */
-    private @Nullable JsonObject resolveBuiltInToolOption(
-        @Nullable JsonObject params, String toolId, String toolCallId
-    ) {
-        if (isAutoDenyEnabled() && shouldAutoDenyBuiltInTool(toolId)) {
-            return handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
+    private String permissionRequestArguments(@Nullable JsonObject toolCall) {
+        if (toolCall == null) {
+            return "";
         }
-        LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
-            + "' — should use MCP tools instead");
-        // Skip reprimand during history replay — historical tool calls are outside the
-        // agent's current context, so notifying it would only cause confusion.
-        if (!restoringHistory) {
-            onBuiltInToolApproved(toolId, false);
+        JsonObject arguments = parseToolCallArguments(toolCall);
+        if (arguments != null) {
+            return arguments.toString();
         }
-        JsonObject chosenOption = findAllowOnceOrFirstOption(params);
-        // Copilot CLI does not send tool_call_update completion events for approved built-in
-        // tools. Synthesize one so the tool chip clears its spinner immediately.
-        notifyBuiltInToolCompleted(toolCallId);
-        return chosenOption;
+        return toolCall.has(KEY_CONTENT) && !toolCall.get(KEY_CONTENT).isJsonNull()
+            ? toolCall.get(KEY_CONTENT).toString() : "";
     }
 
-    /**
-     * Finds the "allow once" option, falling back to the first available option.
-     */
-    private @Nullable JsonObject findAllowOnceOrFirstOption(@Nullable JsonObject params) {
-        JsonObject option = findOptionByKind(params, VALUE_ALLOW_ONCE);
+    private static boolean isAllowOption(@Nullable JsonObject option) {
         if (option == null) {
-            option = findFirstOption(params);
+            return false;
         }
-        return option;
+        String kind = getStringOrEmpty(option, "kind");
+        if (kind.isEmpty()) {
+            String optionId = permissionOptionId(option);
+            kind = optionId != null ? optionId : "";
+        }
+        return kind.startsWith("allow");
     }
 
-    /**
-     * Sends a synthetic COMPLETED tool-call update for built-in tools that don't emit their own.
-     */
-    private void notifyBuiltInToolCompleted(String toolCallId) {
+    private void notifyApprovedToolCompleted(String toolCallId) {
         Consumer<SessionUpdate> consumer = updateConsumer.get();
         if (consumer != null && !toolCallId.isEmpty()) {
             consumer.accept(new SessionUpdate.ToolCallUpdate(
@@ -2187,153 +2272,71 @@ public abstract class AcpClient extends AbstractClient {
         }
     }
 
-    private @Nullable JsonObject handleBlockedTool(String toolId, String toolCallId, @Nullable JsonObject params) {
-        String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
-        LOG.warn(displayName() + ": " + reason);
-
-        Consumer<SessionUpdate> consumer = updateConsumer.get();
-        if (consumer != null && !toolCallId.isEmpty()) {
-            consumer.accept(new SessionUpdate.ToolCallUpdate(
-                toolCallId,
-                SessionUpdate.ToolCallStatus.FAILED,
-                null,
-                "Auto-denied: " + reason,
-                null,
-                true,
-                reason
-            ));
-        }
-        return findDenyOption(params);
-    }
-
-    private @Nullable JsonObject handleAutoDeniedBuiltInTool(String toolId, String toolCallId, @Nullable JsonObject params) {
-        String reason = "Native tool '" + toolId + "' is blocked — use " + mcpAlternative(toolId)
-            + " instead. All AgentBridge MCP tools remain available (call them by the name shown "
-            + "in your tool list).";
-        LOG.warn(displayName() + ": auto-denying native tool '" + toolId + "'");
-
-        Consumer<SessionUpdate> consumer = updateConsumer.get();
-        if (consumer != null && !toolCallId.isEmpty()) {
-            consumer.accept(new SessionUpdate.ToolCallUpdate(
-                toolCallId,
-                SessionUpdate.ToolCallStatus.FAILED,
-                null,
-                "Auto-denied: " + reason,
-                null,
-                true,
-                reason
-            ));
-        }
-        return findDenyOption(params);
-    }
-
     /**
-     * Called when a built-in tool request is processed (approved or auto-denied).
-     * Subclasses may override to react — e.g. injecting a reprimand notice.
-     *
-     * @param toolId       the built-in tool name
-     * @param userApproved {@code true} if the user explicitly approved, {@code false} if
-     *                     the tool was auto-approved without user interaction
+     * Whether an approved non-AgentBridge permission request needs a synthetic completed update.
+     * Most agents emit their own update; subclasses override only for known protocol gaps.
      */
-    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
-        // no-op by default
+    protected boolean shouldSynthesizeApprovedToolCompletion(@NotNull String protocolTitle) {
+        return false;
     }
 
-    /**
-     * Maps a built-in tool to the AgentBridge MCP tool(s) the agent should use instead.
-     *
-     * <p>Tools are named by the bare name the IDE advertises them under (e.g. {@code read_file}),
-     * not by any harness-specific prefix. Each runtime surfaces the same tool under its own
-     * namespaced form ({@code mcp__agentbridge__read_file} in Claude Code,
-     * {@code agentbridge-read_file} in Copilot/ACP); the agent should call whichever exact name
-     * appears in its own tool list.</p>
-     */
-    protected String mcpAlternative(String builtInTool) {
-        return switch (builtInTool) {
-            case "bash" -> "run_command or run_in_terminal";
-            case "edit" -> "edit_text or replace_symbol_body";
-            case "create" -> "write_file";
-            case "view" -> "read_file";
-            case "glob" -> "list_project_files";
-            case "grep" -> "search_text";
-            case "task" -> "run_command (for shell tasks)";
-            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
-            default -> "the corresponding AgentBridge MCP tool";
-        };
-    }
+    private void respondToPermissionRequest(String requestKey, PendingPermissionRequest pending,
+                                            @Nullable JsonObject chosenOption) {
+        if (!pendingPermissionRequests.remove(requestKey, pending)) {
+            LOG.info(displayName() + ": permission request " + requestKey + " was already cancelled");
+            return;
+        }
 
-    private void sendPermissionResponse(JsonElement id, String requestKey, @Nullable JsonObject chosenOption) {
-        String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
-            ? chosenOption.get(KEY_OPTION_ID).getAsString()
-            : VALUE_DENY_ONCE;
+        JsonObject outcome;
+        String optionId = permissionOptionId(chosenOption);
+        if (optionId == null) {
+            outcome = new JsonObject();
+            outcome.addProperty(KEY_OUTCOME, "cancelled");
+        } else {
+            outcome = buildPermissionOutcome(optionId, chosenOption);
+        }
+
         JsonObject result = new JsonObject();
-        result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
-        transport.sendResponse(id, result);
-        pendingPermissionRequests.remove(requestKey);
+        result.add(KEY_OUTCOME, outcome);
+        transport.sendResponse(pending.requestId, result);
     }
 
-    /**
-     * Whether to also block the small set of allowed built-in tools ({@code web_fetch},
-     * {@code web_search}, {@code task_complete}). By default, non-allowed built-in tools
-     * (e.g. {@code bash}, {@code edit}, {@code grep}) are always auto-denied via
-     * {@link #shouldAutoDenyBuiltInTool}. Override to return {@code true} to additionally
-     * block the allowed web tools in agents that require exclusive agentbridge usage.
-     */
-    protected boolean excludeBuiltInTools() {
-        return false;
-    }
-
-    /**
-     * Whether to automatically deny built-in tool requests (e.g. {@code bash}, {@code edit})
-     * instead of auto-approving them.
-     * <p>
-     * Defaults to {@code true}. Subclasses may override to disable auto-deny when the ACP
-     * client has a known bug where tool denial ends the current agent turn, making the agent
-     * unable to recover and retry with the correct MCP tool.
-     */
-    protected boolean isAutoDenyEnabled() {
-        return true;
-    }
-
-    private boolean isToolBlocked(String protocolTitle, String toolId) {
-        if (!isBuiltInTool(protocolTitle)) {
-            return false;
+    private static List<String> permissionOptionKinds(@Nullable JsonObject params) {
+        if (params == null || !params.has(KEY_OPTIONS) || !params.get(KEY_OPTIONS).isJsonArray()) {
+            return List.of();
         }
-        if (excludeBuiltInTools()) {
-            return !ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
+        List<String> kinds = new ArrayList<>();
+        for (JsonElement element : params.getAsJsonArray(KEY_OPTIONS)) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject option = element.getAsJsonObject();
+            String kind = getStringOrEmpty(option, "kind");
+            if (kind.isEmpty()) {
+                kind = permissionOptionId(option);
+            }
+            if (kind != null && !kind.isEmpty()) {
+                kinds.add(kind);
+            }
         }
-        return false;
+        return List.copyOf(kinds);
     }
 
-    static boolean isAllowedBuiltInTool(@NotNull String toolId) {
-        return ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
-    }
-
-    static boolean shouldAutoDenyBuiltInTool(@NotNull String toolId) {
-        if (isMcpResourceTool(toolId)) {
-            return false;
-        }
-        if (toolId.startsWith("agentbridge-")
-            || toolId.startsWith("agentbridge_")
-            || toolId.startsWith("Tool: agentbridge/")
-            || toolId.startsWith("Running: @agentbridge/")
-            || toolId.startsWith("@agentbridge/")) {
-            return false;
-        }
-        return !toolId.contains("/") && !toolId.contains("@") && !isAllowedBuiltInTool(toolId);
-    }
-
-    static boolean isMcpResourceTool(@NotNull String toolId) {
-        String lower = toolId.toLowerCase();
-        return "read_mcp_resource".equals(lower)
-            || "list_mcp_resources".equals(lower);
-    }
-
-    protected final boolean isBuiltInTool(@NotNull String protocolTitle) {
-        return !isMcpToolTitle(protocolTitle);
+    @Override
+    public void setPermissionRequestListener(@Nullable Consumer<PermissionPrompt> listener) {
+        permissionRequestListener.set(listener);
     }
 
     protected abstract boolean isMcpToolTitle(@NotNull String protocolTitle);
+
+    /**
+     * Returns whether the ACP title identifies a tool served by this plugin's AgentBridge MCP server.
+     * Generic MCP classification may be broader (for example, Copilot recognizes third-party server prefixes),
+     * so permission auto-approval must use this narrower predicate.
+     */
+    protected boolean isAgentBridgeMcpToolTitle(@NotNull String protocolTitle) {
+        return isMcpToolTitle(protocolTitle);
+    }
 
     /**
      * Build the outcome object sent back in the {@code session/request_permission} response.
@@ -2364,27 +2367,69 @@ public abstract class AcpClient extends AbstractClient {
 
     @Nullable
     private static JsonObject findOptionByKind(@Nullable JsonObject params, String kind) {
-        if (params == null || !params.has(KEY_OPTIONS)) return null;
-        JsonElement options = params.get(KEY_OPTIONS);
-        if (!options.isJsonArray()) return null;
-        for (JsonElement el : options.getAsJsonArray()) {
-            if (el.isJsonObject()) {
-                JsonObject opt = el.getAsJsonObject();
-                if (opt.has("kind") && kind.equals(opt.get("kind").getAsString())) {
-                    return opt;
-                }
+        if (params == null || !params.has(KEY_OPTIONS) || !params.get(KEY_OPTIONS).isJsonArray()) {
+            return null;
+        }
+        for (JsonElement element : params.getAsJsonArray(KEY_OPTIONS)) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject option = element.getAsJsonObject();
+            if (kind.equals(getStringOrEmpty(option, "kind"))
+                || kind.equals(permissionOptionId(option))) {
+                return option;
             }
         }
         return null;
     }
 
     @Nullable
-    private static JsonObject findFirstOption(@Nullable JsonObject params) {
-        if (params == null || !params.has(KEY_OPTIONS)) return null;
-        JsonElement options = params.get(KEY_OPTIONS);
-        if (!options.isJsonArray()) return null;
-        JsonArray arr = options.getAsJsonArray();
-        return (!arr.isEmpty() && arr.get(0).isJsonObject()) ? arr.get(0).getAsJsonObject() : null;
+    private static String permissionOptionId(@Nullable JsonObject option) {
+        if (option == null) {
+            return null;
+        }
+        String optionId = getStringOrEmpty(option, KEY_OPTION_ID);
+        if (!optionId.isEmpty()) {
+            return optionId;
+        }
+        String legacyId = getStringOrEmpty(option, "id");
+        return legacyId.isEmpty() ? null : legacyId;
+    }
+
+    @Nullable
+    private static JsonObject findAllowOption(@Nullable JsonObject params, String requestedKind) {
+        JsonObject requested = findOptionByKind(params, requestedKind);
+        if (requested != null) {
+            return requested;
+        }
+
+        if ("allow_session".equals(requestedKind)) {
+            JsonObject persistent = findOptionByKind(params, "allow_always");
+            if (persistent != null) {
+                return persistent;
+            }
+        } else if ("allow_always".equals(requestedKind)) {
+            JsonObject session = findOptionByKind(params, "allow_session");
+            if (session != null) {
+                return session;
+            }
+        }
+
+        JsonObject once = findOptionByKind(params, VALUE_ALLOW_ONCE);
+        return once != null ? once : findFirstOptionWithKindPrefix(params, "allow_");
+    }
+
+    @Nullable
+    private static JsonObject findFirstOptionWithKindPrefix(@Nullable JsonObject params, String prefix) {
+        if (params == null || !params.has(KEY_OPTIONS) || !params.get(KEY_OPTIONS).isJsonArray()) return null;
+        for (JsonElement element : params.getAsJsonArray(KEY_OPTIONS)) {
+            if (!element.isJsonObject()) continue;
+            JsonObject option = element.getAsJsonObject();
+            if (option.has("kind") && option.get("kind").getAsString().startsWith(prefix)) {
+                return option;
+            }
+        }
+        return null;
     }
 
     /**
@@ -2394,9 +2439,15 @@ public abstract class AcpClient extends AbstractClient {
      */
     @Nullable
     private static JsonObject findDenyOption(@Nullable JsonObject params) {
-        JsonObject option = findOptionByKind(params, VALUE_DENY_ONCE);
-        if (option != null) return option;
-        return findOptionByKind(params, VALUE_REJECT_ONCE);
+        for (String kind : List.of(VALUE_DENY_ONCE, VALUE_REJECT_ONCE,
+            "deny_always", "reject_always", "deny", "reject")) {
+            JsonObject option = findOptionByKind(params, kind);
+            if (option != null) {
+                return option;
+            }
+        }
+        JsonObject reject = findFirstOptionWithKindPrefix(params, "reject_");
+        return reject != null ? reject : findFirstOptionWithKindPrefix(params, "deny_");
     }
 
     protected void destroyProcess() {

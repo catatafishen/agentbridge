@@ -53,7 +53,7 @@ with IntelliJ-native tools for code intelligence, formatting, and file operation
 - ✅ Built-in profiles: GitHub Copilot, OpenCode, Junie, Kiro
 - ✅ Custom profile support with full configuration
 - ✅ Agent selector UI in connection panel
-- ✅ Per-profile tool permissions and instructions
+- ✅ Project-wide AgentBridge MCP permissions and per-profile instructions
 - ✅ Sub-agent name display in chat bubbles
 
 ## ✅ Phase 7: UI Polish (COMPLETE)

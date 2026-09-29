@@ -4,39 +4,12 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Additional tests for AcpClient static methods not covered by AcpClientTest.
  */
 class AcpClientExtendedTest {
-
-    @Nested
-    class IsMcpResourceTool {
-        @Test
-        void readMcpResource() {
-            assertTrue(AcpClient.isMcpResourceTool("read_mcp_resource"));
-        }
-
-        @Test
-        void listMcpResources() {
-            assertTrue(AcpClient.isMcpResourceTool("list_mcp_resources"));
-        }
-
-        @Test
-        void caseInsensitive() {
-            assertTrue(AcpClient.isMcpResourceTool("READ_MCP_RESOURCE"));
-            assertTrue(AcpClient.isMcpResourceTool("List_Mcp_Resources"));
-        }
-
-        @Test
-        void otherToolIsFalse() {
-            assertFalse(AcpClient.isMcpResourceTool("read_file"));
-            assertFalse(AcpClient.isMcpResourceTool("run_command"));
-        }
-    }
 
     @Nested
     class ExtractRootCauseMessage {

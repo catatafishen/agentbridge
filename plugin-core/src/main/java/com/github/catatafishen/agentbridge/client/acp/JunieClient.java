@@ -1,10 +1,10 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import com.github.catatafishen.agentbridge.model.PromptResponse;
-import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.client.ClientStartException;
 import com.github.catatafishen.agentbridge.client.acp.junie.JunieKeyStore;
+import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
@@ -70,11 +70,6 @@ public final class JunieClient extends AcpClient {
     @Override
     public String agentId() {
         return "junie";
-    }
-
-    @Override
-    protected boolean excludeBuiltInTools() {
-        return true;
     }
 
     @Override

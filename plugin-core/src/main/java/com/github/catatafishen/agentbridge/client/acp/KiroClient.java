@@ -446,6 +446,7 @@ public final class KiroClient extends AcpClient {
             return java.nio.file.Path.of(home, ".local", "share", "kiro-cli", "data.sqlite3");
         }
     }
+
     private void handleKiroNotification(String method, JsonObject params) {
         switch (method) {
             case "_kiro.dev/commands/available" -> handleCommandsAvailable(params);
@@ -551,11 +552,6 @@ public final class KiroClient extends AcpClient {
     }
 
     @Override
-    protected boolean excludeBuiltInTools() {
-        return true;
-    }
-
-    @Override
     protected String resolveToolId(String protocolTitle) {
         return resolveToolIdStatic(protocolTitle);
     }
@@ -625,7 +621,9 @@ public final class KiroClient extends AcpClient {
         return List.of("kiro-cli", "acp", "--agent", "intellij-task", "--trust-all-tools");
     }
 
-    /** @deprecated Use {@link #buildCommandStatic(String)} with an explicit engine. */
+    /**
+     * @deprecated Use {@link #buildCommandStatic(String)} with an explicit engine.
+     */
     @Deprecated
     static List<String> buildCommandStatic() {
         return buildCommandStatic("v2");

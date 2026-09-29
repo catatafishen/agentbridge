@@ -1,317 +1,150 @@
-# Tool Permissions Architecture
+# Tool Permissions
 
-This document explains every layer of tool permission control in the AgentBridge plugin — what each setting
-does, which code enforces it, and how the layers interact for each supported agent.
+AgentBridge has two independent permission boundaries:
 
----
+1. **ACP permission requests** control whether an ACP agent may continue with a tool call that it has chosen to ask about.
+2. **AgentBridge MCP permissions** control whether this plugin executes one of its own IntelliJ tools.
 
-## Overview
+They must not be merged. An AgentBridge MCP call can cross the ACP boundary and still be denied by the plugin's MCP tool layer.
 
-Permissions flow through **five distinct layers**, applied in order:
+## End-to-end flow
 
-```
-1. MCP Server Tool Exposure      — which tools are registered at all
-2. Agent Built-in Tool Exclusion — strips the agent's own tools at session start
-3. Permission Injection          — bakes ALLOW/ASK/DENY into the agent process
-4. Runtime Permission Intercept  — plugin intercepts every tool call at runtime
-5. Session-scoped Allow          — user can grant one-session bypass per tool
-```
+```mermaid
+sequenceDiagram
+    participant Agent as ACP agent
+    participant ACP as AcpClient
+    participant User
+    participant MCP as AgentBridge MCP server
+    participant PSI as PsiBridgeService
 
-Layers 1–3 are applied **before or at startup**. Layers 4–5 are applied **at runtime** as the agent executes.
-
----
-
-## Layer 1 — MCP Server Tool Exposure
-
-**What it controls:** Which IntelliJ tools are registered with the MCP server and visible to the agent at all.
-
-**Classes:** `McpServerSettings`, `McpToolFilter`, `ToolRegistry`
-
-### Tool enable/disable (per project)
-
-In **Settings → Tools → IDE Agent → MCP Server**, the user can enable or disable each IntelliJ tool individually. This
-is stored in `McpServerSettings.State.disabledToolIds` (project-scoped, persisted in `.idea/mcpServer.xml`).
-
-```
-McpServerSettings.isToolEnabled(toolId) → boolean
-```
-
-Tools that are disabled are simply never included in the MCP `tools/list` response. The agent never knows they exist.
-
-### Always-hidden tools
-
-`McpToolFilter.ALWAYS_HIDDEN` is a hard-coded set of tool IDs that are never exposed, regardless of user settings:
-
-```java
-// McpToolFilter.java
-private static final Set<String> ALWAYS_HIDDEN = Set.of(
-                "get_chat_html"   // requires JCEF chat panel — meaningless to agents
-        );
+    Agent->>ACP: session/request_permission(toolCall)
+    alt AgentBridge MCP tool
+        ACP-->>Agent: selected allow option
+        Agent->>MCP: tools/call
+        MCP->>PSI: execute tool
+        alt MCP permission = ALLOW
+            PSI-->>MCP: result
+        else MCP permission = ASK
+            PSI->>User: AgentBridge permission bubble
+            User-->>PSI: allow or deny
+            PSI-->>MCP: result or permission error
+        else MCP permission = DENY
+            PSI-->>MCP: permission error
+        end
+        MCP-->>Agent: result or error
+    else Native or third-party tool
+        ACP->>User: ACP permission bubble
+        User-->>ACP: allow or deny
+        ACP-->>Agent: selected option
+    end
 ```
 
-### Default-disabled tools
+The first branch intentionally auto-approves only the **outer ACP request**. `PsiBridgeService` remains the authoritative permission owner for AgentBridge MCP execution, so the user is not prompted twice for the same tool call.
 
-`McpToolFilter.DEFAULT_DISABLED` lists tools that are off by default but can be enabled by the user:
+## ACP permission policy
 
-```java
-Set.of("get_notifications","set_theme","list_themes")
+`AcpClient.handlePermissionRequest()` handles `session/request_permission` requests.
+
+```mermaid
+flowchart TD
+    A[ACP permission request] --> B{AgentBridge MCP title?}
+    B -- Yes --> C[Select an allow option supplied by the agent]
+    B -- No --> D{Replayed session history?}
+    D -- Yes --> E[Acknowledge replay without a new prompt]
+    D -- No --> F[Show the existing permission bubble]
+    F --> G{User decision}
+    G -- Allow --> H[Return the matching allow option]
+    G -- Deny --> I[Return the matching deny or reject option]
+    C --> J[ACP response]
+    E --> J
+    H --> J
+    I --> J
 ```
 
-### Built-in vs MCP tools
+### AgentBridge tool identification
 
-`ToolRegistry` classifies every tool as either:
+ACP agents use different title formats for MCP tools. Auto-approval is based on each client's AgentBridge-specific format, not on path characters or a generic "looks like MCP" heuristic.
 
-- **Built-in** (`isBuiltIn = true`): tools that belong to the agent itself (e.g., Copilot CLI's `read_file`,
-  `run_command`). These are tracked for permission enforcement but never sent to the MCP server.
-- **MCP tools** (`isBuiltIn = false`): IntelliJ tools provided by this plugin. These are registered with the MCP server
-  and configurable in settings.
+| Agent | AgentBridge title format recognized at the ACP boundary |
+|---|---|
+| Copilot CLI | `agentbridge-<tool>`; known AgentBridge display names such as `Git Stage` are also resolved through `ToolRegistry` |
+| OpenCode | `agentbridge_<tool>` |
+| Junie | `agentbridge_<tool>` or `Tool: agentbridge/<tool>` |
+| Kiro | `@agentbridge/<tool>` or `Running: @agentbridge/<tool>` |
+| Hermes | `mcp_agentbridge_<tool>` |
+| Mistral Vibe | `agentbridge_<tool>` |
+| Goose | `agentbridge: <tool name>` with an optional detail suffix |
 
----
+Copilot's generic MCP classifier also recognizes third-party server prefixes such as `github-`, but that broader classifier is **not** used for auto-approval. Third-party MCP servers own their own execution policy, so their ACP permission requests are shown to the user.
 
-## Layer 2 — Agent Built-in Tool Exclusion
+### User prompt behavior
 
-**What it controls:** Whether the agent's own built-in tools (bash, read_file, edit, etc.) are stripped from the session
-at startup.
+For every non-AgentBridge request that reaches ACP:
 
-**Profile field:** `AgentProfile.excludeAgentBuiltInTools`  
-**Setting UI:** "Exclude agent's built-in tools at session start" checkbox in Agent Profiles settings  
-**Code path:** `AcpClient.createSession()` → `agentConfig.shouldExcludeBuiltInTools()`
+- the tool title and arguments are displayed in the existing chat permission UI;
+- the user's choice is mapped back to an option supplied in the request (`allow_once`, `allow_session`, `allow_always`, `deny_once`, `reject_once`, or an agent-specific equivalent);
+- if a requested persistence level is not offered, the closest available allow option is used;
+- interruption, timeout, missing UI, or malformed options fail closed;
+- cancelling a turn responds `cancelled` to pending ACP permission requests.
 
-When enabled, the plugin sends an `excludedTools` array in the `session/new` ACP request containing every built-in tool
-ID from `ToolRegistry.getBuiltInToolIds()`:
+The default AgentBridge setup tries to prevent overlapping native tools from being offered, so users normally see few ACP prompts. Custom agent configurations, built-in tools, and user-added MCP servers can still generate them.
 
-```java
-// AcpClient.java
-if(agentConfig.shouldExcludeBuiltInTools()){
-JsonArray excluded = new JsonArray();
-    for(
-String toolId :ToolRegistry.
+## AgentBridge MCP execution permissions
 
-getBuiltInToolIds()){
-        excluded.
+AgentBridge MCP permissions are enforced immediately before tool execution in `PsiBridgeService.checkPluginToolPermission()`.
 
-add(toolId);
-    }
-            params.
+| Permission | Behavior |
+|---|---|
+| `ALLOW` | Execute without a plugin prompt |
+| `ASK` | Show the AgentBridge permission bubble and wait for the user's decision |
+| `DENY` | Return an explicit permission error without executing |
 
-add("excludedTools",excluded);
-}
-```
+For path-aware tools, the effective permission is the stricter of the tool's base permission and the project-wide outside-project access policy.
 
-**Agent support:**
-| Agent | Supports `excludedTools` |
-|-------|--------------------------|
-| OpenCode | ✅ Yes — default profile has this enabled |
-| Copilot CLI | ❌ No — ignores it (see [CLI-BUG-556-WORKAROUND.md](bugs/CLI-BUG-556-WORKAROUND.md)) |
-| Claude / others | Depends on ACP implementation |
+The settings are **project-global, not per agent profile**. `GenericSettings` stores them as `tool.perm.<toolId>` and stores the outside-project policy separately. Switching from Copilot to OpenCode does not create a second permission set for the same AgentBridge MCP tool.
 
-For Copilot CLI, built-in tool control is handled differently via Layer 3 (CLI flags).
+`Allow for session` is an in-memory bypass maintained by the project-level `PsiBridgeService`; it is not an ACP permission or an agent-owned session rule. `Allow always` changes the stored MCP tool permission to `ALLOW`.
 
----
+## Tool exposure and launch-time guardrails
 
-## Layer 3 — Permission Injection
+Permission handling does not change which tools an agent receives.
 
-**What it controls:** How the per-tool ALLOW/ASK/DENY configuration is communicated to the agent process itself at
-startup. This lets the agent enforce permissions before calling a tool, reducing unnecessary round-trips.
+- `McpToolFilter` and MCP settings decide which AgentBridge tools appear in `tools/list`.
+- Agent-specific launch configuration decides which native tools are hidden or disabled, for example Copilot's `--excluded-tools`, Junie's allowlist, and custom agent definitions.
+- Startup instructions guide agents toward IntelliJ-backed tools where filtering is unavailable.
 
-**Profile field:** `AgentProfile.permissionInjectionMethod`  
-**Enum:** `PermissionInjectionMethod`
+These guardrails remain independent because some agents execute tools without sending `session/request_permission`. The plugin can only prompt for requests that the agent actually sends.
 
-There are three strategies:
+`ProfileBasedAgentConfig` still contains optional `CLI_FLAGS` and `CONFIG_JSON` permission-injection strategies for compatibility with custom profiles. Current built-in profiles use `PermissionInjectionMethod.NONE`; the active AgentBridge MCP permission gate is `PsiBridgeService`.
 
-### `CLI_FLAGS` (used by Copilot CLI)
+## Other protocol clients
 
-`--allow-tool "toolId"` and `--deny-tool "toolId"` flags are appended to the launch command. Tools not listed default to
-ASK (the agent will prompt the user).
+Not every client uses ACP's `session/request_permission`:
 
-```java
-// ProfileBasedAgentConfig.addPermissionCliFlags()
-for(ToolEntry entry :ToolRegistry.
+- Codex app-server has separate native command/file approval requests and reuses the same permission prompt contract.
+- Claude's protocol has its own permission response path.
+- Agents that do not send a permission request cannot be made interactive at the ACP layer; launch-time filtering and the MCP execution gate still apply where available.
 
-getAllTools()){
-        if(entry.isBuiltIn)continue;
-ToolPermission perm = settings.getToolPermission(entry.id);
-    if(perm ==ALLOW)cmd.
+## Code map
 
-add("--allow-tool",entry.id);
-    if(perm ==DENY)cmd.
+| Responsibility | Primary code |
+|---|---|
+| ACP request routing | `client/acp/AcpClient.java` |
+| Per-agent AgentBridge title formats | ACP client subclasses (`CopilotClient`, `JunieClient`, `KiroClient`, and others) |
+| Chat permission listener | `ui/PromptOrchestrator.kt` |
+| Shared permission UI abstraction | `bridge/PermissionPromptProvider.java` |
+| AgentBridge MCP execution gate | `psi/PsiBridgeService.java` |
+| MCP permission settings adapter | `bridge/ActiveAgentToolLayerSettings.java` |
+| Project-global permission storage | `services/GenericSettings.java` |
+| Tool exposure | `settings/McpToolFilter.java`, `settings/McpServerSettings.java`, `services/ToolRegistry.java` |
 
-add("--deny-tool",entry.id);
-}
-```
+## Historical context
 
-### `CONFIG_JSON` (used by OpenCode)
+Earlier ACP clients had inconsistent permission support. AgentBridge therefore accumulated title heuristics, automatic denial, retry guidance, and client-specific exceptions. Those experiments are documented in [ACP-TOOL-INTERCEPTION.md](ACP-TOOL-INTERCEPTION.md) and [CLI-BUG-556-WORKAROUND.md](bugs/CLI-BUG-556-WORKAROUND.md).
 
-A `"permission"` block is merged into the JSON config passed to the agent (via env var `OPENCODE_CONFIG_CONTENT`). Every
-non-built-in tool gets an `"allow"`, `"ask"`, or `"deny"` entry. When `excludeAgentBuiltInTools` is also enabled, every
-built-in tool (e.g., `read`, `edit`, `write`, `list`) gets a `"deny"` entry in the same block — this is what actually
-prevents OpenCode from using its own tools at the agent level.
+The current policy is simpler:
 
-```java
-// ProfileBasedAgentConfig.mergePermissionsIntoConfig()
-// → buildPermissionJsonObject()
-for(ToolEntry entry :ToolRegistry.
-
-getAllTools()){
-        if(entry.isBuiltIn){
-        if(profile.
-
-isExcludeAgentBuiltInTools()){
-        permObj.
-
-addProperty(entry.id, "deny");
-        }
-                continue;
-                }
-ToolPermission perm = settings.getToolPermission(entry.id);
-    permObj.
-
-addProperty(entry.id, perm.name().
-
-toLowerCase());
-        }
-```
-
-### `NONE`
-
-No injection — permissions are handled entirely by the plugin at runtime (Layer 4).
-
----
-
-## Layer 4 — Runtime Permission Intercept
-
-**What it controls:** The plugin intercepts every `request_permission` ACP event the agent fires before actually
-executing a tool call.
-
-**Code path:** `AcpClient.handleRequestPermission()` → `resolveEffectivePermission()`  
-**Storage:** `GenericSettings` (application-scoped, keyed by agent profile ID)
-
-### Permission levels
-
-```java
-public enum ToolPermission {
-    ALLOW,  // auto-approve without prompting the user
-    ASK,    // show permission request bubble in chat and wait
-    DENY    // auto-deny and send guidance telling the agent to use an alternative
-}
-```
-
-Default for all tools is **ALLOW** (no stored value = allow).
-
-### Outside-project access policy
-
-For tools that act on a file path (`ToolDefinition.supportsPathSubPermissions() == true`), access to files
-**outside the project root** is governed by a single project-wide policy — not by per-tool overrides. Inside the
-project (and for non-path tools) the tool's own permission applies unchanged:
-
-```
-resolveEffectivePermission(toolId, insideProject):
-  1. base = permission for toolId
-  2. If insideProject, or the tool is not path-aware → return base
-  3. Otherwise (path is outside the project) → return the stricter of
-       { base, outsideProjectAccess }        // severity order: ALLOW < ASK < DENY
-```
-
-A path outside the project can therefore only ever be *more* restricted than the tool's own permission, never
-less. The default `outsideProjectAccess` is `ALLOW`, so out-of-project paths behave exactly like in-project ones
-until the user tightens the policy.
-
-Storage keys in `PropertiesComponent`:
-
-- `tool.perm.{toolId}` — the tool's permission
-- `tool.outsideProjectAccess` — the single global outside-project policy (default `ALLOW`)
-
-### `usePluginPermissions` flag
-
-**Profile field:** `AgentProfile.usePluginPermissions` (default: `true`)  
-**Setting UI:** "Use plugin-level tool permissions" checkbox in Agent Profiles settings
-
-When `false`, the plugin's ASK logic is bypassed at runtime — any tool that would normally trigger an ASK prompt is
-promoted to ALLOW automatically. DENY decisions are **always preserved**, regardless of this flag.
-
-```java
-// AcpClient.handleRequestPermission()
-if(perm ==ToolPermission.ASK &&agentSettings.
-
-isAutoApprovePermissions()){
-perm =ToolPermission.ALLOW;  // promotes ASK → ALLOW
-}
-// DENY is never promoted — falls through to rejection path
-```
-
-**OpenCode default:** `usePluginPermissions = false` — OpenCode handles its own permissions via the injected
-`CONFIG_JSON` (Layer 3), so the plugin steps aside at runtime.
-
-**Copilot CLI default:** `usePluginPermissions = true` — plugin actively intercepts and enforces permissions.
-
-### Sub-agent git write protection
-
-Regardless of permission settings, the plugin always blocks sub-agents (agents spawned by the primary agent) from using
-git write tools. This is a hard-coded safety guard that cannot be overridden:
-
-```java
-String gitWriteAbuse = detectSubAgentGitWrite(toolCall);
-if(gitWriteAbuse !=null){
-
-sendPermissionResponse(reqId, rejectOptionId);  // always deny
-    return;
-            }
-```
-
----
-
-## Layer 5 — Session-scoped Allow
-
-**What it controls:** When a user approves an ASK prompt with "Allow for session", that tool is added to a
-session-scoped allow set. Subsequent calls to the same tool in the same session skip the prompt entirely.
-
-```java
-// AcpClient.handleRequestPermission()
-if(perm ==ToolPermission.ASK &&sessionAllowedTools.
-
-contains(toolId)){
-perm =ToolPermission.ALLOW;  // session-scoped bypass
-}
-```
-
-`sessionAllowedTools` is an in-memory `Set<String>` that is cleared when the session ends.
-
----
-
-## Per-agent Summary
-
-| Feature                                 | Copilot CLI                     | OpenCode                         |
-|-----------------------------------------|---------------------------------|----------------------------------|
-| MCP tool enable/disable                 | ✅                               | ✅                                |
-| Exclude built-in tools at session start | ❌ (bug #556)                    | ✅                                |
-| Permission injection method             | `CLI_FLAGS`                     | `CONFIG_JSON`                    |
-| Plugin runtime permission intercept     | ✅ (`usePluginPermissions=true`) | ❌ (`usePluginPermissions=false`) |
-| Path-based sub-permissions              | ✅                               | ❌ (plugin steps aside)           |
-| Session-scoped allow                    | ✅                               | ❌ (plugin steps aside)           |
-| Sub-agent git write protection          | ✅                               | ✅ (always enforced)              |
-
----
-
-## Configuration Reference
-
-### `AgentProfile` fields (Settings → Agent Profiles)
-
-| Field                       | Type    | Default | Effect                                                         |
-|-----------------------------|---------|---------|----------------------------------------------------------------|
-| `usePluginPermissions`      | boolean | `true`  | Enable runtime ALLOW/ASK/DENY enforcement in plugin            |
-| `excludeAgentBuiltInTools`  | boolean | `false` | Send `excludedTools` in `session/new` to strip agent built-ins |
-| `permissionInjectionMethod` | enum    | `NONE`  | How permissions are baked into the agent process at startup    |
-
-### `McpServerSettings` (per project, `.idea/mcpServer.xml`)
-
-| Field             | Effect                                          |
-|-------------------|-------------------------------------------------|
-| `disabledToolIds` | Set of tool IDs to remove from MCP `tools/list` |
-
-### `GenericSettings` (application-scoped, keyed by profile ID)
-
-| Key pattern                   | Effect                                |
-|-------------------------------|---------------------------------------|
-| `{id}.tool.perm.{toolId}`     | Top-level permission (ALLOW/ASK/DENY) |
-| `{id}.tool.perm.in.{toolId}`  | Inside-project override               |
-| `{id}.tool.perm.out.{toolId}` | Outside-project override              |
+- auto-approve AgentBridge MCP tools only at the ACP boundary;
+- enforce their real permission inside the AgentBridge MCP execution layer;
+- show every other ACP permission request to the user;
+- keep tool exposure and launch-time filtering unchanged.

@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
+import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
-import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
@@ -184,114 +184,6 @@ class AcpClientTest {
         }
     }
 
-    // ── isAllowedBuiltInTool (package-private static) ───────────────────
-
-    @Nested
-    class IsAllowedBuiltInTool {
-
-        @Test
-        void webFetchAllowed() {
-            assertTrue(AcpClient.isAllowedBuiltInTool("web_fetch"));
-        }
-
-        @Test
-        void webSearchAllowed() {
-            assertTrue(AcpClient.isAllowedBuiltInTool("web_search"));
-        }
-
-        @Test
-        void taskCompleteAllowed() {
-            assertTrue(AcpClient.isAllowedBuiltInTool("task_complete"));
-        }
-
-        @Test
-        void caseInsensitive() {
-            assertTrue(AcpClient.isAllowedBuiltInTool("Web_Fetch"));
-        }
-
-        @Test
-        void bashNotAllowed() {
-            assertFalse(AcpClient.isAllowedBuiltInTool("bash"));
-        }
-
-        @Test
-        void editNotAllowed() {
-            assertFalse(AcpClient.isAllowedBuiltInTool("edit"));
-        }
-    }
-
-    // ── shouldAutoDenyBuiltInTool (package-private static) ──────────────
-
-    @Nested
-    class ShouldAutoDenyBuiltInTool {
-
-        @Test
-        void mcpResourceToolNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("read_mcp_resource"));
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("list_mcp_resources"));
-        }
-
-        @Test
-        void agentbridgeDashNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("agentbridge-read_file"));
-        }
-
-        @Test
-        void agentbridgeUnderscoreNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("agentbridge_read_file"));
-        }
-
-        @Test
-        void agentbridgeToolProtocolNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("Tool: agentbridge/read_file"));
-        }
-
-        @Test
-        void agentbridgeRunningProtocolNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("Running: @agentbridge/read_file"));
-        }
-
-        @Test
-        void agentbridgeAtPrefixNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("@agentbridge/read_file"));
-        }
-
-        @Test
-        void allowedBuiltInNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("web_fetch"));
-        }
-
-        @Test
-        void bashIsDenied() {
-            assertTrue(AcpClient.shouldAutoDenyBuiltInTool("bash"));
-        }
-
-        @Test
-        void editIsDenied() {
-            assertTrue(AcpClient.shouldAutoDenyBuiltInTool("edit"));
-        }
-
-        @Test
-        void viewIsDenied() {
-            assertTrue(AcpClient.shouldAutoDenyBuiltInTool("view"));
-        }
-
-        @Test
-        void grepIsDenied() {
-            assertTrue(AcpClient.shouldAutoDenyBuiltInTool("grep"));
-        }
-
-        @Test
-        void toolWithSlashNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("some/tool"));
-        }
-
-        @Test
-        void toolWithAtNotDenied() {
-            assertFalse(AcpClient.shouldAutoDenyBuiltInTool("@some_tool"));
-        }
-    }
-
     // ── findOptionByKind (private static) ───────────────────────────────
 
     @Nested
@@ -339,38 +231,6 @@ class AcpClientTest {
             Method m = AcpClient.class.getDeclaredMethod("findOptionByKind", JsonObject.class, String.class);
             m.setAccessible(true);
             return (JsonObject) m.invoke(null, params, kind);
-        }
-    }
-
-    // ── findFirstOption (private static) ────────────────────────────────
-
-    @Nested
-    class FindFirstOption {
-
-        @Test
-        void nullParams() throws Exception {
-            assertNull(invokeFindFirstOption(null));
-        }
-
-        @Test
-        void emptyArray() throws Exception {
-            JsonObject params = new JsonObject();
-            params.add("options", new JsonArray());
-            assertNull(invokeFindFirstOption(params));
-        }
-
-        @Test
-        void returnsFirstElement() throws Exception {
-            JsonObject params = buildOptionsParams("allow", "deny_once");
-            JsonObject result = invokeFindFirstOption(params);
-            assertNotNull(result);
-            assertEquals("allow", result.get("kind").getAsString());
-        }
-
-        private JsonObject invokeFindFirstOption(JsonObject params) throws Exception {
-            Method m = AcpClient.class.getDeclaredMethod("findFirstOption", JsonObject.class);
-            m.setAccessible(true);
-            return (JsonObject) m.invoke(null, params);
         }
     }
 
@@ -540,38 +400,6 @@ class AcpClientTest {
             Method m = AcpClient.class.getDeclaredMethod("getStartupStepFromException", Exception.class);
             m.setAccessible(true);
             return (String) m.invoke(client, ex);
-        }
-    }
-
-    // ── isMcpResourceTool (private static) ──────────────────────────────
-
-    @Nested
-    class IsMcpResourceTool {
-
-        @Test
-        void readMcpResource() throws Exception {
-            assertTrue(invokeIsMcpResourceTool("read_mcp_resource"));
-        }
-
-        @Test
-        void listMcpResources() throws Exception {
-            assertTrue(invokeIsMcpResourceTool("list_mcp_resources"));
-        }
-
-        @Test
-        void caseInsensitive() throws Exception {
-            assertTrue(invokeIsMcpResourceTool("READ_MCP_RESOURCE"));
-        }
-
-        @Test
-        void randomToolNotMcpResource() throws Exception {
-            assertFalse(invokeIsMcpResourceTool("bash"));
-        }
-
-        private boolean invokeIsMcpResourceTool(String toolId) throws Exception {
-            Method m = AcpClient.class.getDeclaredMethod("isMcpResourceTool", String.class);
-            m.setAccessible(true);
-            return (boolean) m.invoke(null, toolId);
         }
     }
 

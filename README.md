@@ -68,8 +68,8 @@ a plugin with no reviews.
 | **Mistral Vibe**               | ACP (stdin/stdout)         | Mistral API key               |
 | **Goose**                      | ACP (stdin/stdout)         | Configurable (multi-provider) |
 
-Switch between agents with one click. Each agent has its own connection settings,
-tool permissions, and custom instructions.
+Switch between agents with one click. Each agent has its own connection settings and custom instructions.
+AgentBridge MCP tool permissions are shared project-wide so the same IntelliJ tool policy applies after switching agents.
 
 ## What Agents Can Do
 
@@ -360,7 +360,7 @@ agentbridge/
 | [TESTING.md](TESTING.md)                                         | Test running and coverage                             |
 | [Releases](https://github.com/catatafishen/agentbridge/releases) | Per-version changelog and downloads                   |
 | [docs/SESSION-RESUME.md](docs/SESSION-RESUME.md)                 | Cross-client session migration                        |
-| [docs/PERMISSIONS.md](docs/PERMISSIONS.md)                       | Per-agent tool permission architecture                |
+| [docs/PERMISSIONS.md](docs/PERMISSIONS.md)                       | ACP and AgentBridge MCP permission architecture        |
 
 ## Supporting the Project
 

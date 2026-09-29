@@ -48,8 +48,8 @@ import java.util.Set;
  * Tools installed in shared system directories (e.g. {@code git} in
  * {@code /usr/bin}) cannot be hidden via PATH stripping alone. The plugin's
  * startup instructions provide an additional layer of enforcement for these
- * cases. If the upstream {@code --excluded-tools} CLI flag is fixed
- * (bug #556), that will be the definitive solution.
+ * cases. Copilot CLI now honors {@code --excluded-tools} in ACP mode, so its
+ * overlapping built-in tools are filtered separately at launch.
  *
  * @see ShellEnvironment
  */
