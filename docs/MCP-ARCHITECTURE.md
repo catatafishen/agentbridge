@@ -203,7 +203,7 @@ custom MCP clients) that cannot use the stdio-based subprocess model.
 
 #### Transport Modes
 
-Configured in **Settings → Tools → AgentBridge → MCP Server → General**.
+Configured in **Settings → Tools → AgentBridge → MCP**.
 
 ##### Streamable HTTP (default)
 

@@ -37,7 +37,7 @@ See [Authentication handling](../AUTH-HANDLING.md).
 
 ## Connect your own Claude Code
 
-1. In **Settings → Tools → AgentBridge → MCP Server → General**, start the MCP server and note the port and
+1. In **Settings → Tools → AgentBridge → MCP**, start the MCP server and note the port and
    transport (Streamable HTTP is the default).
 2. Add the server to Claude Code, for example:
 
