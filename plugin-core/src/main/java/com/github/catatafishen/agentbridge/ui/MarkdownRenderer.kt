@@ -31,6 +31,7 @@ object MarkdownRenderer {
 
     data class MarkdownState(
         var inCode: Boolean = false,
+        var codeLang: String = "",
         var inTable: Boolean = false,
         var firstTR: Boolean = true,
         var inList: Boolean = false,
@@ -63,7 +64,7 @@ object MarkdownRenderer {
                     handleCodeFence(sb, state, t)
                 }
 
-                state.inCode -> sb.append(escapeHtml(line)).append("\n")
+                state.inCode -> sb.append(renderCodeLine(line, state)).append("\n")
 
                 t.isEmpty() -> {
                     closeImplicitCode(sb, state)
@@ -196,16 +197,31 @@ object MarkdownRenderer {
 
     private fun handleCodeFence(sb: StringBuilder, state: MarkdownState, fenceLine: String) {
         if (state.inCode) {
-            sb.append(HTML_CODE_BLOCK_CLOSE); state.inCode = false
+            sb.append(HTML_CODE_BLOCK_CLOSE); state.inCode = false; state.codeLang = ""
         } else {
             closeListAndTable(sb, state)
             val lang = fenceLine.trim().removePrefix("```").trim().lowercase()
+            state.codeLang = lang
             if (lang.isNotEmpty()) {
                 sb.append("<pre><code data-lang=\"").append(escapeHtml(lang)).append("\">")
             } else {
                 sb.append("<pre><code>")
             }
             state.inCode = true
+        }
+    }
+
+    /**
+     * One line inside a fenced code block, escaped. Inside a `diff` block, +/- lines are
+     * wrapped in class spans so the pane's stylesheet can color additions/deletions; the
+     * renderer itself stays theme-free (class names only).
+     */
+    private fun renderCodeLine(line: String, state: MarkdownState): String {
+        if (state.codeLang != "diff") return escapeHtml(line)
+        return when {
+            line.startsWith("+") -> "<span class=\"diff-add\">${escapeHtml(line)}</span>"
+            line.startsWith("-") -> "<span class=\"diff-del\">${escapeHtml(line)}</span>"
+            else -> escapeHtml(line)
         }
     }
 

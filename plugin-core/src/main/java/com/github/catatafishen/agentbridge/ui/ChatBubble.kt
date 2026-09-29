@@ -13,7 +13,7 @@ import javax.swing.*
 
 internal const val BUBBLE_V_PAD = 8
 private const val BUBBLE_H_PAD = 14
-private const val MAX_BUBBLE_WIDTH_FRACTION = 0.94
+internal const val MAX_BUBBLE_WIDTH_FRACTION = 0.94
 
 /**
  * Which corner of the bubble to leave unrounded (square).

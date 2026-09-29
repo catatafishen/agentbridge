@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RENDER_INTERVAL_MS
+import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.github.catatafishen.agentbridge.ui.NativeMarkdownPane.Companion.RESIZE_SETTLE_MS
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBColor
@@ -484,6 +485,14 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         ss.addRule("code { background-color: $codeBg; font-family: monospace; font-size: ${codeFontPt}pt; }")
         ss.addRule("pre { background-color: $codeBg; padding: 8px 12px; border-left: 3px solid $tblBorder; margin: 6px 0; }")
         ss.addRule("pre code { background-color: transparent; }")
+        // Diff coloring inside ```diff code fences (e.g. edit-approval bubbles). Uses the
+        // same success/fail colors the tool renderers use, so it follows the IDE theme.
+        // HTMLEditorKit CSS has no descendant selectors — plain class rules only, and colors
+        // must be hex strings (Color.toString() is not valid CSS).
+        val diffAddColor = colorToHex(ToolRenderers.SUCCESS_COLOR)
+        val diffDelColor = colorToHex(ToolRenderers.FAIL_COLOR)
+        ss.addRule(".diff-add { color: $diffAddColor; }")
+        ss.addRule(".diff-del { color: $diffDelColor; }")
         ss.addRule("table { border-collapse: collapse; margin: 6px 0; width: 100%; }")
         ss.addRule("th { font-weight: bold; border-bottom: 2px solid $tblBorder; padding: 4px 8px; text-align: left; color: $mutedFg; }")
         ss.addRule("td { border-bottom: 1px solid $tblBorder; padding: 4px 8px; }")

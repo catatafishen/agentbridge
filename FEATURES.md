@@ -282,6 +282,9 @@ Fine-grained control over what the agent can do.
   outside-project policy for path-aware tools
 - **ACP permission prompts** — Native and third-party tool requests are shown in the existing permission UI when the
   agent sends `session/request_permission`
+- **Diff cards for edit approvals** — ACP edit-approval prompts show the proposed change as a reviewable collapsible
+  card (target file, +N/−M change stats, colored unified diff) instead of raw whole-file contents, in both the
+  built-in chat and the web UI
 - **No duplicate prompts** — AgentBridge MCP requests are auto-approved only at the ACP boundary, then checked by the
   plugin immediately before execution
 - **Tool exposure guardrails** — Agent-specific filtering keeps overlapping native tools out of the default tool set

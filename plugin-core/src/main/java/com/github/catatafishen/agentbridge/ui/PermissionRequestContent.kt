@@ -25,7 +25,10 @@ data class PermissionRequestContent(
     val toolName: String,
     val args: List<Arg>,
 ) {
-    data class Arg(val key: String, val value: String)
+    data class Arg(val key: String, val value: String) {
+        /** Whether this arg is a unified diff that should render as a code block, not a k/v row. */
+        val isDiff: Boolean = key == "diff"
+    }
 
     companion object {
         const val DEFAULT_HEADLINE = "Permission requested"

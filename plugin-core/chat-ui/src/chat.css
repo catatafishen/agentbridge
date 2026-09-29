@@ -1300,6 +1300,102 @@ hr {
     white-space: nowrap;
 }
 
+/* ── Permission diff block (unified diff of the proposed edit) ──────── */
+
+.perm-diff-card {
+    margin-bottom: var(--sp-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+}
+
+.perm-diff-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-3);
+    background: var(--fg-a05);
+    border-bottom: 1px solid var(--border);
+}
+
+.perm-diff-path {
+    flex: 1;
+    font-family: var(--code-font);
+    font-size: var(--code-font-size);
+    color: var(--fg-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.perm-diff-stats {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-shrink: 0;
+}
+
+.perm-diff-add-count {
+    color: var(--diff-add, #4ec94e);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.perm-diff-del-count {
+    color: var(--diff-del, #e05c5c);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.perm-diff-toggle {
+    background: none;
+    border: none;
+    color: var(--accent, #4a9eff);
+    cursor: pointer;
+    font-size: 0.85em;
+    padding: 0;
+}
+
+.perm-diff-toggle:hover {
+    text-decoration: underline;
+}
+
+.perm-diff {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 300px;
+    background: var(--fg-a05);
+}
+
+.perm-diff-collapsed {
+    display: none;
+}
+
+.perm-diff pre {
+    margin: 0;
+    padding: var(--sp-2) var(--sp-3);
+    font-family: var(--code-font);
+    font-size: var(--code-font-size);
+    line-height: 1.45;
+    white-space: pre;
+}
+
+.perm-diff-add {
+    color: var(--diff-add, #4ec94e);
+    display: block;
+}
+
+.perm-diff-del {
+    color: var(--diff-del, #e05c5c);
+    display: block;
+}
+
+.perm-diff-ctx {
+    color: var(--fg-muted);
+    display: block;
+}
+
 /* ── Code action buttons (copy, wrap, scratch) ───────── */
 
 .code-lang-label {
