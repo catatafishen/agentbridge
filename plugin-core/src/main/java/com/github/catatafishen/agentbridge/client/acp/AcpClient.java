@@ -2190,7 +2190,7 @@ public abstract class AcpClient extends AbstractClient {
 
         String promptId = toolCallId.isBlank() ? requestKey : toolCallId;
         String displayName = toolTitle.isBlank() ? "Unknown tool" : toolTitle;
-        String arguments = permissionRequestArguments(toolCall);
+        String arguments = permissionRequestArguments(toolCall, params);
 
         PermissionPrompt prompt = new PermissionPrompt() {
             @Override
@@ -2257,7 +2257,17 @@ public abstract class AcpClient extends AbstractClient {
         return findDenyOption(params);
     }
 
-    private String permissionRequestArguments(@Nullable JsonObject toolCall) {
+    /**
+     * The arguments string shown in the permission prompt. Agent-native edit/command
+     * approvals get a curated bubble context (question + args with a bounded diff,
+     * change stats, and the target path) via {@link AgentPermissionRequests}; anything
+     * else falls back to the raw tool-call arguments.
+     */
+    private String permissionRequestArguments(@Nullable JsonObject toolCall, @Nullable JsonObject params) {
+        if (params != null && AgentPermissionRequests.requestKind(params) != null) {
+            return AgentPermissionRequests.bubbleContext(params,
+                toolCall != null ? getStringOrEmpty(toolCall, "title") : "");
+        }
         if (toolCall == null) {
             return "";
         }

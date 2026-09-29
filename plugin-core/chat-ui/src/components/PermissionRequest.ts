@@ -23,20 +23,31 @@ export default class PermissionRequest extends HTMLElement {
     private _render(): void {
         const reqId = this.getAttribute('req-id') || '';
         this.className = 'perm-actions';
-        this._buildArgsTable();
+        this._buildArgsTable(reqId);
         this._buildButtons(reqId);
     }
 
-    private _buildArgsTable(): void {
+    private _buildArgsTable(reqId: string): void {
         const argsAttr = this.getAttribute('args');
         if (!argsAttr) return;
         try {
             const args = JSON.parse(argsAttr) as Record<string, unknown>;
             const entries = Object.entries(args).filter(([, v]) => v !== null && v !== undefined && v !== false && v !== '');
             if (entries.length === 0) return;
+            // The diff card's header carries the path and +/- stats, so those args must not
+            // also appear as k/v rows — but only when the card actually renders.
+            const hasDiffCard = typeof args.diff === 'string' && args.diff !== '';
             const table = document.createElement('div');
             table.className = 'perm-args';
             for (const [key, value] of entries) {
+                if (key === 'diff') {
+                    // Unified diff of the proposed edit: render as a collapsible card
+                    // instead of a truncated k/v row so the change is actually reviewable.
+                    this._buildDiffBlock(String(value), args);
+                    continue;
+                }
+                if (hasDiffCard && (key === 'path' || key === 'diffAdded' || key === 'diffRemoved'
+                    || key === 'oldText' || key === 'newText' || key === 'autoOpenDiff')) continue;
                 const row = document.createElement('div');
                 row.className = 'perm-arg-row';
                 const label = document.createElement('span');
@@ -55,6 +66,69 @@ export default class PermissionRequest extends HTMLElement {
         } catch {
             // malformed args — skip
         }
+    }
+
+    private _buildDiffBlock(diff: string, args: Record<string, unknown>): void {
+        // Collapsible card: header with the target path and +/- stats over the scrollable
+        // colored diff. Built purely with textContent — no user input reaches innerHTML.
+        // Stats come from the sender (computed from the FULL change, not the truncated
+        // diff text), keeping a single source of truth between the panels.
+        const wrap = document.createElement('div');
+        wrap.className = 'perm-diff';
+        const card = document.createElement('div');
+        card.className = 'perm-diff-card';
+        const header = document.createElement('div');
+        header.className = 'perm-diff-header';
+        const title = document.createElement('span');
+        title.className = 'perm-diff-path';
+        const p = typeof args.path === 'string' ? args.path : '';
+        const fileName = p !== '' ? p.replace(/^.*[\\/]/, '') : '';
+        title.textContent = fileName !== '' ? fileName : 'proposed change';
+        if (p !== '') title.title = p;
+        header.appendChild(title);
+        const stats = document.createElement('span');
+        stats.className = 'perm-diff-stats';
+        const added = typeof args.diffAdded === 'number' ? args.diffAdded : 0;
+        const removed = typeof args.diffRemoved === 'number' ? args.diffRemoved : 0;
+        const addEl = document.createElement('span');
+        addEl.className = 'perm-diff-add-count';
+        addEl.textContent = `+${added}`;
+        const delEl = document.createElement('span');
+        delEl.className = 'perm-diff-del-count';
+        delEl.textContent = `\u2212${removed}`;
+        stats.appendChild(addEl);
+        stats.appendChild(delEl);
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'perm-diff-toggle';
+        toggle.textContent = 'Hide diff';
+        toggle.onclick = () => {
+            const visible = wrap.classList.toggle('perm-diff-collapsed');
+            toggle.textContent = visible ? 'Show diff' : 'Hide diff';
+        };
+        stats.appendChild(toggle);
+        header.appendChild(stats);
+        card.appendChild(header);
+        const pre = document.createElement('pre');
+        // Drop trailing empty lines: the diff text ends with a newline, which would
+        // otherwise render as blank rows at the bottom of the card.
+        const lines = diff.split('\n');
+        while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+        for (const line of lines) {
+            if (!line) continue;
+            const lineEl = document.createElement('span');
+            lineEl.className = line.startsWith('+')
+                ? 'perm-diff-add'
+                : line.startsWith('-')
+                    ? 'perm-diff-del'
+                    : 'perm-diff-ctx';
+            lineEl.textContent = line;
+            pre.appendChild(lineEl);
+            pre.appendChild(document.createTextNode('\n'));
+        }
+        wrap.appendChild(pre);
+        card.appendChild(wrap);
+        this.appendChild(card);
     }
 
     private _buildButtons(reqId: string): void {

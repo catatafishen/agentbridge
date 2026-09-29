@@ -11,12 +11,15 @@ import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
+import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
@@ -26,7 +29,11 @@ import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.MouseWheelListener
+import kotlin.math.max
+import kotlin.math.min
 import javax.swing.*
+import javax.swing.text.SimpleAttributeSet
+import javax.swing.text.StyleConstants
 
 /**
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
@@ -1194,12 +1201,152 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun getLastResponseText(): String = ""
     override fun getPageHtml(): String? = null
 
+    /**
+     * Collapsible card for the unified diff of a proposed edit: a header bar showing the
+     * target file name (with its file-type icon, full path on hover) and colored +/-
+     * change statistics with a show/hide toggle, over the bounded scrollable monospace
+     * diff block ({@link #createDiffBlock}).
+     */
+    private fun createDiffCard(
+        diff: String, path: String?, added: Int, removed: Int
+    ): JComponent {
+        val diffBlock = createDiffBlock(diff)
+        val toggleLabel = HyperlinkLabel("Hide diff").apply {
+            setToolTipText("Collapse or expand the proposed change")
+        }
+        val header = JPanel(BorderLayout(8, 0)).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(2, 8)
+            val title = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+                isOpaque = false
+                val fileName = path?.let { it.substringAfterLast('/').substringAfterLast('\\') } ?: ""
+                val typeIcon = FileTypeManager.getInstance()
+                    .getFileTypeByFileName(if (fileName.isEmpty()) "file.txt" else fileName).icon
+                add(JBLabel(typeIcon).apply { border = JBUI.Borders.emptyRight(2) })
+                val nameLabel = JBLabel(if (fileName.isEmpty()) "proposed change" else fileName)
+                nameLabel.foreground = UIUtil.getContextHelpForeground()
+                if (path != null) nameLabel.toolTipText = path
+                add(nameLabel)
+            }
+            add(title, BorderLayout.CENTER)
+            val stats = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
+                isOpaque = false
+                val addLabel = JBLabel("+$added")
+                addLabel.foreground = ToolRenderers.SUCCESS_COLOR
+                val delLabel = JBLabel("\u2212$removed")
+                delLabel.foreground = ToolRenderers.FAIL_COLOR
+                add(addLabel)
+                add(delLabel)
+                add(toggleLabel)
+            }
+            add(stats, BorderLayout.EAST)
+        }
+        val card = object : JPanel(BorderLayout()) {
+            // Keep the diff block's full width available when the panel is wide.
+            override fun getAlignmentX(): Float = Component.LEFT_ALIGNMENT
+
+            // The card must always prefer the same width the approval bubble above it
+            // caps at (94% of the viewport) — both expanded and collapsed. When the
+            // diff block is hidden it contributes nothing to the preferred size, and
+            // the header alone is much narrower, so the wrapping bubble would shrink.
+            // Resolved at layout time by walking up to the nearest JViewport (a value
+            // computed at construction time would be stale — nothing is parented yet),
+            // exactly like createBubble does.
+            override fun getPreferredSize(): Dimension {
+                val pref = super.getPreferredSize()
+                var insetH = 0
+                var anc: Container? = parent
+                while (anc != null) {
+                    if (anc is JViewport && anc.width > 0) {
+                        val available = (anc.width - insetH).coerceAtLeast(0)
+                        val w = ((available * MAX_BUBBLE_WIDTH_FRACTION).toInt())
+                            .coerceAtLeast(JBUI.scale(200))
+                        return Dimension(max(pref.width, min(w, available)), pref.height)
+                    }
+                    insetH += anc.insets.left + anc.insets.right
+                    anc = anc.parent
+                }
+                return pref
+            }
+        }
+        toggleLabel.addHyperlinkListener {
+            diffBlock.isVisible = !diffBlock.isVisible
+            toggleLabel.setHyperlinkText(if (diffBlock.isVisible) "Hide diff" else "Show diff")
+            card.revalidate()
+            card.repaint()
+        }
+        card.add(header, BorderLayout.NORTH)
+        card.add(diffBlock, BorderLayout.CENTER)
+        card.border = JBUI.Borders.empty(2, 0)
+        return card
+    }
+
+    /**
+     * Horizontally scrollable monospace block for the unified diff of a proposed edit.
+     * A JTextPane (never soft-wraps long lines) inside a JBScrollPane that does not track
+     * the viewport width, so a horizontal scrollbar appears when the diff is wider than
+     * the card. +/- lines colored with the theme-aware success/fail colors the tool
+     * renderers use; escape character is irrelevant (styled text, not HTML).
+     */
+    private fun createDiffBlock(diff: String): JComponent {
+        val addAttr = SimpleAttributeSet().apply {
+            StyleConstants.setForeground(this, ToolRenderers.SUCCESS_COLOR)
+            StyleConstants.setFontFamily(this, "JetBrains Mono")
+            StyleConstants.setFontSize(this, UIUtil.getLabelFont().size)
+        }
+        val delAttr = SimpleAttributeSet().apply {
+            StyleConstants.setForeground(this, ToolRenderers.FAIL_COLOR)
+            StyleConstants.setFontFamily(this, "JetBrains Mono")
+            StyleConstants.setFontSize(this, UIUtil.getLabelFont().size)
+        }
+        val ctxAttr = SimpleAttributeSet().apply {
+            StyleConstants.setForeground(this, UIUtil.getContextHelpForeground())
+            StyleConstants.setFontFamily(this, "JetBrains Mono")
+            StyleConstants.setFontSize(this, UIUtil.getLabelFont().size)
+        }
+        val textPane = object : JTextPane() {
+            override fun getScrollableTracksViewportWidth(): Boolean = false
+            override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+        }.apply {
+            isEditable = false
+            background = NativeChatColors.CODE_BG
+            border = JBUI.Borders.empty(6, 8)
+            val doc = styledDocument
+            // Drop trailing empty artifacts: the diff text ends with a newline and the
+            // loop appends one per line, which would otherwise render blank rows.
+            for (line in diff.lines().dropLastWhile { it.isEmpty() }) {
+                val attr = when {
+                    line.startsWith("+") -> addAttr
+                    line.startsWith("-") -> delAttr
+                    else -> ctxAttr
+                }
+                doc.insertString(doc.length, line + "\n", attr)
+            }
+            caretPosition = 0
+        }
+        return JBScrollPane(textPane).apply {
+            border = BorderFactory.createLineBorder(NativeChatColors.TABLE_BORDER)
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+            alignmentX = Component.LEFT_ALIGNMENT
+            // Bounded viewport height: long diffs scroll inside the card instead of
+            // stretching the chat; width comes from the card (see below).
+            preferredSize = Dimension(
+                0, min(textPane.preferredSize.height + JBUI.scale(2), JBUI.scale(320)))
+        }
+    }
+
     override fun showPermissionRequest(
         reqId: String, toolDisplayName: String, description: String,
         onRespond: (PermissionResponse) -> Unit
     ) {
         hideWorkingIndicator()
         val parsed = PermissionRequestContent.parse(toolDisplayName, description)
+        // Unified diff of the proposed edit renders as a collapsible card (see below);
+        // its header carries the path and +/- stats, so those args must not also appear
+        // as summary rows — but only when the card actually renders.
+        val diffArg = parsed.args.firstOrNull { it.isDiff }
+        val hasDiffCard = diffArg != null
         val markdown = buildString {
             if (parsed.question != null) {
                 append(parsed.question)
@@ -1208,6 +1355,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
             append("\n\ntool: `").append(parsed.toolName).append("`")
             for (arg in parsed.args) {
+                if (arg.isDiff) continue  // rendered as the diff card below
+                if (hasDiffCard && (arg.key == "path" || arg.key == "diffAdded"
+                        || arg.key == "diffRemoved" || arg.key == "oldText"
+                        || arg.key == "newText" || arg.key == "autoOpenDiff")) continue
                 append("\n\n").append(arg.key).append(": ").append(arg.value)
             }
         }
@@ -1216,6 +1367,32 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         addRow(bubbleRow)
+
+        // Unified diff of the proposed edit renders as a collapsible card: header bar with
+        // the target path and +/- change stats over a bounded scrollable monospace diff
+        // (no soft wrap — long code lines scroll horizontally).
+        if (diffArg != null) {
+            // renderValue wraps string args in display quotes; the diff card wants the raw
+            // values, so strip one pair of surrounding double quotes (never more).
+            fun rawValue(key: String): String? =
+                parsed.args.firstOrNull { it.key == key }?.value?.let { v ->
+                    if (v.length >= 2 && v.startsWith("\"") && v.endsWith("\""))
+                        v.substring(1, v.length - 1) else v
+                }
+            val path = rawValue("path")
+            val added = parsed.args.firstOrNull { it.key == "diffAdded" }?.value?.toIntOrNull() ?: 0
+            val removed = parsed.args.firstOrNull { it.key == "diffRemoved" }?.value?.toIntOrNull() ?: 0
+            // The diff string itself arrives quote-wrapped too; without stripping, the
+            // first line renders as `"+…` (quote before the + breaks add-coloring) and
+            // the last line ends with a stray quote.
+            val diff = rawValue("diff") ?: diffArg.value
+            // Wrap the card in the same rounded agent bubble (and width cap) as the
+            // approval summary above it, so the two read as one unit visually.
+            val (diffRow, _) = createMessageRow(
+                createDiffCard(diff, path, added, removed),
+                agentBg(), explicitBorder = agentBorder())
+            addRow(diffRow)
+        }
 
         val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
             isOpaque = false
