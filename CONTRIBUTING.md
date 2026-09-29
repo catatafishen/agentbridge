@@ -92,6 +92,11 @@ steps, the files to touch, and the tests to add.
 - **Keep PRs focused** on a single logical change. Separate refactors from features.
 - **Write a clear description** — what changed and *why*, not just what.
 - **Reference issues**: `Closes #123` or `Related to #123`.
+- **Write the title for users.** The PR title becomes the line in the generated release notes (and the JetBrains
+  Marketplace changelog). Prefer "feat: add support for X agent" over "refactor: update internal ACP handling".
+- **Label the PR** with `enhancement`, `bug` or `documentation` so it lands in the right release-notes section;
+  unlabeled PRs are listed under "Other Changes". A maintainer can add `ignore-for-release` to leave a PR out of the
+  notes. Dependabot updates are excluded automatically.
 - **All CI checks must pass** before the PR is eligible for merge:
     - `Build, Test & Verify` — Gradle build + Java/Kotlin tests
     - `MCP Server Tests` — Node.js MCP server tests
