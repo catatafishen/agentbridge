@@ -1146,6 +1146,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         currentModelLabel = null
         if (spinTimer.isRunning) spinTimer.stop()
         pendingAskUserRespond.set(null)
+        pendingPermissionResolvers.clear()
+        pendingPermissionExpiries.clear()
         placeholderLabel = null
     }
 
@@ -1448,25 +1450,79 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             "Allow Session" to PermissionResponse.ALLOW_SESSION,
             "Allow Always" to PermissionResponse.ALLOW_ALWAYS
         )
+        // Single completion point: first resolution wins (card button, notification
+        // action, web response); later triggers are no-ops.
+        val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
+        val completeOnce: (String, PermissionResponse) -> Unit = { label, resp ->
+            if (resolved.compareAndSet(false, true)) {
+                pendingPermissionResolvers.remove(reqId)
+                // Remove the expiry hook too: the request is decided, so a late
+                // backend timeout/cancel must not re-disable anything — and the
+                // closure pins the card's Swing components, so dropping it here
+                // keeps the map from growing per answered request.
+                pendingPermissionExpiries.remove(reqId)
+                buttons.forEach { it.isEnabled = false }
+                buttonsRow?.let { contentPanel.remove(it) }
+                contentPanel.revalidate()
+                contentPanel.repaint()
+                addUserDecisionBubble(label)
+                // Close the editor diff tab opened for this request (auto-open or the
+                // card's "Open in editor" link); no-op when none was opened.
+                EditApprovalDiffTabs.getInstance(project).close(project, reqId)
+                onRespond(resp)
+            }
+        }
         choices.forEach { (text, resp) ->
             val btn = JButton(text).apply {
                 applyChatFont()
-                addActionListener {
-                    buttons.forEach { it.isEnabled = false }
-                    buttonsRow?.let { contentPanel.remove(it) }
-                    contentPanel.revalidate()
-                    contentPanel.repaint()
-                    addUserDecisionBubble(text)
-                    // Close the editor diff tab opened for this request (auto-open or the
-                    // card's "Open in editor" link); no-op when none was opened.
-                    EditApprovalDiffTabs.getInstance(project).close(project, reqId)
-                    onRespond(resp)
-                }
+                addActionListener { completeOnce(text, resp) }
             }
             buttons.add(btn)
             buttonsPanel.add(btn)
         }
         buttonsRow = addRow(buttonsPanel)
+        pendingPermissionResolvers[reqId] = { resp -> completeOnce(permissionDecisionLabel(resp), resp) }
+        // Backend expiry (timeout/cancel) disables the card without recording a
+        // decision: the request was answered on the agent side already.
+        pendingPermissionExpiries[reqId] = {
+            if (resolved.compareAndSet(false, true)) {
+                pendingPermissionResolvers.remove(reqId)
+                buttons.forEach { it.isEnabled = false }
+                contentPanel.revalidate()
+                contentPanel.repaint()
+            }
+        }
+    }
+
+    /** Display label for a permission decision, matching the card button texts. */
+    private fun permissionDecisionLabel(resp: PermissionResponse): String = when (resp) {
+        PermissionResponse.DENY -> "Deny"
+        PermissionResponse.ALLOW_ONCE -> "Allow Once"
+        PermissionResponse.ALLOW_SESSION -> "Allow Session"
+        PermissionResponse.ALLOW_ALWAYS -> "Allow Always"
+    }
+
+    /**
+     * Resolves a pending permission request from outside the chat card (notification
+     * action button, web panel): runs the same cleanup as a card-button click —
+     * buttons disappear, a user-decision bubble is added, the editor diff tab closes.
+     * Must run on the EDT. Returns false when no pending card exists for the id
+     * (e.g. the chat was cleared), so the caller can fall back to the raw callback.
+     */
+    fun resolvePermissionRequest(reqId: String, response: PermissionResponse): Boolean {
+        val resolver = pendingPermissionResolvers.remove(reqId) ?: return false
+        resolver(response)
+        return true
+    }
+
+    /**
+     * Retires a pending permission card whose request was resolved on the backend
+     * without a user decision (timeout, cancel): disables the buttons without
+     * recording a decision. Safe for unknown ids. Must run on the EDT.
+     */
+    fun expirePermissionRequest(reqId: String) {
+        pendingPermissionResolvers.remove(reqId)
+        pendingPermissionExpiries.remove(reqId)?.invoke()
     }
 
     private fun addUserDecisionBubble(label: String) {
@@ -1662,6 +1718,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** The completion callback for the currently pending ask-user request; null when idle. */
     private val pendingAskUserRespond = java.util.concurrent.atomic.AtomicReference<((String) -> Unit)?>(null)
+
+    /**
+     * Resolution hooks for permission cards currently shown in this panel, keyed by
+     * request id — lets responses arriving outside the card (notification actions,
+     * web panel) run the same cleanup a card-button click does. EDT-confined.
+     */
+    private val pendingPermissionResolvers = java.util.concurrent.ConcurrentHashMap<String, (PermissionResponse) -> Unit>()
+
+    /**
+     * Expiry hooks for permission cards whose request was resolved on the backend
+     * without a user decision (timeout, cancel): disable the buttons, no decision
+     * bubble. EDT-confined.
+     */
+    private val pendingPermissionExpiries = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
 
     override fun setCurrentModel(modelId: String) {
         updateMetaLabel(modelId.substringAfterLast('/').substringAfterLast(':'))

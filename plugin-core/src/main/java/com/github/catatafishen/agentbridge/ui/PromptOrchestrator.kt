@@ -398,20 +398,11 @@ class PromptOrchestrator(
                         PermissionResponse.DENY -> prompt.deny("Denied by user")
                     }
                 }
-                notifyPermissionRequestIfUnfocused(prompt.toolName())
+                // Unfocused-window alerting for permission requests now lives in
+                // BroadcastChatPanel.showPermissionRequest (OS notification +
+                // taskbar attention; the chat card is the single answering surface).
             }
         }
-    }
-
-    private fun notifyPermissionRequestIfUnfocused(toolDisplayName: String) {
-        val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
-        if (frame.isFocused) return
-        val title = agentManager.activeProfile.displayName
-        val content = "Permission request: $toolDisplayName"
-        com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("AgentBridge Notifications")
-            ?.createNotification(title, content, com.intellij.notification.NotificationType.INFORMATION)
-            ?.notify(project)
     }
 
     private fun prepareModelAndTurnState(selectedModelId: String): String {

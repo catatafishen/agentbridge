@@ -33,6 +33,19 @@ public interface PermissionPromptProvider {
     );
 
     /**
+     * Notifies the UI that a previously shown permission request has been resolved on the
+     * backend without a user decision — the fail-closed timeout expired, the turn was
+     * cancelled, or the client stopped. The UI should expire any notification shown for
+     * the request and disable its approval card so stale buttons cannot act on an
+     * already-denied request. No-op for unknown request ids. Default no-op for providers
+     * that don't track shown prompts.
+     *
+     * @param reqId request identifier previously passed to {@link #showPermissionPrompt}
+     */
+    default void expirePermissionPrompt(@NotNull String reqId) {
+    }
+
+    /**
      * Convenience accessor — equivalent to {@code PermissionPromptProviderHolder.get(project)}.
      */
     static PermissionPromptProvider getInstance(@NotNull Project project) {

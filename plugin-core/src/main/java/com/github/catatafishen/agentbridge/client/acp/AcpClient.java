@@ -217,9 +217,16 @@ public abstract class AcpClient extends AbstractClient {
         private final JsonElement requestId;
         private CompletableFuture<JsonObject> decision;
         private boolean cancelled;
+        /** The prompt id the UI knows this request by (empty until the prompt is shown). */
+        private volatile String promptId = "";
 
         private PendingPermissionRequest(JsonElement requestId) {
             this.requestId = requestId;
+        }
+
+        /** The prompt id the UI layer uses for this request; empty when never shown. */
+        private String promptId() {
+            return promptId;
         }
 
         private synchronized CompletableFuture<JsonObject> createDecision() {
@@ -2176,6 +2183,14 @@ public abstract class AcpClient extends AbstractClient {
             result.add(KEY_OUTCOME, cancelledOutcome);
             transport.sendResponse(pending.requestId, result);
             LOG.info(displayName() + ": responded cancelled to pending permission request " + entry.getKey());
+            String cancelledPromptId = pending.promptId();
+            // pending.cancel() above completes the decision future, so isDone()
+            // cannot gate this — always retire the UI (card + notification) when
+            // the request had reached the user, or a cancelled turn leaves a live
+            // approval card for a request the backend already answered.
+            if (!cancelledPromptId.isEmpty() && pending.decision != null) {
+                notifyPermissionRequestExpired(cancelledPromptId);
+            }
         }
     }
 
@@ -2224,6 +2239,7 @@ public abstract class AcpClient extends AbstractClient {
         }
 
         String promptId = toolCallId.isBlank() ? requestKey : toolCallId;
+        pending.promptId = promptId;
         String displayName = toolTitle.isBlank() ? "Unknown tool" : toolTitle;
         String arguments = permissionRequestArguments(toolCall, params);
         // Opt-in auto-open: show the proposed change in the editor area alongside the
@@ -2332,7 +2348,20 @@ public abstract class AcpClient extends AbstractClient {
             LOG.warn(displayName() + ": permission prompt failed for '" + displayName + "'", e);
         }
         closeEditApprovalDiffTab(promptId);
+        notifyPermissionRequestExpired(promptId);
         return findDenyOption(params);
+    }
+
+    /**
+     * Tells the UI a permission request resolved without a user decision (timeout, cancel,
+     * failure) so its notification and approval card can be retired. Harmless when no UI
+     * is registered or the id is unknown.
+     */
+    private void notifyPermissionRequestExpired(@NotNull String promptId) {
+        if (project == null || project.isDisposed()) return;
+        com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider provider =
+            com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+        if (provider != null) provider.expirePermissionPrompt(promptId);
     }
 
     /**

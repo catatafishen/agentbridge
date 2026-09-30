@@ -325,8 +325,44 @@ class BroadcastChatPanel(
         dispatchUi {
             nativePanel.showPermissionRequest(reqId, toolDisplayName, description) { response ->
                 _pendingPermissionCallbacks.remove(reqId)
+                PermissionRequestNotifier.expire(reqId)
                 onRespond(response)
             }
+            // Alert when the IDE window is not active: OS notification + taskbar
+            // attention. Button-less by design — the chat card is the single
+            // answering surface; clicking the OS notification raises the IDE and
+            // the activation hook in PermissionRequestNotifier opens the chat.
+            val agentName = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project)
+                .activeProfile.displayName
+            PermissionRequestNotifier.notify(project, reqId, agentName, toolDisplayName)
+        }
+    }
+
+    /**
+     * Resolves a pending permission request from outside the chat card (notification
+     * action, web panel): first tries the card itself so the buttons disappear and a
+     * decision bubble is added like a card click; falls back to the raw callback when
+     * no card is pending (e.g. the chat was cleared). Safe for unknown ids.
+     */
+    fun respondToPermission(reqId: String, response: PermissionResponse) {
+        dispatchUi {
+            PermissionRequestNotifier.expire(reqId)
+            if (!nativePanel.resolvePermissionRequest(reqId, response)) {
+                _pendingPermissionCallbacks.remove(reqId)?.invoke(response)
+            }
+        }
+    }
+
+    /**
+     * Backend resolved a permission request without a user decision (fail-closed
+     * timeout, turn cancelled, client stopped): retire the notification and disable the
+     * card so stale buttons can't act on an already-denied request. Safe for unknown ids.
+     */
+    override fun expirePermissionPrompt(reqId: String) {
+        dispatchUi {
+            PermissionRequestNotifier.expire(reqId)
+            _pendingPermissionCallbacks.remove(reqId)
+            nativePanel.expirePermissionRequest(reqId)
         }
     }
 
@@ -341,7 +377,7 @@ class BroadcastChatPanel(
             "always" -> PermissionResponse.ALLOW_ALWAYS
             else -> PermissionResponse.DENY
         }
-        _pendingPermissionCallbacks.remove(reqId)?.invoke(response)
+        respondToPermission(reqId, response)
     }
 
     private val _pendingPermissionCallbacks = ConcurrentHashMap<String, (PermissionResponse) -> Unit>()

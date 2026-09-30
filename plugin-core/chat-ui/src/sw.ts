@@ -103,6 +103,8 @@ interface NotificationMessage {
     title?: string;
     body?: string;
     actions?: NotificationAction[];
+    /** Permission request id; present when actions are permission responses. */
+    permissionReqId?: string;
 }
 
 self.addEventListener('message', (e) => {
@@ -120,7 +122,10 @@ self.addEventListener('message', (e) => {
             renotify: true,
             requireInteraction: false,
         };
-        if (data.actions?.length) opts.actions = data.actions;
+        if (data.actions?.length) {
+            opts.actions = data.actions;
+            (opts as NotificationOptions & {data?: unknown}).data = {permissionReqId: data.permissionReqId};
+        }
         e.waitUntil(
             self.registration.showNotification(data.title || 'AgentBridge', opts),
         );
@@ -130,6 +135,24 @@ self.addEventListener('message', (e) => {
 // ── Notification click → focus/open the app ─────────────────────────────────
 
 self.addEventListener('notificationclick', (e) => {
+    const permissionReqId = (e.notification.data as {permissionReqId?: string} | undefined)?.permissionReqId;
+    if (permissionReqId && e.action) {
+        e.notification.close();
+        e.waitUntil(
+            fetch('/permission', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({reqId: permissionReqId, response: e.action}),
+            }).catch(() => {
+                self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
+                    const c = list.find(w => w.url.startsWith(self.location.origin));
+                    if (c) return c.focus();
+                    return self.clients.openWindow('/');
+                });
+            }),
+        );
+        return;
+    }
     e.notification.close();
     e.waitUntil(
         self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
