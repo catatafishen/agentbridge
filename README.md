@@ -79,10 +79,14 @@ users decide whether to try it.
 Switch between agents with one click. Each agent has its own connection settings and custom instructions.
 AgentBridge MCP tool permissions are shared project-wide so the same IntelliJ tool policy applies after switching agents.
 
-### Community integrations
+### Community contributions
 
-Several agent integrations were contributed by the community:
+AgentBridge has had a lot of help from the community. Thank you!
 
+**Agent integrations**
+
+- **Hermes Agent** — [#500](https://github.com/catatafishen/agentbridge/pull/500) by
+  [@AndreiPurcaru](https://github.com/AndreiPurcaru)
 - **Mistral Vibe** — [#956](https://github.com/catatafishen/agentbridge/pull/956) by
   [@Strobotti](https://github.com/Strobotti)
 - **Kiro** (v3 agent support and follow-up fixes) — [#1021](https://github.com/catatafishen/agentbridge/pull/1021) by
@@ -91,6 +95,31 @@ Several agent integrations were contributed by the community:
   [@jelloeater-agent](https://github.com/jelloeater-agent)
 
 Want to add another agent? See [Adding a new agent](docs/ADDING-A-NEW-AGENT.md).
+
+**Features and fixes**
+
+- **Custom MCP servers** (external HTTP/SSE servers and their settings UI) —
+  [#87](https://github.com/catatafishen/agentbridge/pull/87) by [@nievesj](https://github.com/nievesj), with
+  **OAuth 2.1 PKCE authentication** for them in [#509](https://github.com/catatafishen/agentbridge/pull/509)
+- **Jupyter notebook control tools** — [#946](https://github.com/catatafishen/agentbridge/pull/946) by
+  [@Horcag](https://github.com/Horcag), who also contributed asynchronous git commit/push tracking
+  ([#930](https://github.com/catatafishen/agentbridge/pull/930)) and isolated, reusable agent terminal sessions
+  ([#935](https://github.com/catatafishen/agentbridge/pull/935))
+- **Collapsible colored diff card for edit approvals** — [#1119](https://github.com/catatafishen/agentbridge/pull/1119)
+  and the **editor context-menu actions** (Add Selection / Add File) —
+  [#1097](https://github.com/catatafishen/agentbridge/pull/1097), both by
+  [@BambinoSK](https://github.com/BambinoSK)
+- **Quick MCP toggle, better MCP edit options and server statuses** —
+  [#886](https://github.com/catatafishen/agentbridge/pull/886) by [@forstjiri](https://github.com/forstjiri)
+- **Chat message theming, accessibility and settings UI** — [#923](https://github.com/catatafishen/agentbridge/pull/923)
+  by [@jelloeater-agent](https://github.com/jelloeater-agent)
+- **Grouped model picker and favorites for OpenCode** — [#531](https://github.com/catatafishen/agentbridge/pull/531)
+  by [@nievesj](https://github.com/nievesj)
+
+Thanks also to [@surgicalcoder](https://github.com/surgicalcoder),
+[@jevanlingen](https://github.com/jevanlingen) and
+[@handcraftedbits](https://github.com/handcraftedbits) for fixes and usability improvements, and to everyone who
+reports issues that shape what gets built next.
 
 ## What Agents Can Do
 
