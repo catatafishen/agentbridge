@@ -28,7 +28,10 @@ function formatInline(text: string): string {
     //  2. `inline code`
     //  3. [text](url)
     //  4. bare https?:// URL
-    const PATTERN = /\*\*([^*\n]+)\*\*|`([^`]+)`|\[([^\]]+)]\(([^)]+)\)|(https?:\/\/[^\s<>[\]()]+)/g;
+    // The link text excludes '[' and the url excludes '(' so an unterminated "[" or "](" cannot scan
+    // to the end of the input from every start position (quadratic backtracking); nested brackets in
+    // the text and parentheses in the url are therefore left as plain text.
+    const PATTERN = /\*\*([^*\n]+)\*\*|`([^`]+)`|\[([^[\]]+)]\(([^()]+)\)|(https?:\/\/[^\s<>[\]()]+)/g;
     let last = 0;
     let m: RegExpExecArray | null;
     while ((m = PATTERN.exec(text)) !== null) {
@@ -56,7 +59,10 @@ function formatInline(text: string): string {
 }
 
 const THINK_TAG_PATTERN = /<(think|thinking)>([^<]*(?:<(?!\/(?:think|thinking)>)[^<]*)*)<\/\1>/gi;
-const WRAPPER_TAG_LINE_PATTERN = /^\s*<\/?(task_result|commentary|example|code)>\s*$/gim;
+// Surrounding whitespace is limited to the tag's own line ([^\S\r\n] = whitespace that is not a
+// line terminator). With \s the pattern could span blank lines and rescan the whole run from every line start.
+const WRAPPER_TAG_LINE_PATTERN =
+    /^[^\S\r\n]*<\/?(task_result|commentary|example|code)>[^\S\r\n]*$/gim;
 
 function buildThinkingBlockHtml(content: string): string {
     const normalized = content.trim() || 'No reasoning returned';
