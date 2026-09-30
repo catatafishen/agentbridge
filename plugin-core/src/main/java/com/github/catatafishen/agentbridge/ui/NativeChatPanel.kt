@@ -20,7 +20,7 @@ import com.intellij.openapi.fileTypes.FileTypeManager
 import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.HyperlinkLabel
+import com.intellij.ui.InplaceButton
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
@@ -29,6 +29,8 @@ import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.awt.event.MouseWheelListener
 import kotlin.math.max
 import kotlin.math.min
@@ -1216,12 +1218,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         oldText: String?, newText: String?, reqId: String
     ): JComponent {
         val diffBlock = createDiffBlock(diff)
-        val toggleLabel = HyperlinkLabel("Hide diff").apply {
-            setToolTipText("Collapse or expand the proposed change")
-        }
-        val header = JPanel(BorderLayout(8, 0)).apply {
+        var toggleDiff: () -> Unit = {}
+        val toggleButton = InplaceButton("Hide diff", AllIcons.General.ChevronDown) { toggleDiff() }
+        val header = JPanel(BorderLayout(6, 0)).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(2, 8)
+            border = JBUI.Borders.empty(2, 6)
+            add(toggleButton, BorderLayout.WEST)
             val title = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
                 isOpaque = false
                 val fileName = path?.let { it.substringAfterLast('/').substringAfterLast('\\') } ?: ""
@@ -1232,16 +1234,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 nameLabel.foreground = UIUtil.getContextHelpForeground()
                 if (path != null) nameLabel.toolTipText = path
                 add(nameLabel)
-                if (newText != null) {
-                    val openLink = HyperlinkLabel("Open in editor").apply {
-                        setToolTipText("Show the full diff in the editor area")
-                        addHyperlinkListener {
-                            EditApprovalDiffTabs.getInstance(project).open(
-                                project, reqId, path, oldText, newText)
-                        }
-                    }
-                    add(openLink)
-                }
             }
             add(title, BorderLayout.CENTER)
             val stats = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
@@ -1252,9 +1244,24 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 delLabel.foreground = ToolRenderers.FAIL_COLOR
                 add(addLabel)
                 add(delLabel)
-                add(toggleLabel)
+                if (newText != null) {
+                    add(Box.createHorizontalStrut(JBUI.scale(2)))
+                    add(InplaceButton("Open diff in editor", AllIcons.Actions.Diff) {
+                        EditApprovalDiffTabs.getInstance(project).open(project, reqId, path, oldText, newText)
+                    })
+                }
             }
             add(stats, BorderLayout.EAST)
+            val clickToggle = object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    if (SwingUtilities.isLeftMouseButton(e)) toggleDiff()
+                }
+            }
+            for (c in listOf<JComponent>(this, title, stats) + title.components.filterIsInstance<JComponent>()
+                + stats.components.filterIsInstance<JLabel>()) {
+                c.addMouseListener(clickToggle)
+                c.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            }
         }
         val card = object : JPanel(BorderLayout()) {
             // Keep the diff block's full width available when the panel is wide.
@@ -1284,9 +1291,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 return pref
             }
         }
-        toggleLabel.addHyperlinkListener {
+        toggleDiff = {
             diffBlock.isVisible = !diffBlock.isVisible
-            toggleLabel.setHyperlinkText(if (diffBlock.isVisible) "Hide diff" else "Show diff")
+            toggleButton.setIcon(if (diffBlock.isVisible) AllIcons.General.ChevronDown else AllIcons.General.ChevronRight)
+            toggleButton.toolTipText = if (diffBlock.isVisible) "Hide diff" else "Show diff"
             card.revalidate()
             card.repaint()
         }
@@ -1339,16 +1347,32 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
             caretPosition = 0
         }
-        return JBScrollPane(textPane).apply {
+        val maxViewportHeight = JBUI.scale(320)
+        val scroll = object : JBScrollPane(textPane) {
+            override fun getPreferredSize(): Dimension {
+                val content = textPane.preferredSize
+                val ins = insets
+                val viewportHeight = DiffViewportSizing.viewportHeight(
+                    content.height, content.width, width - ins.left - ins.right,
+                    horizontalScrollBar.preferredSize.height, maxViewportHeight)
+                return Dimension(0, viewportHeight + ins.top + ins.bottom)
+            }
+        }.apply {
             border = BorderFactory.createLineBorder(NativeChatColors.TABLE_BORDER)
             horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
             verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
             alignmentX = Component.LEFT_ALIGNMENT
-            // Bounded viewport height: long diffs scroll inside the card instead of
-            // stretching the chat; width comes from the card (see below).
-            preferredSize = Dimension(
-                0, min(textPane.preferredSize.height + JBUI.scale(2), JBUI.scale(320)))
         }
+        scroll.addComponentListener(object : ComponentAdapter() {
+            private var lastWidth = -1
+            override fun componentResized(e: ComponentEvent) {
+                if (scroll.width != lastWidth) {
+                    lastWidth = scroll.width
+                    scroll.revalidate()
+                }
+            }
+        })
+        return scroll
     }
 
     override fun showPermissionRequest(
