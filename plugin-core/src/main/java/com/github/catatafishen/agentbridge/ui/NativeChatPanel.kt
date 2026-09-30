@@ -17,6 +17,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.fileTypes.FileTypeManager
+import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.HyperlinkLabel
@@ -1205,10 +1206,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      * Collapsible card for the unified diff of a proposed edit: a header bar showing the
      * target file name (with its file-type icon, full path on hover) and colored +/-
      * change statistics with a show/hide toggle, over the bounded scrollable monospace
-     * diff block ({@link #createDiffBlock}).
+     * diff block ({@link #createDiffBlock}). When {@code oldText}/{@code newText} are
+     * supplied, the header also offers an "Open in editor" link that shows the diff view
+     * (Current vs Proposed by agent) in the editor area — with syntax highlighting and
+     * line numbers — while the decision buttons stay in the chat.
      */
     private fun createDiffCard(
-        diff: String, path: String?, added: Int, removed: Int
+        diff: String, path: String?, added: Int, removed: Int,
+        oldText: String?, newText: String?, reqId: String
     ): JComponent {
         val diffBlock = createDiffBlock(diff)
         val toggleLabel = HyperlinkLabel("Hide diff").apply {
@@ -1227,6 +1232,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 nameLabel.foreground = UIUtil.getContextHelpForeground()
                 if (path != null) nameLabel.toolTipText = path
                 add(nameLabel)
+                if (newText != null) {
+                    val openLink = HyperlinkLabel("Open in editor").apply {
+                        setToolTipText("Show the full diff in the editor area")
+                        addHyperlinkListener {
+                            EditApprovalDiffTabs.getInstance(project).open(
+                                project, reqId, path, oldText, newText)
+                        }
+                    }
+                    add(openLink)
+                }
             }
             add(title, BorderLayout.CENTER)
             val stats = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
@@ -1382,6 +1397,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val path = rawValue("path")
             val added = parsed.args.firstOrNull { it.key == "diffAdded" }?.value?.toIntOrNull() ?: 0
             val removed = parsed.args.firstOrNull { it.key == "diffRemoved" }?.value?.toIntOrNull() ?: 0
+            val oldText = rawValue("oldText")
+            val newText = rawValue("newText")
             // The diff string itself arrives quote-wrapped too; without stripping, the
             // first line renders as `"+…` (quote before the + breaks add-coloring) and
             // the last line ends with a stray quote.
@@ -1389,7 +1406,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             // Wrap the card in the same rounded agent bubble (and width cap) as the
             // approval summary above it, so the two read as one unit visually.
             val (diffRow, _) = createMessageRow(
-                createDiffCard(diff, path, added, removed),
+                createDiffCard(diff, path, added, removed, oldText, newText, reqId),
                 agentBg(), explicitBorder = agentBorder())
             addRow(diffRow)
         }
@@ -1416,6 +1433,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     contentPanel.revalidate()
                     contentPanel.repaint()
                     addUserDecisionBubble(text)
+                    // Close the editor diff tab opened for this request (auto-open or the
+                    // card's "Open in editor" link); no-op when none was opened.
+                    EditApprovalDiffTabs.getInstance(project).close(project, reqId)
                     onRespond(resp)
                 }
             }

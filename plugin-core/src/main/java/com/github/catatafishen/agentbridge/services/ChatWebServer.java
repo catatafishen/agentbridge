@@ -18,6 +18,9 @@ import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.ide.ui.LafManager;
 import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -452,8 +455,24 @@ public final class ChatWebServer implements Disposable {
             String reqId = jsonString(body, "reqId");
             String response = jsonString(body, "response");
             if (reqId != null && response != null && onPermissionResponse != null) {
+                // Close the editor diff tab opened for this request (auto-open or the
+                // web card's "Open in editor" button); no-op when none was opened.
+                EditApprovalDiffTabs.getInstance(project).close(project, reqId);
                 onPermissionResponse.accept(reqId + ":" + response);
             }
+        }));
+        server.createContext("/permission-diff", ex -> handleAction(ex, body -> {
+            String reqId = jsonString(body, "reqId");
+            String path = jsonString(body, "path");
+            final String oldText = orEmpty(jsonString(body, "oldText"));
+            final String newText = orEmpty(jsonString(body, "newText"));
+            if (newText.isEmpty() || reqId == null || reqId.isEmpty()) return;
+            // Read-only UI action (no model writes); any-modality mirrors the tool-calls
+            // diff view so this also works during phantom modality states.
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (project.isDisposed()) return;
+                EditApprovalDiffTabs.getInstance(project).open(project, reqId, path, oldText, newText);
+            }, ModalityState.any());
         }));
         server.createContext("/push-subscribe", ex -> handleAction(ex, body -> {
             WebPushSender wp = getOrCreateWebPush();
@@ -1534,6 +1553,10 @@ public final class ChatWebServer implements Disposable {
 
     private void handleInfo(HttpExchange exchange) throws IOException {
         sendJson(exchange, buildInfoJson());
+    }
+
+    private static String orEmpty(@org.jetbrains.annotations.Nullable String s) {
+        return s == null ? "" : s;
     }
 
     private void handleAction(HttpExchange exchange, Consumer<String> handler) throws IOException {

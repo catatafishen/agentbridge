@@ -121,6 +121,12 @@ final class AgentPermissionRequests {
                         args.addProperty("diff", diff);
                         args.addProperty("diffAdded", stats[0]);
                         args.addProperty("diffRemoved", stats[1]);
+                        // Full texts power the "Open in editor" diff view; marked
+                        // as hidden so the panels never render them as rows.
+                        if (oldText != null) {
+                            args.addProperty("oldText", oldText);
+                        }
+                        args.addProperty("newText", newText);
                     }
                     break;
                 }

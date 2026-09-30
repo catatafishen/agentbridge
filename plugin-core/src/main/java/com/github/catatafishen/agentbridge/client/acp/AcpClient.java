@@ -27,6 +27,10 @@ import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.sandbox.BwrapSandbox;
 import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs;
+import com.github.catatafishen.agentbridge.psi.review.EditApprovalRequestParser;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.services.McpServerControl;
@@ -42,6 +46,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
@@ -2191,6 +2196,19 @@ public abstract class AcpClient extends AbstractClient {
         String promptId = toolCallId.isBlank() ? requestKey : toolCallId;
         String displayName = toolTitle.isBlank() ? "Unknown tool" : toolTitle;
         String arguments = permissionRequestArguments(toolCall, params);
+        // Opt-in auto-open: show the proposed change in the editor area alongside the
+        // chat card when the setting is on and this is an edit approval with a diff.
+        // Gate on the parsed edit approval (not just the request kind) so command
+        // approvals never get the autoOpenDiff flag or the editor diff.
+        final EditApprovalRequestParser.Result parsedApproval =
+            project == null || project.isDisposed() ? null : EditApprovalRequestParser.parse(params);
+        final EditApprovalRequestParser.Result.EditApproval editApproval =
+            parsedApproval instanceof EditApprovalRequestParser.Result.EditApproval a ? a : null;
+        final boolean autoOpenDiff = editApproval != null && ActiveAgentManager.getEditApprovalAutoDiff(project);
+        if (autoOpenDiff) {
+            arguments = flagAutoOpenDiff(arguments);
+        }
+        final String promptArguments = arguments;
 
         PermissionPrompt prompt = new PermissionPrompt() {
             @Override
@@ -2205,7 +2223,7 @@ public abstract class AcpClient extends AbstractClient {
 
             @Override
             public @Nullable String arguments() {
-                return arguments;
+                return promptArguments;
             }
 
             @Override
@@ -2225,36 +2243,87 @@ public abstract class AcpClient extends AbstractClient {
         };
 
         Consumer<PermissionPrompt> listener = permissionRequestListener.get();
-        if (listener != null) {
-            listener.accept(prompt);
-        } else if (project != null && !project.isDisposed()) {
-            var promptProvider = com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
-            if (promptProvider == null) {
-                LOG.warn(displayName() + ": no permission prompt provider is registered; rejecting '" + displayName + "'");
+        // Only auto-open the editor diff once a UI that can actually resolve the approval
+        // is confirmed (chat-panel listener or prompt provider) — otherwise the tab would
+        // outlive a request that was already denied here.
+        if (listener != null || (project != null && !project.isDisposed()
+            && com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project) != null)) {
+            // Native auto-open (the web panel auto-opens via the autoOpenDiff flag in the
+            // arguments): open the editor-area diff right before the card appears. Runs on
+            // BOTH permission paths, so hop to the EDT here — open() touches
+            // FileEditorManager and this thread is the background permission executor.
+            if (autoOpenDiff) {
+                final EditApprovalRequestParser.Result.EditApproval approval = editApproval;
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    // Re-check on the EDT: the project may have been disposed between the
+                    // background-thread gate above and this lambda running.
+                    if (project == null || project.isDisposed()) return;
+                    EditApprovalDiffTabs.getInstance(project)
+                        .open(project, promptId, approval.path(), approval.oldText(), approval.newText());
+                }, ModalityState.any());
+            }
+        }
+        try {
+            if (listener != null) {
+                listener.accept(prompt);
+            } else if (project != null && !project.isDisposed()) {
+                var promptProvider = com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+                if (promptProvider == null) {
+                    LOG.warn(displayName() + ": no permission prompt provider is registered; rejecting '" + displayName + "'");
+                    return findDenyOption(params);
+                }
+                promptProvider.showPermissionPrompt(promptId, displayName, arguments, response -> {
+                    switch (response) {
+                        case ALLOW_ONCE -> prompt.allow(VALUE_ALLOW_ONCE);
+                        case ALLOW_SESSION -> prompt.allow(VALUE_ALLOW_SESSION);
+                        case ALLOW_ALWAYS -> prompt.allow(VALUE_ALLOW_ALWAYS);
+                        case DENY -> prompt.deny("Denied by user");
+                    }
+                });
+            } else {
+                LOG.warn(displayName() + ": no permission UI is available; rejecting '" + displayName + "'");
                 return findDenyOption(params);
             }
-            promptProvider.showPermissionPrompt(promptId, displayName, arguments, response -> {
-                switch (response) {
-                    case ALLOW_ONCE -> prompt.allow(VALUE_ALLOW_ONCE);
-                    case ALLOW_SESSION -> prompt.allow(VALUE_ALLOW_SESSION);
-                    case ALLOW_ALWAYS -> prompt.allow(VALUE_ALLOW_ALWAYS);
-                    case DENY -> prompt.deny("Denied by user");
-                }
-            });
-        } else {
-            LOG.warn(displayName() + ": no permission UI is available; rejecting '" + displayName + "'");
-            return findDenyOption(params);
+        } catch (RuntimeException e) {
+            // The prompt UI threw before anyone could respond: close the diff tab the
+            // auto-open may have created so it doesn't outlive the (about-to-deny) request.
+            closeEditApprovalDiffTab(promptId);
+            throw e;
         }
 
         try {
-            return decision.get(120, TimeUnit.SECONDS);
+            JsonObject option = decision.get(120, TimeUnit.SECONDS);
+            closeEditApprovalDiffTab(promptId);
+            return option;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn(displayName() + ": interrupted while waiting for permission for '" + displayName + "'", e);
         } catch (ExecutionException | TimeoutException e) {
             LOG.warn(displayName() + ": permission prompt failed for '" + displayName + "'", e);
         }
+        closeEditApprovalDiffTab(promptId);
         return findDenyOption(params);
+    }
+
+    /**
+     * Sets {@code autoOpenDiff} on the bubble-context args so the web panel opens the
+     * editor-area diff as soon as the approval card appears. Edit-approval contexts only —
+     * called under the opt-in setting.
+     */
+    private static String flagAutoOpenDiff(@NotNull String contextJson) {
+        try {
+            JsonObject context = JsonParser.parseString(contextJson).getAsJsonObject();
+            context.getAsJsonObject("args").addProperty("autoOpenDiff", true);
+            return context.toString();
+        } catch (Exception e) {
+            return contextJson; // malformed context — leave as-is; the card just won't auto-open
+        }
+    }
+
+    /** Closes the editor-area diff tab opened for a request, if any. Safe for unknown ids. */
+    private void closeEditApprovalDiffTab(@NotNull String requestId) {
+        if (project == null || project.isDisposed()) return;
+        EditApprovalDiffTabs.getInstance(project).close(project, requestId);
     }
 
     /**

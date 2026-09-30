@@ -22,6 +22,8 @@ export interface WebBridge {
 
     permissionResponse(data: string): void;
 
+    openPermissionDiff(reqId: string, path: string, oldText: string, newText: string): void;
+
     openScratch(): void;
 
     showToolPopup(): void;

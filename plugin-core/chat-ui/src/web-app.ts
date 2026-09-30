@@ -44,6 +44,9 @@ globalThis._bridge = {
         const reqId = parts.join(':');
         void webPost('/permission', {reqId, response: resp});
     },
+    openPermissionDiff: (reqId, path, oldText, newText) => {
+        void webPost('/permission-diff', {reqId, path, oldText, newText});
+    },
     openScratch: () => {
     },
     showToolPopup: () => {

@@ -43,7 +43,7 @@ export default class PermissionRequest extends HTMLElement {
                 if (key === 'diff') {
                     // Unified diff of the proposed edit: render as a collapsible card
                     // instead of a truncated k/v row so the change is actually reviewable.
-                    this._buildDiffBlock(String(value), args);
+                    this._buildDiffBlock(String(value), args, reqId);
                     continue;
                 }
                 if (hasDiffCard && (key === 'path' || key === 'diffAdded' || key === 'diffRemoved'
@@ -68,7 +68,7 @@ export default class PermissionRequest extends HTMLElement {
         }
     }
 
-    private _buildDiffBlock(diff: string, args: Record<string, unknown>): void {
+    private _buildDiffBlock(diff: string, args: Record<string, unknown>, reqId: string): void {
         // Collapsible card: header with the target path and +/- stats over the scrollable
         // colored diff. Built purely with textContent — no user input reaches innerHTML.
         // Stats come from the sender (computed from the FULL change, not the truncated
@@ -98,6 +98,24 @@ export default class PermissionRequest extends HTMLElement {
         delEl.textContent = `\u2212${removed}`;
         stats.appendChild(addEl);
         stats.appendChild(delEl);
+        const openInEditor = document.createElement('button');
+        openInEditor.type = 'button';
+        openInEditor.className = 'perm-diff-toggle';
+        openInEditor.textContent = 'Open in editor';
+        openInEditor.title = 'Show the full diff in the editor area';
+        openInEditor.onclick = () => {
+            (globalThis as any)._bridge?.openPermissionDiff?.(
+                reqId,
+                typeof args.path === 'string' ? args.path : '',
+                typeof args.oldText === 'string' ? args.oldText : '',
+                typeof args.newText === 'string' ? args.newText : '');
+        };
+        if (typeof args.newText === 'string' && args.newText !== '') {
+            stats.appendChild(openInEditor);
+            // Opt-in (sender-side setting): open the editor-area diff as soon as the card
+            // appears, not just on click.
+            if (args.autoOpenDiff === true) openInEditor.click();
+        }
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'perm-diff-toggle';

@@ -15,6 +15,8 @@ export interface Bridge {
 
     permissionResponse?(data: string): void;
 
+    openPermissionDiff?(reqId: string, path: string, oldText: string, newText: string): void;
+
     cancelNudge?(id: string): void;
 
     cancelQueuedMessage?(id: string, text: string): void;
