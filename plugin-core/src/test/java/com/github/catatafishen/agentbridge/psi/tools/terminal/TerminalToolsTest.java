@@ -70,6 +70,12 @@ import static org.mockito.Mockito.when;
  */
 public class TerminalToolsTest extends BasePlatformTestCase {
 
+    /**
+     * Matches the "(N chars)" annotation via find(); no leading/trailing ".*" so matching is linear.
+     */
+    private static final java.util.regex.Pattern CHAR_COUNT_ANNOTATION =
+        java.util.regex.Pattern.compile("\\(\\d+ chars\\)");
+
     private ListTerminalsTool listTerminalsTool;
     private ReadTerminalOutputTool readTerminalOutputTool;
     private WriteTerminalInputTool writeTerminalInputTool;
@@ -827,14 +833,14 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         assertTrue("Escape-syntax description must contain the raw form, got: " + escapedDescription,
             escapedDescription.contains("{ctrl-c}"));
         assertTrue("Escape-syntax description must include parenthesised length, got: " + escapedDescription,
-            escapedDescription.matches(".*\\(\\d+ chars\\).*"));
+            CHAR_COUNT_ANNOTATION.matcher(escapedDescription).find());
 
         // Plain text: "'<text>'" with no length annotation
         String plainDescription = TerminalTool.describeInput("echo hello", "echo hello");
         assertTrue("Plain-text description must quote the input, got: " + plainDescription,
             plainDescription.contains("echo hello"));
         assertFalse("Plain-text description must NOT include a parenthesised length, got: " + plainDescription,
-            plainDescription.matches(".*\\(\\d+ chars\\).*"));
+            CHAR_COUNT_ANNOTATION.matcher(plainDescription).find());
     }
 
     /**
