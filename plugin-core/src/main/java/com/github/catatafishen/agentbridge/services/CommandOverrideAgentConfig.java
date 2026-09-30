@@ -162,8 +162,9 @@ final class CommandOverrideAgentConfig implements AgentConfig {
     }
 
     private List<String> parseCommand() {
+        // Always return a mutable list: buildAcpProcess() replaces the first token in place.
         if (rawCommand.isBlank()) {
-            return List.of();
+            return new ArrayList<>();
         }
         return new ArrayList<>(Arrays.asList(rawCommand.trim().split("\\s+")));
     }

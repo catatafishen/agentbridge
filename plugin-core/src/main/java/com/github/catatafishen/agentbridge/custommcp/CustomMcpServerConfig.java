@@ -231,14 +231,16 @@ public final class CustomMcpServerConfig {
     }
 
     private static void storeEnvVar(Map<String, String> map, McpEnvVar e) {
-        if (e != null && e.getName() != null && !e.getName().isBlank()) {
-            map.put(e.getName(), e.getValue() != null ? e.getValue() : "");
+        // McpEnvVar normalizes null name/value to "" so both getters are non-null.
+        if (e != null && !e.getName().isBlank()) {
+            map.put(e.getName(), e.getValue());
         }
     }
 
     private static void storeHeader(Map<String, String> map, McpHeader header) {
-        if (header != null && header.getName() != null && !header.getName().isBlank()) {
-            map.put(header.getName(), header.getValue() != null ? header.getValue() : "");
+        // McpHeader normalizes null name/value to "" so both getters are non-null.
+        if (header != null && !header.getName().isBlank()) {
+            map.put(header.getName(), header.getValue());
         }
     }
 

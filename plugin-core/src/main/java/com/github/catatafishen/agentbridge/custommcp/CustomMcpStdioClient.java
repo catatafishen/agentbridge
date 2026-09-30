@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * MCP client that communicates with a local subprocess via stdin/stdout
@@ -35,6 +36,15 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
     private final List<String> args;
     private final Map<String, String> environment;
     private final AtomicInteger requestId = new AtomicInteger(1);
+
+    /**
+     * Serializes whole request/response exchanges on the single stdin/stdout pipe pair.
+     * Deliberately an explicit lock rather than {@code synchronized}: the exchange polls stdout
+     * with short sleeps while it must keep exclusive access, and {@code Object.wait()} (the
+     * alternative to sleeping under a monitor) would release the monitor and let another caller
+     * interleave its request and consume this caller's response.
+     */
+    private final ReentrantLock exchangeLock = new ReentrantLock();
 
     private Process process;
     private Writer stdin;
@@ -172,7 +182,26 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
     }
 
     @NotNull
-    private synchronized JsonObject sendRequestInternal(
+    private JsonObject sendRequestInternal(
+        @NotNull String method,
+        @NotNull JsonObject params,
+        int timeoutMs
+    ) throws IOException {
+        try {
+            exchangeLock.lockInterruptibly();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting to send request " + method, e);
+        }
+        try {
+            return exchange(method, params, timeoutMs);
+        } finally {
+            exchangeLock.unlock();
+        }
+    }
+
+    @NotNull
+    private JsonObject exchange(
         @NotNull String method,
         @NotNull JsonObject params,
         int timeoutMs

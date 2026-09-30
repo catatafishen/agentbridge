@@ -362,12 +362,24 @@ public final class QueryCodeGraphTool extends Tool {
         if (sql.isEmpty()) return "Error: 'sql' parameter is required for query_type=sql.";
         // Inject LIMIT if missing — keeps unbounded SELECTs safe
         if (!sql.toLowerCase(Locale.ROOT).contains(PARAM_LIMIT)) {
-            sql = sql.trim().replaceAll(";+$", "") + " LIMIT " + limit;
+            sql = stripTrailingSemicolons(sql.trim()) + " LIMIT " + limit;
         }
         return formatRows(CodeGraphStore.getInstance(project).queryRaw(sql));
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Removes trailing {@code ;} characters in linear time (a {@code ;+$} regex backtracks
+     * quadratically on long runs of semicolons that are not at the end of the input).
+     */
+    static @NotNull String stripTrailingSemicolons(@NotNull String sql) {
+        int end = sql.length();
+        while (end > 0 && sql.charAt(end - 1) == ';') {
+            end--;
+        }
+        return sql.substring(0, end);
+    }
 
     private @NotNull String requireTarget(@NotNull JsonObject args) throws SQLException {
         String t = optString(args, PARAM_TARGET, "");
