@@ -2,12 +2,13 @@ import {decodeBase64, hideRedundantTimestamp} from './helpers';
 import {renderBatchFragment} from './BatchRenderer';
 import type {TurnContext} from './types';
 
-function _showNotification(title: string, body: string, actions?: { action: string; title: string }[]): void {
+function _showNotification(title: string, body: string, actions?: { action: string; title: string }[], permissionReqId?: string): void {
     if (!('Notification' in globalThis) || Notification.permission !== 'granted' || !document.hidden) return;
     const sw = navigator.serviceWorker?.controller;
     if (sw) {
         const msg: Record<string, unknown> = {type: 'SHOW_NOTIFICATION', title, body};
         if (actions?.length) msg.actions = actions;
+        if (permissionReqId) msg.permissionReqId = permissionReqId;
         sw.postMessage(msg);
     } else {
         new Notification(title, {body, silent: true});
@@ -665,6 +666,14 @@ const ChatController = {
         ctx.msg!.appendChild(actions);
 
         this._container()?.scheduleScrollIfNeeded();
+
+        const body = question.kind === 'plain' ? question.text : `Can I use ${toolDisplayName}?`;
+        const notificationWithActions = Notification as typeof Notification & { readonly maxActions?: number };
+        const maxActions = notificationWithActions.maxActions ?? 2;
+        _showNotification('AgentBridge needs your approval', body, [
+            {action: 'deny', title: 'Deny'},
+            {action: 'once', title: 'Allow'},
+        ].slice(0, maxActions), reqId);
     },
 
     showAskUserRequest(turnId: string, agentId: string, reqId: string, question: string, options: string[], deadlineEpochMs: number): void {
