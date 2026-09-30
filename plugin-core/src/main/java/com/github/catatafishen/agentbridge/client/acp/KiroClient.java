@@ -290,14 +290,21 @@ public final class KiroClient extends AcpClient {
      * @param bin the resolved {@code kiro-cli} executable path (see {@link #resolveKiroCliBinary()})
      */
     static void refreshKiroTokenViaCli(String bin) {
+        Process proc = null;
         try {
-            Process proc = new ProcessBuilder(bin, "whoami")
+            proc = new ProcessBuilder(bin, "whoami")
                 .redirectErrorStream(true)
                 .start();
             if (!proc.waitFor(10, TimeUnit.SECONDS)) {
                 proc.destroyForcibly();
                 LOG.warn("Kiro v3: token refresh via '" + bin + " whoami' timed out after 10s");
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (proc != null) {
+                proc.destroyForcibly();
+            }
+            LOG.warn("Kiro v3: token refresh via CLI interrupted");
         } catch (Exception e) {
             LOG.warn("Kiro v3: token refresh via CLI failed: " + e.getMessage());
         }

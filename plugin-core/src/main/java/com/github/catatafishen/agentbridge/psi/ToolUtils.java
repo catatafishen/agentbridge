@@ -579,6 +579,23 @@ public final class ToolUtils {
      */
     private record StrategyResult(boolean loadable, com.intellij.psi.PsiElement @Nullable [] results) {
         static final StrategyResult NOT_LOADABLE = new StrategyResult(false, null);
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof StrategyResult that
+                && loadable == that.loadable
+                && java.util.Arrays.equals(results, that.results);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Boolean.hashCode(loadable) + java.util.Arrays.hashCode(results);
+        }
+
+        @Override
+        public String toString() {
+            return "StrategyResult[loadable=" + loadable + ", results=" + java.util.Arrays.toString(results) + "]";
+        }
     }
 
     private static StrategyResult invokeFindSuperElementsHelper(@NotNull com.intellij.psi.PsiElement element) {

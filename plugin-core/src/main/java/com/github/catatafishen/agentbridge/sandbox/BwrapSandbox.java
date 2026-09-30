@@ -620,7 +620,7 @@ public final class BwrapSandbox {
             String versionLine;
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
                 versionLine = reader.readLine();
-                while (reader.readLine() != null) { /* drain */ }
+                reader.transferTo(java.io.Writer.nullWriter()); // drain so the process can exit
             }
             if (proc.waitFor() != 0) return false;
             boolean supportsSize = parseSupportsTmpfsSize(versionLine);
