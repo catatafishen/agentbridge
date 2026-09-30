@@ -1,13 +1,20 @@
 package com.github.catatafishen.agentbridge.custommcp;
 
+import com.intellij.openapi.project.Project;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -337,6 +344,52 @@ class CustomMcpRegistrarTest {
             );
             Set<String> desired = CustomMcpRegistrar.collectActiveServerIds(servers);
             assertEquals(Set.of("a", "b"), desired);
+        }
+    }
+
+    // ── EDT safety: status getters must not need the registrar monitor ───
+
+    /**
+     * {@link CustomMcpRegistrar#syncRegistrations()} holds the registrar monitor while it blocks on the OAuth
+     * browser callback, and the settings table reads these snapshots on the EDT while painting.
+     */
+    @Nested
+    class StatusSnapshotsWhileMonitorHeld {
+
+        @Test
+        void statusGetters_doNotBlockWhileRegistrarMonitorIsHeld() throws Exception {
+            Project project = Mockito.mock(Project.class);
+            Mockito.when(project.getService(CustomMcpSettings.class)).thenReturn(new CustomMcpSettings());
+            CustomMcpRegistrar registrar = new CustomMcpRegistrar(project);
+
+            CountDownLatch monitorHeld = new CountDownLatch(1);
+            CountDownLatch releaseMonitor = new CountDownLatch(1);
+            Thread holder = new Thread(() -> {
+                synchronized (registrar) {
+                    monitorHeld.countDown();
+                    try {
+                        releaseMonitor.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            });
+            holder.start();
+            ExecutorService reader = Executors.newSingleThreadExecutor();
+            try {
+                assertTrue(monitorHeld.await(5, TimeUnit.SECONDS));
+
+                Future<?> snapshots = reader.submit(() -> {
+                    registrar.getStatusSnapshot();
+                    registrar.getStatusDetailSnapshot();
+                    registrar.getStateSnapshot();
+                });
+                snapshots.get(5, TimeUnit.SECONDS);
+            } finally {
+                releaseMonitor.countDown();
+                holder.join(5_000);
+                reader.shutdownNow();
+            }
         }
     }
 }

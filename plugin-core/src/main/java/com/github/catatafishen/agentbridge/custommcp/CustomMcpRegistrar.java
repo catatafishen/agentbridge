@@ -61,6 +61,14 @@ public final class CustomMcpRegistrar implements Disposable {
      */
     private final Map<String, String> statusDetailByServer = new HashMap<>();
 
+    /**
+     * Guards {@link #statusByServer} and {@link #statusDetailByServer} only. Deliberately separate from the
+     * registrar monitor: {@link #syncRegistrations()} holds that monitor while blocking on network and OAuth
+     * browser callbacks, and the status getters are called from the EDT while painting the settings table.
+     * Lock order is registrar monitor → statusLock; never acquire the monitor while holding statusLock.
+     */
+    private final Object statusLock = new Object();
+
     public CustomMcpRegistrar(@NotNull Project project) {
         this.project = project;
         this.settingsListener = this::notifyAllStateListeners;
@@ -91,14 +99,14 @@ public final class CustomMcpRegistrar implements Disposable {
 
     @NotNull
     public Map<String, ServerStatus> getStatusSnapshot() {
-        synchronized (this) {
+        synchronized (statusLock) {
             return new HashMap<>(statusByServer);
         }
     }
 
     @NotNull
     public Map<String, String> getStatusDetailSnapshot() {
-        synchronized (this) {
+        synchronized (statusLock) {
             return new HashMap<>(statusDetailByServer);
         }
     }
@@ -111,7 +119,7 @@ public final class CustomMcpRegistrar implements Disposable {
             enabledByServer.put(server.getId(), server.isEnabled());
         }
 
-        synchronized (this) {
+        synchronized (statusLock) {
             Map<String, ServerState> snapshot = new HashMap<>();
             for (Map.Entry<String, Boolean> entry : enabledByServer.entrySet()) {
                 String serverId = entry.getKey();
@@ -178,7 +186,7 @@ public final class CustomMcpRegistrar implements Disposable {
     }
 
     private void updateStatus(@NotNull String serverId, @NotNull ServerStatus status, @Nullable String detail) {
-        synchronized (this) {
+        synchronized (statusLock) {
             statusByServer.put(serverId, status);
             statusDetailByServer.put(serverId, detail != null ? detail : defaultStatusDetail(status));
         }
@@ -309,8 +317,10 @@ public final class CustomMcpRegistrar implements Disposable {
         }
         clientByServer.clear();
         registeredByServer.clear();
-        statusByServer.clear();
-        statusDetailByServer.clear();
+        synchronized (statusLock) {
+            statusByServer.clear();
+            statusDetailByServer.clear();
+        }
         statusListeners.clear();
         stateListeners.clear();
     }
