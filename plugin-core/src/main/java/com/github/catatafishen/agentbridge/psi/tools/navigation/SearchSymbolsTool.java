@@ -113,38 +113,16 @@ public final class SearchSymbolsTool extends NavigationTool {
         List<String> results = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String basePath = project.getBasePath();
-        int[] fileCount = {0};
 
-        // Listing files is cheap; parsing them is not. Collect the files in one read action, then read each
-        // file in its own short read action so a pending write action is never blocked for the whole scan.
-        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-        List<VirtualFile> sourceFiles = readAction(() -> {
-            List<VirtualFile> files = new ArrayList<>();
-            fileIndex.iterateContent(vf -> {
-                if (!vf.isDirectory() && !vf.getFileType().isBinary() && fileIndex.isInSourceContent(vf)) {
-                    files.add(vf);
-                }
-                return true;
-            });
-            return files;
-        });
-
-        for (VirtualFile vf : sourceFiles) {
-            fileCount[0]++;
-            readAction(() -> {
-                if (!vf.isValid()) return null;
-                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                if (psiFile == null) return null;
-                Document doc = FileDocumentManager.getInstance().getDocument(vf);
-                if (doc == null) return null;
-                collectSymbolsFromFile(psiFile, doc, vf, typeFilter, basePath, seen, results);
-                return null;
-            });
+        int scanned = 0;
+        for (VirtualFile vf : collectSourceFiles()) {
+            scanned++;
+            collectSymbolsFromVirtualFile(vf, typeFilter, basePath, seen, results);
             if (results.size() >= offset + maxResults) break;
         }
 
         if (results.isEmpty())
-            return "No " + typeFilter + " symbols found (scanned " + fileCount[0]
+            return "No " + typeFilter + " symbols found (scanned " + scanned
                 + " source files using AST analysis). This is a definitive result — no grep needed.";
 
         // Apply offset
@@ -155,6 +133,38 @@ public final class SearchSymbolsTool extends NavigationTool {
             ? "\n\n(Showing " + maxResults + " results starting at offset " + offset + ". Use offset=" + (offset + maxResults) + " to see more)"
             : "";
         return page.size() + " " + typeFilter + " symbols:\n" + String.join("\n", page) + footer;
+    }
+
+    /**
+     * Lists the project's source files. Listing is cheap; parsing them is not, so callers read each file
+     * in its own short read action (see {@link #collectSymbolsFromVirtualFile}) rather than holding one
+     * read action across the whole scan, which would block any pending write action until it finished.
+     */
+    private List<VirtualFile> collectSourceFiles() {
+        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+        return readAction(() -> {
+            List<VirtualFile> files = new ArrayList<>();
+            fileIndex.iterateContent(vf -> {
+                if (!vf.isDirectory() && !vf.getFileType().isBinary() && fileIndex.isInSourceContent(vf)) {
+                    files.add(vf);
+                }
+                return true;
+            });
+            return files;
+        });
+    }
+
+    private void collectSymbolsFromVirtualFile(VirtualFile vf, String typeFilter, String basePath,
+                                               Set<String> seen, List<String> results) {
+        readAction(() -> {
+            if (!vf.isValid()) return null;
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (psiFile == null) return null;
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) return null;
+            collectSymbolsFromFile(psiFile, doc, vf, typeFilter, basePath, seen, results);
+            return null;
+        });
     }
 
     private String searchExact(String query, String typeFilter, GlobalSearchScope scope, int maxResults, int offset) {

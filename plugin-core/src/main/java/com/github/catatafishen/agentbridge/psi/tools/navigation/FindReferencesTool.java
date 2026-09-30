@@ -10,11 +10,13 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import com.intellij.psi.search.searches.ReferencesSearch;
+import com.intellij.util.Query;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -127,9 +129,12 @@ public final class FindReferencesTool extends NavigationTool {
         int seen = 0;
         // The query is built under a read action, but findAll() runs outside one: the platform takes a
         // short read action per file, so a pending write action is never blocked for the whole search.
-        var query = readAction(() -> definition.isValid() ? ReferencesSearch.search(definition, scope) : null);
-        if (query == null) return;
-        for (PsiReference ref : query.findAll()) {
+        // A definition deleted by a concurrent edit since findDefinitions() has nothing left to search for.
+        Optional<Query<PsiReference>> query = readAction(() -> definition.isValid()
+            ? Optional.of(ReferencesSearch.search(definition, scope))
+            : Optional.empty());
+        if (query.isEmpty()) return;
+        for (PsiReference ref : query.get().findAll()) {
             if (results.size() >= maxResults) break;
             String entry = readAction(() -> ref.getElement().isValid()
                 ? buildRichReferenceEntry(ref, filePattern, compiledGlob, basePath)
