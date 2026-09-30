@@ -30,7 +30,8 @@ class TimeArgParserTest {
     private static final long TOLERANCE_SECONDS = 2;
 
     private static void assertApproximatelyEqual(LocalDateTime expected, LocalDateTime actual) {
-        long diff = Math.abs(ChronoUnit.SECONDS.between(expected, actual));
+        ZoneId zone = ZoneId.systemDefault();
+        long diff = Math.abs(ChronoUnit.SECONDS.between(expected.atZone(zone), actual.atZone(zone)));
         assertTrue(diff <= TOLERANCE_SECONDS,
             "Expected " + expected + " but got " + actual + " (diff=" + diff + "s, tolerance=" + TOLERANCE_SECONDS + "s)");
     }

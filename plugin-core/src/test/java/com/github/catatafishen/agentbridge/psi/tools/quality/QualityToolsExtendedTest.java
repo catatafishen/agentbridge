@@ -277,11 +277,12 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
         assertFalse("Expected non-error response, got: " + result,
             result.startsWith("Error:"));
         // Each highlight line has the format: "relpath:line [severity] description"
-        // A blank-description entry would match the pattern ".*:\d+ \[.*\]\s*" (nothing after [severity]).
-        // If the blank-description filter is removed, a blank highlight would appear as that pattern.
+        // A blank-description entry ends right after the [severity] bracket. The character classes
+        // are delimiter-disjoint so matching stays linear (no nested ".*" backtracking).
+        // If the blank-description filter is removed, a blank highlight would match this pattern.
         for (String line : result.split("\n")) {
             assertFalse("Found highlight entry with blank description: " + line,
-                line.matches(".*:\\d+ \\[.*]\\s*"));
+                line.matches("[^\\[]*:\\d+ \\[[^\\]]*]\\s*"));
         }
     }
 
