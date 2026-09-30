@@ -129,6 +129,18 @@ class ChatInputConfigurable(private val project: Project) :
             }
         }
         row {
+            checkBox("Automatically open edit approvals in the editor diff")
+                .comment(
+                    "When an agent asks to edit a file, automatically show the proposed change " +
+                        "as a diff tab in the editor area when the approval card " +
+                        "appears in chat. The decision buttons stay in the chat card."
+                )
+                .bindSelected(
+                    { ActiveAgentManager.getEditApprovalAutoDiff(project) },
+                    { ActiveAgentManager.setEditApprovalAutoDiff(project, it) }
+                )
+        }
+        row {
             checkBox("Enable smooth scrolling in chat panel")
                 .comment("⚠ May cause screen tearing on some systems")
                 .bindSelected({ mcp.isSmoothScrollEnabled }, { mcp.isSmoothScrollEnabled = it })

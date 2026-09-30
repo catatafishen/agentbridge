@@ -40,6 +40,7 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_ACTIVE_PROFILE = "agent.activeProfileId";
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
     private static final String KEY_ALLOW_TRANSIENT_FILE_OPENS = "agent.allowTransientFileOpens";
+    private static final String KEY_EDIT_APPROVAL_AUTO_DIFF = "agent.editApprovalAutoDiff";
     private static final String KEY_INJECT_CONV_HISTORY = "agent.injectConversationHistory";
     private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
     private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
@@ -584,6 +585,21 @@ public final class ActiveAgentManager implements Disposable {
     public static void setAllowTransientFileOpens(@NotNull Project project, boolean allow) {
         PropertiesComponent.getInstance(project)
             .setValue(KEY_ALLOW_TRANSIENT_FILE_OPENS, allow, true);
+    }
+
+    /**
+     * Whether an edit-approval ask should automatically open the proposed change as a
+     * diff in the editor area (the chat card keeps the decision buttons).
+     * Opt-in; default {@code false}.
+     */
+    public static boolean getEditApprovalAutoDiff(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project)
+            .getBoolean(KEY_EDIT_APPROVAL_AUTO_DIFF, false);
+    }
+
+    public static void setEditApprovalAutoDiff(@NotNull Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project)
+            .setValue(KEY_EDIT_APPROVAL_AUTO_DIFF, enabled, false);
     }
 
     public static boolean getInjectConversationHistory(@NotNull Project project) {
