@@ -59,10 +59,14 @@ function formatInline(text: string): string {
 }
 
 const THINK_TAG_PATTERN = /<(think|thinking)>([^<]*(?:<(?!\/(?:think|thinking)>)[^<]*)*)<\/\1>/gi;
-// Surrounding whitespace is limited to the tag's own line ([^\S\r\n] = whitespace that is not a
-// line terminator). With \s the pattern could span blank lines and rescan the whole run from every line start.
-const WRAPPER_TAG_LINE_PATTERN =
-    /^[^\S\r\n]*<\/?(task_result|commentary|example|code)>[^\S\r\n]*$/gim;
+// A wrapper tag is only removed when it is alone on its line. Each line is trimmed first and then
+// compared with a quantifier-free pattern, so there is no whitespace run to backtrack over.
+const WRAPPER_TAG_PATTERN = /^<\/?(?:task_result|commentary|example|code)>$/i;
+const LINE_CONTENT_PATTERN = /[^\r\n]+/g;
+
+function stripWrapperTagLines(text: string): string {
+    return text.replaceAll(LINE_CONTENT_PATTERN, line => (WRAPPER_TAG_PATTERN.test(line.trim()) ? '' : line));
+}
 
 function buildThinkingBlockHtml(content: string): string {
     const normalized = content.trim() || 'No reasoning returned';
@@ -70,9 +74,8 @@ function buildThinkingBlockHtml(content: string): string {
 }
 
 function preprocessXmlTags(text: string): string {
-    return text
-        .replaceAll(THINK_TAG_PATTERN, (_match, _tag, content) => buildThinkingBlockHtml(content))
-        .replaceAll(WRAPPER_TAG_LINE_PATTERN, '');
+    return stripWrapperTagLines(
+        text.replaceAll(THINK_TAG_PATTERN, (_match, _tag, content) => buildThinkingBlockHtml(content)));
 }
 
 function preprocessXmlTagsOutsideCodeFences(text: string): string {
