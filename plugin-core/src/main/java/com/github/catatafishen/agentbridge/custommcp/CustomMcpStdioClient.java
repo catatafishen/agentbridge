@@ -219,29 +219,9 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
         // Drain any stderr lines (MCP servers log there) to avoid deadlock
         drainStderr();
 
-        // Read response line from stdout
         String responseLine;
         try {
-            long deadline = System.currentTimeMillis() + timeoutMs;
-            while (true) {
-                if (!stdout.ready()) {
-                    if (System.currentTimeMillis() >= deadline) {
-                        throw new IOException("Read timeout after " + timeoutMs + "ms for method " + method);
-                    }
-                    try {
-                        Thread.sleep(50);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new IOException("Interrupted while reading response", e);
-                    }
-                    continue;
-                }
-                responseLine = stdout.readLine();
-                if (responseLine == null) {
-                    throw new IOException("Process closed stdout unexpectedly");
-                }
-                break;
-            }
+            responseLine = readResponseLine(method, timeoutMs);
         } catch (IOException e) {
             if (e.getMessage() != null && e.getMessage().contains("Read timeout")) throw e;
             throw new IOException("Failed to read from MCP server process", e);
@@ -252,6 +232,34 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
         }
 
         return JsonParser.parseString(responseLine).getAsJsonObject();
+    }
+
+    /**
+     * Polls stdout until a line is available or the deadline passes, then reads that line.
+     */
+    @NotNull
+    private String readResponseLine(@NotNull String method, int timeoutMs) throws IOException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (!stdout.ready()) {
+            if (System.currentTimeMillis() >= deadline) {
+                throw new IOException("Read timeout after " + timeoutMs + "ms for method " + method);
+            }
+            pauseBeforeNextPoll();
+        }
+        String line = stdout.readLine();
+        if (line == null) {
+            throw new IOException("Process closed stdout unexpectedly");
+        }
+        return line;
+    }
+
+    private static void pauseBeforeNextPoll() throws IOException {
+        try {
+            Thread.sleep(50);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while reading response", e);
+        }
     }
 
     private void sendJsonLine(@NotNull String json) throws IOException {
