@@ -90,7 +90,7 @@ public final class FindReferencesTool extends NavigationTool {
         int offset = pagination[1];
 
         showSearchFeedback("🔍 Finding references: " + symbol);
-        String result = computeInReadActionWithProgress(() -> {
+        String result = computeWithProgress(() -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = resolveScope(scopeName);
@@ -125,9 +125,15 @@ public final class FindReferencesTool extends NavigationTool {
                                              int maxResults, int offset) {
         var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
         int seen = 0;
-        for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
+        // The query is built under a read action, but findAll() runs outside one: the platform takes a
+        // short read action per file, so a pending write action is never blocked for the whole search.
+        var query = readAction(() -> definition.isValid() ? ReferencesSearch.search(definition, scope) : null);
+        if (query == null) return;
+        for (PsiReference ref : query.findAll()) {
             if (results.size() >= maxResults) break;
-            String entry = buildRichReferenceEntry(ref, filePattern, compiledGlob, basePath);
+            String entry = readAction(() -> ref.getElement().isValid()
+                ? buildRichReferenceEntry(ref, filePattern, compiledGlob, basePath)
+                : null);
             if (entry != null && seen++ >= offset) {
                 results.add(entry);
             }

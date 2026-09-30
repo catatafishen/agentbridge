@@ -7,6 +7,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -91,7 +92,7 @@ public final class SearchSymbolsTool extends NavigationTool {
         int offset = pagination[1];
 
         showSearchFeedback("🔍 Searching symbols: " + query);
-        String result = computeInReadActionWithProgress(() -> {
+        String result = computeWithProgress(() -> {
             if (query.isEmpty() || "*".equals(query)) {
                 if (!SCOPE_PROJECT.equalsIgnoreCase(scopeName)) {
                     return "Error: Wildcard symbol listing is only supported with scope='project'. "
@@ -114,19 +115,33 @@ public final class SearchSymbolsTool extends NavigationTool {
         String basePath = project.getBasePath();
         int[] fileCount = {0};
 
+        // Listing files is cheap; parsing them is not. Collect the files in one read action, then read each
+        // file in its own short read action so a pending write action is never blocked for the whole scan.
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-        fileIndex.iterateContent(vf -> {
-            if (vf.isDirectory() || vf.getFileType().isBinary()) return true;
-            if (!fileIndex.isInSourceContent(vf)) return true;
-            fileCount[0]++;
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (psiFile == null) return true;
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc == null) return true;
-
-            collectSymbolsFromFile(psiFile, doc, vf, typeFilter, basePath, seen, results);
-            return results.size() < offset + maxResults;
+        List<VirtualFile> sourceFiles = readAction(() -> {
+            List<VirtualFile> files = new ArrayList<>();
+            fileIndex.iterateContent(vf -> {
+                if (!vf.isDirectory() && !vf.getFileType().isBinary() && fileIndex.isInSourceContent(vf)) {
+                    files.add(vf);
+                }
+                return true;
+            });
+            return files;
         });
+
+        for (VirtualFile vf : sourceFiles) {
+            fileCount[0]++;
+            readAction(() -> {
+                if (!vf.isValid()) return null;
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (psiFile == null) return null;
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                if (doc == null) return null;
+                collectSymbolsFromFile(psiFile, doc, vf, typeFilter, basePath, seen, results);
+                return null;
+            });
+            if (results.size() >= offset + maxResults) break;
+        }
 
         if (results.isEmpty())
             return "No " + typeFilter + " symbols found (scanned " + fileCount[0]

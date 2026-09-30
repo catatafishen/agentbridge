@@ -118,28 +118,41 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
-     * Runs {@code computation} inside a read action that also carries a progress-indicator
-     * context, instead of the bare {@link ApplicationManager#getApplication()}{@code .runReadAction}.
+     * Runs {@code computation} on the calling thread with a progress-indicator context, but
+     * <b>without</b> holding a read action for its whole duration.
      *
-     * <p>Some JetBrains language-service code paths — notably the TypeScript config/import graph
-     * builder ({@code JSGraphBuildExecutor.ensureGraphInitialized}, reached while resolving module
-     * augmentations for a JS/TS file) — call {@code runBlockingCancellable} internally, which throws
+     * <p>Project-wide searches ({@link PsiSearchHelper#processElementsWithWord},
+     * {@code ReferencesSearch}) already take a short read action per file internally. Wrapping the
+     * entire search in one outer read action defeats that: a pending write action (any user edit)
+     * cannot start until the whole search finishes, which froze the EDT for 13s+ on a large PHP
+     * project. Callers must therefore use {@link #readAction} around any PSI access made outside a
+     * search callback.</p>
+     *
+     * <p>The progress context is still needed: some JetBrains language-service code paths — notably
+     * the TypeScript config/import graph builder ({@code JSGraphBuildExecutor.ensureGraphInitialized},
+     * reached while resolving module augmentations for a JS/TS file) — call
+     * {@code runBlockingCancellable} internally, which throws
      * {@code IllegalStateException("There is no ProgressIndicator or Job in this thread")} when the
      * calling thread carries neither a {@link com.intellij.openapi.progress.ProgressIndicator} nor a
-     * coroutine {@code Job}. Navigation tools run project-wide PSI searches
-     * ({@link PsiSearchHelper#processElementsWithWord}, {@code ReferencesSearch}) directly from the
-     * plain background thread that {@code McpProtocolHandler} dispatches tool calls on, so any
-     * project containing JS/TS sources can trip that assertion mid-search (e.g. {@code search_symbols}
-     * or {@code find_references}). Wrapping the read action in {@link EmptyProgressIndicator} supplies
-     * the missing context without showing any progress UI — the same fix already used in
-     * {@code QualityTool#collectQuickFixNames} for the analogous quick-fix code path.</p>
+     * coroutine {@code Job}. The plain background thread that {@code McpProtocolHandler} dispatches
+     * tool calls on has neither, so {@link EmptyProgressIndicator} supplies one without showing any
+     * progress UI — the same fix already used in {@code QualityTool#collectQuickFixNames}.</p>
      */
-    protected <T> T computeInReadActionWithProgress(Computable<T> computation) {
+    protected <T> T computeWithProgress(Computable<T> computation) {
         AtomicReference<T> resultRef = new AtomicReference<>();
         ProgressManager.getInstance().runProcess(
-            () -> resultRef.set(ApplicationManager.getApplication().runReadAction(computation)),
+            () -> resultRef.set(computation.compute()),
             new EmptyProgressIndicator());
         return resultRef.get();
+    }
+
+    /**
+     * Runs {@code computation} in a short read action. Use this around PSI access made outside a
+     * search callback while inside {@link #computeWithProgress}; keep each call small (one file or
+     * one result entry) so write actions are never held up for long.
+     */
+    protected <T> T readAction(Computable<T> computation) {
+        return ApplicationManager.getApplication().runReadAction(computation);
     }
 
     @Override
@@ -199,9 +212,9 @@ public abstract class NavigationTool extends Tool {
 
         if (isQualified) {
             String[] qualifierTokens = qualifierTokensOf(name);
-            return candidates.stream()
-                .filter(e -> matchesQualifier(e, qualifierTokens))
-                .toList();
+            return readAction(() -> candidates.stream()
+                .filter(e -> e.isValid() && matchesQualifier(e, qualifierTokens))
+                .toList());
         }
         return candidates;
     }
