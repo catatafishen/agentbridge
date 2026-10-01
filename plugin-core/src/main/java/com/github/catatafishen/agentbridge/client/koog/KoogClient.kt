@@ -1,7 +1,5 @@
 package com.github.catatafishen.agentbridge.client.koog
 
-import ai.koog.prompt.executor.model.PromptExecutor
-import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
 import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.client.ClientPromptException
@@ -10,7 +8,6 @@ import com.github.catatafishen.agentbridge.client.ClientStartException
 import com.github.catatafishen.agentbridge.model.Model
 import com.github.catatafishen.agentbridge.model.PromptResponse
 import com.github.catatafishen.agentbridge.model.SessionUpdate
-import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.CancellationException
@@ -32,11 +29,17 @@ import java.util.function.Consumer
  * Because nothing else supplies a system prompt or built-in tools, the model sees exactly one set of
  * instructions (ours) and exactly the tools AgentBridge exposes: there are no competing instructions
  * to disable and no native tools to filter.
+ *
+ * Everything that touches the IDE, the settings or the network goes through [KoogEnvironment], so the
+ * logic here is testable without an IDE.
  */
-class KoogClient(private val project: Project) : AbstractClient() {
+class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
+
+    /** The constructor the registry uses. */
+    constructor(project: Project) : this(IdeKoogEnvironment(project))
 
     private class Runtime(
-        val executor: PromptExecutor,
+        val connection: ProviderConnection,
         val provider: KoogProviderKind,
         val choices: Map<String, KoogModelChoice>,
     )
@@ -52,23 +55,20 @@ class KoogClient(private val project: Project) : AbstractClient() {
     private val conversations = ConcurrentHashMap<String, KoogConversation>()
     private val activeTurns = ConcurrentHashMap<String, Job>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val tools: ToolBackend by lazy { McpToolBackend(project) }
 
     override fun agentId(): String = KoogSupport.AGENT_ID
 
     override fun displayName(): String = "Built-in Agent (Koog)"
 
     override fun start() {
-        KoogSettings.configurationProblem()?.let { throw ClientStartException(it) }
-        val kind = KoogSettings.provider
-        val key = (if (kind == KoogProviderKind.COPILOT) KoogSettings.copilotToken else KoogSettings.openAiApiKey)
+        env.configurationProblem()?.let { throw ClientStartException(it) }
+        val kind = env.provider()
+        val credential = env.credential(kind)
             ?: throw ClientStartException("Koog is not authenticated: no credentials are stored.")
-        val agent = userAgent()
         val choices = try {
-            loadModels(kind, key, agent)
+            env.loadModels(kind, credential)
         } catch (e: Exception) {
-            val classified = KoogErrors.classify(e, kind.label)
-            throw ClientStartException(classified.message, e)
+            throw ClientStartException(KoogErrors.classify(e, kind.label).message, e)
         }
         if (choices.isEmpty()) {
             throw ClientStartException(
@@ -77,12 +77,9 @@ class KoogClient(private val project: Project) : AbstractClient() {
             )
         }
         val previous = runtime
-        runtime = Runtime(
-            KoogProviders.createExecutor(kind, KoogSettings.openAiBaseUrl, key, agent), kind,
-            choices.associateBy { it.id },
-        )
-        selectedModel = KoogSettings.modelId.takeIf { choices.any { c -> c.id == it } } ?: choices.first().id
-        previous?.let { closeQuietly(it.executor) }
+        runtime = Runtime(env.connect(kind, credential), kind, choices.associateBy { it.id })
+        selectedModel = env.preferredModelId().takeIf { id -> choices.any { it.id == id } } ?: choices.first().id
+        previous?.let { closeQuietly(it.connection) }
         log.info("Koog started: provider=${kind.id}, ${choices.size} model(s), selected=$selectedModel")
     }
 
@@ -90,7 +87,7 @@ class KoogClient(private val project: Project) : AbstractClient() {
         activeTurns.values.forEach { it.cancel() }
         activeTurns.clear()
         conversations.clear()
-        runtime?.let { closeQuietly(it.executor) }
+        runtime?.let { closeQuietly(it.connection) }
         runtime = null
         setCurrentSession(null)
     }
@@ -114,14 +111,13 @@ class KoogClient(private val project: Project) : AbstractClient() {
 
     override fun createSession(cwd: String): String {
         val active = runtime ?: throw ClientSessionException("Koog is not started")
-        val system = buildSystemPrompt(cwd)
+        val system = env.systemPrompt(cwd)
         val streamer = ModelStreamer { prompt, toolDescriptors ->
             val model = selectedModel ?: error("No model selected")
-            ExecutorStreamer(active.executor, KoogProviders.toLLModel(active.choices.getValue(model)))
-                .stream(prompt, toolDescriptors)
+            active.connection.streamer(active.choices.getValue(model)).stream(prompt, toolDescriptors)
         }
         val id = "koog-" + UUID.randomUUID()
-        conversations[id] = KoogConversation(streamer, tools, systemPrompt = { system })
+        conversations[id] = KoogConversation(streamer, env.tools, systemPrompt = { system })
         setCurrentSession(id)
         return id
     }
@@ -148,11 +144,11 @@ class KoogClient(private val project: Project) : AbstractClient() {
             }
             return PromptResponse(result.stopReason, usage)
         } catch (_: CancellationException) {
+            // The user pressed Stop: a normal end, reported with the ACP "cancelled" stop reason.
             if (turn.isCancelled) return PromptResponse("cancelled", null)
             throw InterruptedException("Prompt interrupted")
         } catch (e: Exception) {
-            val classified = KoogErrors.classify(e, active.provider.label)
-            throw ClientPromptException(classified.message, e)
+            throw ClientPromptException(KoogErrors.classify(e, active.provider.label).message, e)
         } finally {
             activeTurns.remove(sessionId, turn)
         }
@@ -170,48 +166,20 @@ class KoogClient(private val project: Project) : AbstractClient() {
             return
         }
         selectedModel = modelId
-        KoogSettings.modelId = modelId
+        env.rememberModel(modelId)
     }
 
     override fun modelDisplayMode(): ModelDisplayMode = ModelDisplayMode.NAME
 
-    private fun loadModels(kind: KoogProviderKind, key: String, agent: String): List<KoogModelChoice> = when (kind) {
-        KoogProviderKind.COPILOT -> CopilotModels.usable(KoogNetwork.fetchCopilotModels(key, agent))
-            .map { KoogModelChoice(it.id, it.name, it.contextWindow, it.maxOutputTokens) }
-
-        // A generic OpenAI-style endpoint has no reliable model list; the user names the model.
-        KoogProviderKind.OPENAI_COMPATIBLE -> listOf(KoogModelChoice(KoogSettings.modelId, KoogSettings.modelId))
-    }
-
-    private fun buildSystemPrompt(cwd: String): String {
-        val settings = StartupInstructionsSettings.getInstance()
-        val guidance = KoogGuidance.compose(
-            mcpInstructions = tools.instructions(),
-            defaultTemplate = settings.defaultTemplate,
-            userCustomized = settings.isUsingCustomInstructions,
-            koogVariant = bundled(TOOL_GUIDANCE_RESOURCE),
-        )
-        return systemPrompt(bundled(SYSTEM_PROMPT_RESOURCE), cwd, guidance)
-    }
-
-    private fun bundled(resource: String): String =
-        KoogClient::class.java.getResourceAsStream(resource)?.use { it.readBytes().decodeToString().trim() }
-            ?: throw ClientSessionException("Bundled resource missing: $resource")
-
-    private fun userAgent(): String = "AgentBridge/" + BuildInfo.getVersion()
-
-    private fun closeQuietly(executor: PromptExecutor) {
+    private fun closeQuietly(connection: AutoCloseable) {
         try {
-            (executor as? AutoCloseable)?.close()
+            connection.close()
         } catch (e: Exception) {
-            log.debug("Koog: closing executor failed", e)
+            log.debug("Koog: closing the provider connection failed", e)
         }
     }
 
     companion object {
-        private const val SYSTEM_PROMPT_RESOURCE = "/koog/system-prompt.md"
-        private const val TOOL_GUIDANCE_RESOURCE = "/koog/tool-guidance.md"
-
         /** Our preamble, the project root, then tool guidance (see [KoogGuidance] for which text that is). */
         @JvmStatic
         fun systemPrompt(preamble: String, projectRoot: String, mcpInstructions: String): String =
