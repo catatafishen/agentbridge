@@ -110,6 +110,6 @@ object KoogSettings {
 
     private fun setSecret(key: String, value: String?) {
         val credentials = value?.takeIf { it.isNotBlank() }?.let { Credentials(key, it) }
-        PasswordSafe.instance.set(attributes(key), credentials)
+        PasswordSafe.instance[attributes(key)] = credentials
     }
 }

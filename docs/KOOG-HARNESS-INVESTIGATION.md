@@ -37,8 +37,15 @@ chat UI ── KoogClient (AbstractClient) ── KoogConversation (history + ag
   no HTTP server involved. Every behaviour external agents get is therefore kept: the user's enabled-tool filter,
   Allow/Ask/Deny, pause/resume, hooks, popup gating, live tool-call tracking, timeouts and truncation. The model's
   tool-call id is passed as `_meta.claudecode/toolUseId` so the chat chip correlates exactly.
-- ✅ **System prompt** = `koog/system-prompt.md` + `Project root: ...` + the MCP `initialize` instructions (the guidance
-  every AgentBridge agent gets, including the user's edited startup instructions and memory). Nothing else is added.
+- ✅ **System prompt** = `koog/system-prompt.md` + `Project root: ...` + tool guidance. Nothing else is added.
+  - The shared default startup instructions are written for every agent, including CLIs with built-in tools and deferred
+    schemas. Two items are redundant or misleading here ("never use the agent's native Run Command"; "look a capability
+    up before guessing a name", which sends the model hunting for a tool-search tool that does not exist), and a few
+    phrases assume an MCP client. Unless the user has replaced the shared instructions, `KoogGuidance` swaps the default
+    text for `koog/tool-guidance.md` (same guidance minus those items) and keeps the memory section that follows it.
+    Instructions the user edited are honoured as written, since they chose them for every agent.
+  - Drift guard: a test checks the variant names no native tools or other harnesses and only tools the shared text
+    also names. The variant is a second copy of shared guidance, so changes to the shared text need a matching change.
 - ✅ **Tool schemas** are mapped from the tools' JSON Schema to Koog `ToolDescriptor`s (`KoogToolSchemas`), so the
   model sees the same parameters as over MCP.
 - Providers: **GitHub Copilot** (device sign-in, token in the IDE password safe) and any **OpenAI-compatible**

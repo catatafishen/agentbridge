@@ -10,6 +10,7 @@ import com.github.catatafishen.agentbridge.client.ClientStartException
 import com.github.catatafishen.agentbridge.model.Model
 import com.github.catatafishen.agentbridge.model.PromptResponse
 import com.github.catatafishen.agentbridge.model.SessionUpdate
+import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.CancellationException
@@ -183,11 +184,19 @@ class KoogClient(private val project: Project) : AbstractClient() {
     }
 
     private fun buildSystemPrompt(cwd: String): String {
-        val preamble = KoogClient::class.java.getResourceAsStream(SYSTEM_PROMPT_RESOURCE)?.use {
-            it.readBytes().decodeToString().trim()
-        } ?: throw ClientSessionException("Bundled resource missing: $SYSTEM_PROMPT_RESOURCE")
-        return systemPrompt(preamble, cwd, tools.instructions())
+        val settings = StartupInstructionsSettings.getInstance()
+        val guidance = KoogGuidance.compose(
+            mcpInstructions = tools.instructions(),
+            defaultTemplate = settings.defaultTemplate,
+            userCustomized = settings.isUsingCustomInstructions,
+            koogVariant = bundled(TOOL_GUIDANCE_RESOURCE),
+        )
+        return systemPrompt(bundled(SYSTEM_PROMPT_RESOURCE), cwd, guidance)
     }
+
+    private fun bundled(resource: String): String =
+        KoogClient::class.java.getResourceAsStream(resource)?.use { it.readBytes().decodeToString().trim() }
+            ?: throw ClientSessionException("Bundled resource missing: $resource")
 
     private fun userAgent(): String = "AgentBridge/" + BuildInfo.getVersion()
 
@@ -201,8 +210,9 @@ class KoogClient(private val project: Project) : AbstractClient() {
 
     companion object {
         private const val SYSTEM_PROMPT_RESOURCE = "/koog/system-prompt.md"
+        private const val TOOL_GUIDANCE_RESOURCE = "/koog/tool-guidance.md"
 
-        /** Our preamble, the project root, then the guidance every AgentBridge agent gets over MCP. */
+        /** Our preamble, the project root, then tool guidance (see [KoogGuidance] for which text that is). */
         @JvmStatic
         fun systemPrompt(preamble: String, projectRoot: String, mcpInstructions: String): String =
             listOf(preamble, "Project root: $projectRoot", mcpInstructions.trim())

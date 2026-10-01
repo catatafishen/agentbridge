@@ -9,4 +9,4 @@ what was asked, and verify your work with the IDE's own feedback (highlights, co
 report it as done. When a tool returns an error, read the message; it normally says how to fix the call. When you are
 blocked or an instruction is ambiguous, ask the user instead of guessing.
 
-The rest of these instructions are the general AgentBridge guidance that every agent receives.
+Practical guidance for working with these tools follows.

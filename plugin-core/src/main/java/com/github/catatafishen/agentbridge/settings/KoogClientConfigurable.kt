@@ -195,7 +195,7 @@ class KoogClientConfigurable(private val project: Project) :
                 project,
                 "This build has no GitHub OAuth client id. Enter the Client ID of a GitHub OAuth App with " +
                     "Device Flow enabled in the field below, then try again.",
-                "Sign in to GitHub Copilot",
+                SIGN_IN_TITLE,
             )
             return
         }
@@ -204,7 +204,7 @@ class KoogClientConfigurable(private val project: Project) :
 
     /** Modal because the user has to act on the code shown in the progress text; Cancel abandons the sign-in. */
     private class SignInTask(project: Project, private val clientId: String, private val onDone: () -> Unit) :
-        Task.Modal(project, "Sign in to GitHub Copilot", true) {
+        Task.Modal(project, SIGN_IN_TITLE, true) {
 
         private var error: String? = null
 
@@ -234,7 +234,7 @@ class KoogClientConfigurable(private val project: Project) :
 
         override fun onFinished() {
             onDone()
-            error?.let { Messages.showErrorDialog(project, it, "Sign in to GitHub Copilot") }
+            error?.let { Messages.showErrorDialog(project, it, SIGN_IN_TITLE) }
         }
 
         private fun sleepCancellable(indicator: ProgressIndicator, millis: Long) {
@@ -249,5 +249,6 @@ class KoogClientConfigurable(private val project: Project) :
 
     companion object {
         const val ID = "com.github.catatafishen.agentbridge.client.koog"
+        private const val SIGN_IN_TITLE = "Sign in to GitHub Copilot"
     }
 }

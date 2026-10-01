@@ -91,7 +91,7 @@ object CopilotHeaders {
     /** Fixed headers for chat requests. [userAgent] identifies this client, e.g. `AgentBridge/1.2.3`. */
     @JvmStatic
     fun fixed(userAgent: String): Map<String, String> = mapOf(
-        "Content-Type" to "application/json",
+        "Content-Type" to JsonContentType.MEDIA_TYPE,
         "User-Agent" to userAgent,
         "Openai-Intent" to "conversation-edits",
     )
@@ -126,7 +126,9 @@ object CopilotHeaders {
  * where it replaces the inferred one.
  */
 object JsonContentType {
+    const val MEDIA_TYPE = "application/json"
+
     @JvmStatic
     fun perRequest(@Suppress("UNUSED_PARAMETER") requestBody: Any?): Map<String, String> =
-        mapOf("Content-Type" to "application/json")
+        mapOf("Content-Type" to MEDIA_TYPE)
 }
