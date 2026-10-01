@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client;
 
+import com.github.catatafishen.agentbridge.client.koog.KoogSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -11,10 +12,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class ClientRegistryTest {
 
     @Test
-    @DisplayName("contains all seven ACP agents")
+    @DisplayName("contains all seven ACP agents, plus the built-in Koog agent where the IDE can run it")
     void containsAllAgents() {
         List<ClientRegistry.AgentDescriptor> all = ClientRegistry.getAll();
-        assertEquals(7, all.size());
+        assertEquals(KoogSupport.isSupported() ? 8 : 7, all.size());
+        assertEquals(KoogSupport.isSupported(), ClientRegistry.get(KoogSupport.AGENT_ID) != null);
 
         List<String> ids = all.stream().map(ClientRegistry.AgentDescriptor::id).toList();
         assertTrue(ids.contains("copilot"));

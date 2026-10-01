@@ -24,5 +24,11 @@ public enum TransportType {
      * over stdio. Requires {@code codex} to be installed and authenticated ({@code codex login}).
      * Supports streaming text, graceful tool-approval denial, and multi-turn threads.
      */
-    CODEX_APP_SERVER
+    CODEX_APP_SERVER,
+
+    /**
+     * No subprocess: the agent loop runs inside the IDE and calls the model provider directly
+     * (see {@code client.koog.KoogClient}).
+     */
+    IN_PROCESS
 }
