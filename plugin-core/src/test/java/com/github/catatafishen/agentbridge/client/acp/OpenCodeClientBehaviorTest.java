@@ -72,6 +72,31 @@ class OpenCodeClientBehaviorTest {
     }
 
     @Test
+    void strictAgentIsTheDefaultAgent() {
+        OpenCodeClient client = new OpenCodeClient(mock(Project.class));
+
+        assertEquals("agentbridge", client.defaultAgentSlug());
+        assertEquals("agentbridge", client.getCurrentAgentSlug());
+    }
+
+    @Test
+    void projectAgentCannotShadowTheStrictAgent() throws Exception {
+        Project project = mock(Project.class);
+        when(project.getBasePath()).thenReturn(tempDir.toString());
+        Files.createDirectories(tempDir.resolve(".opencode/agents"));
+        Files.writeString(
+            tempDir.resolve(".opencode/agents/agentbridge.md"),
+            "---\nname: Shadow Strict\n---\n",
+            StandardCharsets.UTF_8
+        );
+
+        List<AbstractClient.AgentMode> agents = new OpenCodeClient(project).getAvailableAgents();
+
+        assertEquals(1, agents.stream().filter(a -> "agentbridge".equals(a.slug())).count());
+        assertTrue(agents.stream().noneMatch(agent -> "Shadow Strict".equals(agent.name())));
+    }
+
+    @Test
     void getAvailableAgentsIncludesProjectAgentsWithoutShadowingBuiltIns() throws Exception {
         Project project = mock(Project.class);
         when(project.getBasePath()).thenReturn(tempDir.toString());
@@ -103,10 +128,10 @@ class OpenCodeClientBehaviorTest {
         List<AbstractClient.AgentMode> agents = client.getAvailableAgents();
 
         assertEquals(
-            List.of("build", "plan", "general", "explore", "scout", "shared", "local"),
+            List.of("agentbridge", "build", "plan", "general", "explore", "scout", "shared", "local"),
             agents.stream().map(AbstractClient.AgentMode::slug).toList()
         );
-        assertEquals("Shared Primary", agents.get(5).name());
+        assertEquals("Shared Primary", agents.get(6).name());
         assertTrue(agents.stream().noneMatch(agent -> "Shadow Build".equals(agent.name())));
     }
 

@@ -31,6 +31,13 @@ import java.util.concurrent.TimeoutException;
 public final class OpenCodeClient extends AcpClient {
 
     private static final String AGENT_ID = "opencode";
+    /**
+     * Primary OpenCode agent defined by this plugin. Its own {@code prompt} replaces OpenCode's
+     * model-specific base prompt (which describes OpenCode's built-in tools, all of which are
+     * denied here), so the model is only told about the IDE tools it actually has.
+     */
+    static final String STRICT_AGENT = "agentbridge";
+    private static final String STRICT_AGENT_PROMPT_RESOURCE = "/agents/opencode/agentbridge-system-prompt.md";
     private static final String BUILD_AGENT = "build";
     private static final String PLAN_AGENT = "plan";
     private static final String GENERAL_AGENT = "general";
@@ -66,7 +73,7 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     public @Nullable String defaultAgentSlug() {
-        return BUILD_AGENT;
+        return STRICT_AGENT;
     }
 
     @Override
@@ -81,7 +88,7 @@ public final class OpenCodeClient extends AcpClient {
         if (basePath != null) {
             agents.addAll(ProjectAgentScanner.scanAgentDirectories(
                 Path.of(basePath),
-                Set.of(BUILD_AGENT, PLAN_AGENT, GENERAL_AGENT, EXPLORE_AGENT, SCOUT_AGENT),
+                Set.of(STRICT_AGENT, BUILD_AGENT, PLAN_AGENT, GENERAL_AGENT, EXPLORE_AGENT, SCOUT_AGENT),
                 PROJECT_AGENT_DIR,
                 PROJECT_AGENTS_DIR,
                 DEPLOYED_AGENT_DIR
@@ -92,7 +99,9 @@ public final class OpenCodeClient extends AcpClient {
 
     static List<AbstractClient.AgentMode> builtInAgents() {
         return List.of(
-            new AbstractClient.AgentMode(BUILD_AGENT, "Build", "Default primary agent with full tool access"),
+            new AbstractClient.AgentMode(STRICT_AGENT, "AgentBridge",
+                "IDE tools only, with an AgentBridge system prompt instead of OpenCode's (default)"),
+            new AbstractClient.AgentMode(BUILD_AGENT, "Build", "OpenCode's own primary agent and system prompt"),
             new AbstractClient.AgentMode(PLAN_AGENT, "Plan", "Read-only planning mode with guarded edits and bash"),
             new AbstractClient.AgentMode(GENERAL_AGENT, "General", "General-purpose subagent for complex tasks"),
             new AbstractClient.AgentMode(EXPLORE_AGENT, "Explore", "Fast read-only subagent for codebase exploration"),
@@ -146,23 +155,95 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     /**
-     * Builds the OPENCODE_CONFIG_CONTENT environment variable denying native tools.
+     * Builds the OPENCODE_CONFIG_CONTENT environment variable: denies native tools globally and
+     * defines the {@link #STRICT_AGENT} primary agent with the AgentBridge system prompt.
      *
      * <p>NOTE: We do NOT set {@code "default_agent"} here. OpenCode v1.4.10+ rejects
      * subagent slugs (like "build", "plan", "explore") as the {@code default_agent} value,
      * causing {@code session/new} to fail with
      * {@code "default agent \"build\" is a subagent"}. OpenCode selects its own default
-     * agent internally — the plugin's agent dropdown controls which agent to start via
-     * the session/create flow instead.</p>
+     * agent internally — the plugin selects the agent with {@code session/set_mode} once
+     * the session exists (see {@link #onSessionCreated}).</p>
+     *
+     * @throws IllegalStateException if the bundled system prompt resource is missing
      */
     static Map<String, String> buildPermissionConfig() {
         JsonObject permission = new JsonObject();
         for (String tool : NATIVE_TOOLS_TO_DENY) {
             permission.addProperty(tool, "deny");
         }
+        JsonObject strictAgent = new JsonObject();
+        strictAgent.addProperty("description", "IDE tools only, with an AgentBridge system prompt");
+        strictAgent.addProperty("mode", "primary");
+        strictAgent.addProperty("prompt", loadStrictAgentPrompt());
+        strictAgent.add("permission", permission.deepCopy());
+        JsonObject agents = new JsonObject();
+        agents.add(STRICT_AGENT, strictAgent);
+
         JsonObject config = new JsonObject();
         config.add("permission", permission);
+        config.add("agent", agents);
         return Map.of("OPENCODE_CONFIG_CONTENT", new Gson().toJson(config));
+    }
+
+    /**
+     * Reads the bundled system prompt for {@link #STRICT_AGENT}. Fails loudly when the resource is
+     * missing: silently starting the agent without its prompt would put OpenCode's own prompt
+     * back, which is exactly what this agent exists to avoid.
+     */
+    static String loadStrictAgentPrompt() {
+        try (java.io.InputStream in = OpenCodeClient.class.getResourceAsStream(STRICT_AGENT_PROMPT_RESOURCE)) {
+            if (in == null) {
+                throw new IllegalStateException("Bundled resource missing: " + STRICT_AGENT_PROMPT_RESOURCE);
+            }
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).strip();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Cannot read bundled resource " + STRICT_AGENT_PROMPT_RESOURCE, e);
+        }
+    }
+
+    /**
+     * Applies the selected agent to the new session. OpenCode starts every session in its own
+     * default agent ({@code build}) and only switches on {@code session/set_mode}, so without this
+     * the {@link #STRICT_AGENT} (or any agent chosen in the dropdown) would never be used.
+     * Waits for the switch so the first prompt cannot overtake it.
+     */
+    @Override
+    protected void onSessionCreated(String sessionId) {
+        String slug = getCurrentAgentSlug();
+        if (isSelectableMode(slug) && !slug.equals(getCurrentModeSlug())) {
+            awaitSetMode(sessionId, slug);
+        }
+    }
+
+    /**
+     * Pushes an agent selection made while a session is live. Without a session the selection is
+     * applied by {@link #onSessionCreated} instead. Does not wait for the reply: this runs from the
+     * UI selection handler and must not block it.
+     */
+    @Override
+    protected void onAgentSlugChanged(@Nullable String slug) {
+        String sessionId = getActiveSessionId();
+        if (isSelectableMode(slug) && sessionId != null && !sessionId.isBlank()) {
+            sendSetMode(sessionId, slug);
+        }
+    }
+
+    /**
+     * Only primary agents advertised in {@code session/new} are valid {@code session/set_mode}
+     * targets; OpenCode rejects subagents (general, explore, scout) and unknown names.
+     */
+    private boolean isSelectableMode(@Nullable String slug) {
+        return slug != null && !slug.isBlank()
+            && getAvailableModes().stream().anyMatch(m -> slug.equals(m.slug()));
+    }
+
+    private void awaitSetMode(String sessionId, String modeId) {
+        try {
+            sendSetMode(sessionId, modeId).join();
+        } catch (java.util.concurrent.CompletionException ignored) {
+            // Already logged by sendSetMode; the agent stays in the mode it started with.
+        }
     }
 
     @Override

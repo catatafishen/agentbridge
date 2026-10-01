@@ -1310,6 +1310,36 @@ public abstract class AcpClient extends AbstractClient {
         // no-op by default
     }
 
+    /**
+     * Builds the standard ACP {@code session/set_mode} request params. The field name is
+     * {@code modeId}. Pure for unit testing.
+     */
+    static JsonObject buildSetModeParams(String sessionId, String modeId) {
+        JsonObject params = new JsonObject();
+        params.addProperty("sessionId", sessionId);
+        params.addProperty("modeId", modeId);
+        return params;
+    }
+
+    /**
+     * Asks the agent to switch {@code sessionId} to the ACP mode {@code modeId} via
+     * {@code session/set_mode}. Only modes the agent advertised in {@code session/new} are valid;
+     * callers must check that first. A failure is logged, because the agent keeps running in its
+     * previous mode. Returns the in-flight request so callers that must not prompt before the
+     * switch has landed can wait for it; others may ignore it.
+     */
+    protected final CompletableFuture<JsonElement> sendSetMode(String sessionId, String modeId) {
+        return transport.sendRequest("session/set_mode", buildSetModeParams(sessionId, modeId))
+            .orTimeout(10, TimeUnit.SECONDS)
+            .whenComplete((result, ex) -> {
+                if (ex != null) {
+                    LOG.warn(displayName() + ": session/set_mode failed for " + modeId + ": " + ex.getMessage());
+                } else {
+                    LOG.info(displayName() + ": session/set_mode " + modeId + " applied for session " + sessionId);
+                }
+            });
+    }
+
     @Override
     public final List<AbstractClient.AgentConfigOption> getAvailableConfigOptions() {
         // Defensive snapshot — see getAvailableModels() for rationale.

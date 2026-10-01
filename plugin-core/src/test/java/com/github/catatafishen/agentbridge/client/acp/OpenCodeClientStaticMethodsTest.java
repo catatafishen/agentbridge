@@ -135,19 +135,97 @@ class OpenCodeClientStaticMethodsTest {
     class BuiltInAgents {
 
         @Test
-        @DisplayName("returns OpenCode's 5 native agents in display order")
+        @DisplayName("lists the AgentBridge agent first, then OpenCode's 5 native agents")
         void returnsNativeAgents() {
             var agents = OpenCodeClient.builtInAgents();
 
-            assertEquals(5, agents.size());
-            assertEquals("build", agents.get(0).slug());
-            assertEquals("plan", agents.get(1).slug());
-            assertEquals("general", agents.get(2).slug());
-            assertEquals("explore", agents.get(3).slug());
-            assertEquals("scout", agents.get(4).slug());
-            assertEquals("Build", agents.get(0).name());
-            assertEquals("Plan", agents.get(1).name());
-            assertEquals("Scout", agents.get(4).name());
+            assertEquals(6, agents.size());
+            assertEquals("agentbridge", agents.get(0).slug());
+            assertEquals("build", agents.get(1).slug());
+            assertEquals("plan", agents.get(2).slug());
+            assertEquals("general", agents.get(3).slug());
+            assertEquals("explore", agents.get(4).slug());
+            assertEquals("scout", agents.get(5).slug());
+            assertEquals("AgentBridge", agents.get(0).name());
+            assertEquals("Build", agents.get(1).name());
+            assertEquals("Plan", agents.get(2).name());
+            assertEquals("Scout", agents.get(5).name());
+        }
+
+        @Test
+        @DisplayName("the strict agent slug matches the constant used for the config and default")
+        void strictAgentSlug() {
+            assertEquals(OpenCodeClient.STRICT_AGENT, OpenCodeClient.builtInAgents().get(0).slug());
+        }
+    }
+
+    // ── strict agent definition ──────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("strict agent config")
+    class StrictAgentConfig {
+
+        private JsonObject strictAgent() {
+            JsonObject config = new Gson().fromJson(
+                OpenCodeClient.buildPermissionConfig().get("OPENCODE_CONFIG_CONTENT"), JsonObject.class);
+            return config.getAsJsonObject("agent").getAsJsonObject(OpenCodeClient.STRICT_AGENT);
+        }
+
+        @Test
+        @DisplayName("defines a primary agent, because OpenCode only accepts primary agents as session modes")
+        void isPrimary() {
+            assertEquals("primary", strictAgent().get("mode").getAsString());
+        }
+
+        @Test
+        @DisplayName("carries the bundled system prompt, replacing OpenCode's provider prompt")
+        void hasPrompt() {
+            String prompt = strictAgent().get("prompt").getAsString();
+
+            assertEquals(OpenCodeClient.loadStrictAgentPrompt(), prompt);
+            assertFalse(prompt.isBlank());
+        }
+
+        @Test
+        @DisplayName("denies every native tool at the agent level too")
+        void deniesNativeTools() {
+            JsonObject permission = strictAgent().getAsJsonObject("permission");
+
+            for (String tool : OpenCodeClient.nativeToolsToDeny()) {
+                assertEquals("deny", permission.get(tool).getAsString(), "Tool not denied: " + tool);
+            }
+        }
+
+        @Test
+        @DisplayName("prompt names the IDE tools and does not point the model at native ones")
+        void promptMatchesAvailableTools() {
+            String prompt = OpenCodeClient.loadStrictAgentPrompt();
+
+            assertTrue(prompt.contains("read_file"));
+            assertTrue(prompt.contains("search_text"));
+            assertTrue(prompt.contains("edit_text"));
+            for (String nativeTool : new String[]{"`bash`", "`grep`", "`glob`", "`todowrite`"}) {
+                assertFalse(prompt.contains(nativeTool), "Prompt must not recommend " + nativeTool);
+            }
+        }
+
+        @Test
+        @DisplayName("prompt is repository-agnostic: no gh, bot identity or repo scripts")
+        void promptIsProductFacing() {
+            String prompt = OpenCodeClient.loadStrictAgentPrompt();
+
+            assertFalse(prompt.contains("`gh "));
+            assertFalse(prompt.toLowerCase().contains("bot identity"));
+            assertFalse(prompt.contains("enforce-"));
+        }
+
+        @Test
+        @DisplayName("does not set default_agent (selection is applied with session/set_mode)")
+        void noDefaultAgent() {
+            JsonObject config = new Gson().fromJson(
+                OpenCodeClient.buildPermissionConfig().get("OPENCODE_CONFIG_CONTENT"), JsonObject.class);
+
+            assertFalse(config.has("default_agent"));
         }
     }
 
