@@ -37,6 +37,16 @@ final class GenericAgentUiSettings implements AgentUiSettings {
     }
 
     @Override
+    public @NotNull String getSelectedMode() {
+        return settings.getSelectedMode();
+    }
+
+    @Override
+    public void setSelectedMode(@NotNull String modeSlug) {
+        settings.setSelectedMode(modeSlug);
+    }
+
+    @Override
     public @NotNull String getSessionOptionValue(@NotNull String optionKey) {
         return settings.getSessionOptionValue(optionKey);
     }

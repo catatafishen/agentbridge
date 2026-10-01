@@ -5,11 +5,13 @@ import com.google.gson.JsonObject;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -29,6 +31,8 @@ import java.util.concurrent.TimeoutException;
  * a terminal attached.
  */
 public final class HermesClient extends AcpClient {
+
+    private static final Logger LOG = Logger.getInstance(HermesClient.class);
 
     public static final String AGENT_ID = "hermes";
     /**
@@ -108,6 +112,75 @@ public final class HermesClient extends AcpClient {
         String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
         markSessionHistoryLoadedInternally();
         return result;
+    }
+
+    /**
+     * Applies an explicit mode selection made while a session is live via {@code session/set_mode}.
+     * Also applies selections made before the session existed once it is created. No-op when there
+     * is no active session, or when the slug is not one of the modes Hermes advertised (guards
+     * against sending an invalid mode the agent would reject). A selection equal to Hermes's own
+     * reported {@code currentModeId} sends nothing: the session already runs that mode.
+     */
+    @Override
+    protected void onModeSlugChanged(@org.jetbrains.annotations.Nullable String slug) {
+        if (slug == null || slug.isBlank()) {
+            return;
+        }
+        if (getAvailableModes().stream().noneMatch(m -> slug.equals(m.slug()))) {
+            LOG.warn(displayName() + ": ignoring mode selection '" + slug + "': not advertised by the agent");
+            return;
+        }
+        if (slug.equals(getAgentReportedModeSlug())) {
+            return;
+        }
+        String sessionId = getActiveSessionId();
+        if (sessionId != null && !sessionId.isBlank()) {
+            applyHermesMode(sessionId, slug);
+        }
+    }
+
+    /**
+     * Applies a mode selection made before the session existed (persisted in settings) once the
+     * session is created. Hermes starts in its own reported {@code currentModeId}; a matching
+     * selection sends nothing, and an unknown slug would be rejected.
+     */
+    @Override
+    protected void onSessionCreated(String sessionId) {
+        String slug = getCurrentModeSlug();
+        if (slug == null || slug.isBlank()) {
+            return;
+        }
+        if (getAvailableModes().stream().noneMatch(m -> slug.equals(m.slug()))) {
+            LOG.warn(displayName() + ": ignoring persisted mode '" + slug + "': not advertised by the agent");
+            return;
+        }
+        if (slug.equals(getAgentReportedModeSlug())) {
+            return;
+        }
+        applyHermesMode(sessionId, slug);
+    }
+
+    /**
+     * Builds the {@code session/set_mode} request params for the given session and mode.
+     * Standard ACP field name is {@code modeId}. Pure for unit testing.
+     */
+    static JsonObject buildSetModeParams(String sessionId, String modeId) {
+        JsonObject params = new JsonObject();
+        params.addProperty("sessionId", sessionId);
+        params.addProperty("modeId", modeId);
+        return params;
+    }
+
+    private void applyHermesMode(String sessionId, String modeId) {
+        transport.sendRequest("session/set_mode", buildSetModeParams(sessionId, modeId))
+            .orTimeout(10, TimeUnit.SECONDS)
+            .whenComplete((result, ex) -> {
+                if (ex != null) {
+                    LOG.warn(displayName() + ": session/set_mode failed for " + modeId + ": " + ex.getMessage());
+                } else {
+                    LOG.info(displayName() + ": session/set_mode " + modeId + " applied for session " + sessionId);
+                }
+            });
     }
 
     /**

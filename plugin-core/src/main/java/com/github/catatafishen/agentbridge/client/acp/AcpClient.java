@@ -440,6 +440,7 @@ public abstract class AcpClient extends AbstractClient {
             availableModes.clear();
             availableCommandNames.clear();
             currentModeSlug = null;
+            agentReportedModeSlug = null;
             currentModelId = null;
             currentAgentSlug = null;
             availableConfigOptions.clear();
@@ -698,6 +699,7 @@ public abstract class AcpClient extends AbstractClient {
     private void updateModes(NewSessionResponse response) {
         availableModes.clear();
         availableModes.addAll(mapModesStatic(response.modes()));
+        agentReportedModeSlug = response.currentModeId();
         if (currentModeSlug == null) {
             String reportedMode = response.currentModeId();
             currentModeSlug = reportedMode != null ? reportedMode : defaultModeSlug();
@@ -705,6 +707,21 @@ public abstract class AcpClient extends AbstractClient {
         if (currentAgentSlug == null) {
             currentAgentSlug = defaultAgentSlug();
         }
+    }
+
+    /**
+     * The mode the agent itself reported as current in its last {@code session/new} response,
+     * or null when it did not report one. Distinguishes the agent's own starting mode from a
+     * user selection stored in {@code currentModeSlug}.
+     */
+    private @Nullable String agentReportedModeSlug = null;
+
+    /**
+     * Returns the mode the agent itself reported as current, or null. Lets subclasses avoid
+     * sending a redundant {@code session/set_mode} that matches the mode the session already runs.
+     */
+    protected final @Nullable String getAgentReportedModeSlug() {
+        return agentReportedModeSlug;
     }
 
     /**
@@ -1287,6 +1304,19 @@ public abstract class AcpClient extends AbstractClient {
     @Override
     public final void setCurrentModeSlug(@Nullable String slug) {
         currentModeSlug = slug;
+        onModeSlugChanged(slug);
+    }
+
+    /**
+     * Hook invoked after the current mode slug changes. Default is a no-op. Subclasses whose
+     * agent applies mode changes to a live session (e.g. Hermes via {@code session/set_mode})
+     * override this to push the change to the running agent process. {@code #setCurrentModeSlug}
+     * is {@code final}, so this hook is the extension point for reacting to selection changes.
+     * Not invoked when the slug is initialized from a {@code session/new} response (that sets the
+     * field directly), only on explicit user selection.
+     */
+    protected void onModeSlugChanged(@Nullable String slug) {
+        // no-op by default
     }
 
     @Override
