@@ -10,7 +10,9 @@ import com.google.gson.JsonParser
 data class CopilotModel(
     val id: String,
     val name: String,
-    val supportsToolCalls: Boolean,
+    /** Null means the catalog did not advertise this capability; false means it explicitly denied it. */
+    val supportsToolCalls: Boolean?,
+    val modelType: String?,
     val contextWindow: Long?,
     val maxOutputTokens: Long?,
     /** Endpoints the model is served on, e.g. `/chat/completions`, `/responses`, `/v1/messages`. */
@@ -18,7 +20,10 @@ data class CopilotModel(
 ) {
     /** Copilot lists endpoints per model; an absent list means the classic chat-completions API. */
     val usesChatCompletions: Boolean
-        get() = endpoints.isEmpty() || CHAT_COMPLETIONS in endpoints
+        get() = (endpoints.isEmpty() || CHAT_COMPLETIONS in endpoints)
+
+    val isChatModel: Boolean
+        get() = (modelType == null || modelType == "chat")
 
     companion object {
         const val CHAT_COMPLETIONS = "/chat/completions"
@@ -29,8 +34,8 @@ data class CopilotModel(
 object CopilotModels {
 
     /**
-     * Parses the catalog, keeping only models the user can pick in Copilot's own model picker. A model the
-     * account may not use (policy disabled) is dropped here rather than failing on the first prompt.
+     * Parses the catalog. Picker visibility is presentation metadata, not an invocation guarantee: some subscriptions
+     * return usable chat models with `model_picker_enabled: false`. Policy-disabled entries are still dropped.
      */
     @JvmStatic
     fun parse(json: String): List<CopilotModel> {
@@ -43,24 +48,29 @@ object CopilotModels {
         return data.mapNotNull { it.takeIf(JsonElement::isJsonObject)?.asJsonObject?.let(::parseModel) }
     }
 
-    /** Models this agent can use: tool-capable and served by the chat-completions endpoint. */
+    /**
+     * Models this agent can use. The endpoint and chat model type are authoritative. Copilot sometimes omits
+     * tool capability metadata, so only an explicit `tool_calls: false` excludes a model.
+     */
     @JvmStatic
     fun usable(models: List<CopilotModel>): List<CopilotModel> =
-        models.filter { it.supportsToolCalls && it.usesChatCompletions }
+        models.filter { model ->
+            model.isChatModel && model.supportsToolCalls != false && model.usesChatCompletions
+        }
 
     private fun parseModel(o: JsonObject): CopilotModel? {
         val id = o.string("id") ?: return null
-        if (o.bool("model_picker_enabled") == false) return null
         if (o.obj("policy")?.string("state") == "disabled") return null
         val capabilities = o.obj("capabilities")
         val limits = capabilities?.obj("limits")
         return CopilotModel(
             id = id,
             name = o.string("name") ?: id,
-            supportsToolCalls = capabilities?.obj("supports")?.bool("tool_calls") ?: false,
+            supportsToolCalls = capabilities?.obj("supports")?.bool("tool_calls"),
+            modelType = capabilities?.string("type"),
             contextWindow = limits?.long("max_context_window_tokens") ?: limits?.long("max_prompt_tokens"),
             maxOutputTokens = limits?.long("max_output_tokens"),
-            endpoints = o.get("supported_endpoints")?.takeIf { it.isJsonArray }?.asJsonArray
+            endpoints = o["supported_endpoints"]?.takeIf { it.isJsonArray }?.asJsonArray
                 ?.mapNotNull { e -> e.takeIf { it.isJsonPrimitive }?.asString }.orEmpty(),
         )
     }

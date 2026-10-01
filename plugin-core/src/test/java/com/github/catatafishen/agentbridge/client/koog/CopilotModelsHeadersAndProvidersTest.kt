@@ -14,24 +14,43 @@ class CopilotModelsHeadersAndProvidersTest {
     inner class Models {
         private val catalog = """{"data":[
             {"id":"gpt-4.1","name":"GPT-4.1","model_picker_enabled":true,
-             "capabilities":{"supports":{"tool_calls":true},"limits":{"max_context_window_tokens":128000,"max_output_tokens":16384}},
+             "capabilities":{"type":"chat","supports":{"tool_calls":true},"limits":{"max_context_window_tokens":128000,"max_output_tokens":16384}},
              "supported_endpoints":["/chat/completions"]},
             {"id":"claude-sonnet","name":"Claude Sonnet","model_picker_enabled":true,
-             "capabilities":{"supports":{"tool_calls":true},"limits":{"max_prompt_tokens":90000}},
+             "capabilities":{"type":"chat","supports":{"tool_calls":true},"limits":{"max_prompt_tokens":90000}},
              "supported_endpoints":["/v1/messages"]},
             {"id":"gpt-5-codex","name":"Codex","model_picker_enabled":true,
-             "capabilities":{"supports":{"tool_calls":true}},"supported_endpoints":["/responses"]},
-            {"id":"embedding","name":"Embed","model_picker_enabled":false,"capabilities":{"supports":{}}},
-            {"id":"no-tools","name":"No tools","model_picker_enabled":true,"capabilities":{"supports":{"tool_calls":false}}},
+             "capabilities":{"type":"chat","supports":{"tool_calls":true}},"supported_endpoints":["/responses"]},
+            {"id":"hidden-chat","name":"Hidden Chat","model_picker_enabled":false,
+             "capabilities":{"type":"chat","supports":{"tool_calls":true}},"supported_endpoints":["/chat/completions"]},
+            {"id":"unknown-tools","name":"Unknown Tools","model_picker_enabled":false,
+             "capabilities":{"type":"chat","supports":{}},"supported_endpoints":["/chat/completions"]},
+            {"id":"embedding","name":"Embed","model_picker_enabled":false,"capabilities":{"type":"embeddings","supports":{}}},
+            {"id":"no-tools","name":"No tools","model_picker_enabled":true,
+             "capabilities":{"type":"chat","supports":{"tool_calls":false}}},
+            {"id":"completion","name":"Completion","model_picker_enabled":false,
+             "capabilities":{"type":"completion","supports":{"tool_calls":true}}},
             {"id":"blocked","name":"Blocked","model_picker_enabled":true,"policy":{"state":"disabled"},
-             "capabilities":{"supports":{"tool_calls":true}}},
+             "capabilities":{"type":"chat","supports":{"tool_calls":true}}},
             {"name":"nameless id is skipped"}]}"""
 
         @Test
-        fun `models hidden from the picker or disabled by policy are dropped at parse time`() {
+        fun `the catalog retains picker-hidden models but drops disabled policy entries`() {
             val ids = CopilotModels.parse(catalog).map { it.id }
 
-            assertEquals(listOf("gpt-4.1", "claude-sonnet", "gpt-5-codex", "no-tools"), ids)
+            assertEquals(
+                listOf(
+                    "gpt-4.1",
+                    "claude-sonnet",
+                    "gpt-5-codex",
+                    "hidden-chat",
+                    "unknown-tools",
+                    "embedding",
+                    "no-tools",
+                    "completion",
+                ),
+                ids,
+            )
         }
 
         @Test
@@ -49,16 +68,16 @@ class CopilotModelsHeadersAndProvidersTest {
         }
 
         @Test
-        fun `usable keeps only tool capable chat completions models`() {
+        fun `usable keeps compatible chat completions models even when picker or tool metadata is absent`() {
             val ids = CopilotModels.usable(CopilotModels.parse(catalog)).map { it.id }
 
-            // claude-sonnet is served on /v1/messages and gpt-5-codex on /responses; no-tools cannot call tools.
-            assertEquals(listOf("gpt-4.1"), ids)
+            // Other endpoints, non-chat types, and explicitly non-tool models are excluded.
+            assertEquals(listOf("gpt-4.1", "hidden-chat", "unknown-tools"), ids)
         }
 
         @Test
         fun `a model without an endpoint list is assumed to use chat completions`() {
-            val model = CopilotModel("m", "M", true, null, null, emptyList())
+            val model = CopilotModel("m", "M", true, "chat", null, null, emptyList())
 
             assertTrue(model.usesChatCompletions)
         }
