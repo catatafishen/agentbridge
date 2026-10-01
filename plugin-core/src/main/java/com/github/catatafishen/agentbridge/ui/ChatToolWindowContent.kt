@@ -2182,6 +2182,7 @@ class ChatToolWindowContent(
             val component = inputEvent.source as? Component ?: return
             val group = DefaultActionGroup()
             addAgentSelectionSection(group)
+            addModeSelectionSection(group)
             addSessionOptionsSection(group)
             if (group.childrenCount == 0) return
             val popup = JBPopupFactory.getInstance().createActionGroupPopup(
@@ -2214,6 +2215,62 @@ class ChatToolWindowContent(
 
                 override fun actionPerformed(e: AnActionEvent) {
                     if (agent.slug() != currentSlug) restartWithNewAgent(agent.slug())
+                }
+            })
+        }
+        return true
+    }
+
+    /**
+     * Adds the mode section for agents that advertise ACP session modes (e.g. Hermes edit-approval
+     * policies). Selection persists in settings and is applied to the live session via
+     * [com.github.catatafishen.agentbridge.client.AbstractClient.setCurrentModeSlug], whose
+     * change hook pushes it to the agent.
+     */
+    private fun addModeSelectionSection(group: DefaultActionGroup): Boolean {
+        val modes = try {
+            agentManager.client.availableModes
+        } catch (_: Exception) {
+            emptyList()
+        }
+        // Agents that surface their modes as agents (e.g. Kiro v3) already list them in
+        // the Agent section; a second copy here would be a duplicate menu section.
+        val agentSlugs = try {
+            agentManager.client.availableAgents.map { it.slug() }.toSet()
+        } catch (_: Exception) {
+            emptySet<String>()
+        }
+        val unlisted = modes.filter { it.slug() !in agentSlugs }
+        if (unlisted.isEmpty()) return false
+        group.addSeparator("Mode")
+        val currentSlug = try {
+            agentManager.client.currentModeSlug
+        } catch (_: Exception) {
+            null
+        }
+        unlisted.forEach { mode ->
+            group.add(object : AnAction(mode.name()) {
+                override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                override fun update(e: AnActionEvent) {
+                    e.presentation.icon = if (mode.slug() == currentSlug) AllIcons.Actions.Checked else null
+                }
+
+                override fun actionPerformed(e: AnActionEvent) {
+                    // Re-read: the snapshot from popup-build time may be stale if the
+                    // mode changed while the popup was open.
+                    val liveSlug = try {
+                        agentManager.client.currentModeSlug
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (mode.slug() == liveSlug) return
+                    agentManager.settings.setSelectedMode(mode.slug())
+                    try {
+                        agentManager.client.setCurrentModeSlug(mode.slug())
+                        statusBanner?.showInfo("Mode: ${mode.name()}")
+                    } catch (ex: Exception) {
+                        LOG.warn("Failed to set mode ${mode.slug()}", ex)
+                    }
                 }
             })
         }

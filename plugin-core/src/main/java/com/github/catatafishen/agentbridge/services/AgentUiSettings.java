@@ -31,6 +31,17 @@ public interface AgentUiSettings {
 
     void setSelectedAgent(@NotNull String agentName);
 
+    // ── Mode selection ──────────────────────────────────────────────────────
+
+    /**
+     * Returns the selected mode slug (e.g. an ACP session mode), or empty string for the
+     * agent's own default.
+     */
+    @NotNull
+    String getSelectedMode();
+
+    void setSelectedMode(@NotNull String modeSlug);
+
     // ── Session options ──────────────────────────────────────────────────────
 
     /**

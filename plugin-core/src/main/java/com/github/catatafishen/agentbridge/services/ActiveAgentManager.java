@@ -372,6 +372,14 @@ public final class ActiveAgentManager implements Disposable {
                 acpClient.setCurrentAgentSlug(savedAgent);
             }
 
+            // Apply persisted mode selection (e.g. an ACP session mode like an edit-approval
+            // policy). setCurrentModeSlug fires onModeSlugChanged, but there is no session yet,
+            // so the change is deferred to onSessionCreated.
+            String savedMode = getSettings().getSelectedMode();
+            if (!savedMode.isEmpty()) {
+                acpClient.setCurrentModeSlug(savedMode);
+            }
+
             acpClient.start();
             started = true;
 

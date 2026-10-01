@@ -84,6 +84,21 @@ public final class GenericSettings {
         getProperties().setValue(key("selectedAgent"), agentName, "");
     }
 
+    // ── Mode selection ───────────────────────────────────────────────────────
+
+    /**
+     * Returns the persisted mode slug (e.g. an ACP session mode), or empty string for the
+     * agent's own default.
+     */
+    @NotNull
+    public String getSelectedMode() {
+        return getProperties().getValue(key("sessionMode"), "");
+    }
+
+    public void setSelectedMode(@NotNull String modeSlug) {
+        getProperties().setValue(key("sessionMode"), modeSlug, "");
+    }
+
     // ── Session options ──────────────────────────────────────────────────────
 
     /**
