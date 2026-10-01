@@ -143,6 +143,28 @@ Copies of the files were read directly (not via a summarizer).
   call) or a wrapping client. ❓ Not tried.
 - Token storage must use IntelliJ `PasswordSafe`, never a file the plugin reads from another tool.
 
+### Alternative: build on OpenCode instead of embedding a harness
+
+OpenCode is itself the harness; Copilot is only its model provider, so this is **not** a stacked-harness setup.
+
+- ✅ **Own system prompt works.** In `packages/opencode/src/session/llm/request.ts:60`:
+  `input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)`. An agent with its own prompt
+  replaces OpenCode's model-specific base prompt (`anthropic.txt`, `gpt.txt`, `copilot-gpt-5.txt`, ...).
+- ✅ **Still appended by OpenCode** (`session/prompt.ts` ~1257-1269): an environment block, instruction files
+  (`AGENTS.md`-style project instructions), MCP server instructions, the skills list, and a JSON-schema prompt when
+  structured output is requested. These are small and mostly project-supplied, but they are not controllable from the
+  agent definition. ❓ Exact environment block content not read.
+- 🔶 Built-in tools can be denied with `permission: {"*": "deny", ...}` (already used by our bundled OpenCode agents).
+  ❓ Not re-verified in this spike that this fully removes every built-in tool from the request.
+- ✅ Copilot auth, `/models` discovery, per-model endpoint choice and the required headers are handled by OpenCode, and
+  GitHub's formal partnership covers OpenCode specifically (see terms below). This removes the need for our own Copilot
+  provider and the terms-of-service risk of building one.
+- ⚠️ Cost: a Node/Bun process, ACP semantics as today (permission requests, session handling), and OpenCode's release
+  cadence. It does not give the in-process tool calls or the single permission layer of a built-in harness.
+- Verdict: **the cheapest path to "Copilot subscription with our own prompt and tools"**, and it already exists as the
+  OpenCode client. The remaining work is a stricter bundled agent (own prompt, built-ins denied) plus the #1127
+  permission settings.
+
 ### Terms of service ❓ (blocking)
 
 - ✅ GitHub's changelog of 2026-01-16, "GitHub Copilot now supports OpenCode", states that GitHub is *officially
