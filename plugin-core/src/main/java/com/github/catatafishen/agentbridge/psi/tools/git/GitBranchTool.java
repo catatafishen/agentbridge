@@ -102,12 +102,22 @@ public final class GitBranchTool extends GitTool {
         String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
             ? args.get(PARAM_BASE).getAsString()
             : null;
-        String result = base != null
-            ? runGitIn(setupError, CMD_CHECKOUT, "-b", name, base)
-            : runGitIn(setupError, CMD_CHECKOUT, "-b", name);
+        String result = runGitIn(setupError, createBranchArgs(name, base));
         if (result.startsWith(ERR_PREFIX)) return result;
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
         return "Created and switched to branch '" + name + "'\n" + getBranchContextIn(setupError);
+    }
+
+    /**
+     * Builds the {@code git checkout -b} arguments. {@code --no-track} prevents git's default
+     * {@code branch.autoSetupMerge} from making a new branch track its remote start point (e.g.
+     * {@code origin/master}), which would make a later push target that branch instead of a
+     * same-named one. The first push with {@code set_upstream} sets the correct upstream.
+     */
+    static String[] createBranchArgs(@NotNull String name, @Nullable String base) {
+        return base != null
+            ? new String[]{CMD_CHECKOUT, "--no-track", "-b", name, base}
+            : new String[]{CMD_CHECKOUT, "-b", name};
     }
 
     private String switchBranch(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
