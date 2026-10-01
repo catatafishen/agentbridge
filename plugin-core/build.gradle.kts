@@ -95,6 +95,29 @@ dependencies {
     // SQLite JDBC (used by OpenCode session import)
     implementation("org.xerial:sqlite-jdbc:${providers.gradleProperty("sqliteJdbcVersion").get()}")
 
+    // Koog (JetBrains): provider clients, prompt/message model and streaming for the built-in "Koog" agent.
+    // Only the executor/client modules are used (not agents-core, which drags in Ktor server artifacts).
+    // kotlinx-coroutines MUST be excluded: the platform ships its own copy and a second one in the plugin
+    // classloader fails with "LinkageError: loader constraint violation" on kotlinx.coroutines.CoroutineScope.
+    // Everything else (kotlinx-serialization 1.10, Jackson, kotlin-logging) loads child-first from the plugin
+    // and coexists with the platform's older copies. Koog 1.3.0 needs a Kotlin stdlib >= 2.3 at runtime
+    // (IDE 2026.1+); older IDEs do not register the agent (see KoogSupport).
+    // See docs/KOOG-HARNESS-INVESTIGATION.md.
+    val koogVersion = providers.gradleProperty("koogVersion").get()
+    listOf(
+        "ai.koog:prompt-executor-openai-client:$koogVersion",
+        "ai.koog:prompt-executor-model:$koogVersion",
+        // JDK java.net.http transport, passed explicitly so Koog never needs ServiceLoader discovery or Ktor engines.
+        "ai.koog:http-client-java:$koogVersion",
+    ).forEach { coordinate ->
+        implementation(coordinate) {
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk9")
+        }
+    }
+
     // IntelliJ's bundled Lucene (used by MemoryStore for vector search).
     // In IJ 2025.x the JAR is in lib/modules/ and auto-exposed by the Gradle plugin.
     // In IJ 2026.x+ it moved to lib/ and must be added explicitly as compileOnly.

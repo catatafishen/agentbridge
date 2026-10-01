@@ -75,6 +75,10 @@ users decide whether to try it.
 | **Hermes Agent**               | ACP (stdin/stdout)         | Configurable (multi-provider) |
 | **Mistral Vibe**               | ACP (stdin/stdout)         | Mistral API key               |
 | **Goose**                      | ACP (stdin/stdout)         | Configurable (multi-provider) |
+| **Built-in Agent (Koog)**      | In-process (experimental)  | Copilot sign-in or API key    |
+
+The built-in Koog agent has no external CLI: it calls the model directly and needs IntelliJ 2026.1 or newer
+([setup](docs/getting-started/koog.md)).
 
 Switch between agents with one click. Each agent has its own connection settings and custom instructions.
 AgentBridge MCP tool permissions are shared project-wide so the same IntelliJ tool policy applies after switching agents.

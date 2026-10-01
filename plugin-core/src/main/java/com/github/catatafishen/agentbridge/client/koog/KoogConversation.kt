@@ -1,0 +1,256 @@
+package com.github.catatafishen.agentbridge.client.koog
+
+import ai.koog.agents.core.tools.ToolDescriptor
+import ai.koog.prompt.Prompt
+import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.message.Message
+import ai.koog.prompt.message.MessagePart
+import ai.koog.prompt.message.RequestMetaInfo
+import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.utils.time.KoogClock
+import com.github.catatafishen.agentbridge.model.ContentBlock
+import com.github.catatafishen.agentbridge.model.SessionUpdate
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.runInterruptible
+import java.util.UUID
+
+/** Streams one model response. A seam over Koog's [PromptExecutor] so the loop is testable without a network. */
+fun interface ModelStreamer {
+    fun stream(prompt: Prompt, tools: List<ToolDescriptor>): Flow<StreamFrame>
+}
+
+/** [ModelStreamer] backed by a Koog executor and a fixed model. */
+class ExecutorStreamer(private val executor: PromptExecutor, private val model: LLModel) : ModelStreamer {
+    override fun stream(prompt: Prompt, tools: List<ToolDescriptor>): Flow<StreamFrame> =
+        executor.executeStreaming(prompt, model, tools)
+}
+
+/** How a turn ended and what it cost, in the vocabulary of the rest of the plugin (ACP stop reasons). */
+data class TurnResult(val stopReason: String, val inputTokens: Long?, val outputTokens: Long?)
+
+/**
+ * One chat conversation: history plus the agent loop.
+ *
+ * Each turn sends the history to the model, streams the answer to the UI, runs any tool calls through
+ * the [ToolBackend] and repeats until the model answers without calling a tool. The loop is ours, built
+ * on Koog's provider clients and message model, because it must (a) keep history across turns,
+ * (b) stream into the chat as it arrives, (c) be cancellable from the Stop button, and (d) send every
+ * tool call through AgentBridge's existing permission path. Koog's agent graph offers none of that
+ * more simply.
+ *
+ * Not thread-safe: one turn at a time per conversation.
+ */
+class KoogConversation(
+    private val streamer: ModelStreamer,
+    private val tools: ToolBackend,
+    private val systemPrompt: () -> String,
+    private val maxSteps: Int = DEFAULT_MAX_STEPS,
+    private val clock: KoogClock = KoogClock.System,
+) {
+    private val history = mutableListOf<Message>()
+
+    val messageCount: Int get() = history.size
+
+    suspend fun runTurn(user: List<ContentBlock>, onUpdate: (SessionUpdate) -> Unit): TurnResult {
+        history += Message.User(PromptText.flatten(user), RequestMetaInfo.create(clock))
+        val specs = tools.listTools()
+        val descriptors = specs.map(KoogToolSchemas::toDescriptor)
+        val specsByName = specs.associateBy { it.name }
+        val system = systemPrompt()
+
+        var inputTokens = 0L
+        var outputTokens = 0L
+        var sawUsage = false
+
+        repeat(maxSteps) {
+            currentCoroutineContext().ensureActive()
+            val request = prompt("koog") {
+                system(system)
+                messages(history.toList())
+            }
+            val frames = mutableListOf<StreamFrame>()
+            streamer.stream(request, descriptors).collect { frame ->
+                frames += frame
+                emitStreamingUpdate(frame, onUpdate)
+            }
+            val assistant = assemble(frames)
+            assistant.metaInfo.inputTokensCount?.let { inputTokens += it; sawUsage = true }
+            assistant.metaInfo.outputTokensCount?.let { outputTokens += it; sawUsage = true }
+
+            val calls = assistant.parts.filterIsInstance<MessagePart.Tool.Call>()
+            if (calls.isEmpty()) {
+                history += assistant
+                return result(stopReasonFor(assistant.finishReason), sawUsage, inputTokens, outputTokens, onUpdate)
+            }
+            val results = calls.map { call -> executeCall(call, specsByName[call.tool], onUpdate) }
+            // Recorded only now, together with the results. If the user stops the turn while a tool runs,
+            // history must not keep tool calls that have no results: providers reject such a history, which
+            // would break every later turn of the session.
+            history += withValidArguments(assistant)
+            history += Message.User(results, RequestMetaInfo.create(clock))
+        }
+        return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, onUpdate)
+    }
+
+    private fun emitStreamingUpdate(frame: StreamFrame, onUpdate: (SessionUpdate) -> Unit) {
+        when (frame) {
+            is StreamFrame.TextDelta ->
+                if (frame.text.isNotEmpty()) onUpdate(SessionUpdate.AgentMessageChunk(listOf(ContentBlock.Text(frame.text))))
+
+            is StreamFrame.ReasoningDelta ->
+                frame.text?.takeIf { it.isNotEmpty() }
+                    ?.let { onUpdate(SessionUpdate.AgentThoughtChunk(listOf(ContentBlock.Thinking(it)))) }
+
+            else -> Unit
+        }
+    }
+
+    private suspend fun executeCall(
+        call: MessagePart.Tool.Call,
+        spec: McpToolSpec?,
+        onUpdate: (SessionUpdate) -> Unit,
+    ): MessagePart.Tool.Result {
+        val callId = call.id ?: "koog-" + UUID.randomUUID()
+        val kind = SessionUpdate.ToolKind.fromString(spec?.kind)
+        onUpdate(
+            SessionUpdate.ToolCall(
+                callId, spec?.displayName ?: call.tool, call.tool, kind,
+                call.args.takeIf { it.isNotBlank() && it != "{}" }, null, null, null, null, null,
+            )
+        )
+        val arguments = parseArguments(call.args)
+        val outcome = if (arguments == null) {
+            ToolOutcome("Error: the arguments for ${call.tool} are not a valid JSON object: ${call.args}", true)
+        } else {
+            runInterruptible(Dispatchers.IO) { tools.call(call.tool, arguments, callId) }
+        }
+        onUpdate(
+            SessionUpdate.ToolCallUpdate(
+                callId,
+                if (outcome.isError) SessionUpdate.ToolCallStatus.FAILED else SessionUpdate.ToolCallStatus.COMPLETED,
+                outcome.text.takeIf { !outcome.isError },
+                outcome.text.takeIf { outcome.isError },
+                null, false, null, call.args.takeIf { it.isNotBlank() }, kind,
+            )
+        )
+        return MessagePart.Tool.Result(id = call.id, tool = call.tool, output = outcome.text, isError = outcome.isError)
+    }
+
+    private fun result(
+        stopReason: String,
+        sawUsage: Boolean,
+        input: Long,
+        output: Long,
+        onUpdate: (SessionUpdate) -> Unit,
+    ): TurnResult {
+        if (sawUsage) onUpdate(SessionUpdate.TurnUsage(input.toInt(), output.toInt(), null))
+        return TurnResult(stopReason, input.takeIf { sawUsage }, output.takeIf { sawUsage })
+    }
+
+    companion object {
+        const val DEFAULT_MAX_STEPS = 50
+        const val STOP_END_TURN = "end_turn"
+        const val STOP_MAX_TOKENS = "max_tokens"
+        const val STOP_MAX_STEPS = "max_turn_requests"
+
+        /** Maps a provider finish reason to an ACP stop reason. A cut-off answer is reported, not hidden. */
+        @JvmStatic
+        fun stopReasonFor(finishReason: String?): String = when (finishReason?.lowercase()) {
+            "length", "max_tokens" -> STOP_MAX_TOKENS
+            else -> STOP_END_TURN
+        }
+
+        /**
+         * Collects streamed frames into the assistant message. Equivalent to Koog's `toMessageResponse()`
+         * except that tool-call arguments are kept as the raw text the model sent: Koog's version parses
+         * them eagerly and throws on malformed JSON, which would abort the whole turn. Here a malformed
+         * call is answered with an error the model can learn from.
+         */
+        @JvmStatic
+        internal fun assemble(frames: List<StreamFrame>): Message.Assistant {
+            var end: StreamFrame.End? = null
+            val parts = frames.mapNotNull<StreamFrame, MessagePart.ResponsePart> { frame ->
+                when (frame) {
+                    is StreamFrame.ReasoningComplete -> MessagePart.Reasoning(
+                        id = frame.id, content = frame.content, summary = frame.summary, encrypted = frame.encrypted,
+                    )
+
+                    is StreamFrame.TextComplete -> MessagePart.Text(frame.text)
+                    is StreamFrame.ToolCallComplete -> MessagePart.Tool.Call(id = frame.id, tool = frame.name, args = frame.content)
+                    is StreamFrame.End -> {
+                        end = frame
+                        null
+                    }
+
+                    else -> null
+                }
+            }
+            return Message.Assistant(
+                parts = parts,
+                finishReason = end?.finishReason,
+                metaInfo = end?.metaInfo ?: ResponseMetaInfo.Empty,
+            )
+        }
+
+        /**
+         * Replaces tool-call arguments that are not a JSON object with `{}` before the message goes into
+         * the history. The history is sent to the provider on every request, and a provider rejects a
+         * request whose earlier tool call carries unparsable arguments. The model has already been told
+         * (in the tool result) what it got wrong.
+         */
+        @JvmStatic
+        internal fun withValidArguments(message: Message.Assistant): Message.Assistant {
+            if (message.parts.none { it is MessagePart.Tool.Call && parseArguments(it.args) == null }) return message
+            val fixed = message.parts.map { part ->
+                if (part is MessagePart.Tool.Call && parseArguments(part.args) == null) {
+                    MessagePart.Tool.Call(id = part.id, tool = part.tool, args = "{}")
+                } else {
+                    part
+                }
+            }
+            return message.copy(parts = fixed)
+        }
+
+        /**
+         * Parses model-produced tool arguments. Blank means "no arguments"; anything that is not a JSON
+         * object returns null so the model is told its call was malformed instead of the turn crashing.
+         */
+        @JvmStatic
+        fun parseArguments(raw: String): JsonObject? {
+            if (raw.isBlank()) return JsonObject()
+            return try {
+                JsonParser.parseString(raw).takeIf { it.isJsonObject }?.asJsonObject
+            } catch (_: com.google.gson.JsonParseException) {
+                null
+            }
+        }
+    }
+}
+
+/** Turns the chat UI's content blocks into the plain text a chat-completions model receives. */
+object PromptText {
+    @JvmStatic
+    fun flatten(blocks: List<ContentBlock>): String = blocks.mapNotNull { block ->
+        when (block) {
+            is ContentBlock.Text -> block.text
+            is ContentBlock.Resource -> block.resource().let { r ->
+                r.text()?.let { text -> "<file path=\"${r.uri()}\">\n$text\n</file>" }
+                    ?: "[attached resource ${r.uri()} (binary content is not sent)]"
+            }
+
+            // A pointer, not content: the model can open it with its own read tools.
+            is ContentBlock.ResourceLink -> "[referenced file: ${block.uri()}]"
+            is ContentBlock.Image -> "[image attachment is not supported by this agent yet]"
+            is ContentBlock.Audio -> "[audio attachment is not supported by this agent]"
+            is ContentBlock.Thinking -> null
+        }
+    }.joinToString("\n\n")
+}
