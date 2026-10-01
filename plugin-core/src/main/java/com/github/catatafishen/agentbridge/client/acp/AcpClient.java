@@ -1316,7 +1316,7 @@ public abstract class AcpClient extends AbstractClient {
      */
     static JsonObject buildSetModeParams(String sessionId, String modeId) {
         JsonObject params = new JsonObject();
-        params.addProperty("sessionId", sessionId);
+        params.addProperty(KEY_SESSION_ID, sessionId);
         params.addProperty("modeId", modeId);
         return params;
     }

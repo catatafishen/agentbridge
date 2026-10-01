@@ -37,6 +37,8 @@ public final class OpenCodeClient extends AcpClient {
      * denied here), so the model is only told about the IDE tools it actually has.
      */
     static final String STRICT_AGENT = "agentbridge";
+    /** Name the AgentBridge MCP server is registered under in {@code session/new}; unrelated to the agent slug. */
+    private static final String MCP_SERVER_NAME = "agentbridge";
     private static final String STRICT_AGENT_PROMPT_RESOURCE = "/agents/opencode/agentbridge-system-prompt.md";
     private static final String BUILD_AGENT = "build";
     private static final String PLAN_AGENT = "plan";
@@ -347,7 +349,7 @@ public final class OpenCodeClient extends AcpClient {
      */
     static void addMcpServerConfig(int mcpPort, JsonObject params) {
         JsonObject server = new JsonObject();
-        server.addProperty("name", "agentbridge");
+        server.addProperty("name", MCP_SERVER_NAME);
         server.addProperty("type", "http");
         server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
         server.add("headers", new JsonArray());
