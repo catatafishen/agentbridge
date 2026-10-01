@@ -95,6 +95,26 @@ dependencies {
     // SQLite JDBC (used by OpenCode session import)
     implementation("org.xerial:sqlite-jdbc:${providers.gradleProperty("sqliteJdbcVersion").get()}")
 
+    // SPIKE (feat/koog-harness-spike, see docs/KOOG-HARNESS-INVESTIGATION.md): Koog agent framework.
+    // Experiment A (no exclusions) FAILED: Koog's bundled kotlinx-coroutines clashed with the platform's copy
+    // (LinkageError: loader constraint violation on kotlinx.coroutines.CoroutineScope).
+    // Experiment B: exclude coroutines so Koog runs on the platform's copy.
+    val koogVersion = providers.gradleProperty("koogVersion").get()
+    val koogDeps = listOf(
+        "ai.koog:agents-core:$koogVersion",
+        "ai.koog:prompt-executor-openai-client:$koogVersion",
+        // JDK java.net.http transport, passed explicitly so Koog never needs ServiceLoader discovery or Ktor engines.
+        "ai.koog:http-client-java:$koogVersion",
+    )
+    koogDeps.forEach { coordinate ->
+        implementation(coordinate) {
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+            exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk9")
+        }
+    }
+
     // IntelliJ's bundled Lucene (used by MemoryStore for vector search).
     // In IJ 2025.x the JAR is in lib/modules/ and auto-exposed by the Gradle plugin.
     // In IJ 2026.x+ it moved to lib/ and must be added explicitly as compileOnly.

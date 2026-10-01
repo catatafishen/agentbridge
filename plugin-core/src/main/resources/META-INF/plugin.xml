@@ -375,6 +375,10 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     <postStartupActivity
       implementation="com.github.catatafishen.agentbridge.psi.graph.CodeGraphStartupActivity"/>
 
+    <!-- SPIKE (feat/koog-harness-spike): Koog classloading check, gated by -Dagentbridge.koogSpike -->
+    <postStartupActivity
+      implementation="com.github.catatafishen.agentbridge.client.koog.KoogSpikeStartup"/>
+
     <!-- Notification Group for status messages -->
     <notificationGroup id="AgentBridge Notifications" displayType="STICKY_BALLOON"/>
 
