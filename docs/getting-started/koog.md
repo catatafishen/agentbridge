@@ -66,8 +66,8 @@ change. Check that it is acceptable under your plan and your employer's policy.
 
 - No history compaction yet: very long conversations eventually reach the model's context limit.
 - No image or audio input.
-- Only models served on the chat-completions endpoint with tool support are offered. Some Copilot models (those served
-  on other endpoints) are hidden for now.
+- Only chat models served on the chat-completions endpoint are offered. Models explicitly marked as not supporting tool
+  calls and models served only on other endpoints are hidden for now.
 
 Design notes and findings: [KOOG-HARNESS-INVESTIGATION.md](../KOOG-HARNESS-INVESTIGATION.md).
 
