@@ -18,10 +18,10 @@ directly and runs every tool call through AgentBridge's tool layer, inside the I
 
 1. Open **Settings → Tools → AgentBridge → Agents → Built-in Agent (Koog)**.
 2. Pick a provider:
-    - **GitHub Copilot subscription**: press **Sign in with GitHub…**. A code is shown and copied to the clipboard and
-      GitHub opens in your browser; enter the code there. The token is kept in the IDE's password safe. Models are
-      listed
-      from your subscription.
+    - **GitHub Copilot subscription**: press **Sign in with GitHub…**. A window shows a code in large type (it is also
+      copied to the clipboard) and GitHub opens in your browser; enter the code there and click Authorize. The window
+      stays open while it waits and closes itself when you are signed in. The token is kept in the IDE's password safe.
+      Models are listed from your subscription.
     - **OpenAI-compatible API (API key)**: enter the base URL (empty means OpenAI; a trailing `/v1` is fine), your API
       key
       and the model id. OpenRouter, Ollama and most gateways work.
