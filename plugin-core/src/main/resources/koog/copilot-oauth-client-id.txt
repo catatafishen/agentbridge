@@ -1,8 +1,10 @@
 # Client id of the GitHub OAuth app used for "Sign in with GitHub Copilot" in the Koog agent.
 #
-# Register the app at https://github.com/settings/developers (OAuth Apps -> New OAuth App), tick
-# "Enable Device Flow", and put its Client ID on the first non-comment line below. A client id is public,
-# not a secret. Do NOT use another product's client id.
+# Register the app at https://github.com/settings/applications/new (any name, homepage and callback URL;
+# GitHub requires them but the device flow never uses them), tick "Enable Device Flow", and put its Client ID
+# on the first non-comment line below. A client id is public, not a secret. Do NOT use another product's
+# client id.
 #
 # Left blank, the Koog agent still works with an OpenAI-compatible API key, and users can enter their own
-# client id under Settings -> Tools -> AgentBridge -> Agents -> Koog.
+# client id under Settings -> Tools -> AgentBridge -> Agents -> Built-in Agent (Koog), where the page walks
+# them through registering one.

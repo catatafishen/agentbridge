@@ -111,8 +111,11 @@ What this implementation does:
 - ✅ The token lives in the IDE password safe. These are credentials this plugin created, not another tool's store
   (`docs/AUTH-HANDLING.md`).
 - ✅ **No client id is bundled.** A device flow needs a registered GitHub OAuth app; another product's client id must
-  not be reused. `koog/copilot-oauth-client-id.txt` ships empty; users or the maintainers fill it in (see the setup
-  guide). Until then Copilot sign-in reports exactly that, and an OpenAI-compatible key works.
+  not be reused. `koog/copilot-oauth-client-id.txt` ships empty; users or the maintainers fill it in. Until then the
+  settings page shows a guided one-time setup (numbered steps, an Open GitHub button, validation that catches a pasted
+  client secret), the sign-in button offers the same instead of a dead end, GitHub's `device_flow_disabled` and
+  `incorrect_client_credentials` errors say what to fix, and an OpenAI-compatible key works meanwhile. Rendered in a
+  sandbox IDE (2026.1.3); the clicks themselves and the live GitHub errors are unverified.
 - ❓ **Not verified against real GitHub or Copilot**: the device sign-in itself, the real `/models` payload, and whether
   `api.githubcopilot.com` accepts these requests for a third-party OAuth app. There is no registered app to test with.
 - ❓ **Terms.** GitHub's changelog of 2026-01-16 announces official Copilot support for OpenCode "through a formal
