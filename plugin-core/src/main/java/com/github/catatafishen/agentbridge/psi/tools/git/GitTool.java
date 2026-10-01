@@ -180,12 +180,19 @@ public abstract class GitTool extends Tool {
     }
 
     private String normalizeRepoParam(@NotNull String repoParam) {
-        String basePath = project.getBasePath();
+        return normalizeRepoParam(repoParam, project.getBasePath());
+    }
+
+    /**
+     * Resolves a {@code repo} selector to a normalized absolute path. Dot segments are collapsed so
+     * the advertised root selector {@code "."} matches the project base path.
+     */
+    static String normalizeRepoParam(@NotNull String repoParam, @Nullable String basePath) {
         File repoFile = new File(repoParam);
         String path = basePath != null && !repoFile.isAbsolute()
             ? new File(basePath, repoParam).getAbsolutePath()
             : repoParam;
-        return path.replace("\\", "/");
+        return new File(path).toPath().normalize().toString().replace("\\", "/");
     }
 
     private String availableRepoRoots(@NotNull List<String> roots) {
