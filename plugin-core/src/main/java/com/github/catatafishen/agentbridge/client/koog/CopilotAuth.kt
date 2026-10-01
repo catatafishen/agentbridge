@@ -66,7 +66,10 @@ object CopilotAuth {
     fun parseDeviceCode(json: String): DeviceCode {
         val o = parseObject(json) ?: throw AuthException("GitHub returned an unreadable device-code response")
         o.string("error")?.let { error ->
-            throw AuthException("GitHub rejected the sign-in request: ${o.string("error_description") ?: error}")
+            throw AuthException(
+                setupMistake(error)
+                    ?: "GitHub rejected the sign-in request: ${o.string("error_description") ?: error}",
+            )
         }
         fun required(key: String) =
             o.string(key) ?: throw AuthException("GitHub's device-code response is missing '$key'")
@@ -89,8 +92,26 @@ object CopilotAuth {
             "expired_token" -> PollResult.Failed("The sign-in code expired before it was entered. Start again.")
             "access_denied" -> PollResult.Failed("The sign-in was cancelled on GitHub.")
             null -> PollResult.Failed("GitHub's token response had neither a token nor an error")
-            else -> PollResult.Failed("GitHub sign-in failed: ${o.string("error_description") ?: error}")
+            else -> PollResult.Failed(
+                setupMistake(error) ?: "GitHub sign-in failed: ${o.string("error_description") ?: error}",
+            )
         }
+    }
+
+    /**
+     * The two errors a person registering their own OAuth app is likely to cause, explained with what to fix.
+     * Null for any other error code.
+     */
+    private fun setupMistake(error: String): String? = when (error) {
+        "device_flow_disabled" ->
+            "Device Flow is not enabled for this OAuth app. Open the app on GitHub (Settings → Developer settings → " +
+                "OAuth Apps), tick \"Enable Device Flow\", save, and sign in again."
+
+        "incorrect_client_credentials" ->
+            "GitHub does not recognise this Client ID. Check that you pasted the Client ID of your OAuth app " +
+                "(not the client secret) and that the app still exists."
+
+        else -> null
     }
 
     /** Requests a device code. The caller shows [DeviceCode.userCode] and opens [DeviceCode.verificationUri]. */

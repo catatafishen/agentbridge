@@ -46,6 +46,9 @@ object KoogSettings {
     fun copilotClientId(): String =
         copilotClientIdOverride.ifBlank { parseClientId(bundledClientIdFile()) }
 
+    /** True when this build ships a client id, so users need no setup of their own. */
+    fun hasBundledClientId(): Boolean = parseClientId(bundledClientIdFile()).isNotBlank()
+
     var copilotToken: String?
         get() = secret("copilot.oauth-token")
         set(value) = setSecret("copilot.oauth-token", value)
@@ -72,13 +75,13 @@ object KoogSettings {
     ): String? = when (provider) {
         KoogProviderKind.COPILOT -> when {
             copilotToken.isNullOrBlank() && copilotClientId.isBlank() ->
+                // "authenticated" is what the shared authentication handling looks for (docs/AUTH-HANDLING.md).
                 "Koog is not authenticated: this build has no GitHub OAuth client id for Copilot sign-in. " +
-                    "Set one under Settings → Tools → AgentBridge → Agents → Koog (see the setup guide), " +
-                    "or use an OpenAI-compatible API key instead."
+                    CopilotSetupGuide.shortHint()
 
             copilotToken.isNullOrBlank() ->
                 "Koog is not authenticated with GitHub Copilot. " +
-                    "Sign in under Settings → Tools → AgentBridge → Agents → Koog."
+                    "Sign in under ${CopilotSetupGuide.SETTINGS_PATH}."
 
             else -> null
         }
@@ -86,10 +89,10 @@ object KoogSettings {
         KoogProviderKind.OPENAI_COMPATIBLE -> when {
             openAiApiKey.isNullOrBlank() ->
                 "Koog is not authenticated: no API key is set. " +
-                    "Enter one under Settings → Tools → AgentBridge → Agents → Koog."
+                    "Enter one under ${CopilotSetupGuide.SETTINGS_PATH}."
 
             modelId.isBlank() ->
-                "Koog has no model selected. Enter a model id under Settings → Tools → AgentBridge → Agents → Koog."
+                "Koog has no model selected. Enter a model id under ${CopilotSetupGuide.SETTINGS_PATH}."
 
             else -> null
         }

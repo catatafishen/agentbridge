@@ -31,7 +31,7 @@ object KoogErrors {
         return when (status) {
             401, 403 -> Classified(
                 "Koog is not authenticated with $providerLabel (HTTP $status). " +
-                    "Sign in again under Settings → Tools → AgentBridge → Agents → Koog." +
+                    "Sign in again under ${CopilotSetupGuide.SETTINGS_PATH}." +
                     (if (snippet.isNotEmpty()) " Server said: $snippet" else ""),
                 true,
             )
