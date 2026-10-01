@@ -131,10 +131,14 @@ In a real sandbox IDE (not just unit tests), against a fake OpenAI-compatible st
   second request carried the history with the tool result.
 - ✅ The settings page builds and resets on the EDT; a credential round trip through the password safe works.
 - ✅ IDE 2025.3.6.1: gate holds, see above.
-- ✅ Unit tests (105 for this agent, all passing; the full plugin suite passes too) cover the gate, schema mapping, MCP parsing, the device flow (pending, `slow_down`, expiry,
+- ✅ Unit tests (167 for this agent, all passing, about 86% line coverage of the package; the remainder is IDE-service
+  and network glue verified in the sandbox runs above; the full plugin suite passes too) cover the gate, schema mapping, MCP parsing, the device flow (pending, `slow_down`, expiry,
   cancel), the model catalog, headers, endpoint normalisation, error classification and the conversation loop
   (history across turns, tool round trips, malformed arguments, several tool calls, step limit, cancellation, and a
-  Stop during a running tool leaving a usable history).
+  Stop during a running tool leaving a usable history), the client lifecycle (start errors, model choice, cancel and stop
+  mapping, provider error classification) through a `KoogEnvironment` seam, the header-injecting HTTP client, the
+  in-process MCP backend, and wire-level tests that drive a real Koog executor against a local streaming server
+  (paths, Copilot headers, `x-initiator` going `user` then `agent`, JSON content type, and how a 401 or 500 surfaces).
 
 Not verified: a live provider (OpenAI, Copilot), real streaming quirks, an `ASK` permission prompt through the
 in-process path (the handler is the same one external agents use, but only an `ALLOW` tool was run), Stop pressed in
