@@ -14,8 +14,8 @@ object KoogNetwork {
     fun jsonPoster(userAgent: String): JsonPoster = JsonPoster { url, body -> postJson(url, body, userAgent) }
 
     private fun postJson(url: String, body: JsonObject, userAgent: String): String =
-        HttpRequests.post(url, "application/json")
-            .accept("application/json")
+        HttpRequests.post(url, JsonContentType.MEDIA_TYPE)
+            .accept(JsonContentType.MEDIA_TYPE)
             .userAgent(userAgent)
             .connectTimeout(TIMEOUT_MS)
             .readTimeout(TIMEOUT_MS)
@@ -28,7 +28,7 @@ object KoogNetwork {
     @JvmStatic
     fun fetchCopilotModels(token: String, userAgent: String): List<CopilotModel> {
         val json = HttpRequests.request(CopilotHeaders.API_BASE + "/models")
-            .accept("application/json")
+            .accept(JsonContentType.MEDIA_TYPE)
             .userAgent(userAgent)
             .connectTimeout(TIMEOUT_MS)
             .readTimeout(TIMEOUT_MS)
