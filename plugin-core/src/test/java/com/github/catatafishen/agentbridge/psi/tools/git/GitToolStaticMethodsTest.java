@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.regex.Matcher;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,6 +31,22 @@ class GitToolStaticMethodsTest {
         @Test
         void absolutePathIsKept() {
             assertEquals("/other/repo", GitTool.normalizeRepoParam("/other/repo", "/work/project"));
+        }
+    }
+
+    @Nested
+    class CreateBranchArgs {
+
+        @Test
+        void remoteBaseIsNotTracked() {
+            assertArrayEquals(new String[]{"checkout", "--no-track", "-b", "feat/x", "origin/master"},
+                GitBranchTool.createBranchArgs("feat/x", "origin/master"));
+        }
+
+        @Test
+        void noBaseBranchesFromHead() {
+            assertArrayEquals(new String[]{"checkout", "-b", "feat/x"},
+                GitBranchTool.createBranchArgs("feat/x", null));
         }
     }
 
