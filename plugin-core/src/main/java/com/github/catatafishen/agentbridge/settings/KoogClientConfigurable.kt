@@ -230,7 +230,7 @@ class KoogClientConfigurable(private val project: Project) :
             showSetupNeeded()
             return
         }
-        ProgressManager.getInstance().run(SignInTask(project, clientId) { refreshCopilotStatus() })
+        ProgressManager.getInstance().run(RequestCodeTask(project, clientId) { refreshCopilotStatus() })
     }
 
     /** Explains the one-time setup and offers to open the GitHub page where it starts, instead of a dead end. */
@@ -250,44 +250,53 @@ class KoogClientConfigurable(private val project: Project) :
         clientIdField?.requestFocusInWindow()
     }
 
-    /** Modal because the user has to act on the code shown in the progress text; Cancel abandons the sign-in. */
-    private class SignInTask(project: Project, private val clientId: String, private val onDone: () -> Unit) :
+    /**
+     * Asks GitHub for a device code (a quick call, so a small modal progress), then hands over to
+     * [CopilotSignInDialog], which shows the code and waits for the user to authorize it.
+     */
+    private class RequestCodeTask(project: Project, private val clientId: String, private val onDone: () -> Unit) :
         Task.Modal(project, SIGN_IN_TITLE, true) {
 
+        private val http = KoogNetwork.jsonPoster("AgentBridge/" + BuildInfo.getVersion())
+        private var code: CopilotAuth.DeviceCode? = null
         private var error: String? = null
 
         override fun run(indicator: ProgressIndicator) {
+            indicator.text = "Requesting a sign-in code from GitHub…"
             try {
-                val http = KoogNetwork.jsonPoster("AgentBridge/" + BuildInfo.getVersion())
-                indicator.text = "Requesting a sign-in code from GitHub…"
-                val code = CopilotAuth.start(clientId, http)
-                ApplicationManager.getApplication().invokeLater {
-                    CopyPasteManager.getInstance().setContents(StringSelection(code.userCode))
-                    BrowserUtil.browse(code.verificationUri)
-                }
-                indicator.text = "Enter code ${code.userCode} at ${code.verificationUri} (copied to the clipboard)"
-                val token = CopilotAuth.awaitToken(
-                    clientId, code, http,
-                    sleeper = { millis -> sleepCancellable(indicator, millis) },
-                    isCancelled = { indicator.isCanceled },
-                )
-                KoogSettings.copilotToken = token
+                code = CopilotAuth.start(clientId, http)
             } catch (e: CopilotAuth.AuthException) {
-                // A user cancel is not an error worth a dialog.
-                if (!indicator.isCanceled) error = e.message
+                error = e.message
             } catch (e: IOException) {
                 error = "Could not reach GitHub: ${e.message}"
             }
         }
 
         override fun onFinished() {
+            val deviceCode = code
+            if (deviceCode == null) {
+                error?.let { Messages.showErrorDialog(project, it, SIGN_IN_TITLE) }
+                onDone()
+                return
+            }
+            val dialog = CopilotSignInDialog(
+                project, deviceCode,
+                waitForToken = { isCancelled ->
+                    CopilotAuth.awaitToken(
+                        clientId, deviceCode, http,
+                        sleeper = { millis -> sleepUnlessCancelled(millis, isCancelled) },
+                        isCancelled = isCancelled,
+                    )
+                },
+                onToken = { KoogSettings.copilotToken = it },
+            )
+            dialog.show()
             onDone()
-            error?.let { Messages.showErrorDialog(project, it, SIGN_IN_TITLE) }
         }
 
-        private fun sleepCancellable(indicator: ProgressIndicator, millis: Long) {
+        private fun sleepUnlessCancelled(millis: Long, isCancelled: () -> Boolean) {
             var left = millis
-            while (left > 0 && !indicator.isCanceled) {
+            while (left > 0 && !isCancelled()) {
                 val slice = minOf(left, 250L)
                 Thread.sleep(slice)
                 left -= slice
