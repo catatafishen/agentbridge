@@ -14,6 +14,25 @@ class GitToolStaticMethodsTest {
 
     private static final String HASH_40 = "a1b2c3d4e5f6789012345678901234567890abcd";
 
+    @Nested
+    class NormalizeRepoParam {
+
+        @Test
+        void dotResolvesToProjectBasePath() {
+            assertEquals("/work/project", GitTool.normalizeRepoParam(".", "/work/project"));
+        }
+
+        @Test
+        void relativeSubmoduleResolvesUnderBasePath() {
+            assertEquals("/work/project/.agents", GitTool.normalizeRepoParam(".agents", "/work/project"));
+        }
+
+        @Test
+        void absolutePathIsKept() {
+            assertEquals("/other/repo", GitTool.normalizeRepoParam("/other/repo", "/work/project"));
+        }
+    }
+
     // ── formatPorcelainStatus ───────────────────────────────
 
     @Nested
