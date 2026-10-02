@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.psi.tools.file.EditPreviewBuilder;
 import com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
@@ -88,6 +89,12 @@ public final class PsiBridgeService implements Disposable {
     private static final String TOOL_REPLACE_SYMBOL_BODY = "replace_symbol_body";
     private static final String TOOL_INSERT_BEFORE_SYMBOL = "insert_before_symbol";
     private static final String TOOL_INSERT_AFTER_SYMBOL = "insert_after_symbol";
+    /**
+     * Size cap for the whole-file old/new texts embedded in an edit-preview Ask
+     * bubble (they power the "Open in editor" diff view). Beyond it only the capped
+     * diff and stats are sent, keeping the bubble payload and chat history bounded.
+     */
+    private static final int MAX_PREVIEW_FULL_TEXT_CHARS = 400_000;
 
     /**
      * Matches the "Context after edit (lines X-Y):" header written by WriteFileTool.
@@ -741,10 +748,31 @@ public final class PsiBridgeService implements Disposable {
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
             : "Can I use " + displayName + "?");
         if (arguments != null) context.add("args", arguments);
+        EditPreviewBuilder.Preview preview = appendEditPreviewArgs(context, toolName, arguments);
         String argsJson = context.toString();
 
         com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider promptProvider =
             com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+
+        // Opt-in auto-open: same setting and tab lifecycle as the ACP edit approvals —
+        // when a previewable diff exists and the chat panel will show the prompt
+        // (promptProvider non-null; the modal-dialog fallback cannot resolve the tab),
+        // show it in the editor area alongside the chat card. This method runs on the
+        // pooled MCP worker thread, so hop to the EDT (open() touches
+        // FileEditorManager). The tab is keyed by reqId and closed on every
+        // resolution path the chat panels already implement, plus the failure exits
+        // below (the request was answered without the user, like AcpClient does).
+        if (preview != null && promptProvider != null
+            && com.github.catatafishen.agentbridge.services.ActiveAgentManager
+                .getEditApprovalAutoDiff(project)) {
+            final EditPreviewBuilder.Preview p = preview;
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (project.isDisposed()) return;
+                com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
+                    .getInstance(project)
+                    .open(project, reqId, p.path(), p.oldText(), p.newText());
+            }, com.intellij.openapi.application.ModalityState.any());
+        }
 
         com.github.catatafishen.agentbridge.bridge.PermissionResponse response;
         try {
@@ -753,9 +781,11 @@ public final class PsiBridgeService implements Disposable {
                 : askViaModalDialog(displayName, arguments);
         } catch (java.util.concurrent.TimeoutException e) {
             LOG.info("PSI Bridge: ASK timed out for " + toolName);
+            closeEditPreviewTab(reqId, preview);
             return "Error: Permission request timed out for tool '" + toolName + "'.";
         } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
             Thread.currentThread().interrupt();
+            closeEditPreviewTab(reqId, preview);
             return "Error: Permission request interrupted for tool '" + toolName + "'.";
         }
 
@@ -780,6 +810,122 @@ public final class PsiBridgeService implements Disposable {
                 yield "Error: Permission denied by user for tool '" + toolName + "'.";
             }
         };
+    }
+
+    /**
+     * Adds the edit-preview args ({@code path}, {@code diff}, {@code diffAdded},
+     * {@code diffRemoved}, {@code oldText}, {@code newText}) to the Ask bubble
+     * context for {@code write_file}/{@code edit_text} calls, so both chat panels
+     * render the same collapsible diff card the ACP edit approvals show. Returns
+     * the preview that was rendered ({@code null} for non-previewable calls) so the
+     * caller can apply the auto-open setting. Runs on the pooled MCP worker thread
+     * (this method's caller), which is the correct place for the VFS/Document read.
+     * The args are added to a copy — the original arguments object stays untouched
+     * because the tool executes from it after the prompt resolves. Any failure or
+     * non-previewable call leaves the context as-is (plain parameter rows), never
+     * blocking the permission ask.
+     */
+    private @Nullable EditPreviewBuilder.Preview appendEditPreviewArgs(
+            com.google.gson.JsonObject context, String toolName, @Nullable JsonObject arguments) {
+        if (!"write_file".equals(toolName) && !"edit_text".equals(toolName)) return null;
+        if (arguments == null) return null;
+        try {
+            String path = arguments.has("path") && arguments.get("path").isJsonPrimitive()
+                ? arguments.get("path").getAsString()
+                : arguments.has("file") && arguments.get("file").isJsonPrimitive()
+                ? arguments.get("file").getAsString() : null;
+            if (path == null || path.isBlank()) return null;
+            String currentText = readCurrentFileText(path);
+            if (UNREADABLE_FILE.equals(currentText)) return null;
+            EditPreviewBuilder.Preview preview =
+                EditPreviewBuilder.buildPreview(arguments, currentText);
+            if (preview == null) return null;
+            String diff = EditPreviewBuilder.boundedDiff(preview.oldText(), preview.newText());
+            if (diff == null) return null;
+            int[] stats = EditPreviewBuilder.changeStats(preview.oldText(), preview.newText());
+            JsonObject args = new JsonObject();
+            // The card fully represents the edit payload, so the bulky args whose
+            // content it already shows are dropped from the k/v rows (the ACP path
+            // never sends them either — its bubble context carries only card args).
+            // Small scalar flags stay visible; they affect what the edit will do.
+            java.util.Set<String> cardAbsorbed = java.util.Set.of(
+                "old_str", "new_str", "content", "start_line", "end_line", "file");
+            for (var e : arguments.entrySet()) {
+                if (!cardAbsorbed.contains(e.getKey())) {
+                    args.add(e.getKey(), e.getValue());
+                }
+            }
+            // The card header shows path + stats; full texts power the editor diff
+            // ("Open in editor"). Only added when the diff card actually renders so
+            // the panels can skip the corresponding k/v rows unconditionally. The
+            // full texts are dropped for huge targets so the bubble payload and chat
+            // history stay bounded — the capped diff and stats still render the card.
+            args.addProperty("path", preview.path());
+            args.addProperty("diff", diff);
+            args.addProperty("diffAdded", stats[0]);
+            args.addProperty("diffRemoved", stats[1]);
+            long fullTextSize = (preview.oldText() != null ? preview.oldText().length() : 0)
+                + preview.newText().length();
+            if (fullTextSize <= MAX_PREVIEW_FULL_TEXT_CHARS) {
+                if (preview.oldText() != null) {
+                    args.addProperty("oldText", preview.oldText());
+                }
+                args.addProperty("newText", preview.newText());
+                // Web-panel auto-open signal: the card clicks its own "Open in editor"
+                // button on render when the setting is on (same flag the ACP path sets).
+                if (com.github.catatafishen.agentbridge.services.ActiveAgentManager
+                        .getEditApprovalAutoDiff(project)) {
+                    args.addProperty("autoOpenDiff", true);
+                }
+            }
+            context.add("args", args);
+            return preview;
+        } catch (Exception e) {
+            LOG.warn("PSI Bridge: edit preview failed for " + toolName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Closes the auto-opened editor diff tab for a permission request that failed
+     * without a user decision (timeout, interrupt): the request was answered on the
+     * agent side already, so a lingering tab would let the user keep reviewing a
+     * dead approval. No-op when no tab was opened (preview null) or none is keyed.
+     */
+    private void closeEditPreviewTab(String reqId,
+                                     @Nullable EditPreviewBuilder.Preview preview) {
+        if (preview == null) return;
+        if (project.isDisposed()) return;
+        com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
+            .getInstance(project).close(project, reqId);
+    }
+
+    /**
+     * Current content of the file the edit targets: the live Document when the file
+     * is open in the IDE (the tool edits the Document, so disk content would show a
+     * stale diff), the disk content otherwise, {@code null} for a file that does not
+     * exist. Unreadable-but-existing files are reported via the sentinel so the
+     * preview never mistakes them for new files. Must run off the EDT (pooled MCP
+     * worker thread); only the VFS lookup and Document read happen under the read
+     * action — disk I/O stays outside it so pending write actions are not stalled.
+     */
+    private static final String UNREADABLE_FILE = "\u0000__agentbridge_unreadable__";
+
+    private @Nullable String readCurrentFileText(@NotNull String path) {
+        com.intellij.openapi.vfs.VirtualFile vf = com.intellij.openapi.application.ReadAction.compute(
+            () -> ToolUtils.resolveVirtualFile(project, path));
+        if (vf == null) return null;
+        String docText = com.intellij.openapi.application.ReadAction.compute(() -> {
+            com.intellij.openapi.editor.Document doc =
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+            return doc != null ? doc.getText() : null;
+        });
+        if (docText != null) return docText;
+        try {
+            return com.intellij.openapi.vfs.VfsUtilCore.loadText(vf);
+        } catch (Exception e) {
+            return UNREADABLE_FILE;
+        }
     }
 
     @NotNull
