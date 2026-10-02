@@ -160,8 +160,8 @@ the real UI, and the sign-in dialog.
 
 ## 6. Known limits (v1)
 
-- No history compaction: a long conversation eventually hits the model's context limit and the provider's error is
-  shown. Koog offers history compression; not used yet.
+- No history summarising. A conversation that nears the model's context window is trimmed instead (section 9): old
+  tool results are shortened, then whole oldest exchanges are dropped, and the chat says so.
 - No image or audio input (called out in the prompt text, not silently dropped).
 - Only chat-completions models; no Anthropic Messages or Responses endpoints.
 - Text streams; reasoning deltas are shown as thoughts when a provider sends them.
@@ -191,8 +191,24 @@ the model forgot everything between prompts, and a restart lost the thread. Now:
 Verified with unit tests and a fake environment. Not yet verified in a real IDE: the stored entries of a Koog session
 carrying the plugin-tool name that `KoogHistory` matches against (the log line above shows the skip count).
 
+## 9. Context window
+
+A conversation used to grow until the provider rejected a request. `KoogCompaction` now keeps it inside the selected
+model's window, which comes from the provider (Copilot's `/models` reports it; an OpenAI-compatible endpoint reports
+none, so nothing is trimmed there). Before each request it estimates the size (characters divided by three, plus the
+system prompt and tool descriptions) and, past 80% of the window, trims down to 60%:
+
+1. Old tool results (whole files and command output, by far the biggest part) are cut to a short head with a visible
+   marker, oldest first. The result of the latest step is left alone: the model is about to read it.
+2. If that is not enough, whole turns are dropped, oldest first, never the latest. A turn is a user prompt and
+   everything after it, so a tool call is never separated from its result.
+
+It is deliberately not a summary: that needs another model call and can quietly lose a detail the work depends on.
+The user sees a warning banner saying what was trimmed. The estimate is pessimistic, so the real limit is not hit first.
+The model picker shows each model's context and output limits.
+
 ## 7. Next steps
 
 1. Run `verifyPlugin`; trim the +10 MB plugin size (see section 3).
-2. History compaction; Responses and Anthropic endpoints for the remaining Copilot models; images.
+2. Responses and Anthropic endpoints for the remaining Copilot models; images.
 3. Decide, after real use, whether to raise `sinceBuild` instead of gating.

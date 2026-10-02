@@ -53,7 +53,8 @@ plan and your employer's policy.
 
 ## Limits
 
-- No history compaction yet: very long conversations eventually reach the model's context limit.
+- Very long conversations are trimmed rather than summarised: old tool results are shortened and then the oldest
+  exchanges are dropped, with a warning in the chat.
 - No image or audio input.
 - Only chat models served on the chat-completions endpoint are offered. Models explicitly marked as not supporting tool
   calls and models served only on other endpoints are hidden for now.

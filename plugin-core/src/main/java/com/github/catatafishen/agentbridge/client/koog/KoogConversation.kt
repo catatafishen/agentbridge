@@ -57,6 +57,8 @@ class KoogConversation(
     private val maxSteps: Int = DEFAULT_MAX_STEPS,
     private val clock: KoogClock = KoogClock.System,
     private val restoreBudgetChars: Int = KoogHistory.DEFAULT_BUDGET_CHARS,
+    /** The model's context window in tokens, or null when unknown (then nothing is trimmed). Read every request. */
+    private val contextWindow: () -> Long? = { null },
 ) {
     private val history = mutableListOf<Message>()
 
@@ -80,6 +82,7 @@ class KoogConversation(
         val descriptors = specs.map(KoogToolSchemas::toDescriptor)
         val specsByName = specs.associateBy { it.name }
         val system = systemPrompt()
+        val overheadChars = system.length.toLong() + specs.sumOf { it.name.length + it.description.length + it.inputSchema.toString().length }
 
         var inputTokens = 0L
         var outputTokens = 0L
@@ -87,6 +90,7 @@ class KoogConversation(
 
         repeat(maxSteps) {
             currentCoroutineContext().ensureActive()
+            compactHistory(overheadChars, onUpdate)
             val request = prompt("koog") {
                 system(system)
                 messages(history.toList())
@@ -113,6 +117,31 @@ class KoogConversation(
             history += Message.User(results, RequestMetaInfo.create(clock))
         }
         return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, onUpdate)
+    }
+
+    /**
+     * Trims the history in place when the next request would not comfortably fit the model's window, and tells the user.
+     * Done before a request, so the history the model sees is the one that was checked. Trimmed text stays trimmed:
+     * the same cut is not repeated on every step.
+     */
+    private fun compactHistory(overheadChars: Long, onUpdate: (SessionUpdate) -> Unit) {
+        val window = contextWindow()?.takeIf { it > 0 } ?: return
+        val compacted = KoogCompaction.compact(history.toList(), window, overheadChars)
+        if (!compacted.changed) return
+        history.clear()
+        history += compacted.messages
+        val what = listOfNotNull(
+            compacted.shrunkResults.takeIf { it > 0 }?.let { "$it old tool result(s) shortened" },
+            compacted.droppedTurns.takeIf { it > 0 }?.let { "$it oldest exchange(s) dropped" },
+        ).joinToString(", ")
+        log.info("Koog trimmed the conversation to fit a $window-token context window: $what")
+        onUpdate(
+            SessionUpdate.Banner(
+                "The conversation was close to the model's context limit, so older parts were trimmed ($what).",
+                SessionUpdate.BannerLevel.WARNING,
+                SessionUpdate.ClearOn.NEXT_SUCCESS,
+            )
+        )
     }
 
     private fun applyPendingRestore(specs: List<McpToolSpec>) {

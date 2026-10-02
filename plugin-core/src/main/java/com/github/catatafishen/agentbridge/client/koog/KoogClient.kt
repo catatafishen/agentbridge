@@ -131,7 +131,11 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
         }
         // Read at the start of every turn, not once per session: edits to the startup instructions, the tool
         // guidance or the memory then apply to the next message instead of the next new conversation.
-        val conversation = KoogConversation(streamer, env.tools, systemPrompt = { env.systemPrompt(cwd) })
+        val conversation = KoogConversation(
+            streamer, env.tools,
+            systemPrompt = { env.systemPrompt(cwd) },
+            contextWindow = { selectedModel?.let { active.choices[it]?.contextLength } },
+        )
         restorePrevious(conversation)
         val id = "koog-" + UUID.randomUUID()
         conversations[id] = conversation
@@ -186,7 +190,16 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
     }
 
     override fun getAvailableModels(): List<Model> =
-        runtime?.choices?.values?.map { Model(it.id, it.name, null, null) }.orEmpty()
+        runtime?.choices?.values?.map { Model(it.id, it.name, describe(it), null) }.orEmpty()
+
+    /** What the model picker can show about a model beyond its name; null when the provider told us nothing. */
+    private fun describe(choice: KoogModelChoice): String? {
+        val parts = listOfNotNull(
+            choice.contextLength?.let { "${formatTokens(it)} context" },
+            choice.maxOutputTokens?.let { "${formatTokens(it)} max output" },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    }
 
     override fun getCurrentModelId(): String? = selectedModel
 
@@ -211,6 +224,15 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
     }
 
     companion object {
+        /** `128000` as `128k`, `1048576` as `1M`, so a model's limits read at a glance. */
+        @JvmStatic
+        fun formatTokens(tokens: Long): String = when {
+            tokens >= 1_000_000 && tokens % 1_000_000 < 50_000 -> "${tokens / 1_000_000}M tokens"
+            tokens >= 1_000_000 -> "%.1fM tokens".format(tokens / 1_000_000.0)
+            tokens >= 1_000 -> "${(tokens + 500) / 1_000}k tokens"
+            else -> "$tokens tokens"
+        }
+
         /** Our preamble, the project root, then tool guidance (see [KoogGuidance] for which text that is). */
         @JvmStatic
         fun systemPrompt(preamble: String, projectRoot: String, mcpInstructions: String): String =
