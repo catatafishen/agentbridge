@@ -125,12 +125,13 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
         // start the next prompt with an empty history, so the model would forget everything said before.
         currentSessionId?.takeIf { conversations.containsKey(it) }?.let { return it }
 
-        val system = env.systemPrompt(cwd)
         val streamer = ModelStreamer { prompt, toolDescriptors ->
             val model = selectedModel ?: error("No model selected")
             active.connection.streamer(active.choices.getValue(model)).stream(prompt, toolDescriptors)
         }
-        val conversation = KoogConversation(streamer, env.tools, systemPrompt = { system })
+        // Read at the start of every turn, not once per session: edits to the startup instructions, the tool
+        // guidance or the memory then apply to the next message instead of the next new conversation.
+        val conversation = KoogConversation(streamer, env.tools, systemPrompt = { env.systemPrompt(cwd) })
         restorePrevious(conversation)
         val id = "koog-" + UUID.randomUUID()
         conversations[id] = conversation
