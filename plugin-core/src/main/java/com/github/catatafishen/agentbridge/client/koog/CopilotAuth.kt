@@ -12,16 +12,27 @@ fun interface JsonPoster {
 /**
  * GitHub OAuth device flow (RFC 8628) for using a GitHub Copilot subscription as a model provider.
  *
- * The protocol and the endpoint used afterwards match what other third-party agent harnesses do with a
- * Copilot subscription: GitHub's device-code endpoints, scope `read:user`, and the resulting access token
- * sent as a bearer token to the Copilot API. GitHub has announced an official partnership for OpenCode
- * specifically; use by other clients is accepted in practice but is not covered by a published policy.
+ * This follows what Hermes and OpenCode do with a Copilot subscription: GitHub's device-code endpoints, scope
+ * `read:user`, then an exchange of the resulting token for a short-lived Copilot session (see [CopilotSession]).
+ * Copilot gives a reduced model catalog (older GPT models only) to tokens issued to an arbitrary OAuth app and
+ * the full one to the Copilot GitHub App's tokens, so the bundled client id is that app's. GitHub has announced an
+ * official partnership for OpenCode specifically; use by other clients is common but is not covered by a published
+ * policy, and may be restricted.
  *
- * The OAuth app must be registered by whoever distributes the build (device flow enabled); its client id
- * is not a secret. Never reuse another product's client id.
+ * The client id is fixed on purpose and cannot be changed by the user: a token from any other OAuth app is only
+ * given the reduced catalog, so a custom id would just make the agent worse.
  */
 object CopilotAuth {
+    /**
+     * The GitHub App that GitHub's own Copilot clients (VS Code, the Copilot CLI), Hermes and OpenCode sign in with.
+     * A client id is public, not a secret.
+     */
+    const val CLIENT_ID = "Iv1.b507a08c87ecfe98"
+
     const val SCOPE = "read:user"
+
+    /** Exchanges the sign-in token (`Authorization: token …`) for a [CopilotSession]. */
+    const val SESSION_URL = "https://api.github.com/copilot_internal/v2/token"
     const val DEVICE_CODE_URL = "https://github.com/login/device/code"
     const val ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
     const val DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
@@ -66,10 +77,7 @@ object CopilotAuth {
     fun parseDeviceCode(json: String): DeviceCode {
         val o = parseObject(json) ?: throw AuthException("GitHub returned an unreadable device-code response")
         o.string("error")?.let { error ->
-            throw AuthException(
-                setupMistake(error)
-                    ?: "GitHub rejected the sign-in request: ${o.string("error_description") ?: error}",
-            )
+            throw AuthException("GitHub rejected the sign-in request: ${o.string("error_description") ?: error}")
         }
         fun required(key: String) =
             o.string(key) ?: throw AuthException("GitHub's device-code response is missing '$key'")
@@ -92,26 +100,8 @@ object CopilotAuth {
             "expired_token" -> PollResult.Failed("The sign-in code expired before it was entered. Start again.")
             "access_denied" -> PollResult.Failed("The sign-in was cancelled on GitHub.")
             null -> PollResult.Failed("GitHub's token response had neither a token nor an error")
-            else -> PollResult.Failed(
-                setupMistake(error) ?: "GitHub sign-in failed: ${o.string("error_description") ?: error}",
-            )
+            else -> PollResult.Failed("GitHub sign-in failed: ${o.string("error_description") ?: error}")
         }
-    }
-
-    /**
-     * The two errors a person registering their own OAuth app is likely to cause, explained with what to fix.
-     * Null for any other error code.
-     */
-    private fun setupMistake(error: String): String? = when (error) {
-        "device_flow_disabled" ->
-            "Device Flow is not enabled for this OAuth app. Open the app on GitHub (Settings → Developer settings → " +
-                "OAuth Apps), tick \"Enable Device Flow\", save, and sign in again."
-
-        "incorrect_client_credentials" ->
-            "GitHub does not recognise this Client ID. Check that you pasted the Client ID of your OAuth app " +
-                "(not the client secret) and that the app still exists."
-
-        else -> null
     }
 
     /** Requests a device code. The caller shows [DeviceCode.userCode] and opens [DeviceCode.verificationUri]. */

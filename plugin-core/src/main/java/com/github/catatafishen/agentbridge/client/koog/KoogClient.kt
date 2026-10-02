@@ -52,6 +52,10 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
     @Volatile
     private var selectedModel: String? = null
 
+    /** False only between a new conversation (or a dropped session) and the session created next. */
+    @Volatile
+    private var restoreNext = true
+
     private val conversations = ConcurrentHashMap<String, KoogConversation>()
     private val activeTurns = ConcurrentHashMap<String, Job>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -102,24 +106,50 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
     override fun clearPersistedSession() {
         conversations.clear()
         setCurrentSession(null)
+        // A new conversation starts empty even if the stored one has not been reset yet by the time the next
+        // session is created.
+        restoreNext = false
     }
 
     override fun dropCurrentSession() {
         currentSessionId?.let { conversations.remove(it) }
         super.dropCurrentSession()
+        // The session was dropped because it went wrong; the stored transcript still holds what went wrong.
+        restoreNext = false
     }
 
+    @Synchronized
     override fun createSession(cwd: String): String {
         val active = runtime ?: throw ClientSessionException("Koog is not started")
+        // The chat calls this before every prompt and relies on a live session being reused. A new one here would
+        // start the next prompt with an empty history, so the model would forget everything said before.
+        currentSessionId?.takeIf { conversations.containsKey(it) }?.let { return it }
+
         val system = env.systemPrompt(cwd)
         val streamer = ModelStreamer { prompt, toolDescriptors ->
             val model = selectedModel ?: error("No model selected")
             active.connection.streamer(active.choices.getValue(model)).stream(prompt, toolDescriptors)
         }
+        val conversation = KoogConversation(streamer, env.tools, systemPrompt = { system })
+        restorePrevious(conversation)
         val id = "koog-" + UUID.randomUUID()
-        conversations[id] = KoogConversation(streamer, env.tools, systemPrompt = { system })
+        conversations[id] = conversation
         setCurrentSession(id)
         return id
+    }
+
+    /**
+     * Gives a new conversation the stored one's history, so a restart or an agent switch keeps the thread. Skipped
+     * once after a new conversation was started or a session was dropped.
+     */
+    private fun restorePrevious(conversation: KoogConversation) {
+        val skip = !restoreNext
+        restoreNext = true
+        if (skip) return
+        val previous = env.previousConversation()
+        if (previous.isEmpty()) return
+        conversation.restore(previous)
+        env.onHistoryRestored()
     }
 
     override fun cancelSession(sessionId: String) {

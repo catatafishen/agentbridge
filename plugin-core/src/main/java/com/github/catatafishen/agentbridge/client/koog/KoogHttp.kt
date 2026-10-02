@@ -1,9 +1,13 @@
 package com.github.catatafishen.agentbridge.client.koog
 
 import ai.koog.http.client.KoogHttpClient
+import ai.koog.http.client.KoogHttpClientException
+import com.google.gson.JsonArray
 import com.google.gson.JsonParseException
+import com.google.gson.JsonPrimitive
 import com.google.gson.JsonParser
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.serialization.json.Json
 import kotlin.reflect.KClass
 
@@ -19,6 +23,7 @@ class HeaderInjectingHttpClientFactory(
     private val delegate: KoogHttpClient.Factory,
     private val fixedHeaders: Map<String, String>,
     private val perRequestHeaders: (requestBody: Any?) -> Map<String, String> = { emptyMap() },
+    private val normalizeChunk: (String) -> String = { it },
 ) : KoogHttpClient.Factory {
 
     override fun create(
@@ -36,12 +41,14 @@ class HeaderInjectingHttpClientFactory(
             requestTimeoutMillis, connectTimeoutMillis, socketTimeoutMillis, json,
         ),
         perRequestHeaders,
+        normalizeChunk,
     )
 }
 
 internal class HeaderInjectingHttpClient(
     private val delegate: KoogHttpClient,
     private val perRequestHeaders: (Any?) -> Map<String, String>,
+    private val normalizeChunk: (String) -> String = { it },
 ) : KoogHttpClient by delegate {
 
     override suspend fun <T : Any, R : Any> post(
@@ -64,10 +71,43 @@ internal class HeaderInjectingHttpClient(
         processStreamingChunk: (R) -> O?,
         parameters: Map<String, String>,
         headers: Map<String, String>,
-    ): Flow<O> = delegate.sse(
-        path, requestBody, requestBodyType, dataFilter, decodeStreamingResponse, processStreamingChunk,
-        parameters, headers + perRequestHeaders(requestBody),
-    )
+    ): Flow<O> {
+        val allHeaders = headers + perRequestHeaders(requestBody)
+        return delegate.sse(
+            path, requestBody, requestBodyType, dataFilter, { data -> decodeStreamingResponse(normalizeChunk(data)) },
+            processStreamingChunk, parameters, allHeaders,
+        ).catch { e ->
+            if (e !is KoogHttpClientException || !e.errorBody.isNullOrBlank() || (e.statusCode ?: 0) !in 400..499) {
+                throw e
+            }
+            // Koog's SSE transport drops the response body of a failed request, which leaves the user with a bare
+            // "HTTP 400". A 4xx is a validation failure rejected before any generation, so replaying the request once
+            // as a plain POST is cheap and returns the server's explanation.
+            throw withServerBody(e, path, requestBody, requestBodyType, parameters, allHeaders)
+        }
+    }
+
+    private suspend fun <T : Any> withServerBody(
+        original: KoogHttpClientException,
+        path: String,
+        requestBody: T,
+        requestBodyType: KClass<T>,
+        parameters: Map<String, String>,
+        headers: Map<String, String>,
+    ): KoogHttpClientException {
+        val replayed = try {
+            delegate.post(path, requestBody, requestBodyType, String::class, parameters, headers)
+            return original
+        } catch (e: KoogHttpClientException) {
+            e
+        } catch (_: Exception) {
+            return original
+        }
+        if (replayed.errorBody.isNullOrBlank()) return original
+        return KoogHttpClientException(
+            original.clientName, original.statusCode, replayed.errorBody, original.message, original,
+        )
+    }
 
     override fun <T : Any> lines(
         path: String,
@@ -88,11 +128,41 @@ object CopilotHeaders {
     /** Version header sent when listing models. */
     const val API_VERSION = "2026-06-01"
 
-    /** Fixed headers for chat requests. [userAgent] identifies this client, e.g. `AgentBridge/1.2.3`. */
+    /**
+     * Copilot's routing contract, not a statement about which program is calling: without an integration id the
+     * API serves a reduced model catalog, and the session token is only valid for the integration it was
+     * exchanged under, so the same value goes on the exchange, `/models` and `/chat/completions`.
+     */
+    const val INTEGRATION_ID = "vscode-chat"
+
+    const val DEFAULT_EDITOR_VERSION = "JetBrains-IDE/unknown"
+
+    /**
+     * Identity headers Copilot expects on the session exchange, the model list and chat requests.
+     * [userAgent] is e.g. `AgentBridge/1.2.3`; [editorVersion] the host IDE, e.g. `IntelliJ-IDEA/2026.1`.
+     */
     @JvmStatic
-    fun fixed(userAgent: String): Map<String, String> = mapOf(
-        "Content-Type" to JsonContentType.MEDIA_TYPE,
+    @JvmOverloads
+    fun identity(
+        userAgent: String,
+        editorVersion: String = DEFAULT_EDITOR_VERSION,
+        pluginVersion: String = userAgent,
+    ): Map<String, String> = mapOf(
         "User-Agent" to userAgent,
+        "Editor-Version" to editorVersion,
+        "Editor-Plugin-Version" to pluginVersion,
+        "Copilot-Integration-Id" to INTEGRATION_ID,
+    )
+
+    /** Fixed headers for chat requests. */
+    @JvmStatic
+    @JvmOverloads
+    fun fixed(
+        userAgent: String,
+        editorVersion: String = DEFAULT_EDITOR_VERSION,
+        pluginVersion: String = userAgent,
+    ): Map<String, String> = identity(userAgent, editorVersion, pluginVersion) + mapOf(
+        "Content-Type" to JsonContentType.MEDIA_TYPE,
         "Openai-Intent" to "conversation-edits",
     )
 
@@ -118,6 +188,39 @@ object CopilotHeaders {
     @JvmStatic
     fun perRequest(requestBody: Any?): Map<String, String> =
         JsonContentType.perRequest(requestBody) + ("x-initiator" to initiator(requestBody))
+}
+
+/**
+ * Copilot's streaming chunks are not complete OpenAI chunks: the first one (content-filter results) has no `object`
+ * or `model`, and others omit `id` or `created`. Koog's parser requires all of them and fails the whole response
+ * ("Field 'object' is required"). Only these envelope fields are filled in, with neutral values; `choices`, the
+ * deltas and `usage` are never touched, so the content the model sent is exactly what is parsed.
+ */
+object CopilotStreamChunks {
+    private val DEFAULTS = listOf(
+        "id" to { JsonPrimitive("") },
+        "object" to { JsonPrimitive("chat.completion.chunk") },
+        "created" to { JsonPrimitive(0) },
+        "model" to { JsonPrimitive("") },
+        "choices" to { JsonArray() },
+    )
+
+    @JvmStatic
+    fun normalize(json: String): String {
+        val chunk = try {
+            JsonParser.parseString(json).takeIf { it.isJsonObject }?.asJsonObject
+        } catch (_: JsonParseException) {
+            null
+        } ?: return json
+        var changed = false
+        for ((key, default) in DEFAULTS) {
+            if (!chunk.has(key) || chunk.get(key).isJsonNull) {
+                chunk.add(key, default())
+                changed = true
+            }
+        }
+        return if (changed) chunk.toString() else json
+    }
 }
 
 /**

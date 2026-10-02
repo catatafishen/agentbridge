@@ -42,32 +42,29 @@ class KoogSupportAndSettingsTest {
     @Nested
     inner class ConfigurationProblems {
         @Test
-        fun `Copilot without token and without a client id explains the missing client id`() {
-            val problem = KoogSettings.problem(KoogProviderKind.COPILOT, null, null, "", "")
+        fun `Copilot without a token asks the user to sign in`() {
+            val problem = KoogSettings.problem(KoogProviderKind.COPILOT, null, null, "")
 
             assertNotNull(problem)
-            assertTrue(problem!!.contains("client id"))
+            assertTrue(problem!!.contains("Sign in"))
+            assertTrue(problem.contains(KoogSettings.SETTINGS_PATH))
             // Must be recognised by the shared authentication handling (see docs/AUTH-HANDLING.md).
             assertTrue(problem.contains("authenticated"))
         }
 
         @Test
-        fun `Copilot with a client id but no token asks the user to sign in`() {
-            val problem = KoogSettings.problem(KoogProviderKind.COPILOT, "", null, "", "abc123")
-
-            assertNotNull(problem)
-            assertTrue(problem!!.contains("Sign in"))
-            assertTrue(problem.contains("authenticated"))
+        fun `Copilot with a blank token is the same as none`() {
+            assertNotNull(KoogSettings.problem(KoogProviderKind.COPILOT, " ", null, ""))
         }
 
         @Test
-        fun `Copilot with a token is ready even without a client id`() {
-            assertNull(KoogSettings.problem(KoogProviderKind.COPILOT, "gho_token", null, "", ""))
+        fun `Copilot with a token is ready`() {
+            assertNull(KoogSettings.problem(KoogProviderKind.COPILOT, "gho_token", null, ""))
         }
 
         @Test
         fun `OpenAI-compatible needs an API key`() {
-            val problem = KoogSettings.problem(KoogProviderKind.OPENAI_COMPATIBLE, null, " ", "gpt-4o", "")
+            val problem = KoogSettings.problem(KoogProviderKind.OPENAI_COMPATIBLE, null, " ", "gpt-4o")
 
             assertNotNull(problem)
             assertTrue(problem!!.contains("API key"))
@@ -76,7 +73,7 @@ class KoogSupportAndSettingsTest {
 
         @Test
         fun `OpenAI-compatible needs a model id`() {
-            val problem = KoogSettings.problem(KoogProviderKind.OPENAI_COMPATIBLE, null, "sk-test", " ", "")
+            val problem = KoogSettings.problem(KoogProviderKind.OPENAI_COMPATIBLE, null, "sk-test", " ")
 
             assertNotNull(problem)
             assertTrue(problem!!.contains("model"))
@@ -84,36 +81,25 @@ class KoogSupportAndSettingsTest {
 
         @Test
         fun `OpenAI-compatible with key and model is ready`() {
-            assertNull(KoogSettings.problem(KoogProviderKind.OPENAI_COMPATIBLE, null, "sk-test", "gpt-4o", ""))
+            assertNull(KoogSettings.problem(KoogProviderKind.OPENAI_COMPATIBLE, null, "sk-test", "gpt-4o"))
+        }
+
+        @Test
+        fun `messages name the settings page by its real title`() {
+            assertTrue(KoogSettings.SETTINGS_PATH.endsWith("Built-in Agent (Koog)"))
         }
     }
 
     @Nested
-    inner class ClientIdFile {
+    inner class CopilotClientId {
         @Test
-        fun `comments and blank lines are skipped and the first value wins`() {
-            val content = "# comment\n\n  # indented comment\n  Iv1.abc  \nsecond\n"
-
-            assertEquals("Iv1.abc", KoogSettings.parseClientId(content))
+        fun `sign-in uses the Copilot GitHub App, which is the one that gets the full model catalog`() {
+            assertEquals("Iv1.b507a08c87ecfe98", CopilotAuth.CLIENT_ID)
         }
 
         @Test
-        fun `a file with only comments yields no client id`() {
-            assertEquals("", KoogSettings.parseClientId("# only\n# comments\n"))
-        }
-
-        @Test
-        fun `a missing file yields no client id`() {
-            assertEquals("", KoogSettings.parseClientId(null))
-        }
-
-        @Test
-        fun `the bundled file ships without a client id so nothing foreign is reused`() {
-            val bundled = KoogSettings::class.java.getResourceAsStream("/koog/copilot-oauth-client-id.txt")
-                ?.use { it.readBytes().decodeToString() }
-
-            assertNotNull(bundled, "bundled resource is missing")
-            assertEquals("", KoogSettings.parseClientId(bundled))
+        fun `the device code request carries that client id`() {
+            assertEquals(CopilotAuth.CLIENT_ID, CopilotAuth.deviceCodeRequest(CopilotAuth.CLIENT_ID).get("client_id").asString)
         }
     }
 

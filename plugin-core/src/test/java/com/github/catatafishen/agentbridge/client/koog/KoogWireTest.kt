@@ -105,6 +105,50 @@ class KoogWireTest {
     }
 
     @Test
+    fun `Copilot chunks that lack object and model, as the real API sends them, are still parsed`() {
+        val copilotAnswer = sse(
+            """{"choices":[],"created":0,"id":"","prompt_filter_results":[{"content_filter_results":{},"index":0}]}""",
+            """{"choices":[{"index":0,"delta":{"role":"assistant","content":"Hello from Copilot"}}],"created":1,"id":"c1"}""",
+            """{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"created":1,"id":"c1","usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}""",
+        )
+        val base = serve(listOf(200 to copilotAnswer))
+        val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)
+        val streamed = StringBuilder()
+
+        val result = runBlocking {
+            conversation(executor).runTurn(listOf(ContentBlock.Text("go"))) { streamed.append(it.toString()) }
+        }
+
+        assertEquals("end_turn", result.stopReason)
+        assertTrue(streamed.contains("Hello from Copilot"), streamed.toString())
+    }
+
+    @Test
+    fun `a Copilot session supplies the host, and its token is renewed between the requests of one turn`() {
+        val base = serve(listOf(200 to toolCall, 200 to answer))
+        var exchanges = 0
+        var now = 1_000L
+        val sessions = CopilotSessions({
+            exchanges++
+            """{"token":"tid=$exchanges","expires_at":${now + 600},"endpoints":{"api":"$base"}}"""
+        }, { now })
+        val executor = KoogProviders.createExecutor(
+            KoogProviderKind.COPILOT, null, "unused", "AgentBridge/test", "http://unreachable.invalid",
+            sessions, "IntelliJ-IDEA/2026.1",
+        )
+        val conv = conversation(executor)
+
+        runBlocking {
+            // The first request carries session 1; time then passes beyond the refresh margin before the follow-up.
+            conv.runTurn(listOf(ContentBlock.Text("go"))) { if (it.toString().contains("read_file")) now += 600 }
+        }
+
+        assertEquals(listOf("Bearer tid=1", "Bearer tid=2"), seen.map { it.headers["authorization"] })
+        assertEquals("vscode-chat", seen[0].headers["copilot-integration-id"])
+        assertEquals("IntelliJ-IDEA/2026.1", seen[0].headers["editor-version"])
+    }
+
+    @Test
     fun `the initiator header marks the first request as a user turn and the tool follow-up as an agent turn`() {
         val base = serve(listOf(200 to toolCall, 200 to answer))
         val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)

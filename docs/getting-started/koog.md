@@ -29,38 +29,27 @@ directly and runs every tool call through AgentBridge's tool layer, inside the I
 
 Changes apply the next time the agent starts (switch agent or restart it).
 
-## Copilot sign-in needs an OAuth client id
+## Which models you get
 
-GitHub's device sign-in needs a registered OAuth app, and this plugin does not borrow another product's. If your build
-bundles one (`plugin-core/src/main/resources/koog/copilot-oauth-client-id.txt`) you can skip this section. If not, the
-settings page shows a **One-time setup needed** box with these steps and an **Open GitHub** button, and pressing **Sign
-in
-with GitHub…** without an id offers the same. It is free, takes about two minutes, and you do not need a client secret:
+Copilot only offers the full model catalog (current GPT, Claude and Gemini models) to tokens issued to the Copilot
+GitHub App that GitHub's own clients, Hermes and OpenCode sign in with. This plugin signs in with that app's client id
+(`CopilotAuth.CLIENT_ID`) and, like those tools, exchanges the token for a short-lived Copilot session that it renews as
+it expires. A token from any other OAuth app is given a short list of older GPT models only, so there is no setting
+for a different client id.
 
-1. Open <https://github.com/settings/applications/new> while signed in to GitHub.
-2. Fill in the form. GitHub requires all three fields but the sign-in never uses them, so any values work:
-   Application name `AgentBridge`, Homepage URL `https://github.com/catatafishen/agentbridge`, Authorization callback
-   URL
-   `http://localhost`.
-3. Tick **Enable Device Flow** (on the form, or on the app's page after you register it) and click **Register
-   application**.
-4. Copy the **Client ID** shown on the app's page. It is public. Do not paste the client secret; the settings page warns
-   if a value looks like one.
-5. Paste it into **OAuth client id** on the settings page and press **Sign in with GitHub…**.
+If sign-in fails with a message that GitHub refused the Copilot session, check that the GitHub account has an active
+Copilot subscription. If your seat comes from an organization that restricts third-party apps, an organization owner
+may need to allow it.
 
-If sign-in then says Device Flow is not enabled, open the app under GitHub → Settings → Developer settings → OAuth Apps,
-tick **Enable Device Flow** and save. If it says GitHub does not recognise the Client ID, re-copy the Client ID (not the
-secret). If your Copilot seat comes from an organization that restricts third-party OAuth apps, an organization owner
-may
-need to approve the app.
-
-Prefer not to register anything? Switch **Provider** to the OpenAI-compatible option and use an API key.
+Prefer not to sign in this way? Switch **Provider** to the OpenAI-compatible option and use an API key.
 
 ### About using a Copilot subscription this way
 
-This uses the same device sign-in and API that other agent tools use with a Copilot subscription. GitHub has announced
-official support for OpenCode specifically; nothing published covers other clients, so this is a gray area and could
-change. Check that it is acceptable under your plan and your employer's policy.
+This uses the same device sign-in, client id and API that other agent tools use with a Copilot subscription. GitHub has
+announced official support for OpenCode specifically; nothing published covers other clients, so this is a gray area,
+could change, and GitHub could restrict it. The requests identify themselves as AgentBridge in `User-Agent` and
+`Editor-Plugin-Version`, but carry the Copilot integration id Copilot requires. Check that it is acceptable under your
+plan and your employer's policy.
 
 ## Limits
 

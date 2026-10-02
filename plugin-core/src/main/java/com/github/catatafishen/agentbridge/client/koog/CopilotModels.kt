@@ -58,6 +58,29 @@ object CopilotModels {
             model.isChatModel && model.supportsToolCalls != false && model.usesChatCompletions
         }
 
+    /**
+     * One diagnostic line per catalog entry, before any filtering, so a surprising model list can be traced to what
+     * the endpoint actually returned (duplicate ids, missing models, endpoint or picker flags).
+     */
+    @JvmStatic
+    fun describe(json: String): List<String> {
+        val data = try {
+            JsonParser.parseString(json).takeIf { it.isJsonObject }?.asJsonObject
+                ?.get("data")?.takeIf { it.isJsonArray }?.asJsonArray
+        } catch (_: JsonParseException) {
+            null
+        } ?: return listOf("catalog has no data array")
+        return data.map { element ->
+            val o = element.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return@map "non-object entry: $element"
+            val capabilities = o.obj("capabilities")
+            val endpoints = o["supported_endpoints"]?.takeIf { it.isJsonArray }?.asJsonArray
+                ?.joinToString(",") { it.asString } ?: "-"
+            "id=${o.string("id")} name=${o.string("name")} type=${capabilities?.string("type")} " +
+                "tools=${capabilities?.obj("supports")?.bool("tool_calls")} picker=${o.bool("model_picker_enabled")} " +
+                "policy=${o.obj("policy")?.string("state")} version=${o.string("version")} endpoints=$endpoints"
+        }
+    }
+
     private fun parseModel(o: JsonObject): CopilotModel? {
         val id = o.string("id") ?: return null
         if (o.obj("policy")?.string("state") == "disabled") return null

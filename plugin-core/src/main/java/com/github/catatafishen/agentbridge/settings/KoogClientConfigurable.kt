@@ -2,11 +2,9 @@ package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.client.koog.CopilotAuth
-import com.github.catatafishen.agentbridge.client.koog.CopilotSetupGuide
 import com.github.catatafishen.agentbridge.client.koog.KoogNetwork
 import com.github.catatafishen.agentbridge.client.koog.KoogProviderKind
 import com.github.catatafishen.agentbridge.client.koog.KoogSettings
-import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.Configurable
@@ -17,7 +15,6 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
@@ -27,9 +24,7 @@ import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.UIUtil
-import java.awt.datatransfer.StringSelection
 import java.io.IOException
-import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
 /**
@@ -50,7 +45,6 @@ class KoogClientConfigurable(private val project: Project) :
 
     private val copilotStatus = JBLabel()
     private val apiKeyField = JBPasswordField()
-    private var clientIdField: JTextField? = null
     private var apiKeyLoaded = false
 
     override fun getId(): String = ID
@@ -75,64 +69,22 @@ class KoogClientConfigurable(private val project: Project) :
                 )
         }
 
-        val needsSetup = !KoogSettings.hasBundledClientId()
-
         group("GitHub Copilot subscription") {
             row("Status:") { cell(copilotStatus) }
             row {
                 button("Sign in with GitHub…") { signIn() }
                 button("Sign out") { signOut() }
             }
-            if (needsSetup) {
-                row {
-                    val intro = JBLabel(
-                        "<html><b>One-time setup needed.</b> GitHub's sign-in needs an OAuth app, and this build " +
-                            "does not include one. Registering your own is free and takes about two minutes:</html>"
-                    )
-                    cell(intro)
-                }
-                row {
-                    cell(JBLabel(CopilotSetupGuide.stepsAsHtml()))
-                }
-                row {
-                    button("Open GitHub: new OAuth app") { BrowserUtil.browse(CopilotSetupGuide.NEW_APP_URL) }
-                }
-            }
-            row("OAuth client id:") {
-                textField()
-                    .align(AlignX.FILL)
-                    .applyToComponent {
-                        clientIdField = this
-                        emptyText.text =
-                            if (needsSetup) "Paste the Client ID from step 4" else "Using the one bundled with this build"
-                    }
-                    .comment(
-                        if (needsSetup) {
-                            "The Client ID (public) of your GitHub OAuth app, with Device Flow enabled."
-                        } else {
-                            "Optional. Leave empty to use the one bundled with this build, or enter the Client ID " +
-                                "of your own GitHub OAuth app with Device Flow enabled."
-                        }
-                    )
-                    .validationOnInput { field ->
-                        CopilotSetupGuide.clientIdProblem(field.text)?.let { warning(it) }
-                    }
-                    .validationOnApply { field ->
-                        CopilotSetupGuide.clientIdProblem(field.text)?.let { error(it) }
-                    }
-                    .bindText(
-                        { KoogSettings.copilotClientIdOverride },
-                        { KoogSettings.copilotClientIdOverride = it },
-                    )
-            }
             row {
-                val terms = JBLabel(
-                    "<html>Using a Copilot subscription outside GitHub's own clients follows the same device sign-in " +
-                        "other agent tools use. GitHub has announced official support for OpenCode only; " +
-                        "check that it is acceptable under your plan and employer's policy.</html>"
+                val about = JBLabel(
+                    "<html>Signs in with the GitHub app that GitHub's own Copilot clients use, so your subscription's " +
+                        "full model list is available. Using a Copilot subscription outside GitHub's own clients " +
+                        "follows the same device sign-in other agent tools use. GitHub has announced official " +
+                        "support for OpenCode only; check that it is acceptable under your plan and employer's " +
+                        "policy.</html>"
                 )
-                terms.foreground = UIUtil.getContextHelpForeground()
-                cell(terms)
+                about.foreground = UIUtil.getContextHelpForeground()
+                cell(about)
             }
         }
 
@@ -203,8 +155,7 @@ class KoogClientConfigurable(private val project: Project) :
                     copilotStatus.text = "✓ Signed in to GitHub Copilot"
                     copilotStatus.foreground = JBColor(0x008000, 0x4EC94E)
                 } else {
-                    copilotStatus.text =
-                        if (KoogSettings.copilotClientId().isBlank()) "Not signed in. One-time setup needed, see below" else "Not signed in"
+                    copilotStatus.text = "Not signed in"
                     copilotStatus.foreground = UIUtil.getLabelForeground()
                 }
             }
@@ -219,35 +170,7 @@ class KoogClientConfigurable(private val project: Project) :
     }
 
     private fun signIn() {
-        val typed = clientIdField?.text?.trim().orEmpty()
-        CopilotSetupGuide.clientIdProblem(typed)?.let {
-            Messages.showErrorDialog(project, it, SIGN_IN_TITLE)
-            clientIdField?.requestFocusInWindow()
-            return
-        }
-        val clientId = typed.ifBlank { KoogSettings.copilotClientId() }
-        if (clientId.isBlank()) {
-            showSetupNeeded()
-            return
-        }
-        ProgressManager.getInstance().run(RequestCodeTask(project, clientId) { refreshCopilotStatus() })
-    }
-
-    /** Explains the one-time setup and offers to open the GitHub page where it starts, instead of a dead end. */
-    private fun showSetupNeeded() {
-        val choice = Messages.showDialog(
-            project,
-            "GitHub's sign-in needs an OAuth app, and this build does not include one. " +
-                "You register your own once (it is free, takes about two minutes, and you do not need a client secret):\n\n" +
-                CopilotSetupGuide.stepsAsText() +
-                "\n\nYou can also use an OpenAI-compatible API key instead, under \"OpenAI-compatible API\" on this page.",
-            SIGN_IN_TITLE,
-            arrayOf("Open GitHub", "Cancel"),
-            0,
-            Messages.getInformationIcon(),
-        )
-        if (choice == 0) BrowserUtil.browse(CopilotSetupGuide.NEW_APP_URL)
-        clientIdField?.requestFocusInWindow()
+        ProgressManager.getInstance().run(RequestCodeTask(project, CopilotAuth.CLIENT_ID) { refreshCopilotStatus() })
     }
 
     /**

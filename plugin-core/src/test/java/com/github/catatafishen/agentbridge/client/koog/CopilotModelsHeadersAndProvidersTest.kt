@@ -83,6 +83,21 @@ class CopilotModelsHeadersAndProvidersTest {
         }
 
         @Test
+        fun `describe lists every raw entry including ones the filters later drop`() {
+            val lines = CopilotModels.describe(catalog)
+
+            assertEquals(10, lines.size)
+            assertTrue(lines[0].contains("id=gpt-4.1") && lines[0].contains("endpoints=/chat/completions"))
+            assertTrue(lines.any { it.contains("id=blocked") && it.contains("policy=disabled") })
+            assertTrue(lines.any { it.contains("id=hidden-chat") && it.contains("picker=false") })
+        }
+
+        @Test
+        fun `describe reports a catalog without a data array`() {
+            assertEquals(listOf("catalog has no data array"), CopilotModels.describe("not json"))
+        }
+
+        @Test
         fun `bad json yields an empty catalog`() {
             assertTrue(CopilotModels.parse("not json").isEmpty())
             assertTrue(CopilotModels.parse("""{"data":"nope"}""").isEmpty())
@@ -129,11 +144,38 @@ class CopilotModelsHeadersAndProvidersTest {
 
         @Test
         fun `fixed headers declare JSON and identify the client`() {
-            val headers = CopilotHeaders.fixed("AgentBridge/1.0")
+            val headers = CopilotHeaders.fixed("AgentBridge/1.0", "IntelliJ-IDEA/2026.1")
 
             assertEquals("application/json", headers["Content-Type"])
             assertEquals("AgentBridge/1.0", headers["User-Agent"])
             assertEquals("conversation-edits", headers["Openai-Intent"])
+        }
+
+        @Test
+        fun `the identity headers Copilot needs for the full catalog are on every request`() {
+            val headers = CopilotHeaders.fixed("AgentBridge/1.0", "IntelliJ-IDEA/2026.1")
+
+            assertEquals("vscode-chat", headers["Copilot-Integration-Id"])
+            assertEquals("IntelliJ-IDEA/2026.1", headers["Editor-Version"])
+            assertEquals("AgentBridge/1.0", headers["Editor-Plugin-Version"])
+        }
+
+        @Test
+        fun `the session exchange and the model list use the same identity as chat`() {
+            val identity = CopilotHeaders.identity("AgentBridge/1.0", "IntelliJ-IDEA/2026.1")
+
+            assertTrue(CopilotHeaders.fixed("AgentBridge/1.0", "IntelliJ-IDEA/2026.1").entries.containsAll(identity.entries))
+        }
+
+        @Test
+        fun `a refused session exchange tells the user to sign in again and is recognised as an auth failure`() {
+            listOf(401, 403, 404).forEach { status ->
+                val message = KoogNetwork.sessionRefusal(status)
+
+                assertTrue(message.contains("authenticated"), message)
+                assertTrue(message.contains("sign in again", ignoreCase = true), message)
+            }
+            assertFalse(KoogNetwork.sessionRefusal(500).contains("authenticated"))
         }
     }
 

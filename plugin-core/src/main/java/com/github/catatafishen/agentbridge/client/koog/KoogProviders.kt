@@ -55,6 +55,8 @@ object KoogProviders {
     /**
      * @param baseUrl the OpenAI-compatible endpoint (ignored for Copilot)
      * @param copilotBaseUrl the Copilot API host; only differs from the default for GitHub Enterprise or tests
+     * @param sessions when given (Copilot), the session token and API host come from here and the token is
+     *   renewed per request, so a long conversation outlives one session; [apiKey] and [copilotBaseUrl] are then unused
      */
     @JvmStatic
     @JvmOverloads
@@ -64,18 +66,26 @@ object KoogProviders {
         apiKey: String,
         userAgent: String,
         copilotBaseUrl: String = CopilotHeaders.API_BASE,
+        sessions: CopilotSessions? = null,
+        editorVersion: String = CopilotHeaders.DEFAULT_EDITOR_VERSION,
     ): PromptExecutor {
         val jdk = JavaKoogHttpClient.Factory()
         return when (kind) {
             KoogProviderKind.COPILOT -> {
+                val perRequest: (Any?) -> Map<String, String> = if (sessions == null) {
+                    CopilotHeaders::perRequest
+                } else {
+                    { body -> CopilotHeaders.perRequest(body) + ("Authorization" to "Bearer ${sessions.current().token}") }
+                }
                 val factory = HeaderInjectingHttpClientFactory(
-                    jdk, CopilotHeaders.fixed(userAgent), CopilotHeaders::perRequest,
+                    jdk, CopilotHeaders.fixed(userAgent, editorVersion), perRequest, CopilotStreamChunks::normalize,
                 )
+                val session = sessions?.current()
                 val settings = OpenAIClientSettings(
-                    baseUrl = copilotBaseUrl,
+                    baseUrl = session?.apiBase ?: copilotBaseUrl,
                     chatCompletionsPath = CopilotHeaders.CHAT_COMPLETIONS_PATH,
                 )
-                MultiLLMPromptExecutor(OpenAILLMClient(apiKey, settings, factory))
+                MultiLLMPromptExecutor(OpenAILLMClient(session?.token ?: apiKey, settings, factory))
             }
 
             KoogProviderKind.OPENAI_COMPATIBLE -> {
