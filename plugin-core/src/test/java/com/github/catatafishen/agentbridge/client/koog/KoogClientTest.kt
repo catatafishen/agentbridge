@@ -74,7 +74,8 @@ class KoogClientTest {
         override fun connect(kind: KoogProviderKind, credential: String) =
             FakeConnection { model -> streamerFor(model) }.also { connections += it }
 
-        override fun systemPrompt(cwd: String) = "SYSTEM for $cwd"
+        var systemSuffix = ""
+        override fun systemPrompt(cwd: String) = "SYSTEM for $cwd$systemSuffix"
 
         var previous: List<EntryData> = emptyList()
         var previousLoads = 0
@@ -291,6 +292,33 @@ class KoogClientTest {
 
             assertNull(client.activeSessionId)
             assertThrows(ClientPromptException::class.java) { client.sendPrompt(request(id)) {} }
+        }
+
+        @Test
+        fun `the system prompt is read again for every turn, so edited instructions apply to the next message`() {
+            val seen = CopyOnWriteArrayList<Prompt>()
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("x", 0), end()) } }
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "one")) {}
+            env.systemSuffix = " (edited)"
+            client.sendPrompt(request(id, "two")) {}
+
+            assertEquals("SYSTEM for /project", seen[0].messages.first().textContent())
+            assertEquals("SYSTEM for /project (edited)", seen[1].messages.first().textContent())
+            // The conversation itself carries on: only the system message changed.
+            assertEquals(listOf("one", "x", "two"), seen[1].messages.drop(1).map { it.textContent() })
+        }
+
+        @Test
+        fun `the system prompt stays the same for all requests of one turn`() {
+            val seen = CopyOnWriteArrayList<Prompt>()
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("x", 0), end()) } }
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "one")) {}
+
+            assertEquals(1, seen.map { it.messages.first().textContent() }.toSet().size)
         }
 
         @Test
