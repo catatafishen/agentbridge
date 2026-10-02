@@ -362,7 +362,7 @@ public final class ActiveAgentManager implements Disposable {
                     AgentConfig config = resolveStartConfig();
                     acpClient = new CodexClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
                 }
-                case ACP -> acpClient = createAcpClient(agentId);
+                case ACP, IN_PROCESS -> acpClient = createAcpClient(agentId);
             }
 
             // Apply persisted agent selection before start() builds the launch command.

@@ -44,6 +44,14 @@ class AgentProfileTest {
     }
 
     @Test
+    @DisplayName("ACP profiles require a start command; in-process profiles do not")
+    void requiresStartCommandDependsOnTransport() {
+        assertTrue(profile.requiresStartCommand());
+        profile.setTransportType(TransportType.IN_PROCESS);
+        assertFalse(profile.requiresStartCommand());
+    }
+
+    @Test
     @DisplayName("default acpArgs include --acp and --stdio")
     void defaultAcpArgs() {
         assertTrue(profile.getAcpArgs().contains("--acp"));

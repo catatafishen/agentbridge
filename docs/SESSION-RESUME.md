@@ -136,6 +136,7 @@ continuation of the exported session. The mechanism varies by client:
 | Claude CLI | `--resume <id>` CLI flag                                    | `cliSessionIds` map (in-memory only) + `cliResumeSessionId` property |
 | Codex      | `codexThreadId`                                             | `PropertiesComponent` (profile-prefixed)                             |
 | OpenCode   | `session/resume` ACP method (separate from `session/new`)   | `GenericSettings("opencode", project)`                               |
+| Koog       | History rebuilt from the v2 store in `createSession`        | none: reads `.current-session-id`, skipped once after a new chat     |
 
 **Critical:** If the exporter writes session files but does NOT set the resume ID,
 the new agent will start a blank session and the exported files are orphaned.

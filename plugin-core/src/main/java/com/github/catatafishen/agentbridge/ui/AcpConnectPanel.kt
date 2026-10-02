@@ -635,8 +635,8 @@ class AcpConnectPanel(
 
         val profileId = selectedProfile.id
 
-        val cmd = agentManager.getCustomAcpCommandFor(profileId)
-        if (cmd.isBlank()) {
+        val cmd = if (selectedProfile.requiresStartCommand()) agentManager.getCustomAcpCommandFor(profileId) else ""
+        if (selectedProfile.requiresStartCommand() && cmd.isBlank()) {
             statusBanner.showError("No start command configured for ${selectedProfile.displayName} — check Settings.")
             return
         }

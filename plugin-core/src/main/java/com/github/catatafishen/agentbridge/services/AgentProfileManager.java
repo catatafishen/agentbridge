@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.services;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
 import com.github.catatafishen.agentbridge.client.acp.GooseClient;
+import com.github.catatafishen.agentbridge.client.koog.KoogSupport;
 import com.github.catatafishen.agentbridge.client.acp.HermesClient;
 import com.github.catatafishen.agentbridge.client.acp.VibeClient;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
@@ -44,6 +45,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
     public static final String VIBE_PROFILE_ID = VibeClient.AGENT_ID;
     public static final String GOOSE_PROFILE_ID = GooseClient.AGENT_ID;
+    public static final String KOOG_PROFILE_ID = KoogSupport.AGENT_ID;
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
     private PersistedState persistedState = new PersistedState();
@@ -317,6 +319,13 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
                 if (profile != null) profiles.put(id, profile);
             }
         }
+        // The Koog agent only exists on IDEs whose Kotlin runtime can run it (see KoogSupport). Also drop a
+        // persisted profile, so an IDE downgrade does not leave an agent that cannot start.
+        if (KoogSupport.isSupported()) {
+            profiles.computeIfAbsent(KOOG_PROFILE_ID, id -> buildKoogProfile());
+        } else {
+            profiles.remove(KOOG_PROFILE_ID);
+        }
     }
 
     @Nullable
@@ -421,6 +430,17 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setAlternateNames(List.of("vibe"));
         p.setInstallHint("Install with: pip install mistral-vibe (requires Python 3.12+)");
         p.setInstallUrl("https://docs.mistral.ai/vibe/code/cli/install-setup");
+        return p;
+    }
+
+    private static AgentProfile buildKoogProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(KOOG_PROFILE_ID);
+        p.setDisplayName("Built-in Agent (Koog)");
+        p.setBuiltIn(true);
+        p.setExperimental(true);
+        p.setTransportType(TransportType.IN_PROCESS);
+        p.setInstallHint("No installation needed. Choose a provider under Settings → Tools → AgentBridge → Agents → Koog.");
         return p;
     }
 

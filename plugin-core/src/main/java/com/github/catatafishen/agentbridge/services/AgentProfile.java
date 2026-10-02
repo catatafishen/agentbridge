@@ -274,6 +274,14 @@ public final class AgentProfile {
         return transportType != null ? transportType : TransportType.ACP;
     }
 
+    /**
+     * Whether connecting needs a launch command. In-process agents run inside the IDE and have no
+     * command to configure, so the connect panel must not demand one.
+     */
+    public boolean requiresStartCommand() {
+        return getTransportType() != TransportType.IN_PROCESS;
+    }
+
     @NotNull
     public String getInstallUrl() {
         return installUrl != null ? installUrl : "";

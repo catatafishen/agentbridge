@@ -7,6 +7,8 @@ import com.github.catatafishen.agentbridge.client.acp.JunieClient;
 import com.github.catatafishen.agentbridge.client.acp.KiroClient;
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeClient;
 import com.github.catatafishen.agentbridge.client.acp.VibeClient;
+import com.github.catatafishen.agentbridge.client.koog.KoogClient;
+import com.github.catatafishen.agentbridge.client.koog.KoogSupport;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
@@ -40,6 +42,11 @@ public final class ClientRegistry {
         register("hermes", "Hermes Agent", HermesClient::new);
         register("vibe", "Mistral Vibe", VibeClient::new);
         register("goose", "Goose", GooseClient::new);
+        // Koog needs a newer Kotlin stdlib than older IDEs ship; KoogSupport touches no Koog classes,
+        // so this check is safe everywhere and the Koog classes are never loaded where they cannot run.
+        if (KoogSupport.isSupported()) {
+            register(KoogSupport.AGENT_ID, "Built-in Agent (Koog)", KoogClient::new);
+        }
         // Claude clients are registered once they support a single-arg Project constructor.
     }
 

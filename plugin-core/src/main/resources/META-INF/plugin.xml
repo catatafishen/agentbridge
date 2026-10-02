@@ -320,6 +320,14 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>
 
+    <!-- Built-in agent. A provider (not a fixed instance) so the page is absent on IDEs whose Kotlin runtime is
+         too old for Koog; see KoogSupport. -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      provider="com.github.catatafishen.agentbridge.settings.KoogConfigurableProvider"
+      id="com.github.catatafishen.agentbridge.clientAgents.koog"
+      displayName="Built-in Agent (Koog)"/>
+
     <!-- ── Storage (file locations + child stores: tool stats, memory, chat history) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"

@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.github.catatafishen.agentbridge.client.acp.CopilotClient;
+import com.github.catatafishen.agentbridge.client.koog.KoogSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -33,10 +35,25 @@ class AgentProfileManagerTest {
     // ── Default profiles ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getAllProfiles returns 9 built-in profiles")
+    @DisplayName("getAllProfiles returns 9 built-in profiles, plus Koog where the IDE can run it")
     void getAllProfilesReturnsDefaults() {
         List<AgentProfile> profiles = manager.getAllProfiles();
-        assertEquals(9, profiles.size());
+        assertEquals(KoogSupport.isSupported() ? 10 : 9, profiles.size());
+    }
+
+    @Test
+    @DisplayName("the Koog profile exists only where supported, runs in-process and is experimental")
+    void koogProfileIsGatedAndInProcess() {
+        AgentProfile koog = manager.getProfile(AgentProfileManager.KOOG_PROFILE_ID);
+
+        if (KoogSupport.isSupported()) {
+            assertNotNull(koog);
+            assertEquals(TransportType.IN_PROCESS, koog.getTransportType());
+            assertTrue(koog.isExperimental());
+            assertTrue(koog.isBuiltIn());
+        } else {
+            assertNull(koog);
+        }
     }
 
     // ── kiroAgentEngine persistence (delta) ───────────────────────────────────
