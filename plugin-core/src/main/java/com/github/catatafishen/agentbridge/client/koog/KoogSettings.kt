@@ -20,8 +20,9 @@ object KoogSettings {
     private const val KEY_PROVIDER = PREFIX + "provider"
     private const val KEY_BASE_URL = PREFIX + "openaiBaseUrl"
     private const val KEY_MODEL = PREFIX + "model"
-    private const val KEY_CLIENT_ID = PREFIX + "copilotClientId"
-    private const val CLIENT_ID_RESOURCE = "/koog/copilot-oauth-client-id.txt"
+
+    /** Where the agent's settings live, for use in messages. */
+    const val SETTINGS_PATH = "Settings → Tools → AgentBridge → Agents → Built-in Agent (Koog)"
 
     private val props get() = PropertiesComponent.getInstance()
 
@@ -37,18 +38,6 @@ object KoogSettings {
         get() = props.getValue(KEY_MODEL, "")
         set(value) = props.setValue(KEY_MODEL, value.trim(), "")
 
-    /** A client id the user typed in, which wins over the one bundled with the plugin. */
-    var copilotClientIdOverride: String
-        get() = props.getValue(KEY_CLIENT_ID, "")
-        set(value) = props.setValue(KEY_CLIENT_ID, value.trim(), "")
-
-    /** The OAuth app client id used for Copilot sign-in, or blank when this build has none configured. */
-    fun copilotClientId(): String =
-        copilotClientIdOverride.ifBlank { parseClientId(bundledClientIdFile()) }
-
-    /** True when this build ships a client id, so users need no setup of their own. */
-    fun hasBundledClientId(): Boolean = parseClientId(bundledClientIdFile()).isNotBlank()
-
     var copilotToken: String?
         get() = secret("copilot.oauth-token")
         set(value) = setSecret("copilot.oauth-token", value)
@@ -60,9 +49,7 @@ object KoogSettings {
     /**
      * What stops the agent from starting, or null when it is ready. Phrased as the next step to take.
      */
-    fun configurationProblem(): String? = problem(
-        provider, copilotToken, openAiApiKey, modelId, copilotClientId(),
-    )
+    fun configurationProblem(): String? = problem(provider, copilotToken, openAiApiKey, modelId)
 
     /** Pure so it can be tested: the rules for "is this configuration usable". */
     @JvmStatic
@@ -71,40 +58,25 @@ object KoogSettings {
         copilotToken: String?,
         openAiApiKey: String?,
         modelId: String,
-        copilotClientId: String,
     ): String? = when (provider) {
-        KoogProviderKind.COPILOT -> when {
-            copilotToken.isNullOrBlank() && copilotClientId.isBlank() ->
+        KoogProviderKind.COPILOT ->
+            if (copilotToken.isNullOrBlank()) {
                 // "authenticated" is what the shared authentication handling looks for (docs/AUTH-HANDLING.md).
-                "Koog is not authenticated: this build has no GitHub OAuth client id for Copilot sign-in. " +
-                    CopilotSetupGuide.shortHint()
-
-            copilotToken.isNullOrBlank() ->
-                "Koog is not authenticated with GitHub Copilot. " +
-                    "Sign in under ${CopilotSetupGuide.SETTINGS_PATH}."
-
-            else -> null
-        }
+                "Koog is not authenticated with GitHub Copilot. Sign in under $SETTINGS_PATH."
+            } else {
+                null
+            }
 
         KoogProviderKind.OPENAI_COMPATIBLE -> when {
             openAiApiKey.isNullOrBlank() ->
-                "Koog is not authenticated: no API key is set. " +
-                    "Enter one under ${CopilotSetupGuide.SETTINGS_PATH}."
+                "Koog is not authenticated: no API key is set. Enter one under $SETTINGS_PATH."
 
             modelId.isBlank() ->
-                "Koog has no model selected. Enter a model id under ${CopilotSetupGuide.SETTINGS_PATH}."
+                "Koog has no model selected. Enter a model id under $SETTINGS_PATH."
 
             else -> null
         }
     }
-
-    /** Parses the bundled client-id file: `#` comments and blank lines are ignored, the first value wins. */
-    @JvmStatic
-    fun parseClientId(fileContent: String?): String =
-        fileContent?.lineSequence()?.map { it.trim() }?.firstOrNull { it.isNotEmpty() && !it.startsWith("#") }.orEmpty()
-
-    private fun bundledClientIdFile(): String? =
-        KoogSettings::class.java.getResourceAsStream(CLIENT_ID_RESOURCE)?.use { it.readBytes().decodeToString() }
 
     private fun attributes(key: String) =
         CredentialAttributes(generateServiceName("AgentBridge Koog", key))

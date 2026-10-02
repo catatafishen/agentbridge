@@ -96,10 +96,17 @@ How other agent tools do it (read from the `sst/opencode` source, not via a summ
 - GitHub OAuth *device flow*: `POST https://github.com/login/device/code` (`client_id`, scope `read:user`), then poll
   `POST https://github.com/login/oauth/access_token` with the device-code grant, handling `authorization_pending` and
   `slow_down` per RFC 8628.
-- The access token is used directly as the Bearer token; there is no second token exchange.
-- Chat goes to `https://api.githubcopilot.com/chat/completions` with `User-Agent`, `Openai-Intent:
-  conversation-edits` and `x-initiator: agent|user` (agent when the last message is not from the user). Models come
-  from `GET /models`, which lists `supported_endpoints` per model (`/chat/completions`, `/responses`, `/v1/messages`).
+- The client id decides the catalog. Tokens from an arbitrary OAuth app are served a fixed list of seven older GPT
+  models (confirmed live: gpt-4o, gpt-4o-mini, gpt-3.5-turbo and dated aliases, all `model_picker_enabled: false`, no
+  `supported_endpoints`). The full catalog goes to tokens from the Copilot GitHub App `Iv1.b507a08c87ecfe98`
+  (community reports: github.com/orgs/community/discussions/206143; Hermes issue #16551).
+- That token is exchanged: `GET https://api.github.com/copilot_internal/v2/token` with `Authorization: token <ghu_…>`
+  returns a session token, `expires_at` and `endpoints.api` (the host to call: `api.individual.…`, `api.business.…`).
+  The session is scoped to the identity headers sent with the exchange (OpenCode #19338, #20759).
+- Chat goes to `<endpoints.api>/chat/completions` with `Authorization: Bearer <session>`, `Copilot-Integration-Id`,
+  `Editor-Version`, `Editor-Plugin-Version`, `User-Agent`, `Openai-Intent: conversation-edits` and `x-initiator:
+  agent|user` (agent when the last message is not from the user). Models come from `GET <endpoints.api>/models` with the
+  same headers; it lists `supported_endpoints` per model (`/chat/completions`, `/responses`, `/v1/messages`).
 
 What this implementation does:
 
@@ -110,14 +117,18 @@ What this implementation does:
   models on `/responses` are hidden for now (Koog has clients for both; not wired).
 - ✅ The token lives in the IDE password safe. These are credentials this plugin created, not another tool's store
   (`docs/AUTH-HANDLING.md`).
-- ✅ **No client id is bundled.** A device flow needs a registered GitHub OAuth app; another product's client id must
-  not be reused. `koog/copilot-oauth-client-id.txt` ships empty; users or the maintainers fill it in. Until then the
-  settings page shows a guided one-time setup (numbered steps, an Open GitHub button, validation that catches a pasted
-  client secret), the sign-in button offers the same instead of a dead end, GitHub's `device_flow_disabled` and
-  `incorrect_client_credentials` errors say what to fix, and an OpenAI-compatible key works meanwhile. Rendered in a
-  sandbox IDE (2026.1.3); the clicks themselves and the live GitHub errors are unverified.
-- ❓ **Not verified against real GitHub or Copilot**: the device sign-in itself, the real `/models` payload, and whether
-  `api.githubcopilot.com` accepts these requests for a third-party OAuth app. There is no registered app to test with.
+- ✅ **The Copilot GitHub App's client id is fixed** (`CopilotAuth.CLIENT_ID`), because a token from any other OAuth
+  app only gets the older-GPT list. This reverses an earlier decision not to reuse another product's id; the reason and
+  the terms caveat are below. There is deliberately no setting to change it: a custom id could only make the agent
+  worse, so the setup guide, the id field and the pasted-secret validation were removed.
+- ✅ Session exchange (`CopilotSessions`): parsed strictly (token, expiry and API host are all required, nothing is
+  defaulted), renewed 120 s before expiry, re-read per request so a long turn outlives one session; a refused exchange
+  asks the user to sign in again. Verified against a fake server: the token changes between two requests of one turn
+  and the host comes from the session.
+- ✅ Live, with a third-party OAuth app (before this change): sign-in works; `/models` returned the seven older models;
+  the chat request was rejected with a bare HTTP 400 for `gpt-4o-mini` with 142 tools attached (cause unknown).
+- ❓ **Not yet verified live with the Copilot GitHub App's tokens**: the catalog it returns, whether the integration id
+  and editor headers are accepted for a JetBrains client, and whether the 400 persists.
 - ❓ **Terms.** GitHub's changelog of 2026-01-16 announces official Copilot support for OpenCode "through a formal
   partnership". Nothing published covers other clients; the practice is common (OpenCode, Hermes and others use the same
   device flow) but is a gray area and may change. The settings page says so.
@@ -154,12 +165,34 @@ the real UI, and the sign-in dialog.
 - No image or audio input (called out in the prompt text, not silently dropped).
 - Only chat-completions models; no Anthropic Messages or Responses endpoints.
 - Text streams; reasoning deltas are shown as thoughts when a provider sends them.
-- One conversation per session in memory; the plugin's own history injection restores context after a restart.
+- The conversation lives in memory. After a restart or an agent switch it is rebuilt from the plugin's stored
+  transcript (section 8), within a size budget; very long conversations resume with only their most recent turns.
 - Experimental: shown with the experimental flag.
+
+## 8. Session resume
+
+The chat calls `createSession` before **every** prompt and relies on a live session being reused (see
+`AbstractClient.dropCurrentSession`). `KoogClient.createSession` used to build a new empty conversation on every call, so
+the model forgot everything between prompts, and a restart lost the thread. Now:
+
+- A live session is reused, so history accumulates across prompts.
+- A new session is seeded from the plugin's stored transcript (`ConversationService.loadRecentEntries`, the same source
+  every other agent's export reads, so it also covers turns another agent took). `KoogHistory` converts it into Koog
+  messages: user prompts, assistant text, and tool calls kept only together with their result and only if this agent has
+  a tool of that name; a trailing unanswered prompt is dropped (the prompt being sent replaces it); whole oldest turns go
+  first when over the budget (`KoogHistory.DEFAULT_BUDGET_CHARS`), and each tool result is cut at
+  `MAX_RESULT_CHARS` with a visible marker.
+- The conversion runs at the start of the first turn, when the tool list is known, and logs how many messages were
+  restored and how many tool calls were skipped (`Koog resumed the previous conversation: …`).
+- The shared summary-injection fallback (`ActiveAgentManager.setInjectConversationHistory`) is switched off when Koog
+  restored the history itself, so the model is not told it twice.
+- A new conversation, and a session dropped as corrupt, skip the restore once.
+
+Verified with unit tests and a fake environment. Not yet verified in a real IDE: the stored entries of a Koog session
+carrying the plugin-tool name that `KoogHistory` matches against (the log line above shows the skip count).
 
 ## 7. Next steps
 
-1. Register the GitHub OAuth app (device flow) and bundle its client id; then test the sign-in and `/models` live.
-2. Run `verifyPlugin`; trim the +10 MB plugin size (see section 3).
-3. History compaction; Responses and Anthropic endpoints for the remaining Copilot models; images.
-4. Decide, after real use, whether to raise `sinceBuild` instead of gating.
+1. Run `verifyPlugin`; trim the +10 MB plugin size (see section 3).
+2. History compaction; Responses and Anthropic endpoints for the remaining Copilot models; images.
+3. Decide, after real use, whether to raise `sinceBuild` instead of gating.

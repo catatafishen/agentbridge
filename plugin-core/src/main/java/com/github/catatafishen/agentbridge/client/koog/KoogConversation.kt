@@ -11,10 +11,12 @@ import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -54,14 +56,27 @@ class KoogConversation(
     private val systemPrompt: () -> String,
     private val maxSteps: Int = DEFAULT_MAX_STEPS,
     private val clock: KoogClock = KoogClock.System,
+    private val restoreBudgetChars: Int = KoogHistory.DEFAULT_BUDGET_CHARS,
 ) {
     private val history = mutableListOf<Message>()
 
+    private var pendingRestore: List<EntryData>? = null
+
     val messageCount: Int get() = history.size
 
+    /**
+     * Seeds this new conversation from a stored one. The conversion happens at the start of the first turn,
+     * when the tool list is known: a stored call is only kept if this agent has that tool.
+     */
+    fun restore(entries: List<EntryData>) {
+        check(history.isEmpty() && pendingRestore == null) { "Only a new conversation can be restored" }
+        pendingRestore = entries
+    }
+
     suspend fun runTurn(user: List<ContentBlock>, onUpdate: (SessionUpdate) -> Unit): TurnResult {
-        history += Message.User(PromptText.flatten(user), RequestMetaInfo.create(clock))
         val specs = tools.listTools()
+        applyPendingRestore(specs)
+        history += Message.User(PromptText.flatten(user), RequestMetaInfo.create(clock))
         val descriptors = specs.map(KoogToolSchemas::toDescriptor)
         val specsByName = specs.associateBy { it.name }
         val system = systemPrompt()
@@ -98,6 +113,18 @@ class KoogConversation(
             history += Message.User(results, RequestMetaInfo.create(clock))
         }
         return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, onUpdate)
+    }
+
+    private fun applyPendingRestore(specs: List<McpToolSpec>) {
+        val entries = pendingRestore ?: return
+        pendingRestore = null
+        val restored = KoogHistory.restore(entries, specs.mapTo(HashSet()) { it.name }, restoreBudgetChars, clock)
+        history += restored.messages
+        log.info(
+            "Koog resumed the previous conversation: ${restored.messages.size} message(s) from ${entries.size} stored " +
+                "entries; ${restored.droppedTurns} oldest turn(s) left out to fit the budget; " +
+                "${restored.skippedToolCalls} tool call(s) skipped because this agent has no such tool"
+        )
     }
 
     private fun emitStreamingUpdate(frame: StreamFrame, onUpdate: (SessionUpdate) -> Unit) {
@@ -156,6 +183,8 @@ class KoogConversation(
     }
 
     companion object {
+        private val log = Logger.getInstance(KoogConversation::class.java)
+
         const val DEFAULT_MAX_STEPS = 50
         const val STOP_END_TURN = "end_turn"
         const val STOP_MAX_TOKENS = "max_tokens"

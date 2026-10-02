@@ -7,6 +7,7 @@ import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.google.gson.JsonObject
@@ -24,6 +25,7 @@ import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -87,6 +89,101 @@ class KoogConversationTest {
     }
 
     // ── tests ───────────────────────────────────────────────────────────────
+
+    @Nested
+    inner class Restoring {
+        private val stored = listOf(
+            EntryData.Prompt("earlier question"),
+            EntryData.Text(raw = "earlier answer"),
+            EntryData.Prompt("a question that used a tool"),
+            EntryData.ToolCall(title = "Read File", arguments = """{"path":"a"}""", result = "file body", pluginTool = "read_file"),
+            EntryData.Text(raw = "answer after the tool"),
+        )
+
+        @Test
+        fun `the stored history reaches the model before the new prompt`() {
+            val model = ScriptedModel(text("ok"))
+            val conv = conversation(model, FakeBackend(listOf(readFile)))
+            conv.restore(stored)
+
+            run(conv, "next")
+
+            val messages = model.prompts.single().messages
+            assertEquals(
+                listOf("SYSTEM", "earlier question", "earlier answer", "a question that used a tool"),
+                messages.take(4).map { it.textContent() },
+            )
+            assertEquals("answer after the tool", messages[messages.size - 2].textContent())
+            assertEquals("next", messages.last().textContent())
+        }
+
+        @Test
+        fun `a restored tool call is kept as a call with its result when this agent has the tool`() {
+            val model = ScriptedModel(text("ok"))
+            val conv = conversation(model, FakeBackend(listOf(readFile)))
+            conv.restore(stored)
+
+            run(conv, "next")
+
+            val parts = model.prompts.single().messages.flatMap { it.parts }
+            val call = parts.filterIsInstance<MessagePart.Tool.Call>().single()
+            val result = parts.filterIsInstance<MessagePart.Tool.Result>().single()
+            assertEquals("read_file", call.tool)
+            assertEquals(call.id, result.id)
+            assertEquals("file body", result.output)
+        }
+
+        @Test
+        fun `a stored call to a tool this agent does not have is left out of what the model sees`() {
+            val model = ScriptedModel(text("ok"))
+            val conv = conversation(model, FakeBackend(emptyList()))
+            conv.restore(stored)
+
+            run(conv, "next")
+
+            val parts = model.prompts.single().messages.flatMap { it.parts }
+            assertTrue(parts.none { it is MessagePart.Tool.Call || it is MessagePart.Tool.Result })
+        }
+
+        @Test
+        fun `the history is restored once and later turns keep building on it`() {
+            val model = ScriptedModel(text("first reply"), text("second reply"))
+            val conv = conversation(model, FakeBackend(listOf(readFile)))
+            conv.restore(listOf(EntryData.Prompt("q"), EntryData.Text(raw = "a")))
+
+            run(conv, "one")
+            run(conv, "two")
+
+            assertEquals(
+                listOf("SYSTEM", "q", "a", "one", "first reply", "two"),
+                model.prompts[1].messages.map { it.textContent() },
+            )
+        }
+
+        @Test
+        fun `only a new conversation can be restored`() {
+            val model = ScriptedModel(text("ok"))
+            val used = conversation(model, FakeBackend())
+            run(used)
+
+            assertThrows(IllegalStateException::class.java) { used.restore(stored) }
+
+            val restoredTwice = conversation(model, FakeBackend())
+            restoredTwice.restore(stored)
+            assertThrows(IllegalStateException::class.java) { restoredTwice.restore(stored) }
+        }
+
+        @Test
+        fun `a stored conversation with nothing usable in it changes nothing`() {
+            val model = ScriptedModel(text("ok"))
+            val conv = conversation(model, FakeBackend())
+            conv.restore(listOf(EntryData.Prompt("unanswered")))
+
+            run(conv, "next")
+
+            assertEquals(listOf("SYSTEM", "next"), model.prompts.single().messages.map { it.textContent() })
+        }
+    }
 
     @Nested
     inner class PlainAnswers {

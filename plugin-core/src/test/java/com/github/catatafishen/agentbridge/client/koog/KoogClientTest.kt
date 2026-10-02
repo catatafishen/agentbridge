@@ -7,6 +7,7 @@ import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.client.ClientPromptException
 import com.github.catatafishen.agentbridge.client.ClientSessionException
 import com.github.catatafishen.agentbridge.client.ClientStartException
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.flowOf
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -73,6 +75,19 @@ class KoogClientTest {
             FakeConnection { model -> streamerFor(model) }.also { connections += it }
 
         override fun systemPrompt(cwd: String) = "SYSTEM for $cwd"
+
+        var previous: List<EntryData> = emptyList()
+        var previousLoads = 0
+        var restoredNotices = 0
+
+        override fun previousConversation(): List<EntryData> {
+            previousLoads++
+            return previous
+        }
+
+        override fun onHistoryRestored() {
+            restoredNotices++
+        }
     }
 
     private companion object {
@@ -220,10 +235,42 @@ class KoogClientTest {
         }
 
         @Test
-        fun `every session has its own id`() {
+        fun `a live session is reused, so the next prompt still has the conversation so far`() {
+            val seen = CopyOnWriteArrayList<Prompt>()
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("reply", 0), end()) } }
+            val first = startedSession()
+            client.sendPrompt(request(first, "one")) {}
+
+            // The chat calls createSession before every prompt.
+            val second = client.createSession("/project")
+            client.sendPrompt(request(second, "two")) {}
+
+            assertEquals(first, second)
+            assertEquals(listOf("SYSTEM for /project", "one", "reply", "two"), seen[1].messages.map { it.textContent() })
+        }
+
+        @Test
+        fun `after the conversation is cleared the next session is a new one with an empty history`() {
+            val seen = CopyOnWriteArrayList<Prompt>()
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("reply", 0), end()) } }
+            val first = startedSession()
+            client.sendPrompt(request(first, "one")) {}
+
+            client.clearPersistedSession()
+            val second = client.createSession("/project")
+            client.sendPrompt(request(second, "two")) {}
+
+            assertNotEquals(first, second)
+            assertEquals(listOf("SYSTEM for /project", "two"), seen[1].messages.map { it.textContent() })
+        }
+
+        @Test
+        fun `a session created after a stop is a new one`() {
+            val first = startedSession()
+            client.stop()
             client.start()
 
-            assertTrue(client.createSession("/a") != client.createSession("/a"))
+            assertNotEquals(first, client.createSession("/project"))
         }
 
         @Test
@@ -255,6 +302,106 @@ class KoogClientTest {
             client.sendPrompt(request(id)) {}
 
             assertEquals("SYSTEM for /project", seen.get().messages.first().textContent())
+        }
+    }
+
+    @Nested
+    inner class Resuming {
+        private val seen = CopyOnWriteArrayList<Prompt>()
+        private val earlier = listOf(EntryData.Prompt("earlier question"), EntryData.Text(raw = "earlier answer"))
+
+        @org.junit.jupiter.api.BeforeEach
+        fun capturePrompts() {
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("reply", 0), end()) } }
+        }
+
+        private fun texts(index: Int = 0) = seen[index].messages.map { it.textContent() }
+
+        @Test
+        fun `a new session starts from the stored conversation`() {
+            env.previous = earlier
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "next")) {}
+
+            assertEquals(listOf("SYSTEM for /project", "earlier question", "earlier answer", "next"), texts())
+            assertEquals(1, env.restoredNotices)
+        }
+
+        @Test
+        fun `the stored conversation is read once per session, not before every prompt`() {
+            env.previous = earlier
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "one")) {}
+            client.createSession("/project")
+            client.sendPrompt(request(id, "two")) {}
+
+            assertEquals(1, env.previousLoads)
+            assertEquals(1, env.restoredNotices)
+        }
+
+        @Test
+        fun `a prompt that is already stored but not yet answered is not sent twice`() {
+            env.previous = earlier + EntryData.Prompt("the prompt being sent")
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "the prompt being sent")) {}
+
+            assertEquals(
+                listOf("SYSTEM for /project", "earlier question", "earlier answer", "the prompt being sent"),
+                texts(),
+            )
+        }
+
+        @Test
+        fun `with nothing stored nothing is restored and the summary fallback is left alone`() {
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "hi")) {}
+
+            assertEquals(listOf("SYSTEM for /project", "hi"), texts())
+            assertEquals(0, env.restoredNotices)
+        }
+
+        @Test
+        fun `a new conversation is not restored even if the store has not been reset yet`() {
+            env.previous = earlier
+            client.start()
+
+            client.clearPersistedSession()
+            val id = client.createSession("/project")
+            client.sendPrompt(request(id, "next")) {}
+
+            assertEquals(listOf("SYSTEM for /project", "next"), texts())
+            assertEquals(0, env.previousLoads)
+        }
+
+        @Test
+        fun `only the session right after a new conversation skips the restore`() {
+            env.previous = earlier
+            client.start()
+            client.clearPersistedSession()
+            client.createSession("/project")
+
+            client.stop()
+            client.start()
+            val id = client.createSession("/project")
+            client.sendPrompt(request(id, "next")) {}
+
+            assertEquals(listOf("SYSTEM for /project", "earlier question", "earlier answer", "next"), texts())
+        }
+
+        @Test
+        fun `a dropped session is not restored into its replacement`() {
+            env.previous = earlier
+            startedSession()
+            val loadsBefore = env.previousLoads
+
+            client.dropCurrentSession()
+            client.createSession("/project")
+
+            assertEquals(loadsBefore, env.previousLoads)
         }
     }
 
