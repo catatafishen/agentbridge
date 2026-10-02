@@ -77,8 +77,12 @@ class KoogConversationTest {
         displayName = "Read File", kind = "read",
     )
 
-    private fun conversation(model: ModelStreamer, backend: ToolBackend, maxSteps: Int = 50) =
-        KoogConversation(model, backend, systemPrompt = { "SYSTEM" }, maxSteps = maxSteps)
+    private fun conversation(
+        model: ModelStreamer,
+        backend: ToolBackend,
+        maxSteps: Int = 50,
+        window: Long? = null,
+    ) = KoogConversation(model, backend, systemPrompt = { "SYSTEM" }, maxSteps = maxSteps, contextWindow = { window })
 
     private fun user(s: String) = listOf<ContentBlock>(ContentBlock.Text(s))
 
@@ -182,6 +186,91 @@ class KoogConversationTest {
             run(conv, "next")
 
             assertEquals(listOf("SYSTEM", "next"), model.prompts.single().messages.map { it.textContent() })
+        }
+    }
+
+    @Nested
+    inner class ContextWindow {
+        private val big = "x".repeat(2_000)
+
+        private fun bigBackend() = FakeBackend(listOf(readFile)) { _, _ -> ToolOutcome(big, false) }
+
+        /** Reads a file three times, then answers: enough history to need trimming in a small window. */
+        private fun readingModel() = ScriptedModel(
+            toolCall("c1", "read_file", """{"path":"a"}"""),
+            toolCall("c2", "read_file", """{"path":"b"}"""),
+            toolCall("c3", "read_file", """{"path":"c"}"""),
+            text("done"),
+        )
+
+        private fun banners(updates: List<SessionUpdate>) = updates.filterIsInstance<SessionUpdate.Banner>()
+
+        @Test
+        fun `an unknown window trims nothing`() {
+            val model = readingModel()
+            val conv = conversation(model, bigBackend(), window = null)
+
+            val (_, updates) = run(conv, "go")
+
+            assertTrue(banners(updates).isEmpty())
+            assertEquals(big, model.prompts.last().messages.flatMap { it.parts }
+                .filterIsInstance<MessagePart.Tool.Result>().first().output)
+        }
+
+        @Test
+        fun `a roomy window trims nothing and says nothing`() {
+            val (_, updates) = run(conversation(readingModel(), bigBackend(), window = 100_000), "go")
+
+            assertTrue(banners(updates).isEmpty())
+        }
+
+        @Test
+        fun `a tight window shortens old results before the next request and tells the user`() {
+            val model = readingModel()
+
+            val (_, updates) = run(conversation(model, bigBackend(), window = 1_500), "go")
+
+            val results = model.prompts.last().messages.flatMap { it.parts }.filterIsInstance<MessagePart.Tool.Result>()
+            assertTrue(results.first().output.contains("trimmed to fit the model's context window"), results.first().output)
+            assertEquals(big, results.last().output)
+            val banner = banners(updates).first()
+            assertEquals(SessionUpdate.BannerLevel.WARNING, banner.level())
+            assertTrue(banner.message().contains("shortened"), banner.message())
+        }
+
+        @Test
+        fun `trimming keeps every tool call paired with its result`() {
+            val model = readingModel()
+
+            run(conversation(model, bigBackend(), window = 1_500), "go")
+
+            val parts = model.prompts.last().messages.flatMap { it.parts }
+            assertEquals(
+                parts.filterIsInstance<MessagePart.Tool.Call>().map { it.id }.toSet(),
+                parts.filterIsInstance<MessagePart.Tool.Result>().map { it.id }.toSet(),
+            )
+        }
+
+        @Test
+        fun `the window is read for every request, so switching to a smaller model takes effect at once`() {
+            var window: Long? = 100_000
+            val conv = KoogConversation(
+                ScriptedModel(
+                    toolCall("c1", "read_file", """{"path":"a"}"""),
+                    toolCall("c2", "read_file", """{"path":"b"}"""),
+                    text("first done"),
+                    toolCall("c3", "read_file", """{"path":"c"}"""),
+                    text("second done"),
+                ),
+                bigBackend(), systemPrompt = { "SYSTEM" }, contextWindow = { window },
+            )
+
+            val (_, first) = run(conv, "first")
+            assertTrue(banners(first).isEmpty())
+            window = 1_500
+            val (_, second) = run(conv, "second")
+
+            assertTrue(banners(second).isNotEmpty())
         }
     }
 

@@ -334,6 +334,71 @@ class KoogClientTest {
     }
 
     @Nested
+    inner class ModelLimits {
+        @Test
+        fun `a model with limits describes them for the picker`() {
+            env.models = { listOf(KoogModelChoice("big", "Big", contextLength = 1_048_576, maxOutputTokens = 65_536)) }
+            client.start()
+
+            val model = client.availableModels.single()
+
+            assertEquals("1M tokens context, 66k tokens max output", model.description())
+        }
+
+        @Test
+        fun `a model without limits has no description rather than an empty one`() {
+            env.models = { listOf(KoogModelChoice("plain", "Plain")) }
+            client.start()
+
+            assertNull(client.availableModels.single().description())
+        }
+
+        @Test
+        fun `token counts read at a glance`() {
+            assertEquals("128k tokens", KoogClient.formatTokens(128_000))
+            assertEquals("200k tokens", KoogClient.formatTokens(200_000))
+            assertEquals("1M tokens", KoogClient.formatTokens(1_000_000))
+            assertEquals("1M tokens", KoogClient.formatTokens(1_048_576))
+            assertEquals("2.5M tokens", KoogClient.formatTokens(2_500_000))
+            assertEquals("800 tokens", KoogClient.formatTokens(800))
+        }
+
+        @Test
+        fun `the selected model's window is what the conversation is trimmed to`() {
+            val seen = CopyOnWriteArrayList<Prompt>()
+            // A 1,000-token window is about 3,000 characters; trimming starts at 80% of that.
+            env.models = { listOf(KoogModelChoice("tiny", "Tiny", contextLength = 1_000)) }
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("y".repeat(1_500), 0), end()) } }
+            val id = startedSession()
+
+            // Two 1,500-character answers do not fit next to a third prompt, so the oldest exchange has to go.
+            val banners = CopyOnWriteArrayList<SessionUpdate.Banner>()
+            client.sendPrompt(request(id, "one")) {}
+            client.sendPrompt(request(id, "two")) {}
+            client.sendPrompt(request(id, "three")) { if (it is SessionUpdate.Banner) banners += it }
+
+            assertEquals(1, banners.size)
+            assertEquals(listOf("SYSTEM for /project", "two", "y".repeat(1_500), "three"), seen[2].messages.map { it.textContent() })
+        }
+
+        @Test
+        fun `a model that does not report a window is never trimmed`() {
+            val seen = CopyOnWriteArrayList<Prompt>()
+            env.models = { listOf(KoogModelChoice("unknown", "Unknown")) }
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seen += prompt; flowOf(StreamFrame.TextComplete("y".repeat(5_000), 0), end()) } }
+            val id = startedSession()
+
+            client.sendPrompt(request(id, "one")) {}
+            client.sendPrompt(request(id, "two")) {}
+            client.sendPrompt(request(id, "three")) {}
+
+            // Nothing was dropped: system prompt, then both earlier exchanges, then the new prompt.
+            assertEquals(6, seen[2].messages.size)
+            assertEquals("one", seen[2].messages[1].textContent())
+        }
+    }
+
+    @Nested
     inner class Resuming {
         private val seen = CopyOnWriteArrayList<Prompt>()
         private val earlier = listOf(EntryData.Prompt("earlier question"), EntryData.Text(raw = "earlier answer"))
