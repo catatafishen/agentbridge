@@ -1,8 +1,10 @@
 package com.github.catatafishen.agentbridge.client.koog
 
 import ai.koog.http.client.java.JavaKoogHttpClient
+import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
+import ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLMCapability
@@ -26,6 +28,8 @@ data class KoogModelChoice(
     val name: String,
     val contextLength: Long? = null,
     val maxOutputTokens: Long? = null,
+    /** Reasoning-effort levels this model accepts (see [KoogProviders.reasoningEffort]); empty when it takes none. */
+    val reasoningEfforts: List<String> = emptyList(),
 )
 
 /** Builds Koog executors and models for the supported providers. */
@@ -107,13 +111,36 @@ object KoogProviders {
     fun toLLModel(choice: KoogModelChoice): LLModel = LLModel(
         provider = LLMProvider.OpenAI,
         id = choice.id,
-        capabilities = listOf(
-            LLMCapability.Completion,
-            LLMCapability.Tools,
-            LLMCapability.Temperature,
-            LLMCapability.OpenAIEndpoint.Completions,
-        ),
+        capabilities = buildList {
+            add(LLMCapability.Completion)
+            add(LLMCapability.Tools)
+            add(LLMCapability.Temperature)
+            add(LLMCapability.OpenAIEndpoint.Completions)
+            // Koog silently drops reasoning_effort from the request unless the model declares this capability.
+            if (sendableEfforts(choice.reasoningEfforts).isNotEmpty()) add(LLMCapability.Thinking)
+        },
         contextLength = choice.contextLength,
         maxOutputTokens = choice.maxOutputTokens,
     )
+
+    /** The option key the chat's model/options menu stores the chosen level under. */
+    const val EFFORT_OPTION_KEY = "reasoning_effort"
+
+    /** The levels of [advertised] that can actually be sent: Koog's request model has a fixed set of names. */
+    @JvmStatic
+    fun sendableEfforts(advertised: List<String>): List<String> =
+        advertised.filter { level -> ReasoningEffort.entries.any { it.name.equals(level, ignoreCase = true) } }
+
+    /**
+     * The request parameters for a chosen effort [level], or null to send none and leave the provider's default.
+     * Only a level the model said it accepts is sent: an unsupported value makes the provider reject the request,
+     * which would turn a menu choice into a failing chat.
+     */
+    @JvmStatic
+    fun paramsFor(level: String?, supported: List<String>): OpenAIChatParams? {
+        val wanted = level?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+        if (wanted !in supported) return null
+        val effort = ReasoningEffort.entries.firstOrNull { it.name.equals(wanted, ignoreCase = true) } ?: return null
+        return OpenAIChatParams(reasoningEffort = effort)
+    }
 }

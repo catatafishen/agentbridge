@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.client.koog
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
+import com.github.catatafishen.agentbridge.bridge.SessionOption
 import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.client.ClientPromptException
 import com.github.catatafishen.agentbridge.client.ClientSessionException
@@ -51,6 +52,10 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
 
     @Volatile
     private var selectedModel: String? = null
+
+    /** The chosen reasoning-effort level, or null for the provider's default. Applies to whichever model is selected. */
+    @Volatile
+    private var effort: String? = null
 
     /** False only between a new conversation (or a dropped session) and the session created next. */
     @Volatile
@@ -127,7 +132,11 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
 
         val streamer = ModelStreamer { prompt, toolDescriptors ->
             val model = selectedModel ?: error("No model selected")
-            active.connection.streamer(active.choices.getValue(model)).stream(prompt, toolDescriptors)
+            val choice = active.choices.getValue(model)
+            // The effort is read per request, so a menu change applies to the very next one.
+            val params = KoogProviders.paramsFor(effort, choice.reasoningEfforts)
+            val request = if (params != null) prompt.withParams(params) else prompt
+            active.connection.streamer(choice).stream(request, toolDescriptors)
         }
         // Read at the start of every turn, not once per session: edits to the startup instructions, the tool
         // guidance or the memory then apply to the next message instead of the next new conversation.
@@ -214,6 +223,23 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
     }
 
     override fun modelDisplayMode(): ModelDisplayMode = ModelDisplayMode.NAME
+
+    /**
+     * The reasoning-effort choice, offered only while the selected model says it takes one. The levels come from the
+     * provider's own catalog, so a model never gets a level it would reject. The empty value means "the provider's
+     * default": nothing is sent.
+     */
+    override fun listSessionOptions(): List<SessionOption> {
+        val levels = KoogProviders.sendableEfforts(runtime?.choices?.get(selectedModel)?.reasoningEfforts.orEmpty())
+        if (levels.isEmpty()) return emptyList()
+        val labels = (listOf("" to "Default") + levels.map { it to it.replaceFirstChar(Char::uppercase) }).toMap()
+        return listOf(SessionOption(KoogProviders.EFFORT_OPTION_KEY, "Reasoning effort", listOf("") + levels, labels))
+    }
+
+    override fun setSessionOption(sessionId: String, key: String, value: String) {
+        if (key != KoogProviders.EFFORT_OPTION_KEY) return
+        effort = value.trim().lowercase().takeIf { it.isNotEmpty() }
+    }
 
     private fun closeQuietly(connection: AutoCloseable) {
         try {

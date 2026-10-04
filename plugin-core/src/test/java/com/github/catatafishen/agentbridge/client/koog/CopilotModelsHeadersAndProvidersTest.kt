@@ -98,6 +98,30 @@ class CopilotModelsHeadersAndProvidersTest {
         }
 
         @Test
+        fun `a model that lists reasoning efforts exposes them, in the order the catalog gives them`() {
+            val json = """{"data":[
+                {"id":"o","name":"O","capabilities":{"type":"chat","supports":{"tool_calls":true,"reasoning_effort":["Low","medium","HIGH","low"," "]}}},
+                {"id":"plain","name":"Plain","capabilities":{"type":"chat","supports":{"tool_calls":true}}},
+                {"id":"odd","name":"Odd","capabilities":{"type":"chat","supports":{"reasoning_effort":"high"}}}]}"""
+
+            val byId = CopilotModels.parse(json).associateBy { it.id }
+
+            assertEquals(listOf("low", "medium", "high"), byId.getValue("o").reasoningEfforts)
+            assertTrue(byId.getValue("plain").reasoningEfforts.isEmpty())
+            // A value that is not a list is ignored rather than guessed at.
+            assertTrue(byId.getValue("odd").reasoningEfforts.isEmpty())
+        }
+
+        @Test
+        fun `describe shows the efforts so a missing option can be traced to the catalog`() {
+            val line = CopilotModels.describe(
+                """{"data":[{"id":"o","capabilities":{"type":"chat","supports":{"reasoning_effort":["low","high"]}}}]}"""
+            ).single()
+
+            assertTrue(line.contains("effort=low,high"), line)
+        }
+
+        @Test
         fun `bad json yields an empty catalog`() {
             assertTrue(CopilotModels.parse("not json").isEmpty())
             assertTrue(CopilotModels.parse("""{"data":"nope"}""").isEmpty())

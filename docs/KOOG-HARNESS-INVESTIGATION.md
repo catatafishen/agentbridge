@@ -207,6 +207,16 @@ It is deliberately not a summary: that needs another model call and can quietly 
 The user sees a warning banner saying what was trimmed. The estimate is pessimistic, so the real limit is not hit first.
 The model picker shows each model's context and output limits.
 
+## 10. Reasoning effort
+
+Copilot's catalog lists the effort levels a model accepts (`capabilities.supports.reasoning_effort`). Models that list
+some get a "Reasoning effort" option in the chat's options menu (Default, then the listed levels); models that list none
+get no option. The choice is sent as `reasoning_effort` on every following request, including mid-conversation, and only
+if the selected model lists that level. Default sends nothing.
+
+Koog only writes `reasoning_effort` into a chat-completions request when the model declares `LLMCapability.Thinking`,
+and drops it silently otherwise, so `toLLModel` declares it for exactly those models. A wire test pins this.
+
 ## 7. Next steps
 
 1. Run `verifyPlugin`; trim the +10 MB plugin size (see section 3).
