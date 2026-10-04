@@ -4,6 +4,7 @@ import ai.koog.http.client.KoogHttpClientException
 import ai.koog.prompt.llm.LLMCapability
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -119,6 +120,29 @@ class CopilotModelsHeadersAndProvidersTest {
             ).single()
 
             assertTrue(line.contains("effort=low,high"), line)
+        }
+
+        @Test
+        fun `vision support is read from the catalog and stays unknown when it is not stated`() {
+            val json = """{"data":[
+                {"id":"v","capabilities":{"type":"chat","supports":{"vision":true}}},
+                {"id":"n","capabilities":{"type":"chat","supports":{"vision":false}}},
+                {"id":"u","capabilities":{"type":"chat","supports":{"tool_calls":true}}}]}"""
+
+            val byId = CopilotModels.parse(json).associateBy { it.id }
+
+            assertEquals(true, byId.getValue("v").supportsVision)
+            assertEquals(false, byId.getValue("n").supportsVision)
+            assertNull(byId.getValue("u").supportsVision)
+        }
+
+        @Test
+        fun `describe shows vision so a model that rejects images can be traced to the catalog`() {
+            val line = CopilotModels.describe(
+                """{"data":[{"id":"v","capabilities":{"type":"chat","supports":{"vision":true}}}]}"""
+            ).single()
+
+            assertTrue(line.contains("vision=true"), line)
         }
 
         @Test

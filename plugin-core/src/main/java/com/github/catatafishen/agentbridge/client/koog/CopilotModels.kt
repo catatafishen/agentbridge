@@ -19,6 +19,8 @@ data class CopilotModel(
     val endpoints: List<String>,
     /** Reasoning-effort levels the model accepts, as the catalog lists them; empty when it takes none. */
     val reasoningEfforts: List<String> = emptyList(),
+    /** `capabilities.supports.vision`; null when the catalog does not say. */
+    val supportsVision: Boolean? = null,
 ) {
     /** Copilot lists endpoints per model; an absent list means the classic chat-completions API. */
     val usesChatCompletions: Boolean
@@ -80,7 +82,8 @@ object CopilotModels {
             "id=${o.string("id")} name=${o.string("name")} type=${capabilities?.string("type")} " +
                 "tools=${capabilities?.obj("supports")?.bool("tool_calls")} picker=${o.bool("model_picker_enabled")} " +
                 "policy=${o.obj("policy")?.string("state")} version=${o.string("version")} endpoints=$endpoints " +
-                "effort=${reasoningEfforts(capabilities).joinToString(",").ifEmpty { "-" }}"
+                "effort=${reasoningEfforts(capabilities).joinToString(",").ifEmpty { "-" }} " +
+                "vision=${capabilities?.obj("supports")?.bool("vision")}"
         }
     }
 
@@ -99,6 +102,7 @@ object CopilotModels {
             endpoints = o["supported_endpoints"]?.takeIf { it.isJsonArray }?.asJsonArray
                 ?.mapNotNull { e -> e.takeIf { it.isJsonPrimitive }?.asString }.orEmpty(),
             reasoningEfforts = reasoningEfforts(capabilities),
+            supportsVision = capabilities?.obj("supports")?.bool("vision"),
         )
     }
 
