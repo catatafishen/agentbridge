@@ -54,6 +54,9 @@ interface KoogEnvironment {
      * first prompt must then stay off, or the model would be told the same history twice.
      */
     fun onHistoryRestored() {}
+
+    /** The plugin-wide limit on tool calls per turn; 0 means unlimited. */
+    fun maxToolCallsPerTurn(): Int = 0
 }
 
 class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
@@ -119,6 +122,8 @@ class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
     }
 
     override fun onHistoryRestored() = ActiveAgentManager.setInjectConversationHistory(project, false)
+
+    override fun maxToolCallsPerTurn(): Int = ActiveAgentManager.getInstance(project).sharedMaxToolCallsPerTurn
 
     private fun userAgent(): String = "AgentBridge/" + BuildInfo.getVersion()
 

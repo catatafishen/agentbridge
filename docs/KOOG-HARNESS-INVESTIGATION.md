@@ -148,7 +148,7 @@ In a real sandbox IDE (not just unit tests), against a fake OpenAI-compatible st
 - ✅ Unit tests (167 for this agent, all passing, about 86% line coverage of the package; the remainder is IDE-service
   and network glue verified in the sandbox runs above; the full plugin suite passes too) cover the gate, schema mapping, MCP parsing, the device flow (pending, `slow_down`, expiry,
   cancel), the model catalog, headers, endpoint normalisation, error classification and the conversation loop
-  (history across turns, tool round trips, malformed arguments, several tool calls, step limit, cancellation, and a
+  (history across turns, tool round trips, malformed arguments, several tool calls, the tool call limit, cancellation, and a
   Stop during a running tool leaving a usable history), the client lifecycle (start errors, model choice, cancel and stop
   mapping, provider error classification) through a `KoogEnvironment` seam, the header-injecting HTTP client, the
   in-process MCP backend, and wire-level tests that drive a real Koog executor against a local streaming server
@@ -216,6 +216,14 @@ if the selected model lists that level. Default sends nothing.
 
 Koog only writes `reasoning_effort` into a chat-completions request when the model declares `LLMCapability.Thinking`,
 and drops it silently otherwise, so `toLLModel` declares it for exactly those models. A wire test pins this.
+
+## 11. Turn length
+
+A turn used to stop after a fixed 50 model requests, which cut off ordinary long jobs (a refactor across many files)
+with `max_turn_requests`. The fixed cap is gone. A turn now ends when the model stops calling tools, when the user stops
+it, or when the plugin-wide "max tool calls per turn" setting (the one the other agents use, 0 = unlimited, the default)
+is reached. Runaway growth is bounded by context compaction (section 9), not by counting steps. The limit is checked
+only after a step's results are recorded, so a stopped turn never leaves a tool call without its result.
 
 ## 7. Next steps
 

@@ -143,6 +143,7 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
         val conversation = KoogConversation(
             streamer, env.tools,
             systemPrompt = { env.systemPrompt(cwd) },
+            maxToolCalls = { env.maxToolCallsPerTurn() },
             contextWindow = { selectedModel?.let { active.choices[it]?.contextLength } },
         )
         restorePrevious(conversation)
