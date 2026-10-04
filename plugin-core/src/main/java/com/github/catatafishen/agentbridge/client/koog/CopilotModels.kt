@@ -17,6 +17,8 @@ data class CopilotModel(
     val maxOutputTokens: Long?,
     /** Endpoints the model is served on, e.g. `/chat/completions`, `/responses`, `/v1/messages`. */
     val endpoints: List<String>,
+    /** Reasoning-effort levels the model accepts, as the catalog lists them; empty when it takes none. */
+    val reasoningEfforts: List<String> = emptyList(),
 ) {
     /** Copilot lists endpoints per model; an absent list means the classic chat-completions API. */
     val usesChatCompletions: Boolean
@@ -77,7 +79,8 @@ object CopilotModels {
                 ?.joinToString(",") { it.asString } ?: "-"
             "id=${o.string("id")} name=${o.string("name")} type=${capabilities?.string("type")} " +
                 "tools=${capabilities?.obj("supports")?.bool("tool_calls")} picker=${o.bool("model_picker_enabled")} " +
-                "policy=${o.obj("policy")?.string("state")} version=${o.string("version")} endpoints=$endpoints"
+                "policy=${o.obj("policy")?.string("state")} version=${o.string("version")} endpoints=$endpoints " +
+                "effort=${reasoningEfforts(capabilities).joinToString(",").ifEmpty { "-" }}"
         }
     }
 
@@ -95,8 +98,15 @@ object CopilotModels {
             maxOutputTokens = limits?.long("max_output_tokens"),
             endpoints = o["supported_endpoints"]?.takeIf { it.isJsonArray }?.asJsonArray
                 ?.mapNotNull { e -> e.takeIf { it.isJsonPrimitive }?.asString }.orEmpty(),
+            reasoningEfforts = reasoningEfforts(capabilities),
         )
     }
+
+    /** `capabilities.supports.reasoning_effort` is a list of level names on models that take one; absent otherwise. */
+    private fun reasoningEfforts(capabilities: JsonObject?): List<String> =
+        capabilities?.obj("supports")?.get("reasoning_effort")?.takeIf { it.isJsonArray }?.asJsonArray
+            ?.mapNotNull { e -> e.takeIf { it.isJsonPrimitive }?.asString?.trim()?.lowercase()?.takeIf(String::isNotEmpty) }
+            ?.distinct().orEmpty()
 
     private fun JsonObject.string(key: String): String? = get(key)?.takeIf { it.isJsonPrimitive }?.asString
     private fun JsonObject.bool(key: String): Boolean? = get(key)?.takeIf { it.isJsonPrimitive }?.asBoolean

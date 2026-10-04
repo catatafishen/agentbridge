@@ -77,7 +77,7 @@ class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
         KoogProviderKind.COPILOT -> {
             val session = copilotSessions(credential).current()
             CopilotModels.usable(KoogNetwork.fetchCopilotModels(session.token, session.apiBase, copilotIdentity()))
-                .map { KoogModelChoice(it.id, it.name, it.contextWindow, it.maxOutputTokens) }
+                .map { KoogModelChoice(it.id, it.name, it.contextWindow, it.maxOutputTokens, it.reasoningEfforts) }
         }
 
         // A generic OpenAI-style endpoint has no reliable model list; the user names the model.

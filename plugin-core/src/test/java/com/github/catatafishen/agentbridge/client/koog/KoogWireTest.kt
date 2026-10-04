@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.koog
 
+import ai.koog.prompt.llm.LLMCapability
 import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -156,6 +157,45 @@ class KoogWireTest {
         runTurn(conversation(executor))
 
         assertEquals(listOf("user", "agent"), seen.map { it.headers["x-initiator"] })
+    }
+
+    @Test
+    fun `a chosen reasoning effort goes out as reasoning_effort in the request body`() {
+        val base = serve(listOf(200 to answer))
+        val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)
+        val streamer = ExecutorStreamer(
+            executor, KoogProviders.toLLModel(KoogModelChoice("m", "M", reasoningEfforts = listOf("low", "high"))),
+        )
+        val withEffort = ModelStreamer { prompt, tools ->
+            streamer.stream(prompt.withParams(KoogProviders.paramsFor("high", listOf("low", "high"))!!), tools)
+        }
+
+        runBlocking {
+            KoogConversation(withEffort, backend, systemPrompt = { "SYS" }).runTurn(listOf(ContentBlock.Text("go"))) { }
+        }
+
+        assertEquals("high", seen.single().body.get("reasoning_effort").asString)
+    }
+
+    @Test
+    fun `a model that takes an effort declares thinking, or Koog would drop the effort from the request`() {
+        val withEffort = KoogProviders.toLLModel(KoogModelChoice("o", "O", reasoningEfforts = listOf("low", "high")))
+        val without = KoogProviders.toLLModel(KoogModelChoice("p", "P"))
+        val unsendable = KoogProviders.toLLModel(KoogModelChoice("q", "Q", reasoningEfforts = listOf("xhigh")))
+
+        assertTrue(withEffort.supports(LLMCapability.Thinking))
+        assertFalse(without.supports(LLMCapability.Thinking))
+        assertFalse(unsendable.supports(LLMCapability.Thinking))
+    }
+
+    @Test
+    fun `without a chosen effort the request carries no reasoning_effort at all`() {
+        val base = serve(listOf(200 to answer))
+        val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)
+
+        runTurn(conversation(executor))
+
+        assertFalse(seen.single().body.has("reasoning_effort"), seen.single().body.toString())
     }
 
     @Test

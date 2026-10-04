@@ -399,6 +399,138 @@ class KoogClientTest {
     }
 
     @Nested
+    inner class ReasoningEffort {
+        private val seenParams = CopyOnWriteArrayList<ai.koog.prompt.params.LLMParams>()
+
+        private val reasoner = KoogModelChoice("o", "Reasoner", reasoningEfforts = listOf("low", "medium", "high"))
+        private val plain = KoogModelChoice("p", "Plain")
+
+        @org.junit.jupiter.api.BeforeEach
+        fun capture() {
+            env.streamerFor = { _ -> ModelStreamer { prompt, _ -> seenParams += prompt.params; flowOf(StreamFrame.TextComplete("x", 0), end()) } }
+        }
+
+        @Test
+        fun `a model that takes an effort offers it, with a default first`() {
+            env.models = { listOf(reasoner) }
+            client.start()
+
+            val option = client.listSessionOptions().single()
+
+            assertEquals("reasoning_effort", option.key())
+            assertEquals(listOf("", "low", "medium", "high"), option.values())
+            assertEquals("Default", option.labelFor(""))
+            assertEquals("Medium", option.labelFor("medium"))
+        }
+
+        @Test
+        fun `a model that takes no effort offers no option`() {
+            env.models = { listOf(plain) }
+            client.start()
+
+            assertTrue(client.listSessionOptions().isEmpty())
+        }
+
+        @Test
+        fun `the option follows the selected model`() {
+            env.models = { listOf(reasoner, plain) }
+            client.start()
+            val id = client.createSession("/project")
+
+            client.setModel(id, "p")
+            assertTrue(client.listSessionOptions().isEmpty())
+            client.setModel(id, "o")
+            assertEquals(1, client.listSessionOptions().size)
+        }
+
+        @Test
+        fun `a level the request model cannot express is not offered`() {
+            env.models = { listOf(KoogModelChoice("o", "O", reasoningEfforts = listOf("low", "xhigh", "high"))) }
+            client.start()
+
+            assertEquals(listOf("", "low", "high"), client.listSessionOptions().single().values())
+        }
+
+        @Test
+        fun `a chosen level is sent with the next request`() {
+            env.models = { listOf(reasoner) }
+            val id = startedSession()
+
+            client.setSessionOption(id, "reasoning_effort", "high")
+            client.sendPrompt(request(id, "go")) {}
+
+            val params = seenParams.single() as ai.koog.prompt.executor.clients.openai.OpenAIChatParams
+            assertEquals(ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort.HIGH, params.reasoningEffort)
+        }
+
+        @Test
+        fun `a change applies to the very next request of the same conversation`() {
+            env.models = { listOf(reasoner) }
+            val id = startedSession()
+
+            client.setSessionOption(id, "reasoning_effort", "low")
+            client.sendPrompt(request(id, "one")) {}
+            client.setSessionOption(id, "reasoning_effort", "high")
+            client.sendPrompt(request(id, "two")) {}
+
+            val efforts = seenParams.map { (it as ai.koog.prompt.executor.clients.openai.OpenAIChatParams).reasoningEffort }
+            assertEquals(
+                listOf(
+                    ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort.LOW,
+                    ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort.HIGH,
+                ),
+                efforts,
+            )
+        }
+
+        @Test
+        fun `the default sends nothing`() {
+            env.models = { listOf(reasoner) }
+            val id = startedSession()
+
+            client.setSessionOption(id, "reasoning_effort", "high")
+            client.setSessionOption(id, "reasoning_effort", "")
+            client.sendPrompt(request(id, "go")) {}
+
+            assertTrue(seenParams.single() !is ai.koog.prompt.executor.clients.openai.OpenAIChatParams)
+        }
+
+        @Test
+        fun `an effort chosen for one model is not sent to a model that does not take it`() {
+            env.models = { listOf(reasoner, plain) }
+            val id = startedSession()
+
+            client.setSessionOption(id, "reasoning_effort", "high")
+            client.setModel(id, "p")
+            client.sendPrompt(request(id, "go")) {}
+
+            assertTrue(seenParams.single() !is ai.koog.prompt.executor.clients.openai.OpenAIChatParams)
+        }
+
+        @Test
+        fun `a level the model does not list is never sent`() {
+            env.models = { listOf(reasoner) }
+            val id = startedSession()
+
+            client.setSessionOption(id, "reasoning_effort", "minimal")
+            client.sendPrompt(request(id, "go")) {}
+
+            assertTrue(seenParams.single() !is ai.koog.prompt.executor.clients.openai.OpenAIChatParams)
+        }
+
+        @Test
+        fun `other option keys are ignored`() {
+            env.models = { listOf(reasoner) }
+            val id = startedSession()
+
+            client.setSessionOption(id, "something_else", "high")
+            client.sendPrompt(request(id, "go")) {}
+
+            assertTrue(seenParams.single() !is ai.koog.prompt.executor.clients.openai.OpenAIChatParams)
+        }
+    }
+
+    @Nested
     inner class Resuming {
         private val seen = CopyOnWriteArrayList<Prompt>()
         private val earlier = listOf(EntryData.Prompt("earlier question"), EntryData.Text(raw = "earlier answer"))
