@@ -54,7 +54,8 @@ class KoogConversation(
     private val streamer: ModelStreamer,
     private val tools: ToolBackend,
     private val systemPrompt: () -> String,
-    private val maxSteps: Int = DEFAULT_MAX_STEPS,
+    /** Most tool calls one turn may make, or 0 for no limit. Read at the start of each turn. */
+    private val maxToolCalls: () -> Int = { 0 },
     private val clock: KoogClock = KoogClock.System,
     private val restoreBudgetChars: Int = KoogHistory.DEFAULT_BUDGET_CHARS,
     /** The model's context window in tokens, or null when unknown (then nothing is trimmed). Read every request. */
@@ -87,8 +88,12 @@ class KoogConversation(
         var inputTokens = 0L
         var outputTokens = 0L
         var sawUsage = false
+        var toolCalls = 0
+        val limit = maxToolCalls()
 
-        repeat(maxSteps) {
+        // No fixed step cap: a turn ends when the model stops calling tools, the user stops it, or the configured
+        // tool-call limit is reached. Context growth is bounded by compaction, not by counting steps.
+        while (true) {
             currentCoroutineContext().ensureActive()
             compactHistory(overheadChars, onUpdate)
             val request = prompt("koog") {
@@ -115,8 +120,12 @@ class KoogConversation(
             // would break every later turn of the session.
             history += withValidArguments(assistant)
             history += Message.User(results, RequestMetaInfo.create(clock))
+            // Checked only after the results are recorded, so the history stays valid for the next turn.
+            toolCalls += calls.size
+            if (limit > 0 && toolCalls >= limit) {
+                return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, onUpdate)
+            }
         }
-        return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, onUpdate)
     }
 
     /**
@@ -214,7 +223,6 @@ class KoogConversation(
     companion object {
         private val log = Logger.getInstance(KoogConversation::class.java)
 
-        const val DEFAULT_MAX_STEPS = 50
         const val STOP_END_TURN = "end_turn"
         const val STOP_MAX_TOKENS = "max_tokens"
         const val STOP_MAX_STEPS = "max_turn_requests"

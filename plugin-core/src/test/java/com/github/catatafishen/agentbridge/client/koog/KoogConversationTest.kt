@@ -80,9 +80,9 @@ class KoogConversationTest {
     private fun conversation(
         model: ModelStreamer,
         backend: ToolBackend,
-        maxSteps: Int = 50,
+        maxToolCalls: Int = 0,
         window: Long? = null,
-    ) = KoogConversation(model, backend, systemPrompt = { "SYSTEM" }, maxSteps = maxSteps, contextWindow = { window })
+    ) = KoogConversation(model, backend, systemPrompt = { "SYSTEM" }, maxToolCalls = { maxToolCalls }, contextWindow = { window })
 
     private fun user(s: String) = listOf<ContentBlock>(ContentBlock.Text(s))
 
@@ -515,13 +515,39 @@ class KoogConversationTest {
         }
 
         @Test
-        fun `a loop that never ends stops at the step limit`() {
+        fun `a configured tool call limit stops a loop that never ends`() {
             val model = ScriptedModel(toolCall("c", "read_file", """{"path":"a"}"""))
 
-            val (result, _) = run(conversation(model, FakeBackend(listOf(readFile)), maxSteps = 3))
+            val (result, _) = run(conversation(model, FakeBackend(listOf(readFile)), maxToolCalls = 3))
 
             assertEquals("max_turn_requests", result.stopReason)
             assertEquals(3, model.prompts.size)
+        }
+
+        @Test
+        fun `a stopped turn leaves every tool call paired with its result`() {
+            val model = ScriptedModel(toolCall("c", "read_file", """{"path":"a"}"""))
+            val conv = conversation(model, FakeBackend(listOf(readFile)), maxToolCalls = 2)
+
+            run(conv, "first")
+            val parts = model.prompts.last().messages.flatMap { it.parts }
+
+            assertEquals(
+                parts.filterIsInstance<MessagePart.Tool.Call>().map { it.id }.toSet(),
+                parts.filterIsInstance<MessagePart.Tool.Result>().map { it.id }.toSet(),
+            )
+        }
+
+        @Test
+        fun `without a limit a long job runs to the end instead of stopping at some step count`() {
+            val steps = 120
+            val replies = List(steps) { toolCall("c$it", "read_file", """{"path":"a"}""") }.plusElement(text("all done"))
+            val model = ScriptedModel(*replies.toTypedArray())
+
+            val (result, _) = run(conversation(model, FakeBackend(listOf(readFile)), maxToolCalls = 0))
+
+            assertEquals("end_turn", result.stopReason)
+            assertEquals(steps + 1, model.prompts.size)
         }
     }
 
