@@ -189,6 +189,30 @@ class KoogWireTest {
     }
 
     @Test
+    fun `an attached image goes out as an image_url data url in the request body`() {
+        val base = serve(listOf(200 to answer))
+        val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)
+        val streamer = ExecutorStreamer(executor, KoogProviders.toLLModel(KoogModelChoice("m", "M")))
+
+        runBlocking {
+            KoogConversation(streamer, backend, systemPrompt = { "SYS" })
+                .runTurn(listOf(ContentBlock.Text("what is this"), ContentBlock.Image("QUJD", "image/png"))) { }
+        }
+
+        val content = seen.single().body.getAsJsonArray("messages").last().asJsonObject.get("content")
+        assertTrue(content.isJsonArray, content.toString())
+        val image = content.asJsonArray.map { it.asJsonObject }.single { it.get("type").asString == "image_url" }
+        assertEquals("data:image/png;base64,QUJD", image.getAsJsonObject("image_url").get("url").asString)
+    }
+
+    @Test
+    fun `a model the catalog says cannot see images is not given the capability`() {
+        assertFalse(KoogProviders.toLLModel(KoogModelChoice("a", "A", supportsVision = false)).supports(LLMCapability.Vision.Image))
+        assertTrue(KoogProviders.toLLModel(KoogModelChoice("b", "B", supportsVision = true)).supports(LLMCapability.Vision.Image))
+        assertTrue(KoogProviders.toLLModel(KoogModelChoice("c", "C")).supports(LLMCapability.Vision.Image))
+    }
+
+    @Test
     fun `without a chosen effort the request carries no reasoning_effort at all`() {
         val base = serve(listOf(200 to answer))
         val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)

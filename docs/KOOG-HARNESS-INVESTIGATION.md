@@ -162,7 +162,7 @@ the real UI, and the sign-in dialog.
 
 - No history summarising. A conversation that nears the model's context window is trimmed instead (section 9): old
   tool results are shortened, then whole oldest exchanges are dropped, and the chat says so.
-- No image or audio input (called out in the prompt text, not silently dropped).
+- No audio input (called out in the prompt text, not silently dropped). Images are supported, see section 12.
 - Only chat-completions models; no Anthropic Messages or Responses endpoints.
 - Text streams; reasoning deltas are shown as thoughts when a provider sends them.
 - The conversation lives in memory. After a restart or an agent switch it is rebuilt from the plugin's stored
@@ -225,8 +225,26 @@ it, or when the plugin-wide "max tool calls per turn" setting (the one the other
 is reached. Runaway growth is bounded by context compaction (section 9), not by counting steps. The limit is checked
 only after a step's results are recorded, so a stopped turn never leaves a tool call without its result.
 
+## 12. Image input
+
+The chat UI sends pasted and attached images as `ContentBlock.Image` (base64 and a MIME type). They used to be replaced
+by a "not supported" note. They are now sent as Koog `MessagePart.Attachment` parts in the position the user gave them,
+which Koog's OpenAI client writes as an `image_url` content part holding a `data:<mime>;base64,...` URL. A wire test
+pins that request shape.
+
+- **Capability gate.** Koog throws while building a request that has an image unless the model declares
+  `LLMCapability.Vision.Image`. `toLLModel` declares it unless the Copilot catalog says `supports.vision` is `false`.
+  When the catalog does not say, the image is tried, because a wrongly hidden image is worse than a clear provider error.
+- **Models that cannot see.** The image becomes a text note ("the selected model does not accept images") so both the
+  model and the user know it was not seen. The choice is read each turn, so switching model takes effect immediately.
+- **Bad data.** An empty payload or a non-image MIME type becomes a note instead of an invalid request. A
+  `data:...;base64,` prefix is stripped and `image/svg+xml` is sent with format `svg`.
+- **Not handled:** the diagnostics line prints `vision=...` per model; if a real catalog uses another key, images are
+  still tried but never filtered out. Image size is not limited or resized, and the compaction estimate counts an image
+  as a fixed amount. A very large image can exceed a provider's request limit.
+
 ## 7. Next steps
 
 1. Run `verifyPlugin`; trim the +10 MB plugin size (see section 3).
-2. Responses and Anthropic endpoints for the remaining Copilot models; images.
+2. Responses and Anthropic endpoints for the remaining Copilot models.
 3. Decide, after real use, whether to raise `sinceBuild` instead of gating.

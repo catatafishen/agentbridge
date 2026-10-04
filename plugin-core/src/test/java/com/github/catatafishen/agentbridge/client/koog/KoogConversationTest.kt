@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.client.koog
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.Prompt
+import ai.koog.prompt.message.AttachmentContent
+import ai.koog.prompt.message.AttachmentSource
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
@@ -86,9 +88,12 @@ class KoogConversationTest {
 
     private fun user(s: String) = listOf<ContentBlock>(ContentBlock.Text(s))
 
-    private fun run(conv: KoogConversation, input: String = "hello"): Pair<TurnResult, List<SessionUpdate>> {
+    private fun run(conv: KoogConversation, input: String = "hello"): Pair<TurnResult, List<SessionUpdate>> =
+        runBlocks(conv, user(input))
+
+    private fun runBlocks(conv: KoogConversation, blocks: List<ContentBlock>): Pair<TurnResult, List<SessionUpdate>> {
         val updates = mutableListOf<SessionUpdate>()
-        val result = runBlocking { conv.runTurn(user(input)) { updates += it } }
+        val result = runBlocking { conv.runTurn(blocks) { updates += it } }
         return result to updates
     }
 
@@ -620,10 +625,70 @@ class KoogConversationTest {
         }
 
         @Test
-        fun `images are called out instead of silently dropped`() {
-            val flattened = PromptText.flatten(listOf(ContentBlock.Image("abc", "image/png")))
+        fun `an image is sent as an attachment in its place between the text`() {
+            val parts = PromptText.toParts(
+                listOf(ContentBlock.Text("before"), ContentBlock.Image("QUJD", "image/png"), ContentBlock.Text("after")),
+            )
 
-            assertTrue(flattened.contains("not supported"))
+            assertEquals(3, parts.size)
+            assertEquals("before", (parts[0] as MessagePart.Text).text)
+            val source = (parts[1] as MessagePart.Attachment).source as AttachmentSource.Image
+            assertEquals("image/png", source.mimeType)
+            assertEquals("png", source.format)
+            assertEquals("QUJD", (source.content as AttachmentContent.Binary).asBase64())
+            assertEquals("after", (parts[2] as MessagePart.Text).text)
+        }
+
+        @Test
+        fun `a data url prefix and an image subtype suffix are normalised`() {
+            val parts = PromptText.toParts(listOf(ContentBlock.Image("data:image/svg+xml;base64,QUJD", "image/svg+xml")))
+
+            val source = (parts.single() as MessagePart.Attachment).source as AttachmentSource.Image
+            assertEquals("QUJD", (source.content as AttachmentContent.Binary).asBase64())
+            assertEquals("svg", source.format)
+        }
+
+        @Test
+        fun `a model without vision gets a note instead of an image`() {
+            val parts = PromptText.toParts(listOf(ContentBlock.Text("look"), ContentBlock.Image("QUJD", "image/png")), acceptsImages = false)
+
+            val text = (parts.single() as MessagePart.Text).text
+            assertTrue(text.startsWith("look"))
+            assertTrue(text.contains("does not accept images"))
+        }
+
+        @Test
+        fun `an image without usable data becomes a note and never an invalid request`() {
+            val empty = PromptText.toParts(listOf(ContentBlock.Image("", "image/png")))
+            val notAnImage = PromptText.toParts(listOf(ContentBlock.Image("QUJD", "application/pdf")))
+
+            assertTrue((empty.single() as MessagePart.Text).text.contains("no usable image data"))
+            assertTrue((notAnImage.single() as MessagePart.Text).text.contains("no usable image data"))
+        }
+
+        @Test
+        fun `a message with no content is still a valid request`() {
+            assertEquals(1, PromptText.toParts(emptyList()).size)
+        }
+
+        @Test
+        fun `an image reaches the model on the turn it was sent`() {
+            val model = ScriptedModel(text("I see it"))
+
+            runBlocks(conversation(model, FakeBackend(emptyList())), listOf(ContentBlock.Text("what is this"), ContentBlock.Image("QUJD", "image/png")))
+
+            val sent = model.prompts.single().messages.last().parts
+            assertTrue(sent.any { it is MessagePart.Attachment })
+        }
+
+        @Test
+        fun `images are not sent when the selected model cannot see them`() {
+            val model = ScriptedModel(text("ok"))
+            val conv = KoogConversation(model, FakeBackend(emptyList()), systemPrompt = { "SYSTEM" }, acceptsImages = { false })
+
+            runBlocks(conv, listOf(ContentBlock.Text("what is this"), ContentBlock.Image("QUJD", "image/png")))
+
+            assertTrue(model.prompts.single().messages.last().parts.none { it is MessagePart.Attachment })
         }
     }
 

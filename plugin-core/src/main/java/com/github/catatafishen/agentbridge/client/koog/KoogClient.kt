@@ -145,6 +145,7 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
             systemPrompt = { env.systemPrompt(cwd) },
             maxToolCalls = { env.maxToolCallsPerTurn() },
             contextWindow = { selectedModel?.let { active.choices[it]?.contextLength } },
+            acceptsImages = { selectedModel?.let { active.choices[it]?.supportsVision } != false },
         )
         restorePrevious(conversation)
         val id = "koog-" + UUID.randomUUID()

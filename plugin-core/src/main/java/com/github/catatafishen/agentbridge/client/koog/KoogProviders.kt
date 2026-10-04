@@ -30,6 +30,8 @@ data class KoogModelChoice(
     val maxOutputTokens: Long? = null,
     /** Reasoning-effort levels this model accepts (see [KoogProviders.reasoningEffort]); empty when it takes none. */
     val reasoningEfforts: List<String> = emptyList(),
+    /** Whether the model accepts images: null when the provider does not say (then an image is tried). */
+    val supportsVision: Boolean? = null,
 )
 
 /** Builds Koog executors and models for the supported providers. */
@@ -118,6 +120,9 @@ object KoogProviders {
             add(LLMCapability.OpenAIEndpoint.Completions)
             // Koog silently drops reasoning_effort from the request unless the model declares this capability.
             if (sendableEfforts(choice.reasoningEfforts).isNotEmpty()) add(LLMCapability.Thinking)
+            // Koog refuses to build a request with an image unless the model declares this. Only a model the
+            // provider explicitly says cannot see images goes without; for an unknown one the image is tried.
+            if (choice.supportsVision != false) add(LLMCapability.Vision.Image)
         },
         contextLength = choice.contextLength,
         maxOutputTokens = choice.maxOutputTokens,

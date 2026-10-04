@@ -5,6 +5,8 @@ import ai.koog.prompt.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.message.AttachmentContent
+import ai.koog.prompt.message.AttachmentSource
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.RequestMetaInfo
@@ -60,6 +62,8 @@ class KoogConversation(
     private val restoreBudgetChars: Int = KoogHistory.DEFAULT_BUDGET_CHARS,
     /** The model's context window in tokens, or null when unknown (then nothing is trimmed). Read every request. */
     private val contextWindow: () -> Long? = { null },
+    /** Whether the selected model can be sent images. When false they become a text note. Read every turn. */
+    private val acceptsImages: () -> Boolean = { true },
 ) {
     private val history = mutableListOf<Message>()
 
@@ -79,7 +83,7 @@ class KoogConversation(
     suspend fun runTurn(user: List<ContentBlock>, onUpdate: (SessionUpdate) -> Unit): TurnResult {
         val specs = tools.listTools()
         applyPendingRestore(specs)
-        history += Message.User(PromptText.flatten(user), RequestMetaInfo.create(clock))
+        history += Message.User(PromptText.toParts(user, acceptsImages()), RequestMetaInfo.create(clock))
         val descriptors = specs.map(KoogToolSchemas::toDescriptor)
         val specsByName = specs.associateBy { it.name }
         val system = systemPrompt()
@@ -301,22 +305,68 @@ class KoogConversation(
     }
 }
 
-/** Turns the chat UI's content blocks into the plain text a chat-completions model receives. */
+/** Turns the chat UI's content blocks into what a chat-completions model receives. */
 object PromptText {
+    /**
+     * The request parts for one user message: text (consecutive text blocks joined) and, when the model can see
+     * them, images as real attachments in their original position. An image the model cannot take, or one
+     * with unusable data, becomes a note, so the model and the user both know it was not seen.
+     */
     @JvmStatic
-    fun flatten(blocks: List<ContentBlock>): String = blocks.mapNotNull { block ->
-        when (block) {
-            is ContentBlock.Text -> block.text
-            is ContentBlock.Resource -> block.resource().let { r ->
-                r.text()?.let { text -> "<file path=\"${r.uri()}\">\n$text\n</file>" }
-                    ?: "[attached resource ${r.uri()} (binary content is not sent)]"
-            }
-
-            // A pointer, not content: the model can open it with its own read tools.
-            is ContentBlock.ResourceLink -> "[referenced file: ${block.uri()}]"
-            is ContentBlock.Image -> "[image attachment is not supported by this agent yet]"
-            is ContentBlock.Audio -> "[audio attachment is not supported by this agent]"
-            is ContentBlock.Thinking -> null
+    fun toParts(blocks: List<ContentBlock>, acceptsImages: Boolean = true): List<MessagePart.RequestPart> {
+        val parts = mutableListOf<MessagePart.RequestPart>()
+        val text = mutableListOf<String>()
+        fun flushText() {
+            if (text.isNotEmpty()) parts += MessagePart.Text(text.joinToString("\n\n"))
+            text.clear()
         }
-    }.joinToString("\n\n")
+        for (block in blocks) {
+            if (block is ContentBlock.Image) {
+                val image = if (acceptsImages) imagePart(block) else null
+                if (image != null) {
+                    flushText()
+                    parts += image
+                } else {
+                    text += if (acceptsImages) IMAGE_UNUSABLE else IMAGE_NOT_SEEN
+                }
+            } else {
+                describe(block)?.let { text += it }
+            }
+        }
+        flushText()
+        // A message with no content at all still has to be a valid request.
+        return parts.ifEmpty { listOf(MessagePart.Text("")) }
+    }
+
+    @JvmStatic
+    fun flatten(blocks: List<ContentBlock>): String = blocks.mapNotNull(::describe).joinToString("\n\n")
+
+    private fun imagePart(block: ContentBlock.Image): MessagePart.Attachment? {
+        val mime = block.mimeType().trim().lowercase()
+        val data = block.data().trim().removePrefix("data:$mime;base64,")
+        if (!mime.startsWith("image/") || data.isEmpty()) return null
+        val source = AttachmentSource.Image(
+            content = AttachmentContent.Binary.Base64(data),
+            format = mime.substringAfter('/').substringBefore('+'),
+            mimeType = mime,
+        )
+        return MessagePart.Attachment(source)
+    }
+
+    private fun describe(block: ContentBlock): String? = when (block) {
+        is ContentBlock.Text -> block.text
+        is ContentBlock.Resource -> block.resource().let { r ->
+            r.text()?.let { text -> "<file path=\"${r.uri()}\">\n$text\n</file>" }
+                ?: "[attached resource ${r.uri()} (binary content is not sent)]"
+        }
+
+        // A pointer, not content: the model can open it with its own read tools.
+        is ContentBlock.ResourceLink -> "[referenced file: ${block.uri()}]"
+        is ContentBlock.Image -> IMAGE_NOT_SEEN
+        is ContentBlock.Audio -> "[audio attachment is not supported by this agent]"
+        is ContentBlock.Thinking -> null
+    }
+
+    private const val IMAGE_NOT_SEEN = "[image attachment not sent: the selected model does not accept images]"
+    private const val IMAGE_UNUSABLE = "[image attachment not sent: it has no usable image data]"
 }

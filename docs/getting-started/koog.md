@@ -55,7 +55,8 @@ plan and your employer's policy.
 
 - Very long conversations are trimmed rather than summarised: old tool results are shortened and then the oldest
   exchanges are dropped, with a warning in the chat.
-- No image or audio input.
+- Images you paste or attach are sent to models that accept them. A model that does not (the catalog says so, or you
+  chose a text-only one) gets a short note in place of the image. No audio input.
 - Only chat models served on the chat-completions endpoint are offered. Models explicitly marked as not supporting tool
   calls and models served only on other endpoints are hidden for now.
 
