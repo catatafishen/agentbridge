@@ -63,9 +63,9 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         mainPanel = FormBuilder.createFormBuilder()
             .addComponent(
                 JBLabel(
-                    "<html><body style='width: 520px'>Configure where AgentBridge stores per-project data files " +
-                        "such as tool-call statistics and semantic memory.</body></html>"
-                )
+                    "<html>Configure where AgentBridge stores per-project data files " +
+                        "such as tool-call statistics and semantic memory.</html>"
+                ).apply { isAllowAutoWrapping = true }
             )
             .addSeparator(8)
             .addComponent(optionPanel(projectDefault, "{project}/.agentbridge", projectDefaultStoragePath()))
@@ -178,10 +178,12 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
             })
         }
 
+    /** Wraps at the width it is given instead of a fixed pixel width, so it also fits a narrow settings window. */
     private fun contextLabel(html: String): JBLabel =
-        JBLabel("<html><body style='width: 520px'>$html</body></html>").apply {
+        JBLabel("<html>$html</html>").apply {
             foreground = UIUtil.getContextHelpForeground()
             font = JBUI.Fonts.smallFont()
+            isAllowAutoWrapping = true
         }
 
     private fun JComponent.indented(): JComponent =

@@ -50,11 +50,10 @@ class KiroClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     override fun createPanel() = panel {
         row("Status:") { cell(statusLabel) }
         row {
-            val note = JBLabel(
-                "<html>Ensure <code>kiro-cli</code> is installed and available on your PATH.</html>"
-            )
-            note.foreground = UIUtil.getContextHelpForeground()
-            cell(note)
+            text(
+                "Ensure <code>kiro-cli</code> is installed and available on your PATH.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Kiro CLI documentation at kiro.dev/docs/cli/acp")

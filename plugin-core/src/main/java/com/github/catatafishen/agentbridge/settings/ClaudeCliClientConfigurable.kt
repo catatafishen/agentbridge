@@ -45,12 +45,11 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
 
     override fun createPanel() = panel {
         row {
-            val authNote = JBLabel(
-                "<html>Run <code>claude /login</code> in a terminal to authenticate. " +
-                    "Authentication problems are reported by Claude itself when you send a prompt.</html>"
-            )
-            authNote.foreground = UIUtil.getContextHelpForeground()
-            cell(authNote)
+            text(
+                "Run <code>claude /login</code> in a terminal to authenticate. " +
+                    "Authentication problems are reported by Claude itself when you send a prompt.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         separator()
         row("Claude binary:") {

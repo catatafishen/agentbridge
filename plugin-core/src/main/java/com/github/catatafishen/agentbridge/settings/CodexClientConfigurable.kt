@@ -12,6 +12,7 @@ import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -46,13 +47,12 @@ class CodexClientConfigurable(private val project: Project) :
     override fun createPanel() = panel {
         row("Binary:") { cell(statusLabel) }
         row {
-            val installNote = JBLabel(
-                "<html>Install with <code>npm install -g @openai/codex</code>, then run " +
+            text(
+                "Install with <code>npm install -g @openai/codex</code>, then run " +
                     "<code>codex login</code>. Authentication problems are reported by Codex " +
-                    "itself when you send a prompt.</html>"
-            )
-            installNote.foreground = UIUtil.getContextHelpForeground()
-            cell(installNote)
+                    "itself when you send a prompt.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Install Codex CLI — npmjs.com/@openai/codex")
@@ -109,12 +109,11 @@ class CodexClientConfigurable(private val project: Project) :
         @Suppress("DialogTitleCapitalization")
         row { button("Sign in — headless (codex login --device-auth)") { openSignInTerminal(true) } }
         row {
-            val note = JBLabel(
-                "<html>Use <i>headless</i> sign-in on remote/SSH machines where a browser cannot " +
-                    "open automatically.</html>"
-            )
-            note.foreground = UIUtil.getContextHelpForeground()
-            cell(note)
+            text(
+                "Use <i>headless</i> sign-in on remote/SSH machines where a browser cannot " +
+                    "open automatically.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         sandboxSection.render(this@panel)
     }

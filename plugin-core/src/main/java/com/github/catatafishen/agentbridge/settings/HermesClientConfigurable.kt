@@ -12,6 +12,7 @@ import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -45,12 +46,11 @@ class HermesClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     override fun createPanel() = panel {
         row("Status:") { cell(statusLabel) }
         row {
-            val note = JBLabel(
-                "<html>Ensure <code>hermes</code> is installed and available on your PATH. " +
-                    "Run <code>hermes setup</code> to configure a model and provider.</html>"
-            )
-            note.foreground = UIUtil.getContextHelpForeground()
-            cell(note)
+            text(
+                "Ensure <code>hermes</code> is installed and available on your PATH. " +
+                    "Run <code>hermes setup</code> to configure a model and provider.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Hermes Agent on GitHub (NousResearch/hermes-agent)")

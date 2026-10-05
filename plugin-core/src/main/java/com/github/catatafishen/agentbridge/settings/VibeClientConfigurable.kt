@@ -12,6 +12,7 @@ import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -45,14 +46,13 @@ class VibeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     override fun createPanel() = panel {
         row("Status:") { cell(statusLabel) }
         row {
-            val note = JBLabel(
-                "<html>Ensure <code>vibe-acp</code> is installed and available on your PATH. " +
+            text(
+                "Ensure <code>vibe-acp</code> is installed and available on your PATH. " +
                     "Install with <code>pip install mistral-vibe</code> or " +
                     "<code>uv tool install mistral-vibe</code> (Python 3.12+). " +
-                    "Run <code>vibe</code> once to authenticate with your Mistral API key.</html>"
-            )
-            note.foreground = UIUtil.getContextHelpForeground()
-            cell(note)
+                    "Run <code>vibe</code> once to authenticate with your Mistral API key.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Mistral Vibe documentation")
