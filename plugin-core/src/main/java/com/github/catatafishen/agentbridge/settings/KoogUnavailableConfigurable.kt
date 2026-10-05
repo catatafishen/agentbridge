@@ -93,15 +93,58 @@ object KoogAvailability {
         appendLine("Plugin version:   ${BuildInfo.getVersion()}")
         appendLine("IDE:              ${ideDescription()}")
         appendLine("OS / Java:        ${SystemInfo.OS_NAME} ${SystemInfo.OS_VERSION} / ${System.getProperty("java.version")}")
-        appendLine("Kotlin runtime:   ${KotlinVersion.CURRENT} (needs ${KoogSupport.MIN_VERSION}+)")
-        appendLine("Kotlin loaded from: ${codeSource(KotlinVersion::class.java)}")
+        appendLine("Kotlin runtime:   ${KotlinVersion.CURRENT} (needs ${KoogSupport.MIN_VERSION}+) - what this plugin resolves")
+        appendLine("Kotlin origin:    ${origin(KotlinVersion::class.java)}")
+        appendLine("Platform Kotlin:  ${platformKotlin()} - what the IDE itself loads")
         appendLine("Gate passes:      ${KoogSupport.isSupported()}")
         appendLine("Koog classes:     ${probeClasses() ?: "load fine"}")
-        appendLine("Koog loaded from: ${codeSource(KoogSupport::class.java)}")
+        appendLine("Plugin origin:    ${origin(KoogSupport::class.java)}")
+        appendLine("Classpath Kotlin: ${classpathKotlin()}")
         if (failure != null) {
             appendLine("Page failure:     ${describe(failure)}")
         }
     }.trimEnd()
+
+    /**
+     * Where a class really comes from. A plugin class loader reports no code source, so use the URL of the class file
+     * (which names the jar) and the loader that defined it.
+     */
+    private fun origin(type: Class<*>): String = try {
+        val file = type.name.replace('.', '/') + ".class"
+        val url = (type.classLoader ?: ClassLoader.getSystemClassLoader()).getResource(file)
+        "${url ?: "unknown"} [loader: ${type.classLoader ?: "bootstrap"}]"
+    } catch (t: Throwable) {
+        "unknown (${describe(t)})"
+    }
+
+    /**
+     * The Kotlin stdlib the IDE itself uses, read through the application class loader instead of this plugin's.
+     * If it differs from [KotlinVersion.CURRENT], something other than the platform is supplying the stdlib to the plugin.
+     */
+    private fun platformKotlin(): String = try {
+        val loader = ApplicationInfo::class.java.classLoader
+        val type = Class.forName("kotlin.KotlinVersion", true, loader)
+        val current = try {
+            type.getField("CURRENT").get(null)
+        } catch (_: NoSuchFieldException) {
+            val companion = type.getField("Companion").get(null)
+            companion.javaClass.getMethod("getCURRENT").invoke(companion)
+        }
+        "$current [loader: $loader]"
+    } catch (t: Throwable) {
+        "unknown (${describe(t)})"
+    }
+
+    /** Kotlin stdlib jars named on the JVM's own class path, in case a launcher or agent puts an old one there. */
+    private fun classpathKotlin(): String = try {
+        System.getProperty("java.class.path").orEmpty()
+            .split(java.io.File.pathSeparatorChar)
+            .filter { it.contains("kotlin", ignoreCase = true) }
+            .ifEmpty { listOf("none") }
+            .joinToString("; ")
+    } catch (t: Throwable) {
+        "unknown (${describe(t)})"
+    }
 
     /** This page is the debug surface, so a failing lookup must be reported, never thrown. */
     private fun ideDescription(): String = try {
@@ -110,13 +153,6 @@ object KoogAvailability {
     } catch (t: Throwable) {
         "unknown (${describe(t)})"
     }
-
-    private fun codeSource(type: Class<*>): String =
-        try {
-            type.protectionDomain?.codeSource?.location?.toString() ?: "unknown (bootstrap or platform loader)"
-        } catch (_: SecurityException) {
-            "unknown"
-        }
 
     private fun describe(t: Throwable): String =
         generateSequence(t) { it.cause }.joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message}" }
