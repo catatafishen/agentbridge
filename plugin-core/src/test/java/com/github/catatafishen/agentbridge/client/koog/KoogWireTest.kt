@@ -106,6 +106,52 @@ class KoogWireTest {
     }
 
     @Test
+    fun `streamed reasoning reaches the chat as thought chunks, whatever the provider calls the field`() {
+        for (field in listOf("reasoning_content", "reasoning_text", "reasoning")) {
+            seen.clear()
+            val reasoned = sse(
+                chunk("""{"role":"assistant","$field":"Let me "}"""),
+                chunk("""{"$field":"think."}"""),
+                chunk("""{"content":"Done."}"""),
+                chunk("{}", "stop", """{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}"""),
+            )
+            server?.stop(0)
+            val base = serve(listOf(200 to reasoned))
+            val updates = mutableListOf<com.github.catatafishen.agentbridge.model.SessionUpdate>()
+
+            for (kind in KoogProviderKind.entries) {
+                val executor = KoogProviders.createExecutor(kind, if (kind == KoogProviderKind.COPILOT) null else base, "t", "ua", base)
+                updates.clear()
+                runBlocking { conversation(executor).runTurn(listOf(ContentBlock.Text("go"))) { updates += it } }
+
+                val thought = updates
+                    .filterIsInstance<com.github.catatafishen.agentbridge.model.SessionUpdate.AgentThoughtChunk>()
+                    .joinToString("") { it.text() }
+                assertEquals("Let me think.", thought, "$kind via '$field'")
+            }
+        }
+    }
+
+    @Test
+    fun `a follow-up request after a reasoning turn is still a well-formed chat request`() {
+        val reasoned = sse(
+            chunk("""{"role":"assistant","reasoning_text":"hmm"}"""),
+            chunk("""{"content":"ok"}"""),
+            chunk("{}", "stop"),
+        )
+        val base = serve(listOf(200 to reasoned, 200 to answer))
+        val executor = KoogProviders.createExecutor(KoogProviderKind.COPILOT, null, "t", "ua", base)
+        val conv = conversation(executor)
+
+        runBlocking { conv.runTurn(listOf(ContentBlock.Text("one"))) { } }
+        runBlocking { conv.runTurn(listOf(ContentBlock.Text("two"))) { } }
+
+        // The second request must still be a well-formed chat request (it parsed and was answered).
+        assertEquals(2, seen.size)
+        assertTrue(seen[1].body.getAsJsonArray("messages").size() >= 3)
+    }
+
+    @Test
     fun `Copilot chunks that lack object and model, as the real API sends them, are still parsed`() {
         val copilotAnswer = sse(
             """{"choices":[],"created":0,"id":"","prompt_filter_results":[{"content_filter_results":{},"index":0}]}""",
