@@ -30,15 +30,27 @@ import java.io.IOException
 import javax.swing.SwingUtilities
 
 /**
- * Registers the Koog settings page only where the agent can run (see `KoogSupport`). Doing it through a
- * provider keeps the page, and the Koog classes behind it, out of IDEs that cannot load them.
+ * Registers the Koog settings page. Where the agent can run it is the real page; everywhere else (Kotlin runtime
+ * too old, or the Koog classes fail to load) it is [KoogUnavailableConfigurable], which says why. The Koog classes
+ * are only touched after the gate passes, and any failure while building the real page falls back to the
+ * placeholder instead of silently dropping the page.
  */
 class KoogConfigurableProvider(private val project: Project) : ConfigurableProvider() {
-    override fun canCreateConfigurable(): Boolean =
-        com.github.catatafishen.agentbridge.client.koog.KoogSupport.isSupported()
+    override fun createConfigurable(): Configurable {
+        if (!com.github.catatafishen.agentbridge.client.koog.KoogSupport.isSupported()) {
+            return KoogUnavailableConfigurable()
+        }
+        return try {
+            KoogClientConfigurable(project)
+        } catch (e: Throwable) {
+            LOG.warn("The Koog settings page could not be created", e)
+            KoogUnavailableConfigurable(e)
+        }
+    }
 
-    override fun createConfigurable(): Configurable? =
-        if (canCreateConfigurable()) KoogClientConfigurable(project) else null
+    private companion object {
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(KoogConfigurableProvider::class.java)
+    }
 }
 
 class KoogClientConfigurable(private val project: Project) :

@@ -23,6 +23,9 @@ import java.util.function.Function;
  */
 public final class ClientRegistry {
 
+    private static final com.intellij.openapi.diagnostic.Logger LOG =
+            com.intellij.openapi.diagnostic.Logger.getInstance(ClientRegistry.class);
+
     /**
      * Describes an available agent without creating an instance.
      */
@@ -44,8 +47,15 @@ public final class ClientRegistry {
         register("goose", "Goose", GooseClient::new);
         // Koog needs a newer Kotlin stdlib than older IDEs ship; KoogSupport touches no Koog classes,
         // so this check is safe everywhere and the Koog classes are never loaded where they cannot run.
+        // A failure to load them must not take the other agents down with it, and must leave a trace in the log.
         if (KoogSupport.isSupported()) {
-            register(KoogSupport.AGENT_ID, "Built-in Agent (Koog)", KoogClient::new);
+            try {
+                register(KoogSupport.AGENT_ID, "Built-in Agent (Koog)", KoogClient::new);
+            } catch (LinkageError e) {
+                LOG.warn("Koog agent not registered: its classes could not be loaded", e);
+            }
+        } else {
+            LOG.info("Koog agent not registered: " + KoogSupport.unsupportedReason());
         }
         // Claude clients are registered once they support a single-arg Project constructor.
     }

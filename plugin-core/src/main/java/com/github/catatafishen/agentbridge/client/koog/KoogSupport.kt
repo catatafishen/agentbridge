@@ -16,6 +16,9 @@ object KoogSupport {
     private const val MIN_MAJOR = 2
     private const val MIN_MINOR = 3
 
+    /** The oldest Kotlin runtime the agent works on, for messages. */
+    const val MIN_VERSION = "$MIN_MAJOR.$MIN_MINOR"
+
     @JvmStatic
     fun isSupported(): Boolean = isSupported(KotlinVersion.CURRENT)
 
