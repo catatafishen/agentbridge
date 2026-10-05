@@ -49,12 +49,11 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
             cell(statusLabel)
         }
         row {
-            val installNote = JBLabel(
-                "<html>Install with <code>npm i -g opencode-ai</code>. " +
-                    "Ensure it's available on PATH.</html>"
-            )
-            installNote.foreground = UIUtil.getContextHelpForeground()
-            cell(installNote)
+            text(
+                "Install with <code>npm i -g opencode-ai</code>. " +
+                    "Ensure it's available on PATH.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Install OpenCode from npmjs.com/package/opencode-ai")

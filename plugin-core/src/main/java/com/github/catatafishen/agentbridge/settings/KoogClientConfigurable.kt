@@ -19,6 +19,7 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -51,14 +52,13 @@ class KoogClientConfigurable(private val project: Project) :
 
     override fun createPanel() = panel {
         row {
-            val note = JBLabel(
-                "<html>AgentBridge's own agent. It talks to the model provider directly and runs every tool call " +
+            text(
+                "AgentBridge's own agent. It talks to the model provider directly and runs every tool call " +
                     "through AgentBridge's tool layer, so the model only ever sees AgentBridge's instructions and " +
                     "tools. Tool permissions are configured under <b>Tools</b>; there are no built-in tools to disable. " +
-                    "Changes apply the next time the agent starts.</html>"
-            )
-            note.foreground = UIUtil.getContextHelpForeground()
-            cell(note)
+                    "Changes apply the next time the agent starts.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row("Provider:") {
             comboBox(KoogProviderKind.entries, textListCellRenderer { it?.label })
@@ -76,15 +76,14 @@ class KoogClientConfigurable(private val project: Project) :
                 button("Sign out") { signOut() }
             }
             row {
-                val about = JBLabel(
-                    "<html>Signs in with the GitHub app that GitHub's own Copilot clients use, so your subscription's " +
+                text(
+                    "Signs in with the GitHub app that GitHub's own Copilot clients use, so your subscription's " +
                         "full model list is available. Using a Copilot subscription outside GitHub's own clients " +
                         "follows the same device sign-in other agent tools use. GitHub has announced official " +
                         "support for OpenCode only; check that it is acceptable under your plan and employer's " +
-                        "policy.</html>"
-                )
-                about.foreground = UIUtil.getContextHelpForeground()
-                cell(about)
+                        "policy.",
+                    MAX_LINE_LENGTH_WORD_WRAP
+                ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
             }
         }
 

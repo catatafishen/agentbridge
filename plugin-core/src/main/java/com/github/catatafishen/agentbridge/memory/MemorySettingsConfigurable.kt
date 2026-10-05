@@ -14,7 +14,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.ui.components.JBCheckBox
-import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.UIUtil
 import java.nio.file.Path
@@ -26,18 +25,15 @@ class MemorySettingsConfigurable(private val project: Project) :
     override fun getId(): String = "com.github.catatafishen.agentbridge.memory"
 
     private val s get() = MemorySettings.getInstance(project)
-    private val storageLocationLabel = JBLabel().apply {
-        foreground = UIUtil.getContextHelpForeground()
-    }
-    private val backfillStatusLabel = JBLabel()
+
+    // Wrapping DSL labels, created with the panel. Null until then; text is applied once the rows exist.
+    private var storageLocationLabel: javax.swing.JEditorPane? = null
+    private var backfillStatusLabel: javax.swing.JEditorPane? = null
     private var backfillButton: javax.swing.JButton? = null
 
     @Volatile private var miningInProgress = false
 
     override fun createPanel() = panel {
-        updateStorageLocationLabel()
-        updateBackfillStatus()
-
         row {
             comment(
                 "Semantic memory powered by concepts from " +
@@ -51,7 +47,9 @@ class MemorySettingsConfigurable(private val project: Project) :
                 .bindSelected({ s.isEnabled }, { s.isEnabled = it })
         }
         row {
-            cell(storageLocationLabel)
+            storageLocationLabel = text("", MAX_LINE_LENGTH_WORD_WRAP)
+                .applyToComponent { foreground = UIUtil.getContextHelpForeground() }
+                .component
         }
         row {
             checkBox("Automatically mine memories after each agent turn")
@@ -86,7 +84,7 @@ class MemorySettingsConfigurable(private val project: Project) :
         }
         separator()
         row {
-            cell(backfillStatusLabel)
+            backfillStatusLabel = text("", MAX_LINE_LENGTH_WORD_WRAP).component
         }
         row {
             backfillButton = button("Mine Existing History") { runBackfill() }
@@ -95,6 +93,8 @@ class MemorySettingsConfigurable(private val project: Project) :
                 .component
             comment("⚠ Can be slow if you have many sessions. Runs in the background.")
         }
+        updateStorageLocationLabel()
+        updateBackfillStatus()
         onApply {
             // Refresh button enablement after settings persist
             backfillButton?.isEnabled = s.isEnabled
@@ -110,8 +110,12 @@ class MemorySettingsConfigurable(private val project: Project) :
 
     private fun updateStorageLocationLabel() {
         val dir: Path = AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project)
-        storageLocationLabel.text =
-            "<html>Stored in <code>${formatPathForHtml(dir)}</code>.</html>"
+        storageLocationLabel?.text = "Stored in <code>${formatPathForHtml(dir)}</code>."
+    }
+
+    /** Status text is shown as HTML by the wrapping label, so anything not meant as markup is escaped. */
+    private fun setBackfillStatus(plainText: String) {
+        backfillStatusLabel?.text = StringUtil.escapeXmlEntities(plainText)
     }
 
     private fun formatPathForHtml(path: Path): String =
@@ -122,15 +126,15 @@ class MemorySettingsConfigurable(private val project: Project) :
     private fun updateBackfillStatus() {
         if (miningInProgress) return
         if (s.isBackfillCompleted) {
-            backfillStatusLabel.text = "✓ History has been mined into memory."
+            setBackfillStatus("✓ History has been mined into memory.")
         } else {
             val sessionCount = ConversationService.getInstance(project)
                 .listSessions().size
-            backfillStatusLabel.text = if (sessionCount > 0) {
-                "<html><b>$sessionCount past sessions</b> available to mine. " +
-                    "Click below to populate memory from your conversation history.</html>"
+            if (sessionCount > 0) {
+                backfillStatusLabel?.text = "<b>$sessionCount past sessions</b> available to mine. " +
+                    "Click below to populate memory from your conversation history."
             } else {
-                "No past sessions found."
+                setBackfillStatus("No past sessions found.")
             }
         }
     }
@@ -148,7 +152,7 @@ class MemorySettingsConfigurable(private val project: Project) :
         s.isBackfillCompleted = false
         miningInProgress = true
         backfillButton?.isEnabled = false
-        backfillStatusLabel.text = "Starting backfill…"
+        setBackfillStatus("Starting backfill…")
 
         ProgressManager.getInstance().run(object :
             Task.Backgroundable(project, "Mining conversation history", true) {
@@ -164,7 +168,7 @@ class MemorySettingsConfigurable(private val project: Project) :
                             indicator.text = text
                             tracker.reportProgress(text)
                             ApplicationManager.getApplication().invokeLater {
-                                backfillStatusLabel.text = text
+                                setBackfillStatus(text)
                             }
                         },
                         { f -> indicator.fraction = f },
@@ -181,7 +185,7 @@ class MemorySettingsConfigurable(private val project: Project) :
                     ApplicationManager.getApplication().invokeLater {
                         miningInProgress = false
                         backfillButton?.isEnabled = s.isEnabled
-                        backfillStatusLabel.text = "Backfill failed: ${e.message}"
+                        setBackfillStatus("Backfill failed: ${e.message}")
                     }
                 }
             }

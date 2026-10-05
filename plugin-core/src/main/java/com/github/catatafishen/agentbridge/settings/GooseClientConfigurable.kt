@@ -12,6 +12,7 @@ import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -39,15 +40,14 @@ class GooseClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     override fun createPanel() = panel {
         row("Status:") { cell(statusLabel) }
         row {
-            val note = JBLabel(
-                "<html>Ensure <code>goose</code> is installed and available on your PATH. " +
+            text(
+                "Ensure <code>goose</code> is installed and available on your PATH. " +
                     "Install with <code>curl -fsSL " +
                     "https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash</code> " +
                     "(installs to <code>~/.local/bin</code>) or <code>brew install block-goose-cli</code>. " +
-                    "Run <code>goose configure</code> to set up your model provider.</html>"
-            )
-            note.foreground = UIUtil.getContextHelpForeground()
-            cell(note)
+                    "Run <code>goose configure</code> to set up your model provider.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Goose documentation")
