@@ -255,7 +255,8 @@ public abstract class GitTool extends Tool {
         appendTrackingContext(ctx, rootDir);
         appendDefaultBranchContext(ctx, rootDir, branch);
         appendWorkingTreeContext(ctx, rootDir);
-        appendStashContext(ctx, rootDir);
+        // Stash count is deliberately not repeated here: it rarely matters and added noise to every git
+        // result. git_status still reports it.
         return ctx.toString();
     }
 
@@ -288,16 +289,6 @@ public abstract class GitTool extends Tool {
             return;
         }
         ctx.append("Working tree: ").append(formatPorcelainStatus(porcelain)).append('\n');
-    }
-
-    private void appendStashContext(@NotNull StringBuilder ctx, @NotNull String rootDir) {
-        String stashList = runGitInQuiet(rootDir, "stash", "list");
-        if (stashList == null || stashList.isEmpty()) return;
-        long count = countStashEntries(stashList);
-        if (count > 0) {
-            ctx.append("Stash: ").append(count).append(" entr")
-                .append(count == 1 ? "y" : "ies").append('\n');
-        }
     }
 
     /**
