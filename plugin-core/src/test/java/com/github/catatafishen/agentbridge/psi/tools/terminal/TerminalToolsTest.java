@@ -263,9 +263,10 @@ public class TerminalToolsTest extends BasePlatformTestCase {
         String result =
             executeSync(closeTerminalTool, args("terminal_id", "terminal-1"));
 
-        assertEquals(
-            "Error: Failed to close terminal 'Agent: build' [terminal_id=terminal-1].",
-            result);
+        assertTrue(result.startsWith(
+            "Error: Failed to close terminal 'Agent: build' [terminal_id=terminal-1]."));
+        assertTrue("Failure must say how to proceed, got: " + result, result.contains("close_terminal again"));
+        assertTrue(result.contains("{ctrl-c}"));
         verify(fixture.manager()).removeContent(owned, true);
         verify(tracker, never()).untrackTerminal(any(), any());
     }
