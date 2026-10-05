@@ -55,7 +55,7 @@ class KoogClientConfigurable(private val project: Project) :
             text(
                 "AgentBridge's own agent. It talks to the model provider directly and runs every tool call " +
                     "through AgentBridge's tool layer, so the model only ever sees AgentBridge's instructions and " +
-                    "tools. Tool permissions are configured under <b>Tools</b>; there are no built-in tools to disable. " +
+                    "tools. Tool permissions and availability are configured under <b>MCP -> Tools</b>. " +
                     "Changes apply the next time the agent starts.",
                 MAX_LINE_LENGTH_WORD_WRAP
             ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
