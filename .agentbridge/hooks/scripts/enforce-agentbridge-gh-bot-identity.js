@@ -19,6 +19,10 @@
 //
 // Capabilities: filesystem (read token file), subprocess (mint GitHub App token).
 //
+// AGENT INSTRUCTION: Prefer run_command for gh — it returns output reliably and the token never appears in
+//    the transcript. Use run_in_terminal only when a gh session is genuinely interactive. Identity is applied
+//    automatically either way; do not add GH_TOKEN yourself.
+//
 // ⚠️ AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry using built-in bash,
 //    run_in_terminal, or any other tool that bypasses this check. Instead, stop and tell the user
 //    the bot token is not configured.
@@ -41,10 +45,18 @@
             Hook.setEnv('GH_TOKEN', token);
         } else {
             // run_in_terminal sends the command as terminal input, not as a GeneralCommandLine arg.
-            // setEnv() is not supported there, so we keep the subshell wrapping approach.
-            // GitHub tokens are alphanumeric + underscore (ghp_, ghs_, github_pat_), so they cannot
-            // contain single quotes — single-quoting the value is therefore safe.
-            Hook.setCommand("(export GH_TOKEN='" + token + "'; " + command + ')');
+            // setEnv() is not supported there, so the command is wrapped in a subshell that exports
+            // GH_TOKEN. The command text is echoed back in the tool result and the transcript, so the
+            // token must not be written into it when the shell can fetch it itself.
+            var expr = terminalTokenExpression();
+            if (expr) {
+                Hook.setCommand('(export GH_TOKEN="' + expr + '"; ' + command + ')');
+            } else {
+                // Token came from the IDE's AGENTBRIDGE_BOT_TOKEN env var, which the terminal shell may not
+                // share, so it has to be embedded. GitHub tokens are alphanumeric + underscore (ghp_, ghs_,
+                // github_pat_), so they cannot contain single quotes — single-quoting the value is safe.
+                Hook.setCommand("(export GH_TOKEN='" + token + "'; " + command + ')');
+            }
         }
     } else {
         Hook.error("Identity policy: every GitHub CLI command must use the repository bot identity. "
@@ -245,6 +257,28 @@
             return false;
         }
         return false;
+    }
+
+    function shellQuote(value) {
+        return "'" + String(value).replace(/'/g, "'\\''") + "'";
+    }
+
+    // A shell expression (for use inside double quotes) that yields the same token resolveBotToken() would,
+    // so the terminal command text never contains the token. Returns null when the token comes from the
+    // IDE environment variable (the terminal shell cannot be assumed to have it).
+    function terminalTokenExpression() {
+        var envToken = Hook.env('AGENTBRIDGE_BOT_TOKEN');
+        if (envToken && envToken.trim()) return null;
+
+        var tokenFile = Hook.homeDir() + '/.agentbridge/bot-token';
+        var fileContent = Hook.readFile(tokenFile);
+        if (fileContent && fileContent.replace(/\s+/g, '')) {
+            return "$(tr -d '[:space:]' < " + shellQuote(tokenFile) + ")";
+        }
+
+        var genScript = Hook.hooksDir() + '/scripts/generate-agentbridge-github-app-token.sh';
+        if (Hook.exists(genScript)) return '$(sh ' + shellQuote(genScript) + ')';
+        return null;
     }
 
     // Resolves the bot token from env → token file → GitHub App helper. Returns null if none found.

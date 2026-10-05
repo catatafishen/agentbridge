@@ -4,14 +4,12 @@
 // repository as part of the project's OWN hook configuration (.agentbridge/hooks/); it is NOT
 // distributed to end users. See docs/BOT-IDENTITY-HOOKS.md. Optional — safe to disable locally.
 //
-// Purpose: remind agents after a git_commit to use the connected bot identity for authorship,
-// keeping commit attribution consistent during plugin development.
+// Purpose: tell the agent that commit authorship is already enforced, so it does not hedge about
+// identity. enforce-commit-author.js (PRE hook) sets the author; nothing needs to be amended.
 //
 // Output: Hook.append(text) on success; nothing on error.
 (function () {
     if (Hook.isError()) return;
-    var agent = Hook.agentName() || 'the connected agent';
-    Hook.append('\nReminder: commits should be authored with the bot identity (' + agent + '). '
-        + 'If only user credentials are available, amend the commit and state explicitly that the '
-        + 'change was authored by ' + agent + ' on behalf of the user.');
+    Hook.append('\nCommit author: bot identity is applied automatically by the enforce-commit-author hook. '
+        + 'Nothing to amend. To confirm, check the author in git_log.');
 })();
