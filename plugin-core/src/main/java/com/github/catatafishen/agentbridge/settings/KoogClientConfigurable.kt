@@ -20,6 +20,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
+import com.intellij.ui.dsl.builder.bindIntText
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -113,6 +114,17 @@ class KoogClientConfigurable(private val project: Project) :
                         { KoogSettings.modelId = it },
                     )
             }
+            row("Context window:") {
+                intTextField(0..10_000_000)
+                    .comment(
+                        "Tokens the model accepts. Used to trim long conversations before the endpoint rejects " +
+                            "them; 0 means unknown, and nothing is trimmed.",
+                    )
+                    .bindIntText(
+                        { KoogSettings.openAiContextWindow },
+                        { KoogSettings.openAiContextWindow = it },
+                    )
+            }
         }
     }
 
@@ -124,6 +136,7 @@ class KoogClientConfigurable(private val project: Project) :
             val key = KoogSettings.openAiApiKey.orEmpty()
             SwingUtilities.invokeLater {
                 apiKeyField.text = key
+                cachedApiKey = key
                 apiKeyLoaded = true
             }
         }

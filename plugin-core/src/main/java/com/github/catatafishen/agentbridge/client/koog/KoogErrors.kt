@@ -31,7 +31,7 @@ object KoogErrors {
         return when (status) {
             401, 403 -> Classified(
                 "Koog is not authenticated with $providerLabel (HTTP $status). " +
-                    "Sign in again under ${KoogSettings.SETTINGS_PATH}." +
+                    "Update the stored credentials under ${KoogSettings.SETTINGS_PATH}." +
                     (if (snippet.isNotEmpty()) " Server said: $snippet" else ""),
                 true,
             )

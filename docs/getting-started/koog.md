@@ -24,7 +24,8 @@ directly and runs every tool call through AgentBridge's tool layer, inside the I
       Models are listed from your subscription.
     - **OpenAI-compatible API (API key)**: enter the base URL (empty means OpenAI; a trailing `/v1` is fine), your API
       key
-      and the model id. OpenRouter, Ollama and most gateways work.
+      and the model id. Optionally set the model's context window (in tokens) so long conversations are trimmed before the
+endpoint rejects them; 0 means unknown and nothing is trimmed. OpenRouter, Ollama and most gateways work.
 3. In the AgentBridge tool window choose **Built-in Agent (Koog)** and start a conversation.
 
 Changes apply the next time the agent starts (switch agent or restart it).

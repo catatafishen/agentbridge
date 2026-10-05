@@ -190,14 +190,15 @@ class CopilotAuthTest {
         @Test
         fun `cancelling aborts before the next poll`() {
             val poster = ScriptedPoster("""{"error":"authorization_pending"}""")
-            var polls = 0
+            var checks = 0
 
+            // Not cancelled at the first check, cancelled by the time the sleeper returns: no request may go out.
             val e = assertThrows(AuthException::class.java) {
-                CopilotAuth.awaitToken("c", code, poster, {}, isCancelled = { polls++ >= 1 })
+                CopilotAuth.awaitToken("c", code, poster, {}, isCancelled = { checks++ >= 1 })
             }
 
             assertTrue(e.message!!.contains("cancelled"))
-            assertEquals(1, poster.urls.size)
+            assertEquals(0, poster.urls.size)
         }
 
         @Test
@@ -205,11 +206,13 @@ class CopilotAuthTest {
             val poster = ScriptedPoster("""{"error":"authorization_pending"}""")
             var now = 0L
 
+            // The code runs out while the sleeper waits, so the poll after it must not be sent.
             val e = assertThrows(AuthException::class.java) {
-                CopilotAuth.awaitToken("c", code, poster, { now += 400_000L }, nowMillis = { now })
+                CopilotAuth.awaitToken("c", code, poster, { now += 10_000_000L }, nowMillis = { now })
             }
 
             assertTrue(e.message!!.contains("expired"))
+            assertEquals(0, poster.urls.size)
         }
     }
 }
