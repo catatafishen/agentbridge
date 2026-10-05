@@ -307,11 +307,22 @@ public sealed interface SessionUpdate
     ) implements SessionUpdate {
     }
 
+    /**
+     * Token usage of a finished turn. {@code inputTokens}/{@code outputTokens} are billing totals summed over every
+     * request of the turn. {@code contextUsed} is different: how much of the context window the conversation fills
+     * after the turn (the last request's prompt plus its answer), and {@code contextSize} is the model's window.
+     * Both are null when the agent cannot tell.
+     */
     record TurnUsage(
         int inputTokens,
         int outputTokens,
-        @Nullable Double costUsd
+        @Nullable Double costUsd,
+        @Nullable Long contextUsed,
+        @Nullable Long contextSize
     ) implements SessionUpdate {
+        public TurnUsage(int inputTokens, int outputTokens, @Nullable Double costUsd) {
+            this(inputTokens, outputTokens, costUsd, null, null);
+        }
     }
 
     /**

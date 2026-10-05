@@ -140,6 +140,8 @@ internal object ConversationSerializer {
                 totalToolCalls = obj["totalToolCalls"]?.asInt ?: 0,
                 totalLinesAdded = obj["totalLinesAdded"]?.asInt ?: 0,
                 totalLinesRemoved = obj["totalLinesRemoved"]?.asInt ?: 0,
+                contextUsed = obj["contextUsed"]?.takeIf { it.isJsonPrimitive }?.asLong,
+                contextSize = obj["contextSize"]?.takeIf { it.isJsonPrimitive }?.asLong,
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 

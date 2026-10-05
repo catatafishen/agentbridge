@@ -121,6 +121,8 @@ class PromptOrchestrator(
     private var turnInputTokens = 0
     private var turnOutputTokens = 0
     private var turnCostUsd: Double? = null
+    private var turnContextUsed: Long? = null
+    private var turnContextSize: Long? = null
     private var turnModelId = ""
     private var turnStartHeadHash: String? = null
     private var turnStartGitBranch: String? = null
@@ -418,6 +420,8 @@ class PromptOrchestrator(
         turnInputTokens = 0
         turnOutputTokens = 0
         turnCostUsd = null
+        turnContextUsed = null
+        turnContextSize = null
         turnHadContent = false
         lastStreamBlockType = StreamBlockType.NONE
         activeSubAgentStack.clear()
@@ -653,7 +657,8 @@ class PromptOrchestrator(
         val stats = TurnStatsData(
             turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
             turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, "",
-            commitHashes, turnStartGitBranch, turnEndGitBranch, pendingPromptEntryId
+            commitHashes, turnStartGitBranch, turnEndGitBranch, pendingPromptEntryId,
+            turnContextUsed, turnContextSize
         )
 
         val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage
@@ -794,6 +799,8 @@ class PromptOrchestrator(
                 turnInputTokens = update.inputTokens()
                 turnOutputTokens = update.outputTokens()
                 turnCostUsd = update.costUsd()
+                turnContextUsed = update.contextUsed()
+                turnContextSize = update.contextSize()
             }
 
             is SessionUpdate.Banner -> handleStreamingBanner(update)

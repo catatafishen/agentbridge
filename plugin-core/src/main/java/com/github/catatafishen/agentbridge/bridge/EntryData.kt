@@ -144,6 +144,9 @@ sealed class EntryData {
         val gitBranchAtStart: String? = null,
         /** Git branch at turn end (fallback when at_start is missing). Null when git is unavailable. */
         val gitBranchAtEnd: String? = null,
+        /** Tokens the conversation fills after this turn, and the model's window; null when unknown. */
+        val contextUsed: Long? = null,
+        val contextSize: Long? = null,
     ) : EntryData()
 
     data class ContextFiles @JvmOverloads constructor(
