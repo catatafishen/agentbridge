@@ -53,7 +53,9 @@ interface KoogEnvironment {
      * Called when the client restored that transcript itself. The shared fallback that prepends a summary to the
      * first prompt must then stay off, or the model would be told the same history twice.
      */
-    fun onHistoryRestored() {}
+    fun onHistoryRestored() {
+        // Default: nothing to do; only clients that restore the transcript themselves need to react.
+    }
 
     /** The plugin-wide limit on tool calls per turn; 0 means unlimited. */
     fun maxToolCallsPerTurn(): Int = 0

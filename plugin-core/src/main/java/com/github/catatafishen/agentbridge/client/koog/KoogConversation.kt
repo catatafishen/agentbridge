@@ -98,7 +98,7 @@ class KoogConversation(
         var inputTokens = 0L
         var outputTokens = 0L
         var sawUsage = false
-        var contextUsed: Long? = null
+        var contextUsed: Long?
         var toolCalls = 0
         val limit = maxToolCalls()
 
@@ -352,16 +352,14 @@ object PromptText {
             text.clear()
         }
         for (block in blocks) {
-            if (block is ContentBlock.Image) {
-                val image = if (acceptsImages) imagePart(block) else null
-                if (image != null) {
+            val image = (block as? ContentBlock.Image)?.let { imageOrNote(it, acceptsImages) }
+            when (image) {
+                is MessagePart.Attachment -> {
                     flushText()
                     parts += image
-                } else {
-                    text += if (acceptsImages) IMAGE_UNUSABLE else IMAGE_NOT_SEEN
                 }
-            } else {
-                describe(block)?.let { text += it }
+                is MessagePart.Text -> text += image.text
+                else -> describe(block)?.let { text += it }
             }
         }
         flushText()
@@ -371,6 +369,12 @@ object PromptText {
 
     @JvmStatic
     fun flatten(blocks: List<ContentBlock>): String = blocks.mapNotNull(::describe).joinToString("\n\n")
+
+    /** The attachment for an image, or a text note when the model cannot take it or its data is unusable. */
+    private fun imageOrNote(block: ContentBlock.Image, acceptsImages: Boolean): MessagePart.RequestPart {
+        if (!acceptsImages) return MessagePart.Text(IMAGE_NOT_SEEN)
+        return imagePart(block) ?: MessagePart.Text(IMAGE_UNUSABLE)
+    }
 
     private fun imagePart(block: ContentBlock.Image): MessagePart.Attachment? {
         val mime = block.mimeType().trim().lowercase()

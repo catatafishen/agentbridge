@@ -59,6 +59,8 @@ public final class EntryDataJsonAdapter {
     private static final String KEY_CONTEXT_FILES = "contextFiles";
     private static final String KEY_PROMPT = "prompt";
     private static final String KEY_SOURCE = "source";
+    private static final String KEY_CONTEXT_USED = "contextUsed";
+    private static final String KEY_CONTEXT_SIZE = "contextSize";
 
     private EntryDataJsonAdapter() {
         throw new IllegalStateException("Utility class");
@@ -218,8 +220,8 @@ public final class EntryDataJsonAdapter {
         addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
         addNonEmpty(json, "gitBranchAtStart", ts.getGitBranchAtStart());
         addNonEmpty(json, "gitBranchAtEnd", ts.getGitBranchAtEnd());
-        if (ts.getContextUsed() != null) json.addProperty("contextUsed", ts.getContextUsed());
-        if (ts.getContextSize() != null) json.addProperty("contextSize", ts.getContextSize());
+        if (ts.getContextUsed() != null) json.addProperty(KEY_CONTEXT_USED, ts.getContextUsed());
+        if (ts.getContextSize() != null) json.addProperty(KEY_CONTEXT_SIZE, ts.getContextSize());
         json.addProperty(KEY_ENTRY_ID, ts.getEntryId());
         if (!ts.getCommitHashes().isEmpty()) {
             JsonArray arr = new JsonArray();
@@ -371,8 +373,8 @@ public final class EntryDataJsonAdapter {
             parseCommitHashes(json),
             strOrNull(json, "gitBranchAtStart"),
             strOrNull(json, "gitBranchAtEnd"),
-            json.has("contextUsed") && json.get("contextUsed").isJsonPrimitive() ? json.get("contextUsed").getAsLong() : null,
-            json.has("contextSize") && json.get("contextSize").isJsonPrimitive() ? json.get("contextSize").getAsLong() : null
+            json.has(KEY_CONTEXT_USED) && json.get(KEY_CONTEXT_USED).isJsonPrimitive() ? json.get(KEY_CONTEXT_USED).getAsLong() : null,
+            json.has(KEY_CONTEXT_SIZE) && json.get(KEY_CONTEXT_SIZE).isJsonPrimitive() ? json.get(KEY_CONTEXT_SIZE).getAsLong() : null
         );
     }
 
