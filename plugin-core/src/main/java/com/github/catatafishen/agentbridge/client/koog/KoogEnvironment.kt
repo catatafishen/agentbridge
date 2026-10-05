@@ -86,7 +86,13 @@ class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
         }
 
         // A generic OpenAI-style endpoint has no reliable model list; the user names the model.
-        KoogProviderKind.OPENAI_COMPATIBLE -> listOf(KoogModelChoice(KoogSettings.modelId, KoogSettings.modelId))
+        KoogProviderKind.OPENAI_COMPATIBLE -> listOf(
+            KoogModelChoice(
+                KoogSettings.modelId,
+                KoogSettings.modelId,
+                contextLength = KoogSettings.openAiContextWindow.takeIf { it > 0 }?.toLong(),
+            )
+        )
     }
 
     override fun connect(kind: KoogProviderKind, credential: String): ProviderConnection {

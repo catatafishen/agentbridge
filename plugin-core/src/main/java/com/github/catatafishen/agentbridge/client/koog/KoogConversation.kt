@@ -129,7 +129,12 @@ class KoogConversation(
                 history += assistant
                 return result(stopReasonFor(assistant.finishReason), sawUsage, inputTokens, outputTokens, contextUsed, onUpdate)
             }
-            val results = calls.map { call -> executeCall(call, specsByName[call.tool], onUpdate) }
+            // The per-turn limit also caps one response with many parallel calls: only the remaining budget runs,
+            // and every other call still gets a result so the history stays valid for the provider.
+            val budget = if (limit > 0) (limit - toolCalls).coerceAtLeast(0) else Int.MAX_VALUE
+            val results = calls.mapIndexed { index, call ->
+                if (index < budget) executeCall(call, specsByName[call.tool], onUpdate) else skippedCall(call)
+            }
             // Recorded only now, together with the results. If the user stops the turn while a tool runs,
             // history must not keep tool calls that have no results: providers reject such a history, which
             // would break every later turn of the session.
@@ -195,6 +200,14 @@ class KoogConversation(
             else -> Unit
         }
     }
+
+    /** The result for a call that was not run because the turn's tool-call limit was reached. */
+    private fun skippedCall(call: MessagePart.Tool.Call) = MessagePart.Tool.Result(
+        id = call.id,
+        tool = call.tool,
+        output = "Not run: the per-turn tool-call limit was reached.",
+        isError = true,
+    )
 
     private suspend fun executeCall(
         call: MessagePart.Tool.Call,

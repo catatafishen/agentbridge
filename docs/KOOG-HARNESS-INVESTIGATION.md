@@ -194,8 +194,8 @@ carrying the plugin-tool name that `KoogHistory` matches against (the log line a
 ## 9. Context window
 
 A conversation used to grow until the provider rejected a request. `KoogCompaction` now keeps it inside the selected
-model's window, which comes from the provider (Copilot's `/models` reports it; an OpenAI-compatible endpoint reports
-none, so nothing is trimmed there). Before each request it estimates the size (characters divided by three, plus the
+model's window, which comes from the provider (Copilot's `/models` reports it). An OpenAI-compatible endpoint reports
+none, so the settings page has a "Context window" field for it; left at 0, nothing is trimmed there. Before each request it estimates the size (characters divided by three, plus the
 system prompt and tool descriptions) and, past 80% of the window, trims down to 60%:
 
 1. Old tool results (whole files and command output, by far the biggest part) are cut to a short head with a visible
@@ -222,8 +222,9 @@ and drops it silently otherwise, so `toLLModel` declares it for exactly those mo
 A turn used to stop after a fixed 50 model requests, which cut off ordinary long jobs (a refactor across many files)
 with `max_turn_requests`. The fixed cap is gone. A turn now ends when the model stops calling tools, when the user stops
 it, or when the plugin-wide "max tool calls per turn" setting (the one the other agents use, 0 = unlimited, the default)
-is reached. Runaway growth is bounded by context compaction (section 9), not by counting steps. The limit is checked
-only after a step's results are recorded, so a stopped turn never leaves a tool call without its result.
+is reached. Runaway growth is bounded by context compaction (section 9), not by counting steps. The limit also caps a
+single answer that asks for many calls at once: only the remaining budget runs, and every other call gets an error result
+saying it was not run, so a tool call never lacks its result and the history stays valid for the next request.
 
 ## 12. Image input
 

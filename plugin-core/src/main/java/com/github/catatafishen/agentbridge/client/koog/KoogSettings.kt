@@ -20,6 +20,7 @@ object KoogSettings {
     private const val KEY_PROVIDER = PREFIX + "provider"
     private const val KEY_BASE_URL = PREFIX + "openaiBaseUrl"
     private const val KEY_MODEL = PREFIX + "model"
+    private const val KEY_CONTEXT_WINDOW = PREFIX + "openaiContextWindow"
 
     /** Where the agent's settings live, for use in messages. */
     const val SETTINGS_PATH = "Settings → Tools → AgentBridge → Agents → Built-in Agent (Koog)"
@@ -37,6 +38,11 @@ object KoogSettings {
     var modelId: String
         get() = props.getValue(KEY_MODEL, "")
         set(value) = props.setValue(KEY_MODEL, value.trim(), "")
+
+    /** Context window, in tokens, of the OpenAI-compatible model; 0 means unknown (no conversation trimming). */
+    var openAiContextWindow: Int
+        get() = props.getInt(KEY_CONTEXT_WINDOW, 0)
+        set(value) = props.setValue(KEY_CONTEXT_WINDOW, value.coerceAtLeast(0), 0)
 
     var copilotToken: String?
         get() = secret("copilot.oauth-token")

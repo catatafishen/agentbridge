@@ -571,6 +571,29 @@ class KoogConversationTest {
         }
 
         @Test
+        fun `one answer with more parallel calls than the limit only runs the remaining budget`() {
+            val frames = listOf(
+                StreamFrame.ToolCallComplete("a", "read_file", """{"path":"1"}""", 0),
+                StreamFrame.ToolCallComplete("b", "read_file", """{"path":"2"}""", 1),
+                StreamFrame.ToolCallComplete("c", "read_file", """{"path":"3"}""", 2),
+                end("tool_calls"),
+            )
+            val backend = FakeBackend(listOf(readFile))
+            val model = ScriptedModel(frames)
+            val conv = conversation(model, backend, maxToolCalls = 2)
+
+            val (result, _) = run(conv)
+
+            assertEquals("max_turn_requests", result.stopReason)
+            assertEquals(listOf("1", "2"), backend.calls.map { it.second.get("path").asString })
+            // The call that did not run still has a result, so the history stays valid for the next request.
+            run(conv, "again")
+            val results = model.prompts.last().messages.flatMap { it.parts }.filterIsInstance<MessagePart.Tool.Result>()
+            assertEquals(listOf("a", "b", "c"), results.map { it.id })
+            assertTrue(results.last().isError)
+        }
+
+        @Test
         fun `a configured tool call limit stops a loop that never ends`() {
             val model = ScriptedModel(toolCall("c", "read_file", """{"path":"a"}"""))
 

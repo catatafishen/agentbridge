@@ -130,6 +130,10 @@ object CopilotAuth {
             if (isCancelled()) throw AuthException("Sign-in cancelled")
             if (nowMillis() > deadline) throw AuthException("The sign-in code expired. Start again.")
             sleeper(interval * 1000L + POLL_SAFETY_MARGIN_MS)
+            // The sleeper returns early when the user cancels, and time passes while it sleeps. Check again so a
+            // cancelled or expired sign-in never sends one more request that could still yield a token.
+            if (isCancelled()) throw AuthException("Sign-in cancelled")
+            if (nowMillis() > deadline) throw AuthException("The sign-in code expired. Start again.")
             when (val result = parsePoll(http.post(ACCESS_TOKEN_URL, pollRequest(clientId, code.deviceCode)))) {
                 is PollResult.Token -> return result.accessToken
                 PollResult.Pending -> Unit
