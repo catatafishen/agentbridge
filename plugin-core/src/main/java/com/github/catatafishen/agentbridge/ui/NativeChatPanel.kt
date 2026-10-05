@@ -1866,7 +1866,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                             linesAdded = entry.linesAdded,
                             linesRemoved = entry.linesRemoved,
                             model = entry.model,
-                            multiplier = entry.multiplier
+                            multiplier = entry.multiplier,
+                            contextUsed = entry.contextUsed,
+                            contextSize = entry.contextSize,
                         )
                     )
                 }

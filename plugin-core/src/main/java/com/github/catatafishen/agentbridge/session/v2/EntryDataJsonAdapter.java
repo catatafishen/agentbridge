@@ -218,6 +218,8 @@ public final class EntryDataJsonAdapter {
         addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
         addNonEmpty(json, "gitBranchAtStart", ts.getGitBranchAtStart());
         addNonEmpty(json, "gitBranchAtEnd", ts.getGitBranchAtEnd());
+        if (ts.getContextUsed() != null) json.addProperty("contextUsed", ts.getContextUsed());
+        if (ts.getContextSize() != null) json.addProperty("contextSize", ts.getContextSize());
         json.addProperty(KEY_ENTRY_ID, ts.getEntryId());
         if (!ts.getCommitHashes().isEmpty()) {
             JsonArray arr = new JsonArray();
@@ -368,7 +370,9 @@ public final class EntryDataJsonAdapter {
             entryId,
             parseCommitHashes(json),
             strOrNull(json, "gitBranchAtStart"),
-            strOrNull(json, "gitBranchAtEnd")
+            strOrNull(json, "gitBranchAtEnd"),
+            json.has("contextUsed") && json.get("contextUsed").isJsonPrimitive() ? json.get("contextUsed").getAsLong() : null,
+            json.has("contextSize") && json.get("contextSize").isJsonPrimitive() ? json.get("contextSize").getAsLong() : null
         );
     }
 

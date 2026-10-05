@@ -417,6 +417,35 @@ class EntryDataJsonAdapterTest {
     }
 
     @Test
+    void turnStatsKeepsContextUsageThroughARoundTrip() {
+        var original = new EntryData.TurnStats(
+            "t4", 1000, 10, 5, 0.0, 1, 0, 0, "m", "",
+            0, 0, 0, 0.0, 0, 0, 0,
+            "2026-04-10T09:00:00Z", "eid-ctx", List.of(), null, null,
+            42_000L, 128_000L
+        );
+
+        JsonObject json = EntryDataJsonAdapter.serialize(original);
+        assertEquals(42_000L, json.get("contextUsed").getAsLong());
+        assertEquals(128_000L, json.get("contextSize").getAsLong());
+
+        var restored = assertInstanceOf(EntryData.TurnStats.class, EntryDataJsonAdapter.deserialize(json));
+        assertEquals(42_000L, restored.getContextUsed());
+        assertEquals(128_000L, restored.getContextSize());
+    }
+
+    @Test
+    void turnStatsWithoutContextUsageStaysUnknownAndWritesNothing() {
+        JsonObject json = EntryDataJsonAdapter.serialize(newTurnStatsSample());
+
+        assertFalse(json.has("contextUsed"));
+        assertFalse(json.has("contextSize"));
+        var restored = assertInstanceOf(EntryData.TurnStats.class, EntryDataJsonAdapter.deserialize(json));
+        assertNull(restored.getContextUsed());
+        assertNull(restored.getContextSize());
+    }
+
+    @Test
     void turnStatsSerializesAllFields() {
         JsonObject json = EntryDataJsonAdapter.serialize(newTurnStatsSample());
         assertEquals("turnStats", json.get("type").getAsString());

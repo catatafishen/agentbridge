@@ -243,6 +243,22 @@ pins that request shape.
   still tried but never filtered out. Image size is not limited or resized, and the compaction estimate counts an image
   as a fixed amount. A very large image can exceed a provider's request limit.
 
+## 13. Context usage
+
+The turn stats row shows how full the context window is, e.g. `ctx 42k / 128k (33%)`.
+
+- **Not the `↑`/`↓` numbers.** Those are billing totals summed over every request of a turn; a turn with five tool calls
+  counts the whole history five times. Context use is the *last* request's prompt tokens plus its answer, which is what
+  the next request has to carry. Both come from the provider, not from an estimate.
+- **Size** is the model's window from the Copilot catalog. A generic OpenAI-compatible endpoint has none, so nothing is
+  shown for it.
+- **Unknown is shown as nothing**, never as a guess: no usage from the provider, no known window, or an agent that does
+  not report it (only Koog does so far). A request without usage clears the figure instead of keeping an older one.
+- **Over 100% is shown as is**, so it is visible when the next request is likely to be trimmed or rejected.
+- **Trim warning.** It names the real fill level from the last response ("filled about 86% ... 110000 of 128000 tokens").
+  After a resume there is no response yet, so it falls back to the old wording.
+- Stored with the turn (`contextUsed`, `contextSize`), so a restored chat keeps the figures. Older sessions show nothing.
+
 ## 7. Next steps
 
 1. Run `verifyPlugin`; trim the +10 MB plugin size (see section 3).

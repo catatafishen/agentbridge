@@ -242,6 +242,8 @@ class ConversationEntryStore {
                 model = stats.model,
                 multiplier = stats.multiplier,
                 commitHashes = stats.commitHashes,
+                contextUsed = stats.contextUsed,
+                contextSize = stats.contextSize,
                 timestamp = timestamp(),
                 entryId = resolvedTurnId + "-stats",
             )

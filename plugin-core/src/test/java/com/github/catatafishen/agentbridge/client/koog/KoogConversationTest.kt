@@ -340,6 +340,57 @@ class KoogConversationTest {
         }
 
         @Test
+        fun `context use is the last request's prompt plus its answer, not the billing sum`() {
+            val model = ScriptedModel(
+                toolCall("c1", "read_file", """{"path":"a"}""", input = 100, output = 10),
+                text("done", input = 150, output = 20),
+            )
+            val conv = KoogConversation(model, FakeBackend(listOf(readFile)), systemPrompt = { "SYSTEM" }, contextWindow = { 1000L })
+
+            val (_, updates) = run(conv)
+
+            val usage = updates.filterIsInstance<SessionUpdate.TurnUsage>().single()
+            assertEquals(170L, usage.contextUsed())
+            assertEquals(1000L, usage.contextSize())
+            // The billing totals are unchanged and still summed over both requests.
+            assertEquals(250, usage.inputTokens)
+        }
+
+        @Test
+        fun `context use is unknown, not stale, when the last request carried no usage`() {
+            val model = ScriptedModel(
+                toolCall("c1", "read_file", """{"path":"a"}""", input = 100, output = 10),
+                text("done"),
+            )
+            val conv = KoogConversation(model, FakeBackend(listOf(readFile)), systemPrompt = { "SYSTEM" }, contextWindow = { 1000L })
+
+            val (_, updates) = run(conv)
+
+            val usage = updates.filterIsInstance<SessionUpdate.TurnUsage>().single()
+            assertNull(usage.contextUsed())
+        }
+
+        @Test
+        fun `context size is unknown when the model has no known window`() {
+            val (_, updates) = run(conversation(ScriptedModel(text("hi", input = 10, output = 5)), FakeBackend()))
+
+            val usage = updates.filterIsInstance<SessionUpdate.TurnUsage>().single()
+            assertEquals(15L, usage.contextUsed())
+            assertNull(usage.contextSize())
+        }
+
+        @Test
+        fun `the trim warning names the real fill level when it is known`() {
+            val known = KoogConversation.compactionMessage("2 oldest exchange(s) dropped", 110_000L, 128_000L)
+            val unknown = KoogConversation.compactionMessage("2 oldest exchange(s) dropped", null, 128_000L)
+
+            assertTrue(known.contains("86%"), known)
+            assertTrue(known.contains("110000 of 128000"), known)
+            assertTrue(unknown.contains("close to the model's context limit"), unknown)
+            assertFalse(unknown.contains("%"), unknown)
+        }
+
+        @Test
         fun `no usage is reported when the provider sends none`() {
             val (result, updates) = run(conversation(ScriptedModel(text("hi")), FakeBackend()))
 

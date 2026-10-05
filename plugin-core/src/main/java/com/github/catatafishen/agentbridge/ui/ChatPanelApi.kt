@@ -5,14 +5,17 @@ import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.intellij.openapi.Disposable
 import javax.swing.JComponent
 
-data class TurnStatsData(
+data class TurnStatsData @JvmOverloads constructor(
     val durationMs: Long, val inputTokens: Int, val outputTokens: Int, val costUsd: Double,
     val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
     val model: String, val multiplier: String, val commitHashes: List<String> = emptyList(),
     val gitBranchAtStart: String? = null,
     val gitBranchAtEnd: String? = null,
     /** The entry ID of the prompt this turn belongs to; empty for legacy/unknown turns. */
-    val promptEntryId: String = ""
+    val promptEntryId: String = "",
+    /** Tokens the conversation fills after this turn, and the model's window; null when the agent cannot tell. */
+    val contextUsed: Long? = null,
+    val contextSize: Long? = null,
 )
 
 /**

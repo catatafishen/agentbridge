@@ -67,6 +67,12 @@ class KoogConversation(
 ) {
     private val history = mutableListOf<Message>()
 
+    /**
+     * The provider's own count of what the conversation filled after the last response, or null when not known
+     * (new or resumed conversation, provider without usage, or just after a trim made the figure stale).
+     */
+    private var lastContextUsed: Long? = null
+
     private var pendingRestore: List<EntryData>? = null
 
     val messageCount: Int get() = history.size
@@ -92,6 +98,7 @@ class KoogConversation(
         var inputTokens = 0L
         var outputTokens = 0L
         var sawUsage = false
+        var contextUsed: Long? = null
         var toolCalls = 0
         val limit = maxToolCalls()
 
@@ -112,11 +119,15 @@ class KoogConversation(
             val assistant = assemble(frames)
             assistant.metaInfo.inputTokensCount?.let { inputTokens += it; sawUsage = true }
             assistant.metaInfo.outputTokensCount?.let { outputTokens += it; sawUsage = true }
+            // What the next request has to carry: this request's prompt plus its answer. Overwritten every step
+            // (also with null) so a stale figure from an earlier step is never shown as current.
+            contextUsed = assistant.metaInfo.inputTokensCount?.let { it.toLong() + (assistant.metaInfo.outputTokensCount ?: 0) }
+            lastContextUsed = contextUsed
 
             val calls = assistant.parts.filterIsInstance<MessagePart.Tool.Call>()
             if (calls.isEmpty()) {
                 history += assistant
-                return result(stopReasonFor(assistant.finishReason), sawUsage, inputTokens, outputTokens, onUpdate)
+                return result(stopReasonFor(assistant.finishReason), sawUsage, inputTokens, outputTokens, contextUsed, onUpdate)
             }
             val results = calls.map { call -> executeCall(call, specsByName[call.tool], onUpdate) }
             // Recorded only now, together with the results. If the user stops the turn while a tool runs,
@@ -127,7 +138,7 @@ class KoogConversation(
             // Checked only after the results are recorded, so the history stays valid for the next turn.
             toolCalls += calls.size
             if (limit > 0 && toolCalls >= limit) {
-                return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, onUpdate)
+                return result(STOP_MAX_STEPS, sawUsage, inputTokens, outputTokens, contextUsed, onUpdate)
             }
         }
     }
@@ -148,9 +159,12 @@ class KoogConversation(
             compacted.droppedTurns.takeIf { it > 0 }?.let { "$it oldest exchange(s) dropped" },
         ).joinToString(", ")
         log.info("Koog trimmed the conversation to fit a $window-token context window: $what")
+        val before = lastContextUsed
+        // The figure describes the history before the trim, so it must not be reported again for the trimmed one.
+        lastContextUsed = null
         onUpdate(
             SessionUpdate.Banner(
-                "The conversation was close to the model's context limit, so older parts were trimmed ($what).",
+                compactionMessage(what, before, window),
                 SessionUpdate.BannerLevel.WARNING,
                 SessionUpdate.ClearOn.NEXT_SUCCESS,
             )
@@ -218,9 +232,13 @@ class KoogConversation(
         sawUsage: Boolean,
         input: Long,
         output: Long,
+        contextUsed: Long?,
         onUpdate: (SessionUpdate) -> Unit,
     ): TurnResult {
-        if (sawUsage) onUpdate(SessionUpdate.TurnUsage(input.toInt(), output.toInt(), null))
+        if (sawUsage) {
+            val size = contextWindow()?.takeIf { it > 0 }
+            onUpdate(SessionUpdate.TurnUsage(input.toInt(), output.toInt(), null, contextUsed, size))
+        }
         return TurnResult(stopReason, input.takeIf { sawUsage }, output.takeIf { sawUsage })
     }
 
@@ -230,6 +248,19 @@ class KoogConversation(
         const val STOP_END_TURN = "end_turn"
         const val STOP_MAX_TOKENS = "max_tokens"
         const val STOP_MAX_STEPS = "max_turn_requests"
+
+        /** The trim warning; names the real fill level when the provider reported one. */
+        @JvmStatic
+        fun compactionMessage(what: String, usedTokens: Long?, windowTokens: Long): String {
+            val known = usedTokens?.takeIf { it > 0 && windowTokens > 0 }
+            val situation = if (known != null) {
+                "The conversation filled about ${Math.round(known * 100.0 / windowTokens)}% of the model's context window " +
+                    "($known of $windowTokens tokens)"
+            } else {
+                "The conversation was close to the model's context limit"
+            }
+            return "$situation, so older parts were trimmed ($what)."
+        }
 
         /** Maps a provider finish reason to an ACP stop reason. A cut-off answer is reported, not hidden. */
         @JvmStatic
