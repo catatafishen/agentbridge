@@ -40,6 +40,52 @@ class CopilotSessionTest {
         assertEquals("not json", CopilotStreamChunks.normalize("not json"))
     }
 
+    private fun deltaOf(chunk: String): com.google.gson.JsonObject =
+        com.google.gson.JsonParser.parseString(chunk).asJsonObject
+            .getAsJsonArray("choices")[0].asJsonObject.getAsJsonObject("delta")
+
+    @Test
+    fun `reasoning sent under another field name is copied to the one Koog reads`() {
+        for (alias in listOf("reasoning_text", "reasoning")) {
+            val chunk = """{"choices":[{"index":0,"delta":{"$alias":"hmm"}}]}"""
+
+            val delta = deltaOf(ReasoningFields.normalize(chunk))
+
+            assertEquals("hmm", delta.get("reasoning_content").asString, alias)
+            // Nothing is removed: the original field stays.
+            assertEquals("hmm", delta.get(alias).asString, alias)
+        }
+    }
+
+    @Test
+    fun `a delta that already has reasoning_content, or none, is returned untouched`() {
+        val canonical = """{"choices":[{"index":0,"delta":{"reasoning_content":"a","reasoning":"b"}}]}"""
+        val plain = """{"choices":[{"index":0,"delta":{"content":"hi"}}]}"""
+        val empty = """{"choices":[{"index":0,"delta":{"reasoning":""}}]}"""
+
+        assertEquals(canonical, ReasoningFields.normalize(canonical))
+        assertEquals(plain, ReasoningFields.normalize(plain))
+        assertEquals(empty, ReasoningFields.normalize(empty))
+        assertEquals("not json with reasoning", ReasoningFields.normalize("not json with reasoning"))
+    }
+
+    @Test
+    fun `reasoning_text wins over reasoning when both are present`() {
+        val chunk = """{"choices":[{"index":0,"delta":{"reasoning_text":"first","reasoning":"second"}}]}"""
+
+        assertEquals("first", deltaOf(ReasoningFields.normalize(chunk)).get("reasoning_content").asString)
+    }
+
+    @Test
+    fun `the Copilot normalizer applies the reasoning alias together with the envelope repair`() {
+        val chunk = """{"choices":[{"index":0,"delta":{"reasoning_text":"hmm"}}]}"""
+
+        val normalized = CopilotStreamChunks.normalize(chunk)
+
+        assertEquals("hmm", deltaOf(normalized).get("reasoning_content").asString)
+        assertEquals("chat.completion.chunk", com.google.gson.JsonParser.parseString(normalized).asJsonObject.get("object").asString)
+    }
+
     @Test
     fun `a session response is parsed`() {
         val session = CopilotSessions.parse(body())

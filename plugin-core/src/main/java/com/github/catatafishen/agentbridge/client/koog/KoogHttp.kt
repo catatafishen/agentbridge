@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.client.koog
 import ai.koog.http.client.KoogHttpClient
 import ai.koog.http.client.KoogHttpClientException
 import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonParser
@@ -219,7 +220,52 @@ object CopilotStreamChunks {
                 changed = true
             }
         }
+        if (ReasoningFields.alias(chunk)) changed = true
         return if (changed) chunk.toString() else json
+    }
+}
+
+/**
+ * Koog's chat-completions streaming reads reasoning only from `delta.reasoning_content`; a delta that carries it under
+ * another name produces no reasoning frame, so the model's thinking never reaches the chat. Providers disagree on the
+ * name, so the known alternatives are copied to `reasoning_content` when it is absent. Nothing is removed or
+ * rewritten, and a delta that already has `reasoning_content` is left alone.
+ */
+object ReasoningFields {
+    /** Names providers use for streamed reasoning text, in order of preference. */
+    private val ALIASES = listOf("reasoning_text", "reasoning")
+
+    private const val CANONICAL = "reasoning_content"
+
+    /** Normalizer for providers that need no envelope repair. Returns the chunk unchanged when nothing applies. */
+    @JvmStatic
+    fun normalize(json: String): String {
+        // Cheap pre-check: nearly every chunk carries no reasoning, and parsing each one would be wasted work.
+        if (!json.contains("\"reasoning")) return json
+        val chunk = try {
+            JsonParser.parseString(json).takeIf { it.isJsonObject }?.asJsonObject
+        } catch (_: JsonParseException) {
+            null
+        } ?: return json
+        return if (alias(chunk)) chunk.toString() else json
+    }
+
+    /** Adds [CANONICAL] to each choice's delta where only an alias is present. True if anything was added. */
+    @JvmStatic
+    fun alias(chunk: JsonObject): Boolean {
+        var changed = false
+        val choices = chunk.get("choices")?.takeIf { it.isJsonArray }?.asJsonArray ?: return false
+        for (choice in choices) {
+            val delta = choice.takeIf { it.isJsonObject }?.asJsonObject
+                ?.get("delta")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+            if (delta.get(CANONICAL)?.takeIf { it.isJsonPrimitive } != null) continue
+            val text = ALIASES.firstNotNullOfOrNull { name ->
+                delta.get(name)?.takeIf { it.isJsonPrimitive && it.asString.isNotEmpty() }
+            } ?: continue
+            delta.add(CANONICAL, text)
+            changed = true
+        }
+        return changed
     }
 }
 

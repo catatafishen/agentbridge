@@ -97,7 +97,7 @@ object KoogProviders {
             KoogProviderKind.OPENAI_COMPATIBLE -> {
                 val endpoint = openAiEndpoint(baseUrl)
                 val factory = HeaderInjectingHttpClientFactory(
-                    jdk, mapOf("User-Agent" to userAgent), JsonContentType::perRequest,
+                    jdk, mapOf("User-Agent" to userAgent), JsonContentType::perRequest, ReasoningFields::normalize,
                 )
                 val settings = OpenAIClientSettings(baseUrl = endpoint.baseUrl, chatCompletionsPath = endpoint.chatPath)
                 MultiLLMPromptExecutor(OpenAILLMClient(apiKey, settings, factory))
