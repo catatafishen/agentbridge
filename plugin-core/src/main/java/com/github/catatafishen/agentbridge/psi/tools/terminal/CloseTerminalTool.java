@@ -108,6 +108,44 @@ public final class CloseTerminalTool extends TerminalTool {
             : message;
     }
 
+    /**
+     * Says why a close can fail and what to do about it. The IDE refuses to remove a tab that is still running a
+     * process (it would ask the user to confirm), so the usual cause is a command that has not finished. The tab
+     * then keeps counting against the per-session terminal limit, which blocks opening new ones.
+     */
+    private @NotNull String closeFailureMessage(
+        @NotNull AgentTabTracker.AgentTerminal terminal,
+        boolean terminalWindowMissing
+    ) {
+        String base = "Error: Failed to close terminal '" + terminal.displayName()
+            + "' [terminal_id=" + terminal.terminalId() + "].";
+        if (terminalWindowMissing) {
+            return base + " The Terminal tool window is not available.";
+        }
+        return base + closeHint(isCommandRunning(terminal));
+    }
+
+    static @NotNull String closeHint(boolean commandRunning) {
+        String cause = commandRunning
+            ? " A command is still running in it."
+            : " The IDE refused to remove the tab, most likely because a process is still running in it.";
+        return cause + " Stop it with write_terminal_input input '{ctrl-c}' (twice if needed), "
+            + "then call close_terminal again.";
+    }
+
+    private boolean isCommandRunning(@NotNull AgentTabTracker.AgentTerminal terminal) {
+        try {
+            Object widget = findTerminalWidgetByContent(
+                Class.forName(TERMINAL_MANAGER_CLASS), terminal.content());
+            if (widget == null) return false;
+            Object running = Class.forName(TERMINAL_WIDGET_CLASS)
+                .getMethod("isCommandRunning").invoke(widget);
+            return Boolean.TRUE.equals(running);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void closeTerminal(
         String ownerId,
         String terminalId,
@@ -129,9 +167,7 @@ public final class CloseTerminalTool extends TerminalTool {
                 .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
             if (toolWindow == null
                 || !toolWindow.getContentManager().removeContent(terminal.content(), true)) {
-                resultFuture.complete(
-                    "Error: Failed to close terminal '" + terminal.displayName()
-                        + "' [terminal_id=" + terminal.terminalId() + "].");
+                resultFuture.complete(closeFailureMessage(terminal, toolWindow == null));
                 return;
             }
 

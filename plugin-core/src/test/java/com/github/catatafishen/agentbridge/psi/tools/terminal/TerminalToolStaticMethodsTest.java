@@ -113,6 +113,23 @@ class TerminalToolStaticMethodsTest {
     }
 
     @Test
+    void newTerminalStartsItsShellImmediatelyInsteadOfWaitingForTheToolWindow() throws Exception {
+        Project project = mock(Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        Content content = content("Agent: eager");
+        when(project.getService(AgentTabTracker.class)).thenReturn(tracker);
+        when(tracker.hasOpenTerminalCapacity("session-a")).thenReturn(true);
+        when(tracker.trackTerminal("session-a", content)).thenReturn("terminal-eager");
+        TestTerminalTool tool = new TestTerminalTool(project, null, content);
+
+        tool.open(null, null, false);
+
+        // A deferred shell stays dormant while the Terminal tool window is hidden, so a command sent to it never
+        // runs. This must stay false.
+        assertEquals(Boolean.FALSE, tool.deferredStart());
+    }
+
+    @Test
     void rejectsCreatedTerminalWhoseIdeContentCannotBeResolved() {
         Project project = mock(Project.class);
         AgentTabTracker tracker = mock(AgentTabTracker.class);
@@ -191,6 +208,77 @@ class TerminalToolStaticMethodsTest {
 
         assertTrue(summary.contains("  • Agent: old [terminal_id=terminal-old]"));
         assertTrue(summary.contains("  ▸ Agent: new [terminal_id=terminal-new]"));
+    }
+
+    // ── dormant terminal detection ──────────────────────────
+
+    @Test
+    void dormantTerminalWarning_emptyOrBlankBufferMeansShellNotStarted() {
+        assertNotNull(TerminalTool.dormantTerminalWarning(null));
+        assertNotNull(TerminalTool.dormantTerminalWarning(""));
+        assertNotNull(TerminalTool.dormantTerminalWarning("  \n\t "));
+    }
+
+    @Test
+    void dormantTerminalWarning_anyOutputMeansTerminalIsAlive() {
+        assertNull(TerminalTool.dormantTerminalWarning("user@host:~/project$ "));
+        assertNull(TerminalTool.dormantTerminalWarning("x"));
+    }
+
+    @Test
+    void dormantTerminalWarning_tellsTheAgentWhatToDoNext() {
+        String warning = TerminalTool.dormantTerminalWarning("");
+
+        assertNotNull(warning);
+        assertTrue(warning.contains("read_terminal_output"));
+        assertTrue(warning.contains("run_command"));
+    }
+
+    @Test
+    void awaitTerminalOutput_returnsAsSoonAsTheShellPrintsSomething() {
+        TextSequenceTool tool = new TextSequenceTool(mock(Project.class), "", "", "prompt$ ", "never reached");
+
+        CharSequence text = tool.await(5_000);
+
+        assertEquals("prompt$ ", text.toString());
+        assertEquals(3, tool.reads());
+    }
+
+    @Test
+    void awaitTerminalOutput_givesUpAfterTheTimeoutAndReturnsTheEmptyBuffer() {
+        TextSequenceTool tool = new TextSequenceTool(mock(Project.class), "");
+
+        CharSequence text = tool.await(50);
+
+        assertEquals("", text.toString());
+        assertTrue(tool.reads() >= 1);
+    }
+
+    @Test
+    void awaitTerminalOutput_doesNotWaitWhenOutputIsAlreadyThere() {
+        TextSequenceTool tool = new TextSequenceTool(mock(Project.class), "already here");
+
+        assertEquals("already here", tool.await(5_000).toString());
+        assertEquals(1, tool.reads());
+    }
+
+    // ── close failure guidance ──────────────────────────────
+
+    @Test
+    void closeHint_alwaysExplainsHowToStopTheProcessAndRetry() {
+        for (boolean running : new boolean[]{true, false}) {
+            String hint = CloseTerminalTool.closeHint(running);
+
+            assertTrue(hint.contains("{ctrl-c}"));
+            assertTrue(hint.contains("write_terminal_input"));
+            assertTrue(hint.contains("close_terminal again"));
+        }
+    }
+
+    @Test
+    void closeHint_namesTheRunningCommandWhenKnown() {
+        assertTrue(CloseTerminalTool.closeHint(true).contains("still running"));
+        assertTrue(CloseTerminalTool.closeHint(false).contains("most likely"));
     }
 
     private static Content content(String displayName) {
@@ -561,6 +649,64 @@ class TerminalToolStaticMethodsTest {
         }
     }
 
+    /** Serves a scripted sequence of buffer texts so the polling loop can be tested without a real terminal. */
+    private static final class TextSequenceTool extends TerminalTool {
+        private final java.util.ArrayDeque<String> texts;
+        private final String last;
+        private int reads;
+
+        private TextSequenceTool(Project project, String... texts) {
+            super(project);
+            this.texts = new java.util.ArrayDeque<>(List.of(texts));
+            this.last = texts[texts.length - 1];
+        }
+
+        private CharSequence await(long timeoutMs) {
+            return awaitTerminalOutput(new Object(), timeoutMs);
+        }
+
+        private int reads() {
+            return reads;
+        }
+
+        @Override
+        protected @org.jetbrains.annotations.Nullable CharSequence readWidgetText(@NotNull Object widget) {
+            reads++;
+            String next = texts.poll();
+            return next != null ? next : last;
+        }
+
+        @Override
+        public @NotNull String id() {
+            return "test_sequence";
+        }
+
+        @Override
+        public @NotNull String displayName() {
+            return "Test Sequence";
+        }
+
+        @Override
+        public @NotNull String description() {
+            return "Test terminal tool";
+        }
+
+        @Override
+        public @NotNull Kind kind() {
+            return Kind.EXECUTE;
+        }
+
+        @Override
+        public @NotNull JsonObject inputSchema() {
+            return new JsonObject();
+        }
+
+        @Override
+        public @NotNull String execute(@NotNull JsonObject args) {
+            return "unused";
+        }
+    }
+
     private static final class TestTerminalTool extends TerminalTool {
         private final Object reusableWidget;
         private final Content content;
@@ -588,6 +734,10 @@ class TerminalToolStaticMethodsTest {
 
         private Object createdWidget() {
             return manager.widget;
+        }
+
+        private Boolean deferredStart() {
+            return manager.deferredStart;
         }
 
         private Object lookupWidget(Class<?> managerClass, Content target) {
@@ -649,6 +799,7 @@ class TerminalToolStaticMethodsTest {
 
     public static final class FakeTerminalManager {
         private final Object widget = new Object();
+        private Boolean deferredStart;
 
         public Object createNewSession(
             String basePath,
@@ -657,6 +808,7 @@ class TerminalToolStaticMethodsTest {
             boolean requestFocus,
             boolean deferSessionStartUntilUiShown
         ) {
+            deferredStart = deferSessionStartUntilUiShown;
             return widget;
         }
     }

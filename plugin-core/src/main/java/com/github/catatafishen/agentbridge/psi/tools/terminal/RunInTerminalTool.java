@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -96,7 +97,7 @@ public final class RunInTerminalTool extends TerminalTool {
         EdtUtil.invokeAndWait(() ->
             com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
 
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        CompletableFuture<Sent> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
                 var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
@@ -107,33 +108,53 @@ public final class RunInTerminalTool extends TerminalTool {
                     ownerId, managerClass, manager, terminalId, tabName, newTab, shell, command);
                 sendTerminalCommand(result.widget(), command);
 
-                resultFuture.complete(
+                resultFuture.complete(new Sent(
                     "Command sent to " + (result.reused() ? "reused" : "new")
                         + " terminal '" + result.tabName() + "'.\n"
                         + "terminal_id: " + result.terminalId() + "\n"
                         + "command: " + command
                         + "\n\nReuse this terminal_id with run_in_terminal, read_terminal_output, "
-                        + "write_terminal_input, and close_terminal.");
+                        + "write_terminal_input, and close_terminal.",
+                    result.widget()));
             } catch (ClassNotFoundException e) {
-                resultFuture.complete(
-                    "Error: Terminal plugin not available. Use run_command tool instead.");
+                resultFuture.complete(Sent.plain(
+                    "Error: Terminal plugin not available. Use run_command tool instead."));
             } catch (IllegalStateException e) {
-                resultFuture.complete(formatCapacityError(e));
+                resultFuture.complete(Sent.plain(formatCapacityError(e)));
             } catch (Exception e) {
                 LOG.warn("Failed to open terminal", e);
-                resultFuture.complete(
+                resultFuture.complete(Sent.plain(
                     "Error: Failed to open terminal: " + e.getMessage()
-                        + ". Use run_command tool instead.");
+                        + ". Use run_command tool instead."));
             }
         });
 
+        Sent sent;
         try {
-            return resultFuture.get(10, TimeUnit.SECONDS);
+            sent = resultFuture.get(10, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Terminal opened (response timed out, but command was likely sent).";
         } catch (Exception e) {
             return "Terminal opened (response timed out, but command was likely sent).";
+        }
+        return sent.widget() == null ? sent.message() : sent.message() + startupNote(sent.widget());
+    }
+
+    /**
+     * "Command sent" only means the text was handed to the terminal widget. If the shell behind it has not
+     * started, nothing runs and nothing is printed, which used to look identical to a command that was running.
+     * Waits briefly for any output and says so when there is none.
+     */
+    private @NotNull String startupNote(@NotNull Object widget) {
+        String warning = dormantTerminalWarning(awaitTerminalOutput(widget, STARTUP_WAIT_MS));
+        return warning == null ? "" : "\n\n" + warning;
+    }
+
+    /** What the EDT block produced: the message for the agent, and the widget when a command was actually sent. */
+    private record Sent(@NotNull String message, @Nullable Object widget) {
+        static Sent plain(@NotNull String message) {
+            return new Sent(message, null);
         }
     }
 

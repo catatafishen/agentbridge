@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
@@ -16,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Abstract base for terminal tools. Integrated terminal resources are resolved by stable
@@ -37,6 +39,11 @@ public abstract class TerminalTool extends Tool {
     protected static final String TTY_CONNECTOR_CLASS = "com.jediterm.terminal.TtyConnector";
     protected static final String FIND_WIDGET_BY_CONTENT_METHOD = "findWidgetByContent";
     protected static final int DEFAULT_MAX_LINES = 50;
+    /**
+     * How long run_in_terminal waits for the shell to print anything before warning that it may be dormant.
+     */
+    protected static final long STARTUP_WAIT_MS = 3_000;
+    protected static final long POLL_INTERVAL_MS = 200;
 
     protected TerminalTool(Project project) {
         super(project);
@@ -137,8 +144,11 @@ public abstract class TerminalTool extends Tool {
         );
         // Avoid stealing the chat caret when the AgentBridge chat tool window is active.
         boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);
+        // Start the shell now rather than when the Terminal tool window is first shown. With deferral, a
+        // terminal opened while the chat has focus stays dormant: the command is queued but never runs, and
+        // read_terminal_output shows an empty buffer until something finally reveals the tool window.
         Object widget = createSession.invoke(
-            manager, project.getBasePath(), title, shellCommand, requestFocus, true);
+            manager, project.getBasePath(), title, shellCommand, requestFocus, false);
 
         Content content = findTerminalContentForWidget(managerClass, widget);
         if (content == null) {
@@ -163,6 +173,62 @@ public abstract class TerminalTool extends Tool {
         } catch (NoSuchMethodException e) {
             widget.getClass().getMethod("executeCommand", String.class)
                 .invoke(widget, command);
+        }
+    }
+
+    /**
+     * Warning appended to the {@code run_in_terminal} result when the terminal shows nothing at all after the
+     * command was sent: not even the echoed command or a prompt. A live shell always prints at least that, so an
+     * empty buffer means the shell has not started and the command is queued rather than running.
+     * Returns null when the terminal is alive.
+     */
+    protected static @Nullable String dormantTerminalWarning(@Nullable CharSequence bufferText) {
+        if (!isBlank(bufferText)) return null;
+        return "WARNING: the terminal has produced no output yet, so its shell may not have started and the "
+            + "command may be queued, not running. Check with read_terminal_output. If it stays empty, bring the "
+            + "Terminal tool window into view, or run the command with run_command instead.";
+    }
+
+    /**
+     * Polls the widget's text until it is non-blank or {@code timeoutMs} elapses, and returns the last text seen.
+     * Must not be called on the EDT: each read hops onto it.
+     */
+    protected @Nullable CharSequence awaitTerminalOutput(@NotNull Object widget, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        CharSequence last = readWidgetText(widget);
+        while (isBlank(last) && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(POLL_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return last;
+            }
+            last = readWidgetText(widget);
+        }
+        return last;
+    }
+
+    private static boolean isBlank(@Nullable CharSequence text) {
+        return text == null || text.toString().isBlank();
+    }
+
+    protected @Nullable CharSequence readWidgetText(@NotNull Object widget) {
+        CompletableFuture<CharSequence> future = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                var getText = Class.forName(TERMINAL_WIDGET_CLASS).getMethod("getText");
+                future.complete((CharSequence) getText.invoke(widget));
+            } catch (Exception e) {
+                future.complete(null);
+            }
+        });
+        try {
+            return future.get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception e) {
+            return null;
         }
     }
 
