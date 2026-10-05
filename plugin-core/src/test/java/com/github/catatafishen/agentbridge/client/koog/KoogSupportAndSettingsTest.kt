@@ -35,7 +35,25 @@ class KoogSupportAndSettingsTest {
 
         @Test
         fun `the unsupported message names the requirement`() {
-            assertTrue(KoogSupport.unsupportedReason().contains("2.3"))
+            assertTrue(KoogSupport.unsupportedReason().contains(KoogSupport.MIN_VERSION))
+            assertEquals("2.3", KoogSupport.MIN_VERSION)
+        }
+
+        @Test
+        fun `the availability details report what is needed to debug a missing agent`() {
+            val details = com.github.catatafishen.agentbridge.settings.KoogAvailability.details(null)
+
+            assertTrue(details.contains("Kotlin runtime:"), details)
+            assertTrue(details.contains("Gate passes:      true"), details)
+            assertTrue(details.contains("Koog classes:     load fine"), details)
+        }
+
+        @Test
+        fun `a page failure is named in the summary`() {
+            val summary = com.github.catatafishen.agentbridge.settings.KoogAvailability
+                .summary(IllegalStateException("boom", NoSuchMethodError("kotlin.time.Duration")))
+
+            assertTrue(summary.contains("boom") && summary.contains("NoSuchMethodError"), summary)
         }
     }
 
