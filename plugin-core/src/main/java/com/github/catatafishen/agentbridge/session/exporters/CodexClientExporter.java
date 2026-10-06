@@ -65,7 +65,7 @@ public final class CodexClientExporter {
         try {
             String threadId = newUuidV7().toString();
             // Codex looks up rollouts at sessions/YYYY/MM/DD/rollout-<timestamp>-<thread-id>.jsonl
-            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC);
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
             Path sessionDir = sessionsDir
                 .resolve(String.format("%04d", now.getYear()))
                 .resolve(String.format("%02d", now.getMonthValue()))
