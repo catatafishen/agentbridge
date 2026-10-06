@@ -544,29 +544,67 @@ class ClaudeClientStreamTest {
             assertEquals("cancelled", response.stopReason());
         }
 
+        /** Gives other threads a chance to write between the pieces of one logical message. */
+        private static final class YieldingStream extends ByteArrayOutputStream {
+            @Override
+            public synchronized void write(byte[] b, int off, int len) {
+                super.write(b, off, len);
+                Thread.yield();
+            }
+
+            @Override
+            public synchronized void write(int b) {
+                super.write(b);
+                Thread.yield();
+            }
+        }
+
         @Test
         void controlResponsesAndThePromptAreNeverInterleaved() throws Exception {
-            // Both writers take the stream's monitor for a whole line, so a line is never torn.
-            ByteArrayOutputStream shared = new ByteArrayOutputStream();
-            JsonObject request = JsonParser.parseString("""
+            // The prompt writer and the control-response writer share stdin. Each takes the stream's
+            // monitor for a whole line, so a line is never torn by the other writer.
+            YieldingStream shared = new YieldingStream();
+            JsonObject controlRequest = JsonParser.parseString("""
                 {"type":"control_request","subtype":"can_use_tool","requestId":"r"}
                 """).getAsJsonObject();
-            Thread[] threads = new Thread[4];
-            for (int i = 0; i < threads.length; i++) {
-                threads[i] = new Thread(() -> {
-                    for (int n = 0; n < 200; n++) {
-                        ClaudeClient.respondToControlRequest(request, shared);
+            int perWriter = 300;
+            CountDownLatch go = new CountDownLatch(1);
+            Runnable prompts = () -> {
+                try {
+                    go.await();
+                    for (int n = 0; n < perWriter; n++) {
+                        ClaudeClient.writeJsonPromptToStdin(shared, "prompt " + n, List.of());
                     }
-                });
-                threads[i].start();
-            }
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            };
+            Runnable controls = () -> {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                for (int n = 0; n < perWriter; n++) {
+                    ClaudeClient.respondToControlRequest(controlRequest, shared);
+                }
+            };
+            Thread[] threads = {new Thread(prompts), new Thread(prompts), new Thread(controls), new Thread(controls)};
+            for (Thread t : threads) t.start();
+            go.countDown();
             for (Thread t : threads) t.join();
 
             String[] lines = shared.toString(StandardCharsets.UTF_8).split("\n");
-            assertEquals(800, lines.length);
+            assertEquals(4 * perWriter, lines.length);
+            int userLines = 0;
+            int controlLines = 0;
             for (String line : lines) {
-                assertEquals("control_response", JsonParser.parseString(line).getAsJsonObject().get("type").getAsString());
+                String type = JsonParser.parseString(line).getAsJsonObject().get("type").getAsString();
+                if ("user".equals(type)) userLines++;
+                else if ("control_response".equals(type)) controlLines++;
             }
+            assertEquals(2 * perWriter, userLines);
+            assertEquals(2 * perWriter, controlLines);
         }
     }
 

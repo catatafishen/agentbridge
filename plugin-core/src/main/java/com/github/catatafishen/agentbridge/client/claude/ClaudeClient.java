@@ -1094,7 +1094,9 @@ public final class ClaudeClient extends AbstractClaudeClient {
         private void fail(@NotNull Process proc, @NotNull ClientException e) {
             failure = e;
             // The CLI will never get its prompt. End it, or the stdout reader waits for it forever.
-            proc.destroy();
+            // destroy() alone only asks politely; a CLI that ignores the request would keep stdout open,
+            // so this uses the bounded destroy / wait / destroyForcibly cleanup.
+            cleanupSubprocess(proc, null);
         }
 
         /**
@@ -1112,7 +1114,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
     }
 
     @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter") // the stream is the shared resource
-    private static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt,
+    static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt,
                                                @NotNull List<ContentBlock.Image> images)
         throws ClientException {
         try {
