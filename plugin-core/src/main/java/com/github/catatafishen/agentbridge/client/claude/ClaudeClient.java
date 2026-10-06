@@ -51,6 +51,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -560,7 +561,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
             // emits events (SessionStart hook output, ~30 KB with a few plugins) before it reads
             // stdin; written from this thread, the prompt would block on a full stdin pipe while the
             // CLI blocks on a full stdout pipe that nobody is draining yet: a deadlock.
-            OutputStream stdin = proc.getOutputStream();
+            CliStdin stdin = new CliStdin(proc.getOutputStream());
             PromptWriter promptWriter = new PromptWriter(proc, stdin, prompt, imageBlocks);
 
             String stopReason = parseStreamOutput(sessionId, proc, stdin, onChunk, onUpdate, cancelled);
@@ -569,27 +570,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
             promptWriter.awaitFinished();
             activeProcesses.remove(sessionId);
 
-            String stderr = stderrBuf.toString().trim();
-            if (!stderr.isEmpty()) {
-                String cliSessionId = cliSessionIds.get(sessionId);
-                if (cliSessionId != null) {
-                    LOG.warn("claude CLI stderr (resume=" + cliSessionId + "): " + stderr);
-                } else {
-                    LOG.warn("claude CLI stderr: " + stderr);
-                }
-                if (stopReason.equals(STOP_REASON_END_TURN) && onChunk != null) {
-                    // No output was produced; surface the CLI error to the user
-                    onChunk.accept("\n[Claude CLI error: " + stderr + "]");
-                }
-            }
-
-            // A prompt that never reached the CLI is a failed turn. After Stop it is expected: the
-            // process was killed, which is what broke the pipe.
-            ClientException writeFailure = promptWriter.failure();
-            if (writeFailure != null && !cancelled.get()) {
-                throw writeFailure;
-            }
-
+            reportStderr(sessionId, stderrBuf, stopReason, onChunk);
+            promptWriter.throwIfFailed(cancelled);
             return stopReason;
         } catch (ClaudeAuthRequiredException e) {
             // Tear down the still-running `claude` process and the stderr drainer thread
@@ -608,6 +590,27 @@ public final class ClaudeClient extends AbstractClaudeClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ClientException("Interrupted waiting for claude process", e, false);
+        }
+    }
+
+    /**
+     * Logs what the CLI wrote to stderr and, when the turn produced no output, shows it to the user.
+     */
+    private void reportStderr(@NotNull String sessionId, @NotNull StringBuilder stderrBuf,
+                              @NotNull String stopReason, @Nullable Consumer<String> onChunk) {
+        String stderr = stderrBuf.toString().trim();
+        if (stderr.isEmpty()) {
+            return;
+        }
+        String cliSessionId = cliSessionIds.get(sessionId);
+        if (cliSessionId != null) {
+            LOG.warn("claude CLI stderr (resume=" + cliSessionId + "): " + stderr);
+        } else {
+            LOG.warn("claude CLI stderr: " + stderr);
+        }
+        if (stopReason.equals(STOP_REASON_END_TURN) && onChunk != null) {
+            // No output was produced; surface the CLI error to the user
+            onChunk.accept("\n[Claude CLI error: " + stderr + "]");
         }
     }
 
@@ -669,7 +672,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
     @NotNull
     private String parseStreamOutput(@NotNull String sessionId,
                                      @NotNull Process proc,
-                                     @NotNull OutputStream stdin,
+                                     @NotNull CliStdin stdin,
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<SessionUpdate> onUpdate,
                                      @NotNull AtomicBoolean cancelled) throws IOException {
@@ -700,7 +703,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
                 }
             }
         } finally {
-            closeQuietly(stdin);
+            stdin.closeQuietly();
         }
         if (cancelled.get()) stopReason = "cancelled";
         if (eventCount == 0) {
@@ -715,7 +718,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
     private String handleStreamEvent(@NotNull String sessionId,
                                      @NotNull JsonObject event,
                                      @NotNull String currentStopReason,
-                                     @NotNull OutputStream stdin,
+                                     @NotNull CliStdin stdin,
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<SessionUpdate> onUpdate) {
         String type = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "";
@@ -788,7 +791,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
     @NotNull
     private String handleResultEvent(@NotNull String sessionId,
                                      @NotNull JsonObject event,
-                                     @NotNull OutputStream stdin,
+                                     @NotNull CliStdin stdin,
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<SessionUpdate> onUpdate) {
         boolean isError = event.has(FIELD_SUBTYPE)
@@ -814,7 +817,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
         if (!isError) emitUsageStats(event, onUpdate);
         // Close stdin so profile-based sessions (which keep stdout open waiting
         // for the next message) receive the EOF signal and exit cleanly.
-        closeQuietly(stdin);
+        stdin.closeQuietly();
         return isError ? SUBTYPE_ERROR : STOP_REASON_END_TURN;
     }
 
@@ -972,8 +975,12 @@ public final class ClaudeClient extends AbstractClaudeClient {
      * JSON message to stdin. All {@code can_use_tool} requests are auto-approved; only trusted
      * MCP tools are exposed when {@code excludeAgentBuiltInTools} is enabled.
      */
-    @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter") // the stream is the shared resource
     static void respondToControlRequest(@NotNull JsonObject event, @NotNull OutputStream stdin) {
+        // A bare stream has no other writer to coordinate with, so it gets a lock of its own.
+        respondToControlRequest(event, new CliStdin(stdin));
+    }
+
+    static void respondToControlRequest(@NotNull JsonObject event, @NotNull CliStdin stdin) {
         String subtype = event.has(FIELD_SUBTYPE) ? event.get(FIELD_SUBTYPE).getAsString() : "";
         String requestId = event.has(FIELD_REQUEST_ID) ? event.get(FIELD_REQUEST_ID).getAsString() : "";
 
@@ -989,12 +996,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
         }
 
         try {
-            // Same monitor as the prompt write, so the two lines never interleave.
-            synchronized (stdin) {
-                stdin.write(response.toString().getBytes(StandardCharsets.UTF_8));
-                stdin.write('\n');
-                stdin.flush();
-            }
+            stdin.writeLine(response.toString());
         } catch (IOException e) {
             LOG.debug("Could not write control_response: " + e.getMessage());
         }
@@ -1074,9 +1076,9 @@ public final class ClaudeClient extends AbstractClaudeClient {
         private static final long JOIN_MS = 2_000L;
 
         private final Thread thread;
-        private volatile ClientException failure;
+        private final AtomicReference<ClientException> failure = new AtomicReference<>();
 
-        PromptWriter(@NotNull Process proc, @NotNull OutputStream stdin, @NotNull String prompt,
+        PromptWriter(@NotNull Process proc, @NotNull CliStdin stdin, @NotNull String prompt,
                      @NotNull List<ContentBlock.Image> images) {
             thread = new Thread(() -> {
                 try {
@@ -1092,7 +1094,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
         }
 
         private void fail(@NotNull Process proc, @NotNull ClientException e) {
-            failure = e;
+            failure.set(e);
             // The CLI will never get its prompt. End it, or the stdout reader waits for it forever.
             // destroy() alone only asks politely; a CLI that ignores the request would keep stdout open,
             // so this uses the bounded destroy / wait / destroyForcibly cleanup.
@@ -1107,27 +1109,51 @@ public final class ClaudeClient extends AbstractClaudeClient {
             thread.join(JOIN_MS);
         }
 
-        @Nullable
-        ClientException failure() {
-            return failure;
+        /**
+         * Fails the turn when the prompt never reached the CLI. After Stop that is expected: killing the
+         * process is what broke the pipe.
+         */
+        void throwIfFailed(@NotNull AtomicBoolean cancelled) throws ClientException {
+            ClientException e = failure.get();
+            if (e != null && !cancelled.get()) {
+                throw e;
+            }
         }
     }
 
-    @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter") // the stream is the shared resource
-    static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt,
-                                               @NotNull List<ContentBlock.Image> images)
+    /**
+     * The CLI's stdin. Whole lines are written under one lock owned by this object, so the prompt (written on
+     * its own thread) and a {@code control_response} (written from the stdout reader) can never interleave.
+     */
+    static final class CliStdin {
+        private final OutputStream out;
+        private final Object lock = new Object();
+
+        CliStdin(@NotNull OutputStream out) {
+            this.out = out;
+        }
+
+        void writeLine(@NotNull String line) throws IOException {
+            byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
+            synchronized (lock) {
+                out.write(bytes);
+                out.write('\n');
+                out.flush();
+            }
+        }
+
+        void closeQuietly() {
+            ClaudeClient.closeQuietly(out);
+        }
+    }
+
+    static void writeJsonPromptToStdin(@NotNull CliStdin stdin, @NotNull String prompt,
+                                       @NotNull List<ContentBlock.Image> images)
         throws ClientException {
         try {
-            byte[] message = buildJsonUserMessage(prompt, images).getBytes(StandardCharsets.UTF_8);
-            // One monitor for every logical stdin message: a control_response must not interleave
-            // with the prompt line.
-            synchronized (stdin) {
-                stdin.write(message);
-                stdin.write('\n');
-                stdin.flush();
-            }
+            stdin.writeLine(buildJsonUserMessage(prompt, images));
         } catch (IOException e) {
-            closeQuietly(stdin);
+            stdin.closeQuietly();
             throw new ClientException("Failed to write prompt to claude process: " + e.getMessage(), e, true);
         }
     }
