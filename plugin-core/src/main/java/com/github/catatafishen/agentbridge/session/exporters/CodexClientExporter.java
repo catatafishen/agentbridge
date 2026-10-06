@@ -63,7 +63,7 @@ public final class CodexClientExporter {
         if (entries.isEmpty() || entries.stream().noneMatch(e -> e instanceof EntryData.Prompt)) return null;
 
         try {
-            String threadId = UUID.randomUUID().toString();
+            String threadId = newUuidV7().toString();
             // Codex looks up rollouts at sessions/YYYY/MM/DD/rollout-<timestamp>-<thread-id>.jsonl
             java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC);
             Path sessionDir = sessionsDir
@@ -88,6 +88,18 @@ public final class CodexClientExporter {
             LOG.warn("Failed to export v2 session to Codex", e);
             return null;
         }
+    }
+
+    /**
+     * Generates a time-ordered UUIDv7 (48-bit unix-ms timestamp, version 7, RFC 4122 variant),
+     * matching the thread-id format used by native Codex threads.
+     */
+    public static UUID newUuidV7() {
+        java.security.SecureRandom rnd = new java.security.SecureRandom();
+        long millis = System.currentTimeMillis();
+        long msb = (millis << 16) | 0x7000L | (rnd.nextLong() & 0x0FFFL);
+        long lsb = (rnd.nextLong() & 0x3FFFFFFFFFFFFFFFL) | 0x8000000000000000L;
+        return new UUID(msb, lsb);
     }
 
     private static long findCreatedAt(@NotNull List<EntryData> entries) {
