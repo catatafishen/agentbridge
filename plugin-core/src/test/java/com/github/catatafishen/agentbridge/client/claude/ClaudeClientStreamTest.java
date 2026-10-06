@@ -561,9 +561,10 @@ class ClaudeClientStreamTest {
 
         @Test
         void controlResponsesAndThePromptAreNeverInterleaved() throws Exception {
-            // The prompt writer and the control-response writer share stdin. Each takes the stream's
-            // monitor for a whole line, so a line is never torn by the other writer.
+            // The prompt writer and the control-response writer share one CliStdin. It writes a whole
+            // line under its own lock, so a line is never torn by the other writer.
             YieldingStream shared = new YieldingStream();
+            ClaudeClient.CliStdin stdin = new ClaudeClient.CliStdin(shared);
             JsonObject controlRequest = JsonParser.parseString("""
                 {"type":"control_request","subtype":"can_use_tool","requestId":"r"}
                 """).getAsJsonObject();
@@ -573,7 +574,7 @@ class ClaudeClientStreamTest {
                 try {
                     go.await();
                     for (int n = 0; n < perWriter; n++) {
-                        ClaudeClient.writeJsonPromptToStdin(shared, "prompt " + n, List.of());
+                        ClaudeClient.writeJsonPromptToStdin(stdin, "prompt " + n, List.of());
                     }
                 } catch (Exception e) {
                     throw new IllegalStateException(e);
@@ -586,7 +587,7 @@ class ClaudeClientStreamTest {
                     Thread.currentThread().interrupt();
                 }
                 for (int n = 0; n < perWriter; n++) {
-                    ClaudeClient.respondToControlRequest(controlRequest, shared);
+                    ClaudeClient.respondToControlRequest(controlRequest, stdin);
                 }
             };
             Thread[] threads = {new Thread(prompts), new Thread(prompts), new Thread(controls), new Thread(controls)};
