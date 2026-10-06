@@ -14,6 +14,7 @@ import com.github.catatafishen.agentbridge.client.ClientStartException
 import com.github.catatafishen.agentbridge.model.ContentBlock
 import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.google.gson.JsonObject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -31,7 +32,6 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class KoogClientTest {
@@ -761,33 +761,29 @@ class KoogClientTest {
         @Test
         fun `a stop that arrives the instant the turn starts is never lost`() {
             // The turn used to be registered after it had started running, so a Stop in that window found
-            // nothing to cancel and was silently ignored (and the turn ran on). Here the stop is pressed from
-            // inside the first model call, the earliest the turn can possibly be running.
+            // nothing to cancel and was silently ignored (and the turn ran on).
             //
-            // The window is microseconds wide, and on an idle machine registration always wins it (20,000
-            // attempts never lost a stop). Competing for the CPUs makes the sending thread get preempted inside
-            // it, as on a loaded CI runner; against the old code this failed within a few hundred attempts.
-            val id = startedSession()
-            env.streamerFor = { _ ->
-                ModelStreamer { _: Prompt, _: List<ToolDescriptor> ->
-                    flow<StreamFrame> {
-                        client.cancelSession(id)
-                        delay(2_000) // reached only if the stop was lost
+            // On real threads the window is microseconds wide and only a loaded machine opens it, so this
+            // closes it deterministically instead: an unconfined dispatcher runs the turn inline on the calling
+            // thread, i.e. the turn is already executing inside the very call that starts it. Pressing Stop
+            // from inside the first model call is then the worst case, every time: with the old order (start,
+            // then register) there is nothing registered to cancel.
+            val inline = KoogClient(env, Dispatchers.Unconfined)
+            try {
+                inline.start()
+                val id = inline.createSession("/project")
+                env.streamerFor = { _ ->
+                    ModelStreamer { _: Prompt, _: List<ToolDescriptor> ->
+                        flow<StreamFrame> {
+                            inline.cancelSession(id)
+                            delay(2_000) // reached only if the stop was lost
+                        }
                     }
                 }
-            }
 
-            val done = AtomicBoolean(false)
-            val hogs = List(Runtime.getRuntime().availableProcessors() * 2) {
-                Thread { while (!done.get()) Thread.onSpinWait() }.apply { isDaemon = true; start() }
-            }
-            try {
-                repeat(2_000) { attempt ->
-                    assertEquals("cancelled", client.sendPrompt(request(id)) {}.stopReason(), "attempt $attempt")
-                }
+                assertEquals("cancelled", inline.sendPrompt(request(id)) {}.stopReason())
             } finally {
-                done.set(true)
-                hogs.forEach { it.join() }
+                inline.close()
             }
         }
 

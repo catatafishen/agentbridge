@@ -12,6 +12,7 @@ import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,11 @@ import java.util.function.Consumer
  * Everything that touches the IDE, the settings or the network goes through [KoogEnvironment], so the
  * logic here is testable without an IDE.
  */
-class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
+class KoogClient(
+    private val env: KoogEnvironment,
+    /** Where turns run. Only a test replaces it, to make a turn run inline on the calling thread. */
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : AbstractClient() {
 
     /** The constructor the registry uses. */
     constructor(project: Project) : this(IdeKoogEnvironment(project))
@@ -64,7 +69,7 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
 
     private val conversations = ConcurrentHashMap<String, KoogConversation>()
     private val activeTurns = ConcurrentHashMap<String, Job>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
     override fun agentId(): String = KoogSupport.AGENT_ID
 
