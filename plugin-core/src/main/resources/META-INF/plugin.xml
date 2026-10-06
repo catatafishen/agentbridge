@@ -66,7 +66,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
   <!-- Optional plugins accessed via reflection for enhanced tool support -->
   <depends optional="true" config-file="gradle-features.xml">org.jetbrains.plugins.gradle</depends>
   <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
-  <depends optional="true" config-file="sonarlint-features.xml">org.sonarlint.idea</depends>
+  <!-- Deliberately NO <depends> on third-party marketplace plugins (SonarQube for IDE org.sonarlint.idea,
+       Qodana, ...). A plugin dependency makes that plugin's class loader a parent of ours, and parents are
+       searched before the IDE's own libraries. SonarQube bundles kotlin-stdlib 1.6.10, so declaring it made
+       KotlinVersion resolve to 1.6.10 instead of the platform's 2.x and broke the Koog agent. Those plugins are
+       reached by reflection through their own class loader (see SonarQubeIntegration), which needs no
+       declaration. PluginManifestDependenciesTest enforces this. -->
   <depends optional="true" config-file="database-features.xml">com.intellij.database</depends>
 
   <!-- Extension points and implementations -->

@@ -31,9 +31,11 @@ IDEs with `com.intellij.modules.java`. The plugin must:
 │    org.jetbrains.plugins.terminal           │  All IDEs (bundled everywhere)
 │    org.jetbrains.plugins.gradle             │  IntelliJ IDEA, some others
 │    org.jetbrains.idea.maven                 │  IntelliJ IDEA, some others
-│    org.sonarlint.idea                       │  User-installed marketplace plugin
-│    org.jetbrains.qodana                     │  User-installed marketplace plugin
 └─────────────────────────────────────────────┘
+
+Third-party marketplace plugins (`org.sonarlint.idea`, `org.jetbrains.qodana`) are deliberately NOT
+declared. They are reached by reflection through their own class loader and detected with
+`isPluginInstalled()`. See "Why third-party plugins are not declared" below.
 ```
 
 ### Guard Strategies
@@ -47,6 +49,19 @@ dependency is accessed:
 | **`isPluginInstalled()` + same class**      | Features that don't use the plugin's types in signatures | Terminal tools             |
 | **Reflection (`Class.forName`)**            | Metadata discovery, no compile-time reference needed     | Gradle/Maven detection     |
 | **`NoClassDefFoundError` catch + fallback** | Inner class loaded on first reference                    | Git4Idea (`IdeGitSupport`) |
+
+### Why third-party plugins are not declared
+
+A `<depends>` on a plugin makes that plugin's class loader a **parent** of ours. Parent loaders are
+searched before the IDE's own libraries, so whatever the other plugin bundles shadows the platform's
+copy. SonarQube for IDE (`org.sonarlint.idea`) bundles `kotlin-stdlib` 1.6.10; declaring it made
+`KotlinVersion` resolve to 1.6.10 instead of the platform's 2.x, which disabled the Koog agent on
+machines that had SonarQube installed.
+
+Marketplace plugins are therefore never declared. They are detected with `isPluginInstalled()` and
+called by reflection through `PlatformApiCompat.getPluginClassLoader(id)`, neither of which needs a
+declaration. `PluginManifestDependenciesTest` fails if a new `<depends>` is added without being
+reviewed against this.
 
 ---
 
