@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.intellij.openapi.project.Project;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -61,8 +63,15 @@ class RepositoryBotIdentityHookTest {
     void terminalInvocationWrapsTrustedHelperWithBotToken(@TempDir Path dir) throws IOException {
         String json = runHook(dir, "run_in_terminal",
             "bash .agents/skills/pr-review/pr-ci.sh 1084");
+        String command = JsonParser.parseString(json).getAsJsonObject()
+            .getAsJsonObject("arguments").get("command").getAsString();
 
-        assertTrue(json.contains("export GH_TOKEN='" + TEST_TOKEN + "'"), json);
+        // The token comes from the token file, so the shell reads it at run time and the command text, which is
+        // echoed back into the tool result and transcript, never contains it.
+        assertTrue(command.startsWith("(export GH_TOKEN=\"$(tr -d '[:space:]' < '"), command);
+        assertTrue(command.contains(".agentbridge/bot-token'"), command);
+        assertTrue(command.endsWith("; bash .agents/skills/pr-review/pr-ci.sh 1084)"), command);
+        assertFalse(json.contains(TEST_TOKEN), "token must not appear in the rewritten command: " + json);
     }
 
     @ParameterizedTest
