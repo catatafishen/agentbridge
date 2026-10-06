@@ -25,6 +25,42 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class SessionSwitchServiceStaticMethodsTest {
 
+    // ── claudeProjectDirName ───────────────────────────────
+
+    @Test
+    void claudeProjectDirName_windowsPath_matchesWhatClaudeCodeCreates() {
+        // Issue #1150: the old encoding kept ':' and '\', so Path.of threw InvalidPathException on Windows.
+        assertEquals("C--Users-me-proj", SessionSwitchService.claudeProjectDirName("C:\\Users\\me\\proj"));
+    }
+
+    @Test
+    void claudeProjectDirName_windowsPathWithForwardSlashes_isTheSame() {
+        // IntelliJ reports project.getBasePath() with forward slashes on Windows.
+        assertEquals("C--Users-me-proj", SessionSwitchService.claudeProjectDirName("C:/Users/me/proj"));
+    }
+
+    @Test
+    void claudeProjectDirName_unixPath_isUnchangedFromBefore() {
+        assertEquals("-home-user-my-project", SessionSwitchService.claudeProjectDirName("/home/user/my-project"));
+    }
+
+    @Test
+    void claudeProjectDirName_everyNonAlphanumericCharacterBecomesADash() {
+        assertEquals("-home-me--config-my-app-v2-x-y", SessionSwitchService.claudeProjectDirName("/home/me/.config/my_app.v2/x y"));
+    }
+
+    @Test
+    void claudeProjectDirName_resultIsAlwaysAValidWindowsFileName() {
+        String name = SessionSwitchService.claudeProjectDirName("D:\\Work\\Mój projekt (1)\\src?");
+
+        assertTrue(name.matches("[a-zA-Z0-9-]+"), name);
+    }
+
+    @Test
+    void claudeProjectDirName_nullIsEmpty() {
+        assertEquals("", SessionSwitchService.claudeProjectDirName(null));
+    }
+
     // ── claudeProjectDir ───────────────────────────────────
 
     @Test

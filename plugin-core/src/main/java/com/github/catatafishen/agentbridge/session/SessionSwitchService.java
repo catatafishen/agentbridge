@@ -700,19 +700,30 @@ public final class SessionSwitchService implements Disposable {
      * Returns the Claude CLI projects directory for this project:
      * {@code ~/.claude/projects/<dash-separated-path>/}
      *
-     * <p>Claude CLI uses the absolute project path with all forward slashes replaced by
-     * dashes as the per-project directory name. For example, the project path
-     * {@code /home/user/my-project} becomes {@code -home-user-my-project}.</p>
+     * <p>Claude CLI names the per-project directory after the absolute project path with every
+     * character that is not an ASCII letter or digit replaced by a dash. For example,
+     * {@code /home/user/my-project} becomes {@code -home-user-my-project} and the Windows path
+     * {@code C:\Users\me\proj} becomes {@code C--Users-me-proj}. Replacing only the separators
+     * would leave {@code :} in the name, which is not a legal file name on Windows
+     * ({@link java.nio.file.InvalidPathException}), and would put paths containing {@code .},
+     * {@code _} or spaces in a directory the CLI never reads.</p>
      *
      * @param basePath absolute project base path; {@code null} falls back to empty string
      * @return path to the project-specific Claude directory (may not yet exist on disk)
      */
     @NotNull
     private static Path claudeProjectDir(@Nullable String basePath) {
-        String projectPath = basePath != null ? basePath : "";
-        String dirName = projectPath.replace('/', '-');
         String home = SystemProperties.getUserHome();
-        return Path.of(home, CLAUDE_HOME, CLAUDE_PROJECTS_DIR, dirName);
+        return Path.of(home, CLAUDE_HOME, CLAUDE_PROJECTS_DIR, claudeProjectDirName(basePath));
+    }
+
+    /**
+     * The directory name Claude CLI uses for a project: see {@link #claudeProjectDir}. Pure, so it
+     * can be tested for Windows paths on any OS.
+     */
+    @NotNull
+    static String claudeProjectDirName(@Nullable String basePath) {
+        return (basePath != null ? basePath : "").replaceAll("[^a-zA-Z0-9]", "-");
     }
 
     @NotNull

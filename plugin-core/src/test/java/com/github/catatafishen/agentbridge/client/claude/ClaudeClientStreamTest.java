@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
+import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
@@ -20,18 +21,23 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -399,6 +405,168 @@ class ClaudeClientStreamTest {
                 new ContentBlock.Text("Hello "),
                 new ContentBlock.Text("World"));
             assertEquals("Hello World", ClaudeClient.extractPromptText(blocks));
+        }
+    }
+
+    /**
+     * Issue #1150: the CLI emits events (SessionStart hook output) before it reads stdin. The fake CLI
+     * below only accepts stdin once its stdout is being read, so a client that writes the prompt before it
+     * starts draining stdout deadlocks, as the real pipes do once ~30 KB of hook events fill them.
+     */
+    @Nested
+    class PromptWrite {
+
+        private static final String RESULT = """
+            {"type":"system","session_id":"cli-sess-1"}
+            {"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}
+            {"type":"result","subtype":"success","cost_usd":0.0}
+            """;
+
+        /** stdout that reports when it is first read. */
+        private static final class WatchedStdout extends ByteArrayInputStream {
+            final CountDownLatch firstRead = new CountDownLatch(1);
+            private final Runnable onFirstRead;
+
+            WatchedStdout(String content, Runnable onFirstRead) {
+                super(content.getBytes(StandardCharsets.UTF_8));
+                this.onFirstRead = onFirstRead;
+            }
+
+            @Override
+            public synchronized int read() {
+                signal();
+                return super.read();
+            }
+
+            @Override
+            public synchronized int read(byte[] b, int off, int len) {
+                signal();
+                return super.read(b, off, len);
+            }
+
+            private void signal() {
+                if (firstRead.getCount() > 0) {
+                    firstRead.countDown();
+                    onFirstRead.run();
+                }
+            }
+        }
+
+        /** stdin that blocks until stdout is being read, or fails, like a full pipe nobody drains. */
+        private static final class StdinNeedingDrainedStdout extends OutputStream {
+            final ByteArrayOutputStream received = new ByteArrayOutputStream();
+            private final CountDownLatch stdoutDrained;
+
+            StdinNeedingDrainedStdout(CountDownLatch stdoutDrained) {
+                this.stdoutDrained = stdoutDrained;
+            }
+
+            @Override
+            public void write(int b) throws IOException {
+                awaitDrained();
+                received.write(b);
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                awaitDrained();
+                received.write(b, off, len);
+            }
+
+            private void awaitDrained() throws IOException {
+                try {
+                    if (!stdoutDrained.await(5, TimeUnit.SECONDS)) {
+                        throw new IOException("stdin is blocked while nobody reads the CLI output (pipe deadlock)");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException(e);
+                }
+            }
+        }
+
+        private PromptRequest request(String sessionId) {
+            return new PromptRequest(sessionId, List.of(new ContentBlock.Text("hello")), null, null);
+        }
+
+        @Test
+        void promptIsWrittenWhileTheCliOutputIsAlreadyBeingRead() throws Exception {
+            WatchedStdout stdout = new WatchedStdout(RESULT, () -> {
+            });
+            StdinNeedingDrainedStdout stdin = new StdinNeedingDrainedStdout(stdout.firstRead);
+            client = createClient((cmd, env, workDir) -> new FakeProcess(
+                stdout, stdin, new ByteArrayInputStream(new byte[0])));
+            String sessionId = client.createSession(null);
+
+            PromptResponse response = client.sendPrompt(request(sessionId), onUpdate);
+
+            assertNotNull(response);
+            assertTrue(updates.stream().anyMatch(u -> u instanceof SessionUpdate.AgentMessageChunk));
+            String sent = stdin.received.toString(StandardCharsets.UTF_8);
+            assertTrue(sent.contains("\"type\":\"user\"") && sent.contains("hello"), sent);
+        }
+
+        @Test
+        void aPromptThatCouldNotBeWrittenFailsTheTurn() throws Exception {
+            OutputStream brokenStdin = new OutputStream() {
+                @Override
+                public void write(int b) throws IOException {
+                    throw new IOException("Pipe terminata");
+                }
+            };
+            client = createClient((cmd, env, workDir) -> new FakeProcess(
+                new ByteArrayInputStream(new byte[0]), brokenStdin, new ByteArrayInputStream(new byte[0])));
+            String sessionId = client.createSession(null);
+
+            ClientException e = assertThrows(ClientException.class, () -> client.sendPrompt(request(sessionId), onUpdate));
+
+            assertTrue(e.getMessage().contains("Failed to write prompt to claude process"), e.getMessage());
+            assertTrue(e.getMessage().contains("Pipe terminata"), e.getMessage());
+        }
+
+        @Test
+        void aWriteThatFailsBecauseTheUserPressedStopIsNotAnError() throws Exception {
+            // Stop kills the process, which breaks the pipe; the turn must end as cancelled, not as a write error.
+            AtomicReference<String> session = new AtomicReference<>();
+            OutputStream brokenStdin = new OutputStream() {
+                @Override
+                public void write(int b) throws IOException {
+                    throw new IOException("Pipe terminata");
+                }
+            };
+            WatchedStdout stdout = new WatchedStdout("", () -> client.cancelSession(session.get()));
+            client = createClient((cmd, env, workDir) -> new FakeProcess(
+                stdout, brokenStdin, new ByteArrayInputStream(new byte[0])));
+            session.set(client.createSession(null));
+
+            PromptResponse response = client.sendPrompt(request(session.get()), onUpdate);
+
+            assertEquals("cancelled", response.stopReason());
+        }
+
+        @Test
+        void controlResponsesAndThePromptAreNeverInterleaved() throws Exception {
+            // Both writers take the stream's monitor for a whole line, so a line is never torn.
+            ByteArrayOutputStream shared = new ByteArrayOutputStream();
+            JsonObject request = JsonParser.parseString("""
+                {"type":"control_request","subtype":"can_use_tool","requestId":"r"}
+                """).getAsJsonObject();
+            Thread[] threads = new Thread[4];
+            for (int i = 0; i < threads.length; i++) {
+                threads[i] = new Thread(() -> {
+                    for (int n = 0; n < 200; n++) {
+                        ClaudeClient.respondToControlRequest(request, shared);
+                    }
+                });
+                threads[i].start();
+            }
+            for (Thread t : threads) t.join();
+
+            String[] lines = shared.toString(StandardCharsets.UTF_8).split("\n");
+            assertEquals(800, lines.length);
+            for (String line : lines) {
+                assertEquals("control_response", JsonParser.parseString(line).getAsJsonObject().get("type").getAsString());
+            }
         }
     }
 
