@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.session;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.session.exporters.CodexClientExporter;
 import com.github.catatafishen.agentbridge.session.importers.CodexClientImporter;
-import com.github.catatafishen.agentbridge.bridge.EntryData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -156,12 +156,21 @@ class CodexClientRoundTripTest {
         }
 
         // Verify rollout file exists and contains expected content
-        Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
+        Path rolloutFile = findRollout(sessionsDir, threadId);
         assertTrue(Files.exists(rolloutFile));
         String content = Files.readString(rolloutFile);
         assertTrue(content.contains("Hello"));
         assertTrue(content.contains("\"type\":\"message\""));
         assertTrue(content.contains("\"type\":\"input_text\""));
+    }
+
+    private static Path findRollout(Path sessionsDir, String threadId) {
+        try (var stream = Files.walk(sessionsDir)) {
+            return stream.filter(p -> p.getFileName().toString().endsWith(threadId + ".jsonl"))
+                .findFirst().orElseThrow();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     @Test
@@ -183,7 +192,7 @@ class CodexClientRoundTripTest {
             List.of(new EntryData.Prompt("read"), toolCall), sessionsDir, dbPath);
         assertNotNull(threadId);
 
-        String content = Files.readString(sessionsDir.resolve(threadId).resolve("rollout.jsonl"));
+        String content = Files.readString(findRollout(sessionsDir, threadId));
         assertTrue(content.contains("\"type\":\"function_call\""));
         assertTrue(content.contains("\"call_id\":"));
         assertTrue(content.contains("\"type\":\"function_call_output\""));
@@ -263,7 +272,7 @@ class CodexClientRoundTripTest {
         String threadId = CodexClientExporter.exportSession(original, sessionsDir, dbPath);
         assertNotNull(threadId);
 
-        Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
+        Path rolloutFile = findRollout(sessionsDir, threadId);
         List<EntryData> imported = CodexClientImporter.importRolloutFile(rolloutFile);
 
         assertEquals(2, imported.size());
@@ -288,7 +297,7 @@ class CodexClientRoundTripTest {
         String threadId = CodexClientExporter.exportSession(original, sessionsDir, dbPath);
         assertNotNull(threadId);
 
-        Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
+        Path rolloutFile = findRollout(sessionsDir, threadId);
         List<EntryData> imported = CodexClientImporter.importRolloutFile(rolloutFile);
 
         assertEquals(3, imported.size());
@@ -319,7 +328,7 @@ class CodexClientRoundTripTest {
         String threadId = CodexClientExporter.exportSession(original, sessionsDir, dbPath);
         assertNotNull(threadId);
 
-        Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
+        Path rolloutFile = findRollout(sessionsDir, threadId);
         List<EntryData> imported = CodexClientImporter.importRolloutFile(rolloutFile);
 
         assertEquals(3, imported.size());
