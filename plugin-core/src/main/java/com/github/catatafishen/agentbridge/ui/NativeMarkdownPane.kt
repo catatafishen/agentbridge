@@ -22,6 +22,7 @@ import javax.swing.text.*
 import javax.swing.text.html.BlockView
 import javax.swing.text.html.HTML
 import javax.swing.text.html.HTMLEditorKit
+import javax.swing.text.html.InlineView
 import javax.swing.text.html.StyleSheet
 
 /**
@@ -654,15 +655,50 @@ private class ScrollableCodeView(elem: Element) : BlockView(elem, View.Y_AXIS) {
     }
 }
 
-/** An [HTMLEditorKit] whose view factory creates [ScrollableCodeView] for `<pre>` elements. */
-private class ScrollableHTMLEditorKit : HTMLEditorKit() {
+/**
+ * A text run that lets a paragraph shrink to the bubble even when the run holds one very long unbreakable
+ * token (a path, URL, identifier or error string in an inline code span).
+ *
+ * Swing lays a paragraph out at `max(minimumSpan, availableWidth)`, and the minimum span of a text run is its
+ * widest unbreakable chunk. So one long token made the whole paragraph wider than the bubble and the tail was
+ * clipped, since the chat has no horizontal scroll. Capping the minimum at [MAX_WORD_EM] lets the run break
+ * inside such a token (Swing then breaks it at the character that does not fit). The cap is not zero on purpose:
+ * words up to that length keep their whole-word protection, so table columns are still sized around their
+ * words and ordinary text lays out exactly as before.
+ */
+internal class WrappingInlineView(elem: Element) : InlineView(elem) {
+
+    override fun getMinimumSpan(axis: Int): Float {
+        val minimum = super.getMinimumSpan(axis)
+        return if (axis == X_AXIS) minimum.coerceAtMost(font.size2D * MAX_WORD_EM) else minimum
+    }
+
+    companion object {
+        /** Longest word, in font-size units (about 15 characters), that is never broken to make room. */
+        const val MAX_WORD_EM = 8f
+    }
+}
+
+/**
+ * An [HTMLEditorKit] whose view factory creates [ScrollableCodeView] for `<pre>` elements and
+ * [WrappingInlineView] for the text everywhere else.
+ */
+internal class ScrollableHTMLEditorKit : HTMLEditorKit() {
     private val factory = object : HTMLFactory() {
         override fun create(elem: Element): View {
-            val tag = elem.attributes?.getAttribute(StyleConstants.NameAttribute) as? HTML.Tag
+            val tag = tagOf(elem)
             if (tag == HTML.Tag.PRE) return ScrollableCodeView(elem)
+            // Code blocks keep their lines intact and scroll sideways instead.
+            if (tag == HTML.Tag.CONTENT && !isInsideCodeBlock(elem)) return WrappingInlineView(elem)
             return super.create(elem)
         }
     }
 
     override fun getViewFactory(): ViewFactory = factory
+
+    private fun tagOf(elem: Element): HTML.Tag? =
+        elem.attributes?.getAttribute(StyleConstants.NameAttribute) as? HTML.Tag
+
+    private fun isInsideCodeBlock(elem: Element): Boolean =
+        generateSequence(elem.parentElement) { it.parentElement }.any { tagOf(it) == HTML.Tag.PRE }
 }
