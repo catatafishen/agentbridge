@@ -64,10 +64,16 @@ public final class CodexClientExporter {
 
         try {
             String threadId = UUID.randomUUID().toString();
-            Path sessionDir = sessionsDir.resolve(threadId);
+            // Codex looks up rollouts at sessions/YYYY/MM/DD/rollout-<timestamp>-<thread-id>.jsonl
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC);
+            Path sessionDir = sessionsDir
+                .resolve(String.format("%04d", now.getYear()))
+                .resolve(String.format("%02d", now.getMonthValue()))
+                .resolve(String.format("%02d", now.getDayOfMonth()));
             Files.createDirectories(sessionDir);
 
-            Path rolloutFile = sessionDir.resolve("rollout.jsonl");
+            String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss").format(now);
+            Path rolloutFile = sessionDir.resolve("rollout-" + stamp + "-" + threadId + ".jsonl");
             writeRolloutFile(entries, rolloutFile, threadId, cwd);
 
             long createdAt = findCreatedAt(entries);
