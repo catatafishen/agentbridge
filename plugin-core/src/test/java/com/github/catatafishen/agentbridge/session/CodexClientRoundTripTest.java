@@ -166,8 +166,19 @@ class CodexClientRoundTripTest {
 
     private static Path findRollout(Path sessionsDir, String threadId) {
         try (var stream = Files.walk(sessionsDir)) {
-            return stream.filter(p -> p.getFileName().toString().endsWith(threadId + ".jsonl"))
+            Path found = stream.filter(p -> p.getFileName().toString().endsWith(threadId + ".jsonl"))
                 .findFirst().orElseThrow();
+            // Must be sessions/YYYY/MM/DD/rollout-YYYY-MM-DDTHH-mm-ss-<threadId>.jsonl
+            Path rel = sessionsDir.relativize(found);
+            assertEquals(4, rel.getNameCount(), "Expected YYYY/MM/DD/<file>: " + rel);
+            String year = rel.getName(0).toString();
+            String month = rel.getName(1).toString();
+            String day = rel.getName(2).toString();
+            assertTrue(year.matches("\\d{4}") && month.matches("\\d{2}") && day.matches("\\d{2}"), rel.toString());
+            assertTrue(rel.getName(3).toString().matches(
+                    "rollout-" + year + "-" + month + "-" + day + "T\\d{2}-\\d{2}-\\d{2}-" + threadId + "\\.jsonl"),
+                rel.toString());
+            return found;
         } catch (IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
