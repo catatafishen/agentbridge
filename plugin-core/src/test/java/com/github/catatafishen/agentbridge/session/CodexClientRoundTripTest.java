@@ -174,6 +174,14 @@ class CodexClientRoundTripTest {
     }
 
     @Test
+    void newUuidV7HasVersion7AndVariant() {
+        java.util.UUID id = CodexClientExporter.newUuidV7();
+        assertEquals(7, id.version());
+        assertEquals(2, id.variant());
+        assertTrue(Math.abs((id.getMostSignificantBits() >>> 16) - System.currentTimeMillis()) < 5000);
+    }
+
+    @Test
     void exportEmptyMessagesReturnsNull() {
         Path sessionsDir = tempDir.resolve("sessions");
         Path dbPath = tempDir.resolve("codex.db");
