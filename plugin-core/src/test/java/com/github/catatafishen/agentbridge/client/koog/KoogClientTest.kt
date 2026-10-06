@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class KoogClientTest {
@@ -755,6 +756,39 @@ class KoogClientTest {
             worker.join(10_000)
 
             assertEquals("cancelled", result.get().stopReason())
+        }
+
+        @Test
+        fun `a stop that arrives the instant the turn starts is never lost`() {
+            // The turn used to be registered after it had started running, so a Stop in that window found
+            // nothing to cancel and was silently ignored (and the turn ran on). Here the stop is pressed from
+            // inside the first model call, the earliest the turn can possibly be running.
+            //
+            // The window is microseconds wide, and on an idle machine registration always wins it (20,000
+            // attempts never lost a stop). Competing for the CPUs makes the sending thread get preempted inside
+            // it, as on a loaded CI runner; against the old code this failed within a few hundred attempts.
+            val id = startedSession()
+            env.streamerFor = { _ ->
+                ModelStreamer { _: Prompt, _: List<ToolDescriptor> ->
+                    flow<StreamFrame> {
+                        client.cancelSession(id)
+                        delay(2_000) // reached only if the stop was lost
+                    }
+                }
+            }
+
+            val done = AtomicBoolean(false)
+            val hogs = List(Runtime.getRuntime().availableProcessors() * 2) {
+                Thread { while (!done.get()) Thread.onSpinWait() }.apply { isDaemon = true; start() }
+            }
+            try {
+                repeat(2_000) { attempt ->
+                    assertEquals("cancelled", client.sendPrompt(request(id)) {}.stopReason(), "attempt $attempt")
+                }
+            } finally {
+                done.set(true)
+                hogs.forEach { it.join() }
+            }
         }
 
         @Test

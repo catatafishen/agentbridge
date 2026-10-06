@@ -13,6 +13,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -179,8 +180,11 @@ class KoogClient(private val env: KoogEnvironment) : AbstractClient() {
         val active = runtime ?: throw ClientPromptException("Koog is not started")
         request.modelId()?.takeIf { it.isNotBlank() && active.choices.containsKey(it) }?.let { selectedModel = it }
 
-        val turn = scope.async { conversation.runTurn(request.prompt(), onUpdate::accept) }
+        // Registered before it starts running. Started eagerly, the turn could be under way (and Stop pressed)
+        // before it was in activeTurns, so cancelSession found nothing and the Stop was silently ignored.
+        val turn = scope.async(start = CoroutineStart.LAZY) { conversation.runTurn(request.prompt(), onUpdate::accept) }
         activeTurns[sessionId] = turn
+        turn.start()
         try {
             val result = runBlocking { turn.await() }
             val usage = if (result.inputTokens != null || result.outputTokens != null) {
