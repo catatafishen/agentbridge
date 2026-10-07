@@ -101,7 +101,7 @@ public final class GrepCommandSafety {
      */
     public static @NotNull List<GrepInvocation> analyze(@NotNull String command) {
         List<GrepInvocation> invocations = new ArrayList<>();
-        for (CommandSegment segment : splitIntoSegments(tokenize(command))) {
+        for (CommandSegment segment : splitIntoSegments(tokenizeQuoteAware(command))) {
             int grepIndex = indexOfGrep(segment.tokens());
             if (grepIndex < 0) continue;
             invocations.add(new GrepInvocation(
@@ -125,8 +125,21 @@ public final class GrepCommandSafety {
      * paths handled here.
      */
     public static @NotNull List<String> tokenize(@NotNull String command) {
-        List<String> out = new ArrayList<>();
+        return tokenizeQuoteAware(command).stream().map(Token::text).toList();
+    }
+
+    /**
+     * A shell word after quote removal. {@code quoted} records that some part of it was quoted, so
+     * it is always a literal word: a quoted {@code '<failure'} pattern is not a redirection and a
+     * quoted {@code ';'} is not a command separator, even though their text looks like one.
+     */
+    private record Token(@NotNull String text, boolean quoted) {
+    }
+
+    private static @NotNull List<Token> tokenizeQuoteAware(@NotNull String command) {
+        List<Token> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
+        boolean curQuoted = false;
         char quote = 0;
         int i = 0;
         while (i < command.length()) {
@@ -137,15 +150,16 @@ public final class GrepCommandSafety {
                 i++;
             } else if (c == '\'' || c == '"') {
                 quote = c;
+                curQuoted = true;
                 i++;
             } else if (Character.isWhitespace(c)) {
-                flushToken(out, cur);
+                curQuoted = flushToken(out, cur, curQuoted);
                 i++;
             } else {
                 String operator = operatorAt(command, i);
                 if (operator != null) {
-                    flushToken(out, cur);
-                    out.add(operator);
+                    curQuoted = flushToken(out, cur, curQuoted);
+                    out.add(new Token(operator, false));
                     i += operator.length();
                 } else {
                     cur.append(c);
@@ -153,15 +167,20 @@ public final class GrepCommandSafety {
                 }
             }
         }
-        flushToken(out, cur);
+        flushToken(out, cur, curQuoted);
         return out;
     }
 
-    private static void flushToken(@NotNull List<String> out, @NotNull StringBuilder cur) {
-        if (!cur.isEmpty()) {
-            out.add(cur.toString());
+    /**
+     * Emits the pending token (an empty quoted string such as {@code ""} still counts) and returns
+     * the reset quoted flag.
+     */
+    private static boolean flushToken(@NotNull List<Token> out, @NotNull StringBuilder cur, boolean quoted) {
+        if (!cur.isEmpty() || quoted) {
+            out.add(new Token(cur.toString(), quoted));
             cur.setLength(0);
         }
+        return false;
     }
 
     /**
@@ -194,18 +213,18 @@ public final class GrepCommandSafety {
         return paths != null ? paths : List.of();
     }
 
-    private record CommandSegment(boolean fedByPipe, List<String> tokens) {
+    private record CommandSegment(boolean fedByPipe, List<Token> tokens) {
     }
 
-    private static List<CommandSegment> splitIntoSegments(List<String> tokens) {
+    private static List<CommandSegment> splitIntoSegments(List<Token> tokens) {
         List<CommandSegment> segments = new ArrayList<>();
-        List<String> current = new ArrayList<>();
+        List<Token> current = new ArrayList<>();
         boolean fedByPipe = false;
-        for (String token : tokens) {
-            if (COMMAND_SEPARATORS.contains(token)) {
+        for (Token token : tokens) {
+            if (!token.quoted() && COMMAND_SEPARATORS.contains(token.text())) {
                 segments.add(new CommandSegment(fedByPipe, current));
                 current = new ArrayList<>();
-                fedByPipe = PIPE_SEPARATORS.contains(token);
+                fedByPipe = PIPE_SEPARATORS.contains(token.text());
             } else {
                 current.add(token);
             }
@@ -223,13 +242,13 @@ public final class GrepCommandSafety {
      * the ones written here, so the invocation's real file operands cannot be determined from
      * the command text alone and must not be treated as empty.
      */
-    private static int indexOfGrep(List<String> tokens) {
+    private static int indexOfGrep(List<Token> tokens) {
         int i = 0;
-        while (i < tokens.size() && SAFE_WRAPPER_COMMANDS.contains(tokens.get(i).toLowerCase(Locale.ROOT))) {
+        while (i < tokens.size() && SAFE_WRAPPER_COMMANDS.contains(tokens.get(i).text().toLowerCase(Locale.ROOT))) {
             i++;
         }
         if (i >= tokens.size()) return -1;
-        String token = tokens.get(i);
+        String token = tokens.get(i).text();
         return token.equalsIgnoreCase("grep") || token.equalsIgnoreCase("rg") ? i : -1;
     }
 
@@ -237,7 +256,7 @@ public final class GrepCommandSafety {
      * Collects the path operands that follow a grep invocation, or returns {@code null} when one
      * of them contains a glob.
      */
-    private static @Nullable List<String> collectPathArgs(List<String> tokens, int from) {
+    private static @Nullable List<String> collectPathArgs(List<Token> tokens, int from) {
         Operands operands = stripFlags(tokens, from);
         List<String> paths = new ArrayList<>();
         boolean patternConsumed = operands.patternConsumed();
@@ -259,15 +278,16 @@ public final class GrepCommandSafety {
      * @return the operands, plus whether a flag such as {@code -e} already supplied the pattern
      * (in which case the first operand is a path rather than the pattern)
      */
-    private static Operands stripFlags(List<String> tokens, int from) {
+    private static Operands stripFlags(List<Token> tokens, int from) {
         List<String> operands = new ArrayList<>();
         boolean patternConsumed = false;
         boolean skipNext = false;
         for (int i = from; i < tokens.size(); i++) {
-            String token = tokens.get(i);
+            Token word = tokens.get(i);
+            String token = word.text();
             if (skipNext) {
                 skipNext = false;
-            } else if (isRedirection(token)) {
+            } else if (!word.quoted() && isRedirection(token)) {
                 // A redirection names a stream or an output file, never a file grep reads, so it
                 // must not be counted as a path operand — `grep -i x a.log 2>&1` searches a.log
                 // only. "2>" and "<" with a detached target consume the token after them.

@@ -82,6 +82,17 @@ class GrepCommandSafetyTest {
         }
 
         @Test
+        @DisplayName("a quoted pattern that looks like a redirection is still the pattern (#1134)")
+        void quotedRedirectionLookingPatternIsNotARedirection() {
+            assertEquals(List.of("plugin-core/build/test-results/test"),
+                GrepCommandSafety.analyze("grep -R -n '<failure' plugin-core/build/test-results/test | head -20")
+                    .getFirst().paths(),
+                "'<failure' is the pattern, so the build directory stays the only path operand");
+            assertEquals(List.of("/tmp/ci.log"),
+                GrepCommandSafety.analyze("grep \"a>b\" /tmp/ci.log").getFirst().paths());
+        }
+
+        @Test
         @DisplayName("redirections after grep are not path operands")
         void redirectionsAreNotPaths() {
             assertEquals(List.of("/tmp/ci.log"),
