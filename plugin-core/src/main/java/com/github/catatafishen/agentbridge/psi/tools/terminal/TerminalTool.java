@@ -389,10 +389,10 @@ public abstract class TerminalTool extends Tool {
     }
 
     private static final java.util.regex.Pattern SECRET_ASSIGNMENT = java.util.regex.Pattern.compile(
-        "(\\b[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)\\s*=\\s*)('[^']*'|\"[^\"]*\"|[^\\s;&|)]+)",
+        "(\\b\\w*(?:TOKEN|SECRET|PASSWORD|KEY)\\s*=\\s*)('[^']*'|\"[^\"]*\"|[^\\s;&|)]+)",
         java.util.regex.Pattern.CASE_INSENSITIVE);
     private static final java.util.regex.Pattern GITHUB_TOKEN = java.util.regex.Pattern.compile(
-        "\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})");
+        "\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\\w{20,})");
 
     /**
      * Masks credentials in the command echoed back to the agent. A pre-hook may rewrite the command

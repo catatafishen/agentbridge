@@ -42,24 +42,29 @@ object ContextTextUtils {
         var idx = 0
         for (ch in rawText) {
             if (ch == ORC && idx < items.size) {
-                val item = items[idx++]
-                sb.append('`').append(item.name).append('`')
-                val inline = item.inlineText
-                if (inline != null) {
-                    inlineBlocks.append("\n\n--- ").append(item.name).append(" ---\n").append(inline)
-                } else {
-                    sb.append(" (").append(item.path)
-                    if (item.isSelection && item.startLine > 0) {
-                        sb.append(':').append(item.startLine)
-                        if (item.endLine > item.startLine) sb.append('-').append(item.endLine)
-                    }
-                    sb.append(')')
-                }
+                appendNudgeChip(items[idx++], sb, inlineBlocks)
             } else {
                 sb.append(ch)
             }
         }
         return (sb.toString().trim() + inlineBlocks).trim()
+    }
+
+    /** Renders one chip into [sb]; chips with inline text defer their content to [inlineBlocks]. */
+    private fun appendNudgeChip(item: ContextItemData, sb: StringBuilder, inlineBlocks: StringBuilder) {
+        sb.append('`').append(item.name).append('`')
+        val inline = item.inlineText
+        if (inline != null) {
+            inlineBlocks.append("\n\n--- ").append(item.name).append(" ---\n").append(inline)
+        } else {
+            sb.append(" (").append(item.path).append(selectionRangeSuffix(item)).append(')')
+        }
+    }
+
+    private fun selectionRangeSuffix(item: ContextItemData): String = when {
+        !item.isSelection || item.startLine <= 0 -> ""
+        item.endLine > item.startLine -> ":${item.startLine}-${item.endLine}"
+        else -> ":${item.startLine}"
     }
 
     /**
