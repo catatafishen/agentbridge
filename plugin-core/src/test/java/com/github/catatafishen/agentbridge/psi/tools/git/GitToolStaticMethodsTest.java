@@ -50,6 +50,35 @@ class GitToolStaticMethodsTest {
         }
     }
 
+    @Nested
+    class FormatStaleBaseWarning {
+
+        @Test
+        void warnsWhenBaseIsBehindUpstreamAndSaysNoFetchWasRun() {
+            String warning = GitBranchTool.formatStaleBaseWarning("master", "origin/master", "3\n");
+            assertTrue(warning.contains("'master' is 3 commit(s) behind its upstream 'origin/master'"), warning);
+            assertTrue(warning.contains("no fetch was run"), warning);
+            assertTrue(warning.contains("base: 'origin/master'"), warning);
+        }
+
+        @Test
+        void silentWhenUpToDate() {
+            assertEquals("", GitBranchTool.formatStaleBaseWarning("master", "origin/master", "0"));
+        }
+
+        @Test
+        void silentWhenBaseHasNoUpstreamOrGitFailed() {
+            assertEquals("", GitBranchTool.formatStaleBaseWarning("origin/master", null, null));
+            assertEquals("", GitBranchTool.formatStaleBaseWarning("master", "origin/master", null));
+            assertEquals("", GitBranchTool.formatStaleBaseWarning("master", null, "2"));
+        }
+
+        @Test
+        void silentWhenCountIsNotANumber() {
+            assertEquals("", GitBranchTool.formatStaleBaseWarning("master", "origin/master", "fatal: bad"));
+        }
+    }
+
     // ── formatPorcelainStatus ───────────────────────────────
 
     @Nested
