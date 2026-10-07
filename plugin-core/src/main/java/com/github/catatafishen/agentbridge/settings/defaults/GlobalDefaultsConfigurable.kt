@@ -27,7 +27,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
 
     override fun getId(): String = ID
 
-    override fun getDisplayName(): String = "Global Defaults"
+    override fun getDisplayName(): String = TITLE
 
     override fun createComponent(): JComponent {
         val component = panel {
@@ -103,7 +103,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
 
     private fun nothingSelected(): Boolean {
         if (selected().isNotEmpty()) return false
-        Messages.showInfoMessage(project, "Check at least one group of settings first.", "Global Defaults")
+        Messages.showInfoMessage(project, "Check at least one group of settings first.", TITLE)
         return true
     }
 
@@ -124,7 +124,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             engine.save(project, chosen)
             engine.syncAll(ProjectManager.getInstance().openProjects.filter { it != project && !it.isDisposed })
         } catch (e: Exception) {
-            Messages.showErrorDialog(project, "Could not save the defaults: ${e.message}", "Global Defaults")
+            Messages.showErrorDialog(project, "Could not save the defaults: ${e.message}", TITLE)
             return
         }
         refresh()
@@ -135,7 +135,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             project,
             "Saved this project's settings for: ${names(chosen)}.\n\n" +
                 "This project and every project that follows the defaults now use them.$failure",
-            "Global Defaults",
+            TITLE,
         )
     }
 
@@ -144,7 +144,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         val chosen = selected()
         val withDefaults = chosen.filter { engine.hasDefaults(it) }
         if (withDefaults.isEmpty()) {
-            Messages.showInfoMessage(project, "None of the checked groups has global defaults yet.", "Global Defaults")
+            Messages.showInfoMessage(project, "None of the checked groups has global defaults yet.", TITLE)
             return
         }
         if (!confirm(
@@ -156,7 +156,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         val result = try {
             engine.apply(project, chosen)
         } catch (e: Exception) {
-            Messages.showErrorDialog(project, "Could not apply the defaults: ${e.message}", "Global Defaults")
+            Messages.showErrorDialog(project, "Could not apply the defaults: ${e.message}", TITLE)
             return
         }
         refresh()
@@ -168,7 +168,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
                 "Options the servers read when they start (MCP server, memory, code graph) apply after the " +
                 "MCP server is restarted or the project is reopened. Reopen this dialog to see the new values " +
                 "on the other settings pages.",
-            "Global Defaults",
+            TITLE,
         )
     }
 
@@ -176,7 +176,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         if (nothingSelected()) return
         val saved = selected().filter { engine.hasDefaults(it) }
         if (saved.isEmpty()) {
-            Messages.showInfoMessage(project, "None of the checked groups has global defaults.", "Global Defaults")
+            Messages.showInfoMessage(project, "None of the checked groups has global defaults.", TITLE)
             return
         }
         if (!confirm(
@@ -192,6 +192,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
 
     companion object {
         const val ID = "com.github.catatafishen.agentbridge.globalDefaults"
+        private const val TITLE = "Global Defaults"
         private const val FOLLOWS = "Follows global defaults"
         private const val OVERRIDES = "Overrides in this project"
     }
