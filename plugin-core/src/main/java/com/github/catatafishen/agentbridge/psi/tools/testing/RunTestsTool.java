@@ -501,7 +501,7 @@ public final class RunTestsTool extends TestingTool {
     private String runTestsViaGradleConfig(String target, String module, String testTask) {
         try {
             String taskPrefix = buildGradleTaskPrefix(module);
-            String resolvedTask = testTask.isEmpty() ? resolveTestTask() : testTask;
+            String resolvedTask = testTask.isEmpty() ? resolveTestTask(module) : testTask;
             String configName = "Gradle Test: " + target;
 
             TestExecutionTracker tracker = new TestExecutionTracker(project, configName);
@@ -583,8 +583,8 @@ public final class RunTestsTool extends TestingTool {
      * Resolves the test task name to use. Falls back to the standard {@code "test"} task
      * if nothing custom is found via the project model or build files.
      */
-    private String resolveTestTask() {
-        String detected = detectTestTask();
+    private String resolveTestTask(@NotNull String module) {
+        String detected = detectTestTask(module);
         return detected != null ? detected : "test";
     }
 
@@ -599,12 +599,12 @@ public final class RunTestsTool extends TestingTool {
      * standard {@code "test"} task is present or nothing could be detected
      */
     @Nullable
-    private String detectTestTask() {
+    private String detectTestTask(@NotNull String module) {
         String basePath = project.getBasePath();
         if (basePath == null) return null;
 
         boolean externalDataFound = false;
-        String customTask = null;
+        List<TestTaskInfo> tasks = new ArrayList<>();
         for (ExternalSystemManager<?, ?, ?, ?, ?> manager : ExternalSystemApiUtil.getAllManagers()) {
             var systemId = manager.getSystemId();
             ExternalProjectInfo info = ProjectDataManager.getInstance()
@@ -615,20 +615,47 @@ public final class RunTestsTool extends TestingTool {
                 info.getExternalProjectStructure(), ProjectKeys.TASK);
             for (var taskNode : taskNodes) {
                 TaskData task = taskNode.getData();
-                if (!task.isTest()) continue;
-                // The model spans every module, and "test" is registered by each Gradle module that
-                // applies a JVM plugin. A custom task found in some *other* module (e.g. an
-                // `integrationTest` in a sibling UI-test module) must not hijack the standard
-                // task: it does not exist in, or match no tests of, the module being tested
-                // (#1113, #1130, #1135).
-                String name = task.getName();
-                if ("test".equals(name)) return null;
-                if (customTask == null && isCustomTestTask(name, true)) customTask = name;
+                tasks.add(new TestTaskInfo(task.getName(), task.getLinkedExternalProjectPath(), task.isTest()));
             }
         }
-        if (externalDataFound) return customTask;
+        if (externalDataFound) return selectTestTask(tasks, basePath, module);
 
         return GradleBuildFileScanner.detectTestTask(basePath);
+    }
+
+    /**
+     * A task from the external-system model together with the project directory that owns it.
+     */
+    record TestTaskInfo(@NotNull String name, @NotNull String projectPath, boolean markedAsTest) {
+    }
+
+    /**
+     * Picks the non-standard test task for {@code module}, or {@code null} when the standard
+     * {@code test} task should be used.
+     *
+     * <p>Only tasks owned by the requested module are considered ({@code module} is a Gradle path
+     * such as {@code plugin-core} or {@code a:b}; empty means the root project). The model spans
+     * every module, so a custom task of another module (e.g. an {@code integrationTest} in a sibling
+     * UI-test module) must not be chosen, and another module's {@code test} task must not hide that
+     * the requested module only has a custom one (#1113, #1130, #1135).
+     */
+    static @Nullable String selectTestTask(@NotNull List<TestTaskInfo> tasks,
+                                           @NotNull String basePath, @NotNull String module) {
+        String scope = normalizeProjectPath(module.isEmpty()
+            ? basePath
+            : basePath + "/" + module.replaceFirst("^:+", "").replace(':', '/'));
+        String custom = null;
+        for (TestTaskInfo task : tasks) {
+            if (!task.markedAsTest() || !scope.equals(normalizeProjectPath(task.projectPath()))) continue;
+            if ("test".equals(task.name())) return null;
+            if (custom == null && isCustomTestTask(task.name(), true)) custom = task.name();
+        }
+        return custom;
+    }
+
+    private static String normalizeProjectPath(@NotNull String path) {
+        String normalized = path.replace('\\', '/');
+        return normalized.endsWith("/") ? normalized.substring(0, normalized.length() - 1) : normalized;
     }
 
     static boolean isCustomTestTask(@NotNull String name, boolean markedAsTest) {
