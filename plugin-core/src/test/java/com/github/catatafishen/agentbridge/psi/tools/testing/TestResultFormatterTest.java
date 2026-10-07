@@ -92,6 +92,24 @@ class TestResultFormatterTest {
         }
 
         @Test
+        @DisplayName("exit code 0 without collected results still states a PASSED verdict")
+        void passedEmptyOutputStatesVerdict() {
+            String result = TestResultFormatter.formatTestSummary(0, "MyTestConfig", "");
+
+            assertTrue(result.startsWith("Tests PASSED (exit code 0) — MyTestConfig"), result);
+            assertTrue(result.contains("no per-test results could be collected"), result);
+        }
+
+        @Test
+        @DisplayName("non-zero exit without results explains the run may not have executed any test")
+        void failedEmptyOutputExplainsMissingResults() {
+            String result = TestResultFormatter.formatTestSummary(1, "FailConfig", "");
+
+            assertTrue(result.contains("No test results were collected"), result);
+            assertTrue(result.contains("filter matched no tests"), result);
+        }
+
+        @Test
         @DisplayName("summary uses em dash separator between status and config name")
         void emDashSeparator() {
             String result = TestResultFormatter.formatTestSummary(0, "DashTest", "");
