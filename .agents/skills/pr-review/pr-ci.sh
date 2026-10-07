@@ -7,12 +7,16 @@ set -euo pipefail
 PR="${1:?Usage: pr-ci.sh <PR_NUMBER> [owner/repo]}"
 REPO="${2:-catatafishen/agentbridge}"
 
+# `gh pr checks` exits non-zero (8 = checks failing/pending) precisely when this script has work
+# to do, so its status must not abort the script under `set -e` / `pipefail` (#1115).
+CHECKS=$(gh pr checks "$PR" --repo "$REPO" 2>&1) || true
+
 echo "=== CI checks for PR #$PR ==="
-gh pr checks "$PR" --repo "$REPO" 2>&1
+echo "$CHECKS"
 
 # Extract job IDs from failing check URLs.
 # gh pr checks output is tab-separated; URL format: .../runs/<RUN_ID>/job/<JOB_ID>
-FAILING_JOBS=$(gh pr checks "$PR" --repo "$REPO" 2>&1 | python3 -c "
+FAILING_JOBS=$(echo "$CHECKS" | python3 -c "
 import sys, re
 for line in sys.stdin:
     if 'fail' in line.lower():
