@@ -33,6 +33,8 @@ public final class CodexClientExporter {
     private static final String F_CONTENT = "content";
     private static final String F_TIMESTAMP = "timestamp";
 
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+
     private CodexClientExporter() {
     }
 
@@ -65,7 +67,7 @@ public final class CodexClientExporter {
         try {
             String threadId = newUuidV7().toString();
             // Codex looks up rollouts at sessions/YYYY/MM/DD/rollout-<timestamp>-<thread-id>.jsonl
-            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.systemDefault());
             Path sessionDir = sessionsDir
                 .resolve(String.format("%04d", now.getYear()))
                 .resolve(String.format("%02d", now.getMonthValue()))
@@ -95,10 +97,9 @@ public final class CodexClientExporter {
      * matching the thread-id format used by native Codex threads.
      */
     public static UUID newUuidV7() {
-        java.security.SecureRandom rnd = new java.security.SecureRandom();
         long millis = System.currentTimeMillis();
-        long msb = (millis << 16) | 0x7000L | (rnd.nextLong() & 0x0FFFL);
-        long lsb = (rnd.nextLong() & 0x3FFFFFFFFFFFFFFFL) | 0x8000000000000000L;
+        long msb = (millis << 16) | 0x7000L | (RANDOM.nextLong() & 0x0FFFL);
+        long lsb = (RANDOM.nextLong() & 0x3FFFFFFFFFFFFFFFL) | 0x8000000000000000L;
         return new UUID(msb, lsb);
     }
 
