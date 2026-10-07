@@ -36,7 +36,8 @@ public final class GitBranchTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "List, create, switch, or delete branches. After create or switch, returns "
-            + "branch context: tracking status, ahead/behind counts, and uncommitted changes.";
+            + "branch context: tracking status, ahead/behind counts, and uncommitted changes. "
+            + "Never fetches: create's 'base' is used as-is (see its parameter description).";
     }
 
     @Override
@@ -54,7 +55,10 @@ public final class GitBranchTool extends GitTool {
         return schema(
             Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'switch', 'delete'"),
             Param.optional(PARAM_NAME, TYPE_STRING, "Branch name (required for create/switch/delete)"),
-            Param.optional(PARAM_BASE, TYPE_STRING, "Base ref for create (default: HEAD)"),
+            Param.optional(PARAM_BASE, TYPE_STRING, "Base ref for create (default: HEAD). Never fetches. "
+                + "A local branch such as 'master' may be behind the remote; to branch from the latest remote "
+                + "state, run git_fetch and pass e.g. 'origin/master'. If a local branch is given, the response "
+                + "warns when it is behind its already-fetched upstream."),
             Param.optional(PARAM_ALL, TYPE_BOOLEAN, "For list: include remote branches"),
             Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "For delete: force delete unmerged branches"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
@@ -105,7 +109,37 @@ public final class GitBranchTool extends GitTool {
         String result = runGitIn(setupError, createBranchArgs(name, base));
         if (result.startsWith(ERR_PREFIX)) return result;
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
-        return "Created and switched to branch '" + name + "'\n" + getBranchContextIn(setupError);
+        return "Created and switched to branch '" + name + "'\n" + getBranchContextIn(setupError)
+            + staleBaseWarning(setupError, base);
+    }
+
+    /**
+     * Warns when {@code base} is a local branch that is behind its upstream, using only refs that
+     * are already present locally. Nothing is fetched, so this detects a stale base relative to the
+     * last fetch, not commits that were never fetched. Silent when {@code base} is absent, is not a
+     * local branch with an upstream, or is up to date.
+     */
+    private @NotNull String staleBaseWarning(@NotNull String root, @Nullable String base) {
+        if (base == null) return "";
+        String behind = runGitInQuiet(root, "rev-list", "--count", base + ".." + base + "@{upstream}");
+        String upstream = runGitInQuiet(root, "rev-parse", "--abbrev-ref", base + "@{upstream}");
+        return formatStaleBaseWarning(base, upstream, behind);
+    }
+
+    static @NotNull String formatStaleBaseWarning(@NotNull String base, @Nullable String upstream,
+                                                  @Nullable String behindCount) {
+        if (upstream == null || behindCount == null) return "";
+        int behind;
+        try {
+            behind = Integer.parseInt(behindCount.trim());
+        } catch (NumberFormatException e) {
+            return "";
+        }
+        if (behind <= 0) return "";
+        return "\n⚠️ Base '" + base + "' is " + behind + " commit(s) behind its upstream '" + upstream.trim()
+            + "' (as of the last fetch; no fetch was run), so the new branch starts from an outdated state. "
+            + "Run git_fetch and recreate the branch with base: '" + upstream.trim() + "', "
+            + "or rebase it with git_rebase(branch: '" + upstream.trim() + "').";
     }
 
     /**

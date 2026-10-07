@@ -119,6 +119,9 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - One logical change per branch — do not bundle unrelated changes
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
+- Create the branch from fresh remote state: run `git_fetch`, then `git_branch` with `base: "origin/master"`. A bare
+  `base: "master"` is the *local* branch, which may be behind the remote; `git_branch` never fetches for you (it only
+  warns when a local base is behind its already-fetched upstream).
 
 ## Do Not Fan Out Branches While Work Is Unmerged
 
