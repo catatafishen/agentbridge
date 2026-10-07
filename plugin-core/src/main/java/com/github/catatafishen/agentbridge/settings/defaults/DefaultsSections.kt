@@ -3,14 +3,11 @@ package com.github.catatafishen.agentbridge.settings.defaults
 import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings
 import com.github.catatafishen.agentbridge.memory.MemorySettings
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings
-import com.github.catatafishen.agentbridge.services.ActiveAgentManager
-import com.github.catatafishen.agentbridge.services.AgentProfileManager
-import com.github.catatafishen.agentbridge.services.CleanupSettings
-import com.github.catatafishen.agentbridge.services.GenericSettings
-import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
+import com.intellij.openapi.project.Project
 
 /**
  * Every group of project settings that can be a global default.
@@ -34,6 +31,7 @@ object DefaultsSections {
             component = { McpServerSettings.getInstance(it) },
             stateClass = McpServerSettings.State::class.java,
             keep = ::keepProjectPort,
+            neutralize = ::forgetProjectPort,
         ),
         StateDefaultsSection(
             id = "custom-mcp",
@@ -65,9 +63,13 @@ object DefaultsSections {
         PropertyDefaultsSection(
             id = "client-options",
             title = "Agent client options",
-            description = "Per agent: model, agent, mode, effort and limits. Options an agent reports itself " +
+            description = "Per agent: custom start command, model, agent, mode, effort and limits. Options an agent reports itself " +
                 "(other than effort) are not copied.",
-            keys = { AgentProfileManager.getInstance().allProfiles.flatMap { GenericSettings.userChoiceKeys(it.id) } },
+            keys = {
+                AgentProfileManager.getInstance().allProfiles.flatMap {
+                    GenericSettings.userChoiceKeys(it.id) + ActiveAgentManager.customAcpCommandKey(it.id)
+                }
+            },
         ),
         StateDefaultsSection(
             id = "chat-history",
@@ -124,6 +126,10 @@ object DefaultsSections {
     val projectFiles: List<String> =
         all.filterIsInstance<StateDefaultsSection<*>>().map { it.storageFile } + "chatWebServer.xml"
 
+    /** Whether [project] has a value for any of the properties the sections own: it was configured by hand. */
+    fun hasProjectProperties(project: Project): Boolean =
+        all.filterIsInstance<PropertyDefaultsSection>().any { it.capture(project).isNotEmpty() }
+
     fun engine(): DefaultsEngine = DefaultsEngine(all, GlobalDefaults.getInstance())
 
     /**
@@ -133,5 +139,12 @@ object DefaultsSections {
     internal fun keepProjectPort(current: McpServerSettings.State, incoming: McpServerSettings.State) {
         incoming.port = current.port
         incoming.isStaticPort = current.isStaticPort
+    }
+
+    /** What [keepProjectPort] leaves alone must not count as part of the section, or changing it would look like an edit. */
+    internal fun forgetProjectPort(state: McpServerSettings.State) {
+        val builtIn = McpServerSettings.State()
+        state.port = builtIn.port
+        state.isStaticPort = builtIn.isStaticPort
     }
 }

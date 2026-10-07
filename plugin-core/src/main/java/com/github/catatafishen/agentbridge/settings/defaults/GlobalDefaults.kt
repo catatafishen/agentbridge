@@ -39,30 +39,46 @@ class GlobalDefaults : PersistentStateComponent<GlobalDefaults.State> {
 
     fun entriesFor(sectionId: String): Map<String, String> {
         val prefix = prefixOf(sectionId)
-        return current.entries.filterKeys { it.startsWith(prefix) }.mapKeys { it.key.removePrefix(prefix) }
+        return current.entries
+            .filterKeys { it.startsWith(prefix) && it != presenceKey(sectionId) }
+            .mapKeys { it.key.removePrefix(prefix) }
     }
 
-    fun hasDefaults(sectionId: String): Boolean {
-        val prefix = prefixOf(sectionId)
-        return current.entries.keys.any { it.startsWith(prefix) }
-    }
+    /**
+     * Whether [sectionId] has saved defaults. A saved section can have no values at all (a project that uses only
+     * the built-in ones), which is different from nothing saved, so presence is recorded on its own.
+     */
+    fun hasDefaults(sectionId: String): Boolean = presenceKey(sectionId) in current.entries
 
     /** Replaces everything saved for [sectionId], so a value that was dropped from the section is dropped here. */
     @Synchronized
     fun replace(sectionId: String, entries: Map<String, String>) {
-        val prefix = prefixOf(sectionId)
-        val next = LinkedHashMap(current.entries.filterKeys { !it.startsWith(prefix) })
-        for ((key, value) in entries) next[prefix + key] = value
+        val next = withoutSection(sectionId)
+        next[presenceKey(sectionId)] = PRESENT
+        for ((key, value) in entries) next[prefixOf(sectionId) + key] = value
         current = State().also { it.entries = next }
     }
 
     @Synchronized
-    fun clear(sectionId: String) = replace(sectionId, emptyMap())
+    fun clear(sectionId: String) {
+        current = State().also { it.entries = withoutSection(sectionId) }
+    }
+
+    private fun withoutSection(sectionId: String): MutableMap<String, String> {
+        val prefix = prefixOf(sectionId)
+        return LinkedHashMap(current.entries.filterKeys { !it.startsWith(prefix) })
+    }
+
+    private fun presenceKey(sectionId: String) = prefixOf(sectionId) + PRESENCE_KEY
 
     private fun prefixOf(sectionId: String) = sectionId + SEPARATOR
 
     companion object {
         private const val SEPARATOR = "|"
+
+        // A key a section cannot use for a value of its own: those are setting names or "xml".
+        private const val PRESENCE_KEY = "#saved"
+        private const val PRESENT = "true"
 
         @JvmStatic
         fun getInstance(): GlobalDefaults = ApplicationManager.getApplication().getService(GlobalDefaults::class.java)

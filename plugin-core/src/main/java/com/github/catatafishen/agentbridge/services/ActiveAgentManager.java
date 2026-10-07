@@ -231,6 +231,15 @@ public final class ActiveAgentManager implements Disposable {
         );
     }
 
+    /**
+     * The property that holds the custom start command of one agent profile. Lives with the other
+     * per-agent choices, so the global defaults list it for every profile.
+     */
+    @NotNull
+    public static String customAcpCommandKey(@NotNull String profileId) {
+        return KEY_CUSTOM_ACP_COMMAND + "." + profileId;
+    }
+
     private static final String KEY_BRANCH_SESSION_AT_STARTUP = "agent.branchSessionAtStartup";
 
     /**
@@ -246,7 +255,6 @@ public final class ActiveAgentManager implements Disposable {
         KEY_ALLOW_TRANSIENT_FILE_OPENS,
         KEY_EDIT_APPROVAL_AUTO_DIFF,
         KEY_AUTO_CONNECT,
-        KEY_CUSTOM_ACP_COMMAND,
         KEY_SHARED_TURN_TIMEOUT_MINUTES,
         KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS,
         KEY_SHARED_MAX_TOOL_CALLS,
@@ -673,7 +681,7 @@ public final class ActiveAgentManager implements Disposable {
     public String getCustomAcpCommand() {
         String profileId = getActiveProfileId();
         String stored = PropertiesComponent.getInstance(project)
-            .getValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId);
+            .getValue(customAcpCommandKey(profileId));
         if (stored != null && !stored.isEmpty()) {
             return stored;
         }
@@ -685,13 +693,13 @@ public final class ActiveAgentManager implements Disposable {
         String defaultCommand = getActiveProfile().getDefaultStartCommand();
         String value = command.equals(defaultCommand) ? "" : command;
         PropertiesComponent.getInstance(project)
-            .setValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId, value, "");
+            .setValue(customAcpCommandKey(profileId), value, "");
     }
 
     @NotNull
     public String getCustomAcpCommandFor(@NotNull String profileId) {
         String stored = PropertiesComponent.getInstance(project)
-            .getValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId);
+            .getValue(customAcpCommandKey(profileId));
         if (stored != null && !stored.isEmpty()) {
             return stored;
         }
@@ -704,7 +712,7 @@ public final class ActiveAgentManager implements Disposable {
         String defaultCommand = profile != null ? profile.getDefaultStartCommand() : "";
         String value = command.equals(defaultCommand) ? "" : command;
         PropertiesComponent.getInstance(project)
-            .setValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId, value, "");
+            .setValue(customAcpCommandKey(profileId), value, "");
     }
 
     // ── Backwards compatibility ──────────────────────────────────────────────
