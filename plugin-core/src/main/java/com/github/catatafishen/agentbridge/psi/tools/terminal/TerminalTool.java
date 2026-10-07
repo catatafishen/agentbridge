@@ -132,7 +132,7 @@ public abstract class TerminalTool extends Tool {
                     + "Reuse an existing terminal or close one with close_terminal.");
         }
 
-        String title = tabName != null ? tabName : "Agent: " + truncateForTitle(command);
+        String title = tabName != null ? tabName : "Agent: " + truncateForTitle(redactSecrets(command));
         List<String> shellCommand = shell != null ? List.of(shell) : null;
         var createSession = managerClass.getMethod(
             "createNewSession",
@@ -386,6 +386,26 @@ public abstract class TerminalTool extends Tool {
         } catch (Exception e) {
             result.append("\nCould not determine IntelliJ default shell.");
         }
+    }
+
+    private static final java.util.regex.Pattern SECRET_ASSIGNMENT = java.util.regex.Pattern.compile(
+        "(\\b[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)\\s*=\\s*)('[^']*'|\"[^\"]*\"|[^\\s;&|)]+)",
+        java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern GITHUB_TOKEN = java.util.regex.Pattern.compile(
+        "\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})");
+
+    /**
+     * Masks credentials in the command echoed back to the agent. A pre-hook may rewrite the command
+     * to inject secrets (e.g. {@code (export GH_TOKEN='...'; gh ...)}), and the response would
+     * otherwise leak them into the conversation transcript.
+     */
+    protected static @NotNull String redactSecrets(@NotNull String command) {
+        String masked = SECRET_ASSIGNMENT.matcher(command).replaceAll(m -> {
+            String value = m.group(2);
+            char quote = value.charAt(0) == '\'' || value.charAt(0) == '"' ? value.charAt(0) : '\'';
+            return java.util.regex.Matcher.quoteReplacement(m.group(1) + quote + "***" + quote);
+        });
+        return GITHUB_TOKEN.matcher(masked).replaceAll("***");
     }
 
     protected static String truncateForTitle(String command) {

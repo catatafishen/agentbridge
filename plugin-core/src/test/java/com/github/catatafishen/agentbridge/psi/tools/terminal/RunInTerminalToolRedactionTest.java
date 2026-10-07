@@ -19,6 +19,20 @@ class RunInTerminalToolRedactionTest {
     }
 
     @Test
+    void masksBareCredentialVariableNames() {
+        assertEquals("TOKEN='***' run", RunInTerminalTool.redactSecrets("TOKEN=short-secret run"));
+        assertEquals("password='***' run", RunInTerminalTool.redactSecrets("password=hunter2 run"));
+    }
+
+    @Test
+    void redactedCommandIsUsedForTabTitleBeforeTruncation() {
+        String command = "(export GH_TOKEN='ghs_abcdefghijklmnopqrstuvwxyz0123'; gh pr view 1)";
+        String title = RunInTerminalTool.truncateForTitle(RunInTerminalTool.redactSecrets(command));
+        assertEquals(-1, title.indexOf("ghs_"), title);
+        assertEquals(-1, title.indexOf("abcdefgh"), title);
+    }
+
+    @Test
     void masksBareGithubTokens() {
         assertEquals("curl -H 'Authorization: bearer ***'",
             RunInTerminalTool.redactSecrets("curl -H 'Authorization: bearer ghp_abcdefghijklmnopqrstuvwxyz0123'"));

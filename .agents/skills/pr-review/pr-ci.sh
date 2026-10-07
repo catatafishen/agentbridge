@@ -7,9 +7,12 @@ set -euo pipefail
 PR="${1:?Usage: pr-ci.sh <PR_NUMBER> [owner/repo]}"
 REPO="${2:-catatafishen/agentbridge}"
 
-# `gh pr checks` exits non-zero (8 = checks failing/pending) precisely when this script has work
-# to do, so its status must not abort the script under `set -e` / `pipefail` (#1115).
-CHECKS=$(gh pr checks "$PR" --repo "$REPO" 2>&1) || true
+# `gh pr checks` exits non-zero when checks fail or are pending, which is exactly when this script has
+# work to do, so its status must not abort the script under `set -e` / `pipefail` (#1115). The status
+# is kept so that a non-zero exit with nothing to extract (auth/network/invalid PR, or checks still
+# pending) is still reported as non-success instead of "No failing job URLs found" / exit 0.
+CHECKS_STATUS=0
+CHECKS=$(gh pr checks "$PR" --repo "$REPO" 2>&1) || CHECKS_STATUS=$?
 
 echo "=== CI checks for PR #$PR ==="
 echo "$CHECKS"
@@ -27,6 +30,11 @@ for line in sys.stdin:
 
 if [ -z "$FAILING_JOBS" ]; then
     echo ""
+    if [ "$CHECKS_STATUS" -ne 0 ]; then
+        echo "✗ gh pr checks exited with status $CHECKS_STATUS and no failing job URLs were found" \
+            "(error above, or checks still pending)"
+        exit "$CHECKS_STATUS"
+    fi
     echo "✓ No failing job URLs found"
     exit 0
 fi

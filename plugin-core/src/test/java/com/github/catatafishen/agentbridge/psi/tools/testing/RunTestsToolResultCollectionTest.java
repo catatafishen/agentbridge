@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RunTestsToolResultCollectionTest {
@@ -60,6 +62,46 @@ class RunTestsToolResultCollectionTest {
         assertFalse(RunTestsTool.isCustomTestTask("build", true));
         assertTrue(RunTestsTool.isCustomTestTask("integrationTest", true));
         assertFalse(RunTestsTool.isCustomTestTask("integrationTest", false));
+    }
+
+    private static final String BASE = "/work/repo";
+
+    private static RunTestsTool.TestTaskInfo task(String name, String projectPath) {
+        return new RunTestsTool.TestTaskInfo(name, projectPath, true);
+    }
+
+    @Test
+    void siblingModulesCustomTaskIsNotSelected() {
+        var tasks = List.of(
+            task("test", BASE + "/plugin-core"),
+            task("integrationTest", BASE + "/ide-integration-tests"));
+
+        assertNull(RunTestsTool.selectTestTask(tasks, BASE, "plugin-core"));
+    }
+
+    @Test
+    void anotherModulesTestTaskDoesNotHideTheRequestedModulesCustomTask() {
+        var tasks = List.of(
+            task("test", BASE + "/module-a"),
+            task("integrationTest", BASE + "/module-b"));
+
+        assertEquals("integrationTest", RunTestsTool.selectTestTask(tasks, BASE, "module-b"));
+        assertNull(RunTestsTool.selectTestTask(tasks, BASE, "module-a"));
+    }
+
+    @Test
+    void nestedGradlePathAndRootProjectAreResolvedToDirectories() {
+        var tasks = List.of(
+            task("uiTest", BASE + "/libs/ui"),
+            task("rootTest", BASE + "/"));
+
+        assertEquals("uiTest", RunTestsTool.selectTestTask(tasks, BASE, ":libs:ui"));
+        assertEquals("rootTest", RunTestsTool.selectTestTask(tasks, BASE, ""));
+    }
+
+    @Test
+    void moduleWithNoRegisteredTestTasksUsesTheStandardTask() {
+        assertNull(RunTestsTool.selectTestTask(List.of(task("integrationTest", BASE + "/other")), BASE, "plugin-core"));
     }
 
     public static final class FakeConsole {
