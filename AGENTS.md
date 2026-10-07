@@ -440,10 +440,15 @@ System prompt goes here...
 
 **Bundled Agents**:
 
-- `ide-general` — general-purpose agent with most IntelliJ tools enabled (default)
-- `intellij-explore` — read-only exploration agent with code intelligence
+- `agentbridge` — primary agent (default). Its own `prompt` (`agents/opencode/agentbridge-system-prompt.md`) replaces
+  OpenCode's model-specific base prompt (`session/llm/request.ts`: `agent.prompt ?? SystemPrompt.provider(model)`), so
+  the model is not told about OpenCode's built-in tools, all of which are denied. OpenCode still appends an
+  environment block, project instruction files (`AGENTS.md`), MCP instructions and the `skill`/`task` tools.
 
-Injected via `OPENCODE_CONFIG_CONTENT` JSON config (not `.md` files).
+Defined in the `OPENCODE_CONFIG_CONTENT` JSON config (not `.md` files) and selected with `session/set_mode` after
+`session/new`: OpenCode starts every session in `build`, and only primary agents are valid modes (it rejects subagents
+such as `general`). Do not use `default_agent` — OpenCode v1.4.10+ rejects subagent slugs there. The legacy
+`ide-general.md` / `ide-explore.md` files under `resources/agents/opencode/` are not injected into OpenCode.
 
 **Status**: ✅ Working (permission config + agent definitions fully supported)
 
@@ -513,7 +518,7 @@ plugin launches Hermes without a TTY for hook prompts)
 | Agent    | MCP Tool Prefix    | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests    | Bundled Agents                      | Status                     |
 |----------|--------------------|----------------------------------|------------------------------------------------------------|------------------------|-------------------------------------|----------------------------|
 | Copilot  | `agentbridge-`     | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools      | 2 (intellij-explore, intellij-task) | Working (filtering broken) |
-| OpenCode | `agentbridge_`     | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                  | 2 (ide-general, intellij-explore)   | ✅ Working                  |
+| OpenCode | `agentbridge_`     | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                  | 1 (agentbridge)                     | ✅ Working                  |
 | Junie    | `agentbridge-`     | ❌ No support                     | N/A                                                        | ❌ No (auto-executes)   | 0                                   | Prompt workaround only     |
 | Kiro     | `@agentbridge/`    | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts    | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
 | Hermes   | `mcp_agentbridge_` | ❌ No ACP-side definitions        | N/A (gating via `~/.hermes/config.yaml` toolsets/skills)   | ✅ Via `--accept-hooks` | 0 (sub-agents via `delegate_task`)  | ✅ Working                  |

@@ -778,7 +778,7 @@ public final class KiroClient extends AcpClient {
         }
         String slug = getCurrentAgentSlug();
         if (isSelectableMode(slug) && !slug.equals(getCurrentModeSlug())) {
-            applyKiroMode(sessionId, slug);
+            sendSetMode(sessionId, slug);
         }
     }
 
@@ -795,7 +795,7 @@ public final class KiroClient extends AcpClient {
         }
         String sessionId = getActiveSessionId();
         if (sessionId != null && !sessionId.isBlank()) {
-            applyKiroMode(sessionId, slug);
+            sendSetMode(sessionId, slug);
         }
     }
 
@@ -808,29 +808,6 @@ public final class KiroClient extends AcpClient {
             return false;
         }
         return getAvailableModes().stream().anyMatch(m -> slug.equals(m.slug()));
-    }
-
-    /**
-     * Builds the {@code session/set_mode} request params for the given session and mode.
-     * The Kiro (standard ACP) field name is {@code modeId}. Pure for unit testing.
-     */
-    static JsonObject buildSetModeParams(String sessionId, String modeId) {
-        JsonObject params = new JsonObject();
-        params.addProperty("sessionId", sessionId);
-        params.addProperty("modeId", modeId);
-        return params;
-    }
-
-    private void applyKiroMode(String sessionId, String modeId) {
-        transport.sendRequest("session/set_mode", buildSetModeParams(sessionId, modeId))
-            .orTimeout(10, TimeUnit.SECONDS)
-            .whenComplete((result, ex) -> {
-                if (ex != null) {
-                    LOG.warn("Kiro v3: session/set_mode failed for " + modeId + ": " + ex.getMessage());
-                } else {
-                    LOG.info("Kiro v3: session/set_mode " + modeId + " applied for session " + sessionId);
-                }
-            });
     }
 
     /**

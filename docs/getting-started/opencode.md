@@ -11,8 +11,9 @@ many model providers, so you keep your choice of model.
 - OpenCode sees IDE errors, warnings and inspection results after edits.
   See [How IDE feedback reaches the agent](../concepts/ide-feedback-loop.md).
 - Builds, tests, run configurations and Git run through the IDE.
-- AgentBridge supplies OpenCode agent definitions: `ide-general` (most IntelliJ tools) and `intellij-explore`
-  (read-only exploration).
+- AgentBridge adds an **AgentBridge** agent to OpenCode and selects it by default. It uses the IDE tools only and has
+  its own system prompt in place of OpenCode's, so the model is not told about built-in tools (grep, read, bash, ...)
+  that are switched off. OpenCode's own **Build** and **Plan** agents stay available in the agent dropdown.
 
 ## Install
 
