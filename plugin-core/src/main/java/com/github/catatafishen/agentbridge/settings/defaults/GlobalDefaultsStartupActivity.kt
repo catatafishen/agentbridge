@@ -53,23 +53,26 @@ class GlobalDefaultsStartupActivity : ProjectActivity {
             hasSettingsFile = configDir != null &&
                 DefaultsSections.projectFiles.any { Files.exists(configDir.resolve(it)) },
         )
-        if (decision == SeedDecision.NOTHING) return
-
-        if (decision == SeedDecision.SEED) seed(project)
-        properties.setValue(HANDLED_KEY, true)
-    }
-
-    private fun seed(project: Project) {
         val engine = DefaultsSections.engine()
         try {
-            val result = engine.apply(project, engine.sections)
-            if (result.applied.isNotEmpty()) {
-                LOG.info("New project: applied global defaults for ${result.applied.joinToString { it.id }}")
-            }
+            // A project configured before the defaults existed keeps what it has until the user opts in.
+            if (decision == SeedDecision.MARK_ONLY) engine.overrideAll(project)
+            properties.setValue(HANDLED_KEY, true)
+            report(engine.sync(project))
         } catch (e: Exception) {
             // Never stop the project from opening because a default could not be applied.
-            LOG.warn("Could not apply the global defaults to this new project", e)
+            LOG.warn("Could not apply the global defaults to this project", e)
         }
+    }
+
+    private fun report(result: DefaultsEngine.SyncResult) {
+        if (result.applied.isNotEmpty()) {
+            LOG.info("Applied global defaults for ${result.applied.joinToString { it.id }}")
+        }
+        if (result.diverged.isNotEmpty()) {
+            LOG.info("Edited in this project, so now overriding the global defaults: ${result.diverged.joinToString { it.id }}")
+        }
+        for ((section, error) in result.failed) LOG.warn("Could not apply the global defaults for ${section.id}", error)
     }
 
     private companion object {

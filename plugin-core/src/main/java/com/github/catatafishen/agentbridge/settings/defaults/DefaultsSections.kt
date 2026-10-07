@@ -48,9 +48,12 @@ object DefaultsSections {
             id = "tool-permissions",
             title = "Tool permissions",
             description = "Allow / ask / deny per tool, and the policy for paths outside the project.",
+            // The registry is filled after startup, so the keys the defaults themselves name are always listed:
+            // otherwise a project would read differently before and after that, and look edited when it is not.
             keys = { project ->
                 ToolRegistry.getInstance(project).allTools.map { GenericSettings.toolPermissionKey(it.id()) } +
-                    GenericSettings.outsideProjectAccessKey()
+                    GenericSettings.outsideProjectAccessKey() +
+                    GlobalDefaults.getInstance().entriesFor("tool-permissions").keys
             },
         ),
         PropertyDefaultsSection(
