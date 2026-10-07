@@ -216,7 +216,9 @@ resolve signal tells reviewers the thread is closed. Both are required.
 
 # AI Identity and Transparency
 
-Hooks automatically apply the agent's non-personal identity to commits (`enforce-commit-author.sh`) and the bot
+Hooks automatically apply the agent's non-personal identity to commits (`enforce-commit-author.js`, which always
+overwrites `author` with the connected MCP client's name — so it can differ per client/sub-agent, and an explicit
+`author` argument, including on `amend`, is ignored) and the bot
 identity to `gh` calls (`enforce-agentbridge-gh-bot-identity.js`); if the bot token is unavailable, the call is blocked
 rather than falling back to the owner's account. Do not work around them, and do not amend commits to substitute a
 human email for AI-authored changes. You don't need to mention identity in commit or PR text.
@@ -511,8 +513,7 @@ plugin launches Hermes without a TTY for hook prompts)
 
 ## Mistral Vibe
 
-**Location**: Not yet investigated
-**Format**: N/A — Vibe's agent definition support has not been investigated yet.
+**Location**: Not yet investigated **Format**: N/A — Vibe's agent definition support has not been investigated yet.
 
 **Bundled Agents**: 0
 
@@ -522,14 +523,14 @@ plugin launches Hermes without a TTY for hook prompts)
 
 ## Summary Table
 
-| Agent    | MCP Tool Prefix    | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests    | Bundled Agents                      | Status                     |
-|----------|--------------------|----------------------------------|------------------------------------------------------------|------------------------|-------------------------------------|----------------------------|
+| Agent    | MCP Tool Prefix    | Agent Definition Support          | Tool Filtering Format                                      | Permission Requests     | Bundled Agents                      | Status                     |
+|----------|--------------------|-----------------------------------|------------------------------------------------------------|-------------------------|-------------------------------------|----------------------------|
 | Copilot  | `agentbridge-`     | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools      | 2 (intellij-explore, intellij-task) | Working (filtering broken) |
-| OpenCode | `agentbridge_`     | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                  | 2 (ide-general, intellij-explore)   | ✅ Working                  |
+| OpenCode | `agentbridge_`     | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                  | 2 (ide-general, intellij-explore)   | ✅ Working                 |
 | Junie    | `agentbridge-`     | ❌ No support                     | N/A                                                        | ❌ No (auto-executes)   | 0                                   | Prompt workaround only     |
-| Kiro     | `@agentbridge/`    | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts    | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
-| Hermes   | `mcp_agentbridge_` | ❌ No ACP-side definitions        | N/A (gating via `~/.hermes/config.yaml` toolsets/skills)   | ✅ Via `--accept-hooks` | 0 (sub-agents via `delegate_task`)  | ✅ Working                  |
-| Vibe     | `agentbridge_`     | ❌ Not yet investigated           | N/A                                                        | ⚠️ Not yet tested      | 0                                   | ⚠️ Experimental            |
+| Kiro     | `@agentbridge/`    | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts     | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
+| Hermes   | `mcp_agentbridge_` | ❌ No ACP-side definitions        | N/A (gating via `~/.hermes/config.yaml` toolsets/skills)   | ✅ Via `--accept-hooks` | 0 (sub-agents via `delegate_task`)  | ✅ Working                 |
+| Vibe     | `agentbridge_`     | ❌ Not yet investigated           | N/A                                                        | ⚠️ Not yet tested       | 0                                   | ⚠️ Experimental            |
 
 See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode investigation
 and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.
