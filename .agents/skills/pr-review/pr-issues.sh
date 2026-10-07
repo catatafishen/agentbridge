@@ -26,7 +26,10 @@ case "$CMD" in
   view)
     NUM="${2:?Usage: pr-issues.sh view <NUMBER>}"
     echo "=== Issue #$NUM ($REPO) ==="
-    gh issue view "$NUM" --repo "$REPO"
+    # Always use --json: plain `gh issue view` (and `--comments`) queries the retired Projects
+    # Classic `projectCards` field, which fails or prints nothing on current GitHub (#1111, #1151).
+    gh issue view "$NUM" --repo "$REPO" --json title,state,labels,author,body \
+      --jq '"\(.title) [\(.state)] by @\(.author.login)\nlabels: \(.labels | map(.name) | join(", "))\n\n\(.body)"'
     echo ""
     echo "=== Comments ==="
     gh issue view "$NUM" --repo "$REPO" --json comments \
