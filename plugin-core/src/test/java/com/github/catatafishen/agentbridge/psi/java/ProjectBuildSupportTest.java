@@ -2,7 +2,10 @@ package com.github.catatafishen.agentbridge.psi.java;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link ProjectBuildSupport#formatBuildHeader(boolean, int, int, long)}.
@@ -10,6 +13,21 @@ import static org.junit.jupiter.api.Assertions.*;
  * Same package as the production class so we can call the package-private method directly.
  */
 class ProjectBuildSupportTest {
+
+    @Test
+    void selectModuleNames_includesGradleSourceSetChildren() {
+        var all = java.util.List.of("agentbridge", "plugin-core", "plugin-core.main", "plugin-core.test",
+            "plugin-core-extras.main", "ide-integration-tests.main");
+        assertEquals(java.util.List.of("plugin-core", "plugin-core.main", "plugin-core.test"),
+            ProjectBuildSupport.selectModuleNames("plugin-core", all));
+    }
+
+    @Test
+    void selectModuleNames_leafModuleSelectsItselfOnly() {
+        var all = java.util.List.of("plugin-core", "plugin-core.main", "plugin-core.test");
+        assertEquals(java.util.List.of("plugin-core.main"),
+            ProjectBuildSupport.selectModuleNames("plugin-core.main", all));
+    }
 
     @Test
     void buildSucceeded_zeroErrors() {
