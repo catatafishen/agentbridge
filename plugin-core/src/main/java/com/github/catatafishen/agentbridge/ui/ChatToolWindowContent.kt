@@ -1496,10 +1496,10 @@ class ChatToolWindowContent(
         val rawText = promptTextArea.text.trim()
         if (rawText.isEmpty()) return
 
-        // Resolve file reference ORCs to plain text names before clearing the editor —
-        // nudges don't support context attachments, so inline chips become backtick-wrapped names.
+        // Resolve chip ORCs to plain text before clearing the editor — nudges don't support
+        // context attachments, so each chip becomes a name plus its path (or inline content).
         val contextItems = contextManager.collectInlineContextItems()
-        val text = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
+        val text = contextManager.replaceOrcsWithNudgeRefs(rawText, contextItems)
 
         // If a prompt_user request is pending, route the typed text to it instead of nudging.
         if (consolePanel.resolvePendingAskUser(text)) {

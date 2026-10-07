@@ -30,6 +30,39 @@ object ContextTextUtils {
     }
 
     /**
+     * Like [replaceOrcsWithTextRefs], but for nudges, which cannot carry ACP attachment blocks:
+     * the text is the only channel to the agent, so each chip must be self-describing.
+     * File-backed chips become `` `name` (path:start-end) `` so the agent can `read_file` them;
+     * chips carrying [ContextItemData.inlineText] get that content appended after the message.
+     */
+    fun replaceOrcsWithNudgeRefs(rawText: String, items: List<ContextItemData>): String {
+        if (items.isEmpty()) return rawText.replace(ORC.toString(), "").trim()
+        val sb = StringBuilder()
+        val inlineBlocks = StringBuilder()
+        var idx = 0
+        for (ch in rawText) {
+            if (ch == ORC && idx < items.size) {
+                val item = items[idx++]
+                sb.append('`').append(item.name).append('`')
+                val inline = item.inlineText
+                if (inline != null) {
+                    inlineBlocks.append("\n\n--- ").append(item.name).append(" ---\n").append(inline)
+                } else {
+                    sb.append(" (").append(item.path)
+                    if (item.isSelection && item.startLine > 0) {
+                        sb.append(':').append(item.startLine)
+                        if (item.endLine > item.startLine) sb.append('-').append(item.endLine)
+                    }
+                    sb.append(')')
+                }
+            } else {
+                sb.append(ch)
+            }
+        }
+        return (sb.toString().trim() + inlineBlocks).trim()
+    }
+
+    /**
      * Compare two text snippets after normalizing tabs to spaces and
      * stripping trailing whitespace per line, so minor indentation
      * mismatches (partial first-line selection, mixed tabs/spaces) still match.
