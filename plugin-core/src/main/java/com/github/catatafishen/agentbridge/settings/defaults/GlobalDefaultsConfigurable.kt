@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.settings.defaults
 
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
@@ -10,16 +12,17 @@ import com.intellij.util.ui.UIUtil
 import javax.swing.JComponent
 
 /**
- * Settings page for the global defaults: choose which groups of settings to copy, then save this project's values
- * as the defaults, apply the defaults to this project, or clear them.
+ * Settings page for the global defaults.
  *
- * New projects get the defaults automatically the first time they open (see [GlobalDefaultsStartupActivity]).
- * Changing the defaults later does not change projects that already have them: each project keeps its own copy.
+ * Every group of settings is either followed from the global defaults or overridden in this project (the choice
+ * next to it). The buttons act on the checked groups: save this project's values as the global defaults, reset this
+ * project to them, or delete them. See [DefaultsEngine] for how following and overriding work.
  */
 class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfigurable {
 
     private val engine by lazy { DefaultsSections.engine() }
     private val checkboxes = LinkedHashMap<String, JBCheckBox>()
+    private val modes = LinkedHashMap<String, ComboBox<String>>()
     private val statuses = LinkedHashMap<String, JBLabel>()
 
     override fun getId(): String = ID
@@ -30,30 +33,34 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         val component = panel {
             row {
                 comment(
-                    "Save the settings of this project as your defaults, and every new project starts with " +
-                        "them instead of the built-in ones. Existing projects keep what they have: copy the " +
-                        "defaults into one with <b>Apply</b>."
+                    "Save the settings of one project as your global defaults, and every project that follows " +
+                        "them uses those values. New projects follow them from the start; a project that already " +
+                        "had settings keeps them until you choose to follow the defaults."
                 )
             }
-            group("Settings to Copy") {
+            group("Settings") {
                 for (section in engine.sections) {
                     row {
                         val box = checkBox(section.title).comment(section.description).component
                         box.isSelected = section.id !in DefaultsSections.sensitiveIds
                         checkboxes[section.id] = box
+                        cell(ComboBox(arrayOf(FOLLOWS, OVERRIDES)).also { modes[section.id] = it })
                         cell(JBLabel().also { statuses[section.id] = it })
                     }
                 }
             }
             row {
                 button("Save This Project's Settings as Global Defaults") { onSave() }
-                button("Apply Global Defaults to This Project") { onApplyToProject() }
+                button("Reset This Project to Global Defaults") { onReset() }
                 button("Clear Global Defaults") { onClear() }
             }
             row {
                 comment(
-                    "Only the checked groups are used. The web server and the MCP port are never copied: " +
-                        "they belong to one project. Custom MCP servers start unchecked because they can hold tokens."
+                    "The buttons use the checked groups. A group that follows the defaults is brought up to date " +
+                        "when the project opens and when the defaults are saved. If you change a followed group " +
+                        "in this project it becomes an override by itself. The web server and the MCP port are " +
+                        "never shared: they belong to one project. Custom MCP servers start unchecked because " +
+                        "they can hold tokens."
                 )
             }
         }
@@ -61,16 +68,25 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         return component
     }
 
-    override fun isModified(): Boolean = false
+    override fun isModified(): Boolean = engine.sections.any { chosenOverride(it) != engine.isOverridden(project, it) }
 
-    override fun apply() = Unit
+    override fun apply() {
+        for (section in engine.sections) {
+            val overridden = chosenOverride(section)
+            if (overridden != engine.isOverridden(project, section)) engine.setOverridden(project, section, overridden)
+        }
+        refresh()
+    }
 
     override fun reset() = refresh()
+
+    private fun chosenOverride(section: DefaultsSection): Boolean = modes[section.id]?.selectedItem == OVERRIDES
 
     private fun selected(): List<DefaultsSection> = engine.sections.filter { checkboxes[it.id]?.isSelected == true }
 
     private fun refresh() {
         for (section in engine.sections) {
+            modes[section.id]?.selectedItem = if (engine.isOverridden(project, section)) OVERRIDES else FOLLOWS
             statuses[section.id]?.apply {
                 if (engine.hasDefaults(section)) {
                     text = "Saved"
@@ -99,25 +115,31 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         val chosen = selected()
         val replacing = chosen.filter { engine.hasDefaults(it) }
         if (replacing.isNotEmpty() && !confirm(
-                "This replaces the saved global defaults for: ${names(replacing)}.\n\nContinue?",
+                "This replaces the saved global defaults for: ${names(replacing)}.\n\n" +
+                    "Every open project that follows them is updated.\n\nContinue?",
                 "Save Global Defaults",
             )
         ) return
-        try {
+        val others = try {
             engine.save(project, chosen)
+            engine.syncAll(ProjectManager.getInstance().openProjects.filter { it != project && !it.isDisposed })
         } catch (e: Exception) {
             Messages.showErrorDialog(project, "Could not save the defaults: ${e.message}", "Global Defaults")
             return
         }
         refresh()
+        val failed = others.values.flatMap { it.failed.keys }.distinct()
+        val failure = if (failed.isEmpty()) "" else
+            "\n\nCould not update some open projects for: ${names(failed)}. They are updated when they next open."
         Messages.showInfoMessage(
             project,
-            "Saved this project's settings for: ${names(chosen)}.\n\nNew projects will start with them.",
+            "Saved this project's settings for: ${names(chosen)}.\n\n" +
+                "This project and every project that follows the defaults now use them.$failure",
             "Global Defaults",
         )
     }
 
-    private fun onApplyToProject() {
+    private fun onReset() {
         if (nothingSelected()) return
         val chosen = selected()
         val withDefaults = chosen.filter { engine.hasDefaults(it) }
@@ -126,8 +148,9 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             return
         }
         if (!confirm(
-                "This replaces this project's current values for: ${names(withDefaults)}.\n\nContinue?",
-                "Apply Global Defaults",
+                "This replaces this project's current values for: ${names(withDefaults)}, and makes the project " +
+                    "follow the global defaults for them.\n\nContinue?",
+                "Reset to Global Defaults",
             )
         ) return
         val result = try {
@@ -136,11 +159,12 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             Messages.showErrorDialog(project, "Could not apply the defaults: ${e.message}", "Global Defaults")
             return
         }
+        refresh()
         val skipped = if (result.withoutDefaults.isEmpty()) "" else
             "\n\nLeft alone, because they have no global defaults: ${names(result.withoutDefaults)}."
         Messages.showInfoMessage(
             project,
-            "Applied the global defaults for: ${names(result.applied)}.$skipped\n\n" +
+            "This project now follows the global defaults for: ${names(result.applied)}.$skipped\n\n" +
                 "Options the servers read when they start (MCP server, memory, code graph) apply after the " +
                 "MCP server is restarted or the project is reopened. Reopen this dialog to see the new values " +
                 "on the other settings pages.",
@@ -157,7 +181,8 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
         }
         if (!confirm(
                 "This deletes the saved global defaults for: ${names(saved)}.\n\n" +
-                    "No project is changed; new projects go back to the built-in values for them.",
+                    "No project is changed; projects keep the values they have now, and new projects go back " +
+                    "to the built-in values for them.",
                 "Clear Global Defaults",
             )
         ) return
@@ -167,5 +192,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
 
     companion object {
         const val ID = "com.github.catatafishen.agentbridge.globalDefaults"
+        private const val FOLLOWS = "Follows global defaults"
+        private const val OVERRIDES = "Overrides in this project"
     }
 }

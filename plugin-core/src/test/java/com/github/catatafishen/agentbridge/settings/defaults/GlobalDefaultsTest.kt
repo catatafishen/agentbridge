@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Proxy
+import java.util.IdentityHashMap
 
 class GlobalDefaultsTest {
 
@@ -185,23 +186,44 @@ class GlobalDefaultsTest {
         }
     }
 
-    private class FakeSection(override val id: String, var values: Map<String, String>) : DefaultsSection {
+    /** A section whose values are kept per project, so that two projects can differ. */
+    private class FakeSection(override val id: String, private val initial: Map<String, String>) : DefaultsSection {
         override val title = id
         override val description = ""
         var applied: Map<String, String>? = null
+        var failOnApply = false
+        private val perProject = IdentityHashMap<Project, Map<String, String>>()
 
-        override fun capture(project: Project) = values
+        fun valuesIn(project: Project): Map<String, String> = perProject[project] ?: initial
+        fun edit(project: Project, values: Map<String, String>) {
+            perProject[project] = values
+        }
+
+        override fun capture(project: Project) = valuesIn(project)
         override fun apply(project: Project, entries: Map<String, String>) {
+            check(!failOnApply) { "cannot apply $id" }
             applied = entries
+            perProject[project] = entries
         }
     }
+
+    private fun newProject(): Project =
+        Proxy.newProxyInstance(Project::class.java.classLoader, arrayOf(Project::class.java)) { proxy, method, args ->
+            when (method.name) {
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args[0]
+                else -> null
+            }
+        } as Project
 
     @Nested
     inner class Engine {
         private val a = FakeSection("a", mapOf("k" to "1"))
         private val b = FakeSection("b", mapOf("k" to "2"))
+        private val stores = IdentityHashMap<Project, MapStore>()
 
-        private fun engine(defaults: GlobalDefaults = GlobalDefaults()) = DefaultsEngine(listOf(a, b), defaults)
+        private fun engine(defaults: GlobalDefaults = GlobalDefaults()) =
+            DefaultsEngine(listOf(a, b), defaults) { stores.getOrPut(it) { MapStore() } }
 
         @Test
         fun `saving stores the chosen sections and nothing else`() {
@@ -214,9 +236,10 @@ class GlobalDefaultsTest {
         }
 
         @Test
-        fun `applying copies the saved values into the sections that have some`() {
+        fun `resetting copies the saved values into the sections that have some`() {
             val engine = engine()
             engine.save(project, listOf(a))
+            a.edit(project, mapOf("k" to "changed"))
 
             val result = engine.apply(project, listOf(a, b))
 
@@ -235,6 +258,149 @@ class GlobalDefaultsTest {
 
             assertFalse(engine.hasDefaults(a))
             assertTrue(engine.hasDefaults(b))
+        }
+    }
+
+    @Nested
+    inner class Inheritance {
+        private val a = FakeSection("a", mapOf("k" to "1"))
+        private val b = FakeSection("b", mapOf("k" to "2"))
+        private val defaults = GlobalDefaults()
+        private val stores = IdentityHashMap<Project, MapStore>()
+        private val engine = DefaultsEngine(listOf(a, b), defaults) { stores.getOrPut(it) { MapStore() } }
+        private val source = newProject()
+        private val other = newProject()
+
+        private fun saveFromSource(values: Map<String, String> = mapOf("k" to "global")) {
+            a.edit(source, values)
+            engine.save(source, listOf(a))
+        }
+
+        @Test
+        fun `a project that follows the defaults picks them up when it syncs`() {
+            saveFromSource()
+
+            val result = engine.sync(other)
+
+            assertEquals(mapOf("k" to "global"), a.valuesIn(other))
+            assertEquals(listOf(a), result.applied)
+        }
+
+        @Test
+        fun `syncing again with nothing new applies nothing`() {
+            saveFromSource()
+            engine.sync(other)
+
+            assertTrue(engine.sync(other).applied.isEmpty())
+        }
+
+        @Test
+        fun `a changed default reaches the projects that follow it`() {
+            saveFromSource()
+            engine.sync(other)
+
+            saveFromSource(mapOf("k" to "newer"))
+            val result = engine.sync(other)
+
+            assertEquals(mapOf("k" to "newer"), a.valuesIn(other))
+            assertEquals(listOf(a), result.applied)
+        }
+
+        @Test
+        fun `a project that overrides a section keeps its own values`() {
+            saveFromSource()
+            a.edit(other, mapOf("k" to "mine"))
+            engine.setOverridden(other, a, true)
+
+            val result = engine.sync(other)
+
+            assertEquals(mapOf("k" to "mine"), a.valuesIn(other))
+            assertTrue(result.applied.isEmpty())
+        }
+
+        @Test
+        fun `a followed section that was edited by hand becomes an override instead of being replaced`() {
+            saveFromSource()
+            engine.sync(other)
+            a.edit(other, mapOf("k" to "edited here"))
+
+            saveFromSource(mapOf("k" to "newer"))
+            val result = engine.sync(other)
+
+            assertEquals(mapOf("k" to "edited here"), a.valuesIn(other))
+            assertEquals(listOf(a), result.diverged)
+            assertTrue(engine.isOverridden(other, a))
+        }
+
+        @Test
+        fun `an edit made before any defaults existed is not replaced when they appear`() {
+            engine.sync(other)
+            a.edit(other, mapOf("k" to "edited early"))
+
+            saveFromSource()
+            val result = engine.sync(other)
+
+            assertEquals(mapOf("k" to "edited early"), a.valuesIn(other))
+            assertEquals(listOf(a), result.diverged)
+        }
+
+        @Test
+        fun `saving makes the saving project follow the defaults and updates the other open projects`() {
+            saveFromSource()
+
+            val results = engine.syncAll(listOf(other))
+
+            assertFalse(engine.isOverridden(source, a))
+            assertEquals(mapOf("k" to "global"), a.valuesIn(other))
+            assertEquals(listOf(a), results.getValue(other).applied)
+        }
+
+        @Test
+        fun `a project configured before the defaults existed overrides everything until it opts in`() {
+            saveFromSource()
+            engine.overrideAll(other)
+
+            assertTrue(engine.sync(other).applied.isEmpty())
+            assertEquals(mapOf("k" to "1"), a.valuesIn(other))
+
+            engine.setOverridden(other, a, false)
+
+            assertEquals(mapOf("k" to "global"), a.valuesIn(other), "following takes effect at once")
+            assertEquals(mapOf("k" to "2"), b.valuesIn(other), "other sections stay overridden")
+        }
+
+        @Test
+        fun `resetting a project to the defaults makes it follow them again`() {
+            saveFromSource()
+            a.edit(other, mapOf("k" to "mine"))
+            engine.setOverridden(other, a, true)
+
+            engine.apply(other, listOf(a))
+
+            assertFalse(engine.isOverridden(other, a))
+            assertEquals(mapOf("k" to "global"), a.valuesIn(other))
+        }
+
+        @Test
+        fun `one section that cannot be applied does not stop the others`() {
+            a.failOnApply = true
+            saveFromSource()
+            b.edit(source, mapOf("k" to "b-global"))
+            engine.save(source, listOf(b))
+
+            val result = engine.sync(other)
+
+            assertEquals(setOf(a), result.failed.keys)
+            assertEquals(mapOf("k" to "b-global"), b.valuesIn(other))
+        }
+
+        @Test
+        fun `the fingerprint does not depend on the order of the values`() {
+            assertEquals(
+                fingerprint(linkedMapOf("x" to "1", "y" to "2")),
+                fingerprint(linkedMapOf("y" to "2", "x" to "1")),
+            )
+            assertFalse(fingerprint(mapOf("x" to "1")) == fingerprint(mapOf("x" to "2")))
         }
     }
 
