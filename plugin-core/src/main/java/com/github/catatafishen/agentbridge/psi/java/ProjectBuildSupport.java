@@ -62,7 +62,12 @@ public class ProjectBuildSupport {
                         resultFuture.complete("Error: Module '" + moduleName + "' not found.\n" + listAvailableModules(project));
                         return;
                     }
-                    compilerManager.compile(module, callback);
+                    // compile(module, ...) alone would build only the named module. For Gradle projects
+                    // that is the empty parent module ("plugin-core"); the sources live in the child
+                    // source-set modules ("plugin-core.main", "plugin-core.test"), so compiling just the
+                    // parent "succeeds" in under a second without compiling anything (#1160).
+                    Module[] scope = expandWithChildModules(project, module);
+                    compilerManager.make(compilerManager.createModulesCompileScope(scope, true), callback);
                 } else {
                     compilerManager.make(callback);
                 }
@@ -145,6 +150,24 @@ public class ProjectBuildSupport {
             }
             sb.append(" ").append(msg.getMessage()).append("\n");
         }
+    }
+
+    private static Module[] expandWithChildModules(Project project, Module module) {
+        Module[] all = ModuleManager.getInstance(project).getModules();
+        java.util.Set<String> wanted = new java.util.HashSet<>(selectModuleNames(
+            module.getName(), java.util.Arrays.stream(all).map(Module::getName).toList()));
+        return java.util.Arrays.stream(all).filter(m -> wanted.contains(m.getName())).toArray(Module[]::new);
+    }
+
+    /**
+     * Returns {@code moduleName} plus every module nested under it by the Gradle/Maven naming
+     * convention {@code <parent>.<child>} (e.g. {@code plugin-core.main}). Pure function.
+     */
+    static java.util.List<String> selectModuleNames(String moduleName, java.util.Collection<String> allNames) {
+        String childPrefix = moduleName + ".";
+        return allNames.stream()
+            .filter(n -> n.equals(moduleName) || n.startsWith(childPrefix))
+            .toList();
     }
 
     private static Module resolveModule(Project project, String moduleName) {
