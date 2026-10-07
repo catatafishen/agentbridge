@@ -33,6 +33,8 @@ interface DefaultsSection {
  *
  * @param keep copies the values that must stay what they are in the target project (a port, say) from the
  *   [current][keep] state onto the incoming one, before it is loaded
+ * @param neutralize resets those same values to a fixed value in the copy that is captured, so a project-only
+ *   value is neither saved as a default nor mistaken for an edit of the section when it changes
  */
 class StateDefaultsSection<S : Any>(
     override val id: String,
@@ -43,11 +45,13 @@ class StateDefaultsSection<S : Any>(
     private val component: (Project) -> PersistentStateComponent<S>,
     private val stateClass: Class<S>,
     private val keep: (current: S, incoming: S) -> Unit = { _, _ -> },
+    private val neutralize: (S) -> Unit = {},
 ) : DefaultsSection {
 
     override fun capture(project: Project): Map<String, String> {
         val state = component(project).state ?: error("Section '$id' has no state to save")
-        return mapOf(XML_KEY to StateXml.write(state))
+        val copy = StateXml.read(StateXml.write(state), stateClass).also(neutralize)
+        return mapOf(XML_KEY to StateXml.write(copy))
     }
 
     override fun apply(project: Project, entries: Map<String, String>) {

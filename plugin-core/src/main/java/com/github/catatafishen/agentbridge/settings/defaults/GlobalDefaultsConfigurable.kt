@@ -84,9 +84,20 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
 
     private fun selected(): List<DefaultsSection> = engine.sections.filter { checkboxes[it.id]?.isSelected == true }
 
+    /** Shows the saved state of every group, dropping any choice that was made but not applied yet. */
     private fun refresh() {
-        for (section in engine.sections) {
+        showModes(engine.sections)
+        refreshStatuses()
+    }
+
+    private fun showModes(sections: Collection<DefaultsSection>) {
+        for (section in sections) {
             modes[section.id]?.selectedItem = if (engine.isOverridden(project, section)) OVERRIDES else FOLLOWS
+        }
+    }
+
+    private fun refreshStatuses() {
+        for (section in engine.sections) {
             statuses[section.id]?.apply {
                 if (engine.hasDefaults(section)) {
                     text = "Saved"
@@ -127,7 +138,8 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             Messages.showErrorDialog(project, "Could not save the defaults: ${e.message}", TITLE)
             return
         }
-        refresh()
+        refreshStatuses()
+        showModes(chosen)
         val failed = others.values.flatMap { it.failed.keys }.distinct()
         val failure = if (failed.isEmpty()) "" else
             "\n\nCould not update some open projects for: ${names(failed)}. They are updated when they next open."
@@ -159,7 +171,8 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             Messages.showErrorDialog(project, "Could not apply the defaults: ${e.message}", TITLE)
             return
         }
-        refresh()
+        refreshStatuses()
+        showModes(result.applied)
         val skipped = if (result.withoutDefaults.isEmpty()) "" else
             "\n\nLeft alone, because they have no global defaults: ${names(result.withoutDefaults)}."
         Messages.showInfoMessage(
@@ -187,7 +200,7 @@ class GlobalDefaultsConfigurable(private val project: Project) : SearchableConfi
             )
         ) return
         engine.clear(saved)
-        refresh()
+        refreshStatuses()
     }
 
     companion object {

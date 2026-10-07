@@ -94,6 +94,30 @@ class GlobalDefaultsTest {
         }
 
         @Test
+        fun `a section saved with no values is saved, not missing`() {
+            val defaults = GlobalDefaults()
+
+            defaults.replace("agent", emptyMap())
+
+            assertTrue(defaults.hasDefaults("agent"))
+            assertEquals(emptyMap<String, String>(), defaults.entriesFor("agent"))
+            assertFalse(defaults.hasDefaults("other"))
+        }
+
+        @Test
+        fun `a section saved with no values is still saved after a restart, and clearing removes it`() {
+            val defaults = GlobalDefaults()
+            defaults.replace("agent", emptyMap())
+
+            val reloaded = GlobalDefaults()
+            reloaded.loadState(XmlSerializer.deserialize(XmlSerializer.serialize(defaults.state), GlobalDefaults.State::class.java))
+            assertTrue(reloaded.hasDefaults("agent"))
+
+            reloaded.clear("agent")
+            assertFalse(reloaded.hasDefaults("agent"))
+        }
+
+        @Test
         fun `what is saved survives being written to disk and read back`() {
             val defaults = GlobalDefaults()
             defaults.replace("mcp-server", mapOf("xml" to "<State>\n  <option name=\"port\" value=\"8642\" />\n</State>"))
@@ -138,10 +162,14 @@ class GlobalDefaultsTest {
 
     @Nested
     inner class StateSections {
-        private fun section(component: FakeComponent, keep: (Bean, Bean) -> Unit = { _, _ -> }) =
+        private fun section(
+            component: FakeComponent,
+            keep: (Bean, Bean) -> Unit = { _, _ -> },
+            neutralize: (Bean) -> Unit = {},
+        ) =
             StateDefaultsSection(
                 id = "bean", title = "Bean", description = "", storageFile = "bean.xml",
-                component = { component }, stateClass = Bean::class.java, keep = keep,
+                component = { component }, stateClass = Bean::class.java, keep = keep, neutralize = neutralize,
             )
 
         @Test
@@ -154,6 +182,29 @@ class GlobalDefaultsTest {
             assertEquals(9, target.current.port)
             assertEquals("x", target.current.name)
             assertEquals(setOf("a", "b"), target.current.tags)
+        }
+
+        @Test
+        fun `a value the project keeps for itself is not part of what is captured`() {
+            val neutralize: (Bean) -> Unit = { it.port = 0 }
+            val component = FakeComponent(Bean().apply { port = 5000; name = "shared" })
+
+            val before = section(component, neutralize = neutralize).capture(project)
+            component.current.port = 6000
+            val after = section(component, neutralize = neutralize).capture(project)
+
+            assertEquals(before, after, "changing a project-only value must not look like editing the section")
+            assertEquals(6000, component.current.port, "capturing leaves the live state alone")
+        }
+
+        @Test
+        fun `the MCP port and static-port flag are left out of what the MCP section captures`() {
+            val state = McpServerSettings.State().apply { port = 8700; isStaticPort = true }
+            DefaultsSections.forgetProjectPort(state)
+
+            val builtIn = McpServerSettings.State()
+            assertEquals(builtIn.port, state.port)
+            assertEquals(builtIn.isStaticPort, state.isStaticPort)
         }
 
         @Test
@@ -475,6 +526,15 @@ class GlobalDefaultsTest {
             assertTrue("claude-cli.selectedModel" in keys)
             assertTrue("claude-cli.sessionOpt.effort" in keys)
             keys.forEach { key -> assertTrue(runtimeStateMarkers.none { key.contains(it, ignoreCase = true) }, key) }
+        }
+
+        @Test
+        fun `the custom start command is copied under the per-profile key the accessors use`() {
+            assertEquals("agent.customAcpCommand.claude-cli", ActiveAgentManager.customAcpCommandKey("claude-cli"))
+            assertTrue(
+                ActiveAgentManager.USER_CHOICE_KEYS.none { it == "agent.customAcpCommand" },
+                "the unsuffixed prefix is not a key anything reads or writes",
+            )
         }
 
         @Test

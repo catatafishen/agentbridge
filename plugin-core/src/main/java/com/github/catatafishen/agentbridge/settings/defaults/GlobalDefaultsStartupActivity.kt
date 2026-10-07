@@ -50,8 +50,11 @@ class GlobalDefaultsStartupActivity : ProjectActivity {
         val decision = FreshProject.decide(
             alreadyHandled = properties.getBoolean(HANDLED_KEY, false),
             hasConfigDir = hasConfigDir,
-            hasSettingsFile = configDir != null &&
-                DefaultsSections.projectFiles.any { Files.exists(configDir.resolve(it)) },
+            // Settings kept in properties leave no file of their own, so a project that only ever changed those
+            // (the active agent, auto-connect...) would look new without the second test.
+            hasSettingsFile = (configDir != null &&
+                DefaultsSections.projectFiles.any { Files.exists(configDir.resolve(it)) }) ||
+                DefaultsSections.hasProjectProperties(project),
         )
         val engine = DefaultsSections.engine()
         try {
