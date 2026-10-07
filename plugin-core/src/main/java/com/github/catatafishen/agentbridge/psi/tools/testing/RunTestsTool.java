@@ -603,19 +603,30 @@ public final class RunTestsTool extends TestingTool {
         String basePath = project.getBasePath();
         if (basePath == null) return null;
 
+        boolean externalDataFound = false;
+        String customTask = null;
         for (ExternalSystemManager<?, ?, ?, ?, ?> manager : ExternalSystemApiUtil.getAllManagers()) {
             var systemId = manager.getSystemId();
             ExternalProjectInfo info = ProjectDataManager.getInstance()
                 .getExternalProjectData(project, systemId, basePath);
             if (info == null || info.getExternalProjectStructure() == null) continue;
+            externalDataFound = true;
             var taskNodes = ExternalSystemApiUtil.findAllRecursively(
                 info.getExternalProjectStructure(), ProjectKeys.TASK);
             for (var taskNode : taskNodes) {
                 TaskData task = taskNode.getData();
+                if (!task.isTest()) continue;
+                // The model spans every module, and "test" is registered by each Gradle module that
+                // applies a JVM plugin. A custom task found in some *other* module (e.g. an
+                // `integrationTest` in a sibling UI-test module) must not hijack the standard
+                // task: it does not exist in, or match no tests of, the module being tested
+                // (#1113, #1130, #1135).
                 String name = task.getName();
-                if (isCustomTestTask(name, task.isTest())) return name;
+                if ("test".equals(name)) return null;
+                if (customTask == null && isCustomTestTask(name, true)) customTask = name;
             }
         }
+        if (externalDataFound) return customTask;
 
         return GradleBuildFileScanner.detectTestTask(basePath);
     }
