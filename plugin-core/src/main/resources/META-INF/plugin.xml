@@ -104,6 +104,9 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       serviceImplementation="com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.agentbridge.services.AgentProfileManager"/>
+    <!-- The user's global defaults for per-project settings (see settings/defaults) -->
+    <applicationService
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.defaults.GlobalDefaults"/>
 
     <!-- Project Services -->
     <projectService
@@ -212,6 +215,13 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       instance="com.github.catatafishen.agentbridge.settings.PluginSettingsConfigurable"
       id="com.github.catatafishen.agentbridge.settings"
       displayName="AgentBridge"/>
+
+    <!-- ── Global defaults: save this project's settings for every new project ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.defaults.GlobalDefaultsConfigurable"
+      id="com.github.catatafishen.agentbridge.globalDefaults"
+      displayName="Global Defaults"/>
 
     <!-- ── UI/UX ── -->
     <projectConfigurable
@@ -376,6 +386,11 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
 
     <!-- ── Security / Sandbox ── -->
     <!-- Removed: sandbox is now configured per-agent in each agent's settings page. -->
+
+    <!-- Give a new project the user's global defaults, before the services below read their settings -->
+    <postStartupActivity
+      implementation="com.github.catatafishen.agentbridge.settings.defaults.GlobalDefaultsStartupActivity"
+      order="first"/>
 
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity
