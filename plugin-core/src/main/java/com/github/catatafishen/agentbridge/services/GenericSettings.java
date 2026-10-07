@@ -5,6 +5,8 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
+
 /**
  * Reusable settings storage for ACP agents, parameterized by key prefix.
  * Agents that don't need Copilot-specific extras (monthly cost tracking,
@@ -16,6 +18,54 @@ public final class GenericSettings {
 
     private static final int DEFAULT_MAX_TOOL_CALLS = 0;
     private static final String OUTSIDE_PROJECT_ACCESS_KEY = "tool.outsideProjectAccess";
+
+    // Key suffixes (after the profile prefix) of the options the user chose for an agent.
+    private static final String SELECTED_MODEL = "selectedModel";
+    private static final String SELECTED_AGENT = "selectedAgent";
+    private static final String SESSION_MODE = "sessionMode";
+    private static final String SESSION_OPTION_PREFIX = "sessionOpt.";
+    private static final String CONTEXT_HISTORY_LIMIT = "contextHistoryLimit";
+    private static final String MAX_TOOL_CALLS_PER_TURN = "maxToolCallsPerTurn";
+    private static final String TOOL_PERMISSION_PREFIX = "tool.perm.";
+
+    /**
+     * The one session option every agent has a fixed key for. Agents that report their own options over ACP
+     * use ids this class cannot know in advance, so those are not part of {@link #userChoiceKeys}.
+     */
+    private static final String EFFORT_OPTION_KEY = "effort";
+
+    /**
+     * Keys, for the agent {@code profileId}, that hold what the user chose (model, agent, mode, effort,
+     * limits) as opposed to runtime state (resume id, billing counters). The global defaults copy exactly these.
+     */
+    @NotNull
+    public static List<String> userChoiceKeys(@NotNull String profileId) {
+        String p = profileId + ".";
+        return List.of(
+            p + SELECTED_MODEL,
+            p + SELECTED_AGENT,
+            p + SESSION_MODE,
+            p + SESSION_OPTION_PREFIX + EFFORT_OPTION_KEY,
+            p + CONTEXT_HISTORY_LIMIT,
+            p + MAX_TOOL_CALLS_PER_TURN
+        );
+    }
+
+    /**
+     * The key holding the permission for {@code toolId}.
+     */
+    @NotNull
+    public static String toolPermissionKey(@NotNull String toolId) {
+        return TOOL_PERMISSION_PREFIX + toolId;
+    }
+
+    /**
+     * The key holding the outside-project access policy.
+     */
+    @NotNull
+    public static String outsideProjectAccessKey() {
+        return OUTSIDE_PROJECT_ACCESS_KEY;
+    }
 
     private final String prefix;
     private final Project project;
@@ -59,7 +109,7 @@ public final class GenericSettings {
 
     @Nullable
     public String getSelectedModel() {
-        String model = getProperties().getValue(key("selectedModel"));
+        String model = getProperties().getValue(key(SELECTED_MODEL));
         if (model == null || model.isEmpty()) {
             return activeAgentLabel;
         }
@@ -67,7 +117,7 @@ public final class GenericSettings {
     }
 
     public void setSelectedModel(@NotNull String modelId) {
-        getProperties().setValue(key("selectedModel"), modelId);
+        getProperties().setValue(key(SELECTED_MODEL), modelId);
     }
 
     // ── Agent selection ──────────────────────────────────────────────────────
@@ -77,11 +127,11 @@ public final class GenericSettings {
      */
     @NotNull
     public String getSelectedAgent() {
-        return getProperties().getValue(key("selectedAgent"), "");
+        return getProperties().getValue(key(SELECTED_AGENT), "");
     }
 
     public void setSelectedAgent(@NotNull String agentName) {
-        getProperties().setValue(key("selectedAgent"), agentName, "");
+        getProperties().setValue(key(SELECTED_AGENT), agentName, "");
     }
 
     // ── Mode selection ───────────────────────────────────────────────────────
@@ -92,11 +142,11 @@ public final class GenericSettings {
      */
     @NotNull
     public String getSelectedMode() {
-        return getProperties().getValue(key("sessionMode"), "");
+        return getProperties().getValue(key(SESSION_MODE), "");
     }
 
     public void setSelectedMode(@NotNull String modeSlug) {
-        getProperties().setValue(key("sessionMode"), modeSlug, "");
+        getProperties().setValue(key(SESSION_MODE), modeSlug, "");
     }
 
     // ── Session options ──────────────────────────────────────────────────────
@@ -106,11 +156,11 @@ public final class GenericSettings {
      */
     @NotNull
     public String getSessionOptionValue(@NotNull String optionKey) {
-        return getProperties().getValue(key("sessionOpt." + optionKey), "");
+        return getProperties().getValue(key(SESSION_OPTION_PREFIX + optionKey), "");
     }
 
     public void setSessionOptionValue(@NotNull String optionKey, @NotNull String value) {
-        getProperties().setValue(key("sessionOpt." + optionKey), value, "");
+        getProperties().setValue(key(SESSION_OPTION_PREFIX + optionKey), value, "");
     }
 
     // ── Active agent label (runtime-only) ────────────────────────────────────
@@ -135,30 +185,30 @@ public final class GenericSettings {
      * @param defaultLimit the value to return when no override is stored
      */
     public int getContextHistoryLimit(int defaultLimit) {
-        return getProperties().getInt(key("contextHistoryLimit"), defaultLimit);
+        return getProperties().getInt(key(CONTEXT_HISTORY_LIMIT), defaultLimit);
     }
 
     public void setContextHistoryLimit(int limit) {
-        getProperties().setValue(key("contextHistoryLimit"), limit, 0);
+        getProperties().setValue(key(CONTEXT_HISTORY_LIMIT), limit, 0);
     }
 
     public int getMaxToolCallsPerTurn() {
-        return getProperties().getInt(key("maxToolCallsPerTurn"), DEFAULT_MAX_TOOL_CALLS);
+        return getProperties().getInt(key(MAX_TOOL_CALLS_PER_TURN), DEFAULT_MAX_TOOL_CALLS);
     }
 
     public void setMaxToolCallsPerTurn(int count) {
-        getProperties().setValue(key("maxToolCallsPerTurn"), count, DEFAULT_MAX_TOOL_CALLS);
+        getProperties().setValue(key(MAX_TOOL_CALLS_PER_TURN), count, DEFAULT_MAX_TOOL_CALLS);
     }
 
     // ── Per-tool permissions (project-global, not per-profile) ──────────────
 
     @NotNull
     public ToolPermission getToolPermission(@NotNull String toolId) {
-        return parseToolPermission(getProperties().getValue("tool.perm." + toolId), ToolPermission.ALLOW);
+        return parseToolPermission(getProperties().getValue(toolPermissionKey(toolId)), ToolPermission.ALLOW);
     }
 
     public void setToolPermission(@NotNull String toolId, @NotNull ToolPermission perm) {
-        getProperties().setValue("tool.perm." + toolId, perm.name());
+        getProperties().setValue(toolPermissionKey(toolId), perm.name());
     }
 
     /**

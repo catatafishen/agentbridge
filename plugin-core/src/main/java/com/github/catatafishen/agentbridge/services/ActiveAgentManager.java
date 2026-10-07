@@ -234,6 +234,26 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_BRANCH_SESSION_AT_STARTUP = "agent.branchSessionAtStartup";
 
     /**
+     * The project-level properties that hold what the user chose for the agent as a whole (which agent,
+     * timeouts, follow-agent behaviour...). The global defaults copy exactly these between projects.
+     *
+     * <p>Deliberately not here: {@code KEY_INJECT_CONV_HISTORY}, a transient flag the session-resume
+     * fallback flips, which must never be carried into another project.</p>
+     */
+    public static final List<String> USER_CHOICE_KEYS = List.of(
+        KEY_ACTIVE_PROFILE,
+        KEY_FOLLOW_AGENT_FILES,
+        KEY_ALLOW_TRANSIENT_FILE_OPENS,
+        KEY_EDIT_APPROVAL_AUTO_DIFF,
+        KEY_AUTO_CONNECT,
+        KEY_CUSTOM_ACP_COMMAND,
+        KEY_SHARED_TURN_TIMEOUT_MINUTES,
+        KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS,
+        KEY_SHARED_MAX_TOOL_CALLS,
+        KEY_BRANCH_SESSION_AT_STARTUP
+    );
+
+    /**
      * Whether to snapshot the current session before each new session starts.
      * When {@code true}, a copy of the current session JSONL is saved with a timestamp label
      * so the user can revert to the state captured at that point via the session history picker.
