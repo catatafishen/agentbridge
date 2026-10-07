@@ -170,6 +170,18 @@ once CI has had time to finish.
 If CI is failing: `gh pr checks <number>` to see which check failed, then
 `gh run view <run-id> --log-failed` for details.
 
+## `gh` CLI Caveats
+
+These are GitHub/`gh` behaviours, not AgentBridge tool problems — do not file an issue for them.
+
+- **Retired Projects (classic):** the human-readable forms (`gh issue view`, `gh pr view`, `gh pr edit`) query the
+  retired GraphQL field `projectCards` and can fail with "Projects (classic) is being deprecated". Prefer the
+  structured forms, which do not touch it: `gh issue view N --json title,state,labels,body,comments` (or
+  `.agents/skills/pr-review/pr-issues.sh view N`), and to edit a PR body
+  `gh api repos/catatafishen/agentbridge/pulls/N --method PATCH -f body=...`.
+- **`gh issue view N --comments` prints only the comments**, so it is empty (exit 0) when the issue has none. Drop
+  `--comments` to see the title and body.
+
 ## Handling PR Review Comments
 
 When a PR has review comments, for **each comment thread**:
