@@ -95,6 +95,11 @@ class PromptContextManager(
         return ContextTextUtils.replaceOrcsWithTextRefs(rawText, items)
     }
 
+    /** Nudge variant of [replaceOrcsWithTextRefs] that also exposes each chip's path or inline content. */
+    fun replaceOrcsWithNudgeRefs(rawText: String, items: List<ContextItemData>): String {
+        return ContextTextUtils.replaceOrcsWithNudgeRefs(rawText, items)
+    }
+
     // ── Clipboard detection ───────────────────────────────────────────
 
     fun getClipboardText(): String? {

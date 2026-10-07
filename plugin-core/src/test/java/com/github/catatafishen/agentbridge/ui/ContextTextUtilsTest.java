@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("ContextTextUtils")
 class ContextTextUtilsTest {
 
-    /** Unicode Object Replacement Character — same constant used in the production code. */
+    /**
+     * Unicode Object Replacement Character — same constant used in the production code.
+     */
     private static final char ORC = '\uFFFC';
 
     private static ContextItemData item(String name) {
@@ -27,6 +29,37 @@ class ContextTextUtilsTest {
     // ---------------------------------------------------------------
 
     @Nested
+    @DisplayName("replaceOrcsWithNudgeRefs")
+    class ReplaceOrcsWithNudgeRefs {
+
+        @Test
+        @DisplayName("file chip exposes its path so the agent can read it")
+        void fileChipIncludesPath() {
+            assertEquals("See `scratch_55.txt` (/path/scratch_55.txt) now",
+                ContextTextUtils.INSTANCE.replaceOrcsWithNudgeRefs(
+                    "See " + ORC + " now", List.of(item("scratch_55.txt"))));
+        }
+
+        @Test
+        @DisplayName("selection chip includes its line range")
+        void selectionChipIncludesLineRange() {
+            ContextItemData sel = new ContextItemData("/p/A.kt", "A.kt", 5, 9, "kotlin", true);
+            assertEquals("`A.kt` (/p/A.kt:5-9)",
+                ContextTextUtils.INSTANCE.replaceOrcsWithNudgeRefs("" + ORC, List.of(sel)));
+        }
+
+        @Test
+        @DisplayName("inline-text chip appends its content after the message")
+        void inlineTextChipAppendsContent() {
+            ContextItemData inline = new ContextItemData("", "turn", 0, 0, null, false,
+                AttachmentKind.PROMPT, "body");
+            assertEquals("Look `turn`\n\n--- turn ---\nbody",
+                ContextTextUtils.INSTANCE.replaceOrcsWithNudgeRefs(
+                    "Look " + ORC, List.of(inline)));
+        }
+    }
+
+    @Nested
     @DisplayName("replaceOrcsWithTextRefs")
     class ReplaceOrcsWithTextRefs {
 
@@ -36,7 +69,7 @@ class ContextTextUtilsTest {
             String text = "Hello world";
             List<ContextItemData> items = List.of(item("ignored.kt"));
             assertEquals("Hello world",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
         @Test
@@ -45,7 +78,7 @@ class ContextTextUtilsTest {
             String text = "Check " + ORC + " for details";
             List<ContextItemData> items = List.of(item("AuthService.kt"));
             assertEquals("Check `AuthService.kt` for details",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
         @Test
@@ -54,7 +87,7 @@ class ContextTextUtilsTest {
             String text = "" + ORC + " and " + ORC + " are related";
             List<ContextItemData> items = Arrays.asList(item("Foo.kt"), item("Bar.kt"));
             assertEquals("`Foo.kt` and `Bar.kt` are related",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
         @Test
@@ -73,7 +106,7 @@ class ContextTextUtilsTest {
             String text = "See " + ORC;
             List<ContextItemData> items = Arrays.asList(item("A.kt"), item("B.kt"), item("C.kt"));
             assertEquals("See `A.kt`",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
         @Test
@@ -81,21 +114,21 @@ class ContextTextUtilsTest {
         void emptyItemsRemovesOrcs() {
             String text = "Before " + ORC + " after";
             assertEquals("Before  after",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, Collections.emptyList()));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, Collections.emptyList()));
         }
 
         @Test
         @DisplayName("empty text returns empty string")
         void emptyTextReturnsEmpty() {
             assertEquals("",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs("", List.of(item("x.kt"))));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs("", List.of(item("x.kt"))));
         }
 
         @Test
         @DisplayName("empty text with empty items returns empty string")
         void emptyTextAndEmptyItemsReturnsEmpty() {
             assertEquals("",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs("", Collections.emptyList()));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs("", Collections.emptyList()));
         }
 
         @Test
@@ -104,7 +137,7 @@ class ContextTextUtilsTest {
             String text = "  " + ORC + "  ";
             List<ContextItemData> items = List.of(item("File.kt"));
             assertEquals("`File.kt`",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
         @Test
@@ -112,7 +145,7 @@ class ContextTextUtilsTest {
         void orcOnlyTextEmptyItemsReturnsEmpty() {
             String text = "" + ORC + ORC + ORC;
             assertEquals("",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, Collections.emptyList()));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, Collections.emptyList()));
         }
 
         @Test
@@ -121,7 +154,7 @@ class ContextTextUtilsTest {
             String text = "See " + ORC;
             List<ContextItemData> items = List.of(item("Service.kt:116-170"));
             assertEquals("See `Service.kt:116-170`",
-                    ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
+                ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
     }
 
@@ -225,70 +258,70 @@ class ContextTextUtilsTest {
         @DisplayName("java → text/x-java")
         void javaType() {
             assertEquals("text/x-java",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("java"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("java"));
         }
 
         @Test
         @DisplayName("kotlin → text/x-kotlin")
         void kotlinType() {
             assertEquals("text/x-kotlin",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("kotlin"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("kotlin"));
         }
 
         @Test
         @DisplayName("python → text/x-python")
         void pythonType() {
             assertEquals("text/x-python",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("python"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("python"));
         }
 
         @Test
         @DisplayName("javascript → text/javascript")
         void javascriptType() {
             assertEquals("text/javascript",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("javascript"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("javascript"));
         }
 
         @Test
         @DisplayName("typescript → text/typescript")
         void typescriptType() {
             assertEquals("text/typescript",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("typescript"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("typescript"));
         }
 
         @Test
         @DisplayName("xml → text/xml")
         void xmlType() {
             assertEquals("text/xml",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("xml"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("xml"));
         }
 
         @Test
         @DisplayName("html → text/html")
         void htmlType() {
             assertEquals("text/html",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("html"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("html"));
         }
 
         @Test
         @DisplayName("unknown file type → text/plain")
         void unknownTypeReturnsPlain() {
             assertEquals("text/plain",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("rust"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("rust"));
         }
 
         @Test
         @DisplayName("null → text/plain")
         void nullReturnsPlain() {
             assertEquals("text/plain",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType(null));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType(null));
         }
 
         @Test
         @DisplayName("empty string → text/plain")
         void emptyStringReturnsPlain() {
             assertEquals("text/plain",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType(""));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType(""));
         }
 
         @Test
@@ -296,21 +329,21 @@ class ContextTextUtilsTest {
         void caseSensitiveJava() {
             // The when-expression matches lowercase only
             assertEquals("text/plain",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("JAVA"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("JAVA"));
         }
 
         @Test
         @DisplayName("case-sensitive: Kotlin does not match kotlin branch → text/plain")
         void caseSensitiveKotlin() {
             assertEquals("text/plain",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("Kotlin"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("Kotlin"));
         }
 
         @Test
         @DisplayName("case-sensitive: Python does not match python branch → text/plain")
         void caseSensitivePython() {
             assertEquals("text/plain",
-                    ContextTextUtils.INSTANCE.getMimeTypeForFileType("Python"));
+                ContextTextUtils.INSTANCE.getMimeTypeForFileType("Python"));
         }
     }
 }
