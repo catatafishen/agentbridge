@@ -5,6 +5,8 @@ import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
@@ -13,6 +15,10 @@ import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationAction;
+import com.intellij.notification.NotificationType;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
@@ -22,8 +28,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
@@ -107,8 +115,7 @@ public final class CopilotClient extends AcpClient {
      * Copilot model backends expose {@code rg} instead of {@code grep} — and we can't reliably
      * enumerate every built-in name across every model.
      */
-    public static final String DEFAULT_EXCLUDED_BUILT_IN_TOOLS =
-        "view,edit,create,bash,glob,grep,apply_patch,grep_search,file_search,rg";
+    public static final String DEFAULT_EXCLUDED_BUILT_IN_TOOLS = CopilotBuiltInTools.DEFAULT_EXCLUDED;
     /**
      * Known Copilot CLI built-in tool names. Used by {@link #resolveToolId} to distinguish
      * actual tool names from human-readable task descriptions that the CLI sends as titles
@@ -116,7 +123,9 @@ public final class CopilotClient extends AcpClient {
      */
     private static final Set<String> KNOWN_BUILTIN_TOOL_NAMES = Set.of(
         "view", "edit", "create", "bash", "glob", "grep", "task", "report_intent",
-        "web_fetch", "web_search", "task_complete", "sql", "skill", "apply_patch"
+        "web_fetch", "web_search", "task_complete", "sql", "skill", "apply_patch",
+        "rg", "str_replace_editor", "lsp", "read_bash", "write_bash", "stop_bash", "list_bash",
+        "powershell", "read_powershell", "write_powershell", "stop_powershell"
     );
 
     // ─── Lifecycle ───────────────────────────────────
@@ -441,6 +450,80 @@ public final class CopilotClient extends AcpClient {
     @Override
     public boolean requiresInlineReferences() {
         return true;
+    }
+
+    // ─── Unknown built-in tools ──────────────────────
+
+    /**
+     * Tools already offered to the user in {@link #promptedSessionId}; guarded by itself.
+     */
+    private final Set<String> promptedUnknownTools = new HashSet<>();
+    private @Nullable String promptedSessionId;
+
+    /**
+     * Offers to exclude a built-in tool we have never classified. The ACP {@code tool_call} carries only a
+     * display title (no separate tool name), so detection is limited to titles shaped like tool names.
+     */
+    @Override
+    protected SessionUpdate processUpdate(SessionUpdate update) {
+        if (update instanceof SessionUpdate.ToolCall toolCall && !isRestoringHistory()) {
+            String tool = toolCall.title();
+            if (shouldPromptForUnknownTool(getCurrentSessionId(), tool, resolveExcludedBuiltInTools())) {
+                showExcludeToolNotification(tool);
+            }
+        }
+        return super.processUpdate(update);
+    }
+
+    /**
+     * True the first time {@code title} is seen as an unclassified tool in {@code sessionId}; a new session
+     * starts with a clean slate.
+     */
+    boolean shouldPromptForUnknownTool(@Nullable String sessionId, String title, String excludedCsv) {
+        if (!CopilotBuiltInTools.isUnknown(title, excludedCsv)) {
+            return false;
+        }
+        synchronized (promptedUnknownTools) {
+            if (!Objects.equals(promptedSessionId, sessionId)) {
+                promptedUnknownTools.clear();
+                promptedSessionId = sessionId;
+            }
+            return promptedUnknownTools.add(title);
+        }
+    }
+
+    private void showExcludeToolNotification(String tool) {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            Notification notification = PlatformApiCompat.createNotification(
+                "Unknown Copilot built-in tool: " + tool,
+                "Copilot called its built-in <code>" + tool + "</code> tool, which AgentBridge has not classified. "
+                    + "Exclude it so the model uses AgentBridge tools instead? "
+                    + "The exclusion is only passed to Copilot when its process starts, so it will not take "
+                    + "effect in this session: it applies after the Copilot agent is restarted "
+                    + "(or the IDE is restarted).",
+                NotificationType.INFORMATION);
+            notification.addAction(NotificationAction.createSimpleExpiring(
+                "Exclude " + tool + " (after restart)", () -> excludeBuiltInTool(tool)));
+            notification.addAction(NotificationAction.createSimpleExpiring("Keep available", () -> {
+            }));
+            notification.notify(project);
+        });
+    }
+
+    private void excludeBuiltInTool(String tool) {
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(AGENT_ID);
+        if (profile == null) {
+            throw new IllegalStateException("No agent profile for " + AGENT_ID + "; cannot exclude " + tool);
+        }
+        profile.setExcludedBuiltInTools(CopilotBuiltInTools.withTool(resolveExcludedBuiltInTools(), tool));
+        LOG.info("Added " + tool + " to the Copilot excluded built-in tools");
+        PlatformApiCompat.showNotification(
+            project,
+            "Excluded Copilot tool: " + tool,
+            "<code>" + tool + "</code> was added to the excluded built-in tools. Copilot can still call it "
+                + "until the Copilot agent is restarted (or the IDE is restarted). "
+                + "You can edit the list in Settings → GitHub Copilot.",
+            NotificationType.INFORMATION);
     }
 
     // ─── Models ──────────────────────────────────────

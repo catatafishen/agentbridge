@@ -95,8 +95,9 @@ agent-specific context.
 
 ### Layer 4: --excluded-tools CLI flag
 
-**What:** The plugin passes `--excluded-tools view,edit,create,bash,glob,grep`
-when launching the Copilot CLI.
+**What:** The plugin passes `--excluded-tools <list>` when launching the Copilot CLI. The default list
+(`CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS`) covers all known file/search and shell built-ins; see
+[COPILOT-BUILTIN-TOOLS.md](COPILOT-BUILTIN-TOOLS.md) for the full inventory.
 
 **Why:** This is the intended upstream mechanism for hiding built-in tools.
 Excluded tools never appear in the agent's tool list, so the agent cannot call
