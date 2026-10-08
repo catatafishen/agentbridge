@@ -5,7 +5,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Pure knowledge about Copilot CLI's built-in tools: which ones we exclude by default, which ones we
@@ -37,18 +36,35 @@ final class CopilotBuiltInTools {
         "ask_user", "exit_plan_mode"
     );
 
-    /**
-     * Copilot reports bare tool names (e.g. {@code read_bash}) as the ACP title for tools without a
-     * custom display title, whereas tools with one use free text ("Update review todo",
-     * "Using skill: x", "Fetching host/path"). Only lowercase snake_case titles can be tool names.
-     */
-    private static final Pattern TOOL_NAME = Pattern.compile("[a-z][a-z0-9]*(?:_[a-z0-9]+)*");
-
     private CopilotBuiltInTools() {
     }
 
+    /**
+     * Whether {@code title} can be a bare tool name. Copilot reports bare names (e.g. {@code read_bash}) as the
+     * ACP title for tools without a custom display title, whereas tools with one use free text
+     * ("Update review todo", "Using skill: x", "Fetching host/path"). So only lowercase snake_case qualifies:
+     * starts with a letter, then lowercase letters, digits and single underscores, not ending in an underscore.
+     * A character loop rather than a regex, because the equivalent nested-repetition pattern can overflow the
+     * stack on long input.
+     */
     static boolean looksLikeToolName(@NotNull String title) {
-        return TOOL_NAME.matcher(title).matches();
+        if (title.isEmpty() || !isLowerAscii(title.charAt(0)) || title.charAt(title.length() - 1) == '_') {
+            return false;
+        }
+        char previous = 0;
+        for (int i = 0; i < title.length(); i++) {
+            char c = title.charAt(i);
+            boolean underscore = c == '_';
+            if (!(isLowerAscii(c) || (c >= '0' && c <= '9') || underscore) || (underscore && previous == '_')) {
+                return false;
+            }
+            previous = c;
+        }
+        return true;
+    }
+
+    private static boolean isLowerAscii(char c) {
+        return c >= 'a' && c <= 'z';
     }
 
     /**

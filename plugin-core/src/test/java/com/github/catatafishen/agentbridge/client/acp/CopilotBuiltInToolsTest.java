@@ -30,6 +30,19 @@ class CopilotBuiltInToolsTest {
     }
 
     @Test
+    void nonAsciiAndUppercaseLettersDoNotLookLikeToolNames() {
+        for (String title : List.of("café", "tool_Name", "tôol", "a-b", "a b", "a.b", "1abc")) {
+            assertFalse(CopilotBuiltInTools.looksLikeToolName(title), title);
+        }
+    }
+
+    @Test
+    void veryLongInputIsHandledWithoutStackOverflow() {
+        assertTrue(CopilotBuiltInTools.looksLikeToolName("a_b".repeat(100_000)));
+        assertFalse(CopilotBuiltInTools.looksLikeToolName("a_b".repeat(100_000) + "_"));
+    }
+
+    @Test
     void defaultExcludedToolsAreNeverUnknown() {
         for (String tool : CopilotBuiltInTools.parse(DEFAULTS)) {
             assertFalse(CopilotBuiltInTools.isUnknown(tool, ""), tool);
