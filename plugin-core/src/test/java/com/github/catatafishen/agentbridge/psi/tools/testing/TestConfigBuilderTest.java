@@ -98,6 +98,47 @@ class TestConfigBuilderTest {
     }
 
     @Nested
+    @DisplayName("applyPatternData")
+    class ApplyPatternData {
+
+        /** Mirrors JUnitConfiguration.Data: a public TEST_OBJECT field, patterns only behind setPatterns. */
+        @SuppressWarnings("unused")
+        public static class FakeJUnitData {
+            public String TEST_OBJECT;
+            private java.util.LinkedHashSet<String> myPattern = new java.util.LinkedHashSet<>();
+
+            public void setPatterns(java.util.LinkedHashSet<String> patterns) {
+                this.myPattern = patterns;
+            }
+
+            public java.util.Set<String> getPatterns() {
+                return myPattern;
+            }
+        }
+
+        @Test
+        @DisplayName("sets the pattern test type and the classes through setPatterns (#1163)")
+        void setsTypeAndPatterns() throws Exception {
+            FakeJUnitData data = new FakeJUnitData();
+
+            TestConfigBuilder.applyPatternData(data, java.util.List.of("a.AFooTest", "b.BFooTest", "a.AFooTest"));
+
+            assertEquals("pattern", data.TEST_OBJECT);
+            assertEquals(java.util.List.of("a.AFooTest", "b.BFooTest"), new java.util.ArrayList<>(data.getPatterns()));
+        }
+
+        @Test
+        @DisplayName("data without setPatterns fails loudly instead of silently not running anything")
+        void missingSetterThrows() {
+            class NoSetter {
+                public String TEST_OBJECT;
+            }
+            org.junit.jupiter.api.Assertions.assertThrows(NoSuchMethodException.class,
+                () -> TestConfigBuilder.applyPatternData(new NoSetter(), java.util.List.of("a.AFooTest")));
+        }
+    }
+
+    @Nested
     @DisplayName("extractFqnFromSourceText")
     class ExtractFqnFromSourceText {
 
