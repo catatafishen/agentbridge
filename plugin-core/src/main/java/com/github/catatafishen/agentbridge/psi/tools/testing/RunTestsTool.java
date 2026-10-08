@@ -402,11 +402,19 @@ public final class RunTestsTool extends TestingTool {
      * those cases the caller keeps its previous behaviour.
      */
     private @Nullable String matchedGradleModule(MatchingTestClasses matches, String basePath) {
-        if (matches.classes().isEmpty() || matches.modules().size() != 1) return null;
+        if (matches.classes().isEmpty() || matches.modules().size() != 1) {
+            LOG.info("matchedGradleModule: " + matches.classes().size() + " classes in "
+                + matches.modules().size() + " modules " + matches.modules() + "; not scoping to Gradle");
+            return null;
+        }
         Module only = matches.modules().iterator().next();
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
-            if (!ExternalSystemApiUtil.isExternalSystemAwareModule("GRADLE", only)) return null;
-            return TestConfigBuilder.gradleModulePath(basePath, ExternalSystemApiUtil.getExternalProjectPath(only));
+            boolean gradleAware = ExternalSystemApiUtil.isExternalSystemAwareModule("GRADLE", only);
+            String externalPath = ExternalSystemApiUtil.getExternalProjectPath(only);
+            String path = gradleAware ? TestConfigBuilder.gradleModulePath(basePath, externalPath) : null;
+            LOG.info("matchedGradleModule: module=" + only.getName() + " gradleAware=" + gradleAware
+                + " externalPath=" + externalPath + " basePath=" + basePath + " -> " + path);
+            return path;
         });
     }
 
@@ -469,7 +477,8 @@ public final class RunTestsTool extends TestingTool {
         // A package-qualified target needs the FQN, which means reading the file's package; a simple-name
         // target can reject most files from the name alone.
         boolean needsFqnToMatch = target.contains(".");
-        if (!needsFqnToMatch && !TestConfigBuilder.matchesTestTarget(simpleName, null, target, compiledGlob)) return true;
+        if (!needsFqnToMatch && !TestConfigBuilder.matchesTestTarget(simpleName, null, target, compiledGlob))
+            return true;
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return true;
         String fqn = extractClassFqn(psiFile, simpleName);
