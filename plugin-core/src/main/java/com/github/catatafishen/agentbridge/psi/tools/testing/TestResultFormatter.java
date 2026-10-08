@@ -14,6 +14,9 @@ final class TestResultFormatter {
     private static final String TESTS_PASSED = "Tests PASSED";
     private static final String TESTS_FAILED_PREFIX = "Tests FAILED (exit code ";
     private static final String RESULTS_IN_RUNNER_PANEL = "\n(See detailed results in the IDE's Run panel)";
+    private static final String NO_COUNTS_NOTE = "\nNote: no test counts were reported for this run, so it is not "
+        + "confirmed that any test executed (a build tool also exits 0 when the test task is up to date or "
+        + "nothing matched). Re-run after changing the test, or read the run output with read_run_output.";
 
     private TestResultFormatter() {
     }
@@ -24,12 +27,22 @@ final class TestResultFormatter {
     static String formatTestSummary(int exitCode, @NotNull String configName, @NotNull String testOutput) {
         String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
             + " — " + configName;
-        if (testOutput.startsWith(TEST_RESULT_COUNTS_PREFIX)) {
+        if (hasTestCounts(testOutput)) {
             return testOutput + "\n\nRun configuration: " + configName + " (exit code " + exitCode + ")";
         }
-        return testOutput.isEmpty()
+        String body = testOutput.isEmpty()
             ? summary + RESULTS_IN_RUNNER_PANEL
             : summary + "\n" + testOutput;
+        // A zero exit code without any test counts proves only that the build tool succeeded: it is also what
+        // an up-to-date or fully filtered-out test task returns. Say so rather than imply the tests ran.
+        return exitCode == 0 ? body + NO_COUNTS_NOTE : body;
+    }
+
+    /**
+     * Whether {@code testOutput} starts with the per-test counts line, i.e. tests were actually counted.
+     */
+    static boolean hasTestCounts(@NotNull String testOutput) {
+        return testOutput.startsWith(TEST_RESULT_COUNTS_PREFIX);
     }
 
     static @NotNull String withConsoleFallback(@NotNull String testOutput,

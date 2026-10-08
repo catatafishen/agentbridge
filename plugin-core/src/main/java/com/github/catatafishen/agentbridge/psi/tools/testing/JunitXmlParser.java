@@ -51,6 +51,15 @@ public final class JunitXmlParser {
      * Returns a formatted summary string, or an empty string if no results were found.
      */
     static String parseJunitXmlResults(String basePath, String module) {
+        return parseJunitXmlResults(basePath, module, 0);
+    }
+
+    /**
+     * Like {@link #parseJunitXmlResults(String, String)}, but only reads report files modified at or after
+     * {@code modifiedSinceMillis}. Report directories of modules that were not part of this run keep the files of
+     * an earlier run, which must not be presented as the outcome of this one.
+     */
+    static String parseJunitXmlResults(String basePath, String module, long modifiedSinceMillis) {
         List<Path> reportDirs = findTestReportDirs(basePath, module);
         if (reportDirs.isEmpty()) return "";
 
@@ -64,6 +73,7 @@ public final class JunitXmlParser {
         for (Path reportDir : reportDirs) {
             try (var xmlFiles = Files.list(reportDir)) {
                 for (Path xmlFile : xmlFiles.filter(p -> p.toString().endsWith(".xml")).toList()) {
+                    if (!isModifiedSince(xmlFile, modifiedSinceMillis)) continue;
                     TestSuiteResult result = parseTestSuiteXml(xmlFile);
                     if (result == null) continue;
                     totalTests += result.tests;
@@ -83,6 +93,15 @@ public final class JunitXmlParser {
     }
 
     // ── Filesystem helpers ───────────────────────────────────
+
+    static boolean isModifiedSince(Path file, long modifiedSinceMillis) {
+        if (modifiedSinceMillis <= 0) return true;
+        try {
+            return Files.getLastModifiedTime(file).toMillis() >= modifiedSinceMillis;
+        } catch (IOException e) {
+            return false;
+        }
+    }
 
     /**
      * Walks the filesystem under {@code basePath} to find directories matching
