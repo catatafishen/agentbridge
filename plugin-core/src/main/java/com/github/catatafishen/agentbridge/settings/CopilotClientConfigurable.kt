@@ -108,7 +108,7 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
             liveBinaryFieldText = { cell.component.text }
         }
         row("Excluded built-in tools:") {
-            textField()
+            val excludedTools = textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
                 .applyToComponent { emptyText.text = CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS }
@@ -118,7 +118,8 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                         "<code>${CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS}</code>. " +
                         "Add extra names here if a model exposes a built-in tool under a different " +
                         "name than the default list expects (e.g. some backends use <code>rg</code> " +
-                        "instead of <code>grep</code>)."
+                        "instead of <code>grep</code>). AgentBridge also offers to add tools it does not " +
+                        "recognise when Copilot calls them. Changes apply the next time Copilot starts."
                 )
                 .bindText(
                     { AgentProfileManager.getInstance().getProfile(AGENT_ID)?.excludedBuiltInTools.orEmpty() },
@@ -126,6 +127,9 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                         AgentProfileManager.getInstance().getProfile(AGENT_ID)?.excludedBuiltInTools = value.trim()
                     }
                 )
+            button("Reset to Defaults") {
+                excludedTools.component.text = CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS
+            }
         }
         row("Additional arguments:") {
             textField()

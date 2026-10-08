@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,6 +18,100 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CopilotClientTest {
+
+    // ── DEFAULT_EXCLUDED_BUILT_IN_TOOLS ─────────────────────────────────
+
+    private static Set<String> defaultExcludedTools() {
+        return Set.of(CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS.split(","));
+    }
+
+    @Test
+    void defaultExcludedToolsCoverFileAndSearchBuiltIns() {
+        assertTrue(defaultExcludedTools().containsAll(List.of(
+            "view", "edit", "create", "apply_patch", "str_replace_editor", "glob", "grep", "rg",
+            "grep_search", "file_search", "search_code_subagent", "lsp")));
+    }
+
+    @Test
+    void defaultExcludedToolsCoverShellBuiltInsAndTheirAsyncCompanions() {
+        assertTrue(defaultExcludedTools().containsAll(List.of(
+            "bash", "read_bash", "write_bash", "stop_bash", "list_bash",
+            "powershell", "read_powershell", "write_powershell", "stop_powershell")));
+    }
+
+    @Test
+    void defaultExcludedToolsKeepWebSubAgentTodoAndDiscoveryTools() {
+        Set<String> excluded = defaultExcludedTools();
+        for (String kept : List.of("web_fetch", "web_search", "sql", "session_store_sql", "task", "read_agent",
+            "write_agent", "list_agents", "skill", "tool_search_tool", "report_intent", "task_complete")) {
+            assertFalse(excluded.contains(kept), kept + " must stay available to the model");
+        }
+    }
+
+    @Test
+    void defaultExcludedToolsHaveNoBlankOrDuplicateEntries() {
+        String[] names = CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS.split(",");
+        assertEquals(names.length, Set.of(names).size());
+        for (String name : names) {
+            assertEquals(name.trim(), name);
+            assertFalse(name.isEmpty());
+        }
+    }
+
+    // ── shouldPromptForUnknownTool ──────────────────────────────────────
+
+    private static final String DEFAULTS = CopilotClient.DEFAULT_EXCLUDED_BUILT_IN_TOOLS;
+
+    @Test
+    void unknownToolPromptsOncePerSession() {
+        CopilotClient client = allocateClient();
+        assertTrue(client.shouldPromptForUnknownTool("s1", "brand_new_tool", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool("s1", "brand_new_tool", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool("s1", "brand_new_tool", DEFAULTS));
+    }
+
+    @Test
+    void unknownToolPromptsAgainInNewSession() {
+        CopilotClient client = allocateClient();
+        assertTrue(client.shouldPromptForUnknownTool("s1", "brand_new_tool", DEFAULTS));
+        assertTrue(client.shouldPromptForUnknownTool("s2", "brand_new_tool", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool("s2", "brand_new_tool", DEFAULTS));
+    }
+
+    @Test
+    void differentUnknownToolsPromptSeparately() {
+        CopilotClient client = allocateClient();
+        assertTrue(client.shouldPromptForUnknownTool("s1", "tool_a", DEFAULTS));
+        assertTrue(client.shouldPromptForUnknownTool("s1", "tool_b", DEFAULTS));
+    }
+
+    @Test
+    void knownAndHumanReadableToolsNeverPrompt() {
+        CopilotClient client = allocateClient();
+        assertFalse(client.shouldPromptForUnknownTool("s1", "bash", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool("s1", "web_fetch", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool("s1", "Update review todo", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool("s1", "agentbridge-read_file", DEFAULTS));
+    }
+
+    @Test
+    void toolAlreadyExcludedByUserNeverPrompts() {
+        assertFalse(allocateClient().shouldPromptForUnknownTool("s1", "brand_new_tool", "brand_new_tool"));
+    }
+
+    @Test
+    void declinedKnownToolDoesNotConsumeThePromptForAnUnknownOne() {
+        CopilotClient client = allocateClient();
+        assertFalse(client.shouldPromptForUnknownTool("s1", "bash", DEFAULTS));
+        assertTrue(client.shouldPromptForUnknownTool("s1", "brand_new_tool", DEFAULTS));
+    }
+
+    @Test
+    void promptWithoutSessionIdIsStillDeduplicated() {
+        CopilotClient client = allocateClient();
+        assertTrue(client.shouldPromptForUnknownTool(null, "brand_new_tool", DEFAULTS));
+        assertFalse(client.shouldPromptForUnknownTool(null, "brand_new_tool", DEFAULTS));
+    }
 
     // ── buildAgentDefinition (private static) ───────────────────────────
 
