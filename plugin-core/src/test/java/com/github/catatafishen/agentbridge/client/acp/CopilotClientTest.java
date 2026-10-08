@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
 import com.github.catatafishen.agentbridge.model.PromptResponse;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Nested;
@@ -111,6 +112,45 @@ class CopilotClientTest {
         CopilotClient client = allocateClient();
         assertTrue(client.shouldPromptForUnknownTool(null, "brand_new_tool", DEFAULTS));
         assertFalse(client.shouldPromptForUnknownTool(null, "brand_new_tool", DEFAULTS));
+    }
+
+    // ── unknownToolToOffer (parsed processUpdate path) ──────────────────
+
+    private static SessionUpdate.ToolCall toolCall(String title) {
+        return new SessionUpdate.ToolCall("id-" + title, title, null, null, null, null, null, null, null, null);
+    }
+
+    @Test
+    void parsedAgentBridgeToolIsNotOfferedForExclusion() {
+        // AcpMessageParser hands processUpdate the resolved title: "agentbridge-read_file" -> "read_file".
+        CopilotClient client = allocateClient();
+        assertNull(client.unknownToolToOffer(toolCall("read_file"), false, "s1", DEFAULTS, "read_file"::equals));
+        assertEquals("brand_new_tool",
+            client.unknownToolToOffer(toolCall("brand_new_tool"), false, "s1", DEFAULTS, "read_file"::equals));
+    }
+
+    @Test
+    void registeredToolDoesNotConsumeThePromptSlot() {
+        CopilotClient client = allocateClient();
+        assertNull(client.unknownToolToOffer(toolCall("read_file"), false, "s1", DEFAULTS, id -> true));
+        assertEquals("read_file", client.unknownToolToOffer(toolCall("read_file"), false, "s1", DEFAULTS, id -> false));
+    }
+
+    @Test
+    void unknownToolToOfferIgnoresReplayedAndNonToolCallUpdates() {
+        CopilotClient client = allocateClient();
+        assertNull(client.unknownToolToOffer(toolCall("brand_new_tool"), true, "s1", DEFAULTS, id -> false));
+        assertNull(client.unknownToolToOffer(
+            new SessionUpdate.ToolCallUpdate("id", SessionUpdate.ToolCallStatus.COMPLETED, null, null, null),
+            false, "s1", DEFAULTS, id -> false));
+    }
+
+    @Test
+    void unknownToolToOfferIsOncePerSession() {
+        CopilotClient client = allocateClient();
+        assertEquals("brand_new_tool",
+            client.unknownToolToOffer(toolCall("brand_new_tool"), false, "s1", DEFAULTS, id -> false));
+        assertNull(client.unknownToolToOffer(toolCall("brand_new_tool"), false, "s1", DEFAULTS, id -> false));
     }
 
     // ── buildAgentDefinition (private static) ───────────────────────────
