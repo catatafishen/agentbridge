@@ -466,13 +466,32 @@ public final class CopilotClient extends AcpClient {
      */
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
-        if (update instanceof SessionUpdate.ToolCall toolCall && !isRestoringHistory()) {
-            String tool = toolCall.title();
-            if (shouldPromptForUnknownTool(getCurrentSessionId(), tool, resolveExcludedBuiltInTools())) {
-                showExcludeToolNotification(tool);
-            }
+        String unknownTool = unknownToolToOffer(update, isRestoringHistory(), getCurrentSessionId(),
+            resolveExcludedBuiltInTools(), id -> ToolRegistry.getInstance(project).findById(id) != null);
+        if (unknownTool != null) {
+            showExcludeToolNotification(unknownTool);
         }
         return super.processUpdate(update);
+    }
+
+    /**
+     * Returns the tool to offer for exclusion for this update, or {@code null} when nothing should be shown:
+     * not a live tool call, already offered this session, or a tool we already know.
+     *
+     * <p>{@link SessionUpdate.ToolCall#title()} is the <em>resolved</em> title, so an AgentBridge call
+     * {@code agentbridge-read_file} arrives here as {@code read_file}. It is indistinguishable from a built-in
+     * name by shape alone, hence the registry check ({@code isAgentBridgeTool}).
+     */
+    @Nullable String unknownToolToOffer(SessionUpdate update, boolean restoringHistory, @Nullable String sessionId,
+                                        String excludedCsv, java.util.function.Predicate<String> isAgentBridgeTool) {
+        if (restoringHistory || !(update instanceof SessionUpdate.ToolCall toolCall)) {
+            return null;
+        }
+        String title = toolCall.title();
+        if (isAgentBridgeTool.test(title) || !shouldPromptForUnknownTool(sessionId, title, excludedCsv)) {
+            return null;
+        }
+        return title;
     }
 
     /**
