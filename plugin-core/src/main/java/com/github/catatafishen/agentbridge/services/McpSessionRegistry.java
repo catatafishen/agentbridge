@@ -31,14 +31,19 @@ final class McpSessionRegistry {
 
     private static final int MAX_RETIRED_SESSIONS = 64;
 
-    private final Map<String, Long> lastActivityNanos = new HashMap<>();
-    private final Map<String, String> clientNames = new HashMap<>();
     /**
-     * Recently retired session IDs → client name; bounded, oldest evicted first.
+     * Marks a session whose agent generation was never recorded; never matches a real generation.
      */
-    private final Map<String, String> retired = new LinkedHashMap<>() {
+    static final long NO_GENERATION = -1;
+
+    private final Map<String, Long> lastActivityNanos = new HashMap<>();
+    private final Map<String, Long> generations = new HashMap<>();
+    /**
+     * Recently retired session IDs → agent generation; bounded, oldest evicted first.
+     */
+    private final Map<String, Long> retired = new LinkedHashMap<>() {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
             return super.size() > MAX_RETIRED_SESSIONS;
         }
     };
@@ -84,26 +89,27 @@ final class McpSessionRegistry {
     }
 
     /**
-     * Records which MCP client ({@code clientInfo.name}) a live session belongs to.
+     * Records which agent generation (see {@code ActiveAgentManager#getAgentGeneration}) a live session
+     * was initialized under.
      */
-    synchronized void recordClientName(@NotNull String sessionId, @Nullable String clientName) {
-        if (clientName == null || !lastActivityNanos.containsKey(sessionId)) return;
-        clientNames.put(sessionId, clientName);
+    synchronized void recordGeneration(@NotNull String sessionId, long generation) {
+        if (!lastActivityNanos.containsKey(sessionId)) return;
+        generations.put(sessionId, generation);
     }
 
     /**
-     * Returns the client name of a session this registry issued and has since retired
-     * (closed, expired or drained), or {@code null} if the ID was never issued by this
-     * server instance (e.g. a stale ID from before an IDE restart, or from another client).
-     * The empty string means "retired, client name unknown".
+     * Returns the agent generation a session this registry issued had when it was initialized, once that
+     * session has been retired (closed, expired or drained); {@code null} if the ID was never issued by this
+     * server instance (e.g. a stale ID from before an IDE restart, or one held by another client), and
+     * {@link #NO_GENERATION} if no generation was recorded.
      */
-    synchronized @Nullable String retiredClientName(@NotNull String sessionId) {
+    synchronized @Nullable Long retiredGeneration(@NotNull String sessionId) {
         return retired.get(sessionId);
     }
 
     private void retire(@NotNull String sessionId) {
-        String name = clientNames.remove(sessionId);
-        retired.put(sessionId, name == null ? "" : name);
+        Long generation = generations.remove(sessionId);
+        retired.put(sessionId, generation == null ? NO_GENERATION : generation);
     }
 
     synchronized boolean closeSession(@NotNull String sessionId) {

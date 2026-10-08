@@ -284,13 +284,14 @@ class McpHttpServerStaticMethodsTest {
             ActiveAgentManager agentManager = mock(ActiveAgentManager.class);
             when(project.getService(ActiveAgentManager.class)).thenReturn(agentManager);
             when(agentManager.isConnected()).thenReturn(true);
+            when(agentManager.getAgentGeneration()).thenReturn(7L);
             McpHttpServer server = new McpHttpServer(project);
             // Run the reconnect synchronously so the assertions below are deterministic —
             // the real app-wide executor's scheduling latency is unpredictable when many
             // tests share the same JVM.
             server.setReconnectExecutorForTest(Runnable::run);
-            // A session this server issued and then retired (idle expiry / close).
-            String retiredId = issueAndRetireSession(server);
+            // A session of the running agent process that this server issued and then retired.
+            String retiredId = issueAndRetireSession(server, 7L);
             Headers requestHeaders = new Headers();
             requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, retiredId);
             HttpExchange exchange = exchange(requestHeaders, new Headers(),
@@ -337,43 +338,53 @@ class McpHttpServerStaticMethodsTest {
         }
 
         @Test
-        void shouldAutoReconnectOnlyForRetiredSessionOfTheActiveAgent() {
+        void shouldAutoReconnectOnlyForRetiredSessionOfTheRunningAgentProcess() {
             // never issued by this server -> never restart
-            assertFalse(McpHttpServer.shouldAutoReconnect(null, "Koog", false));
-            // retired session of the active agent -> restart
-            assertTrue(McpHttpServer.shouldAutoReconnect("Koog", "Koog", false));
-            // retired session with no recorded ownership -> not restartable
-            assertFalse(McpHttpServer.shouldAutoReconnect("", "Koog", false));
-            // retired session of a different client -> leave the active agent alone
-            assertFalse(McpHttpServer.shouldAutoReconnect("copilot-cli", "Koog", false));
+            assertFalse(McpHttpServer.shouldAutoReconnect(null, 5, false));
+            // retired session of the running agent process -> restart
+            assertTrue(McpHttpServer.shouldAutoReconnect(5L, 5, false));
+            // retired session with no recorded generation -> not restartable
+            assertFalse(McpHttpServer.shouldAutoReconnect(McpSessionRegistry.NO_GENERATION, 5, false));
+            // no agent manager (current generation unknown) must not match an unrecorded session
+            assertFalse(McpHttpServer.shouldAutoReconnect(
+                McpSessionRegistry.NO_GENERATION, McpSessionRegistry.NO_GENERATION, false));
+            // session of an earlier agent process -> leave the running agent alone
+            assertFalse(McpHttpServer.shouldAutoReconnect(4L, 5, false));
             // other requests in flight would be dropped by a restart
-            assertFalse(McpHttpServer.shouldAutoReconnect("Koog", "Koog", true));
+            assertFalse(McpHttpServer.shouldAutoReconnect(5L, 5, true));
         }
 
+        /**
+         * Review finding: a client name is caller-supplied, so a second client claiming the active
+         * agent's name must not be able to restart it. Only the generation counts.
+         */
         @Test
-        void extractClientNameReadsClientInfo() {
-            assertEquals("copilot-cli", McpHttpServer.extractClientName(
-                "{\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"copilot-cli\"}}}"));
-            assertNull(McpHttpServer.extractClientName(
-                "{\"method\":\"initialize\",\"params\":{}}"));
-            assertNull(McpHttpServer.extractClientName("{broken"));
+        void sessionFromAnEarlierAgentProcessDoesNotRestartTheRunningAgent() throws Exception {
+            Project project = mock(Project.class);
+            ActiveAgentManager agentManager = mock(ActiveAgentManager.class);
+            when(project.getService(ActiveAgentManager.class)).thenReturn(agentManager);
+            when(agentManager.isConnected()).thenReturn(true);
+            when(agentManager.getAgentGeneration()).thenReturn(8L);
+            McpHttpServer server = new McpHttpServer(project);
+            server.setReconnectExecutorForTest(Runnable::run);
+            String retiredId = issueAndRetireSession(server, 7L);
+            Headers requestHeaders = new Headers();
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, retiredId);
+
+            assertNull(server.resolveHttpOwner(exchange(requestHeaders, new Headers(),
+                new ByteArrayOutputStream()), "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+
+            verify(agentManager, never()).restart();
         }
 
-        private String issueAndRetireSession(McpHttpServer server) throws Exception {
+        private String issueAndRetireSession(McpHttpServer server, long generation) throws Exception {
             java.lang.reflect.Field field = McpHttpServer.class.getDeclaredField("httpSessions");
             field.setAccessible(true);
             McpSessionRegistry registry = (McpSessionRegistry) field.get(server);
             String id = registry.openSession(0);
             assertNotNull(id);
-            registry.recordClientName(id, "Koog");
+            registry.recordGeneration(id, generation);
             assertTrue(registry.closeSession(id));
-            // The active agent's MCP identity, as recorded at initialize.
-            McpProtocolHandler handler = mock(McpProtocolHandler.class);
-            when(handler.getConnectedAgentName()).thenReturn("Koog");
-            java.lang.reflect.Field handlerField =
-                McpHttpServer.class.getDeclaredField("protocolHandler");
-            handlerField.setAccessible(true);
-            handlerField.set(server, handler);
             return id;
         }
 
@@ -387,10 +398,11 @@ class McpHttpServerStaticMethodsTest {
             ActiveAgentManager agentManager = mock(ActiveAgentManager.class);
             when(project.getService(ActiveAgentManager.class)).thenReturn(agentManager);
             when(agentManager.isConnected()).thenReturn(true);
+            when(agentManager.getAgentGeneration()).thenReturn(7L);
             McpHttpServer server = new McpHttpServer(project);
             java.util.List<Runnable> queued = new java.util.ArrayList<>();
             server.setReconnectExecutorForTest(queued::add);
-            String retiredId = issueAndRetireSession(server);
+            String retiredId = issueAndRetireSession(server, 7L);
             Headers requestHeaders = new Headers();
             requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, retiredId);
             assertNull(server.resolveHttpOwner(exchange(requestHeaders, new Headers(),

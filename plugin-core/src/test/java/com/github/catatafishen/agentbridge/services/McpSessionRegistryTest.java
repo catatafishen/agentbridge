@@ -37,21 +37,21 @@ class McpSessionRegistryTest {
     }
 
     @Test
-    @DisplayName("remembers client name of retired sessions; never-issued IDs stay unknown")
+    @DisplayName("remembers the agent generation of retired sessions; never-issued IDs stay unknown")
     void tracksRetiredSessions() {
         McpSessionRegistry registry = new McpSessionRegistry();
-        String named = registry.openSession(0);
-        String unnamed = registry.openSession(0);
-        registry.recordClientName(named, "copilot-cli");
-        registry.recordClientName("never-issued", "ghost");
+        String tagged = registry.openSession(0);
+        String untagged = registry.openSession(0);
+        registry.recordGeneration(tagged, 7);
+        registry.recordGeneration("never-issued", 9);
 
-        assertNull(registry.retiredClientName(named), "live sessions are not retired");
-        assertTrue(registry.closeSession(named));
-        assertTrue(registry.closeSession(unnamed));
+        assertNull(registry.retiredGeneration(tagged), "live sessions are not retired");
+        assertTrue(registry.closeSession(tagged));
+        assertTrue(registry.closeSession(untagged));
 
-        assertEquals("copilot-cli", registry.retiredClientName(named));
-        assertEquals("", registry.retiredClientName(unnamed));
-        assertNull(registry.retiredClientName("never-issued"));
+        assertEquals(7L, registry.retiredGeneration(tagged));
+        assertEquals(McpSessionRegistry.NO_GENERATION, registry.retiredGeneration(untagged));
+        assertNull(registry.retiredGeneration("never-issued"));
     }
 
     @Test
@@ -60,14 +60,14 @@ class McpSessionRegistryTest {
         AtomicLong now = new AtomicLong();
         McpSessionRegistry registry = new McpSessionRegistry(now::get);
         String idle = registry.openSession(0);
-        registry.recordClientName(idle, "Koog");
+        registry.recordGeneration(idle, 3);
         now.set(100);
         assertEquals(Set.of(idle), registry.expireIdleSessions(50));
-        assertEquals("Koog", registry.retiredClientName(idle));
+        assertEquals(3L, registry.retiredGeneration(idle));
 
         String drained = registry.openSession(0);
         registry.drainSessions();
-        assertEquals("", registry.retiredClientName(drained));
+        assertEquals(McpSessionRegistry.NO_GENERATION, registry.retiredGeneration(drained));
     }
 
     @Test
