@@ -41,8 +41,10 @@ import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -66,7 +68,6 @@ public final class RunTestsTool extends TestingTool {
 
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
-    private static final String TEST_TYPE_PATTERN = "pattern";
     private static final String JUNIT_TYPE_ID = "junit";
     private static final String LAUNCH_FAILED = "launch_failed";
     private static final String FIELD_TEST_OBJECT = "TEST_OBJECT";
@@ -89,14 +90,11 @@ public final class RunTestsTool extends TestingTool {
     private int timeoutSec = DEFAULT_TIMEOUT_SECONDS;
 
     /**
-     * When the current run started, for ignoring report files written by an earlier run; set in {@link #execute}.
+     * Report files as they were before the current run started, for ignoring files written by an earlier run;
+     * taken in {@link #execute}. Comparing against this is exact, unlike a time cutoff, which the file
+     * system's timestamp granularity and clock skew can blur.
      */
-    private long runStartedMillis;
-
-    /**
-     * Report files can carry a coarser timestamp than the clock that records the start.
-     */
-    private static final long XML_FRESHNESS_SLACK_MILLIS = 2_000;
+    private Map<Path, Long> reportBaseline = Map.of();
 
     public RunTestsTool(Project project) {
         super(project);
@@ -167,7 +165,8 @@ public final class RunTestsTool extends TestingTool {
         String timeoutError = McpRequestDeadline.rejectNonPositive(requestedTimeout);
         if (timeoutError != null) return timeoutError;
         this.timeoutSec = McpRequestDeadline.clamp(requestedTimeout);
-        this.runStartedMillis = System.currentTimeMillis();
+        String basePath = project.getBasePath();
+        this.reportBaseline = basePath == null ? Map.of() : JunitXmlParser.snapshotReportTimes(basePath);
         return McpRequestDeadline.prependNotice(
             McpRequestDeadline.clampNotice(requestedTimeout), runResolvedTarget(args));
     }
@@ -1196,7 +1195,7 @@ public final class RunTestsTool extends TestingTool {
     }
 
     private String parseJunitXmlResults(String basePath, String module) {
-        return JunitXmlParser.parseJunitXmlResults(basePath, module, runStartedMillis - XML_FRESHNESS_SLACK_MILLIS);
+        return JunitXmlParser.parseJunitXmlResults(basePath, module, reportBaseline);
     }
 
     /**
