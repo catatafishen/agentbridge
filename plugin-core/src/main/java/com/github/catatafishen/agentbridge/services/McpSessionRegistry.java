@@ -7,6 +7,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -28,7 +29,19 @@ final class McpSessionRegistry {
         INVALID
     }
 
+    private static final int MAX_RETIRED_SESSIONS = 64;
+
     private final Map<String, Long> lastActivityNanos = new HashMap<>();
+    private final Map<String, String> clientNames = new HashMap<>();
+    /**
+     * Recently retired session IDs → client name; bounded, oldest evicted first.
+     */
+    private final Map<String, String> retired = new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > MAX_RETIRED_SESSIONS;
+        }
+    };
     private final LongSupplier nanoTime;
 
     McpSessionRegistry() {
@@ -70,8 +83,33 @@ final class McpSessionRegistry {
         return true;
     }
 
+    /**
+     * Records which MCP client ({@code clientInfo.name}) a live session belongs to.
+     */
+    synchronized void recordClientName(@NotNull String sessionId, @Nullable String clientName) {
+        if (clientName == null || !lastActivityNanos.containsKey(sessionId)) return;
+        clientNames.put(sessionId, clientName);
+    }
+
+    /**
+     * Returns the client name of a session this registry issued and has since retired
+     * (closed, expired or drained), or {@code null} if the ID was never issued by this
+     * server instance (e.g. a stale ID from before an IDE restart, or from another client).
+     * The empty string means "retired, client name unknown".
+     */
+    synchronized @Nullable String retiredClientName(@NotNull String sessionId) {
+        return retired.get(sessionId);
+    }
+
+    private void retire(@NotNull String sessionId) {
+        String name = clientNames.remove(sessionId);
+        retired.put(sessionId, name == null ? "" : name);
+    }
+
     synchronized boolean closeSession(@NotNull String sessionId) {
-        return lastActivityNanos.remove(sessionId) != null;
+        boolean removed = lastActivityNanos.remove(sessionId) != null;
+        if (removed) retire(sessionId);
+        return removed;
     }
 
     synchronized @NotNull Set<String> expireIdleSessions(long maxIdleNanos) {
@@ -85,12 +123,14 @@ final class McpSessionRegistry {
             if (idle) expired.add(entry.getKey());
             return idle;
         });
+        expired.forEach(this::retire);
         return Set.copyOf(expired);
     }
 
     synchronized @NotNull Set<String> drainSessions() {
         Set<String> drained = Set.copyOf(lastActivityNanos.keySet());
         lastActivityNanos.clear();
+        drained.forEach(this::retire);
         return drained;
     }
 

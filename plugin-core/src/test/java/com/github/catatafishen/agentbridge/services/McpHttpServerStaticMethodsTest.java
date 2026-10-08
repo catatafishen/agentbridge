@@ -289,8 +289,10 @@ class McpHttpServerStaticMethodsTest {
             // the real app-wide executor's scheduling latency is unpredictable when many
             // tests share the same JVM.
             server.setReconnectExecutorForTest(Runnable::run);
+            // A session this server issued and then retired (idle expiry / close).
+            String retiredId = issueAndRetireSession(server);
             Headers requestHeaders = new Headers();
-            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, "unknown");
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, retiredId);
             HttpExchange exchange = exchange(requestHeaders, new Headers(),
                 new ByteArrayOutputStream());
 
@@ -307,6 +309,64 @@ class McpHttpServerStaticMethodsTest {
             assertNull(server.resolveHttpOwner(secondExchange,
                 "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"));
             verify(agentManager, times(1)).restart();
+        }
+
+        /**
+         * Regression: a session ID this server never issued (stale from before an IDE restart,
+         * or held by another client such as a leftover CLI process) used to restart the active
+         * agent, killing its running turn and dropping in-flight tool results.
+         */
+        @Test
+        void sessionNeverIssuedByThisServerDoesNotRestartActiveAgent() throws Exception {
+            Project project = mock(Project.class);
+            ActiveAgentManager agentManager = mock(ActiveAgentManager.class);
+            when(project.getService(ActiveAgentManager.class)).thenReturn(agentManager);
+            when(agentManager.isConnected()).thenReturn(true);
+            McpHttpServer server = new McpHttpServer(project);
+            server.setReconnectExecutorForTest(Runnable::run);
+            Headers requestHeaders = new Headers();
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, "stale-from-other-client");
+            HttpExchange exchange = exchange(requestHeaders, new Headers(),
+                new ByteArrayOutputStream());
+
+            assertNull(server.resolveHttpOwner(exchange,
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+
+            verify(exchange).sendResponseHeaders(eq(404), anyLong());
+            verify(agentManager, never()).restart();
+        }
+
+        @Test
+        void shouldAutoReconnectOnlyForRetiredSessionOfTheActiveAgent() {
+            // never issued by this server -> never restart
+            assertFalse(McpHttpServer.shouldAutoReconnect(null, "Koog", false));
+            // retired session of the active agent -> restart
+            assertTrue(McpHttpServer.shouldAutoReconnect("Koog", "Koog", false));
+            // retired session, client name unknown -> restart (previous behaviour)
+            assertTrue(McpHttpServer.shouldAutoReconnect("", "Koog", false));
+            // retired session of a different client -> leave the active agent alone
+            assertFalse(McpHttpServer.shouldAutoReconnect("copilot-cli", "Koog", false));
+            // other requests in flight would be dropped by a restart
+            assertFalse(McpHttpServer.shouldAutoReconnect("Koog", "Koog", true));
+        }
+
+        @Test
+        void extractClientNameReadsClientInfo() {
+            assertEquals("copilot-cli", McpHttpServer.extractClientName(
+                "{\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"copilot-cli\"}}}"));
+            assertNull(McpHttpServer.extractClientName(
+                "{\"method\":\"initialize\",\"params\":{}}"));
+            assertNull(McpHttpServer.extractClientName("{broken"));
+        }
+
+        private String issueAndRetireSession(McpHttpServer server) throws Exception {
+            java.lang.reflect.Field field = McpHttpServer.class.getDeclaredField("httpSessions");
+            field.setAccessible(true);
+            McpSessionRegistry registry = (McpSessionRegistry) field.get(server);
+            String id = registry.openSession(0);
+            assertNotNull(id);
+            assertTrue(registry.closeSession(id));
+            return id;
         }
 
         @Test
