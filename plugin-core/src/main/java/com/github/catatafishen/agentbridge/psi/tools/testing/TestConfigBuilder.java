@@ -66,6 +66,19 @@ final class TestConfigBuilder {
     }
 
     /**
+     * Configures a JUnit run configuration's persistent data to run the given classes as a pattern. The patterns
+     * are set through {@code setPatterns}: the data class has no public {@code PATTERNS} field (they live in a
+     * private field), so reading the field reflectively throws {@link NoSuchFieldException} (#1163).
+     */
+    @SuppressWarnings("java:S3011") // reflection on JUnit config data: the API is not available at compile time
+    static void applyPatternData(@NotNull Object data, @NotNull java.util.Collection<String> classes)
+        throws ReflectiveOperationException {
+        data.getClass().getField("TEST_OBJECT").set(data, "pattern");
+        data.getClass().getMethod("setPatterns", java.util.LinkedHashSet.class)
+            .invoke(data, new java.util.LinkedHashSet<>(classes));
+    }
+
+    /**
      * Builds a Gradle task prefix from the module name.
      * Returns an empty string for no module, or {@code ":module:"} for a named module.
      */

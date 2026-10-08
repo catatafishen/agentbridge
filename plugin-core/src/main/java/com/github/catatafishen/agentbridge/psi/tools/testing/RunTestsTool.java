@@ -475,9 +475,7 @@ public final class RunTestsTool extends TestingTool {
 
             var getData = config.getClass().getMethod("getPersistentData");
             Object data = getData.invoke(config);
-            data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_PATTERN);
-            data.getClass().getField("PATTERNS").set(data,
-                new java.util.LinkedHashSet<>(matchingClasses));
+            TestConfigBuilder.applyPatternData(data, matchingClasses);
 
             Module patternModule = matchedModule != null ? matchedModule : resolveModuleFallback();
             if (patternModule != null) {
