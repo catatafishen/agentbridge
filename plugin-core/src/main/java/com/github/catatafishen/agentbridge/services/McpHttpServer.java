@@ -331,6 +331,9 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 exchange.getResponseBody().write(bytes);
             }
 
+            if (initialized && owner.newSessionId() != null) {
+                httpSessions.recordClientName(owner.newSessionId(), extractClientName(body));
+            }
             retainNewSession = initialized;
         } catch (Exception e) {
             LOG.warn("MCP request error", e);
@@ -491,6 +494,17 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * so conversation history is preserved when the agent advertises that capability.</p>
      */
     private void maybeAutoReconnectExpiredSession(@NotNull String sessionId) {
+        String retiredClient = httpSessions.retiredClientName(sessionId);
+        String connectedAgent = getConnectedAgentName();
+        // The current request (the stale one) is itself counted in activeConnections.
+        boolean otherRequestsInFlight = activeConnections.get() > 1;
+        if (!shouldAutoReconnect(retiredClient, connectedAgent, otherRequestsInFlight)) {
+            LOG.info("MCP session " + sessionId + " is unknown or expired (issued by this server: "
+                + (retiredClient != null) + ", client: " + retiredClient + ", connected agent: "
+                + connectedAgent + ", other requests in flight: " + otherRequestsInFlight
+                + "); not restarting the active agent.");
+            return;
+        }
         long now = System.nanoTime();
         long last = lastAutoReconnectAtNanos.get();
         if (now - last < AUTO_RECONNECT_COOLDOWN_NANOS
@@ -516,6 +530,38 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 LOG.warn("Auto-reconnect after expired MCP session failed", e);
             }
         });
+    }
+
+    /**
+     * Decides whether an unknown/expired MCP session justifies restarting the active agent.
+     *
+     * <p>Only a session this server issued and later retired can belong to the active agent.
+     * An ID this server never issued (stale from before an IDE restart, or held by another
+     * client such as a leftover CLI process) must not kill the running agent's turn. A restart
+     * is also skipped while other requests are in flight, since it would drop their results.</p>
+     *
+     * @param retiredClient client name recorded for the retired session; {@code null} if the
+     *                      ID was never issued by this server, empty if the name is unknown
+     */
+    static boolean shouldAutoReconnect(
+        @Nullable String retiredClient,
+        @Nullable String connectedAgent,
+        boolean otherRequestsInFlight
+    ) {
+        if (retiredClient == null || otherRequestsInFlight) return false;
+        return retiredClient.isEmpty() || retiredClient.equals(connectedAgent);
+    }
+
+    static @Nullable String extractClientName(@NotNull String initializeBody) {
+        try {
+            JsonObject params = JsonParser.parseString(initializeBody).getAsJsonObject()
+                .getAsJsonObject("params");
+            if (params == null || !params.has("clientInfo")) return null;
+            JsonObject info = params.getAsJsonObject("clientInfo");
+            return info.has("name") ? info.get("name").getAsString() : null;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private void startHttpSessionCleanup() {

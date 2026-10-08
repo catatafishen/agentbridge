@@ -6,7 +6,13 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("MCP transport session registry")
 class McpSessionRegistryTest {
@@ -28,6 +34,40 @@ class McpSessionRegistryTest {
         assertFalse(registry.touch(first));
         assertTrue(registry.touch(second));
         assertFalse(registry.closeSession("unknown"));
+    }
+
+    @Test
+    @DisplayName("remembers client name of retired sessions; never-issued IDs stay unknown")
+    void tracksRetiredSessions() {
+        McpSessionRegistry registry = new McpSessionRegistry();
+        String named = registry.openSession(0);
+        String unnamed = registry.openSession(0);
+        registry.recordClientName(named, "copilot-cli");
+        registry.recordClientName("never-issued", "ghost");
+
+        assertNull(registry.retiredClientName(named), "live sessions are not retired");
+        assertTrue(registry.closeSession(named));
+        assertTrue(registry.closeSession(unnamed));
+
+        assertEquals("copilot-cli", registry.retiredClientName(named));
+        assertEquals("", registry.retiredClientName(unnamed));
+        assertNull(registry.retiredClientName("never-issued"));
+    }
+
+    @Test
+    @DisplayName("expired and drained sessions are retired too")
+    void expiredAndDrainedSessionsAreRetired() {
+        AtomicLong now = new AtomicLong();
+        McpSessionRegistry registry = new McpSessionRegistry(now::get);
+        String idle = registry.openSession(0);
+        registry.recordClientName(idle, "Koog");
+        now.set(100);
+        assertEquals(Set.of(idle), registry.expireIdleSessions(50));
+        assertEquals("Koog", registry.retiredClientName(idle));
+
+        String drained = registry.openSession(0);
+        registry.drainSessions();
+        assertEquals("", registry.retiredClientName(drained));
     }
 
     @Test
