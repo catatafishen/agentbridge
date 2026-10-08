@@ -67,6 +67,10 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private final McpSessionRegistry httpSessions = new McpSessionRegistry();
     private final AtomicLong lastAutoReconnectAtNanos = new AtomicLong(0);
     /**
+     * Prefix of the log lines about an MCP session id.
+     */
+    private static final String LOG_SESSION = "MCP session ";
+    /**
      * Shared by in-flight tool requests, exclusive for an auto-reconnect restart. The restart
      * only proceeds if it can take the exclusive side without waiting, so a request that
      * arrives after the earlier check but before the restart runs can never be dropped.
@@ -345,7 +349,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             }
 
             if (initialized && owner.newSessionId() != null) {
-                httpSessions.recordClientName(owner.newSessionId(), extractClientName(body));
+                httpSessions.recordGeneration(owner.newSessionId(), currentAgentGeneration());
             }
             retainNewSession = initialized;
         } catch (Exception e) {
@@ -507,15 +511,15 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * so conversation history is preserved when the agent advertises that capability.</p>
      */
     private void maybeAutoReconnectExpiredSession(@NotNull String sessionId) {
-        String retiredClient = httpSessions.retiredClientName(sessionId);
-        String connectedAgent = getConnectedAgentName();
+        Long retiredGeneration = httpSessions.retiredGeneration(sessionId);
+        long currentGeneration = currentAgentGeneration();
         // The current request (the stale one) is itself counted in activeConnections.
         boolean otherRequestsInFlight = activeConnections.get() > 1;
-        if (!shouldAutoReconnect(retiredClient, connectedAgent, otherRequestsInFlight)) {
-            LOG.info("MCP session " + sessionId + " is unknown or expired (issued by this server: "
-                + (retiredClient != null) + ", client: " + retiredClient + ", connected agent: "
-                + connectedAgent + ", other requests in flight: " + otherRequestsInFlight
-                + "); not restarting the active agent.");
+        if (!shouldAutoReconnect(retiredGeneration, currentGeneration, otherRequestsInFlight)) {
+            LOG.info(LOG_SESSION + sessionId + " is unknown or expired (issued by this server: "
+                + (retiredGeneration != null) + ", session generation: " + retiredGeneration
+                + ", current agent generation: " + currentGeneration + ", other requests in flight: "
+                + otherRequestsInFlight + "); not restarting the active agent.");
             return;
         }
         long now = System.nanoTime();
@@ -534,12 +538,12 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             return;
         }
         if (!agentManager.isConnected()) return;
-        LOG.warn("MCP session " + sessionId + " expired while the agent was still connected; "
+        LOG.warn(LOG_SESSION + sessionId + " expired while the agent was still connected; "
             + "auto-reconnecting so it renegotiates a fresh MCP session.");
         reconnectExecutor.execute(() -> {
             // Atomic with request admission: skip if any tool request is in flight right now.
             if (!restartGate.writeLock().tryLock()) {
-                LOG.info("MCP session " + sessionId + " expired but a request is in flight; "
+                LOG.info(LOG_SESSION + sessionId + " expired but a request is in flight; "
                     + "not restarting the active agent.");
                 return;
             }
@@ -556,33 +560,33 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     /**
      * Decides whether an unknown/expired MCP session justifies restarting the active agent.
      *
-     * <p>Only a session this server issued and later retired, whose recorded client name matches
-     * the connected agent, is eligible. An ID this server never issued, or one with no recorded
-     * ownership, is never restartable. {@code clientInfo.name} is caller-supplied, so this
-     * narrows rather than proves ownership; the restart itself is additionally gated by
-     * {@code restartGate} so it cannot drop an in-flight request.</p>
+     * <p>Ownership is bound to the agent process the manager is running, not to anything a client
+     * claims about itself: each session records the {@code ActiveAgentManager} agent generation
+     * current when it was initialized. Only a session this server issued, whose generation is known
+     * and equals the current one, belongs to the running agent and may restart it. An ID this server
+     * never issued, a session without a recorded generation, and a session from an earlier agent
+     * process are never restartable. The restart itself is additionally gated by {@code restartGate}
+     * so it cannot drop an in-flight request.</p>
      *
-     * @param retiredClient client name recorded for the retired session; {@code null} if the
-     *                      ID was never issued by this server, empty if no name was recorded
+     * @param retiredGeneration generation recorded for the retired session; {@code null} if the ID was
+     *                          never issued by this server, {@link McpSessionRegistry#NO_GENERATION} if
+     *                          none was recorded
      */
     static boolean shouldAutoReconnect(
-        @Nullable String retiredClient,
-        @Nullable String connectedAgent,
+        @Nullable Long retiredGeneration,
+        long currentGeneration,
         boolean otherRequestsInFlight
     ) {
-        if (retiredClient == null || retiredClient.isEmpty() || otherRequestsInFlight) return false;
-        return retiredClient.equals(connectedAgent);
+        if (retiredGeneration == null || otherRequestsInFlight) return false;
+        return retiredGeneration != McpSessionRegistry.NO_GENERATION && retiredGeneration == currentGeneration;
     }
 
-    static @Nullable String extractClientName(@NotNull String initializeBody) {
+    private long currentAgentGeneration() {
         try {
-            JsonObject params = JsonParser.parseString(initializeBody).getAsJsonObject()
-                .getAsJsonObject("params");
-            if (params == null || !params.has("clientInfo")) return null;
-            JsonObject info = params.getAsJsonObject("clientInfo");
-            return info.has("name") ? info.get("name").getAsString() : null;
-        } catch (RuntimeException ignored) {
-            return null;
+            return ActiveAgentManager.getInstance(project).getAgentGeneration();
+        } catch (RuntimeException e) {
+            // No agent manager (bare project in unit tests): nothing is restartable.
+            return McpSessionRegistry.NO_GENERATION;
         }
     }
 

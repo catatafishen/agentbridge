@@ -55,6 +55,14 @@ public final class ActiveAgentManager implements Disposable {
     private final SessionSwitchService sessionSwitchService;
     private volatile boolean acpConnected;
 
+    /**
+     * Incremented every time an agent process/client is started. MCP sessions record the value current at
+     * their {@code initialize}, so a session that belongs to an earlier process can be told apart from the
+     * one the managed agent is using now.
+     */
+    private final java.util.concurrent.atomic.AtomicLong agentGeneration =
+        new java.util.concurrent.atomic.AtomicLong();
+
     private volatile AbstractClient acpClient;
     private AgentConfig cachedConfig;
     private GenericSettings cachedSettings;
@@ -408,6 +416,8 @@ public final class ActiveAgentManager implements Disposable {
                 acpClient.setCurrentModeSlug(savedMode);
             }
 
+            // Bump before start(): a CLI agent can call MCP initialize while start() is still running.
+            agentGeneration.incrementAndGet();
             acpClient.start();
             started = true;
 
@@ -650,6 +660,13 @@ public final class ActiveAgentManager implements Disposable {
 
     public boolean isConnected() {
         return acpConnected;
+    }
+
+    /**
+     * Identifies the currently running agent process/client; changes on every (re)start.
+     */
+    public long getAgentGeneration() {
+        return agentGeneration.get();
     }
 
     /**
