@@ -220,7 +220,8 @@ public final class RunTestsTool extends TestingTool {
             var configs = RunManager.getInstance(project).getAllSettings();
             for (var settings : configs) {
                 String typeName = settings.getType().getDisplayName().toLowerCase();
-                if ((typeName.contains(JUNIT_TYPE_ID) || typeName.contains("test"))
+                if (!settings.isTemporary()
+                    && (typeName.contains(JUNIT_TYPE_ID) || typeName.contains("test"))
                     && settings.getName().contains(target)) {
                     return runTestConfigAndWait(settings);
                 }
