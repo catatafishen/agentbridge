@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.testing;
 
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,6 +48,21 @@ final class TestConfigBuilder {
      */
     static String buildPatternConfigName(@NotNull String target, int classCount) {
         return "Test: " + target + " (" + classCount + " classes)";
+    }
+
+    /**
+     * Whether a test class matches a wildcard target. A target without a dot (e.g. {@code *Test}) is matched against
+     * the simple class name; a package-qualified target (e.g. {@code com.example.Foo*}) is matched against the fully
+     * qualified name, which Gradle's {@code --tests} filter and callers copying a class name both produce.
+     *
+     * @param fqn the fully qualified name, or {@code null} if it is not known yet
+     */
+    static boolean matchesTestTarget(@NotNull String simpleName, @Nullable String fqn, @NotNull String target,
+                                     @Nullable Pattern compiledGlob) {
+        if (target.isEmpty()) return true;
+        if (!target.contains(".")) return !ToolUtils.doesNotMatchGlob(simpleName, target, compiledGlob);
+        String qualified = fqn != null ? fqn : simpleName;
+        return !ToolUtils.doesNotMatchGlob(qualified, target, compiledGlob);
     }
 
     /**

@@ -1,11 +1,14 @@
 package com.github.catatafishen.agentbridge.psi.tools.testing;
 
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for {@link TestConfigBuilder} — pure config naming, FQN resolution,
@@ -39,6 +42,58 @@ class TestConfigBuilderTest {
         @DisplayName("deeply nested package builds correct FQN")
         void deeplyNestedPackage() {
             assertEquals("a.b.c.d.Foo", TestConfigBuilder.buildFqn("a.b.c.d", "Foo"));
+        }
+    }
+
+    @Nested
+    @DisplayName("matchesTestTarget")
+    class MatchesTestTarget {
+
+        private static final String FQN = "com.github.catatafishen.agentbridge.services.AgentProfileManagerTest";
+        private static final String SIMPLE = "AgentProfileManagerTest";
+
+        private boolean matches(String simpleName, String fqn, String target) {
+            return TestConfigBuilder.matchesTestTarget(simpleName, fqn, target, ToolUtils.compileGlob(target));
+        }
+
+        @Test
+        @DisplayName("package-qualified wildcard matches the fully qualified name (#1163)")
+        void packageQualifiedWildcardMatchesFqn() {
+            assertTrue(matches(SIMPLE, FQN, "com.github.catatafishen.agentbridge.services.AgentProfileManager*"));
+        }
+
+        @Test
+        @DisplayName("package-qualified wildcard does not match a class in another package")
+        void packageQualifiedWildcardRejectsOtherPackage() {
+            assertFalse(matches("AgentProfileManagerTest", "com.example.other.AgentProfileManagerTest",
+                "com.github.catatafishen.agentbridge.services.AgentProfileManager*"));
+        }
+
+        @Test
+        @DisplayName("package wildcard matches every class below the package")
+        void packageWildcard() {
+            assertTrue(matches(SIMPLE, FQN, "com.github.catatafishen.agentbridge.services.*"));
+            assertFalse(matches("FooTest", "com.example.FooTest", "com.github.catatafishen.agentbridge.services.*"));
+        }
+
+        @Test
+        @DisplayName("simple-name wildcard still matches by simple name and ignores the package")
+        void simpleNameWildcard() {
+            assertTrue(matches(SIMPLE, FQN, "*ProfileManager*"));
+            assertTrue(matches(SIMPLE, null, "*Test"));
+            assertFalse(matches(SIMPLE, FQN, "*Service"));
+        }
+
+        @Test
+        @DisplayName("package-qualified target without a known FQN falls back to the simple name")
+        void unknownFqnFallsBackToSimpleName() {
+            assertFalse(matches(SIMPLE, null, "com.github.catatafishen.agentbridge.services.AgentProfileManager*"));
+        }
+
+        @Test
+        @DisplayName("empty target matches everything")
+        void emptyTarget() {
+            assertTrue(TestConfigBuilder.matchesTestTarget(SIMPLE, FQN, "", null));
         }
     }
 

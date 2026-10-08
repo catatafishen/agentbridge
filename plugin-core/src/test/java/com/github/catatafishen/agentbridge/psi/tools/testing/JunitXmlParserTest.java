@@ -55,6 +55,51 @@ class JunitXmlParserTest {
         assertEquals("t", result[1], "single lowercase char is treated as method");
     }
 
+    // ── parseJunitXmlResults: only this run's reports ────────────────────────
+
+    private static void writeReport(Path dir, String name, int tests, long modifiedMillis) throws IOException {
+        Files.createDirectories(dir);
+        Path file = dir.resolve(name);
+        Files.writeString(file, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<testsuite name=\"" + name + "\" tests=\"" + tests + "\" skipped=\"0\" failures=\"0\" errors=\"0\" "
+            + "time=\"0.1\"></testsuite>");
+        Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(modifiedMillis));
+    }
+
+    @Test
+    void parseJunitXmlResults_ignoresReportsFromBeforeTheRun(@TempDir Path tempDir) throws IOException {
+        // A module that was not part of this run keeps the report of an earlier run (#1164).
+        writeReport(tempDir.resolve("old-module/build/test-results/test"), "TEST-old.xml", 5, 1_000_000L);
+        writeReport(tempDir.resolve("new-module/build/test-results/test"), "TEST-new.xml", 2, 9_000_000L);
+
+        assertTrue(JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", 5_000_000L)
+            .startsWith("Test Results: 2 tests, 2 passed"));
+    }
+
+    @Test
+    void parseJunitXmlResults_withoutCutoffReadsEveryReport(@TempDir Path tempDir) throws IOException {
+        writeReport(tempDir.resolve("a/build/test-results/test"), "TEST-a.xml", 5, 1_000_000L);
+        writeReport(tempDir.resolve("b/build/test-results/test"), "TEST-b.xml", 2, 9_000_000L);
+
+        assertTrue(JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "")
+            .startsWith("Test Results: 7 tests, 7 passed"));
+    }
+
+    @Test
+    void parseJunitXmlResults_returnsEmptyWhenAllReportsAreOlderThanTheRun(@TempDir Path tempDir) throws IOException {
+        writeReport(tempDir.resolve("a/build/test-results/test"), "TEST-a.xml", 5, 1_000_000L);
+
+        assertEquals("", JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", 5_000_000L));
+    }
+
+    @Test
+    void isModifiedSince_zeroCutoffAcceptsAnyFileAndMissingFileIsRejected(@TempDir Path tempDir) throws IOException {
+        Path file = tempDir.resolve("x.xml");
+        Files.writeString(file, "<x/>");
+        assertTrue(JunitXmlParser.isModifiedSince(file, 0));
+        assertFalse(JunitXmlParser.isModifiedSince(tempDir.resolve("missing.xml"), 1));
+    }
+
     // ── formatTestResults ────────────────────────────────────────────────────
 
     @Test

@@ -32,6 +32,43 @@ class TestResultFormatterTest {
         }
 
         @Test
+        @DisplayName("exit code 0 without test counts says it is not confirmed that tests ran (#1164)")
+        void passedWithoutCountsIsNotConfirmed() {
+            String empty = TestResultFormatter.formatTestSummary(0, "MyTestConfig", "");
+            String consoleOnly = TestResultFormatter.formatTestSummary(0, "MyTestConfig",
+                "\n=== Console Output ===\n16:25:15: Execution finished 'test'.");
+
+            for (String result : new String[]{empty, consoleOnly}) {
+                assertTrue(result.startsWith("Tests PASSED — MyTestConfig"), result);
+                assertTrue(result.contains("not confirmed that any test executed"), result);
+            }
+        }
+
+        @Test
+        @DisplayName("exit code 0 with counted results carries no unconfirmed note")
+        void passedWithCountsHasNoNote() {
+            String counts = TestResultFormatter.formatTestResults(21, 21, 0, 0, 0);
+            String result = TestResultFormatter.formatTestSummary(0, "MyTestConfig", counts);
+
+            assertTrue(result.startsWith("Test Results: 21 tests, 21 passed"), result);
+            assertFalse(result.contains("not confirmed"), result);
+        }
+
+        @Test
+        @DisplayName("a failing run never carries the unconfirmed-pass note")
+        void failedHasNoUnconfirmedNote() {
+            assertFalse(TestResultFormatter.formatTestSummary(1, "FailConfig", "").contains("not confirmed"));
+        }
+
+        @Test
+        @DisplayName("hasTestCounts only accepts the counts line prefix")
+        void hasTestCounts() {
+            assertTrue(TestResultFormatter.hasTestCounts(TestResultFormatter.formatTestResults(1, 1, 0, 0, 0)));
+            assertFalse(TestResultFormatter.hasTestCounts(""));
+            assertFalse(TestResultFormatter.hasTestCounts("Tests PASSED — x"));
+        }
+
+        @Test
         @DisplayName("exit code 0 with output shows result and appends output")
         void passedWithOutput() {
             String result = TestResultFormatter.formatTestSummary(0, "MyTestConfig", "5 tests, 5 passed");

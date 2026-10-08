@@ -88,6 +88,16 @@ public final class RunTestsTool extends TestingTool {
      */
     private int timeoutSec = DEFAULT_TIMEOUT_SECONDS;
 
+    /**
+     * When the current run started, for ignoring report files written by an earlier run; set in {@link #execute}.
+     */
+    private long runStartedMillis;
+
+    /**
+     * Report files can carry a coarser timestamp than the clock that records the start.
+     */
+    private static final long XML_FRESHNESS_SLACK_MILLIS = 2_000;
+
     public RunTestsTool(Project project) {
         super(project);
     }
@@ -157,6 +167,7 @@ public final class RunTestsTool extends TestingTool {
         String timeoutError = McpRequestDeadline.rejectNonPositive(requestedTimeout);
         if (timeoutError != null) return timeoutError;
         this.timeoutSec = McpRequestDeadline.clamp(requestedTimeout);
+        this.runStartedMillis = System.currentTimeMillis();
         return McpRequestDeadline.prependNotice(
             McpRequestDeadline.clampNotice(requestedTimeout), runResolvedTarget(args));
     }
@@ -381,16 +392,20 @@ public final class RunTestsTool extends TestingTool {
             var junitType = findJUnitConfigurationType();
             if (junitType == null) return null;
 
-            List<String> matchingClasses = resolveMatchingTestClasses(target);
+            MatchingTestClasses matches = resolveMatchingTestClasses(target);
+            List<String> matchingClasses = matches.classes();
             if (matchingClasses.isEmpty()) return null;
 
             String configName = buildPatternConfigName(target, matchingClasses.size());
 
             TestExecutionTracker tracker = new TestExecutionTracker(project, configName);
 
+            // The run configuration takes one module, which also decides the Gradle project the tests run in.
+            // Use the module that holds the matched classes; with several (or none), fall back to a guess.
+            Module patternModule = matches.modules().size() == 1 ? matches.modules().iterator().next() : null;
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> launchPatternConfig(
-                junitType, configName, matchingClasses, launchFuture, tracker));
+                junitType, configName, matchingClasses, patternModule, launchFuture, tracker));
 
             return awaitTestExecution(configName, launchFuture, tracker);
         } catch (InterruptedException e) {
@@ -403,29 +418,45 @@ public final class RunTestsTool extends TestingTool {
         }
     }
 
-    private List<String> resolveMatchingTestClasses(String target) {
-        return ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
+    /**
+     * Test classes matching a wildcard target, and the modules that contain them.
+     */
+    private record MatchingTestClasses(List<String> classes, java.util.Set<Module> modules) {
+    }
+
+    private MatchingTestClasses resolveMatchingTestClasses(String target) {
+        return ApplicationManager.getApplication().runReadAction((Computable<MatchingTestClasses>) () -> {
             List<String> classes = new ArrayList<>();
+            java.util.Set<Module> modules = new java.util.LinkedHashSet<>();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
             var compiledGlob = target.isEmpty() ? null : ToolUtils.compileGlob(target);
-            fileIndex.iterateContent(vf -> processTestFile(vf, fileIndex, target, compiledGlob, classes));
-            return classes;
+            fileIndex.iterateContent(vf -> processTestFile(vf, fileIndex, target, compiledGlob, classes, modules));
+            return new MatchingTestClasses(classes, modules);
         });
     }
 
     private boolean processTestFile(com.intellij.openapi.vfs.VirtualFile vf,
-                                    ProjectFileIndex fileIndex, String target, java.util.regex.Pattern compiledGlob, List<String> classes) {
+                                    ProjectFileIndex fileIndex, String target, java.util.regex.Pattern compiledGlob,
+                                    List<String> classes, java.util.Set<Module> modules) {
         if (!fileIndex.isInTestSourceContent(vf)) return true;
         if (vf.isDirectory()) return true;
         String name = vf.getName();
         int dotIdx = name.lastIndexOf('.');
         if (dotIdx <= 0) return true;
         String simpleName = name.substring(0, dotIdx);
-        if (ToolUtils.doesNotMatchGlob(simpleName, target, compiledGlob)) return true;
+        // A package-qualified target needs the FQN, which means reading the file's package; a simple-name
+        // target can reject most files from the name alone.
+        boolean needsFqnToMatch = target.contains(".");
+        if (!needsFqnToMatch && !TestConfigBuilder.matchesTestTarget(simpleName, null, target, compiledGlob)) return true;
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return true;
         String fqn = extractClassFqn(psiFile, simpleName);
-        if (fqn != null) classes.add(fqn);
+        if (needsFqnToMatch && !TestConfigBuilder.matchesTestTarget(simpleName, fqn, target, compiledGlob)) return true;
+        if (fqn != null) {
+            classes.add(fqn);
+            Module module = fileIndex.getModuleForFile(vf);
+            if (module != null) modules.add(module);
+        }
         return classes.size() < 200;
     }
 
@@ -433,6 +464,7 @@ public final class RunTestsTool extends TestingTool {
     // Required: accessing internal JUnit run config fields via reflection — no public API exists
     private void launchPatternConfig(ConfigurationType junitType, String configName,
                                      List<String> matchingClasses,
+                                     @Nullable Module matchedModule,
                                      CompletableFuture<String> launchFuture,
                                      TestExecutionTracker tracker) {
         try {
@@ -447,9 +479,9 @@ public final class RunTestsTool extends TestingTool {
             data.getClass().getField("PATTERNS").set(data,
                 new java.util.LinkedHashSet<>(matchingClasses));
 
-            Module fallbackModule = resolveModuleFallback();
-            if (fallbackModule != null) {
-                setModuleIfSupported(config, fallbackModule);
+            Module patternModule = matchedModule != null ? matchedModule : resolveModuleFallback();
+            if (patternModule != null) {
+                setModuleIfSupported(config, patternModule);
             }
 
             String configError = checkRunConfiguration(config);
@@ -763,6 +795,11 @@ public final class RunTestsTool extends TestingTool {
 
         String testOutput = selectTestOutput(
             exitCode, () -> collectTestRunOutput(configName), tracker.capturedOutput());
+        if (exitCode == 0 && !TestResultFormatter.hasTestCounts(testOutput)) {
+            // The IDE reported no per-test results (Gradle runs often don't): count them from the report files.
+            String xmlResults = freshXmlResults("");
+            if (!xmlResults.isEmpty()) testOutput = xmlResults;
+        }
         return formatTestSummary(exitCode, configName, testOutput);
     }
 
@@ -1129,7 +1166,16 @@ public final class RunTestsTool extends TestingTool {
     }
 
     private String parseJunitXmlResults(String basePath, String module) {
-        return JunitXmlParser.parseJunitXmlResults(basePath, module);
+        return JunitXmlParser.parseJunitXmlResults(basePath, module, runStartedMillis - XML_FRESHNESS_SLACK_MILLIS);
+    }
+
+    /**
+     * Result of this run read from the report files Gradle wrote, or an empty string when there are none. Used
+     * when the IDE's own test-results model has nothing, so a pass is still reported with counts.
+     */
+    private String freshXmlResults(String module) {
+        String basePath = project.getBasePath();
+        return basePath == null ? "" : parseJunitXmlResults(basePath, module);
     }
 
     static String buildJUnitConfigName(@NotNull String simpleName, @Nullable String testMethod) {
