@@ -39,7 +39,7 @@ final class McpSessionRegistry {
     private final Map<String, String> retired = new LinkedHashMap<>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-            return size() > MAX_RETIRED_SESSIONS;
+            return super.size() > MAX_RETIRED_SESSIONS;
         }
     };
     private final LongSupplier nanoTime;

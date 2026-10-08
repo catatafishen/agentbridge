@@ -66,6 +66,13 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private final AtomicInteger activeConnections = new AtomicInteger(0);
     private final McpSessionRegistry httpSessions = new McpSessionRegistry();
     private final AtomicLong lastAutoReconnectAtNanos = new AtomicLong(0);
+    /**
+     * Shared by in-flight tool requests, exclusive for an auto-reconnect restart. The restart
+     * only proceeds if it can take the exclusive side without waiting, so a request that
+     * arrives after the earlier check but before the restart runs can never be dropped.
+     */
+    private final java.util.concurrent.locks.ReentrantReadWriteLock restartGate =
+        new java.util.concurrent.locks.ReentrantReadWriteLock();
     private static final long AUTO_RECONNECT_COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(30);
     // Overridable in tests: the shared app-wide AppExecutorUtil pool can be contended by other
     // tests running in the same JVM, making its scheduling latency unpredictable under load.
@@ -306,11 +313,17 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             if (owner == null) return;
             String response;
             String ownerKey = owner.ownerKey();
+            // Established (tool) requests hold the shared side of restartGate so an agent
+            // restart can only run while none is in flight; initialize bypasses it so a
+            // restarting agent can always re-handshake.
+            boolean gated = owner.kind() == HttpOwnerKind.ESTABLISHED;
+            if (gated) restartGate.readLock().lock();
             try {
                 response = ownerKey != null
                     ? protocolHandler.handleMessage(body, ownerKey)
                     : protocolHandler.handleMessage(body);
             } finally {
+                if (gated) restartGate.readLock().unlock();
                 if (ownerKey != null) {
                     finishHttpRequest(ownerKey);
                 }
@@ -524,10 +537,18 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         LOG.warn("MCP session " + sessionId + " expired while the agent was still connected; "
             + "auto-reconnecting so it renegotiates a fresh MCP session.");
         reconnectExecutor.execute(() -> {
+            // Atomic with request admission: skip if any tool request is in flight right now.
+            if (!restartGate.writeLock().tryLock()) {
+                LOG.info("MCP session " + sessionId + " expired but a request is in flight; "
+                    + "not restarting the active agent.");
+                return;
+            }
             try {
                 agentManager.restart();
             } catch (RuntimeException e) {
                 LOG.warn("Auto-reconnect after expired MCP session failed", e);
+            } finally {
+                restartGate.writeLock().unlock();
             }
         });
     }
@@ -535,21 +556,22 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     /**
      * Decides whether an unknown/expired MCP session justifies restarting the active agent.
      *
-     * <p>Only a session this server issued and later retired can belong to the active agent.
-     * An ID this server never issued (stale from before an IDE restart, or held by another
-     * client such as a leftover CLI process) must not kill the running agent's turn. A restart
-     * is also skipped while other requests are in flight, since it would drop their results.</p>
+     * <p>Only a session this server issued and later retired, whose recorded client name matches
+     * the connected agent, is eligible. An ID this server never issued, or one with no recorded
+     * ownership, is never restartable. {@code clientInfo.name} is caller-supplied, so this
+     * narrows rather than proves ownership; the restart itself is additionally gated by
+     * {@code restartGate} so it cannot drop an in-flight request.</p>
      *
      * @param retiredClient client name recorded for the retired session; {@code null} if the
-     *                      ID was never issued by this server, empty if the name is unknown
+     *                      ID was never issued by this server, empty if no name was recorded
      */
     static boolean shouldAutoReconnect(
         @Nullable String retiredClient,
         @Nullable String connectedAgent,
         boolean otherRequestsInFlight
     ) {
-        if (retiredClient == null || otherRequestsInFlight) return false;
-        return retiredClient.isEmpty() || retiredClient.equals(connectedAgent);
+        if (retiredClient == null || retiredClient.isEmpty() || otherRequestsInFlight) return false;
+        return retiredClient.equals(connectedAgent);
     }
 
     static @Nullable String extractClientName(@NotNull String initializeBody) {

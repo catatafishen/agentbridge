@@ -342,8 +342,8 @@ class McpHttpServerStaticMethodsTest {
             assertFalse(McpHttpServer.shouldAutoReconnect(null, "Koog", false));
             // retired session of the active agent -> restart
             assertTrue(McpHttpServer.shouldAutoReconnect("Koog", "Koog", false));
-            // retired session, client name unknown -> restart (previous behaviour)
-            assertTrue(McpHttpServer.shouldAutoReconnect("", "Koog", false));
+            // retired session with no recorded ownership -> not restartable
+            assertFalse(McpHttpServer.shouldAutoReconnect("", "Koog", false));
             // retired session of a different client -> leave the active agent alone
             assertFalse(McpHttpServer.shouldAutoReconnect("copilot-cli", "Koog", false));
             // other requests in flight would be dropped by a restart
@@ -365,8 +365,51 @@ class McpHttpServerStaticMethodsTest {
             McpSessionRegistry registry = (McpSessionRegistry) field.get(server);
             String id = registry.openSession(0);
             assertNotNull(id);
+            registry.recordClientName(id, "Koog");
             assertTrue(registry.closeSession(id));
+            // The active agent's MCP identity, as recorded at initialize.
+            McpProtocolHandler handler = mock(McpProtocolHandler.class);
+            when(handler.getConnectedAgentName()).thenReturn("Koog");
+            java.lang.reflect.Field handlerField =
+                McpHttpServer.class.getDeclaredField("protocolHandler");
+            handlerField.setAccessible(true);
+            handlerField.set(server, handler);
             return id;
+        }
+
+        /**
+         * Review finding: the restart must be atomic with request admission. While a tool
+         * request holds the shared side of the gate, the queued restart must be skipped.
+         */
+        @Test
+        void restartIsSkippedWhileARequestHoldsTheGate() throws Exception {
+            Project project = mock(Project.class);
+            ActiveAgentManager agentManager = mock(ActiveAgentManager.class);
+            when(project.getService(ActiveAgentManager.class)).thenReturn(agentManager);
+            when(agentManager.isConnected()).thenReturn(true);
+            McpHttpServer server = new McpHttpServer(project);
+            java.util.List<Runnable> queued = new java.util.ArrayList<>();
+            server.setReconnectExecutorForTest(queued::add);
+            String retiredId = issueAndRetireSession(server);
+            Headers requestHeaders = new Headers();
+            requestHeaders.set(McpHttpServer.MCP_SESSION_ID_HEADER, retiredId);
+            assertNull(server.resolveHttpOwner(exchange(requestHeaders, new Headers(),
+                    new ByteArrayOutputStream()),
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+            assertEquals(1, queued.size(), "restart is queued, not yet run");
+
+            java.lang.reflect.Field gateField = McpHttpServer.class.getDeclaredField("restartGate");
+            gateField.setAccessible(true);
+            var gate = (java.util.concurrent.locks.ReentrantReadWriteLock) gateField.get(server);
+            // A tool request arrives after the check but before the queued restart runs.
+            gate.readLock().lock();
+            try {
+                queued.get(0).run();
+            } finally {
+                gate.readLock().unlock();
+            }
+
+            verify(agentManager, never()).restart();
         }
 
         @Test
