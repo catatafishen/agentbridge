@@ -890,7 +890,7 @@ public final class KiroClient extends AcpClient {
      * Trailing pre-release/build suffixes (e.g. {@code "-beta"}, {@code "+build"}) on the last
      * numeric segment are ignored. Returns {@code null} if no leading numeric component is present.
      */
-    private static int @org.jetbrains.annotations.Nullable [] parseVersion(
+    static int @org.jetbrains.annotations.Nullable [] parseVersion(
         @org.jetbrains.annotations.Nullable String version) {
         if (version == null || version.isBlank()) {
             return null;

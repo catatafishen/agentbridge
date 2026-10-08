@@ -262,6 +262,65 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     /**
+     * Model selection routing. OpenCode 2 moved ACP model changes to Session Config
+     * Options ({@code session/set_config_option}); the older {@code session/set_model}
+     * method is gone and fails with {@code Method not found}. Route v2+ model changes
+     * through the config option; on v1, keep the standard method.
+     */
+    @Override
+    protected void sendSetModel(String sessionId, String modelId) {
+        if (isOpenCodeV2OrLater()) {
+            try {
+                JsonObject params = new JsonObject();
+                params.addProperty("sessionId", sessionId);
+                params.addProperty("configId", "model");
+                params.addProperty("value", modelId);
+                transport.sendRequest("session/set_config_option", params)
+                    .get(SET_CONFIG_OPTION_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException e) {
+                if (e.getCause() instanceof com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException jre
+                    && jre.getCode() == com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes.METHOD_NOT_FOUND) {
+                    // Version misdetection or unexpected build: retry the legacy method.
+                    com.intellij.openapi.diagnostic.Logger.getInstance(OpenCodeClient.class).warn(displayName() + ": session/set_config_option(model) not found (OpenCode " + openCodeVersion() + "), retrying via session/set_model");
+                    super.sendSetModel(sessionId, modelId);
+                } else {
+                    throw new RuntimeException(displayName() + ": failed to set model " + modelId + " via session/set_config_option", e);
+                }
+            } catch (java.util.concurrent.TimeoutException | InterruptedException e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                throw new RuntimeException(displayName() + ": failed to set model " + modelId + " via session/set_config_option", e);
+            }
+        } else {
+            super.sendSetModel(sessionId, modelId);
+        }
+    }
+
+    private static final long SET_CONFIG_OPTION_TIMEOUT_SECONDS = 10;
+
+    /**
+     * The OpenCode version reported in the ACP {@code initialize} response, or {@code null}
+     * if the agent hasn't initialized yet or didn't report a version.
+     */
+    private @Nullable String openCodeVersion() {
+        var caps = getCapabilities();
+        return caps != null && caps.agentInfo() != null ? caps.agentInfo().version() : null;
+    }
+
+    /**
+     * Whether the connected OpenCode is version 2.x or later. Unparseable or missing
+     * versions return {@code true}: the method-not-found fallback in
+     * {@link #sendSetModel} recovers a misdetected old build.
+     */
+    static boolean isOpenCodeV2OrLater(@org.jetbrains.annotations.Nullable String version) {
+        int[] parsed = KiroClient.parseVersion(version);
+        return parsed == null || parsed[0] >= 2;
+    }
+
+    private boolean isOpenCodeV2OrLater() {
+        return isOpenCodeV2OrLater(openCodeVersion());
+    }
+
+    /**
      * Adds the {@code mcpServers} block to session/new params with type "http".
      */
     static void addMcpServerConfig(int mcpPort, JsonObject params) {
