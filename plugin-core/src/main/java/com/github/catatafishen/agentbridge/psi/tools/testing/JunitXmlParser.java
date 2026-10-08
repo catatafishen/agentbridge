@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Utility class for parsing JUnit XML test reports and test target strings.
@@ -51,15 +53,15 @@ public final class JunitXmlParser {
      * Returns a formatted summary string, or an empty string if no results were found.
      */
     static String parseJunitXmlResults(String basePath, String module) {
-        return parseJunitXmlResults(basePath, module, 0);
+        return parseJunitXmlResults(basePath, module, Map.of());
     }
 
     /**
-     * Like {@link #parseJunitXmlResults(String, String)}, but only reads report files modified at or after
-     * {@code modifiedSinceMillis}. Report directories of modules that were not part of this run keep the files of
-     * an earlier run, which must not be presented as the outcome of this one.
+     * Like {@link #parseJunitXmlResults(String, String)}, but only reads report files that are new or changed
+     * compared to {@code baseline} (see {@link #snapshotReportTimes}). Report directories of modules that were not
+     * part of this run keep the files of an earlier run, which must not be presented as the outcome of this one.
      */
-    static String parseJunitXmlResults(String basePath, String module, long modifiedSinceMillis) {
+    static String parseJunitXmlResults(String basePath, String module, Map<Path, Long> baseline) {
         List<Path> reportDirs = findTestReportDirs(basePath, module);
         if (reportDirs.isEmpty()) return "";
 
@@ -71,11 +73,9 @@ public final class JunitXmlParser {
         List<String> failures = new ArrayList<>();
 
         for (Path reportDir : reportDirs) {
-            try (var xmlFiles = Files.list(reportDir)) {
-                for (Path xmlFile : xmlFiles.filter(p -> p.toString().endsWith(".xml")).toList()) {
-                    if (!isModifiedSince(xmlFile, modifiedSinceMillis)) continue;
-                    TestSuiteResult result = parseTestSuiteXml(xmlFile);
-                    if (result == null) continue;
+            for (Path xmlFile : listXmlFiles(reportDir)) {
+                TestSuiteResult result = isChangedSince(xmlFile, baseline) ? parseTestSuiteXml(xmlFile) : null;
+                if (result != null) {
                     totalTests += result.tests;
                     totalFailed += result.failed;
                     totalErrors += result.errors;
@@ -83,8 +83,6 @@ public final class JunitXmlParser {
                     totalTime += result.time;
                     failures.addAll(result.failures);
                 }
-            } catch (IOException ignored) {
-                // IO errors during directory listing are non-fatal
             }
         }
 
@@ -94,12 +92,47 @@ public final class JunitXmlParser {
 
     // ── Filesystem helpers ───────────────────────────────────
 
-    static boolean isModifiedSince(Path file, long modifiedSinceMillis) {
-        if (modifiedSinceMillis <= 0) return true;
+    /**
+     * Records the last-modified time of every report file under {@code basePath}. Taken before a run starts, it is
+     * the baseline that lets {@link #parseJunitXmlResults(String, String, Map)} tell this run's reports from the
+     * ones an earlier run left behind, without relying on clock comparisons.
+     */
+    static Map<Path, Long> snapshotReportTimes(String basePath) {
+        Map<Path, Long> snapshot = new HashMap<>();
+        for (Path reportDir : findTestReportDirs(basePath, "")) {
+            for (Path xmlFile : listXmlFiles(reportDir)) {
+                snapshot.put(xmlFile, lastModifiedMillis(xmlFile));
+            }
+        }
+        return snapshot;
+    }
+
+    /**
+     * A report counts as written by this run when it did not exist in the baseline or its modification time
+     * differs from the baseline's. A rewrite that leaves the timestamp unchanged is treated as not written, so a
+     * coarse file-system clock degrades to "no confirmed results" rather than to stale counts.
+     */
+    static boolean isChangedSince(Path file, Map<Path, Long> baseline) {
+        long now = lastModifiedMillis(file);
+        if (now < 0) return false;
+        Long before = baseline.get(file);
+        return before == null || before != now;
+    }
+
+    private static long lastModifiedMillis(Path file) {
         try {
-            return Files.getLastModifiedTime(file).toMillis() >= modifiedSinceMillis;
+            return Files.getLastModifiedTime(file).toMillis();
         } catch (IOException e) {
-            return false;
+            return -1;
+        }
+    }
+
+    private static List<Path> listXmlFiles(Path reportDir) {
+        try (var xmlFiles = Files.list(reportDir)) {
+            return xmlFiles.filter(p -> p.toString().endsWith(".xml")).toList();
+        } catch (IOException ignored) {
+            // IO errors during directory listing are non-fatal
+            return List.of();
         }
     }
 

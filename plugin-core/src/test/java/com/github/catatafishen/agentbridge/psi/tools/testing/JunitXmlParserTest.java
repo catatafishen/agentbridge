@@ -70,14 +70,15 @@ class JunitXmlParserTest {
     void parseJunitXmlResults_ignoresReportsFromBeforeTheRun(@TempDir Path tempDir) throws IOException {
         // A module that was not part of this run keeps the report of an earlier run (#1164).
         writeReport(tempDir.resolve("old-module/build/test-results/test"), "TEST-old.xml", 5, 1_000_000L);
+        var baseline = JunitXmlParser.snapshotReportTimes(tempDir.toString());
         writeReport(tempDir.resolve("new-module/build/test-results/test"), "TEST-new.xml", 2, 9_000_000L);
 
-        assertTrue(JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", 5_000_000L)
+        assertTrue(JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", baseline)
             .startsWith("Test Results: 2 tests, 2 passed"));
     }
 
     @Test
-    void parseJunitXmlResults_withoutCutoffReadsEveryReport(@TempDir Path tempDir) throws IOException {
+    void parseJunitXmlResults_withoutBaselineReadsEveryReport(@TempDir Path tempDir) throws IOException {
         writeReport(tempDir.resolve("a/build/test-results/test"), "TEST-a.xml", 5, 1_000_000L);
         writeReport(tempDir.resolve("b/build/test-results/test"), "TEST-b.xml", 2, 9_000_000L);
 
@@ -86,18 +87,38 @@ class JunitXmlParserTest {
     }
 
     @Test
-    void parseJunitXmlResults_returnsEmptyWhenAllReportsAreOlderThanTheRun(@TempDir Path tempDir) throws IOException {
+    void parseJunitXmlResults_returnsEmptyWhenNoReportChangedSinceTheBaseline(@TempDir Path tempDir) throws IOException {
         writeReport(tempDir.resolve("a/build/test-results/test"), "TEST-a.xml", 5, 1_000_000L);
+        var baseline = JunitXmlParser.snapshotReportTimes(tempDir.toString());
 
-        assertEquals("", JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", 5_000_000L));
+        assertEquals("", JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", baseline));
     }
 
     @Test
-    void isModifiedSince_zeroCutoffAcceptsAnyFileAndMissingFileIsRejected(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("x.xml");
-        Files.writeString(file, "<x/>");
-        assertTrue(JunitXmlParser.isModifiedSince(file, 0));
-        assertFalse(JunitXmlParser.isModifiedSince(tempDir.resolve("missing.xml"), 1));
+    void parseJunitXmlResults_acceptsAReportRewrittenSinceTheBaseline(@TempDir Path tempDir) throws IOException {
+        // Review of #1168: a stale report from an immediately preceding run must not count, but one that this run
+        // rewrote must, even when the new timestamp is only one second later.
+        Path dir = tempDir.resolve("a/build/test-results/test");
+        writeReport(dir, "TEST-a.xml", 5, 1_000_000L);
+        var baseline = JunitXmlParser.snapshotReportTimes(tempDir.toString());
+        writeReport(dir, "TEST-a.xml", 3, 1_001_000L);
+
+        assertTrue(JunitXmlParser.parseJunitXmlResults(tempDir.toString(), "", baseline)
+            .startsWith("Test Results: 3 tests, 3 passed"));
+    }
+
+    @Test
+    void isChangedSince_newFileChangedFileUnchangedFileAndMissingFile(@TempDir Path tempDir) throws IOException {
+        Path dir = tempDir.resolve("a/build/test-results/test");
+        writeReport(dir, "TEST-a.xml", 1, 1_000_000L);
+        Path file = dir.resolve("TEST-a.xml");
+        var baseline = JunitXmlParser.snapshotReportTimes(tempDir.toString());
+
+        assertFalse(JunitXmlParser.isChangedSince(file, baseline), "unchanged");
+        assertTrue(JunitXmlParser.isChangedSince(file, java.util.Map.of()), "not in the baseline: new");
+        Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(1_002_000L));
+        assertTrue(JunitXmlParser.isChangedSince(file, baseline), "timestamp moved");
+        assertFalse(JunitXmlParser.isChangedSince(dir.resolve("missing.xml"), java.util.Map.of()));
     }
 
     // ── formatTestResults ────────────────────────────────────────────────────

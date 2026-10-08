@@ -140,7 +140,7 @@ class TestConfigBuilderTest {
     class ApplyPatternData {
 
         /** Mirrors JUnitConfiguration.Data: a public TEST_OBJECT field, patterns only behind setPatterns. */
-        @SuppressWarnings("unused")
+        @SuppressWarnings({"unused", "java:S116"}) // TEST_OBJECT must keep the platform's name: it is read reflectively
         public static class FakeJUnitData {
             public String TEST_OBJECT;
             private java.util.LinkedHashSet<String> myPattern = new java.util.LinkedHashSet<>();
@@ -168,6 +168,7 @@ class TestConfigBuilderTest {
         @Test
         @DisplayName("data without setPatterns fails loudly instead of silently not running anything")
         void missingSetterThrows() {
+            @SuppressWarnings("java:S116") // TEST_OBJECT must keep the platform's name: it is read reflectively
             class NoSetter {
                 public String TEST_OBJECT;
             }
