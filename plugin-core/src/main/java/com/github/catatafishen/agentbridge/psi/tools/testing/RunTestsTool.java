@@ -183,7 +183,16 @@ public final class RunTestsTool extends TestingTool {
         if (configResult != null) return configResult;
 
         if (target.contains("*")) {
-            String patternResult = tryRunJUnitPattern(target);
+            MatchingTestClasses matches = resolveMatchingTestClasses(target);
+
+            // A Gradle project must be run through Gradle: its test task carries the JVM arguments the tests need
+            // (e.g. --add-opens for IntelliJ platform tests), which a native IDE JUnit run does not get (#1163).
+            // Scope the task to the module that holds the matched classes; an unscoped `test` also runs modules
+            // without a matching test, and Gradle then fails the whole build with "No tests found".
+            String gradleModule = module.isEmpty() ? matchedGradleModule(matches, basePath) : module;
+            if (gradleModule != null) return runTestsViaGradleConfig(target, gradleModule, testTask);
+
+            String patternResult = tryRunJUnitPattern(target, matches);
             if (patternResult != null) return patternResult;
 
             return runTestsViaGradleConfig(target, module, testTask);
@@ -387,12 +396,25 @@ public final class RunTestsTool extends TestingTool {
 
     // ── JUnit pattern runner ─────────────────────────────────
 
-    private String tryRunJUnitPattern(String target) {
+    /**
+     * The Gradle project path (e.g. {@code plugin-core}) of the single module holding all matched classes, or
+     * {@code null} when the classes span several modules, none matched, or the module is not Gradle-linked. In
+     * those cases the caller keeps its previous behaviour.
+     */
+    private @Nullable String matchedGradleModule(MatchingTestClasses matches, String basePath) {
+        if (matches.classes().isEmpty() || matches.modules().size() != 1) return null;
+        Module only = matches.modules().iterator().next();
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            if (!ExternalSystemApiUtil.isExternalSystemAwareModule("GRADLE", only)) return null;
+            return TestConfigBuilder.gradleModulePath(basePath, ExternalSystemApiUtil.getExternalProjectPath(only));
+        });
+    }
+
+    private String tryRunJUnitPattern(String target, MatchingTestClasses matches) {
         try {
             var junitType = findJUnitConfigurationType();
             if (junitType == null) return null;
 
-            MatchingTestClasses matches = resolveMatchingTestClasses(target);
             List<String> matchingClasses = matches.classes();
             if (matchingClasses.isEmpty()) return null;
 

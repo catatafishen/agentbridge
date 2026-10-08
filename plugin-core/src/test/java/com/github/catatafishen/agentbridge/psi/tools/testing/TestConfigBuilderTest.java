@@ -98,6 +98,44 @@ class TestConfigBuilderTest {
     }
 
     @Nested
+    @DisplayName("gradleModulePath")
+    class GradleModulePath {
+
+        @Test
+        @DisplayName("sub-project directory becomes the module path")
+        void subProject() {
+            assertEquals("plugin-core", TestConfigBuilder.gradleModulePath("/work/proj", "/work/proj/plugin-core"));
+        }
+
+        @Test
+        @DisplayName("nested sub-project uses colons")
+        void nestedSubProject() {
+            assertEquals("a:b", TestConfigBuilder.gradleModulePath("/work/proj/", "/work/proj/a/b/"));
+        }
+
+        @Test
+        @DisplayName("root project is the empty module path")
+        void rootProject() {
+            assertEquals("", TestConfigBuilder.gradleModulePath("/work/proj", "/work/proj"));
+        }
+
+        @Test
+        @DisplayName("windows separators are normalised")
+        void windowsSeparators() {
+            assertEquals("plugin-core", TestConfigBuilder.gradleModulePath("C:\\work\\proj", "C:\\work\\proj\\plugin-core"));
+        }
+
+        @Test
+        @DisplayName("unknown or foreign directories give null instead of a guess")
+        void unknownIsNull() {
+            assertNull(TestConfigBuilder.gradleModulePath("/work/proj", null));
+            assertNull(TestConfigBuilder.gradleModulePath("/work/proj", ""));
+            assertNull(TestConfigBuilder.gradleModulePath("/work/proj", "/elsewhere/plugin-core"));
+            assertNull(TestConfigBuilder.gradleModulePath("/work/proj", "/work/project-two"));
+        }
+    }
+
+    @Nested
     @DisplayName("applyPatternData")
     class ApplyPatternData {
 

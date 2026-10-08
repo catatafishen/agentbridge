@@ -79,6 +79,26 @@ final class TestConfigBuilder {
     }
 
     /**
+     * Converts the directory of a Gradle project, as reported by the external-system model, into the module path
+     * used for task prefixes and report lookups: {@code ""} for the root project, {@code "plugin-core"} or
+     * {@code "a:b"} for sub-projects.
+     *
+     * @return the module path, or {@code null} when the directory is unknown or not inside {@code basePath}
+     */
+    static @Nullable String gradleModulePath(@NotNull String basePath, @Nullable String externalProjectPath) {
+        if (externalProjectPath == null || externalProjectPath.isEmpty()) return null;
+        String base = trimTrailingSlash(basePath.replace('\\', '/'));
+        String dir = trimTrailingSlash(externalProjectPath.replace('\\', '/'));
+        if (dir.equals(base)) return "";
+        if (!dir.startsWith(base + "/")) return null;
+        return dir.substring(base.length() + 1).replace('/', ':');
+    }
+
+    private static String trimTrailingSlash(String path) {
+        return path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+    }
+
+    /**
      * Builds a Gradle task prefix from the module name.
      * Returns an empty string for no module, or {@code ":module:"} for a named module.
      */
