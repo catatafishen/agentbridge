@@ -26,6 +26,56 @@ class ToolCallArgParserTest {
 
     private final ToolCallArgParser parser = ToolCallArgParser.INSTANCE;
 
+    // ── defaultChipTitle ────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("defaultChipTitle")
+    class DefaultChipTitle {
+
+        @Test
+        @DisplayName("shows the sleep length as '30s sleep'")
+        void sleepShowsDuration() {
+            assertEquals("30s sleep", parser.defaultChipTitle("sleep", "{\"seconds\":30}"));
+        }
+
+        @Test
+        @DisplayName("accepts a whole number written with a decimal point")
+        void sleepWholeDecimal() {
+            assertEquals("30s sleep", parser.defaultChipTitle("sleep", "{\"seconds\":30.0}"));
+        }
+
+        @Test
+        @DisplayName("returns null for a fractional or non-numeric length so the tool name is used")
+        void sleepInvalidLength() {
+            assertNull(parser.defaultChipTitle("sleep", "{\"seconds\":1.5}"));
+            assertNull(parser.defaultChipTitle("sleep", "{\"seconds\":\"soon\"}"));
+            assertNull(parser.defaultChipTitle("sleep", "{}"));
+        }
+
+        @Test
+        @DisplayName("returns null for missing, blank or invalid arguments")
+        void sleepNoArguments() {
+            assertNull(parser.defaultChipTitle("sleep", null));
+            assertNull(parser.defaultChipTitle("sleep", " "));
+            assertNull(parser.defaultChipTitle("sleep", "not json"));
+        }
+
+        @Test
+        @DisplayName("returns null for every other tool")
+        void otherToolsUseTheirName() {
+            assertNull(parser.defaultChipTitle("read_file", "{\"seconds\":30}"));
+            assertNull(parser.defaultChipTitle(null, "{\"seconds\":30}"));
+        }
+
+        @Test
+        @DisplayName("an explicit title still wins over the default")
+        void explicitTitleWins() {
+            String args = "{\"seconds\":30,\"title\":\"Wait for CI\"}";
+
+            assertEquals("Wait for CI", parser.extractChipTitle(args));
+        }
+    }
+
     // ── isJson ──────────────────────────────────────────────────────────
 
     @Nested

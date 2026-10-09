@@ -10,6 +10,8 @@ import com.google.gson.JsonParser
  */
 object ToolCallArgParser {
 
+    private const val SLEEP_TOOL_ID = "sleep"
+
     private val TERMINAL_TOOLS = setOf(
         "run_in_terminal", "read_terminal_output", "write_terminal_input", "list_terminals"
     )
@@ -53,6 +55,23 @@ object ToolCallArgParser {
                 ?.takeIf { it.isJsonPrimitive }
                 ?.asString
                 ?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Default chip label for tools whose arguments say more than the tool name does, used when the
+     * agent did not supply a `"title"`. Currently `sleep`, shown as "30s sleep".
+     * Returns `null` to fall back to the tool's display name.
+     */
+    fun defaultChipTitle(toolId: String?, arguments: String?): String? {
+        if (toolId != SLEEP_TOOL_ID || arguments.isNullOrBlank()) return null
+        return try {
+            val seconds = JsonParser.parseString(arguments).asJsonObject["seconds"]
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asBigDecimal?.intValueExact()
+            seconds?.let { "${it}s sleep" }
         } catch (_: Exception) {
             null
         }
