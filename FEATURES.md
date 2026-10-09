@@ -192,6 +192,9 @@ HTTP requests, IDE diagnostics, and notification access.
 - **`http_request`** — Make HTTP requests (GET, POST, PUT, PATCH, DELETE) to any URL
 - **`read_ide_log`** — Read recent IDE log entries with optional level and text filtering
 - **`get_notifications`** — Get recent IntelliJ balloon notifications
+- **`sleep`** — Pause for N seconds (max 170) instead of improvising a shell `sleep`. The chat shows a live
+  countdown with **+10s**, **+30s** and **Skip** buttons (native chat panel); the agent only ever sees that the sleep
+  completed
 
 ---
 

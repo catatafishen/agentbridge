@@ -155,7 +155,7 @@ These use only `com.intellij.modules.platform` APIs:
 | `create_run_configuration` / `edit_run_configuration` / `delete_run_configuration` | ProjectTools        |
 | `get_project_modules` / `get_project_dependencies`                                 | ProjectTools        |
 | `list_tests` / `run_tests` / `get_coverage`                                        | TestTools           |
-| `run_command` / `http_request`                                                     | InfrastructureTools |
+| `run_command` / `http_request` / `sleep`                                           | InfrastructureTools |
 | `read_ide_log` / `get_notifications` / `read_run_output`                           | InfrastructureTools |
 
 ### Java-Only Tools (2 tools)

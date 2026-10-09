@@ -214,6 +214,19 @@ interface ChatPanelApi : Disposable {
      */
     fun resolvePendingAskUser(answer: String): Boolean
 
+    /**
+     * Shows a live "Sleeping… Xs / Ys" countdown for a running `sleep` tool call, with
+     * "+10s", "+30s" and "Skip" buttons that act through [controls]. The agent is never told
+     * which of them was used.
+     *
+     * [deadlineEpochMs] is the absolute epoch-ms at which the sleep ends. Call
+     * [endSleepRequest] with the same [reqId] when the tool returns, however it ended.
+     */
+    fun showSleepRequest(reqId: String, deadlineEpochMs: Long, controls: SleepControls)
+
+    /** Removes the sleep countdown shown for [reqId]. Safe to call for an unknown or stale id. */
+    fun endSleepRequest(reqId: String)
+
     fun showNudgeBubble(id: String, text: String, source: NudgeSource = NudgeSource.HUMAN)
     fun resolveNudgeBubble(id: String)
     fun removeNudgeBubble(id: String)

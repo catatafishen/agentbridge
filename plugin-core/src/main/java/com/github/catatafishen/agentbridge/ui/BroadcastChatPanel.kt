@@ -5,7 +5,6 @@ import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.session.ConversationEntryStore
 import com.github.catatafishen.agentbridge.session.db.ConversationService
-import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.Companion.getInstance
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
@@ -395,6 +394,12 @@ class BroadcastChatPanel(
     }
 
     override fun resolvePendingAskUser(answer: String): Boolean = nativePanel.resolvePendingAskUser(answer)
+
+    override fun showSleepRequest(reqId: String, deadlineEpochMs: Long, controls: SleepControls) = dispatchUi {
+        nativePanel.showSleepRequest(reqId, deadlineEpochMs, controls)
+    }
+
+    override fun endSleepRequest(reqId: String) = dispatchUi { nativePanel.endSleepRequest(reqId) }
 
     // ── PermissionPromptProvider (Java interface bridge) ────────────────────────
 

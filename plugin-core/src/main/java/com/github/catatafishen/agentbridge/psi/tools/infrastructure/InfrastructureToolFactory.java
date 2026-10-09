@@ -17,6 +17,7 @@ public final class InfrastructureToolFactory {
     public static @NotNull List<Tool> create(@NotNull Project project) {
         return List.of(
             new PromptUserTool(project),
+            new SleepTool(project),
             new HttpRequestTool(project),
             new RunCommandTool(project),
             new ReadIdeLogTool(project),

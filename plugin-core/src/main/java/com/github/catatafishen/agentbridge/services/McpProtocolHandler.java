@@ -701,6 +701,11 @@ public final class McpProtocolHandler {
         });
 
         try {
+            if (managesOwnTimeout(toolName)) {
+                // The tool bounds its own wait and shows its own controls (see ToolDefinition#managesOwnTimeout);
+                // the generic "still running" dialog would only duplicate and confuse them.
+                return getFutureResult(future, workerThread, toolName, "self-managed wait");
+            }
             int initialTimeoutSeconds = Math.max(1, ChatInputSettings.getInstance().getToolTimeoutSeconds());
             return future.get(initialTimeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -715,6 +720,11 @@ public final class McpProtocolHandler {
         } catch (CancellationException e) {
             return ToolResult.error(toolError(toolName, "was unexpectedly cancelled"));
         }
+    }
+
+    private boolean managesOwnTimeout(String toolName) {
+        ToolDefinition definition = ToolRegistry.getInstance(project).findById(toolName);
+        return definition != null && definition.managesOwnTimeout();
     }
 
     private ToolResult waitAfterTimeout(CompletableFuture<ToolResult> future,

@@ -373,6 +373,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var waitExtendButton: JButton? = null
     private var waitTimeoutAction: (() -> Unit)? = null
 
+    /** Verb shown in the countdown label: "Waiting" for prompt_user, "Sleeping" for sleep. */
+    private var waitLabelPrefix = "Waiting"
+
+    /** Holds the sleep tool's "+10s" / "+30s" / "Skip" buttons; empty unless a sleep is running. */
+    private var waitActionsPanel: JPanel? = null
+
+    /** Id of the sleep the indicator is currently showing, so a stale [endSleepRequest] is ignored. */
+    private var activeSleepReqId: String? = null
+
     /**
      * Set to true when a tool call or sub-agent reaches a terminal state.
      * The next [appendThinkingText] or [appendText] call checks this flag via
@@ -602,16 +611,22 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             applyChatFont(-1)
             isVisible = false
         }
+        val actionsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+            isOpaque = false
+            isVisible = false
+        }
         val innerPanel = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
             isOpaque = false
             add(label)
             add(extendBtn)
+            add(actionsPanel)
         }
         val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
         bubble.add(innerPanel, BorderLayout.CENTER)
         workingIndicator = row
         workingLabel = label
         waitExtendButton = extendBtn
+        waitActionsPanel = actionsPanel
         val wrapper = rowContainer(row)
         workingIndicatorWrapper = wrapper
         // Insert before any queued messages so they remain at the very bottom.
@@ -629,6 +644,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingTimer.stop()
         workingLabel = null
         waitExtendButton = null
+        waitActionsPanel = null
+        activeSleepReqId = null
+        waitLabelPrefix = "Waiting"
         waitTimeoutAction = null
         isWaitingMode = false
         workingIndicatorWrapper?.let {
@@ -646,7 +664,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val now = System.currentTimeMillis()
             val elapsed = (now - waitStartMs) / 1000
             val total = (waitDeadlineMs - waitStartMs) / 1000
-            label.text = "Waiting\u2026 ${elapsed}s / ${total}s"
+            label.text = "$waitLabelPrefix\u2026 ${elapsed}s / ${total}s"
             if (now >= waitDeadlineMs) {
                 val action = waitTimeoutAction
                 waitTimeoutAction = null
@@ -684,11 +702,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      * @param onTimeout called once when [deadlineEpochMs] is reached without a response
      */
     private fun showWaitingMode(deadlineEpochMs: Long, onExtend: () -> Long, onTimeout: () -> Unit) {
-        if (workingLabel == null) showWorkingIndicator()
-        isWaitingMode = true
-        waitStartMs = System.currentTimeMillis()
-        waitDeadlineMs = deadlineEpochMs
-        waitTimeoutAction = onTimeout
+        beginWaiting("Waiting", deadlineEpochMs, onTimeout)
         waitExtendButton?.apply {
             actionListeners.forEach { removeActionListener(it) }
             addActionListener {
@@ -701,9 +715,78 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (autoScrollEnabled) scrollToBottom()
     }
 
-    /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user completes. */
+    /**
+     * Puts the working indicator into countdown mode without choosing which buttons it offers —
+     * callers add their own ([showWaitingMode] for prompt_user, [showSleepRequest] for sleep).
+     * Creates the indicator if it is not yet shown.
+     */
+    private fun beginWaiting(labelPrefix: String, deadlineEpochMs: Long, onTimeout: (() -> Unit)?) {
+        if (workingLabel == null) showWorkingIndicator()
+        isWaitingMode = true
+        waitLabelPrefix = labelPrefix
+        waitStartMs = System.currentTimeMillis()
+        waitDeadlineMs = deadlineEpochMs
+        waitTimeoutAction = onTimeout
+    }
+
+    override fun showSleepRequest(reqId: String, deadlineEpochMs: Long, controls: SleepControls) {
+        // A sleep never waits on the human, so there is no timeout action: the tool wakes itself at
+        // the deadline and calls endSleepRequest. The countdown label just keeps counting until then.
+        beginWaiting("Sleeping", deadlineEpochMs, null)
+        activeSleepReqId = reqId
+        waitExtendButton?.isVisible = false
+
+        val panel = waitActionsPanel ?: return
+        panel.removeAll()
+        val extendButtons = SLEEP_EXTENSION_SECONDS.map { seconds ->
+            JButton("+${seconds}s").apply {
+                applyChatFont(-1)
+                toolTipText = "Sleep $seconds seconds longer"
+            }
+        }
+        val skipButton = JButton("Skip").apply {
+            applyChatFont(-1)
+            toolTipText = "End the sleep now"
+        }
+        val refreshExtendButtons = {
+            val canExtend = waitDeadlineMs < controls.maxDeadlineEpochMs
+            extendButtons.forEach { it.isEnabled = canExtend }
+        }
+        SLEEP_EXTENSION_SECONDS.zip(extendButtons).forEach { (seconds, button) ->
+            button.addActionListener {
+                waitDeadlineMs = controls.extend(seconds)
+                refreshExtendButtons()
+                updateWorkingLabel()
+            }
+            panel.add(button)
+        }
+        skipButton.addActionListener {
+            extendButtons.forEach { it.isEnabled = false }
+            skipButton.isEnabled = false
+            controls.skip()
+        }
+        panel.add(skipButton)
+        refreshExtendButtons()
+        panel.isVisible = true
+        panel.revalidate()
+        updateWorkingLabel()
+        if (autoScrollEnabled) scrollToBottom()
+    }
+
+    override fun endSleepRequest(reqId: String) {
+        if (activeSleepReqId != reqId) return
+        stopWaitingMode()
+    }
+
+    /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user or sleep completes. */
     private fun stopWaitingMode() {
         isWaitingMode = false
+        activeSleepReqId = null
+        waitLabelPrefix = "Waiting"
+        waitActionsPanel?.apply {
+            removeAll()
+            isVisible = false
+        }
         workingStartMs = System.currentTimeMillis()
         waitTimeoutAction = null
         waitExtendButton?.isVisible = false
@@ -1356,7 +1439,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 val ins = insets
                 val viewportHeight = DiffViewportSizing.viewportHeight(
                     content.height, content.width, width - ins.left - ins.right,
-                    horizontalScrollBar.preferredSize.height, maxViewportHeight)
+                    horizontalScrollBar.preferredSize.height, maxViewportHeight
+                )
                 return Dimension(0, viewportHeight + ins.top + ins.bottom)
             }
         }.apply {
@@ -1399,7 +1483,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 if (arg.isDiff) continue  // rendered as the diff card below
                 if (hasDiffCard && (arg.key == "path" || arg.key == "diffAdded"
                         || arg.key == "diffRemoved" || arg.key == "oldText"
-                        || arg.key == "newText" || arg.key == "autoOpenDiff")) continue
+                        || arg.key == "newText" || arg.key == "autoOpenDiff")
+                ) continue
                 append("\n\n").append(arg.key).append(": ").append(arg.value)
             }
         }
@@ -1420,6 +1505,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     if (v.length >= 2 && v.startsWith("\"") && v.endsWith("\""))
                         v.substring(1, v.length - 1) else v
                 }
+
             val path = rawValue("path")
             val added = parsed.args.firstOrNull { it.key == "diffAdded" }?.value?.toIntOrNull() ?: 0
             val removed = parsed.args.firstOrNull { it.key == "diffRemoved" }?.value?.toIntOrNull() ?: 0
@@ -1433,7 +1519,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             // approval summary above it, so the two read as one unit visually.
             val (diffRow, _) = createMessageRow(
                 createDiffCard(diff, path, added, removed, oldText, newText, reqId),
-                agentBg(), explicitBorder = agentBorder())
+                agentBg(), explicitBorder = agentBorder()
+            )
             addRow(diffRow)
         }
 
@@ -1724,7 +1811,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      * request id — lets responses arriving outside the card (notification actions,
      * web panel) run the same cleanup a card-button click does. EDT-confined.
      */
-    private val pendingPermissionResolvers = java.util.concurrent.ConcurrentHashMap<String, (PermissionResponse) -> Unit>()
+    private val pendingPermissionResolvers =
+        java.util.concurrent.ConcurrentHashMap<String, (PermissionResponse) -> Unit>()
 
     /**
      * Expiry hooks for permission cards whose request was resolved on the backend
@@ -2013,6 +2101,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     companion object {
         private const val ROW_SPACING = 8
+
+        /** The "+Ns" extension buttons offered while the sleep tool is running. */
+        private val SLEEP_EXTENSION_SECONDS = listOf(10, 30)
 
         /** Minimum upward pixel movement required to disable auto-scroll, guarding against sub-pixel layout rounding. */
         private const val SCROLL_DISABLE_THRESHOLD_PX = 10
