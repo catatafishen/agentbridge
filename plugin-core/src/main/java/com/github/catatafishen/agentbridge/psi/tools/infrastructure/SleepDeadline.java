@@ -19,7 +19,8 @@ final class SleepDeadline {
 
     /**
      * @param startMs    epoch millis at which the sleep started
-     * @param seconds    initial length of the sleep; must already be clamped to {@code maxSeconds}
+     * @param seconds    initial length of the sleep; values above {@code maxSeconds} are clamped to it,
+     *                   so callers need not validate the upper bound themselves
      * @param maxSeconds longest total sleep, measured from {@code startMs}
      */
     SleepDeadline(long startMs, int seconds, int maxSeconds) {

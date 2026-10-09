@@ -379,8 +379,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /** Holds the sleep tool's "+10s" / "+30s" / "Skip" buttons; empty unless a sleep is running. */
     private var waitActionsPanel: JPanel? = null
 
-    /** Id of the sleep the indicator is currently showing, so a stale [endSleepRequest] is ignored. */
-    private var activeSleepReqId: String? = null
+    /** Tracks the sleep the indicator is currently showing, so a stale [endSleepRequest] is ignored. */
+    private val sleepTracker = SleepRequestTracker()
 
     /**
      * Set to true when a tool call or sub-agent reaches a terminal state.
@@ -645,7 +645,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         workingLabel = null
         waitExtendButton = null
         waitActionsPanel = null
-        activeSleepReqId = null
+        sleepTracker.clear()
         waitLabelPrefix = "Waiting"
         waitTimeoutAction = null
         isWaitingMode = false
@@ -662,9 +662,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val label = workingLabel ?: return
         if (isWaitingMode) {
             val now = System.currentTimeMillis()
-            val elapsed = (now - waitStartMs) / 1000
-            val total = (waitDeadlineMs - waitStartMs) / 1000
-            label.text = "$waitLabelPrefix\u2026 ${elapsed}s / ${total}s"
+            label.text = WaitCountdown.label(waitLabelPrefix, waitStartMs, waitDeadlineMs, now)
             if (now >= waitDeadlineMs) {
                 val action = waitTimeoutAction
                 waitTimeoutAction = null
@@ -733,7 +731,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // A sleep never waits on the human, so there is no timeout action: the tool wakes itself at
         // the deadline and calls endSleepRequest. The countdown label just keeps counting until then.
         beginWaiting("Sleeping", deadlineEpochMs, null)
-        activeSleepReqId = reqId
+        sleepTracker.begin(reqId)
         waitExtendButton?.isVisible = false
 
         val panel = waitActionsPanel ?: return
@@ -749,7 +747,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             toolTipText = "End the sleep now"
         }
         val refreshExtendButtons = {
-            val canExtend = waitDeadlineMs < controls.maxDeadlineEpochMs
+            val canExtend = WaitCountdown.canExtend(waitDeadlineMs, controls.maxDeadlineEpochMs)
             extendButtons.forEach { it.isEnabled = canExtend }
         }
         SLEEP_EXTENSION_SECONDS.zip(extendButtons).forEach { (seconds, button) ->
@@ -774,14 +772,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     override fun endSleepRequest(reqId: String) {
-        if (activeSleepReqId != reqId) return
+        if (!sleepTracker.end(reqId)) return
         stopWaitingMode()
     }
 
     /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user or sleep completes. */
     private fun stopWaitingMode() {
         isWaitingMode = false
-        activeSleepReqId = null
+        sleepTracker.clear()
         waitLabelPrefix = "Waiting"
         waitActionsPanel?.apply {
             removeAll()

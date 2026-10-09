@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
 import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
 import com.github.catatafishen.agentbridge.ui.SleepControls;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -85,12 +86,11 @@ public final class SleepTool extends InfrastructureTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        int requested;
-        try {
-            requested = args.get(PARAM_SECONDS).getAsInt();
-        } catch (RuntimeException e) {
+        Integer parsed = parseSeconds(args.get(PARAM_SECONDS));
+        if (parsed == null) {
             return err("seconds must be a whole number, got: " + args.get(PARAM_SECONDS));
         }
+        int requested = parsed;
         if (requested <= 0) {
             return err("seconds must be a positive integer, got: " + requested);
         }
@@ -112,7 +112,7 @@ public final class SleepTool extends InfrastructureTool {
 
         try {
             awaitDeadline(deadline, skipSignal);
-            return McpRequestDeadline.prependNotice(clampNotice(requested), completionMessage(seconds));
+            return finishedMessage(requested);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return err("sleep interrupted");
@@ -127,7 +127,24 @@ public final class SleepTool extends InfrastructureTool {
         }
     }
 
-    private static @NotNull SleepControls controlsFor(
+    /**
+     * Reads {@code seconds} as an exact integer. {@code JsonElement.getAsInt()} would truncate
+     * {@code 1.5} to {@code 1} and wrap huge values, silently sleeping a different time than asked.
+     *
+     * @return the value, or {@code null} if it is missing, not a number, fractional or out of int range
+     */
+    static @Nullable Integer parseSeconds(@Nullable JsonElement element) {
+        if (element == null || !element.isJsonPrimitive()) {
+            return null;
+        }
+        try {
+            return element.getAsBigDecimal().intValueExact();
+        } catch (NumberFormatException | ArithmeticException e) {
+            return null;
+        }
+    }
+
+    static @NotNull SleepControls controlsFor(
         @NotNull SleepDeadline deadline, @NotNull CompletableFuture<String> skipSignal) {
         return new SleepControls() {
             @Override
@@ -200,6 +217,14 @@ public final class SleepTool extends InfrastructureTool {
             return cancelled;
         }
         return new IllegalStateException("sleep wait failed", e.getCause());
+    }
+
+    /**
+     * The result returned when a sleep ends. Both the clamp notice and the completion line quote the
+     * length the agent asked for, so they never contradict each other.
+     */
+    static @NotNull String finishedMessage(int requestedSeconds) {
+        return McpRequestDeadline.prependNotice(clampNotice(requestedSeconds), completionMessage(requestedSeconds));
     }
 
     static @NotNull String completionMessage(int seconds) {
