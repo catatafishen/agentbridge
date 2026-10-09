@@ -164,6 +164,38 @@ the turn. Do not consider the work done if the build is red — fix all errors f
 **Before pushing to a branch that has an open PR** (or before creating a PR), run `run_tests`
 and verify all unit tests pass. A failing test suite blocks review; fix failures before pushing.
 
+## Static Analysis (SonarCloud)
+
+**A clean `write_file` / `get_highlights` / `get_problems` result does NOT mean SonarCloud will pass.** The IDE
+inspections shown there do not include Sonar's rule set: rules such as `S3776` (cognitive complexity), `S125`
+(commented-out code), `S2925` (`Thread.sleep` in tests), `S5778` (several throwing calls in one `assertThrows` lambda)
+and the regex rules `S5869` / `S6353` were all invisible in the IDE and only appeared on the PR. What the IDE does show
+are INFORMATION-level hints ("use text block", "use switch") — those are style noise, not Sonar findings.
+
+So the PR itself is the only place these are found, and you must go and look:
+
+1. After pushing to a PR branch, wait for the **SonarCloud Code Analysis** check to finish
+   (`gh pr checks <number> | grep -i sonar`, a couple of minutes).
+2. Run `bash .agents/skills/pr-review/sonar-issues.sh <number>`. It lists every open issue with rule, file and line, and
+   exits non-zero if there are any.
+3. **Fix every issue it lists** and push again. Do not suppress with `// NOSONAR` or `@SuppressWarnings` to make a
+   finding
+   go away; only suppress when the rule is demonstrably wrong for that code, with a comment saying why.
+4. A PR is not ready for review while that script reports issues.
+
+Write code that avoids the recurring ones in the first place:
+
+- **`S3776` cognitive complexity ≤ 15:** keep methods flat. Put `try`/`catch` translation, nested `if`s and ternaries in
+  small named helpers instead of one loop body.
+- **`S125` commented-out code:** a `//` comment that ends in `;` or `)` or contains `Type#member` or `foo()` looks like
+  code to Sonar. Write comments as plain prose.
+- **`S2925` no `Thread.sleep` in tests:** use latches, `CompletableFuture.delayedExecutor`, or completing a future from
+  another thread.
+- **`S5778` lambdas passed to `assertThrows` / `assertTimeout*`:** exactly one call that can throw; build the inputs
+  before the lambda.
+- **Regexes (`S5869`, `S6353`):** use `\w` / `\d` instead of `[A-Za-z0-9_]` / `[0-9]`, and no duplicate or overlapping
+  ranges in a character class (e.g. `A-Za-z` together with `CASE_INSENSITIVE`).
+
 ## Async CI Pattern
 
 CI takes 3-5 minutes after each push or rebase. Do not wait for it synchronously — check

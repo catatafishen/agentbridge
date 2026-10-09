@@ -159,29 +159,47 @@ public final class SleepTool extends InfrastructureTool {
      */
     static void awaitDeadline(@NotNull SleepDeadline deadline, @NotNull CompletableFuture<String> skipSignal)
         throws InterruptedException {
-        while (true) {
-            long remaining = deadline.remainingMs(System.currentTimeMillis());
-            if (remaining <= 0) {
-                return;
-            }
-            try {
-                skipSignal.get(remaining, TimeUnit.MILLISECONDS);
-                return;
-            } catch (TimeoutException ignored) {
-                // The deadline may have been extended in flight — re-check the loop condition.
-            } catch (CancellationException e) {
-                // Future.get() wraps a failed-with-CancellationException future in a new one whose
-                // message is generic; the reason the registry gave (e.g. "agent stopped") is the cause's.
-                Throwable cause = e.getCause();
-                String reason = cause != null ? cause.getMessage() : e.getMessage();
-                throw reason == null ? e : new CancellationException(reason);
-            } catch (ExecutionException e) {
-                if (e.getCause() instanceof CancellationException cancelled) {
-                    throw cancelled;
-                }
-                throw new IllegalStateException("sleep wait failed", e.getCause());
-            }
+        long remaining = deadline.remainingMs(System.currentTimeMillis());
+        while (remaining > 0 && !awaitSkip(skipSignal, remaining)) {
+            remaining = deadline.remainingMs(System.currentTimeMillis());
         }
+    }
+
+    /**
+     * Parks for at most {@code remainingMs} waiting for the skip signal.
+     *
+     * @return {@code true} if the sleep was skipped, {@code false} if the wait timed out (the
+     * deadline may have been extended meanwhile, so the caller re-checks it)
+     */
+    private static boolean awaitSkip(@NotNull CompletableFuture<String> skipSignal, long remainingMs)
+        throws InterruptedException {
+        try {
+            skipSignal.get(remainingMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        } catch (CancellationException e) {
+            throw withRealReason(e);
+        } catch (ExecutionException e) {
+            throw unwrapFailure(e);
+        }
+    }
+
+    /**
+     * {@code Future.get()} wraps a future that failed with a {@code CancellationException} in a new
+     * one with a generic message; the reason the registry gave (e.g. "agent stopped") is its cause's.
+     */
+    private static @NotNull CancellationException withRealReason(@NotNull CancellationException e) {
+        Throwable cause = e.getCause();
+        String reason = cause != null ? cause.getMessage() : e.getMessage();
+        return reason == null ? e : new CancellationException(reason);
+    }
+
+    private static @NotNull RuntimeException unwrapFailure(@NotNull ExecutionException e) {
+        if (e.getCause() instanceof CancellationException cancelled) {
+            return cancelled;
+        }
+        return new IllegalStateException("sleep wait failed", e.getCause());
     }
 
     static @NotNull String completionMessage(int seconds) {

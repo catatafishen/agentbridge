@@ -702,8 +702,8 @@ public final class McpProtocolHandler {
 
         try {
             if (managesOwnTimeout(toolName)) {
-                // The tool bounds its own wait and shows its own controls (see ToolDefinition#managesOwnTimeout);
-                // the generic "still running" dialog would only duplicate and confuse them.
+                // This tool bounds its own wait and shows its own controls, so the generic "still running"
+                // dialog would only duplicate and confuse them. See ToolDefinition.managesOwnTimeout.
                 return getFutureResult(future, workerThread, toolName, "self-managed wait");
             }
             int initialTimeoutSeconds = Math.max(1, ChatInputSettings.getInstance().getToolTimeoutSeconds());

@@ -4,8 +4,10 @@ import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,8 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.time.Duration;
 
 class SleepToolTest {
 
@@ -31,41 +31,39 @@ class SleepToolTest {
 
     @Test
     void returnsImmediatelyWhenTheDeadlineHasAlreadyPassed() {
-        assertTimeoutPreemptively(Duration.ofSeconds(2),
-            () -> SleepTool.awaitDeadline(alreadyExpired(), new CompletableFuture<>()));
+        SleepDeadline expired = alreadyExpired();
+        CompletableFuture<String> neverSkipped = new CompletableFuture<>();
+
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> SleepTool.awaitDeadline(expired, neverSkipped));
     }
 
     @Test
     void skipEndsALongSleepAtOnce() {
+        SleepDeadline deadline = farFuture();
         CompletableFuture<String> skip = new CompletableFuture<>();
         skip.complete("skipped");
 
-        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> SleepTool.awaitDeadline(farFuture(), skip));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> SleepTool.awaitDeadline(deadline, skip));
     }
 
     @Test
     void skipFromAnotherThreadWakesTheWaiter() {
+        SleepDeadline deadline = farFuture();
         CompletableFuture<String> skip = new CompletableFuture<>();
-        Thread skipper = new Thread(() -> {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            skip.complete("skipped");
-        });
-        skipper.start();
+        // Completes the signal 100ms from now on another thread, i.e. while the waiter is parked.
+        skip.completeAsync(() -> "skipped", CompletableFuture.delayedExecutor(100, TimeUnit.MILLISECONDS));
 
-        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> SleepTool.awaitDeadline(farFuture(), skip));
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> SleepTool.awaitDeadline(deadline, skip));
     }
 
     @Test
     void cancellationSurfacesWithItsReason() {
+        SleepDeadline deadline = farFuture();
         CompletableFuture<String> stopped = new CompletableFuture<>();
         stopped.completeExceptionally(new CancellationException("agent stopped"));
 
         CancellationException thrown = assertThrows(CancellationException.class,
-            () -> SleepTool.awaitDeadline(farFuture(), stopped));
+            () -> SleepTool.awaitDeadline(deadline, stopped));
 
         assertEquals("agent stopped", thrown.getMessage());
     }
