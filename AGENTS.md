@@ -166,34 +166,9 @@ and verify all unit tests pass. A failing test suite blocks review; fix failures
 
 ## Static Analysis (Sonar)
 
-Sonar findings are fixed while writing the code, not discovered on the PR afterwards.
-
-- **What the editor reports is binding.** Every problem that `write_file`, `edit_text`, `get_highlights` or
-  `get_problems` returns at WARNING level or above, and every Sonar-sourced problem at any level, must be fixed before
-  you commit. Plain INFORMATION style hints ("use text block", "use switch") may be skipped, but that is not permission
-  to skip the rest. Do not silence a finding with `// NOSONAR` or `@SuppressWarnings` to make it go away; suppress only
-  when the rule is demonstrably wrong for that code, with a comment saying why.
-- **This only works if the IDE running the agent has the SonarQube for IDE (SonarLint) plugin.** Without it, Sonar's
-  rules are simply absent from those results. In an IDE without the plugin, a throwaway test containing a
-  `Thread.sleep`, a two-call `assertThrows` lambda and a code-looking comment produced only two INFORMATION hints. If
-  you never see a Sonar-style finding, say so to the user rather than assuming the code is clean.
-- To look at what SonarCloud says about a PR (when reviewing, or when asked), run
-  `bash .agents/skills/pr-review/sonar-issues.sh <number>`. Exit `0` clean, `1` issues listed, `3` SonarCloud has not
-  yet analysed the latest commit (not "clean"), `2` the query failed. This is a one-off check, not a step to repeat
-  after every push.
-
-Write code that avoids the recurring ones in the first place:
-
-- **`S3776` cognitive complexity <= 15:** keep methods flat. Put `try`/`catch` translation, nested `if`s and ternaries
-  in small named helpers instead of one loop body.
-- **`S125` commented-out code:** a `//` comment that ends in `;` or `)` or contains `Type#member` or `foo()` looks like
-  code to Sonar. Write comments as plain prose.
-- **`S2925` no `Thread.sleep` in tests:** use latches, `CompletableFuture.delayedExecutor`, or completing a future from
-  another thread.
-- **`S5778` lambdas passed to `assertThrows` / `assertTimeout*`:** exactly one call that can throw; build the inputs
-  before the lambda.
-- **Regexes (`S5869`, `S6353`):** use `\w` / `\d` instead of `[A-Za-z0-9_]` / `[0-9]`, and no duplicate or overlapping
-  ranges in a character class (e.g. `A-Za-z` together with `CASE_INSENSITIVE`).
+Sonar issues are not allowed in this project. Trust any Sonar report that reaches you (from `write_file`, `edit_text`,
+`get_highlights`, `get_problems`) and fix it before committing. Do not silence a finding with `// NOSONAR` or
+`@SuppressWarnings`; suppress only when the rule is demonstrably wrong for that code, with a comment saying why.
 
 ## Async CI Pattern
 
