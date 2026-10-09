@@ -164,29 +164,28 @@ the turn. Do not consider the work done if the build is red — fix all errors f
 **Before pushing to a branch that has an open PR** (or before creating a PR), run `run_tests`
 and verify all unit tests pass. A failing test suite blocks review; fix failures before pushing.
 
-## Static Analysis (SonarCloud)
+## Static Analysis (Sonar)
 
-**A clean `write_file` / `get_highlights` / `get_problems` result does NOT mean SonarCloud will pass.** The IDE
-inspections shown there do not include Sonar's rule set: rules such as `S3776` (cognitive complexity), `S125`
-(commented-out code), `S2925` (`Thread.sleep` in tests), `S5778` (several throwing calls in one `assertThrows` lambda)
-and the regex rules `S5869` / `S6353` were all invisible in the IDE and only appeared on the PR. What the IDE does show
-are INFORMATION-level hints ("use text block", "use switch") — those are style noise, not Sonar findings.
+Sonar findings are fixed while writing the code, not discovered on the PR afterwards.
 
-So the PR itself is the only place these are found, and you must go and look:
-
-1. After pushing to a PR branch, wait for the **SonarCloud Code Analysis** check to finish
-   (`gh pr checks <number> | grep -i sonar`, a couple of minutes).
-2. Run `bash .agents/skills/pr-review/sonar-issues.sh <number>`. It lists every open issue with rule, file and line, and
-   exits non-zero if there are any.
-3. **Fix every issue it lists** and push again. Do not suppress with `// NOSONAR` or `@SuppressWarnings` to make a
-   finding
-   go away; only suppress when the rule is demonstrably wrong for that code, with a comment saying why.
-4. A PR is not ready for review while that script reports issues.
+- **What the editor reports is binding.** Every problem that `write_file`, `edit_text`, `get_highlights` or
+  `get_problems` returns at WARNING level or above, and every Sonar-sourced problem at any level, must be fixed before
+  you commit. Plain INFORMATION style hints ("use text block", "use switch") may be skipped, but that is not permission
+  to skip the rest. Do not silence a finding with `// NOSONAR` or `@SuppressWarnings` to make it go away; suppress only
+  when the rule is demonstrably wrong for that code, with a comment saying why.
+- **This only works if the IDE running the agent has the SonarQube for IDE (SonarLint) plugin.** Without it, Sonar's
+  rules are simply absent from those results. In an IDE without the plugin, a throwaway test containing a
+  `Thread.sleep`, a two-call `assertThrows` lambda and a code-looking comment produced only two INFORMATION hints. If
+  you never see a Sonar-style finding, say so to the user rather than assuming the code is clean.
+- To look at what SonarCloud says about a PR (when reviewing, or when asked), run
+  `bash .agents/skills/pr-review/sonar-issues.sh <number>`. Exit `0` clean, `1` issues listed, `3` SonarCloud has not
+  yet analysed the latest commit (not "clean"), `2` the query failed. This is a one-off check, not a step to repeat
+  after every push.
 
 Write code that avoids the recurring ones in the first place:
 
-- **`S3776` cognitive complexity ≤ 15:** keep methods flat. Put `try`/`catch` translation, nested `if`s and ternaries in
-  small named helpers instead of one loop body.
+- **`S3776` cognitive complexity <= 15:** keep methods flat. Put `try`/`catch` translation, nested `if`s and ternaries
+  in small named helpers instead of one loop body.
 - **`S125` commented-out code:** a `//` comment that ends in `;` or `)` or contains `Type#member` or `foo()` looks like
   code to Sonar. Write comments as plain prose.
 - **`S2925` no `Thread.sleep` in tests:** use latches, `CompletableFuture.delayedExecutor`, or completing a future from
