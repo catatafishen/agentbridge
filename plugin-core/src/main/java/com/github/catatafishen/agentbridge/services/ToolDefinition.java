@@ -232,6 +232,17 @@ public interface ToolDefinition {
         return false;
     }
 
+    /**
+     * True if this tool deliberately runs longer than the generic "still running" threshold and
+     * bounds and surfaces its own wait (e.g. {@code sleep}, which shows its own countdown with
+     * skip / extend controls). The handler then skips the generic timeout dialog for it. The tool
+     * is responsible for always returning within {@code McpRequestDeadline.MAX_TIMEOUT_SECONDS}.
+     * Default: false.
+     */
+    default boolean managesOwnTimeout() {
+        return false;
+    }
+
     // ── Schema ───────────────────────────────────────────────
 
     /**
