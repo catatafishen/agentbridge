@@ -38,6 +38,13 @@ class ToolCallArgParserTest {
             assertEquals("30s sleep", parser.defaultChipTitle("sleep", "{\"seconds\":30}"));
         }
 
+        @ParameterizedTest
+        @ValueSource(ints = {1, 7, 45, 90, 170})
+        @DisplayName("shows whatever length the agent asked for")
+        void sleepShowsAnyRequestedLength(int seconds) {
+            assertEquals(seconds + "s sleep", parser.defaultChipTitle("sleep", "{\"seconds\":" + seconds + "}"));
+        }
+
         @Test
         @DisplayName("accepts a whole number written with a decimal point")
         void sleepWholeDecimal() {
