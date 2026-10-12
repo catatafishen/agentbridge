@@ -223,6 +223,95 @@ class ConversationReaderTest {
         assertEquals("Found it in /src/auth", loaded.getResult());
         assertEquals("completed", loaded.getStatus());
         assertEquals("call-1", loaded.getCallId());
+        assertTrue(loaded.getChildren().isEmpty());
+    }
+
+    private static EntryData.SubAgent subAgentWithChildren() {
+        EntryData.SubAgent sa = new EntryData.SubAgent(
+            "general", "Read the readme", "Read README.md", "## Title",
+            "completed", 0, "call-1", false, null,
+            "2026-01-01T10:00:01Z", "assistant", "opencode", "sa1"
+        );
+        sa.setChildren(subAgentChildren());
+        return sa;
+    }
+
+    private static List<EntryData> subAgentChildren() {
+        EntryData.ToolCall tool = new EntryData.ToolCall(
+            "read_file", "{\"path\":\"README.md\"}", "read", "# AgentBridge\n...", "completed",
+            null, null, false, null, null,
+            "2026-01-01T10:00:03Z", "general", "deepseek", "c-tool");
+        return List.of(
+            new EntryData.Thinking("Let me read the file", "2026-01-01T10:00:02Z", "general", "deepseek", "c-think"),
+            tool,
+            new EntryData.Text("The second heading is ## Title", "2026-01-01T10:00:04Z", "general", "deepseek", "c-text")
+        );
+    }
+
+    private void assertSubAgentChildrenLoaded(EntryData.SubAgent loaded) {
+        List<EntryData> children = loaded.getChildren();
+        assertEquals(3, children.size());
+        EntryData.Thinking thinking = assertInstanceOf(EntryData.Thinking.class, children.getFirst());
+        assertEquals("Let me read the file", thinking.getRaw());
+        assertEquals("c-think", thinking.getEntryId());
+        EntryData.ToolCall tool = assertInstanceOf(EntryData.ToolCall.class, children.get(1));
+        assertEquals("read_file", tool.getTitle());
+        assertEquals("{\"path\":\"README.md\"}", tool.getArguments());
+        assertEquals("read", tool.getKind());
+        assertEquals("# AgentBridge\n...", tool.getResult());
+        assertEquals("completed", tool.getStatus());
+        assertEquals("c-tool", tool.getEntryId());
+        EntryData.Text text = assertInstanceOf(EntryData.Text.class, children.get(2));
+        assertEquals("The second heading is ## Title", text.getRaw());
+        assertEquals("2026-01-01T10:00:04Z", text.getTimestamp());
+    }
+
+    @Test
+    void subAgentChildrenWrittenWithTheSubAgentRoundtripInOrder() {
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            subAgentWithChildren()
+        ));
+
+        List<EntryData> entries = reader.loadEntries("sess-1");
+
+        assertEquals(2, entries.size(), "children must not appear as top-level entries");
+        assertSubAgentChildrenLoaded(assertInstanceOf(EntryData.SubAgent.class, entries.get(1)));
+    }
+
+    @Test
+    void subAgentChildrenAddedAfterTheSubAgentWasPersistedRoundtrip() {
+        EntryData.SubAgent early = new EntryData.SubAgent(
+            "general", "Read the readme", "Read README.md", null,
+            "running", 0, "call-1", false, null,
+            "2026-01-01T10:00:01Z", "assistant", "opencode", "sa1");
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", null, "t1", "t1"), early));
+
+        assertTrue(writer.recordSubAgentChildren("sa1", subAgentChildren()));
+
+        List<EntryData> entries = reader.loadEntries("sess-1");
+        assertEquals(2, entries.size());
+        assertSubAgentChildrenLoaded(assertInstanceOf(EntryData.SubAgent.class, entries.get(1)));
+    }
+
+    @Test
+    void recordingSubAgentChildrenTwiceDoesNotDuplicateThem() {
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            subAgentWithChildren()
+        ));
+
+        assertTrue(writer.recordSubAgentChildren("sa1", subAgentChildren()));
+
+        EntryData.SubAgent loaded =
+            assertInstanceOf(EntryData.SubAgent.class, reader.loadEntries("sess-1").get(1));
+        assertEquals(3, loaded.getChildren().size());
+    }
+
+    @Test
+    void recordingChildrenOfAnUnknownSubAgentWritesNothing() {
+        assertFalse(writer.recordSubAgentChildren("missing", subAgentChildren()));
     }
 
     @Test

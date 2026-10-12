@@ -101,6 +101,22 @@ erDiagram
         TEXT denial_reason
     }
 
+    sub_agent_children {
+        TEXT id PK
+        TEXT sub_agent_event_id FK "events.id of the sub_agent event"
+        INTEGER sequence_num "order inside the sub-agent"
+        TEXT child_type "text, thinking or tool_call"
+        TEXT timestamp
+        TEXT agent_name
+        TEXT model
+        TEXT content "text / thinking content"
+        TEXT tool_name
+        TEXT tool_kind
+        TEXT arguments
+        TEXT result
+        TEXT status
+    }
+
     nudge_events {
         TEXT event_id PK "FK to events"
         TEXT text
@@ -142,6 +158,7 @@ erDiagram
     events ||--o| thinking_events: "is-a"
     events ||--o| tool_call_events: "is-a"
     events ||--o| sub_agent_events: "is-a"
+    events ||--o{ sub_agent_children: "sub-agent contains"
     events ||--o| nudge_events: "is-a"
     tool_call_events ||--o{ hook_executions: "has"
 ```
@@ -160,6 +177,29 @@ discriminator in `events` identifies which subtype table to join:
 | `tool_call`  | `tool_call_events` | MCP or built-in tool invocation                  |
 | `sub_agent`  | `sub_agent_events` | Sub-agent delegation call                        |
 | `nudge`      | `nudge_events`     | User or system nudge injected into a tool result |
+
+---
+
+## Sub-Agent Children
+
+`sub_agent_children` holds the conversation *inside* a sub-agent: its text, reasoning and tool
+calls, in order (`sequence_num`). It is deliberately **not** part of `events`: everything that
+queries `events` / `tool_call_events` (usage statistics, the code-graph dashboard, history search,
+per-turn replay) keeps seeing only the main agent's activity, and a sub-agent's MCP calls that are
+already recorded there are not counted twice.
+
+| `child_type` | Columns used                                              |
+|--------------|-----------------------------------------------------------|
+| `text`       | `content`                                                 |
+| `thinking`   | `content`                                                 |
+| `tool_call`  | `tool_name`, `tool_kind`, `arguments`, `result`, `status` |
+
+The rows are written when the sub-agent finishes and its client can supply the conversation (today
+OpenCode, whose child session is not streamed over ACP — see `AbstractClient.loadSubAgentTranscript`).
+`ConversationReader` attaches them to the loaded `EntryData.SubAgent` as `children`, so a restored
+session renders them without any call back to the agent. Child ids are
+`<sub_agent_event_id>:<agent part id>`, so a second sub-agent that resumes the same agent-side
+session gets rows of its own, and re-recording is idempotent.
 
 ---
 
@@ -190,14 +230,19 @@ or direct MCP calls without an active agent).
 
 `ConversationSchema.createOrMigrate()` is idempotent. It reads the current version from
 `schema_version`, then applies each missing migration in order. The version constant lives
-in `ConversationDatabase.SCHEMA_VERSION` (currently **4**).
+in `ConversationDatabase.SCHEMA_VERSION` (currently **9**).
 
-| Version | Changes                                                           |
-|---------|-------------------------------------------------------------------|
-| 1       | Initial schema — all core tables                                  |
-| 2       | Unique constraint on `commits(turn_id, commit_hash)`              |
-| 3       | Make `tool_call_events.is_mcp` nullable (table rebuild)           |
-| 4       | Add `nudge_events.source` column; back-fill legacy reprimand rows |
+| Version | Changes                                                                   |
+|---------|---------------------------------------------------------------------------|
+| 1       | Initial schema — all core tables                                          |
+| 2       | Unique constraint on `commits(turn_id, commit_hash)`                      |
+| 3       | Make `tool_call_events.is_mcp` nullable (table rebuild)                   |
+| 4       | Add `nudge_events.source` column; back-fill legacy reprimand rows         |
+| 5       | Add `tool_call_events.plugin_version`                                     |
+| 6       | Knowledge graph tables (`graph_nodes`, `graph_edges`, `graph_file_index`) |
+| 7       | Git commit history tables (`graph_commits`, `graph_commit_files`)         |
+| 8       | Add `graph_file_index.root_type`                                          |
+| 9       | Add `sub_agent_children` — the conversation inside a sub-agent            |
 
 ---
 

@@ -254,6 +254,26 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Stores the conversation inside a sub-agent after any queued insert.
+     *
+     * <p>If the sub-agent row is not in the database yet (it is written by a later
+     * {@code appendEntriesAsync}), this is a no-op: the children are in memory on the
+     * {@link com.github.catatafishen.agentbridge.bridge.EntryData.SubAgent} and are written
+     * together with it.
+     */
+    public void recordSubAgentChildrenAsync(
+        @NotNull String subAgentEventId,
+        @NotNull List<EntryData> children
+    ) {
+        enqueueWrite("record sub-agent children", () -> {
+            ConversationWriter writer = getOrCreateWriter();
+            if (writer != null) {
+                writer.recordSubAgentChildren(subAgentEventId, children);
+            }
+        });
+    }
+
+    /**
      * Updates the session title after any queued insert.
      */
     public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {

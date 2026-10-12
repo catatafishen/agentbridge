@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
@@ -12,6 +13,7 @@ import com.intellij.util.net.NetUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -190,6 +192,26 @@ public final class OpenCodeClient extends AcpClient {
         JsonObject config = new JsonObject();
         config.add("permission", permission);
         return Map.of("OPENCODE_CONFIG_CONTENT", new Gson().toJson(config));
+    }
+
+    /**
+     * OpenCode runs a subagent in a child session that ACP never streams, but the HTTP server
+     * that {@code opencode acp} starts beside ACP serves it (see {@link OpenCodeServerEndpoint}).
+     * The child session id is in the {@code task} result text.
+     */
+    @Override
+    public @Nullable List<EntryData> loadSubAgentTranscript(
+        @NotNull String subAgentEntryId, @Nullable String subAgentResult) throws IOException {
+        OpenCodeTaskOutput task = OpenCodeTaskOutput.parse(subAgentResult);
+        if (task == null) {
+            return null;
+        }
+        try {
+            return OpenCodeSessionHttpClient.fetchTranscript(task.childSessionId()).toEntries(subAgentEntryId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while loading the subagent session " + task.childSessionId(), e);
+        }
     }
 
     @Override

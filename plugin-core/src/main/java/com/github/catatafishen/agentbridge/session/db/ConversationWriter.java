@@ -55,6 +55,11 @@ public final class ConversationWriter implements AutoCloseable {
 
     private static final Logger LOG = Logger.getInstance(ConversationWriter.class);
 
+    /** {@code sub_agent_children.child_type} values; also read back by {@link ConversationReader}. */
+    static final String SUB_AGENT_CHILD_TEXT = "text";
+    static final String SUB_AGENT_CHILD_THINKING = "thinking";
+    static final String SUB_AGENT_CHILD_TOOL_CALL = "tool_call";
+
     static final int MAX_PENDING_HOOK_EVENTS = 256;
     static final int MAX_PENDING_HOOK_STAGES_PER_EVENT = 32;
     static final int MAX_PENDING_TOOL_STATS = 256;
@@ -190,6 +195,7 @@ public final class ConversationWriter implements AutoCloseable {
             insertEvent(conn, sessionId, sa.getEntryId(), "sub_agent", sa.getTimestamp(),
                 sa.getAgent(), sa.getModel());
             insertSubAgent(conn, sa);
+            insertSubAgentChildren(conn, sa.getEntryId(), sa.getChildren());
         } else if (entry instanceof EntryData.Nudge n) {
             writeNudge(conn, sessionId, n);
         } else if (entry instanceof EntryData.TurnStats ts) {
@@ -599,6 +605,126 @@ public final class ConversationWriter implements AutoCloseable {
             ps.setString(9, sa.getDenialReason());
             ps.executeUpdate();
         }
+    }
+
+    /**
+     * Writes the conversation inside a sub-agent that is already in the database. A sub-agent
+     * is usually persisted before its transcript is known, so the transcript arrives separately.
+     *
+     * <p>If the sub-agent row has not been written yet this does nothing and returns {@code false}:
+     * the children are then written together with the sub-agent itself by {@link #recordEntries}.
+     * Writing is idempotent ({@code INSERT OR IGNORE} on the child ids).
+     *
+     * @return {@code true} when the children are in the database after this call
+     */
+    public boolean recordSubAgentChildren(
+        @NotNull String subAgentEventId,
+        @NotNull List<EntryData> children
+    ) {
+        synchronized (database) {
+            if (closed || children.isEmpty()) return false;
+            Connection conn = database.getConnection();
+            if (conn == null) return false;
+            try {
+                if (!subAgentEventExists(conn, subAgentEventId)) return false;
+                conn.setAutoCommit(false);
+                try {
+                    insertSubAgentChildren(conn, subAgentEventId, children);
+                    conn.commit();
+                    return true;
+                } catch (SQLException e) {
+                    conn.rollback();
+                    throw e;
+                } finally {
+                    conn.setAutoCommit(true);
+                }
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to record " + children.size()
+                    + " sub-agent children for " + subAgentEventId, e);
+                return false;
+            }
+        }
+    }
+
+    private static boolean subAgentEventExists(
+        @NotNull Connection conn, @NotNull String eventId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT 1 FROM sub_agent_events WHERE event_id = ? LIMIT 1")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static void insertSubAgentChildren(
+        @NotNull Connection conn,
+        @NotNull String subAgentEventId,
+        @NotNull List<EntryData> children
+    ) throws SQLException {
+        if (children.isEmpty()) return;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT OR IGNORE INTO sub_agent_children (
+                id, sub_agent_event_id, sequence_num, child_type, timestamp, agent_name, model,
+                content, tool_name, tool_kind, arguments, result, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            for (int i = 0; i < children.size(); i++) {
+                if (bindSubAgentChild(ps, subAgentEventId, i, children.get(i))) {
+                    ps.addBatch();
+                }
+            }
+            ps.executeBatch();
+        }
+    }
+
+    /**
+     * Binds one child to the insert statement; returns {@code false} (and logs) for entry types a
+     * sub-agent transcript is not expected to contain.
+     */
+    private static boolean bindSubAgentChild(
+        @NotNull PreparedStatement ps,
+        @NotNull String subAgentEventId,
+        int sequence,
+        @NotNull EntryData child
+    ) throws SQLException {
+        ps.setString(1, child.getEntryId());
+        ps.setString(2, subAgentEventId);
+        ps.setInt(3, sequence);
+        ps.setString(5, emptyToNull(child.getTimestamp()));
+        for (int column = 6; column <= 13; column++) {
+            ps.setNull(column, Types.VARCHAR);
+        }
+        switch (child) {
+            case EntryData.Text t -> {
+                ps.setString(4, SUB_AGENT_CHILD_TEXT);
+                ps.setString(6, emptyToNull(t.getAgent()));
+                ps.setString(7, emptyToNull(t.getModel()));
+                ps.setString(8, t.getRaw());
+            }
+            case EntryData.Thinking th -> {
+                ps.setString(4, SUB_AGENT_CHILD_THINKING);
+                ps.setString(6, emptyToNull(th.getAgent()));
+                ps.setString(7, emptyToNull(th.getModel()));
+                ps.setString(8, th.getRaw());
+            }
+            case EntryData.ToolCall tc -> {
+                ps.setString(4, SUB_AGENT_CHILD_TOOL_CALL);
+                ps.setString(6, emptyToNull(tc.getAgent()));
+                ps.setString(7, emptyToNull(tc.getModel()));
+                ps.setString(9, tc.getTitle());
+                ps.setString(10, tc.getKind());
+                ps.setString(11, tc.getArguments());
+                ps.setString(12, tc.getResult());
+                ps.setString(13, tc.getStatus());
+            }
+            default -> {
+                LOG.warn("ConversationWriter: skipping unsupported sub-agent child "
+                    + child.getClass().getSimpleName() + " " + child.getEntryId());
+                return false;
+            }
+        }
+        return true;
     }
 
     private void insertContextFiles(

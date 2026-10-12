@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.intellij.openapi.Disposable
@@ -122,6 +123,13 @@ interface ChatPanelApi : Disposable {
         id: String, status: String, result: String?, description: String? = null,
         autoDenied: Boolean = false, denialReason: String? = null
     )
+
+    /**
+     * Attaches the sub-agent's own conversation ([EntryData.Text], [EntryData.Thinking] and
+     * [EntryData.ToolCall] entries, in order) so its section can show it. Called once the
+     * sub-agent has finished, and again on history replay.
+     */
+    fun setSubAgentTranscript(id: String, children: List<EntryData>)
 
     // ── Sub-agent internal tool calls ──────────────────────────────
 

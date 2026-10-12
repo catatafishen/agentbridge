@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
+import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.client.AbstractClient
@@ -13,6 +14,7 @@ import com.github.catatafishen.agentbridge.services.*
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import java.io.IOException
 
 /**
  * Callbacks the orchestrator invokes back into the UI layer for side-effects it cannot own.
@@ -1006,6 +1008,7 @@ class PromptOrchestrator(
                 update.autoDenied,
                 update.denialReason
             )
+            captureSubAgentTranscript(recordId, update.result)
         } else if (update.isInternal) {
             consolePanel().updateSubAgentToolCall(
                 recordId,
@@ -1028,6 +1031,24 @@ class PromptOrchestrator(
                     kind = update.kind
                 )
             )
+        }
+    }
+
+    /**
+     * Fetches the finished sub-agent's own conversation from the client, when the client has one to
+     * offer, and hands it to the chat panel, which stores it with the sub-agent entry. Done once, here,
+     * so the UI only ever renders what is already in the conversation store.
+     */
+    private fun captureSubAgentTranscript(subAgentId: String, result: String?) {
+        val client = agentManager.client
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val children: List<EntryData>? = client.loadSubAgentTranscript(subAgentId, result)
+                if (!children.isNullOrEmpty()) consolePanel().setSubAgentTranscript(subAgentId, children)
+            } catch (e: IOException) {
+                log.warn("Could not load the conversation of sub-agent $subAgentId", e)
+                consolePanel().addErrorEntry("Could not load the subagent's conversation: ${e.message}")
+            }
         }
     }
 

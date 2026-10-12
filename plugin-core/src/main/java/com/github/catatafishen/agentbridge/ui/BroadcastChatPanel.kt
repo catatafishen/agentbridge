@@ -215,6 +215,15 @@ class BroadcastChatPanel(
         dispatchUi { nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason) }
     }
 
+    override fun setSubAgentTranscript(id: String, children: List<EntryData>) {
+        // If the sub-agent row is not in the DB yet, the children are written together with it
+        // (they hang off the in-memory entry); otherwise this queued write adds them.
+        if (entryStore.setSubAgentChildren(id, children)) {
+            ConversationService.getInstance(project).recordSubAgentChildrenAsync(id, children)
+        }
+        dispatchUi { nativePanel.setSubAgentTranscript(id, children) }
+    }
+
     override fun addSubAgentToolCall(
         subAgentId: String, toolId: String, title: String,
         arguments: String?, kind: String?

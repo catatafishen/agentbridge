@@ -499,7 +499,7 @@ public final class ConversationReader {
             ps.setString(1, eventId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
-                return new EntryData.SubAgent(
+                EntryData.SubAgent subAgent = new EntryData.SubAgent(
                     rs.getString(1),  // agentType
                     nullToEmpty(rs.getString(2)),  // description
                     rs.getString(3),  // prompt
@@ -511,8 +511,63 @@ public final class ConversationReader {
                     rs.getString(8),  // denialReason
                     timestamp, agent, model, eventId
                 );
+                subAgent.setChildren(loadSubAgentChildren(conn, eventId));
+                return subAgent;
             }
         }
+    }
+
+    /**
+     * Loads the conversation recorded inside a sub-agent, in order; empty when none was captured.
+     */
+    @NotNull
+    private List<EntryData> loadSubAgentChildren(
+        @NotNull Connection conn, @NotNull String subAgentEventId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            SELECT id, child_type, timestamp, agent_name, model, content,
+                   tool_name, tool_kind, arguments, result, status
+            FROM sub_agent_children
+            WHERE sub_agent_event_id = ?
+            ORDER BY sequence_num
+            """)) {
+            ps.setString(1, subAgentEventId);
+            List<EntryData> children = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    EntryData child = reconstructSubAgentChild(rs);
+                    if (child != null) children.add(child);
+                }
+            }
+            return children;
+        }
+    }
+
+    @Nullable
+    private static EntryData reconstructSubAgentChild(@NotNull ResultSet rs) throws SQLException {
+        String id = rs.getString(1);
+        String type = rs.getString(2);
+        String timestamp = nullToEmpty(rs.getString(3));
+        String agent = nullToEmpty(rs.getString(4));
+        String model = nullToEmpty(rs.getString(5));
+        return switch (type) {
+            case ConversationWriter.SUB_AGENT_CHILD_TEXT ->
+                new EntryData.Text(nullToEmpty(rs.getString(6)), timestamp, agent, model, id);
+            case ConversationWriter.SUB_AGENT_CHILD_THINKING ->
+                new EntryData.Thinking(nullToEmpty(rs.getString(6)), timestamp, agent, model, id);
+            case ConversationWriter.SUB_AGENT_CHILD_TOOL_CALL -> new EntryData.ToolCall(
+                nullToEmpty(rs.getString(7)),  // title (tool name)
+                rs.getString(9),               // arguments
+                nullToEmpty(rs.getString(8)),  // kind
+                rs.getString(10),              // result
+                rs.getString(11),              // status
+                null, null, false, null, null, // description, filePath, autoDenied, denialReason, pluginTool
+                timestamp, agent, model, id
+            );
+            default -> {
+                LOG.warn("ConversationReader: ignoring sub-agent child " + id + " of unknown type " + type);
+                yield null;
+            }
+        };
     }
 
     @Nullable

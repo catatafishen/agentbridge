@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.client;
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
+import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
@@ -8,6 +9,7 @@ import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -348,6 +350,22 @@ public abstract class AbstractClient {
      */
     public void setSubAgentActive(boolean active) {
         // no-op by default
+    }
+
+    /**
+     * Loads the conversation a finished sub-agent had (its text, reasoning and tool calls), for
+     * clients whose protocol does not stream it. Called from a background thread after the
+     * sub-agent's result has arrived.
+     *
+     * @param subAgentEntryId the id of the sub-agent entry; used to derive stable ids for the children
+     * @param subAgentResult  the raw result text of the sub-agent's tool call
+     * @return the sub-agent's entries in order, or {@code null} when this client cannot supply them
+     * (the default) or the result does not refer to a loadable sub-agent session
+     * @throws IOException if the conversation should be available but could not be loaded
+     */
+    public @Nullable List<EntryData> loadSubAgentTranscript(
+        @NotNull String subAgentEntryId, @Nullable String subAgentResult) throws IOException {
+        return null;
     }
 
     /**

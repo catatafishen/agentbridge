@@ -44,6 +44,7 @@ class ConversationSchemaTest {
             "thinking_events",
             "tool_call_events",
             "sub_agent_events",
+            "sub_agent_children",
             "nudge_events",
             "commits",
             "hook_executions",

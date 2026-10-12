@@ -56,6 +56,7 @@ final class ConversationSchema {
             if (currentVersion < 6) applyV6(stmt);
             if (currentVersion < 7) applyV7(stmt);
             if (currentVersion < 8) applyV8(stmt);
+            if (currentVersion < 9) applyV9(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -414,5 +415,35 @@ final class ConversationSchema {
     private static void applyV8(@NotNull Statement stmt) throws SQLException {
         stmt.execute("ALTER TABLE graph_file_index ADD COLUMN root_type TEXT NOT NULL DEFAULT 'sources'");
         stmt.execute("CREATE INDEX idx_gfi_root_type ON graph_file_index(root_type)");
+    }
+
+    /**
+     * V9: the conversation inside a sub-agent (its text, reasoning and tool calls).
+     *
+     * <p>Kept in a table of its own rather than as {@code events} rows so that everything that
+     * queries {@code events} / {@code tool_call_events} (statistics, the code-graph dashboard, history
+     * search, per-turn replay) keeps seeing only the main agent's activity. One row per child, with
+     * the content columns of the three child types sharing the table; unused columns stay NULL.
+     */
+    private static void applyV9(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("""
+            CREATE TABLE sub_agent_children (
+                id                  TEXT PRIMARY KEY,
+                sub_agent_event_id  TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                sequence_num        INTEGER NOT NULL,
+                child_type          TEXT NOT NULL,
+                timestamp           TEXT,
+                agent_name          TEXT,
+                model               TEXT,
+                content             TEXT,
+                tool_name           TEXT,
+                tool_kind           TEXT,
+                arguments           TEXT,
+                result              TEXT,
+                status              TEXT
+            )
+            """);
+        stmt.execute(
+            "CREATE INDEX idx_sac_parent ON sub_agent_children(sub_agent_event_id, sequence_num)");
     }
 }

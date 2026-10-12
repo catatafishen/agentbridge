@@ -5,10 +5,7 @@ import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.client.acp.AcpClient
-import com.github.catatafishen.agentbridge.client.acp.OpenCodeServerEndpoint
-import com.github.catatafishen.agentbridge.client.acp.OpenCodeSessionHttpClient
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeTaskOutput
-import com.github.catatafishen.agentbridge.client.acp.OpenCodeTranscript
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
@@ -1096,9 +1093,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val section = subAgentSections[id] ?: return
         val accent = ChatTheme.SA_COLORS[section.colorIndex]
 
-        // OpenCode wraps the subagent's answer in <task id="…"> and carries its child session ID there.
-        val openCodeTask = OpenCodeTaskOutput.parse(result)
-        val answer = openCodeTask?.body() ?: result
+        // OpenCode wraps the subagent's answer in <task id="…">; show only the answer.
+        val answer = OpenCodeTaskOutput.parse(result)?.body() ?: result
 
         // Show the result text in the sub-agent's indented section.
         val resultText = when {
@@ -1115,7 +1111,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         } else {
             section.resultRow = createSubAgentBubble(accent, resultText).also { section.contentBox.add(it) }
         }
-        if (openCodeTask != null) addTranscriptLink(section, accent, openCodeTask.childSessionId())
         section.contentBox.revalidate()
         if (autoScrollEnabled) scrollToBottom()
     }
@@ -1140,9 +1135,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /**
      * Builds the subagent's conversation from the chat's own components: agent bubbles for its
      * text, a tool chip per tool call (opening the usual tool popup), and a collapsed thinking
-     * chip for its reasoning. User messages are skipped; the prompt is already shown above.
+     * chip for its reasoning. The prompt is not part of [children]; it is shown above the section.
      */
-    private fun buildTranscriptPanel(childSessionId: String, transcript: OpenCodeTranscript, accent: Color): JPanel {
+    private fun buildTranscriptPanel(children: List<EntryData>, accent: Color): JPanel {
         val panel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
@@ -1162,21 +1157,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             strip = it
         }
 
-        val parts = transcript.messages.filter { it.isAssistant }.flatMap { it.parts }
-        for (part in parts) {
-            when (part.type()) {
-                OpenCodeTranscript.PartType.TEXT -> {
+        for (child in children) {
+            when (child) {
+                is EntryData.Text -> {
                     closeStrip()
-                    panel.add(createSubAgentBubble(accent, part.text().orEmpty()))
+                    panel.add(createSubAgentBubble(accent, child.raw))
                 }
 
-                OpenCodeTranscript.PartType.REASONING -> {
+                is EntryData.Thinking -> {
                     currentStrip()
                     if (reasoning.isNotEmpty()) reasoning.append("\n\n")
-                    reasoning.append(part.text().orEmpty())
+                    reasoning.append(child.raw)
                 }
 
-                OpenCodeTranscript.PartType.TOOL -> addTranscriptToolChip(currentStrip(), childSessionId, part)
+                is EntryData.ToolCall -> addTranscriptToolChip(currentStrip(), child)
+                else -> Unit
             }
         }
         closeStrip()
@@ -1186,12 +1181,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         return panel
     }
 
-    private fun addTranscriptToolChip(strip: ChipStripPanel, childSessionId: String, part: OpenCodeTranscript.Part) {
-        val tool = part.tool().orEmpty()
-        val toolId = "$childSessionId/${part.callId()}"
-        val status = part.status() ?: OpenCodeTranscript.STATUS_RUNNING
-        addToolChipTo(strip, toolId, tool, part.input(), toolRegistry.findById(tool)?.cssKindName(), status)
-        toolCallData[toolId]?.result = part.output()
+    private fun addTranscriptToolChip(strip: ChipStripPanel, call: EntryData.ToolCall) {
+        addToolChipTo(
+            strip, call.entryId, call.title, call.arguments,
+            toolRegistry.findById(call.title)?.cssKindName() ?: call.kind,
+            call.status ?: "complete"
+        )
+        toolCallData[call.entryId]?.result = call.result
     }
 
     /** Adds a collapsed thinking chip + bubble holding [markdown] to [strip]. */
@@ -1209,14 +1205,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         })
     }
 
-    /**
-     * Adds a "Show subagent transcript" link under the result of an OpenCode subagent. The link is
-     * only offered while the OpenCode HTTP server address is known. The first click fetches the
-     * child session from that server and shows the transcript below the link; later clicks toggle
-     * its visibility without fetching again.
-     */
-    private fun addTranscriptLink(section: SubAgentSection, accent: Color, childSessionId: String) {
-        if (section.transcriptRow != null || OpenCodeServerEndpoint.baseUrl() == null) return
+    override fun setSubAgentTranscript(id: String, children: List<EntryData>) {
+        val section = subAgentSections[id] ?: return
+        if (children.isEmpty() || section.transcriptRow != null) return
+        val accent = ChatTheme.SA_COLORS[section.colorIndex]
 
         val row = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
@@ -1225,51 +1217,23 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         val link = HyperlinkLabel(SHOW_TRANSCRIPT)
         var transcriptPanel: JPanel? = null
-        var errorLabel: JBLabel? = null
-
-        fun refresh() {
+        link.addHyperlinkListener {
+            val shown = transcriptPanel
+            if (shown == null) {
+                // Built on first use, so replaying a long history does not create a panel per sub-agent.
+                transcriptPanel = buildTranscriptPanel(children, accent).also { section.contentBox.add(it) }
+            } else {
+                shown.isVisible = !shown.isVisible
+            }
+            link.setHyperlinkText(if (transcriptPanel?.isVisible == true) HIDE_TRANSCRIPT else SHOW_TRANSCRIPT)
             section.contentBox.revalidate()
             section.contentBox.repaint()
             if (autoScrollEnabled) scrollToBottom()
         }
-
-        fun onLoaded(transcript: OpenCodeTranscript) {
-            errorLabel?.let { row.remove(it) }
-            errorLabel = null
-            transcriptPanel = buildTranscriptPanel(childSessionId, transcript, accent).also {
-                section.contentBox.add(it)
-            }
-            link.setHyperlinkText(HIDE_TRANSCRIPT)
-        }
-
-        fun onFailed(error: Throwable) {
-            errorLabel?.let { row.remove(it) }
-            errorLabel = JBLabel("  Could not load subagent transcript: ${error.message}").apply {
-                foreground = JBColor.RED
-            }.also { row.add(it) }
-        }
-
-        link.addHyperlinkListener {
-            val loaded = transcriptPanel
-            if (loaded != null) {
-                loaded.isVisible = !loaded.isVisible
-                link.setHyperlinkText(if (loaded.isVisible) HIDE_TRANSCRIPT else SHOW_TRANSCRIPT)
-                refresh()
-                return@addHyperlinkListener
-            }
-            link.isEnabled = false
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val transcript = runCatching { OpenCodeSessionHttpClient.fetchTranscript(childSessionId) }
-                ApplicationManager.getApplication().invokeLater {
-                    transcript.fold(onSuccess = ::onLoaded, onFailure = ::onFailed)
-                    link.isEnabled = true
-                    refresh()
-                }
-            }
-        }
         row.add(link)
         section.contentBox.add(row)
         section.transcriptRow = row
+        section.contentBox.revalidate()
     }
 
     /** Finds the first NativeMarkdownPane inside a component tree (for updating existing bubbles). */
@@ -2198,6 +2162,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     val status = entry.status ?: "complete"
                     addSubAgentEntry(entry.entryId, entry.agentType, entry.description, entry.prompt)
                     updateSubAgentResult(entry.entryId, status, entry.result, entry.description)
+                    setSubAgentTranscript(entry.entryId, entry.children)
                 }
 
                 is EntryData.TurnStats -> {

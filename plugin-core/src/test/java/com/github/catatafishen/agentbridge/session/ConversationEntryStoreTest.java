@@ -303,6 +303,24 @@ class ConversationEntryStoreTest {
         assertEquals("Found 5 files", entry.getResult());
     }
 
+    @Test
+    void setSubAgentChildren_attachesTheConversationToTheSubAgentOnly() {
+        var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
+        store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
+        var child = new EntryData.Text("Found 5 files", "2026-01-01T10:00:00Z", "general", "m", "sa1:prt_1");
+
+        assertTrue(store.setSubAgentChildren("sa1", List.of(child)));
+
+        assertEquals(1, store.getEntries().size(), "children are not top-level entries");
+        var entry = (EntryData.SubAgent) store.getEntries().getFirst();
+        assertEquals(List.of(child), entry.getChildren());
+    }
+
+    @Test
+    void setSubAgentChildren_reportsAnUnknownSubAgent() {
+        assertFalse(store.setSubAgentChildren("missing", List.of()));
+    }
+
     // ── Nudge entries ─────────────────────────────────────────────────────────
 
     @Test

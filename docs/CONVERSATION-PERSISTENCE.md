@@ -14,8 +14,8 @@ flowchart TD
     BCP --> Store["ConversationEntryStore<br/>(in-memory, mutable)"]
     BCP --> UI["NativeChatPanel<br/>(UI rendering)"]
     Store --> PM["ConversationPersistenceManager<br/>(persisted/queued entry IDs)"]
-    PM -->|"appendNewEntries[Async]()"| CS["ConversationService<br/>(serialized async write queue)"]
-    BCP -->|"updateToolCallCompletionAsync()<br/>updateSubAgentCompletionAsync()"| CS
+    PM -->|" appendNewEntries[Async]() "| CS["ConversationService<br/>(serialized async write queue)"]
+    BCP -->|" updateToolCallCompletionAsync()<br/>updateSubAgentCompletionAsync() "| CS
     CS --> CW["ConversationWriter<br/>(synchronized SQLite writes)"]
     CW --> DB[("SQLite Database")]
 ```
@@ -27,16 +27,16 @@ flowchart TD
 Every entry receives a stable UUID (`entryId`) at creation time. These UUIDs are used
 as primary keys in the database and must never change after creation.
 
-| Entry Type       | UUID Source                                                              |
-|------------------|--------------------------------------------------------------------------|
-| **Prompt**       | ACP `turn_id` from the protocol (or `UUID.randomUUID()` if missing)     |
-| **Text**         | `UUID.randomUUID()` — generated on first `appendText()` call            |
-| **Thinking**     | `UUID.randomUUID()` — generated on first `appendThinkingText()` call    |
-| **ToolCall**     | ACP `tool_call_id` passed via `addToolCallEntry(id, ...)`               |
-| **SubAgent**     | ACP `tool_call_id` passed via `addSubAgentEntry(id, ...)`               |
-| **TurnStats**    | `UUID.randomUUID()` — generated in `finishTurn()`                       |
-| **ContextFiles** | `UUID.randomUUID()` — generated at construction                         |
-| **Nudge**        | `UUID.randomUUID()` — generated at construction                         |
+| Entry Type       | UUID Source                                                          |
+|------------------|----------------------------------------------------------------------|
+| **Prompt**       | ACP `turn_id` from the protocol (or `UUID.randomUUID()` if missing)  |
+| **Text**         | `UUID.randomUUID()` — generated on first `appendText()` call         |
+| **Thinking**     | `UUID.randomUUID()` — generated on first `appendThinkingText()` call |
+| **ToolCall**     | ACP `tool_call_id` passed via `addToolCallEntry(id, ...)`            |
+| **SubAgent**     | ACP `tool_call_id` passed via `addSubAgentEntry(id, ...)`            |
+| **TurnStats**    | `UUID.randomUUID()` — generated in `finishTurn()`                    |
+| **ContextFiles** | `UUID.randomUUID()` — generated at construction                      |
+| **Nudge**        | `UUID.randomUUID()` — generated at construction                      |
 
 **Key rule:** The `entryId` is the database row key (`event_id` in subtype tables,
 `id` in the `events` table). Once set, it is immutable. All INSERTs use
@@ -61,11 +61,13 @@ as primary keys in the database and must never change after creation.
 
 **Called by:** `ConversationPersistenceManager.appendNewEntries()`
 **Triggered from:**
+
 - `PromptOrchestrator.callbacks.saveConversation()` — immediate save (at block boundaries)
 - `PromptOrchestrator.callbacks.saveConversationThrottled()` — throttled (30s), on tool call completion
 - Turn end / `finishTurn()` — always saves
 
 **What it does:**
+
 1. Reads all entries from `ConversationEntryStore.getEntries()` (thread-safe snapshot)
 2. Selects entries whose stable IDs are neither committed nor already queued
 3. Passes the remaining entries to `ConversationService.appendEntriesAsync()`
@@ -83,9 +85,10 @@ This is why explicit UPDATE calls exist (see §2 and §3 below).
 
 **Called by:** `BroadcastChatPanel.updateToolCall()` when `status != "running"`
 **What it does:**
+
 ```sql
-UPDATE tool_call_events SET
-    result        = COALESCE(?, result),
+UPDATE tool_call_events
+SET result        = COALESCE(?, result),
     status        = ?,
     auto_denied   = ?,
     denial_reason = COALESCE(?, denial_reason)
@@ -104,9 +107,10 @@ the entry with correct data from the already-mutated in-memory snapshot.
 
 **Called by:** `BroadcastChatPanel.updateSubAgentResult()` when `status != "running"`
 **What it does:**
+
 ```sql
-UPDATE sub_agent_events SET
-    result_text   = COALESCE(?, result_text),
+UPDATE sub_agent_events
+SET result_text   = COALESCE(?, result_text),
     status        = ?,
     auto_denied   = ?,
     denial_reason = COALESCE(?, denial_reason)
@@ -129,13 +133,13 @@ for nullable fields.
 
 ### 5. `markToolCallMcp()` / `markToolCallNonMcp()` — MCP correlation flag
 
-**Called by:** MCP protocol handler when correlation is confirmed/denied.
-**What it does:** Sets `is_mcp = 1` or `is_mcp = 0` on the tool call row.
+**Called by:** MCP protocol handler when correlation is confirmed/denied. **What it does:** Sets `is_mcp = 1` or
+`is_mcp = 0` on the tool call row.
 
 ### 6. `recordHookStages()` / `recordHookExecution()` — Hook audit records
 
-**Called by:** Hook execution pipeline after tool permission/pre/post hooks run.
-**What it does:** INSERT rows into `hook_executions`, linked to the tool call's `event_id`.
+**Called by:** Hook execution pipeline after tool permission/pre/post hooks run. **What it does:** INSERT rows into
+`hook_executions`, linked to the tool call's `event_id`.
 If hook results arrive before the parent `tool_call_events` row commits, the writer retains
 and flushes them immediately after that tool call is persisted.
 
@@ -154,6 +158,7 @@ appendNewEntries()      → persists the text entry with its FINAL content
 ```
 
 **Guarantee:** Text entries are always persisted with their complete content because:
+
 1. `closeCurrentTextEntry()` is called before any block boundary that saves
 2. The save captures the current `raw` value at snapshot time
 3. No subsequent mutation occurs after close
@@ -179,6 +184,7 @@ updateToolCall(id, "completed", {details="..."})
 ```
 
 **Guarantee:** After the fix, tool call results are always persisted because:
+
 1. The explicit UPDATE fires immediately on completion (chained through pendingSave)
 2. Even if the INSERT happened earlier with null result, the UPDATE overwrites it
 3. `COALESCE(?, result)` means a null UPDATE param preserves existing data
@@ -195,6 +201,23 @@ updateSubAgentResult(id, "completed", result="Found 3 files")
 ```
 
 **Same guarantee as tool calls** — the explicit UPDATE ensures results survive.
+
+**The sub-agent's own conversation** (text, reasoning and tool calls) is stored in
+`sub_agent_children`, not as `events`. For clients whose protocol does not stream it (OpenCode: the
+child session is never registered over ACP), `PromptOrchestrator.captureSubAgentTranscript` asks the
+client for it once the sub-agent has finished (`AbstractClient.loadSubAgentTranscript`, on a pooled
+thread) and calls `ChatPanelApi.setSubAgentTranscript`. `BroadcastChatPanel` then:
+
+1. attaches the children to the in-memory `EntryData.SubAgent` (`ConversationEntryStore.setSubAgentChildren`),
+2. queues `ConversationService.recordSubAgentChildrenAsync`, and
+3. forwards them to the UI, which renders the entry's children and nothing else.
+
+Either ordering with the sub-agent's own INSERT is safe: if the `sub_agent_events` row already exists the
+queued call inserts the children; if it does not yet, that call does nothing and `recordEntries` inserts the
+children together with the sub-agent, because they hang off the in-memory entry. All child inserts are
+`INSERT OR IGNORE` on the child id. After a restart `ConversationReader` loads the children with the
+sub-agent, so history replay needs no call to the agent. If loading fails, an error entry is shown and
+the sub-agent keeps just its result text.
 
 ### TurnStats Entries
 
@@ -230,8 +253,9 @@ pendingSave = pendingSave.thenRunAsync(write2)
 ```
 
 This guarantees:
-- An INSERT (from `appendNewEntries()`) always completes before any subsequent UPDATE
-  (from `updateToolCallCompletionAsync`) for the same entry
+
+- An INSERT (from `appendNewEntries()`) always completes before any subsequent UPDATE (from
+  `updateToolCallCompletionAsync`) for the same entry
 - Multiple concurrent `appendNewEntries()` calls are serialized
 - The completion UPDATE cannot race ahead of the initial INSERT
 
@@ -255,29 +279,30 @@ committed before agent execution begins.
 
 ## What Can Go Wrong (After Fix)
 
-| Scenario                              | Data Loss?    | Why                                                              |
-|---------------------------------------|---------------|------------------------------------------------------------------|
-| Plugin crashes after prompt dispatch  | No            | Prompt transaction commits before agent execution begins          |
+| Scenario                              | Data Loss?    | Why                                                                |
+|---------------------------------------|---------------|--------------------------------------------------------------------|
+| Plugin crashes after prompt dispatch  | No            | Prompt transaction commits before agent execution begins           |
 | Plugin crashes mid-text-stream        | Partial text  | Current response block may not have reached its next save boundary |
 | Plugin crashes after tool completion  | Possible      | Completion update may still be queued during an abrupt crash       |
-| IDE force-killed during write         | Possible      | SQLite journal provides crash recovery for committed transactions |
-| Two tool calls racing                 | No            | UPDATE fires for EACH completion independently                   |
-| Sub-agent with 50 internal tools      | No            | UPDATE fires when sub-agent completes, after all INSERTs         |
-| `enrichToolCallStats` races INSERT    | No            | Both use `event_id` as key; UPDATE on missing row = 0 affected   |
-| Restore after crash (partial session) | Partial turns | Last uncommitted transaction is rolled back by SQLite journal     |
+| IDE force-killed during write         | Possible      | SQLite journal provides crash recovery for committed transactions  |
+| Two tool calls racing                 | No            | UPDATE fires for EACH completion independently                     |
+| Sub-agent with 50 internal tools      | No            | UPDATE fires when sub-agent completes, after all INSERTs           |
+| `enrichToolCallStats` races INSERT    | No            | Both use `event_id` as key; UPDATE on missing row = 0 affected     |
+| Restore after crash (partial session) | Partial turns | Last uncommitted transaction is rolled back by SQLite journal      |
 
 ---
 
 ## Summary: All Write Trigger Points
 
-| Method                                  | Source                          | Operation   | Target Table          |
-|-----------------------------------------|---------------------------------|-------------|-----------------------|
-| `recordEntries()`                       | `appendNewEntries()` pipeline   | INSERT      | sessions, turns, events, text_events, thinking_events, tool_call_events, sub_agent_events, nudge_events, turn_context_files, commits |
-| `updateToolCallCompletion()`            | `BroadcastChatPanel.updateToolCall()` | UPDATE | tool_call_events (result, status)                                    |
-| `updateSubAgentCompletion()`            | `BroadcastChatPanel.updateSubAgentResult()` | UPDATE | sub_agent_events (result_text, status)                         |
-| `enrichToolCallStats()`                 | MCP protocol handler            | UPDATE      | tool_call_events (stats, category, display_name)                     |
-| `markToolCallMcp()` / `markToolCallNonMcp()` | MCP correlation logic     | UPDATE      | tool_call_events (is_mcp flag)                                       |
-| `recordHookStages()` / `recordHookExecution()` | Hook pipeline           | INSERT      | hook_executions                                                      |
-| `updateTurnTotals()` (via TurnStats)    | `recordEntries()` pipeline      | UPDATE      | turns (ended_at, tokens, cost, etc.)                                 |
-| `updateSessionEndedAt()`                | `recordEntries()` pipeline      | UPDATE      | sessions (ended_at)                                                  |
-| `updateSessionDisplayName()`            | `recordEntries()` (first prompt)| UPDATE      | sessions (display_name, only if NULL)                                |
+| Method                                         | Source                                       | Operation | Target Table                                                                                                                         |
+|------------------------------------------------|----------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `recordEntries()`                              | `appendNewEntries()` pipeline                | INSERT    | sessions, turns, events, text_events, thinking_events, tool_call_events, sub_agent_events, nudge_events, turn_context_files, commits |
+| `updateToolCallCompletion()`                   | `BroadcastChatPanel.updateToolCall()`        | UPDATE    | tool_call_events (result, status)                                                                                                    |
+| `updateSubAgentCompletion()`                   | `BroadcastChatPanel.updateSubAgentResult()`  | UPDATE    | sub_agent_events (result_text, status)                                                                                               |
+| `recordSubAgentChildren()`                     | `BroadcastChatPanel.setSubAgentTranscript()` | INSERT    | sub_agent_children (also written by `recordEntries()` with the sub-agent)                                                            |
+| `enrichToolCallStats()`                        | MCP protocol handler                         | UPDATE    | tool_call_events (stats, category, display_name)                                                                                     |
+| `markToolCallMcp()` / `markToolCallNonMcp()`   | MCP correlation logic                        | UPDATE    | tool_call_events (is_mcp flag)                                                                                                       |
+| `recordHookStages()` / `recordHookExecution()` | Hook pipeline                                | INSERT    | hook_executions                                                                                                                      |
+| `updateTurnTotals()` (via TurnStats)           | `recordEntries()` pipeline                   | UPDATE    | turns (ended_at, tokens, cost, etc.)                                                                                                 |
+| `updateSessionEndedAt()`                       | `recordEntries()` pipeline                   | UPDATE    | sessions (ended_at)                                                                                                                  |
+| `updateSessionDisplayName()`                   | `recordEntries()` (first prompt)             | UPDATE    | sessions (display_name, only if NULL)                                                                                                |

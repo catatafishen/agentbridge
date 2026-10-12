@@ -189,6 +189,17 @@ class ConversationEntryStore {
         }
     }
 
+    /**
+     * Attaches the sub-agent's own conversation to its entry so it is persisted with it.
+     *
+     * @return false when no sub-agent entry with [id] is tracked
+     */
+    fun setSubAgentChildren(id: String, children: List<EntryData>): Boolean = synchronized(lock) {
+        val entry = _subAgentEntries[id] ?: return false
+        entry.children = children.toList()
+        true
+    }
+
     fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
         synchronized(lock) {
             _entries.add(EntryData.Nudge(text, id = id, sent = true, timestamp = timestamp(), source = source))

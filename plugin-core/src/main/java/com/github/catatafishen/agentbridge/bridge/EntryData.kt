@@ -116,7 +116,17 @@ sealed class EntryData {
         val agent: String = "",
         val model: String = "",
         override val entryId: String = UUID.randomUUID().toString()
-    ) : EntryData()
+    ) : EntryData() {
+        /**
+         * The sub-agent's own conversation ([Text], [Thinking] and [ToolCall] entries in order), when
+         * the client can supply it. Persisted in its own table, not as top-level entries, so code that
+         * walks the main entry list (export, statistics, history search) never sees these.
+         *
+         * Replaced as a whole, never mutated, so readers on other threads see a consistent list.
+         */
+        @Volatile
+        var children: List<EntryData> = emptyList()
+    }
 
     data class TurnStats @JvmOverloads constructor(
         val turnId: String,
