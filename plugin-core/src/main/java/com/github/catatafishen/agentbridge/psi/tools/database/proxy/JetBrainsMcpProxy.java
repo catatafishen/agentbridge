@@ -48,6 +48,8 @@ final class JetBrainsMcpProxy {
     private static final String DEFAULT_CONSTRUCTOR_MARKER_CLASS_NAME =
         "kotlin.jvm.internal.DefaultConstructorMarker";
 
+    private static final List<String> GET_MCP_TOOLS_NAMES = List.of("getMcpTools", "getMcpTools$intellij_mcpserver");
+
     private static final AtomicReference<Map<String, Object>> toolCacheRef = new AtomicReference<>();
     private static final AtomicReference<ClassLoader> mcpClassLoaderRef = new AtomicReference<>();
 
@@ -64,7 +66,8 @@ final class JetBrainsMcpProxy {
         } catch (ReflectiveOperationException | RuntimeException e) {
             Throwable rootCause = e.getCause() != null ? e.getCause() : e;
             LOG.warn("JetBrains MCP tools unavailable — database tools will not be registered. " +
-                "Check that the JetBrains AI Assistant plugin is installed.", rootCause);
+                "Check that the JetBrains MCP Server plugin (" + MCPSERVER_PLUGIN_ID + ") is installed and " +
+                "that its getMcpTools signature is still supported.", rootCause);
             return Collections.emptyList();
         }
     }
@@ -165,25 +168,53 @@ final class JetBrainsMcpProxy {
     private static List<?> invokeGetMcpTools(ClassLoader cl, Class<?> serviceClass, Object service,
                                              Class<?> mcpToolFilterClass, Class<?> implementationClass, Class<?> sessionOptionsClass,
                                              Object acceptAllFilter, Object implementation, Object sessionOptions) throws ReflectiveOperationException {
-        try {
-            // IntelliJ 2026.1 and earlier: four-parameter getMcpTools() method.
-            Method getToolsMethod = serviceClass.getDeclaredMethod(
-                "getMcpTools$intellij_mcpserver",
-                mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass);
-            return (List<?>) getToolsMethod.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
-        } catch (NoSuchMethodException e) {
-            // IntelliJ 2026.2 and later: five-parameter getMcpTools() method.
-            Class<?> invocationModeClass = Class.forName("com.intellij.mcpserver.McpToolInvocationMode", true, cl);
-            // Enum constants are public static final fields — look up DIRECT by name via
-            // reflection instead of scanning getEnumConstants() and comparing toString().
-            // Enums can override toString(), so a name-based field lookup is more robust.
-            Object directMode = invocationModeClass.getField("DIRECT").get(null);
-            Method getToolsMethod = serviceClass.getDeclaredMethod(
-                "getMcpTools$intellij_mcpserver",
-                mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass, invocationModeClass);
-            return (List<?>) getToolsMethod.invoke(
+        Class<?> invocationModeClass = Class.forName("com.intellij.mcpserver.McpToolInvocationMode", true, cl);
+        // Enum constants are public static final fields — look up DIRECT by name via
+        // reflection instead of scanning getEnumConstants() and comparing toString().
+        // Enums can override toString(), so a name-based field lookup is more robust.
+        Object directMode = invocationModeClass.getField("DIRECT").get(null);
+
+        // Newest signature first: 2026.2+ takes the invocation mode as a fifth parameter,
+        // 2026.1 and earlier takes four.
+        Class<?>[] fiveParams = {
+            mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass, invocationModeClass};
+        Class<?>[] fourParams = {mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass};
+
+        Method method = findDeclaredMethod(serviceClass, fiveParams);
+        if (method != null) {
+            return (List<?>) method.invoke(
                 service, acceptAllFilter, false, implementation, sessionOptions, directMode);
         }
+        method = findDeclaredMethod(serviceClass, fourParams);
+        if (method != null) {
+            return (List<?>) method.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
+        }
+        throw new NoSuchMethodException(
+            "No compatible getMcpTools overload on " + serviceClass.getName() + "; candidates: "
+                + describeGetMcpToolsMethods(serviceClass));
+    }
+
+    /**
+     * Looks up {@code getMcpTools} under every name the JetBrains plugin has used for it. Up to
+     * 2026.2 early builds it was module-internal, so Kotlin mangled it to
+     * {@code getMcpTools$intellij_mcpserver}; build 262 made it public under the plain name.
+     */
+    static @Nullable Method findDeclaredMethod(Class<?> serviceClass, Class<?>[] paramTypes) {
+        for (String name : GET_MCP_TOOLS_NAMES) {
+            try {
+                return serviceClass.getDeclaredMethod(name, paramTypes);
+            } catch (NoSuchMethodException ignored) { //NOSONAR — expected while probing known names
+            }
+        }
+        return null;
+    }
+
+    private static String describeGetMcpToolsMethods(Class<?> serviceClass) {
+        return Arrays.stream(serviceClass.getDeclaredMethods())
+            .filter(m -> m.getName().startsWith("getMcpTools"))
+            .map(Method::toGenericString)
+            .toList()
+            .toString();
     }
 
     private static String invokeInProcess(ClassLoader cl, Project project, Object tool, String argsJson)
