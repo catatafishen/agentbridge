@@ -42,6 +42,9 @@ import javax.swing.*
 import javax.swing.text.SimpleAttributeSet
 import javax.swing.text.StyleConstants
 
+private const val SHOW_TRANSCRIPT = "Show subagent transcript"
+private const val HIDE_TRANSCRIPT = "Hide subagent transcript"
+
 /**
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
  * tool chips with animated ring indicators, and collapsible thinking sections.
@@ -1135,8 +1138,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /**
      * Adds a "Show subagent transcript" link under the result of an OpenCode subagent. The link is
-     * only offered while the OpenCode HTTP server address is known; clicking it fetches the child
-     * session from that server and replaces the link with the transcript.
+     * only offered while the OpenCode HTTP server address is known. The first click fetches the
+     * child session from that server and shows the transcript below the link; later clicks toggle
+     * its visibility without fetching again.
      */
     private fun addTranscriptLink(section: SubAgentSection, accent: Color, childSessionId: String) {
         if (section.transcriptRow != null || OpenCodeServerEndpoint.baseUrl() == null) return
@@ -1146,29 +1150,47 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             alignmentX = Component.LEFT_ALIGNMENT
             border = JBUI.Borders.emptyTop(JBUI.scale(2))
         }
-        val link = HyperlinkLabel("Show subagent transcript")
+        val link = HyperlinkLabel(SHOW_TRANSCRIPT)
+        var transcriptBubble: JPanel? = null
+        var errorLabel: JBLabel? = null
+
+        fun refresh() {
+            section.contentBox.revalidate()
+            section.contentBox.repaint()
+            if (autoScrollEnabled) scrollToBottom()
+        }
+
+        fun onLoaded(markdown: String) {
+            errorLabel?.let { row.remove(it) }
+            errorLabel = null
+            transcriptBubble = addSubAgentMarkdownBubble(
+                section, accent, markdown.ifBlank { "_The subagent session has no messages._" }
+            )
+            link.setHyperlinkText(HIDE_TRANSCRIPT)
+        }
+
+        fun onFailed(error: Throwable) {
+            errorLabel?.let { row.remove(it) }
+            errorLabel = JBLabel("  Could not load subagent transcript: ${error.message}").apply {
+                foreground = JBColor.RED
+            }.also { row.add(it) }
+        }
+
         link.addHyperlinkListener {
+            val bubble = transcriptBubble
+            if (bubble != null) {
+                bubble.isVisible = !bubble.isVisible
+                link.setHyperlinkText(if (bubble.isVisible) HIDE_TRANSCRIPT else SHOW_TRANSCRIPT)
+                refresh()
+                return@addHyperlinkListener
+            }
             link.isEnabled = false
             ApplicationManager.getApplication().executeOnPooledThread {
                 val transcript = runCatching { OpenCodeSessionHttpClient.fetchTranscriptMarkdown(childSessionId) }
                 ApplicationManager.getApplication().invokeLater {
-                    transcript.fold(
-                        onSuccess = { markdown ->
-                            section.contentBox.remove(row)
-                            section.transcriptRow = addSubAgentMarkdownBubble(
-                                section, accent, markdown.ifBlank { "_The subagent session has no messages._" }
-                            )
-                        },
-                        onFailure = { error ->
-                            row.add(JBLabel("  Could not load subagent transcript: ${error.message}").apply {
-                                foreground = JBColor.RED
-                            })
-                            link.isEnabled = true
-                        }
-                    )
-                    section.contentBox.revalidate()
-                    section.contentBox.repaint()
-                    if (autoScrollEnabled) scrollToBottom()
+                    transcript.fold(onSuccess = ::onLoaded, onFailure = ::onFailed)
+                    link.isEnabled = true
+                    refresh()
                 }
             }
         }
