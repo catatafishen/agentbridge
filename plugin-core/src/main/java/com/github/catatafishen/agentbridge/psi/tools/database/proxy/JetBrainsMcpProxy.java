@@ -25,9 +25,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * <b>How it works:</b>
  * <ol>
  *   <li>Discovers the mcpserver plugin's class loader.</li>
- *   <li>Calls {@code McpServerService.getMcpTools$intellij_mcpserver(McpToolFilter, boolean,
- *       Implementation, McpSessionOptions)} (Kotlin module-internal — the {@code $} in the
- *       mangled name prevents direct calling, so reflection is required). {@code Implementation}
+ *   <li>Calls {@code McpServerService.getMcpTools(McpToolFilter, boolean, Implementation,
+ *       McpSessionOptions[, McpToolInvocationMode])}. Before build 262 it was Kotlin
+ *       module-internal and mangled to {@code getMcpTools$intellij_mcpserver}, and the invocation
+ *       mode only exists from 2026.2; reflection copes with both. {@code Implementation}
  *       and {@code McpSessionOptions} are constructed explicitly to avoid relying on
  *       {@code getTheOnlySession()}, which fails at startup before any MCP client connects.</li>
  *   <li>Builds a {@code McpCallInfo} with the current project (all fields constructed via
@@ -168,30 +169,61 @@ final class JetBrainsMcpProxy {
     private static List<?> invokeGetMcpTools(ClassLoader cl, Class<?> serviceClass, Object service,
                                              Class<?> mcpToolFilterClass, Class<?> implementationClass, Class<?> sessionOptionsClass,
                                              Object acceptAllFilter, Object implementation, Object sessionOptions) throws ReflectiveOperationException {
-        Class<?> invocationModeClass = Class.forName("com.intellij.mcpserver.McpToolInvocationMode", true, cl);
+        Class<?>[] fourParams = {mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass};
+        // McpToolInvocationMode only exists from 2026.2; on 2026.1 and earlier it is absent and the
+        // four-parameter overload is the one to call, so a missing class must not abort discovery.
+        Class<?> invocationModeClass = loadOptionalClass("com.intellij.mcpserver.McpToolInvocationMode", cl);
+
+        Method method = findGetMcpTools(serviceClass, fourParams, invocationModeClass);
+        if (method == null) {
+            throw new NoSuchMethodException(
+                "No compatible getMcpTools overload on " + serviceClass.getName() + "; candidates: "
+                    + describeGetMcpToolsMethods(serviceClass));
+        }
+        if (method.getParameterCount() == fourParams.length) {
+            return (List<?>) method.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
+        }
         // Enum constants are public static final fields — look up DIRECT by name via
         // reflection instead of scanning getEnumConstants() and comparing toString().
         // Enums can override toString(), so a name-based field lookup is more robust.
         Object directMode = invocationModeClass.getField("DIRECT").get(null);
+        return (List<?>) method.invoke(
+            service, acceptAllFilter, false, implementation, sessionOptions, directMode);
+    }
 
-        // Newest signature first: 2026.2+ takes the invocation mode as a fifth parameter,
-        // 2026.1 and earlier takes four.
-        Class<?>[] fiveParams = {
-            mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass, invocationModeClass};
-        Class<?>[] fourParams = {mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass};
+    /**
+     * Picks the {@code getMcpTools} overload to call, newest signature first: 2026.2+ takes the
+     * invocation mode as a fifth parameter, 2026.1 and earlier takes only [baseParams].
+     *
+     * @param invocationModeClass the 2026.2 invocation-mode type, or {@code null} when the plugin
+     *                            does not have it, in which case only the base signature is tried
+     * @return the method, or {@code null} when no known name and signature matches
+     */
+    static @Nullable Method findGetMcpTools(Class<?> serviceClass, Class<?>[] baseParams,
+                                            @Nullable Class<?> invocationModeClass) {
+        if (invocationModeClass != null) {
+            Class<?>[] withMode = Arrays.copyOf(baseParams, baseParams.length + 1);
+            withMode[baseParams.length] = invocationModeClass;
+            Method method = findDeclaredMethod(serviceClass, withMode);
+            if (method != null) {
+                return method;
+            }
+        }
+        return findDeclaredMethod(serviceClass, baseParams);
+    }
 
-        Method method = findDeclaredMethod(serviceClass, fiveParams);
-        if (method != null) {
-            return (List<?>) method.invoke(
-                service, acceptAllFilter, false, implementation, sessionOptions, directMode);
+    /**
+     * Loads a class that only some versions of the JetBrains plugin have.
+     *
+     * @return the class, or {@code null} if [cl] does not have it
+     */
+    static @Nullable Class<?> loadOptionalClass(String className, ClassLoader cl) {
+        try {
+            return Class.forName(className, true, cl);
+        } catch (ClassNotFoundException e) {
+            LOG.debug("JetBrains MCP proxy: " + className + " not present — assuming an older MCP Server plugin");
+            return null;
         }
-        method = findDeclaredMethod(serviceClass, fourParams);
-        if (method != null) {
-            return (List<?>) method.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
-        }
-        throw new NoSuchMethodException(
-            "No compatible getMcpTools overload on " + serviceClass.getName() + "; candidates: "
-                + describeGetMcpToolsMethods(serviceClass));
     }
 
     /**
