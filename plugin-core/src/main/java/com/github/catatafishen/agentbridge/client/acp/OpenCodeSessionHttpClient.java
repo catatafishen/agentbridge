@@ -27,11 +27,11 @@ public final class OpenCodeSessionHttpClient {
     }
 
     /**
-     * Fetches the messages of [sessionId] and formats them as Markdown.
+     * Fetches and parses the messages of [sessionId].
      *
      * @throws IOException if the server address is unknown, unreachable, or answers with an error
      */
-    public static @NotNull String fetchTranscriptMarkdown(@NotNull String sessionId)
+    public static @NotNull OpenCodeTranscript fetchTranscript(@NotNull String sessionId)
         throws IOException, InterruptedException {
         String baseUrl = OpenCodeServerEndpoint.baseUrl();
         if (baseUrl == null) {
@@ -55,7 +55,7 @@ public final class OpenCodeSessionHttpClient {
                 + " for session " + sessionId);
         }
         try {
-            return OpenCodeTranscriptFormatter.toMarkdown(response.body());
+            return OpenCodeTranscript.parse(response.body());
         } catch (RuntimeException e) {
             throw new IOException("Unexpected response from OpenCode server: " + e.getMessage(), e);
         }

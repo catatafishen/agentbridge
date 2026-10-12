@@ -244,7 +244,7 @@ public final class OpenCodeClient extends AcpClient {
     /**
      * Strips the {@code agentbridge_} prefix from an OpenCode tool title.
      */
-    static String stripToolPrefix(String protocolTitle) {
+    public static String stripToolPrefix(String protocolTitle) {
         return protocolTitle.replaceFirst("^agentbridge_", "");
     }
 

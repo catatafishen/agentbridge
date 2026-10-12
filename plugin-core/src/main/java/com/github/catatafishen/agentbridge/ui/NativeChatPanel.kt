@@ -8,6 +8,7 @@ import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeServerEndpoint
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeSessionHttpClient
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeTaskOutput
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeTranscript
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
@@ -1112,14 +1113,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val pane = findMarkdownPane(existingBubble)
             pane?.setCompleteMarkdown(resultText)
         } else {
-            section.resultRow = addSubAgentMarkdownBubble(section, accent, resultText)
+            section.resultRow = createSubAgentBubble(accent, resultText).also { section.contentBox.add(it) }
         }
         if (openCodeTask != null) addTranscriptLink(section, accent, openCodeTask.childSessionId())
         section.contentBox.revalidate()
         if (autoScrollEnabled) scrollToBottom()
     }
 
-    private fun addSubAgentMarkdownBubble(section: SubAgentSection, accent: Color, markdown: String): JPanel {
+    /** Creates a sub-agent colored markdown bubble row; the caller adds it to a container. */
+    private fun createSubAgentBubble(accent: Color, markdown: String): JPanel {
         val pane = NativeMarkdownPane(fileNavigator).also {
             it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
             allMarkdownPanes += it
@@ -1132,8 +1134,79 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         trackAgentBubble(bubbleRow.bubble)
         bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
-        section.contentBox.add(bubbleRow.row)
         return bubbleRow.row
+    }
+
+    /**
+     * Builds the subagent's conversation from the chat's own components: agent bubbles for its
+     * text, a tool chip per tool call (opening the usual tool popup), and a collapsed thinking
+     * chip for its reasoning. User messages are skipped; the prompt is already shown above.
+     */
+    private fun buildTranscriptPanel(childSessionId: String, transcript: OpenCodeTranscript, accent: Color): JPanel {
+        val panel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        var strip: ChipStripPanel? = null
+        val reasoning = StringBuilder()
+
+        fun closeStrip() {
+            strip?.let { if (reasoning.isNotBlank()) addReasoningTo(it, reasoning.toString()) }
+            reasoning.setLength(0)
+            strip = null
+        }
+
+        fun currentStrip(): ChipStripPanel = strip ?: ChipStripPanel().also {
+            panel.add(it)
+            strip = it
+        }
+
+        val parts = transcript.messages.filter { it.isAssistant }.flatMap { it.parts }
+        for (part in parts) {
+            when (part.type()) {
+                OpenCodeTranscript.PartType.TEXT -> {
+                    closeStrip()
+                    panel.add(createSubAgentBubble(accent, part.text().orEmpty()))
+                }
+
+                OpenCodeTranscript.PartType.REASONING -> {
+                    currentStrip()
+                    if (reasoning.isNotEmpty()) reasoning.append("\n\n")
+                    reasoning.append(part.text().orEmpty())
+                }
+
+                OpenCodeTranscript.PartType.TOOL -> addTranscriptToolChip(currentStrip(), childSessionId, part)
+            }
+        }
+        closeStrip()
+        if (panel.componentCount == 0) {
+            panel.add(createSubAgentBubble(accent, "_The subagent session has no assistant output._"))
+        }
+        return panel
+    }
+
+    private fun addTranscriptToolChip(strip: ChipStripPanel, childSessionId: String, part: OpenCodeTranscript.Part) {
+        val tool = part.tool().orEmpty()
+        val toolId = "$childSessionId/${part.callId()}"
+        val status = part.status() ?: OpenCodeTranscript.STATUS_RUNNING
+        addToolChipTo(strip, toolId, tool, part.input(), toolRegistry.findById(tool)?.cssKindName(), status)
+        toolCallData[toolId]?.result = part.output()
+    }
+
+    /** Adds a collapsed thinking chip + bubble holding [markdown] to [strip]. */
+    private fun addReasoningTo(strip: ChipStripPanel, markdown: String) {
+        val (wrapper, pane, bubbleRow) = createMarkdownBubble(NativeChatColors.THINK_BG)
+        pane.setCompleteMarkdown(markdown)
+        trackAgentBubble(bubbleRow.bubble)
+        bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+        wrapper.border = JBUI.Borders.emptyTop(JBUI.scale(4))
+        strip.setThinkingBubble(wrapper)
+        strip.addThinkingChip(ThinkingChipComponent(active = false) {
+            strip.toggleThinkingBubble()
+            strip.revalidate()
+            strip.repaint()
+        })
     }
 
     /**
@@ -1151,7 +1224,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             border = JBUI.Borders.emptyTop(JBUI.scale(2))
         }
         val link = HyperlinkLabel(SHOW_TRANSCRIPT)
-        var transcriptBubble: JPanel? = null
+        var transcriptPanel: JPanel? = null
         var errorLabel: JBLabel? = null
 
         fun refresh() {
@@ -1160,12 +1233,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             if (autoScrollEnabled) scrollToBottom()
         }
 
-        fun onLoaded(markdown: String) {
+        fun onLoaded(transcript: OpenCodeTranscript) {
             errorLabel?.let { row.remove(it) }
             errorLabel = null
-            transcriptBubble = addSubAgentMarkdownBubble(
-                section, accent, markdown.ifBlank { "_The subagent session has no messages._" }
-            )
+            transcriptPanel = buildTranscriptPanel(childSessionId, transcript, accent).also {
+                section.contentBox.add(it)
+            }
             link.setHyperlinkText(HIDE_TRANSCRIPT)
         }
 
@@ -1177,16 +1250,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
 
         link.addHyperlinkListener {
-            val bubble = transcriptBubble
-            if (bubble != null) {
-                bubble.isVisible = !bubble.isVisible
-                link.setHyperlinkText(if (bubble.isVisible) HIDE_TRANSCRIPT else SHOW_TRANSCRIPT)
+            val loaded = transcriptPanel
+            if (loaded != null) {
+                loaded.isVisible = !loaded.isVisible
+                link.setHyperlinkText(if (loaded.isVisible) HIDE_TRANSCRIPT else SHOW_TRANSCRIPT)
                 refresh()
                 return@addHyperlinkListener
             }
             link.isEnabled = false
             ApplicationManager.getApplication().executeOnPooledThread {
-                val transcript = runCatching { OpenCodeSessionHttpClient.fetchTranscriptMarkdown(childSessionId) }
+                val transcript = runCatching { OpenCodeSessionHttpClient.fetchTranscript(childSessionId) }
                 ApplicationManager.getApplication().invokeLater {
                     transcript.fold(onSuccess = ::onLoaded, onFailure = ::onFailed)
                     link.isEnabled = true
@@ -1220,19 +1293,30 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             addToolCallEntry(toolId, title, arguments, kind, false)
             return
         }
+        addToolChipTo(section.chipStrip, toolId, title, arguments, kind)
+        if (autoScrollEnabled) scrollToBottom()
+    }
+
+    /**
+     * Adds a tool chip to [strip] whose click opens the usual tool popup. [status] is the chip's
+     * initial status; only a "running" chip starts the spinner.
+     */
+    private fun addToolChipTo(
+        strip: ChipStripPanel, toolId: String, title: String, arguments: String?, kind: String?,
+        status: String = "running"
+    ) {
         val resolvedKind = kind ?: "other"
         val displayTitle = ToolCallArgParser.extractChipTitle(arguments)
             ?: ToolCallArgParser.defaultChipTitle(title, arguments)
             ?: resolveToolDisplayName(title)
-        toolCallData[toolId] = ToolCallData(displayTitle, resolvedKind, title, arguments)
+        toolCallData[toolId] = ToolCallData(displayTitle, resolvedKind, title, arguments, status)
         val chip = ToolChipComponent(
-            displayTitle, kind, "running", false,
+            displayTitle, kind, status, false,
             McpServerSettings.getInstance(project)
         ) { showToolPopup(toolId) }
         allChips[toolId] = chip
-        section.chipStrip.addToolChip(chip)
-        if (!spinTimer.isRunning) spinTimer.start()
-        if (autoScrollEnabled) scrollToBottom()
+        strip.addToolChip(chip)
+        if (chip.isSpinning() && !spinTimer.isRunning) spinTimer.start()
     }
 
     override fun updateSubAgentToolCall(
