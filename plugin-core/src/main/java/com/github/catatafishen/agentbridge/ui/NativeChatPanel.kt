@@ -5,6 +5,9 @@ import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.client.acp.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeServerEndpoint
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeSessionHttpClient
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeTaskOutput
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
@@ -18,6 +21,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
+import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.InplaceButton
@@ -472,6 +476,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val chipStrip: ChipStripPanel,
         val contentBox: JPanel,
         var resultRow: JPanel? = null,
+        var transcriptRow: JPanel? = null,
     )
 
     private val subAgentSections = mutableMapOf<String, SubAgentSection>()
@@ -1087,9 +1092,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val section = subAgentSections[id] ?: return
         val accent = ChatTheme.SA_COLORS[section.colorIndex]
 
+        // OpenCode wraps the subagent's answer in <task id="…"> and carries its child session ID there.
+        val openCodeTask = OpenCodeTaskOutput.parse(result)
+        val answer = openCodeTask?.body() ?: result
+
         // Show the result text in the sub-agent's indented section.
         val resultText = when {
-            !result.isNullOrBlank() -> result
+            !answer.isNullOrBlank() -> answer
             status == "completed" || status == "complete" -> "\u2713 Completed"
             else -> "\u2716 Failed"
         }
@@ -1099,16 +1108,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val existingBubble = section.resultRow!!
             val pane = findMarkdownPane(existingBubble)
             pane?.setCompleteMarkdown(resultText)
-            section.contentBox.revalidate()
-            if (autoScrollEnabled) scrollToBottom()
-            return
+        } else {
+            section.resultRow = addSubAgentMarkdownBubble(section, accent, resultText)
         }
+        if (openCodeTask != null) addTranscriptLink(section, accent, openCodeTask.childSessionId())
+        section.contentBox.revalidate()
+        if (autoScrollEnabled) scrollToBottom()
+    }
 
+    private fun addSubAgentMarkdownBubble(section: SubAgentSection, accent: Color, markdown: String): JPanel {
         val pane = NativeMarkdownPane(fileNavigator).also {
             it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
             allMarkdownPanes += it
         }
-        pane.setCompleteMarkdown(resultText)
+        pane.setCompleteMarkdown(markdown)
         val bubbleRow = createBubble(
             NativeChatColors.agentBubbleBg(accent),
             explicitBorder = NativeChatColors.agentBubbleBorder(accent)
@@ -1117,9 +1130,51 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         bubbleRow.bubble.add(pane, BorderLayout.CENTER)
         bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         section.contentBox.add(bubbleRow.row)
-        section.resultRow = bubbleRow.row
-        section.contentBox.revalidate()
-        if (autoScrollEnabled) scrollToBottom()
+        return bubbleRow.row
+    }
+
+    /**
+     * Adds a "Show subagent transcript" link under the result of an OpenCode subagent. The link is
+     * only offered while the OpenCode HTTP server address is known; clicking it fetches the child
+     * session from that server and replaces the link with the transcript.
+     */
+    private fun addTranscriptLink(section: SubAgentSection, accent: Color, childSessionId: String) {
+        if (section.transcriptRow != null || OpenCodeServerEndpoint.baseUrl() == null) return
+
+        val row = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyTop(JBUI.scale(2))
+        }
+        val link = HyperlinkLabel("Show subagent transcript")
+        link.addHyperlinkListener {
+            link.isEnabled = false
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val transcript = runCatching { OpenCodeSessionHttpClient.fetchTranscriptMarkdown(childSessionId) }
+                ApplicationManager.getApplication().invokeLater {
+                    transcript.fold(
+                        onSuccess = { markdown ->
+                            section.contentBox.remove(row)
+                            section.transcriptRow = addSubAgentMarkdownBubble(
+                                section, accent, markdown.ifBlank { "_The subagent session has no messages._" }
+                            )
+                        },
+                        onFailure = { error ->
+                            row.add(JBLabel("  Could not load subagent transcript: ${error.message}").apply {
+                                foreground = JBColor.RED
+                            })
+                            link.isEnabled = true
+                        }
+                    )
+                    section.contentBox.revalidate()
+                    section.contentBox.repaint()
+                    if (autoScrollEnabled) scrollToBottom()
+                }
+            }
+        }
+        row.add(link)
+        section.contentBox.add(row)
+        section.transcriptRow = row
     }
 
     /** Finds the first NativeMarkdownPane inside a component tree (for updating existing bubbles). */
