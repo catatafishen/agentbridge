@@ -1521,6 +1521,18 @@ public abstract class AcpClient extends AbstractClient {
     protected abstract List<String> buildCommand(String cwd, int mcpPort);
 
     /**
+     * Last chance to adjust the command line, called once the binary has been resolved to an
+     * absolute path and validated. Unlike {@link #buildCommand} this can therefore run the binary
+     * (e.g. {@code --version}) to decide which flags it understands.
+     *
+     * @param resolvedCommand the command from {@link #buildCommand} with its first element resolved
+     * @return the command to launch; the first element must stay the resolved binary
+     */
+    protected List<String> finalizeCommand(List<String> resolvedCommand) {
+        return resolvedCommand;
+    }
+
+    /**
      * Whether to strip non-essential PATH entries before launching the agent process.
      * When enabled, the process PATH is sanitized to include only essential system
      * directories, Node.js, and the CLI binary itself. This prevents the agent CLI
@@ -1674,7 +1686,9 @@ public abstract class AcpClient extends AbstractClient {
         // absolute path, the binary genuinely isn't installed.
         validateResolvedBinary(resolvedCommand.getFirst(), displayName());
 
-        ProcessBuilder pb = new ProcessBuilder(resolvedCommand);
+        List<String> launchCommand = finalizeCommand(resolvedCommand);
+
+        ProcessBuilder pb = new ProcessBuilder(launchCommand);
         pb.directory(new File(cwd));
         pb.redirectErrorStream(false);
 
@@ -1698,7 +1712,7 @@ public abstract class AcpClient extends AbstractClient {
             pb.environment().putAll(env);
         }
 
-        LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
+        LOG.info("Launching " + displayName() + ": " + String.join(" ", launchCommand));
         LOG.info("Environment size: " + pb.environment().size() + " variables");
 
         // Wrap in bwrap sandbox if enabled. Must happen after environment setup (bwrap inherits

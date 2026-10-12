@@ -8,8 +8,10 @@ import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.net.NetUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /**
  * OpenCode ACP client.
@@ -33,6 +36,7 @@ import java.util.concurrent.TimeoutException;
  */
 public final class OpenCodeClient extends AcpClient {
 
+    private static final Logger LOG = Logger.getInstance(OpenCodeClient.class);
     private static final String AGENT_ID = "opencode";
     private static final String BUILD_AGENT = "build";
     private static final String PLAN_AGENT = "plan";
@@ -58,6 +62,13 @@ public final class OpenCodeClient extends AcpClient {
      * its own OpenCode process on its own port.
      */
     private final OpenCodeServerEndpoint serverEndpoint = new OpenCodeServerEndpoint();
+
+    /**
+     * {@code false} when the running OpenCode is known to have no reachable HTTP server (2.x), as
+     * opposed to a server that should be there but whose address is lost. Decides whether a missing
+     * address is an expected "no transcript" or an error worth showing.
+     */
+    private volatile boolean serverReachableByDesign = true;
 
     public OpenCodeClient(Project project) {
         super(project);
@@ -119,27 +130,58 @@ public final class OpenCodeClient extends AcpClient {
         if (profile != null) {
             cmd.addAll(profile.parsedExtraCliArgs());
         }
-        recordServerPort(cmd);
+        return cmd;
+    }
+
+    @Override
+    protected List<String> finalizeCommand(List<String> resolvedCommand) {
+        List<String> cmd = new ArrayList<>(resolvedCommand);
+        pinServerPort(cmd, () -> OpenCodeVersionProbe.probe(resolvedCommand.getFirst()));
         return cmd;
     }
 
     /**
-     * Records the port of the HTTP server that {@code opencode acp} runs beside ACP, so
-     * subagent transcripts can be read from it. Only an explicit {@code --port} from the
-     * profile's extra arguments is used: OpenCode 2's {@code acp} command exits on unknown
-     * flags, so a port must never be appended automatically.
+     * Pins the port of the HTTP server that {@code opencode acp} runs beside ACP, so subagent
+     * transcripts can be read from it.
+     * <ul>
+     *   <li>An explicit {@code --port} from the profile's extra arguments is respected as is.</li>
+     *   <li>OpenCode 1.x accepts {@code --port}, so a free port is chosen and appended.</li>
+     *   <li>OpenCode 2.x's {@code acp} command has no {@code --port} flag and exits on it, so
+     *       nothing is appended and transcripts are unavailable. Its HTTP server is started internally
+     *       with a random port and password that only the {@code acp} process knows.</li>
+     * </ul>
+     * An undeterminable version is treated like 2.x: the agent must launch, and a missing
+     * transcript is the lesser harm (the reason is logged).
+     *
+     * @param installedVersion supplies the installed OpenCode version, or {@code null} if unknown;
+     *                         only consulted when there is no explicit {@code --port}
      */
-    private void recordServerPort(List<String> cmd) {
+    void pinServerPort(List<String> cmd, Supplier<@Nullable String> installedVersion) {
+        serverReachableByDesign = true;
         Integer explicitPort = OpenCodeServerEndpoint.portFromArgs(cmd);
         if (explicitPort != null) {
             serverEndpoint.publish(explicitPort);
             return;
         }
-        // The transcript feature is optional; make the missing subagent conversation
-        // explainable from the log.
-        serverEndpoint.clear();
-        com.intellij.openapi.diagnostic.Logger.getInstance(OpenCodeClient.class)
-            .warn("No --port pinned for the OpenCode HTTP server; subagent transcripts are unavailable");
+        String version = installedVersion.get();
+        if (isOpenCodeV2OrLater(version)) {
+            serverEndpoint.clear();
+            serverReachableByDesign = false;
+            LOG.info("OpenCode " + (version != null ? version : "(unknown version)")
+                + ": `opencode acp` has no --port flag, so subagent transcripts are unavailable");
+            return;
+        }
+        try {
+            int port = NetUtils.findAvailableSocketPort();
+            cmd.add("--port");
+            cmd.add(String.valueOf(port));
+            serverEndpoint.publish(port);
+        } catch (IOException e) {
+            // The transcript feature is optional: launch OpenCode on its own random port, but make
+            // the missing subagent conversation explainable from the log.
+            serverEndpoint.clear();
+            LOG.warn("No free port for the OpenCode HTTP server; subagent transcripts are unavailable", e);
+        }
     }
 
     @Override
@@ -225,8 +267,12 @@ public final class OpenCodeClient extends AcpClient {
         }
         String baseUrl = serverEndpoint.baseUrl();
         if (baseUrl == null) {
+            if (!serverReachableByDesign) {
+                // OpenCode 2.x: no transcript source yet. Not an error, so no error entry in the chat.
+                return null;
+            }
             throw new IOException("OpenCode HTTP server address is unknown (the agent was started with an "
-                + "unparseable --port, no --port was given in the agent's extra CLI arguments, or the agent has been stopped)");
+                + "unparseable --port, no port was free, or the agent has been stopped)");
         }
         Map<String, String> shellEnvironment = ShellEnvironment.getEnvironment();
         try {

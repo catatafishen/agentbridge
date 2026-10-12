@@ -213,6 +213,13 @@ children together with the sub-agent, because they hang off the in-memory entry.
 sub-agent, so history replay needs no call to the agent. If loading fails, an error entry is shown and
 the sub-agent keeps just its result text.
 
+The OpenCode transcript is read from the HTTP server that `opencode acp` runs beside ACP, so it needs a
+pinned `--port`. That flag exists on OpenCode 1.x only: `OpenCodeClient.finalizeCommand` probes
+`opencode --version` after the binary is resolved and appends `--port` for 1.x. OpenCode 2.x's `acp`
+command exits on unknown flags and starts its server on a random port with a random password, so on 2.x
+(or when the version cannot be determined) no port is passed, `loadSubAgentTranscript` returns `null`,
+and the sub-agent shows just its result text without an error entry (#1176).
+
 ### TurnStats Entries
 
 ```
