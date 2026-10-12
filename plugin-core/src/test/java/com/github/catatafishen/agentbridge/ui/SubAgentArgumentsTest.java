@@ -50,4 +50,15 @@ class SubAgentArgumentsTest {
     void ignoresNonTextValues() {
         assertNull(SubAgentArguments.parse("{\"prompt\": {\"text\": \"x\"}, \"description\": [1]}"));
     }
+
+    @Test
+    void ignoresNumbersAndBooleans() {
+        // Gson would happily convert these to "true" / "42"; only JSON strings are text.
+        assertNull(SubAgentArguments.parse("{\"description\": true, \"prompt\": 42}"));
+
+        var details = SubAgentArguments.parse("{\"description\": false, \"prompt\": \"Do it\"}");
+        assertNotNull(details);
+        assertNull(details.getDescription());
+        assertEquals("Do it", details.getPrompt());
+    }
 }

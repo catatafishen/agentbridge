@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,11 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class OpenCodeServerEndpointTest {
-
-    @AfterEach
-    void reset() {
-        OpenCodeServerEndpoint.publish(-1);
-    }
 
     @Test
     void portFromArgsIsNullWhenFlagAbsent() {
@@ -38,10 +32,35 @@ class OpenCodeServerEndpointTest {
 
     @Test
     void baseUrlIsNullUntilPortPublished() {
-        assertNull(OpenCodeServerEndpoint.baseUrl());
-        OpenCodeServerEndpoint.publish(0);
-        assertNull(OpenCodeServerEndpoint.baseUrl());
-        OpenCodeServerEndpoint.publish(5123);
-        assertEquals("http://127.0.0.1:5123", OpenCodeServerEndpoint.baseUrl());
+        OpenCodeServerEndpoint endpoint = new OpenCodeServerEndpoint();
+
+        assertNull(endpoint.baseUrl());
+        endpoint.publish(0);
+        assertNull(endpoint.baseUrl());
+        endpoint.publish(5123);
+        assertEquals("http://127.0.0.1:5123", endpoint.baseUrl());
+    }
+
+    @Test
+    void clearForgetsThePort() {
+        OpenCodeServerEndpoint endpoint = new OpenCodeServerEndpoint();
+        endpoint.publish(5123);
+
+        endpoint.clear();
+
+        assertNull(endpoint.baseUrl(), "a stopped agent's port must not be used for later requests");
+    }
+
+    @Test
+    void endpointsOfDifferentClientsAreIndependent() {
+        OpenCodeServerEndpoint projectA = new OpenCodeServerEndpoint();
+        OpenCodeServerEndpoint projectB = new OpenCodeServerEndpoint();
+
+        projectA.publish(5001);
+        projectB.publish(5002);
+        projectB.clear();
+
+        assertEquals("http://127.0.0.1:5001", projectA.baseUrl(), "launching or stopping B must not affect A");
+        assertNull(projectB.baseUrl());
     }
 }

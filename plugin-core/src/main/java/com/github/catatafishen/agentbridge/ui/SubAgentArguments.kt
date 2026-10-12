@@ -25,5 +25,5 @@ object SubAgentArguments {
     }
 
     private fun JsonObject.text(key: String): String? =
-        get(key)?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString?.takeIf { it.isNotBlank() }
 }

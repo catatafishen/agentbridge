@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -52,6 +53,12 @@ public final class OpenCodeClient extends AcpClient {
     static List<String> nativeToolsToDeny() {
         return NATIVE_TOOLS_TO_DENY;
     }
+
+    /**
+     * Address of this client's own OpenCode HTTP server. Per client, not global: every project runs
+     * its own OpenCode process on its own port.
+     */
+    private final OpenCodeServerEndpoint serverEndpoint = new OpenCodeServerEndpoint();
 
     public OpenCodeClient(Project project) {
         super(project);
@@ -122,24 +129,41 @@ public final class OpenCodeClient extends AcpClient {
      * transcripts can be read from it. An explicit {@code --port} from the profile's extra
      * arguments is respected; otherwise a free port is chosen.
      */
-    private static void addServerPort(List<String> cmd) {
+    private void addServerPort(List<String> cmd) {
         Integer explicitPort = OpenCodeServerEndpoint.portFromArgs(cmd);
         if (explicitPort != null) {
-            OpenCodeServerEndpoint.publish(explicitPort);
+            serverEndpoint.publish(explicitPort);
             return;
         }
         try {
             int port = NetUtils.findAvailableSocketPort();
             cmd.add("--port");
             cmd.add(String.valueOf(port));
-            OpenCodeServerEndpoint.publish(port);
+            serverEndpoint.publish(port);
         } catch (java.io.IOException e) {
             // The transcript feature is optional: launch OpenCode on its own random port, but make
-            // the missing "Show subagent transcript" link explainable from the log.
-            OpenCodeServerEndpoint.publish(-1);
+            // the missing subagent conversation explainable from the log.
+            serverEndpoint.clear();
             com.intellij.openapi.diagnostic.Logger.getInstance(OpenCodeClient.class)
                 .warn("No free port for the OpenCode HTTP server; subagent transcripts are unavailable", e);
         }
+    }
+
+    @Override
+    protected void afterStop() {
+        // The port belonged to the process that has just been destroyed.
+        serverEndpoint.clear();
+    }
+
+    /**
+     * Looks up an environment variable the way the OpenCode process saw it at launch: the captured
+     * login-shell environment is laid over the IDE's own (see {@code AcpClient.launchProcess}). A
+     * GUI-launched IDE does not inherit variables set in shell startup files, so reading only
+     * {@link System#getenv} would miss e.g. {@code OPENCODE_SERVER_PASSWORD}.
+     */
+    static @Nullable String launchEnvironmentVariable(@NotNull Map<String, String> shellEnvironment, @NotNull String name) {
+        String fromShell = shellEnvironment.get(name);
+        return fromShell != null ? fromShell : System.getenv(name);
     }
 
     /**
@@ -206,8 +230,16 @@ public final class OpenCodeClient extends AcpClient {
         if (task == null) {
             return null;
         }
+        String baseUrl = serverEndpoint.baseUrl();
+        if (baseUrl == null) {
+            throw new IOException("OpenCode HTTP server address is unknown (the agent was started with an "
+                + "unparseable --port, no port was free, or the agent has been stopped)");
+        }
+        Map<String, String> shellEnvironment = ShellEnvironment.getEnvironment();
         try {
-            return OpenCodeSessionHttpClient.fetchTranscript(task.childSessionId()).toEntries(subAgentEntryId);
+            return OpenCodeSessionHttpClient
+                .fetchTranscript(baseUrl, task.childSessionId(), name -> launchEnvironmentVariable(shellEnvironment, name))
+                .toEntries(subAgentEntryId);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while loading the subagent session " + task.childSessionId(), e);

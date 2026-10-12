@@ -443,6 +443,7 @@ public abstract class AcpClient extends AbstractClient {
             capabilities = null;
             currentSessionId = null;
             launchCwd = null;
+            afterStop();
             availableModels.clear();
             availableModes.clear();
             availableCommandNames.clear();
@@ -471,6 +472,15 @@ public abstract class AcpClient extends AbstractClient {
                 }
             }
         }
+    }
+
+    /**
+     * Called from {@link #stop()} once the agent process has been destroyed, so a subclass can
+     * drop state that only describes that process (e.g. the port of a companion HTTP server).
+     * Must not throw. Default: no-op.
+     */
+    protected void afterStop() {
+        // no-op by default
     }
 
     /**
