@@ -19,7 +19,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
-import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.InplaceButton
@@ -39,9 +38,6 @@ import kotlin.math.min
 import javax.swing.*
 import javax.swing.text.SimpleAttributeSet
 import javax.swing.text.StyleConstants
-
-private const val SHOW_TRANSCRIPT = "Show subagent transcript"
-private const val HIDE_TRANSCRIPT = "Hide subagent transcript"
 
 /**
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
@@ -477,7 +473,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val chipStrip: ChipStripPanel,
         val contentBox: JPanel,
         var resultRow: JPanel? = null,
-        var transcriptRow: JPanel? = null,
+        var transcriptPanel: JPanel? = null,
     )
 
     private val subAgentSections = mutableMapOf<String, SubAgentSection>()
@@ -1175,9 +1171,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
         }
         closeStrip()
-        if (panel.componentCount == 0) {
-            panel.add(createSubAgentBubble(accent, "_The subagent session has no assistant output._"))
-        }
         return panel
     }
 
@@ -1207,33 +1200,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun setSubAgentTranscript(id: String, children: List<EntryData>) {
         val section = subAgentSections[id] ?: return
-        if (children.isEmpty() || section.transcriptRow != null) return
-        val accent = ChatTheme.SA_COLORS[section.colorIndex]
+        if (section.transcriptPanel != null) return
+        // The result bubble already shows the sub-agent's final answer, which is also its last
+        // text part; showing it in both places would duplicate it.
+        val answer = section.resultRow?.let { findMarkdownPane(it)?.getRawText() }?.trim()
+        val last = children.lastOrNull()
+        val shown = if (last is EntryData.Text && last.raw.trim() == answer) children.dropLast(1) else children
+        if (shown.isEmpty()) return
 
-        val row = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
-            isOpaque = false
-            alignmentX = Component.LEFT_ALIGNMENT
-            border = JBUI.Borders.emptyTop(JBUI.scale(2))
-        }
-        val link = HyperlinkLabel(SHOW_TRANSCRIPT)
-        var transcriptPanel: JPanel? = null
-        link.addHyperlinkListener {
-            val shown = transcriptPanel
-            if (shown == null) {
-                // Built on first use, so replaying a long history does not create a panel per sub-agent.
-                transcriptPanel = buildTranscriptPanel(children, accent).also { section.contentBox.add(it) }
-            } else {
-                shown.isVisible = !shown.isVisible
-            }
-            link.setHyperlinkText(if (transcriptPanel?.isVisible == true) HIDE_TRANSCRIPT else SHOW_TRANSCRIPT)
-            section.contentBox.revalidate()
-            section.contentBox.repaint()
-            if (autoScrollEnabled) scrollToBottom()
-        }
-        row.add(link)
-        section.contentBox.add(row)
-        section.transcriptRow = row
+        val panel = buildTranscriptPanel(shown, ChatTheme.SA_COLORS[section.colorIndex])
+        // Same layout as other agents' sub-agents: their work first, the result bubble last.
+        val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
+        if (resultIndex >= 0) section.contentBox.add(panel, resultIndex) else section.contentBox.add(panel)
+        section.transcriptPanel = panel
         section.contentBox.revalidate()
+        if (autoScrollEnabled) scrollToBottom()
     }
 
     /** Finds the first NativeMarkdownPane inside a component tree (for updating existing bubbles). */
