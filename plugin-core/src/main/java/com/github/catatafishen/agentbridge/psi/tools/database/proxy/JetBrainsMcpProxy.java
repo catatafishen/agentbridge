@@ -153,9 +153,12 @@ final class JetBrainsMcpProxy {
         Class<?> allowAllClass = Class.forName("com.intellij.mcpserver.McpToolFilter$AllowAll", true, cl);
         Object acceptAllFilter = allowAllClass.getField("INSTANCE").get(null);
 
+        // The parameter types shared by every getMcpTools overload; 2026.2+ appends the invocation mode.
+        Class<?>[] baseParamTypes = {mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass};
+
         // false = do not restrict to "hidden-only" tools — include all registered tools
-        List<?> tools = invokeGetMcpTools(cl, serviceClass, service, mcpToolFilterClass, implementationClass,
-            sessionOptionsClass, acceptAllFilter, implementation, sessionOptions);
+        List<?> tools = invokeGetMcpTools(cl, serviceClass, service, baseParamTypes,
+            acceptAllFilter, implementation, sessionOptions);
 
         Map<String, Object> map = new ConcurrentHashMap<>();
         for (Object tool : tools) {
@@ -167,20 +170,20 @@ final class JetBrainsMcpProxy {
     }
 
     private static List<?> invokeGetMcpTools(ClassLoader cl, Class<?> serviceClass, Object service,
-                                             Class<?> mcpToolFilterClass, Class<?> implementationClass, Class<?> sessionOptionsClass,
+                                             Class<?>[] baseParamTypes,
                                              Object acceptAllFilter, Object implementation, Object sessionOptions) throws ReflectiveOperationException {
-        Class<?>[] fourParams = {mcpToolFilterClass, boolean.class, implementationClass, sessionOptionsClass};
         // McpToolInvocationMode only exists from 2026.2; on 2026.1 and earlier it is absent and the
         // four-parameter overload is the one to call, so a missing class must not abort discovery.
         Class<?> invocationModeClass = loadOptionalClass("com.intellij.mcpserver.McpToolInvocationMode", cl);
 
-        Method method = findGetMcpTools(serviceClass, fourParams, invocationModeClass);
+        Method method = findGetMcpTools(serviceClass, baseParamTypes, invocationModeClass);
         if (method == null) {
             throw new NoSuchMethodException(
                 "No compatible getMcpTools overload on " + serviceClass.getName() + "; candidates: "
                     + describeGetMcpToolsMethods(serviceClass));
         }
-        if (method.getParameterCount() == fourParams.length) {
+        // Without the invocation-mode class only the base signature can have been selected.
+        if (invocationModeClass == null || method.getParameterCount() == baseParamTypes.length) {
             return (List<?>) method.invoke(service, acceptAllFilter, false, implementation, sessionOptions);
         }
         // Enum constants are public static final fields — look up DIRECT by name via
@@ -232,10 +235,13 @@ final class JetBrainsMcpProxy {
      * {@code getMcpTools$intellij_mcpserver}; build 262 made it public under the plain name.
      */
     static @Nullable Method findDeclaredMethod(Class<?> serviceClass, Class<?>[] paramTypes) {
+        Method[] declared = serviceClass.getDeclaredMethods();
+        // Names in priority order, so the plain name wins when a class has both.
         for (String name : GET_MCP_TOOLS_NAMES) {
-            try {
-                return serviceClass.getDeclaredMethod(name, paramTypes);
-            } catch (NoSuchMethodException ignored) { //NOSONAR — expected while probing known names
+            for (Method candidate : declared) {
+                if (candidate.getName().equals(name) && Arrays.equals(candidate.getParameterTypes(), paramTypes)) {
+                    return candidate;
+                }
             }
         }
         return null;

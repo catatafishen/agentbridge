@@ -86,7 +86,7 @@ class JetBrainsMcpProxyTest {
     @SuppressWarnings("unused")
     private static final class Pre262Service {
         Object getMcpTools$intellij_mcpserver(String filter, boolean flag, Integer impl, Long options) {
-            return filter;
+            return filter + flag + impl + options;
         }
     }
 
@@ -96,7 +96,7 @@ class JetBrainsMcpProxyTest {
     @SuppressWarnings("unused")
     private static final class Build262Service {
         public Object getMcpTools(String filter, boolean flag, Integer impl, Long options, FakeInvocationMode mode) {
-            return filter;
+            return filter + flag + impl + options + mode;
         }
     }
 
@@ -107,7 +107,7 @@ class JetBrainsMcpProxyTest {
     private static final class EarlyMangledFiveParamService {
         Object getMcpTools$intellij_mcpserver(String filter, boolean flag, Integer impl, Long options,
                                               FakeInvocationMode mode) {
-            return filter;
+            return filter + flag + impl + options + mode;
         }
     }
 
