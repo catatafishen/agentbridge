@@ -317,6 +317,25 @@ class ConversationEntryStoreTest {
     }
 
     @Test
+    void updateSubAgentDetails_fillsInWhatTheToolCallLeftOut() {
+        var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
+        store.addSubAgentEntry("sa1", "general", "task", null, state);
+
+        assertTrue(store.updateSubAgentDetails("sa1", "Find the title", "Read README.md"));
+        // A repeated update with blanks must not erase what is known.
+        assertTrue(store.updateSubAgentDetails("sa1", null, " "));
+
+        var entry = (EntryData.SubAgent) store.getEntries().getFirst();
+        assertEquals("Find the title", entry.getDescription());
+        assertEquals("Read README.md", entry.getPrompt());
+    }
+
+    @Test
+    void updateSubAgentDetails_reportsAnUnknownSubAgent() {
+        assertFalse(store.updateSubAgentDetails("missing", "d", "p"));
+    }
+
+    @Test
     void setSubAgentChildren_reportsAnUnknownSubAgent() {
         assertFalse(store.setSubAgentChildren("missing", List.of()));
     }

@@ -125,6 +125,12 @@ interface ChatPanelApi : Disposable {
     )
 
     /**
+     * Supplies the description and prompt of a sub-agent whose entry was created without them
+     * (OpenCode reveals them in a later tool_call_update). Safe to call repeatedly with the same values.
+     */
+    fun updateSubAgentDetails(id: String, description: String?, prompt: String?)
+
+    /**
      * Attaches the sub-agent's own conversation ([EntryData.Text], [EntryData.Thinking] and
      * [EntryData.ToolCall] entries, in order) so its section can show it. Called once the
      * sub-agent has finished, and again on history replay.

@@ -136,7 +136,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** Stored tool call data for popup display when chips are clicked. */
     private data class ToolCallData(
-        val title: String,
+        var title: String,
         val kind: String,
         val rawToolName: String,
         val arguments: String? = null,
@@ -470,8 +470,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private class SubAgentSection(
         val colorIndex: Int,
+        val label: String,
         val chipStrip: ChipStripPanel,
         val contentBox: JPanel,
+        /** The row in [contentPanel] holding this section; the late prompt bubble is inserted before it. */
+        val row: JPanel,
+        var promptRow: JPanel? = null,
         var resultRow: JPanel? = null,
         var transcriptPanel: JPanel? = null,
     )
@@ -1040,19 +1044,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         ensureTurn().chipStrip.addToolChip(chip)
         if (!spinTimer.isRunning) spinTimer.start()
 
-        // Prompt bubble: shows what was sent to the sub-agent.
+        // Prompt bubble: shows what was sent to the sub-agent. Agents that only reveal it later
+        // (OpenCode) get it from updateSubAgentDetails instead.
+        var promptRow: JPanel? = null
         if (!prompt.isNullOrBlank()) {
             finalizeTurn()
-            val promptText = "**@$label** $prompt"
-            val pane = createMarkdownPane(promptText)
-            val bubbleRow = createBubble(
-                NativeChatColors.agentBubbleBg(accent),
-                explicitBorder = NativeChatColors.agentBubbleBorder(accent)
-            )
-            trackAgentBubble(bubbleRow.bubble)
-            bubbleRow.bubble.add(pane, BorderLayout.CENTER)
-            bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
-            addRow(bubbleRow.row)
+            promptRow = addRow(createSubAgentPromptBubble(label, accent, prompt))
         }
         val subChipStrip = ChipStripPanel().apply { isVisible = false }
         val contentBox = JPanel().apply {
@@ -1068,8 +1065,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             alignmentX = Component.LEFT_ALIGNMENT
             add(contentBox, BorderLayout.CENTER)
         }
-        addRow(sectionWrapper)
-        subAgentSections[id] = SubAgentSection(colorIndex, subChipStrip, contentBox)
+        val sectionRow = addRow(sectionWrapper)
+        subAgentSections[id] = SubAgentSection(colorIndex, label, subChipStrip, contentBox, sectionRow, promptRow)
 
         if (initialState.status != null) {
             updateSubAgentResult(
@@ -1077,6 +1074,26 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 initialState.description, initialState.autoDenied, initialState.denialReason
             )
         }
+    }
+
+    private fun createSubAgentPromptBubble(label: String, accent: Color, prompt: String): JPanel =
+        createSubAgentBubble(accent, "**@$label** $prompt")
+
+    override fun updateSubAgentDetails(id: String, description: String?, prompt: String?) {
+        val section = subAgentSections[id] ?: return
+        if (!description.isNullOrBlank()) {
+            val chipTitle = "[${section.label}] $description"
+            toolCallData[id]?.title = chipTitle
+            allChips[id]?.updateTitle(chipTitle)
+        }
+        if (prompt.isNullOrBlank() || section.promptRow != null) return
+        val at = contentPanel.getComponentZOrder(section.row)
+        if (at < 0) return
+        val promptRow = rowContainer(createSubAgentPromptBubble(section.label, ChatTheme.SA_COLORS[section.colorIndex], prompt))
+        contentPanel.add(promptRow, at)
+        section.promptRow = promptRow
+        contentPanel.revalidate()
+        if (autoScrollEnabled) scrollToBottom()
     }
 
     override fun updateSubAgentResult(
@@ -1105,7 +1122,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val pane = findMarkdownPane(existingBubble)
             pane?.setCompleteMarkdown(resultText)
         } else {
-            section.resultRow = createSubAgentBubble(accent, resultText).also { section.contentBox.add(it) }
+            section.resultRow = createSpacedSubAgentBubble(accent, resultText).also { section.contentBox.add(it) }
         }
         section.contentBox.revalidate()
         if (autoScrollEnabled) scrollToBottom()
@@ -1128,6 +1145,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         return bubbleRow.row
     }
 
+    /** A sub-agent bubble inside a sub-agent section, spaced like the top-level rows that addRow wraps. */
+    private fun createSpacedSubAgentBubble(accent: Color, markdown: String): JPanel =
+        rowContainer(createSubAgentBubble(accent, markdown))
+
     /**
      * Builds the subagent's conversation from the chat's own components: agent bubbles for its
      * text, a tool chip per tool call (opening the usual tool popup), and a collapsed thinking
@@ -1149,7 +1170,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
 
         fun currentStrip(): ChipStripPanel = strip ?: ChipStripPanel().also {
-            panel.add(it)
+            panel.add(rowContainer(it))
             strip = it
         }
 
@@ -1157,7 +1178,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             when (child) {
                 is EntryData.Text -> {
                     closeStrip()
-                    panel.add(createSubAgentBubble(accent, child.raw))
+                    panel.add(createSpacedSubAgentBubble(accent, child.raw))
                 }
 
                 is EntryData.Thinking -> {

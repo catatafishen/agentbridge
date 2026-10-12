@@ -310,6 +310,25 @@ class ConversationReaderTest {
     }
 
     @Test
+    void subAgentPersistedWithoutPromptGetsItFromALaterUpdate() {
+        EntryData.SubAgent early = new EntryData.SubAgent(
+            "general", "task", null, null,
+            "running", 0, "call-1", false, null,
+            "2026-01-01T10:00:01Z", "assistant", "opencode", "sa1");
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", null, "t1", "t1"), early));
+
+        writer.updateSubAgentDetails("sa1", "Find the title", "Read README.md");
+        // Blank/absent values keep what is stored.
+        writer.updateSubAgentDetails("sa1", null, null);
+
+        EntryData.SubAgent loaded =
+            assertInstanceOf(EntryData.SubAgent.class, reader.loadEntries("sess-1").get(1));
+        assertEquals("Find the title", loaded.getDescription());
+        assertEquals("Read README.md", loaded.getPrompt());
+    }
+
+    @Test
     void recordingChildrenOfAnUnknownSubAgentWritesNothing() {
         assertFalse(writer.recordSubAgentChildren("missing", subAgentChildren()));
     }

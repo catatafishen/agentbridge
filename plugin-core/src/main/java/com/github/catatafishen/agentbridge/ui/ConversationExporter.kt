@@ -197,7 +197,7 @@ ul,ol{margin:4px 0;padding-left:22px}
         val info = SUB_AGENT_INFO[e.agentType]
         val name = info?.displayName ?: e.agentType
         val sb = StringBuilder()
-        if (e.prompt != null) sb.append("<div class='response'><b>@$name</b> ${escapeHtml(e.prompt)}</div>\n")
+        e.prompt?.let { sb.append("<div class='response'><b>@$name</b> ${escapeHtml(it)}</div>\n") }
         if (e.result != null) sb.append("<div class='response'>${markdownToHtml(e.result!!)}</div>\n")
         else sb.append("<div class='response'><b>@$name</b> \u2014 ${escapeHtml(e.description)}</div>\n")
         return sb.toString()

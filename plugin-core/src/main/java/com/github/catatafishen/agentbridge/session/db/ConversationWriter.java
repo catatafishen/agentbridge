@@ -933,6 +933,35 @@ public final class ConversationWriter implements AutoCloseable {
         }
     }
 
+    /**
+     * Fills in a sub-agent's description and prompt after it was persisted without them (OpenCode
+     * reveals both in a later tool_call_update). Null arguments keep the stored value. Safe to call
+     * if the row does not exist yet (0 rows affected): the in-memory entry then already holds them.
+     */
+    public void updateSubAgentDetails(
+        @NotNull String eventId,
+        @Nullable String description,
+        @Nullable String prompt
+    ) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                UPDATE sub_agent_events SET
+                    description = COALESCE(?, description),
+                    prompt_text = COALESCE(?, prompt_text)
+                WHERE event_id = ?
+                """)) {
+                ps.setString(1, description);
+                ps.setString(2, prompt);
+                ps.setString(3, eventId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to update sub-agent details for " + eventId, e);
+            }
+        }
+    }
+
     public void recordHookStages(
         @NotNull String toolEventId,
         @NotNull List<HookStageResult> stages

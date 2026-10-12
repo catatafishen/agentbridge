@@ -118,6 +118,13 @@ class ToolChipComponent(
         putClientProperty("html.disable", true)
     }
 
+    /** Replaces the chip text, e.g. when the real description of a sub-agent arrives after the chip was created. */
+    fun updateTitle(title: String) {
+        label.text = truncateLabel(title)
+        revalidate()
+        repaint()
+    }
+
     init {
         if (onClick != null) cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         add(statusLabel)

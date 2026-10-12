@@ -104,8 +104,11 @@ sealed class EntryData {
 
     class SubAgent @JvmOverloads constructor(
         val agentType: String,
-        val description: String,
-        val prompt: String? = null,
+        // Some agents (OpenCode) send the sub-agent's tool_call with empty input and only reveal the
+        // description and prompt in a later tool_call_update; ConversationEntryStore.updateSubAgentDetails
+        // fills them in, so they must stay mutable.
+        var description: String,
+        var prompt: String? = null,
         var result: String? = null,
         var status: String? = null,
         var colorIndex: Int = 0,

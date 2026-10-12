@@ -254,6 +254,22 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Fills in a sub-agent's description and prompt after any queued insert.
+     */
+    public void updateSubAgentDetailsAsync(
+        @NotNull String eventId,
+        @Nullable String description,
+        @Nullable String prompt
+    ) {
+        enqueueWrite("update sub-agent details", () -> {
+            ConversationWriter writer = getOrCreateWriter();
+            if (writer != null) {
+                writer.updateSubAgentDetails(eventId, description, prompt);
+            }
+        });
+    }
+
+    /**
      * Stores the conversation inside a sub-agent after any queued insert.
      *
      * <p>If the sub-agent row is not in the database yet (it is written by a later

@@ -957,6 +957,8 @@ class PromptOrchestrator(
             else -> MessageFormatter.ChipStatus.RUNNING
         }
 
+        if (isSubAgent) applySubAgentDetails(recordId, arguments)
+
         updateToolCallUi(
             toolCallId, recordId, uiStatus,
             ToolCallUiUpdate(
@@ -973,6 +975,16 @@ class PromptOrchestrator(
             )
             callbacks.appendNewEntries()
         }
+    }
+
+    /**
+     * OpenCode sends a sub-agent's tool_call with empty input (title "task") and only reveals the
+     * description and prompt in a later tool_call_update. Without this the sub-agent chip keeps the
+     * title "task" and the prompt the main agent sent is never shown.
+     */
+    private fun applySubAgentDetails(recordId: String, arguments: String?) {
+        val details = SubAgentArguments.parse(arguments) ?: return
+        consolePanel().updateSubAgentDetails(recordId, details.description, details.prompt)
     }
 
     private data class ToolCallUiUpdate(
