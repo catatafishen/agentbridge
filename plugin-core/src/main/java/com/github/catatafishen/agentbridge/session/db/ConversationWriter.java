@@ -176,19 +176,19 @@ public final class ConversationWriter implements AutoCloseable {
         if (entry instanceof EntryData.Prompt p) {
             openTurn(conn, sessionId, p);
         } else if (entry instanceof EntryData.Text t) {
-            insertEvent(conn, sessionId, t.getEntryId(), "text", t.getTimestamp(),
+            insertEvent(conn, sessionId, t.getEntryId(), SUB_AGENT_CHILD_TEXT, t.getTimestamp(),
                 t.getAgent(), t.getModel());
             insertSubtype(conn,
                 "INSERT OR IGNORE INTO text_events (event_id, content) VALUES (?, ?)",
                 t.getEntryId(), t.getRaw());
         } else if (entry instanceof EntryData.Thinking th) {
-            insertEvent(conn, sessionId, th.getEntryId(), "thinking", th.getTimestamp(),
+            insertEvent(conn, sessionId, th.getEntryId(), SUB_AGENT_CHILD_THINKING, th.getTimestamp(),
                 th.getAgent(), th.getModel());
             insertSubtype(conn,
                 "INSERT OR IGNORE INTO thinking_events (event_id, content) VALUES (?, ?)",
                 th.getEntryId(), th.getRaw());
         } else if (entry instanceof EntryData.ToolCall tc) {
-            insertEvent(conn, sessionId, tc.getEntryId(), "tool_call", tc.getTimestamp(),
+            insertEvent(conn, sessionId, tc.getEntryId(), SUB_AGENT_CHILD_TOOL_CALL, tc.getTimestamp(),
                 tc.getAgent(), tc.getModel());
             insertToolCall(conn, tc, clientId);
         } else if (entry instanceof EntryData.SubAgent sa) {
@@ -627,22 +627,30 @@ public final class ConversationWriter implements AutoCloseable {
             if (conn == null) return false;
             try {
                 if (!subAgentEventExists(conn, subAgentEventId)) return false;
-                conn.setAutoCommit(false);
-                try {
-                    insertSubAgentChildren(conn, subAgentEventId, children);
-                    conn.commit();
-                    return true;
-                } catch (SQLException e) {
-                    conn.rollback();
-                    throw e;
-                } finally {
-                    conn.setAutoCommit(true);
-                }
+                insertSubAgentChildrenInTransaction(conn, subAgentEventId, children);
+                return true;
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record " + children.size()
                     + " sub-agent children for " + subAgentEventId, e);
                 return false;
             }
+        }
+    }
+
+    private static void insertSubAgentChildrenInTransaction(
+        @NotNull Connection conn,
+        @NotNull String subAgentEventId,
+        @NotNull List<EntryData> children
+    ) throws SQLException {
+        conn.setAutoCommit(false);
+        try {
+            insertSubAgentChildren(conn, subAgentEventId, children);
+            conn.commit();
+        } catch (SQLException e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
         }
     }
 
