@@ -697,7 +697,8 @@ class AcpConnectPanel(
                 // already updated .current-session-id, so exportForRestart() will pick
                 // up the correct session. For agent switches, onAgentSwitch() handles this.
                 if (sameAgent) sessionSwitch.exportForRestart(profileId)
-                false
+                // Chat must be cleared and reloaded from the newly selected session.
+                true
             }
 
             null -> false // no selection — keep defaults

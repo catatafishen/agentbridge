@@ -414,10 +414,15 @@ class ChatToolWindowContent(
         } else {
             // On reconnect: if the user explicitly chose "None" (fresh session), clear any
             // messages left from the previous connection so the chat window matches the agent context.
+            // The same flag is set when an older session was selected: the chat is cleared and the
+            // newly selected session (per .current-session-id) is loaded from disk. For "None"
+            // the id file is gone, so the restore finds nothing and the chat stays empty.
             if (freshSession) {
                 consolePanel.clear()
+                persistenceManager.restoreConversation(onComplete = addSeparatorNow)
+            } else {
+                addSeparatorNow()
             }
-            addSeparatorNow()
         }
         cardLayout.show(mainPanel, CARD_CHAT)
         agentManager.isConnected = true
