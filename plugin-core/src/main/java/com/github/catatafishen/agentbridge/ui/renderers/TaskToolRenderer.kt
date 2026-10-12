@@ -1,5 +1,9 @@
 package com.github.catatafishen.agentbridge.ui.renderers
 
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeServerEndpoint
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeSessionHttpClient
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
@@ -59,6 +63,47 @@ object TaskToolRenderer : ToolResultRenderer {
             })
         }
 
+        if (parsed.taskId != null && OpenCodeServerEndpoint.baseUrl() != null) {
+            panel.add(transcriptSection(parsed.taskId))
+        }
+
         return panel
+    }
+
+    /**
+     * A link that loads the subagent's child session from the OpenCode HTTP server and shows the
+     * full transcript in place of the link. [taskId] is the child session ID.
+     */
+    private fun transcriptSection(taskId: String): JComponent {
+        val section = ToolRenderers.listPanel().apply {
+            border = JBUI.Borders.emptyTop(4)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        }
+        val link = HyperlinkLabel("Show subagent transcript")
+        link.addHyperlinkListener {
+            link.isEnabled = false
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val result = runCatching { OpenCodeSessionHttpClient.fetchTranscriptMarkdown(taskId) }
+                ApplicationManager.getApplication().invokeLater {
+                    section.removeAll()
+                    section.add(
+                        result.fold(
+                            onSuccess = { HtmlToolRendererSupport.markdownPane(it.ifBlank { "_Empty transcript_" }) },
+                            onFailure = {
+                                ToolRenderers.statusHeader(
+                                    ToolIcons.FAILURE,
+                                    "Could not load subagent transcript: ${it.message}",
+                                    ToolRenderers.FAIL_COLOR
+                                )
+                            }
+                        )
+                    )
+                    section.revalidate()
+                    section.repaint()
+                }
+            }
+        }
+        section.add(link)
+        return section
     }
 }
