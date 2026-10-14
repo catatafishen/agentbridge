@@ -40,7 +40,7 @@ jobs:
       contents: read
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
         with:
           egress-policy: audit
 
@@ -66,7 +66,7 @@ jobs:
         run: gradle :plugin-core:buildPlugin --no-daemon --quiet -x :plugin-core:buildChatUi
 
       - name: Upload plugin distribution
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: plugin-distribution
           path: plugin-core/build/distributions/*.zip
@@ -89,7 +89,7 @@ jobs:
           - { id: IU-EAP, name: "IntelliJ IDEA Ultimate 2026.2 EAP" }
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
         with:
           egress-policy: audit
 
@@ -111,7 +111,7 @@ jobs:
           cache-disabled: true
 
       - name: Download plugin distribution
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: plugin-distribution
           path: plugin-core/build/distributions/
