@@ -5,12 +5,7 @@ import ai.koog.prompt.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.message.AttachmentContent
-import ai.koog.prompt.message.AttachmentSource
-import ai.koog.prompt.message.Message
-import ai.koog.prompt.message.MessagePart
-import ai.koog.prompt.message.RequestMetaInfo
-import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.message.*
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
 import com.github.catatafishen.agentbridge.bridge.EntryData
@@ -24,7 +19,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runInterruptible
-import java.util.UUID
+import java.util.*
 
 /** Streams one model response. A seam over Koog's [PromptExecutor] so the loop is testable without a network. */
 fun interface ModelStreamer {
@@ -93,7 +88,8 @@ class KoogConversation(
         val descriptors = specs.map(KoogToolSchemas::toDescriptor)
         val specsByName = specs.associateBy { it.name }
         val system = systemPrompt()
-        val overheadChars = system.length.toLong() + specs.sumOf { it.name.length + it.description.length + it.inputSchema.toString().length }
+        val overheadChars =
+            system.length.toLong() + specs.sumOf { it.name.length + it.description.length + it.inputSchema.toString().length }
 
         var inputTokens = 0L
         var outputTokens = 0L
@@ -121,13 +117,21 @@ class KoogConversation(
             assistant.metaInfo.outputTokensCount?.let { outputTokens += it; sawUsage = true }
             // What the next request has to carry: this request's prompt plus its answer. Overwritten every step
             // (also with null) so a stale figure from an earlier step is never shown as current.
-            contextUsed = assistant.metaInfo.inputTokensCount?.let { it.toLong() + (assistant.metaInfo.outputTokensCount ?: 0) }
+            contextUsed =
+                assistant.metaInfo.inputTokensCount?.let { it.toLong() + (assistant.metaInfo.outputTokensCount ?: 0) }
             lastContextUsed = contextUsed
 
             val calls = assistant.parts.filterIsInstance<MessagePart.Tool.Call>()
             if (calls.isEmpty()) {
                 history += assistant
-                return result(stopReasonFor(assistant.finishReason), sawUsage, inputTokens, outputTokens, contextUsed, onUpdate)
+                return result(
+                    stopReasonFor(assistant.finishReason),
+                    sawUsage,
+                    inputTokens,
+                    outputTokens,
+                    contextUsed,
+                    onUpdate
+                )
             }
             // The per-turn limit also caps one response with many parallel calls: only the remaining budget runs,
             // and every other call still gets a result so the history stays valid for the provider.
@@ -237,7 +241,7 @@ class KoogConversation(
                 null, false, null, call.args.takeIf { it.isNotBlank() }, kind,
             )
         )
-        return MessagePart.Tool.Result(id = call.id, tool = call.tool, output = outcome.text, isError = outcome.isError)
+        return MessagePart.Tool.Result(id = callId, tool = call.tool, output = outcome.text, isError = outcome.isError)
     }
 
     private fun result(
@@ -298,7 +302,14 @@ class KoogConversation(
                     )
 
                     is StreamFrame.TextComplete -> MessagePart.Text(frame.text)
-                    is StreamFrame.ToolCallComplete -> MessagePart.Tool.Call(id = frame.id, tool = frame.name, args = frame.content)
+                    is StreamFrame.ToolCallComplete -> MessagePart.Tool.Call(
+                        // Copilot rejects the whole request ("tool call must have a tool call ID and function name")
+                        // if any call in the history lacks an id or name, so never let a blank one in.
+                        id = frame.id?.takeIf { it.isNotBlank() } ?: ("koog-" + UUID.randomUUID()),
+                        tool = frame.name.ifBlank { "unknown_tool" },
+                        args = frame.content,
+                    )
+
                     is StreamFrame.End -> {
                         end = frame
                         null
@@ -371,6 +382,7 @@ object PromptText {
                     flushText()
                     parts += image
                 }
+
                 is MessagePart.Text -> text += image.text
                 else -> describe(block)?.let { text += it }
             }
