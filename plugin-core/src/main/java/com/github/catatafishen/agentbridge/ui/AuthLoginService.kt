@@ -139,6 +139,13 @@ class AuthLoginService(private val project: Project) {
         onAuthComplete: () -> Unit,
         onFallback: () -> Unit,
     ): Process? {
+        if (!activeProfileSupportsCopilotStyleLogin()) {
+            // Never run '<binary> login' for agents that don't have that command (e.g. OpenCode
+            // would treat 'login' as a project directory). Route to the safe fallback instead.
+            LOG.warn("Inline auth requested for a profile without OAuth sign-in support; not running 'login'")
+            onFallback()
+            return null
+        }
         val cmd = resolveAuthCommand()
         val process: Process
         try {
@@ -210,7 +217,32 @@ class AuthLoginService(private val project: Project) {
     ): AuthCommandBuilder.ParseResult =
         AuthCommandBuilder.parseDeviceCode(line, existingCode, existingUrl)
 
+    /**
+     * The inline/`<binary> login` flow is Copilot-specific. Other agents either define their own
+     * [com.github.catatafishen.agentbridge.services.AgentProfile.terminalSignInCommand] or must be
+     * signed in outside the plugin.
+     */
+    private fun activeProfileSupportsCopilotStyleLogin(): Boolean =
+        ActiveAgentManager.getInstance(project).activeProfile.isSupportsOAuthSignIn
+
     fun startCopilotLogin() {
+        if (!activeProfileSupportsCopilotStyleLogin()) {
+            val profile = ActiveAgentManager.getInstance(project).activeProfile
+            val terminalCmd = profile.terminalSignInCommand
+            if (terminalCmd != null) {
+                startTerminalSignIn(terminalCmd)
+            } else {
+                LOG.warn("Sign-in requested for ${profile.displayName}, which has no sign-in command")
+                Messages.showInfoMessage(
+                    project,
+                    "${profile.displayName} cannot be signed in from the plugin.\n\n" +
+                        "Authenticate using the ${profile.displayName} CLI in a terminal " +
+                        "(see its documentation), then click Retry.",
+                    "Sign In",
+                )
+            }
+            return
+        }
         val command = resolveAuthCommand().joinToString(" ")
         val envVars = getAuthEnvironmentVars()
         LOG.info("AuthLoginService: starting copilot login with command='$command', envVars=$envVars")
