@@ -756,6 +756,8 @@ public abstract class FileTool extends Tool {
             return;
         }
 
+        preparseForNavigation(project, pathStr);
+
         EdtUtil.invokeLater(() -> {
             AtomicBoolean nav = NAVIGATING.computeIfAbsent(project, k -> new AtomicBoolean(false));
             if (!nav.compareAndSet(false, true)) {
@@ -788,6 +790,29 @@ public abstract class FileTool extends Tool {
                 nav.set(false);
             }
         });
+    }
+
+    /**
+     * Parses the file's PSI off the EDT so that opening it does not have to. Restoring editor state for a
+     * freshly opened file (e.g. Markdown with preview) logs "File should be parsed when changing editor state"
+     * and can freeze the UI when the PSI is still unparsed on the EDT. No-op when called on the EDT.
+     */
+    private static void preparseForNavigation(Project project, String pathStr) {
+        if (ApplicationManager.getApplication().isDispatchThread()) return;
+        try {
+            ApplicationManager.getApplication().runReadAction(() -> {
+                VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
+                if (vf == null || vf.isDirectory()) return;
+                PsiFile psi = PsiManager.getInstance(project).findFile(vf);
+                if (psi != null) {
+                    psi.getNode(); // forces the parse
+                }
+            });
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.debug("Pre-parse before navigation failed: " + pathStr, e);
+        }
     }
 
     /**
