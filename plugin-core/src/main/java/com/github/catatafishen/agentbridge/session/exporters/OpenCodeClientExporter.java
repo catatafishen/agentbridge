@@ -25,12 +25,23 @@ import java.util.List;
 /**
  * Exports {@link EntryData} list into OpenCode's native SQLite format.
  *
- * <p>OpenCode stores sessions in {@code opencode.db} with tables managed by drizzle
- * migrations: {@code project}, {@code session}, {@code message}, and {@code part}.
- * This exporter creates records matching the real schema so that OpenCode can
- * resume the conversation via {@code resumeSessionId} in ACP {@code session/new}.</p>
+ * <p>OpenCode stores sessions in {@code opencode.db} with drizzle-managed tables. This
+ * exporter detects the installed schema generation and writes rows only in a shape that
+ * generation actually reads, so {@code session/resume} can pick the conversation up:</p>
  *
- * <p><b>Key schema details (OpenCode 1.2.x):</b></p>
+ * <p><b>OpenCode 2.x ({@code session_v2} table present):</b></p>
+ * <ul>
+ *   <li>{@code session_v2} requires {@code project_id}, {@code slug}, {@code directory},
+ *       {@code version}, {@code time_created}, {@code time_updated}</li>
+ *   <li>Messages live in {@code session_message} ({@code type}/{@code seq} columns, parts
+ *       embedded as a {@code content} array inside {@code data}); the legacy
+ *       {@code message}/{@code part} tables are not read for new sessions</li>
+ *   <li>{@code event_sequence} must carry the last used {@code seq} for the session</li>
+ *   <li>Session lookup by id does not scope by project; the {@code directory} column must
+ *       match the cwd the ACP client sends with the resume request</li>
+ * </ul>
+ *
+ * <p><b>OpenCode 1.2.x (legacy {@code session} table present):</b></p>
  * <ul>
  *   <li>{@code session} requires {@code project_id} (FK→project), {@code slug}, {@code version}</li>
  *   <li>{@code message} requires {@code time_updated}</li>
@@ -38,6 +49,10 @@ import java.util.List;
  *   <li>IDs use prefixed format: {@code ses_}, {@code msg_}, {@code prt_}</li>
  *   <li>{@code project.id} = SHA-1 hex of the worktree path</li>
  * </ul>
+ *
+ * <p>When neither schema is present the database has not been initialized by OpenCode yet;
+ * the export is skipped rather than fabricating tables, because a v2 process migrating a
+ * database later chokes on unexpected table shapes.</p>
  */
 public final class OpenCodeClientExporter {
 
@@ -117,6 +132,14 @@ public final class OpenCodeClientExporter {
         String sessionId = generateId("ses");
 
         try (Connection conn = openSqlite(dbPath)) {
+            if (tableExists(conn, "session_v2")) {
+                return exportSessionV2(conn, sessionId, entries, projectDir);
+            }
+            if (!tableExists(conn, "session")) {
+                LOG.warn("OpenCode database at " + dbPath + " has no initialized schema; skipping raw session export");
+                return null;
+            }
+
             ensureTables(conn);
 
             long now = System.currentTimeMillis();
@@ -499,6 +522,389 @@ public final class OpenCodeClientExporter {
         }
     }
 
+    // ── OpenCode 2.x export (session_v2 schema) ──────────────────────────────
+
+    /**
+     * Returns {@code true} when the database contains the given table. Used to detect
+     * which OpenCode schema generation owns the database before writing any rows.
+     */
+    static boolean tableExists(@NotNull Connection conn, @NotNull String table) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /**
+     * Writes the conversation against the OpenCode 2.x schema: one {@code session_v2} row,
+     * {@code session_message} rows with parts embedded in a {@code content} array, and an
+     * {@code event_sequence} watermark matching the last used {@code seq}. Project rows are
+     * never created here; v2 resolves and persists projects itself on startup.
+     */
+    @Nullable
+    private static String exportSessionV2(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull List<EntryData> entries,
+        @NotNull String projectDir) throws SQLException {
+
+        long now = System.currentTimeMillis();
+        boolean previousAutoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try {
+            String projectId = resolveProjectIdV2(conn, projectDir);
+            insertSessionV2(conn, sessionId, projectId, projectDir, latestSessionVersionV2(conn), now);
+
+            int messageCount = processEntriesV2(conn, sessionId, entries, now);
+            upsertEventSequence(conn, sessionId, Math.max(messageCount - 1, 0));
+
+            conn.commit();
+            LOG.info("Exported session to OpenCode 2.x storage: " + sessionId
+                + " (project=" + projectId + ", messages=" + messageCount + ")");
+            return sessionId;
+        } catch (SQLException | RuntimeException e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(previousAutoCommit);
+        }
+    }
+
+    /**
+     * Finds the project id v2 associates with this directory: the row whose worktree is the
+     * enclosing git repository root, else the row for the directory itself, else the literal
+     * {@code global} id v2 assigns to sessions with no resolvable project.
+     */
+    @NotNull
+    static String resolveProjectIdV2(@NotNull Connection conn, @NotNull String projectDir) throws SQLException {
+        Path gitRoot = findGitRoot(projectDir);
+        if (gitRoot != null) {
+            String id = findProjectByWorktree(conn, gitRoot.toString());
+            if (id != null) return id;
+        }
+        String id = findProjectByWorktree(conn, Path.of(projectDir).toString());
+        return id != null ? id : "global";
+    }
+
+    /**
+     * Walks up from {@code projectDir} looking for a {@code .git} entry, mirroring how v2
+     * resolves a directory to its enclosing repository. Returns {@code null} outside any repo.
+     */
+    @Nullable
+    static Path findGitRoot(@NotNull String projectDir) {
+        Path dir = Path.of(projectDir).toAbsolutePath().normalize();
+        while (dir != null) {
+            if (Files.exists(dir.resolve(".git"))) return dir;
+            dir = dir.getParent();
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String findProjectByWorktree(@NotNull Connection conn, @NotNull String worktree) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM project WHERE worktree = ?")) {
+            ps.setString(1, worktree.replace('\\', '/'));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
+    /**
+     * Copies the version string from the most recent v2 session so exported rows are
+     * indistinguishable from native ones; v2 treats the value as informational only.
+     */
+    @NotNull
+    private static String latestSessionVersionV2(@NotNull Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT version FROM session_v2 ORDER BY time_created DESC LIMIT 1")) {
+            String version = rs.next() ? rs.getString(1) : null;
+            return version != null ? version : "2.0.0";
+        }
+    }
+
+    /**
+     * Inserts the {@code session_v2} row. {@code directory} is normalized to forward slashes
+     * because v2 compares it against its own normalized cwd form on every lookup, and
+     * {@code path} is the session directory relative to the git root (empty at the root
+     * itself), matching how v2 populates the column.
+     */
+    private static void insertSessionV2(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String projectId,
+        @NotNull String projectDir,
+        @NotNull String version,
+        long now) throws SQLException {
+        Path gitRoot = findGitRoot(projectDir);
+        String relativePath = "";
+        if (gitRoot != null) {
+            String relative = gitRoot.toAbsolutePath().normalize()
+                .relativize(Path.of(projectDir).toAbsolutePath().normalize()).toString().replace('\\', '/');
+            if (!relative.isEmpty()) relativePath = relative;
+        }
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO session_v2 (id, project_id, slug, directory, path, title, version, "
+                + "time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setString(1, sessionId);
+            ps.setString(2, projectId);
+            ps.setString(3, generateSlug());
+            ps.setString(4, projectDir.replace('\\', '/'));
+            ps.setString(5, relativePath);
+            ps.setString(6, IMPORTED_TITLE);
+            ps.setString(7, version);
+            ps.setLong(8, now);
+            ps.setLong(9, now);
+            ps.executeUpdate();
+        }
+    }
+
+    /**
+     * v2 message writer. Same user/assistant turn pairing as the legacy path, but each
+     * message is a single {@code session_message} row whose {@code data} carries the role
+     * payload with parts embedded in a {@code content} array. {@code seq} starts at 0 and
+     * increments once per row, matching v2's own v1-to-v2 migration.
+     */
+    private static int processEntriesV2(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull List<EntryData> entries,
+        long startTime) throws SQLException {
+
+        long prevTime = startTime;
+        int seq = 0;
+        int messageCount = 0;
+
+        List<JsonObject> pendingContent = null;
+        String pendingAgent = null;
+        String pendingModel = null;
+
+        for (EntryData entry : entries) {
+            switch (entry) {
+                case EntryData.Prompt prompt -> {
+                    if (pendingContent != null && !pendingContent.isEmpty()) {
+                        prevTime++;
+                        applyForeignAgentPrefix(pendingContent, pendingAgent);
+                        insertSessionMessage(conn, sessionId, "assistant", seq++,
+                            buildV2AssistantData(pendingAgent, pendingModel, pendingContent, prevTime), prevTime);
+                        pendingContent = null;
+                        pendingAgent = null;
+                        pendingModel = null;
+                        messageCount++;
+                    }
+                    prevTime++;
+                    insertSessionMessage(conn, sessionId, "user", seq++,
+                        buildV2UserData(prompt.getText(), prevTime), prevTime);
+                    messageCount++;
+                }
+                case EntryData.Text text -> {
+                    JsonObject content = new JsonObject();
+                    content.addProperty("type", "text");
+                    content.addProperty("text", text.getRaw());
+                    if (pendingContent == null) {
+                        pendingContent = new ArrayList<>();
+                        pendingAgent = text.getAgent();
+                        pendingModel = text.getModel();
+                    }
+                    pendingContent.add(content);
+                }
+                case EntryData.Thinking thinking -> {
+                    if (pendingContent == null) {
+                        pendingContent = new ArrayList<>();
+                        pendingAgent = thinking.getAgent();
+                        pendingModel = thinking.getModel();
+                    }
+                    pendingContent.add(buildV2ReasoningContent(thinking.getRaw(), prevTime));
+                }
+                case EntryData.ToolCall toolCall -> {
+                    if (pendingContent == null) {
+                        pendingContent = new ArrayList<>();
+                        pendingAgent = toolCall.getAgent();
+                        pendingModel = toolCall.getModel();
+                    }
+                    pendingContent.add(buildV2ToolContent(toolCall, prevTime));
+                }
+                case EntryData.SubAgent subAgent -> {
+                    JsonObject content = buildSubAgentPart(subAgent);
+                    if (pendingContent == null) {
+                        pendingContent = new ArrayList<>();
+                        pendingAgent = subAgent.getAgent();
+                        pendingModel = subAgent.getModel();
+                    }
+                    pendingContent.add(content);
+                }
+                default -> {
+                    // Skip: Status, TurnStats, ContextFiles, SessionSeparator
+                }
+            }
+        }
+
+        if (pendingContent != null && !pendingContent.isEmpty()) {
+            prevTime++;
+            applyForeignAgentPrefix(pendingContent, pendingAgent);
+            insertSessionMessage(conn, sessionId, "assistant", seq++,
+                buildV2AssistantData(pendingAgent, pendingModel, pendingContent, prevTime), prevTime);
+            messageCount++;
+        }
+
+        return messageCount;
+    }
+
+    private static void insertSessionMessage(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String type,
+        int seq,
+        @NotNull JsonObject data,
+        long time) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setString(1, generateId("msg"));
+            ps.setString(2, sessionId);
+            ps.setString(3, type);
+            ps.setInt(4, seq);
+            ps.setLong(5, time);
+            ps.setLong(6, time);
+            ps.setString(7, GSON.toJson(data));
+            ps.executeUpdate();
+        }
+    }
+
+    /**
+     * Records the last used {@code seq} for the session. v2 reads this watermark to know
+     * which events a session has already consumed, so it must not lag behind the rows we
+     * just wrote.
+     */
+    private static void upsertEventSequence(@NotNull Connection conn, @NotNull String sessionId, int lastSeq) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO event_sequence (aggregate_id, seq, owner_id) VALUES (?, ?, NULL) "
+                + "ON CONFLICT(aggregate_id) DO UPDATE SET seq = excluded.seq, owner_id = NULL")) {
+            ps.setString(1, sessionId);
+            ps.setInt(2, lastSeq);
+            ps.executeUpdate();
+        }
+    }
+
+    /** v2 user payload: plain text plus empty attachment arrays, mirroring native rows. */
+    @NotNull
+    static JsonObject buildV2UserData(@NotNull String text, long time) {
+        JsonObject data = new JsonObject();
+        data.addProperty("text", text);
+        data.add("files", new com.google.gson.JsonArray());
+        data.add("agents", new com.google.gson.JsonArray());
+        JsonObject timeObj = new JsonObject();
+        timeObj.addProperty("created", time);
+        data.add("time", timeObj);
+        return data;
+    }
+
+    /** v2 assistant payload: model info and token counters at message level, parts inside {@code content}. */
+    @NotNull
+    static JsonObject buildV2AssistantData(@Nullable String agent, @Nullable String model, @NotNull List<JsonObject> content, long time) {
+        String modelId = (model != null && !model.isEmpty()) ? model : "imported";
+        String agentName = (agent != null && !agent.isEmpty()) ? agent : "build";
+
+        JsonObject data = new JsonObject();
+        data.addProperty("agent", agentName);
+        JsonObject modelObj = new JsonObject();
+        modelObj.addProperty("providerID", "imported");
+        modelObj.addProperty("id", modelId);
+        modelObj.addProperty("variant", "default");
+        data.add("model", modelObj);
+        com.google.gson.JsonArray contentArray = new com.google.gson.JsonArray();
+        content.forEach(contentArray::add);
+        data.add("content", contentArray);
+        data.addProperty("cost", 0);
+        JsonObject cache = new JsonObject();
+        cache.addProperty("read", 0);
+        cache.addProperty("write", 0);
+        JsonObject tokens = new JsonObject();
+        tokens.addProperty(FIELD_INPUT, 0);
+        tokens.addProperty("output", 0);
+        tokens.addProperty("reasoning", 0);
+        tokens.add("cache", cache);
+        data.add("tokens", tokens);
+        JsonObject timeObj = new JsonObject();
+        timeObj.addProperty("created", time);
+        timeObj.addProperty("completed", time);
+        data.add("time", timeObj);
+        return data;
+    }
+
+    /** v2 reasoning entry; timestamps use the {@code created}/{@code completed} pair. */
+    @NotNull
+    static JsonObject buildV2ReasoningContent(@NotNull String text, long time) {
+        JsonObject content = new JsonObject();
+        content.addProperty("type", "reasoning");
+        content.addProperty("text", text);
+        JsonObject timeObj = new JsonObject();
+        timeObj.addProperty("created", time);
+        timeObj.addProperty("completed", time);
+        content.add("time", timeObj);
+        return content;
+    }
+
+    /**
+     * v2 tool entry. A completed call carries its output as a text entry inside
+     * {@code state.content}; an unfinished one is recorded as interrupted, the same shape
+     * v2's own migration produces for calls it cannot replay.
+     */
+    @NotNull
+    static JsonObject buildV2ToolContent(@NotNull EntryData.ToolCall toolCall, long time) {
+        JsonObject result = new JsonObject();
+        result.addProperty("type", "tool");
+        result.addProperty("id", toolCall.getEntryId());
+        result.addProperty("name", ExportUtils.exportMcpToolName(toolCall, ExportUtils.OPENCODE_MCP_PREFIX));
+
+        JsonObject state = new JsonObject();
+        state.add(FIELD_INPUT, parseToolInput(toolCall.getArguments()));
+        if (toolCall.getResult() != null) {
+            state.addProperty("status", "completed");
+            com.google.gson.JsonArray outputContent = new com.google.gson.JsonArray();
+            JsonObject textEntry = new JsonObject();
+            textEntry.addProperty("type", "text");
+            textEntry.addProperty("text", toolCall.getResult());
+            outputContent.add(textEntry);
+            state.add("content", outputContent);
+        } else {
+            state.addProperty("status", "error");
+            JsonObject error = new JsonObject();
+            error.addProperty("type", "tool.interrupted");
+            error.addProperty("message", "Tool execution was interrupted before export");
+            state.add("error", error);
+        }
+        result.add("state", state);
+
+        JsonObject timeObj = new JsonObject();
+        timeObj.addProperty("created", time);
+        if (toolCall.getResult() != null) timeObj.addProperty("completed", time);
+        result.add("time", timeObj);
+        return result;
+    }
+
+    /**
+     * Parses tool call arguments into the JSON object v2 expects. Non-object or unparsable
+     * payloads are wrapped in a {@code raw} key so the value still decodes as an object.
+     */
+    @NotNull
+    static JsonObject parseToolInput(@Nullable String argsStr) {
+        if (argsStr != null && !argsStr.isBlank()) {
+            try {
+                JsonElement parsed = com.google.gson.JsonParser.parseString(argsStr);
+                if (parsed.isJsonObject()) return parsed.getAsJsonObject();
+            } catch (Exception ignored) {
+                // fall through to the raw wrapper below
+            }
+        }
+        JsonObject wrapper = new JsonObject();
+        if (argsStr != null && !argsStr.isBlank()) wrapper.addProperty("raw", argsStr);
+        return wrapper;
+    }
+
     // ── Message insertion ─────────────────────────────────────────────────────
 
     /**
@@ -665,25 +1071,7 @@ public final class OpenCodeClientExporter {
         stateObj.addProperty("status", completed ? "completed" : "running");
 
         // OpenCode Zod schema requires input: z.record(z.string(), z.any()) — must be a JSON object.
-        String argsStr = toolCall.getArguments();
-        if (argsStr != null && !argsStr.isBlank()) {
-            try {
-                JsonElement parsed = com.google.gson.JsonParser.parseString(argsStr);
-                if (parsed.isJsonObject()) {
-                    stateObj.add(FIELD_INPUT, parsed);
-                } else {
-                    JsonObject wrapper = new JsonObject();
-                    wrapper.addProperty("raw", argsStr);
-                    stateObj.add(FIELD_INPUT, wrapper);
-                }
-            } catch (Exception e) {
-                JsonObject wrapper = new JsonObject();
-                wrapper.addProperty("raw", argsStr);
-                stateObj.add(FIELD_INPUT, wrapper);
-            }
-        } else {
-            stateObj.add(FIELD_INPUT, new JsonObject());
-        }
+        stateObj.add(FIELD_INPUT, parseToolInput(toolCall.getArguments()));
 
         if (completed) {
             stateObj.addProperty("output", toolCall.getResult());

@@ -1,12 +1,20 @@
 package com.github.catatafishen.agentbridge.session.exporters;
 
 import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -16,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -548,6 +557,336 @@ class OpenCodeClientExporterTest {
         assertEquals("text", parts.get(0).get("type").getAsString());
         assertTrue(parts.get(0).get("text").getAsString().contains("copilot"));
         assertEquals("tool", parts.get(1).get("type").getAsString());
+    }
+
+    // ── OpenCode 2.x payload builders ────────────────────────────────────────
+
+    @Test
+    void buildV2UserData_hasTextAttachmentsAndTime() {
+        JsonObject data = OpenCodeClientExporter.buildV2UserData("hello", 1000L);
+        assertEquals("hello", data.get("text").getAsString());
+        assertEquals(0, data.getAsJsonArray("files").size());
+        assertEquals(0, data.getAsJsonArray("agents").size());
+        assertEquals(1000L, data.getAsJsonObject("time").get("created").getAsLong());
+        assertFalse(data.has("role"));
+        assertFalse(data.has("agent"));
+        assertFalse(data.has("model"));
+    }
+
+    @Test
+    void buildV2AssistantData_hasModelContentCostTokens() {
+        JsonObject textEntry = new JsonObject();
+        textEntry.addProperty("type", "text");
+        textEntry.addProperty("text", "answer");
+        JsonObject data = OpenCodeClientExporter.buildV2AssistantData("coder", "gpt-4", List.of(textEntry), 2000L);
+        assertEquals("coder", data.get("agent").getAsString());
+        JsonObject model = data.getAsJsonObject("model");
+        assertEquals("imported", model.get("providerID").getAsString());
+        assertEquals("gpt-4", model.get("id").getAsString());
+        assertEquals("default", model.get("variant").getAsString());
+        assertEquals(1, data.getAsJsonArray("content").size());
+        assertEquals(0, data.get("cost").getAsInt());
+        JsonObject tokens = data.getAsJsonObject("tokens");
+        assertEquals(0, tokens.get("input").getAsInt());
+        assertEquals(0, tokens.getAsJsonObject("cache").get("read").getAsInt());
+        assertEquals(2000L, data.getAsJsonObject("time").get("created").getAsLong());
+        assertEquals(2000L, data.getAsJsonObject("time").get("completed").getAsLong());
+        assertFalse(data.has("role"));
+        assertFalse(data.has("path"));
+        assertFalse(data.has("parentID"));
+    }
+
+    @Test
+    void buildV2AssistantData_nullAgentAndModel_useDefaults() {
+        JsonObject data = OpenCodeClientExporter.buildV2AssistantData(null, null, List.of(), 1L);
+        assertEquals("build", data.get("agent").getAsString());
+        assertEquals("imported", data.getAsJsonObject("model").get("id").getAsString());
+    }
+
+    @Test
+    void buildV2ReasoningContent_usesCreatedCompletedTimePair() {
+        JsonObject content = OpenCodeClientExporter.buildV2ReasoningContent("thinking", 3000L);
+        assertEquals("reasoning", content.get("type").getAsString());
+        assertEquals("thinking", content.get("text").getAsString());
+        assertEquals(3000L, content.getAsJsonObject("time").get("created").getAsLong());
+        assertEquals(3000L, content.getAsJsonObject("time").get("completed").getAsLong());
+        assertFalse(content.getAsJsonObject("time").has("start"));
+    }
+
+    @Test
+    void buildV2ToolContent_completedCall_outputInsideStateContent() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("read_file", "{\"path\":\"a.txt\"}");
+        tc.setResult("file contents");
+        JsonObject content = OpenCodeClientExporter.buildV2ToolContent(tc, 5000L);
+        assertEquals("tool", content.get("type").getAsString());
+        assertEquals("read_file", content.get("name").getAsString());
+        JsonObject state = content.getAsJsonObject("state");
+        assertEquals("completed", state.get("status").getAsString());
+        assertEquals("a.txt", state.getAsJsonObject("input").get("path").getAsString());
+        assertEquals("file contents", state.getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString());
+        assertEquals(5000L, content.getAsJsonObject("time").get("created").getAsLong());
+        assertEquals(5000L, content.getAsJsonObject("time").get("completed").getAsLong());
+        assertFalse(state.has("output"));
+    }
+
+    @Test
+    void buildV2ToolContent_unfinishedCall_recordedAsInterrupted() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("bash");
+        JsonObject content = OpenCodeClientExporter.buildV2ToolContent(tc, 3000L);
+        JsonObject state = content.getAsJsonObject("state");
+        assertEquals("error", state.get("status").getAsString());
+        assertEquals("tool.interrupted", state.getAsJsonObject("error").get("type").getAsString());
+        assertFalse(state.has("content"));
+        assertFalse(content.getAsJsonObject("time").has("completed"));
+    }
+
+    // ── parseToolInput ───────────────────────────────────────────────────────
+
+    @Test
+    void parseToolInput_jsonObject_returnedAsIs() {
+        JsonObject input = OpenCodeClientExporter.parseToolInput("{\"path\":\"a.txt\"}");
+        assertEquals("a.txt", input.get("path").getAsString());
+    }
+
+    @Test
+    void parseToolInput_nonJson_wrappedInRaw() {
+        JsonObject input = OpenCodeClientExporter.parseToolInput("not valid json");
+        assertEquals("not valid json", input.get("raw").getAsString());
+    }
+
+    @Test
+    void parseToolInput_nullAndBlank_emptyObject() {
+        assertEquals(0, OpenCodeClientExporter.parseToolInput(null).size());
+        assertEquals(0, OpenCodeClientExporter.parseToolInput("   ").size());
+    }
+
+    // ── findGitRoot ──────────────────────────────────────────────────────────
+
+    @Test
+    void findGitRoot_walksUpToDotGit() throws Exception {
+        Path root = Files.createTempDirectory("oc-gitroot-test");
+        try {
+            Files.createDirectories(root.resolve(".git"));
+            Path nested = Files.createDirectories(root.resolve("sub").resolve("dir"));
+            assertEquals(root.toAbsolutePath().normalize(), OpenCodeClientExporter.findGitRoot(nested.toString()).toAbsolutePath().normalize());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    // ── exportSession against real SQLite databases ──────────────────────────
+
+    @Test
+    void exportSession_v2Schema_writesSessionV2AndSessionMessages() throws Exception {
+        Path dir = Files.createTempDirectory("oc-v2-export-test");
+        Path dbPath = dir.resolve("opencode.db");
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
+            createV2Schema(conn);
+            insertProjectRow(conn, "proj_test", dir.toString());
+        }
+
+        List<EntryData> entries = new ArrayList<>();
+        entries.add(new EntryData.Prompt("first question"));
+        entries.add(new EntryData.Text("first answer"));
+        EntryData.ToolCall tc = new EntryData.ToolCall("read_file", "{\"path\":\"a.txt\"}");
+        tc.setResult("contents");
+        entries.add(tc);
+        entries.add(new EntryData.Text("second answer"));
+
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, dir.toString(), 0);
+
+        assertNotNull(sessionId);
+        assertTrue(sessionId.startsWith("ses_"));
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+             Statement stmt = conn.createStatement()) {
+            try (ResultSet rs = stmt.executeQuery(
+                "SELECT project_id, directory, version, title FROM session_v2 WHERE id = '" + sessionId + "'")) {
+                assertTrue(rs.next());
+                assertEquals("proj_test", rs.getString(1));
+                assertEquals(dir.toString().replace('\\', '/'), rs.getString(2));
+                assertEquals("2.0.0", rs.getString(3));
+                assertEquals("AgentBridge Session", rs.getString(4));
+            }
+            try (ResultSet rs = stmt.executeQuery(
+                "SELECT type, seq, data FROM session_message WHERE session_id = '" + sessionId + "' ORDER BY seq")) {
+                assertTrue(rs.next());
+                assertEquals("user", rs.getString(1));
+                assertEquals(0, rs.getInt(2));
+                JsonObject userData = JsonParser.parseString(rs.getString(3)).getAsJsonObject();
+                assertEquals("first question", userData.get("text").getAsString());
+                assertTrue(rs.next());
+                assertEquals("assistant", rs.getString(1));
+                assertEquals(1, rs.getInt(2));
+                JsonObject assistantData = JsonParser.parseString(rs.getString(3)).getAsJsonObject();
+                JsonArray content = assistantData.getAsJsonArray("content");
+                assertEquals(3, content.size(), "text, tool, and trailing text share one assistant message");
+                assertEquals("text", content.get(0).getAsJsonObject().get("type").getAsString());
+                assertEquals("first answer", content.get(0).getAsJsonObject().get("text").getAsString());
+                JsonObject toolEntry = content.get(1).getAsJsonObject();
+                assertEquals("tool", toolEntry.get("type").getAsString());
+                assertEquals("a.txt", toolEntry.getAsJsonObject("state").getAsJsonObject("input").get("path").getAsString());
+                assertEquals("text", content.get(2).getAsJsonObject().get("type").getAsString());
+                assertEquals("second answer", content.get(2).getAsJsonObject().get("text").getAsString());
+                assertFalse(rs.next());
+            }
+            try (ResultSet rs = stmt.executeQuery(
+                "SELECT seq FROM event_sequence WHERE aggregate_id = '" + sessionId + "'")) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt(1));
+            }
+            try (ResultSet rs = stmt.executeQuery(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part')")) {
+                assertEquals(0, rs.getInt(1), "legacy tables must not be created against a v2 database");
+            }
+        }
+    }
+
+    @Test
+    void exportSession_v2Schema_pathIsSubdirRelativeToGitRoot() throws Exception {
+        Path root = Files.createTempDirectory("oc-v2-path-test");
+        Path dbPath = root.resolve("opencode.db");
+        Path sub = Files.createDirectories(root.resolve("coreapp"));
+        try {
+            Files.createDirectories(root.resolve(".git"));
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
+                createV2Schema(conn);
+                insertProjectRow(conn, "proj_git", root.toString());
+            }
+
+            List<EntryData> entries = new ArrayList<>();
+            entries.add(new EntryData.Prompt("q"));
+            entries.add(new EntryData.Text("a"));
+
+            String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, sub.toString(), 0);
+
+            assertNotNull(sessionId);
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+                 Statement stmt = conn.createStatement()) {
+                try (ResultSet rs = stmt.executeQuery(
+                    "SELECT path, project_id, directory FROM session_v2 WHERE id = '" + sessionId + "'")) {
+                    assertTrue(rs.next());
+                    assertEquals("coreapp", rs.getString(1), "path must be the subdir relative to the git root, not the up-walk");
+                    assertEquals("proj_git", rs.getString(2), "project must resolve to the git root worktree");
+                    assertEquals(sub.toString().replace('\\', '/'), rs.getString(3).replace('\\', '/'));
+                }
+            }
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    void exportSession_v2Schema_noProjectRow_fallsBackToGlobal() throws Exception {
+        Path dir = Files.createTempDirectory("oc-v2-global-test");
+        Path dbPath = dir.resolve("opencode.db");
+        try {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
+                createV2Schema(conn);
+            }
+
+            List<EntryData> entries = new ArrayList<>();
+            entries.add(new EntryData.Prompt("q"));
+            entries.add(new EntryData.Text("a"));
+
+            String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, dir.toString(), 0);
+
+            assertNotNull(sessionId);
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT project_id FROM session_v2 WHERE id = '" + sessionId + "'")) {
+                assertTrue(rs.next());
+                assertEquals("global", rs.getString(1), "no matching project row must fall back to the global id");
+            }
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    void exportSession_legacySchema_stillUsesLegacyTables() throws Exception {
+        Path dir = Files.createTempDirectory("oc-v1-export-test");
+        Path dbPath = dir.resolve("opencode.db");
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT, "
+                + "slug TEXT NOT NULL, directory TEXT NOT NULL, title TEXT NOT NULL, version TEXT NOT NULL, "
+                + "share_url TEXT, summary_additions INTEGER, summary_deletions INTEGER, summary_files INTEGER, "
+                + "summary_diffs TEXT, revert TEXT, permission TEXT, time_created INTEGER NOT NULL, "
+                + "time_updated INTEGER NOT NULL, time_compacting INTEGER, time_archived INTEGER, workspace_id TEXT)");
+        }
+
+        List<EntryData> entries = new ArrayList<>();
+        entries.add(new EntryData.Prompt("q"));
+        entries.add(new EntryData.Text("a"));
+
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, dir.toString(), 0);
+
+        assertNotNull(sessionId);
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT count(*) FROM session WHERE id = '" + sessionId + "'")) {
+            assertEquals(1, rs.getInt(1), "legacy path must keep writing the legacy session table");
+        }
+    }
+
+    @Test
+    void exportSession_uninitializedDatabase_skipsExport() throws Exception {
+        Path dir = Files.createTempDirectory("oc-fresh-export-test");
+        Path dbPath = dir.resolve("opencode.db");
+
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(new EntryData.Prompt("q"), new EntryData.Text("a")), dbPath, dir.toString(), 0);
+
+        assertNull(sessionId);
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                 "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'session_v2')")) {
+            assertEquals(0, rs.getInt(1), "no schema may be fabricated into an uninitialized database");
+        }
+    }
+
+    private static void createV2Schema(Connection conn) throws Exception {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL, vcs TEXT, "
+                + "time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, sandboxes TEXT NOT NULL)");
+            stmt.execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, "
+                + "workspace_id TEXT, parent_id TEXT, fork_session_id TEXT, fork_boundary TEXT, slug TEXT NOT NULL, "
+                + "directory TEXT NOT NULL, path TEXT, title TEXT, version TEXT NOT NULL, share_url TEXT, "
+                + "summary_additions INTEGER, summary_deletions INTEGER, summary_files INTEGER, summary_diffs TEXT, "
+                + "metadata TEXT, cost REAL DEFAULT 0 NOT NULL, tokens_input INTEGER DEFAULT 0 NOT NULL, "
+                + "tokens_output INTEGER DEFAULT 0 NOT NULL, tokens_reasoning INTEGER DEFAULT 0 NOT NULL, "
+                + "tokens_cache_read INTEGER DEFAULT 0 NOT NULL, tokens_cache_write INTEGER DEFAULT 0 NOT NULL, "
+                + "revert TEXT, permission TEXT, agent TEXT, model TEXT, time_created INTEGER NOT NULL, "
+                + "time_updated INTEGER NOT NULL, time_compacting INTEGER, time_archived INTEGER)");
+            stmt.execute("CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, "
+                + "type TEXT NOT NULL, seq INTEGER NOT NULL, time_created INTEGER NOT NULL, "
+                + "time_updated INTEGER NOT NULL, data TEXT NOT NULL)");
+            stmt.execute("CREATE TABLE event_sequence (aggregate_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, owner_id TEXT)");
+        }
+    }
+
+    private static void insertProjectRow(Connection conn, String id, String worktree) throws Exception {
+        try (java.sql.PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes) VALUES (?, ?, NULL, 0, 0, '[]')")) {
+            ps.setString(1, id);
+            ps.setString(2, worktree.replace('\\', '/'));
+            ps.executeUpdate();
+        }
+    }
+
+    private static void deleteRecursively(Path root) {
+        try (var walk = Files.walk(root)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.delete(p);
+                } catch (Exception ignored) {
+                    // best-effort cleanup of a temp directory
+                }
+            });
+        } catch (Exception ignored) {
+            // best-effort cleanup of a temp directory
+        }
     }
 
     // ── Reflection helpers ───────────────────────────────────────────────────
