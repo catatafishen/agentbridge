@@ -405,6 +405,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBinaryName(OPENCODE_PROFILE_ID);
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setInstallUrl("https://opencode.ai/docs");
+        // 'opencode login' is not valid (treated as a directory); the CLI's command is 'auth login'.
+        p.setTerminalSignInCommand("opencode auth login");
         return p;
     }
 
