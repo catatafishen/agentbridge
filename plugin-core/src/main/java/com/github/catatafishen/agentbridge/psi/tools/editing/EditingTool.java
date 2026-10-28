@@ -159,7 +159,7 @@ public abstract class EditingTool extends Tool {
                             TextRange range = element.getTextRange();
                             int startOffset = getDeclarationStartOffset(element, doc, range);
                             int startLine = doc.getLineNumber(startOffset) + 1;
-                            int endLine = doc.getLineNumber(range.getEndOffset()) + 1;
+                            int endLine = doc.getLineNumber(declarationEndOffset(element)) + 1;
                             matches.add(new SymbolLocation(startOffset, startLine, endLine, type, name));
                         }
                     }
@@ -168,6 +168,25 @@ public abstract class EditingTool extends Tool {
             }
         });
         return matches;
+    }
+
+    /**
+     * End offset of the whole declaration of {@code element}. For most languages the named element spans its
+     * entire declaration. In Python the named element of {@code NAME = value(...)} is only the target
+     * {@code NAME}; the value lives in the enclosing assignment statement. Using the name's own range made
+     * "insert after" land inside a multi-line value. So climb through parents that start where the element
+     * starts and are assignments, and use the outermost one's end.
+     */
+    static int declarationEndOffset(PsiElement element) {
+        TextRange result = element.getTextRange();
+        PsiElement parent = element.getParent();
+        while (parent != null && !(parent instanceof PsiFile)
+            && parent.getTextRange().getStartOffset() == result.getStartOffset()
+            && parent.getClass().getSimpleName().contains("Assignment")) {
+            result = parent.getTextRange();
+            parent = parent.getParent();
+        }
+        return result.getEndOffset();
     }
 
     private static int getDeclarationStartOffset(PsiElement element, Document doc, TextRange range) {
