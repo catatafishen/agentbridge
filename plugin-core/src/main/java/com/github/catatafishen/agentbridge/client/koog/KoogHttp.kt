@@ -2,12 +2,11 @@ package com.github.catatafishen.agentbridge.client.koog
 
 import ai.koog.http.client.KoogHttpClient
 import ai.koog.http.client.KoogHttpClientException
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
-import com.google.gson.JsonParseException
-import com.google.gson.JsonPrimitive
-import com.google.gson.JsonParser
+import com.github.catatafishen.agentbridge.client.koog.ReasoningFields.CANONICAL
+import com.google.gson.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
 import kotlinx.serialization.json.Json
 import kotlin.reflect.KClass
@@ -77,7 +76,13 @@ internal class HeaderInjectingHttpClient(
         return delegate.sse(
             path, requestBody, requestBodyType, dataFilter, { data -> decodeStreamingResponse(normalizeChunk(data)) },
             processStreamingChunk, parameters, allHeaders,
-        ).catch { e ->
+            // Koog's JDK transport is a callbackFlow with the default 64-slot buffer that hands each chunk over with
+            // trySend and ignores the result. When the collector is slower than the network (long tool-call arguments
+            // arrive as thousands of small deltas; the collector also renders UI updates, and the IDE can stall),
+            // the buffer fills and chunks are silently dropped. A dropped argument delta corrupts the tool call in
+            // the middle of a value. Applied directly to the transport's flow, buffer() fuses into it and makes the
+            // channel unbounded, so no chunk is ever lost.
+        ).buffer(Channel.UNLIMITED).catch { e ->
             if (e !is KoogHttpClientException || !e.errorBody.isNullOrBlank() || (e.statusCode ?: 0) !in 400..499) {
                 throw e
             }

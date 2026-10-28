@@ -7,14 +7,12 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.project.Project
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -85,7 +83,8 @@ class KoogHttpAndBackendTest {
         @Test
         fun `fixed headers join the defaults and win over a same-named default`() {
             val delegate = RecordingFactory()
-            val factory = HeaderInjectingHttpClientFactory(delegate, mapOf("Content-Type" to "application/json", "X-A" to "1"))
+            val factory =
+                HeaderInjectingHttpClientFactory(delegate, mapOf("Content-Type" to "application/json", "X-A" to "1"))
 
             create(factory, defaults = mapOf("Content-Type" to "text/plain", "Authorization" to "Bearer t"))
 
@@ -103,7 +102,14 @@ class KoogHttpAndBackendTest {
             )
 
             val result: String = runBlocking {
-                client.post("/chat", """{"messages":[{"role":"tool"}]}""", String::class, String::class, emptyMap(), mapOf("X-Own" to "keep"))
+                client.post(
+                    "/chat",
+                    """{"messages":[{"role":"tool"}]}""",
+                    String::class,
+                    String::class,
+                    emptyMap(),
+                    mapOf("X-Own" to "keep")
+                )
             }
 
             assertEquals("posted", result)
@@ -120,7 +126,14 @@ class KoogHttpAndBackendTest {
             val client = create(HeaderInjectingHttpClientFactory(delegate, emptyMap(), JsonContentType::perRequest))
 
             runBlocking {
-                client.post<String, String>("/p", "{}", String::class, String::class, emptyMap(), mapOf("Content-Type" to "text/plain"))
+                client.post<String, String>(
+                    "/p",
+                    "{}",
+                    String::class,
+                    String::class,
+                    emptyMap(),
+                    mapOf("Content-Type" to "text/plain")
+                )
             }
 
             assertEquals("application/json", delegate.client.calls.single().second["Content-Type"])
@@ -155,6 +168,46 @@ class KoogHttpAndBackendTest {
         }
     }
 
+    // ── streaming must not lose chunks ──────────────────────────────────────
+
+    /** Mimics Koog's JDK transport: a callbackFlow whose blocking reader hands chunks over with an ignored trySend. */
+    private class TrySendClient(private val chunks: Int) : KoogHttpClient by RecordingClient() {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : Any, R : Any, O : Any> sse(
+            path: String, requestBody: T, requestBodyType: KClass<T>, dataFilter: (String?) -> Boolean,
+            decodeStreamingResponse: (String) -> R, processStreamingChunk: (R) -> O?,
+            parameters: Map<String, String>, headers: Map<String, String>,
+        ): Flow<O> = callbackFlow {
+            repeat(chunks) { trySend(it.toString() as O) }
+            close()
+            awaitClose { }
+        }
+    }
+
+    @Test
+    fun `a slow collector of a stream never loses chunks`() {
+        val total = 5_000
+        val client = HeaderInjectingHttpClient(TrySendClient(total), { emptyMap() })
+
+        val received = runBlocking {
+            client.sse<String, String, String>(
+                "/chat",
+                "{}",
+                String::class,
+                { true },
+                { it },
+                { it },
+                emptyMap(),
+                emptyMap()
+            )
+                .onEach { delay(0) }
+                .toList()
+        }
+
+        assertEquals(total, received.size)
+        assertEquals((0 until total).map { it.toString() }, received)
+    }
+
     // ── in-process MCP backend ──────────────────────────────────────────────
 
     @Nested
@@ -185,7 +238,10 @@ class KoogHttpAndBackendTest {
             assertEquals("Be careful.", text)
             val request = lastRequest()
             assertEquals("initialize", request.get("method").asString)
-            assertEquals("AgentBridge Koog", request.getAsJsonObject("params").getAsJsonObject("clientInfo").get("name").asString)
+            assertEquals(
+                "AgentBridge Koog",
+                request.getAsJsonObject("params").getAsJsonObject("clientInfo").get("name").asString
+            )
         }
 
         @Test
