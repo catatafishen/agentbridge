@@ -1453,10 +1453,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             })
         }
         val buttons = mutableListOf<JButton>()
+        var stripRow: JComponent? = null
+        // Any choice (or dismissal) consumes the whole strip: remove it from the chat.
+        val consumeStrip = {
+            currentQuickReplyButtons = emptyList()
+            stripRow?.let { contentPanel.remove(it) }
+            contentPanel.revalidate()
+            contentPanel.repaint()
+        }
         strip.replies.forEach { reply ->
             val btn = createStyledButton(reply.label, reply.style, reply.dismiss)
             btn.addActionListener {
-                currentQuickReplyButtons.forEach { it.isEnabled = false }
+                consumeStrip()
                 if (!reply.dismiss) onQuickReply?.invoke(reply.text)
             }
             buttons.add(btn)
@@ -1466,11 +1474,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val btn = createStyledButton(action.label, action.style, false)
             btn.toolTipText = actionTooltip(action)
             btn.addActionListener {
-                btn.isEnabled = false // single-use
-                btn.text = "${action.label}…"
+                consumeStrip()
+                addUserDecisionBubble(action.label)
+                val chipId = startActionChip(action)
                 ButtonActionRunner.run(project, action) { outcome ->
-                    btn.text = "${if (outcome.success) "✔" else "✖"} ${action.label}"
-                    btn.toolTipText = outcome.summary.take(500)
+                    finishActionChip(chipId, outcome)
                     // Nobody is waiting for the result: tell the agent on its next prompt.
                     ButtonActionRunner.recordNote(project, outcome)
                 }
@@ -1482,11 +1490,26 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             toolTipText = "Dismiss"
             isBorderPainted = false
             isContentAreaFilled = false
-            addActionListener { disableQuickReplies() }
+            addActionListener { consumeStrip() }
         }
         panel.add(close)
         currentQuickReplyButtons = buttons + close
-        addRow(panel)
+        stripRow = addRow(panel)
+    }
+
+    /** Shows a running tool chip for a clicked action button; returns its id for [finishActionChip]. */
+    private fun startActionChip(action: ActionButton): String {
+        val id = "button-action-${java.util.UUID.randomUUID()}"
+        addToolCallEntry(id, action.tool, action.arguments.toString(), null, false)
+        return id
+    }
+
+    private fun finishActionChip(id: String, outcome: ButtonActionRunner.Outcome) {
+        updateToolCall(
+            id,
+            if (outcome.success) "completed" else "failed",
+            ChatPanelApi.ToolCallUpdate(details = outcome.summary)
+        )
     }
 
     private fun createStyledButton(label: String, style: ButtonStyle, dismiss: Boolean): JButton =
@@ -1951,7 +1974,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     allButtons.forEach { it.isEnabled = false }
                     text = "${action.label}…"
                     ButtonActionRunner.run(project, action) { outcome ->
-                        completeOnce("${if (outcome.success) "✔" else "✖"} ${action.label}", outcome.summary)
+                        // Show the call as a tool chip (result viewable in its popup) rather than only
+                        // reporting it to the agent, which would leave the user blind to the output.
+                        completeOnce(action.label, outcome.summary)
+                        // The chip goes below the "user said" bubble that completeOnce adds.
+                        val chipId = startActionChip(action)
+                        finishActionChip(chipId, outcome)
                     }
                 }
             }
