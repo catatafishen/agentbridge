@@ -140,10 +140,21 @@ class PromptAttributionService(private val project: Project) : Disposable {
     fun turnInfo(turnIds: Collection<String>): Map<String, LineAttributionStore.TurnInfo> =
         store()?.turnInfo(turnIds) ?: emptyMap()
 
-    /** Files that still hold lines written by [turnId], with the line count; call from a background thread. */
+    /**
+     * Files written by [turnId]. Files with known attribution carry their line count; files only known from
+     * the recorded tool calls (attribution is computed lazily, when a file is annotated) carry [UNKNOWN_LINES].
+     * Files that no longer exist are dropped. Call from a background thread.
+     */
     fun filesForTurn(turnId: String): Map<String, Int> {
         flushDirty()
-        return store()?.filesForTurn(turnId) ?: emptyMap()
+        val store = store() ?: return emptyMap()
+        val result = LinkedHashMap(store.filesForTurn(turnId))
+        val base = project.basePath
+        for (recorded in store.editedFilesForTurn(turnId)) {
+            val absolute = if (recorded.startsWith("/") || base == null) recorded else "$base/$recorded"
+            if (absolute !in result && java.io.File(absolute).isFile) result[absolute] = UNKNOWN_LINES
+        }
+        return result
     }
 
     /** Forgets everything held in memory (not the database). Used when the project's files are reset. */
@@ -280,6 +291,9 @@ class PromptAttributionService(private val project: Project) : Disposable {
 
     companion object {
         private const val FLUSH_INTERVAL_SEC = 10L
+
+        /** Line count for a file known to be edited by a turn whose attribution has not been computed yet. */
+        const val UNKNOWN_LINES = -1
 
         /**
          * Nesting depth of agent edits on this thread. Static so the existing no-argument

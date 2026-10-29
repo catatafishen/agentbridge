@@ -135,6 +135,26 @@ class LineAttributionStoreTest {
     }
 
     @Test
+    void editedFilesForTurnListsDistinctSuccessfulEditsOnly() throws Exception {
+        ConversationDatabase database = new ConversationDatabase();
+        Connection c = DriverManager.getConnection("jdbc:sqlite::memory:");
+        try (Statement s = c.createStatement()) {
+            s.execute("PRAGMA foreign_keys = ON");
+        }
+        database.initializeWithConnection(c);
+        new ConversationWriter(database).recordEntries("s1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Edit", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            toolCall("ev-1", "2026-01-01T10:01:00Z", "edit_text", "{}", "src/B.java", "completed"),
+            toolCall("ev-2", "2026-01-01T10:02:00Z", "edit_text", "{}", "src/B.java", "completed"),
+            toolCall("ev-3", "2026-01-01T10:03:00Z", "write_file", "{}", "src/A.java", "completed"),
+            toolCall("ev-4", "2026-01-01T10:04:00Z", "read_file", "{}", "src/C.java", "completed")));
+
+        assertEquals(List.of("src/A.java", "src/B.java"),
+            new LineAttributionStore(database).editedFilesForTurn("t1"));
+        c.close();
+    }
+
+    @Test
     void deletingATurnCascadesToItsAttribution() throws Exception {
         store.replaceFile("A.java", "x", List.of(run("t1", 0, 4), run("t2", 5, 6)));
 

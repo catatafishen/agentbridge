@@ -153,7 +153,7 @@ internal class PromptAnnotationProvider(
                     "Files Changed by This Prompt", entries
                 ) {
                     override fun getTextFor(value: Map.Entry<String, Int>): String =
-                        "${displayPath(value.key)}  (${value.value} line${if (value.value == 1) "" else "s"})"
+                        AnnotationText.fileEntryLabel(displayPath(value.key), value.value)
 
                     override fun onChosen(selected: Map.Entry<String, Int>, finalChoice: Boolean): PopupStep<*>? {
                         openFile(selected.key)

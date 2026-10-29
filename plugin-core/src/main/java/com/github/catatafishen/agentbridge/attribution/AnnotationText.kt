@@ -38,6 +38,12 @@ object AnnotationText {
         return sb.toString()
     }
 
+    /** Popup row for a file a prompt changed; [lines] < 0 means attribution has not been computed for it yet. */
+    fun fileEntryLabel(path: String, lines: Int): String = when {
+        lines < 0 -> path
+        else -> "$path  ($lines line${if (lines == 1) "" else "s"} still from this prompt)"
+    }
+
     /** True when [line] is the first line of a run of lines with the same owner. */
     fun startsRun(ownership: LineOwnership, line: Int): Boolean {
         val owner = ownership.ownerAt(line) ?: return false

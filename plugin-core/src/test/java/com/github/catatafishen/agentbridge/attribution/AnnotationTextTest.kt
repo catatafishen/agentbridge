@@ -74,6 +74,13 @@ class AnnotationTextTest {
     }
 
     @Test
+    fun `file entry shows a line count only when attribution is known`() {
+        assertEquals("src/A.java", AnnotationText.fileEntryLabel("src/A.java", -1))
+        assertEquals("src/A.java  (1 line still from this prompt)", AnnotationText.fileEntryLabel("src/A.java", 1))
+        assertTrue(AnnotationText.fileEntryLabel("src/A.java", 7).contains("7 lines"))
+    }
+
+    @Test
     fun `unowned lines never start a run`() {
         assertFalse(AnnotationText.startsRun(LineOwnership.empty(3), 1))
     }

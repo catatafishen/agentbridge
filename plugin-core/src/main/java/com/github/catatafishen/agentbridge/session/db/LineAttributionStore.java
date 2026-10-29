@@ -191,6 +191,34 @@ public final class LineAttributionStore {
     }
 
     /**
+     * Distinct files that successful editing tool calls of {@code turnId} touched, as recorded (may be relative).
+     */
+    @NotNull
+    public List<String> editedFilesForTurn(@NotNull String turnId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT DISTINCT tc.file_path
+                FROM tool_call_events tc JOIN events e ON e.id = tc.event_id
+                WHERE e.turn_id = ? AND tc.success = 1 AND tc.file_path IS NOT NULL AND tc.file_path != ''
+                  AND tc.tool_name IN ('edit_text', 'write_file', 'create_file',
+                                       'replace_symbol_body', 'insert_after_symbol', 'insert_before_symbol')
+                ORDER BY tc.file_path""")) {
+                ps.setString(1, turnId);
+                List<String> files = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) files.add(rs.getString(1));
+                }
+                return files;
+            } catch (SQLException e) {
+                LOG.warn("LineAttributionStore: failed to list edited files of turn " + turnId, e);
+                return List.of();
+            }
+        }
+    }
+
+    /**
      * All files that currently have stored attribution.
      */
     @NotNull
