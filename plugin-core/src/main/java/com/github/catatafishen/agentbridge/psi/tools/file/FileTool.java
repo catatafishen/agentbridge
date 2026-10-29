@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.attribution.PromptAttributionService;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
@@ -688,6 +689,7 @@ public abstract class FileTool extends Tool {
      */
     public static void notifyBeforeEdit(Project project, VirtualFile vf, Document doc) {
         AgentEditSession.markAgentEditStart();
+        PromptAttributionService.agentEditStarted(project);
         AgentEditSession session = AgentEditSession.getInstance(project);
         session.ensureStarted();
         if (vf != null && doc != null) {
@@ -701,6 +703,7 @@ public abstract class FileTool extends Tool {
      */
     public static void notifyEditComplete() {
         AgentEditSession.markAgentEditEnd();
+        PromptAttributionService.agentEditFinished();
     }
 
     /**

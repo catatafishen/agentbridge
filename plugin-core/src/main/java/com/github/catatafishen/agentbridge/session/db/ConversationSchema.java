@@ -58,6 +58,7 @@ final class ConversationSchema {
             if (currentVersion < 8) applyV8(stmt);
             if (currentVersion < 9) applyV9(stmt);
             if (currentVersion < 10) applyV10(stmt);
+            if (currentVersion < 11) applyV11(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -506,6 +507,15 @@ final class ConversationSchema {
             """);
         stmt.execute("CREATE INDEX idx_la_file ON line_attribution(file_path, timestamp)");
         stmt.execute("CREATE INDEX idx_la_turn ON line_attribution(turn_id)");
+    }
+
+    /**
+     * V11: {@code line_attribution.file_hash} is the hash of the whole file at the time the rows were
+     * written. On load it tells whether line numbers are still exact or must be re-anchored because
+     * the file changed while the IDE was closed.
+     */
+    private static void applyV11(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("ALTER TABLE line_attribution ADD COLUMN file_hash TEXT");
     }
 
     /**

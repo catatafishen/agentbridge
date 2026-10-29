@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest
+import com.github.catatafishen.agentbridge.attribution.PromptAttributionService
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.bridge.MessageFormatter
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
@@ -262,6 +263,9 @@ class PromptOrchestrator(
 
     private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
         agentManager.beginPrompt()
+        // Edits made by tools during this turn are attributed to this prompt (editor gutter annotation).
+        val attribution = PromptAttributionService.getInstance(project)
+        attribution.beginTurn(pendingPromptEntryId)
         try {
             // Clean up agent resources from previous turns before starting a new one
             AgentTabTracker.getInstance(project).closeTrackedTabs()
@@ -304,6 +308,7 @@ class PromptOrchestrator(
         } catch (e: Exception) {
             handlePromptError(e)
         } finally {
+            attribution.endTurn()
             agentManager.endPrompt()
         }
     }

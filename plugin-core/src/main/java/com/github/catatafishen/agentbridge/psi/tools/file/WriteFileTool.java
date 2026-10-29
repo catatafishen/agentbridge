@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.attribution.PromptAttributionService;
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
@@ -305,11 +306,13 @@ public class WriteFileTool extends FileTool {
         // VFS refresh must run on EDT with write lock — dispatch even if called from background thread.
         // EdtUtil.invokeAndWait() is safe here: it detects if already on EDT and runs directly.
         String finalFullPath = fullPath;
+        VirtualFile[] created = new VirtualFile[1];
         EdtUtil.invokeAndWait(() -> WriteAction.run(() -> {
-            LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+            created[0] = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
             CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
         }));
         notifyFileCreated(project, pathStr);
+        if (created[0] != null) PromptAttributionService.fileCreated(project, created[0]);
         resultFuture.complete("Created: " + pathStr);
     }
 
