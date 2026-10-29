@@ -144,6 +144,53 @@ public final class LineAttributionStore {
     }
 
     /**
+     * A recorded, successful editing tool call on a file.
+     */
+    public record ToolEditRow(
+        @NotNull String turnId,
+        long timestampMs,
+        @NotNull String toolName,
+        @Nullable String arguments
+    ) {
+    }
+
+    /**
+     * Successful editing tool calls that touched {@code relativeOrAbsolutePath}, oldest first. Both the
+     * project-relative and the absolute spelling are matched, because tools record whichever they were given.
+     */
+    @NotNull
+    public List<ToolEditRow> editsForFile(@NotNull String relativePath, @NotNull String absolutePath) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT e.turn_id, e.timestamp, tc.tool_name, tc.arguments
+                FROM tool_call_events tc
+                  JOIN events e ON e.id = tc.event_id
+                WHERE tc.file_path IN (?, ?)
+                  AND e.turn_id IS NOT NULL
+                  AND tc.success = 1
+                  AND tc.tool_name IN ('edit_text', 'write_file', 'create_file',
+                                       'replace_symbol_body', 'insert_after_symbol', 'insert_before_symbol')
+                ORDER BY e.timestamp""")) {
+                ps.setString(1, relativePath);
+                ps.setString(2, absolutePath);
+                List<ToolEditRow> rows = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        rows.add(new ToolEditRow(rs.getString(1), parseMs(rs.getString(2)),
+                            rs.getString(3), rs.getString(4)));
+                    }
+                }
+                return rows;
+            } catch (SQLException e) {
+                LOG.warn("LineAttributionStore: failed to load recorded edits for " + absolutePath, e);
+                return List.of();
+            }
+        }
+    }
+
+    /**
      * All files that currently have stored attribution.
      */
     @NotNull

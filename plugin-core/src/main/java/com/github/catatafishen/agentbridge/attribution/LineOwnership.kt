@@ -83,6 +83,11 @@ class LineOwnership private constructor(private val owners: MutableList<LineOwne
         for (i in owners.indices) owners[i] = owner
     }
 
+    /** Marks lines [from]..[toInclusive] (clamped to the file) as written by [owner]. */
+    fun claimRange(from: Int, toInclusive: Int, owner: LineOwner) {
+        for (i in from.coerceAtLeast(0)..toInclusive.coerceAtMost(owners.size - 1)) owners[i] = owner
+    }
+
     /** Collapses to runs of consecutive lines with the same owner. [lines] provides the text for hashing. */
     fun toRuns(lines: List<String>): List<OwnerRun> {
         val runs = ArrayList<OwnerRun>()

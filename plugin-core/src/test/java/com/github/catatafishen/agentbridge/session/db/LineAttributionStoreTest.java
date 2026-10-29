@@ -106,6 +106,35 @@ class LineAttributionStoreTest {
     }
 
     @Test
+    void editsForFileReturnsSuccessfulEditCallsOldestFirstForBothPathSpellings() throws Exception {
+        ConversationDatabase database = new ConversationDatabase();
+        Connection c = DriverManager.getConnection("jdbc:sqlite::memory:");
+        try (Statement s = c.createStatement()) {
+            s.execute("PRAGMA foreign_keys = ON");
+        }
+        database.initializeWithConnection(c);
+        new ConversationWriter(database).recordEntries("s1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Edit it", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            toolCall("ev-2", "2026-01-01T10:02:00Z", "edit_text", "{\"new_str\":\"B\"}", "src/A.java", "completed"),
+            toolCall("ev-1", "2026-01-01T10:01:00Z", "write_file", "{\"content\":\"A\"}", "/abs/src/A.java", "completed"),
+            toolCall("ev-3", "2026-01-01T10:03:00Z", "read_file", "{}", "src/A.java", "completed"),
+            toolCall("ev-4", "2026-01-01T10:04:00Z", "edit_text", "{\"new_str\":\"C\"}", "src/Other.java", "completed")));
+
+        List<LineAttributionStore.ToolEditRow> rows =
+            new LineAttributionStore(database).editsForFile("src/A.java", "/abs/src/A.java");
+
+        assertEquals(2, rows.size());
+        assertEquals("write_file", rows.get(0).toolName());
+        assertEquals("edit_text", rows.get(1).toolName());
+        assertEquals("t1", rows.get(0).turnId());
+        c.close();
+    }
+
+    private static EntryData.ToolCall toolCall(String id, String ts, String tool, String args, String path, String status) {
+        return new EntryData.ToolCall(tool, args, "edit", "ok", status, null, path, false, null, null, ts, "Copilot", "m", id);
+    }
+
+    @Test
     void deletingATurnCascadesToItsAttribution() throws Exception {
         store.replaceFile("A.java", "x", List.of(run("t1", 0, 4), run("t2", 5, 6)));
 

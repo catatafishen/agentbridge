@@ -104,10 +104,31 @@ class PromptAttributionService(private val project: Project) : Disposable {
     /** The ownership of [file], restored from the database on first use; null when nothing is known. */
     fun ownershipFor(file: VirtualFile): LineOwnership? {
         models[file.path]?.let { return it }
-        if (file.path !in attributedPaths && store()?.load(file.path) == null) return null
         val doc = FileDocumentManager.getInstance().getDocument(file) ?: return null
-        val restored = restore(file.path, doc) ?: return null
+        val known = file.path in attributedPaths || store()?.load(file.path) != null
+        val restored = (if (known) restore(file.path, doc) else null) ?: backfill(file, doc) ?: return null
         return models.putIfAbsent(file.path, restored) ?: restored
+    }
+
+    /**
+     * Best-effort attribution for a file that was edited before live capture existed, rebuilt by replaying
+     * the editing tool calls recorded for it. Never overrides live data (only runs when none is stored), and
+     * every owner it produces is flagged inferred. Returns null when nothing could be placed.
+     */
+    private fun backfill(file: VirtualFile, doc: Document): LineOwnership? {
+        val store = store() ?: return null
+        val base = project.basePath
+        val relative = if (base != null) file.path.removePrefix("$base/") else file.path
+        val edits = store.editsForFile(relative, file.path).mapNotNull {
+            RecordedEditParser.parse(it.turnId(), it.timestampMs(), it.toolName(), it.arguments())
+        }
+        if (edits.isEmpty()) return null
+        val lines = LineOwnership.splitLines(doc.immutableCharSequence)
+        val model = HistoryBackfill.replay(lines, edits)
+        if (model.isEmpty()) return null
+        attributedPaths.add(file.path)
+        markDirty(file.path) // persist, so the next open is instant and the result stays stable
+        return model
     }
 
     fun hasAttribution(file: VirtualFile): Boolean = ownershipFor(file)?.isEmpty() == false
