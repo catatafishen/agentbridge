@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
+import com.github.catatafishen.agentbridge.ui.sessions.SessionPickerDialog
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -40,6 +41,7 @@ class AcpConnectPanel(
     companion object {
         private const val START_SERVER = "Start server"
         private const val STOP_SERVER = "Stop server"
+        private const val INLINE_SESSION_LIMIT = 5
         private val SESSION_DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
     }
 
@@ -397,8 +399,52 @@ class AcpConnectPanel(
         }
         sessionCombo.alignmentX = LEFT_ALIGNMENT
         sessionCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
-        panel.add(sessionCombo)
+
+        val searchButton = InplaceButton("Search all sessions…", AllIcons.Actions.Search) {
+            openSessionPicker()
+        }.apply {
+            accessibleContext.accessibleName = "Search all sessions"
+        }
+        val row = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(6), 0)).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+            add(sessionCombo, BorderLayout.CENTER)
+            add(searchButton, BorderLayout.EAST)
+        }
+        panel.add(row)
         return panel
+    }
+
+    /**
+     * Opens the searchable session picker. Picking a session selects it in the combo (adding it
+     * when it is not among the short list), so the existing resume logic in [applySessionChoice]
+     * applies unchanged.
+     */
+    private fun openSessionPicker() {
+        val dialog = SessionPickerDialog(project)
+        if (!dialog.showAndGet()) return
+        val picked = dialog.selected ?: return
+        selectSession(picked.id())
+    }
+
+    private fun selectSession(sessionId: String) {
+        for (i in 0 until sessionCombo.itemCount) {
+            val choice = sessionCombo.getItemAt(i)
+            val record = when (choice) {
+                is SessionChoice.Latest -> choice.record
+                is SessionChoice.Older -> choice.record
+                SessionChoice.None -> null
+            }
+            if (record?.id == sessionId) {
+                sessionCombo.selectedIndex = i
+                return
+            }
+        }
+        val record = ConversationService.getInstance(project).listSessions().find { it.id == sessionId } ?: return
+        val choice = SessionChoice.Older(record)
+        sessionCombo.insertItemAt(choice, minOf(2, sessionCombo.itemCount))
+        sessionCombo.selectedItem = choice
     }
 
     private fun refreshSessionCombo() {
@@ -410,7 +456,10 @@ class AcpConnectPanel(
             sessionCombo.addItem(SessionChoice.Latest(sessions.first()))
         }
         sessionCombo.addItem(SessionChoice.None)
-        for (i in 1 until sessions.size) {
+        // Only the most recent few are listed inline; everything else is reached through the
+        // search button, which scales to long histories.
+        val recentEnd = minOf(sessions.size, INLINE_SESSION_LIMIT + 1)
+        for (i in 1 until recentEnd) {
             sessionCombo.addItem(SessionChoice.Older(sessions[i]))
         }
     }
