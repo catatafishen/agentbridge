@@ -173,12 +173,12 @@ class LineOwnership private constructor(private val owners: MutableList<LineOwne
         }
 
         fun hashLines(lines: List<String>, from: Int, toInclusive: Int): String =
-            sha1((from..toInclusive).joinToString("\n") { lines.getOrElse(it) { "" } })
+            sha256((from..toInclusive).joinToString("\n") { lines.getOrElse(it) { "" } })
 
-        fun hashText(lines: List<String>): String = sha1(lines.joinToString("\n"))
+        fun hashText(lines: List<String>): String = sha256(lines.joinToString("\n"))
 
-        private fun sha1(s: String): String =
-            MessageDigest.getInstance("SHA-1").digest(s.toByteArray(Charsets.UTF_8))
+        private fun sha256(s: String): String =
+            MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
 
         /** Splits text into lines the way the editor does: a trailing newline yields a final empty line. */
