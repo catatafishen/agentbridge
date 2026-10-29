@@ -1500,7 +1500,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     /** Shows a running tool chip for a clicked action button; returns its id for [finishActionChip]. */
     private fun startActionChip(action: ActionButton): String {
         val id = "button-action-${java.util.UUID.randomUUID()}"
-        addToolCallEntry(id, action.tool, action.arguments.toString(), null, false)
+        addToolCallEntry(id, action.tool, action.arguments.toString(), null, isMcpHandled = true)
         return id
     }
 
