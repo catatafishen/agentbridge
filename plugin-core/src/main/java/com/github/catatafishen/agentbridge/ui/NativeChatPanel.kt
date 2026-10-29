@@ -1446,11 +1446,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
         }
+        // Same presentation as the blocking question: an agent bubble with the buttons below it.
         strip.caption?.takeIf { it.isNotBlank() }?.let { caption ->
-            panel.add(JBLabel(caption).apply {
-                applyChatFont()
-                foreground = UIUtil.getContextHelpForeground()
-            })
+            val pane = createMarkdownPane(caption)
+            val (bubbleRow, bubble) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
+                row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
+            }
+            trackAgentBubble(bubble)
+            addRow(bubbleRow)
         }
         val buttons = mutableListOf<JButton>()
         var stripRow: JComponent? = null
