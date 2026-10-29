@@ -1156,8 +1156,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (prompt.isNullOrBlank() || section.promptRow != null) return
         val at = contentPanel.getComponentZOrder(section.row)
         if (at < 0) return
-        val promptRow =
-            rowContainer(createSubAgentPromptBubble(section.label, ChatTheme.SA_COLORS[section.colorIndex], prompt))
+        val promptRow = rowContainer(createSubAgentPromptBubble(section.label, ChatTheme.SA_COLORS[section.colorIndex], prompt))
         contentPanel.add(promptRow, at)
         section.promptRow = promptRow
         contentPanel.revalidate()
@@ -1491,7 +1490,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun createStyledButton(label: String, style: ButtonStyle, dismiss: Boolean): JButton =
-        JButton(label).apply {
+        JButton(ellipsize(label)).apply {
+            if (label.length > BUTTON_LABEL_MAX_CHARS) toolTipText = label
             applyChatFont()
             foreground = when {
                 dismiss -> UIUtil.getContextHelpForeground()
@@ -1502,6 +1502,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 else -> null
             }
         }
+
+    private fun ellipsize(label: String): String =
+        if (label.length > BUTTON_LABEL_MAX_CHARS) label.take(BUTTON_LABEL_MAX_CHARS - 1).trimEnd() + "…" else label
 
     private fun actionTooltip(action: ActionButton): String {
         val args = action.arguments.toString().let { if (it.length > 300) it.take(300) + "…" else it }
@@ -1934,6 +1937,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // leave the option buttons invisible until the next revalidate).
         strip.replies.forEach { reply ->
             val btn = createStyledButton(reply.label, reply.style, reply.dismiss).apply {
+                // Blocking prompt: the agent is waiting, so every reply (including a dismiss-styled one)
+                // must answer; "dismiss" only means "just close the strip" for wait=false buttons.
                 addActionListener { completeOnce(reply.text, reply.text) }
             }
             allButtons.add(btn)
@@ -2358,6 +2363,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     companion object {
+        private const val BUTTON_LABEL_MAX_CHARS = 40
         private const val ROW_SPACING = 8
 
         /**

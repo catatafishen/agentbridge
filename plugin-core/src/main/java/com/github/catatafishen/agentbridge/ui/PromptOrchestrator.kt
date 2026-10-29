@@ -475,9 +475,12 @@ class PromptOrchestrator(
     private fun buildEffectivePrompt(prompt: String): String {
         var effective = prompt
         // Tell the agent about actions the user ran from buttons since its last turn.
-        val notes = PendingButtons.getInstance(project).drainNotes()
-        if (notes.isNotEmpty() && !prompt.trimStart().startsWith("/")) {
-            effective = notes.joinToString("\n", prefix = "[", postfix = "]\n\n") + effective
+        // Slash commands must stay first, so notes are left queued for the next regular prompt.
+        if (!prompt.trimStart().startsWith("/")) {
+            val notes = PendingButtons.getInstance(project).drainNotes()
+            if (notes.isNotEmpty()) {
+                effective = notes.joinToString("\n", prefix = "[", postfix = "]\n\n") + effective
+            }
         }
         if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
             conversationSummaryInjected = true

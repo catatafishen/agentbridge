@@ -80,7 +80,7 @@ public final class PromptUserTool extends InfrastructureTool {
         JsonObject schema = schema(
             Param.optional(PARAM_QUESTION, TYPE_STRING, "Question to show. Required unless wait=false."),
             Param.optional(PARAM_WAIT, TYPE_BOOLEAN, "Block for the answer (default) or return at once and end your turn.", true),
-            Param.optional(PARAM_REPLIES, TYPE_ARRAY, "Buttons that send text back to you. Items: label, optional text (sent instead of label), style, dismiss. Strings accepted."),
+            Param.optional(PARAM_REPLIES, TYPE_ARRAY, "Buttons that send text back to you. Items: label, optional text (sent instead of label), style, dismiss (wait=false only: just closes the buttons; when blocking, every reply answers). Strings accepted."),
             Param.optional(PARAM_ACTIONS, TYPE_ARRAY, "Buttons that run a tool directly. Items: label, tool, arguments, style.")
         );
         JsonObject props = schema.getAsJsonObject("properties");
@@ -132,7 +132,11 @@ public final class PromptUserTool extends InfrastructureTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String question = args.has(PARAM_QUESTION) && !args.get(PARAM_QUESTION).isJsonNull()
             ? args.get(PARAM_QUESTION).getAsString().trim() : "";
-        boolean wait = !question.isEmpty() && (!args.has(PARAM_WAIT) || args.get(PARAM_WAIT).getAsBoolean());
+        boolean explicitWait = args.has(PARAM_WAIT) && !args.get(PARAM_WAIT).isJsonNull();
+        boolean wait = !explicitWait || args.get(PARAM_WAIT).getAsBoolean();
+        if (wait && question.isEmpty()) {
+            return "Error: question is required unless wait=false";
+        }
 
         ButtonSpecParser.Result parsed = ButtonSpecParser.INSTANCE.parse(args, new RegistryToolCatalog(project));
         if (!parsed.getOk()) {
@@ -142,13 +146,10 @@ public final class PromptUserTool extends InfrastructureTool {
 
         if (!wait) {
             if (strip.isEmpty())
-                return "Error: provide a question to wait for, or at least one button (replies/actions).";
+                return "Error: provide at least one button (replies/actions) when wait=false.";
             PendingButtons.Companion.getInstance(project).set(strip);
             return "Buttons registered (" + strip.getActions().size() + " actions, " + strip.getReplies().size()
                 + " replies). They appear when your turn ends. End your turn now and do not repeat them in text.";
-        }
-        if (question.isEmpty()) {
-            return "Error: question is required";
         }
 
         List<String> options = new ArrayList<>();
@@ -190,11 +191,6 @@ public final class PromptUserTool extends InfrastructureTool {
      * Calls the ask-user panel API through reflection so Java compilation does not depend on
      * javac understanding the Kotlin function-type signature. This has been observed to drift
      * between the source model and the Java compiler stub view during incremental builds.
-     *
-     * <p>We prefer the new 7-argument API (deadline + extend + supersede callbacks). If the
-     * runtime class only exposes the older 4-argument ABI, we still show the prompt and keep
-     * the backend waiter functional, but deadline extension/supersede notifications are not
-     * available from that older contract.
      */
     private static void showAskUserCompat(
         @NotNull com.github.catatafishen.agentbridge.ui.ChatPanelApi panel,

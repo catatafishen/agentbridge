@@ -23,7 +23,7 @@ object ButtonActionRunner {
     fun run(project: Project, action: ActionButton, onDone: (Outcome) -> Unit) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val outcome = execute(project, action)
-            ApplicationManager.getApplication().invokeLater { onDone(outcome) }
+            ApplicationManager.getApplication().invokeLater({ onDone(outcome) }, project.disposed)
         }
     }
 
@@ -41,8 +41,19 @@ object ButtonActionRunner {
     private fun describe(action: ActionButton, status: String, detail: String): String =
         "User ran action \"${action.label}\" (${action.tool}): $status" + if (detail.isEmpty()) "" else "\n$detail"
 
-    /** Records the outcome as a note for the agent's next prompt (used when no agent is waiting). */
+    private const val MAX_NOTE_CHARS = 400
+
+    /**
+     * Records the outcome as a note for the agent's next prompt (used when no agent is waiting).
+     * Includes the (truncated) detail so the agent can see why an action failed.
+     */
     fun recordNote(project: Project, outcome: Outcome) {
-        PendingButtons.getInstance(project).addNote(outcome.summary.lineSequence().first())
+        PendingButtons.getInstance(project).addNote(noteFor(outcome))
+    }
+
+    /** Flattens an outcome to a single bounded line for the agent's next prompt. */
+    fun noteFor(outcome: Outcome): String {
+        val flat = outcome.summary.lineSequence().joinToString(" ") { it.trim() }.trim()
+        return if (flat.length > MAX_NOTE_CHARS) flat.take(MAX_NOTE_CHARS) + "…" else flat
     }
 }

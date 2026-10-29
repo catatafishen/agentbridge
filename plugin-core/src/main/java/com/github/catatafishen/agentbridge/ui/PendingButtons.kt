@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Holds the buttons an agent registered with `prompt_user(wait=false)` until its turn ends,
@@ -14,23 +15,18 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @Service(Service.Level.PROJECT)
 class PendingButtons {
 
-    @Volatile
-    private var strip: ButtonStrip? = null
+    private val strip = AtomicReference<ButtonStrip?>(null)
     private val notes = ConcurrentLinkedQueue<String>()
 
     fun set(newStrip: ButtonStrip) {
-        strip = newStrip
+        strip.set(newStrip)
     }
 
-    /** Returns and clears the registered strip, or `null` if none. */
-    fun take(): ButtonStrip? {
-        val current = strip
-        strip = null
-        return current
-    }
+    /** Atomically returns and clears the registered strip, or `null` if none. */
+    fun take(): ButtonStrip? = strip.getAndSet(null)
 
     fun clear() {
-        strip = null
+        strip.set(null)
     }
 
     fun addNote(note: String) {

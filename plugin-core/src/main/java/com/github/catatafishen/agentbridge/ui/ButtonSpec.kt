@@ -65,7 +65,11 @@ object ButtonSpecParser {
     const val KEY_REPLIES = "replies"
     const val KEY_ACTIONS = "actions"
 
-    /** Deprecated alias of [KEY_REPLIES], still accepted for older callers. */
+    /**
+     * Previous name of [KEY_REPLIES] in the old `prompt_user` schema. Accepted silently as a tolerance for
+     * clients that still hold a cached copy of that schema; it is not advertised in the tool definition and
+     * can be removed once such clients are no longer a concern.
+     */
     const val KEY_LEGACY_OPTIONS = "options"
     private const val SELF_TOOL = "prompt_user"
 
@@ -104,7 +108,9 @@ object ButtonSpecParser {
         for ((i, item) in el.asJsonArray.withIndex()) {
             val path = "$key[$i]"
             val button = when {
-                item.isJsonPrimitive -> checkLabel(path, item.asString, labels, errors)?.let { ReplyButton(it, it) }
+                item.isJsonPrimitive ->
+                    checkLabel(path, item.asString, labels, errors, enforceLength = false)?.let { ReplyButton(it, it) }
+
                 item.isJsonObject -> parseReplyObject(path, item.asJsonObject, labels, errors)
                 else -> {
                     errors += "$path must be a string or an object with a \"label\"."
@@ -122,11 +128,13 @@ object ButtonSpecParser {
         labels: MutableSet<String>,
         errors: MutableList<String>
     ): ReplyButton? {
-        val label = checkLabel(path, obj.str("label"), labels, errors)
+        // Reply labels may be long: the UI shortens them with an ellipsis and shows the full text on hover.
+        val label = checkLabel(path, obj.str("label"), labels, errors, enforceLength = false)
         val style = parseStyle(path, obj, errors)
-        if (label == null || style == null) return null
+        val dismiss = parseDismiss(path, obj, errors)
+        if (label == null || style == null || dismiss == null) return null
         val text = obj.str("text")?.takeIf { it.isNotBlank() } ?: label
-        return ReplyButton(label, text, style, obj.bool("dismiss"))
+        return ReplyButton(label, text, style, dismiss)
     }
 
     // ── actions ──────────────────────────────────────────────────────────────
@@ -218,7 +226,8 @@ object ButtonSpecParser {
 
     private fun missingRequired(schema: JsonObject?, arguments: JsonObject): String {
         val required = schema?.getAsJsonArray("required") ?: return ""
-        val missing = required.map { it.asString }.filter { arguments.get(it)?.isJsonNull != false }
+        val missing =
+            required.filter { it.isJsonPrimitive }.map { it.asString }.filter { arguments.get(it)?.isJsonNull != false }
         if (missing.isEmpty()) return ""
         val props = schema.getAsJsonObject("properties")
         val described = props?.keySet()?.joinToString(", ") { name ->
@@ -234,7 +243,8 @@ object ButtonSpecParser {
         path: String,
         label: String?,
         labels: MutableSet<String>,
-        errors: MutableList<String>
+        errors: MutableList<String>,
+        enforceLength: Boolean = true,
     ): String? {
         val trimmed = label?.trim()
         return when {
@@ -243,7 +253,7 @@ object ButtonSpecParser {
                 null
             }
 
-            trimmed.length > MAX_LABEL_LENGTH -> {
+            enforceLength && trimmed.length > MAX_LABEL_LENGTH -> {
                 errors += "$path.label is too long (${trimmed.length} chars, max $MAX_LABEL_LENGTH). Use a short label."
                 null
             }
@@ -265,7 +275,7 @@ object ButtonSpecParser {
     }
 
     private fun didYouMean(name: String, all: Collection<String>): String {
-        val suggestions = all.filter { it.contains(name) || name.contains(it) || editDistance(it, name) <= 2 }
+        val suggestions = all.filter { it.startsWith(name) || editDistance(it, name) <= 2 }
             .sortedBy { editDistance(it, name) }.take(3)
         return if (suggestions.isEmpty()) "" else " Did you mean ${suggestions.joinToString(" or ") { "\"$it\"" }}?"
     }
@@ -285,5 +295,12 @@ object ButtonSpecParser {
 
     private fun JsonObject.str(key: String): String? = get(key)?.takeIf { it.isJsonPrimitive }?.asString
 
-    private fun JsonObject.bool(key: String): Boolean = get(key)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+    /** Absent/null → false; a non-boolean value is reported as an error and returns `null`. */
+    private fun parseDismiss(path: String, obj: JsonObject, errors: MutableList<String>): Boolean? {
+        val el = obj.get("dismiss")
+        if (el == null || el.isJsonNull) return false
+        if (el.isJsonPrimitive && el.asJsonPrimitive.isBoolean) return el.asBoolean
+        errors += "$path.dismiss must be true or false."
+        return null
+    }
 }

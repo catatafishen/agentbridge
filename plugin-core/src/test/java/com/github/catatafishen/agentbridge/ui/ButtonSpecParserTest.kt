@@ -57,6 +57,29 @@ class ButtonSpecParserTest {
         assertEquals(ButtonStyle.DEFAULT, r.replies[0].style)
     }
 
+    @Test
+    fun `long reply labels are accepted and sent in full`() {
+        val long = "Yes, please go ahead and do all of the things you listed above"
+        val r = parse("""{"replies":["$long"]}""")
+        assertTrue(r.ok, r.errors.toString())
+        assertEquals(long, r.replies.single().text)
+    }
+
+    @Test
+    fun `long action labels are rejected`() {
+        val long = "x".repeat(ButtonSpecParser.MAX_LABEL_LENGTH + 1)
+        val r = parse("""{"actions":[{"label":"$long","tool":"git_push"}]}""")
+        assertFalse(r.ok)
+        assertTrue(r.errors.single().contains("too long"))
+    }
+
+    @Test
+    fun `non boolean dismiss is an error`() {
+        val r = parse("""{"replies":[{"label":"Later","dismiss":"yes"}]}""")
+        assertFalse(r.ok)
+        assertTrue(r.errors.single().contains("dismiss"))
+    }
+
     // ── actions ──────────────────────────────────────────────────────────────
 
     @Test
@@ -156,12 +179,6 @@ class ButtonSpecParserTest {
         val r = parse("""{"replies":["Push"],"actions":[{"label":"push","tool":"git_push"}]}""")
         assertFalse(r.ok)
         assertTrue(r.errors.single().contains("duplicate"))
-    }
-
-    @Test
-    fun `too long label is rejected`() {
-        val r = parse("""{"replies":["${"x".repeat(ButtonSpecParser.MAX_LABEL_LENGTH + 1)}"]}""")
-        assertFalse(r.ok)
     }
 
     @Test
