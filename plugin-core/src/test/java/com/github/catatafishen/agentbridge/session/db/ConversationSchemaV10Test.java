@@ -59,9 +59,9 @@ class ConversationSchemaV10Test {
             new EntryData.Prompt("Fix flaky login test", "2026-01-01T10:05:00Z", null, "t2", "t2")));
 
         assertEquals("t1", scalar(
-            "SELECT t.id FROM turns_fts f JOIN turns t ON t.rowid = f.rowid WHERE turns_fts MATCH 'payment'"));
+            "SELECT t.id FROM turns_fts f JOIN turns t ON t.id = f.turn_id WHERE turns_fts MATCH 'payment'"));
         assertEquals("t2", scalar(
-            "SELECT t.id FROM turns_fts f JOIN turns t ON t.rowid = f.rowid WHERE turns_fts MATCH 'flaky'"));
+            "SELECT t.id FROM turns_fts f JOIN turns t ON t.id = f.turn_id WHERE turns_fts MATCH 'flaky'"));
     }
 
     @Test

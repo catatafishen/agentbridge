@@ -467,6 +467,11 @@ final class ConversationSchema {
     private static void applyV10(@NotNull Statement stmt) throws SQLException {
         stmt.execute("ALTER TABLE turns ADD COLUMN git_info_inferred INTEGER NOT NULL DEFAULT 0");
 
+        // Indexes first: the backfill below correlates commits/turns per row.
+        stmt.execute("CREATE INDEX IF NOT EXISTS idx_tc_file_path ON tool_call_events(file_path)");
+        stmt.execute("CREATE INDEX IF NOT EXISTS idx_commits_hash ON commits(commit_hash)");
+        stmt.execute("CREATE INDEX IF NOT EXISTS idx_commits_turn ON commits(turn_id)");
+
         stmt.execute("""
             UPDATE turns SET
                 git_branch_at_start = (
@@ -486,16 +491,12 @@ final class ConversationSchema {
             WHERE git_info_inferred = 1 AND git_branch_at_end IS NULL
             """);
 
-        stmt.execute("CREATE INDEX IF NOT EXISTS idx_tc_file_path ON tool_call_events(file_path)");
-        stmt.execute("CREATE INDEX IF NOT EXISTS idx_commits_hash ON commits(commit_hash)");
-
         createPromptSearchIndex(stmt);
 
         stmt.execute("""
             CREATE TABLE line_attribution (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 turn_id        TEXT NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
-                tool_event_id  TEXT,
                 file_path      TEXT NOT NULL,
                 timestamp      TEXT NOT NULL,
                 kind           TEXT NOT NULL,
@@ -524,31 +525,41 @@ final class ConversationSchema {
      */
     private static void createPromptSearchIndex(@NotNull Statement stmt) {
         try {
+            // Self-contained (not external-content): turns has a TEXT primary key, so its implicit rowid
+            // is not stable across VACUUM. The index is keyed by turn id instead.
             stmt.execute("""
                 CREATE VIRTUAL TABLE turns_fts USING fts5(
-                    prompt_text, content='turns', content_rowid='rowid', tokenize='unicode61')
+                    turn_id UNINDEXED, prompt_text, tokenize='unicode61')
                 """);
             stmt.execute("""
                 CREATE TRIGGER turns_fts_ai AFTER INSERT ON turns BEGIN
-                    INSERT INTO turns_fts(rowid, prompt_text) VALUES (new.rowid, new.prompt_text);
+                    INSERT INTO turns_fts(turn_id, prompt_text) VALUES (new.id, new.prompt_text);
                 END
                 """);
             stmt.execute("""
                 CREATE TRIGGER turns_fts_ad AFTER DELETE ON turns BEGIN
-                    INSERT INTO turns_fts(turns_fts, rowid, prompt_text)
-                    VALUES ('delete', old.rowid, old.prompt_text);
+                    DELETE FROM turns_fts WHERE turn_id = old.id;
                 END
                 """);
             stmt.execute("""
                 CREATE TRIGGER turns_fts_au AFTER UPDATE OF prompt_text ON turns BEGIN
-                    INSERT INTO turns_fts(turns_fts, rowid, prompt_text)
-                    VALUES ('delete', old.rowid, old.prompt_text);
-                    INSERT INTO turns_fts(rowid, prompt_text) VALUES (new.rowid, new.prompt_text);
+                    DELETE FROM turns_fts WHERE turn_id = old.id;
+                    INSERT INTO turns_fts(turn_id, prompt_text) VALUES (new.id, new.prompt_text);
                 END
                 """);
-            stmt.execute("INSERT INTO turns_fts(turns_fts) VALUES ('rebuild')");
+            stmt.execute("INSERT INTO turns_fts(turn_id, prompt_text) SELECT id, prompt_text FROM turns");
         } catch (SQLException e) {
             LOG.warn("FTS5 unavailable; session search will use LIKE matching: " + e.getMessage());
+            // Never leave a half-built index behind: readers would treat it as usable.
+            for (String drop : new String[]{
+                "DROP TRIGGER IF EXISTS turns_fts_ai", "DROP TRIGGER IF EXISTS turns_fts_ad",
+                "DROP TRIGGER IF EXISTS turns_fts_au", "DROP TABLE IF EXISTS turns_fts"}) {
+                try {
+                    stmt.execute(drop);
+                } catch (SQLException ignored) {
+                    // best effort
+                }
+            }
         }
     }
 }

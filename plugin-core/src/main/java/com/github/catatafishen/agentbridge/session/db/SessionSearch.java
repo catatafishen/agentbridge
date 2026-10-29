@@ -10,8 +10,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -179,6 +182,7 @@ public final class SessionSearch {
             + "ORDER BY last_activity DESC LIMIT ? OFFSET ?";
 
         List<SessionSummary> result = new ArrayList<>();
+        List<Object[]> rows = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             int i = 1;
             for (Object a : args) ps.setObject(i++, a);
@@ -186,22 +190,23 @@ public final class SessionSearch {
             ps.setInt(i, Math.max(0, p.offset()));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    String id = rs.getString(1);
-                    GitFacts git = loadGitFacts(conn, id);
-                    result.add(new SessionSummary(
-                        id,
-                        rs.getString(2),
-                        rs.getString(3),
-                        snippet(rs.getString(9)),
-                        text.isEmpty() ? null : findMatchedPrompt(conn, id, text),
-                        parseMs(rs.getString(4)),
-                        parseMs(rs.getString(5)),
-                        rs.getInt(6),
-                        rs.getInt(7),
-                        rs.getInt(8),
-                        git.branches, git.inferred, git.commits));
+                    rows.add(new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getString(5), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getString(9)});
                 }
             }
+        }
+        // One batched query per fact instead of several per session.
+        Map<String, GitFacts> facts = loadGitFactsBatch(conn,
+            rows.stream().map(r -> (String) r[0]).toList());
+        for (Object[] r : rows) {
+            String id = (String) r[0];
+            GitFacts git = facts.getOrDefault(id, new GitFacts(List.of(), Set.of(), List.of()));
+            result.add(new SessionSummary(
+                id, (String) r[1], (String) r[2], snippet((String) r[8]),
+                text.isEmpty() ? null : findMatchedPrompt(conn, id, text),
+                parseMs((String) r[3]), parseMs((String) r[4]),
+                (Integer) r[5], (Integer) r[6], (Integer) r[7],
+                git.branches, git.inferred, git.commits));
         }
         return result;
     }
@@ -231,7 +236,7 @@ public final class SessionSearch {
         String fts = ftsQuery(text);
         if (hasFts(conn) && !fts.isEmpty()) {
             any.add("""
-                s.id IN (SELECT t.session_id FROM turns_fts f JOIN turns t ON t.rowid = f.rowid
+                s.id IN (SELECT t.session_id FROM turns_fts f JOIN turns t ON t.id = f.turn_id
                          WHERE turns_fts MATCH ?)""");
             args.add(fts);
         } else {
@@ -261,6 +266,20 @@ public final class SessionSearch {
 
     @Nullable
     private String findMatchedPrompt(Connection conn, String sessionId, String text) throws SQLException {
+        String fts = ftsQuery(text);
+        if (!fts.isEmpty() && hasFts(conn)) {
+            // Same matcher as the filter, so a session found by FTS always shows why.
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT t.prompt_text FROM turns_fts f JOIN turns t ON t.id = f.turn_id
+                WHERE t.session_id = ? AND turns_fts MATCH ?
+                ORDER BY t.started_at LIMIT 1""")) {
+                ps.setString(1, sessionId);
+                ps.setString(2, fts);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) return snippet(rs.getString(1));
+                }
+            }
+        }
         String like = "%" + escapeLike(text) + "%";
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT prompt_text FROM turns
@@ -280,53 +299,70 @@ public final class SessionSearch {
     private record GitFacts(List<String> branches, Set<String> inferred, List<CommitRef> commits) {
     }
 
-    private GitFacts loadGitFacts(Connection conn, String sessionId) throws SQLException {
-        Set<String> captured = new LinkedHashSet<>();
-        Set<String> all = new LinkedHashSet<>();
+    private Map<String, GitFacts> loadGitFactsBatch(Connection conn, List<String> sessionIds) throws SQLException {
+        Map<String, GitFacts> out = new HashMap<>();
+        if (sessionIds.isEmpty()) return out;
+        String in = String.join(",", Collections.nCopies(sessionIds.size(), "?"));
+
+        Map<String, Set<String>> captured = new HashMap<>();
+        Map<String, Set<String>> all = new HashMap<>();
+        Map<String, List<CommitRef>> commits = new HashMap<>();
 
         try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT b, MAX(inferred) FROM (
-                SELECT git_branch_at_start AS b, git_info_inferred AS inferred
-                  FROM turns WHERE session_id = ?
+            SELECT sid, b, MAX(inferred) FROM (
+                SELECT session_id AS sid, git_branch_at_start AS b, git_info_inferred AS inferred
+                  FROM turns WHERE session_id IN (""" + in + """
+            )
                 UNION ALL
-                SELECT git_branch_at_end, git_info_inferred FROM turns WHERE session_id = ?
-            ) WHERE b IS NOT NULL AND b != '' GROUP BY b ORDER BY b""")) {
-            ps.setString(1, sessionId);
-            ps.setString(2, sessionId);
+                SELECT session_id, git_branch_at_end, git_info_inferred
+                  FROM turns WHERE session_id IN (""" + in + """
+            )
+            ) WHERE b IS NOT NULL AND b != '' GROUP BY sid, b""")) {
+            int i = 1;
+            for (String id : sessionIds) ps.setString(i++, id);
+            for (String id : sessionIds) ps.setString(i++, id);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    all.add(rs.getString(1));
-                    if (rs.getInt(2) == 0) captured.add(rs.getString(1));
+                    all.computeIfAbsent(rs.getString(1), k -> new LinkedHashSet<>()).add(rs.getString(2));
+                    if (rs.getInt(3) == 0) {
+                        captured.computeIfAbsent(rs.getString(1), k -> new LinkedHashSet<>()).add(rs.getString(2));
+                    }
                 }
             }
         }
 
-        List<CommitRef> commits = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT c.commit_hash, gc.message, gc.branch, MIN(t.started_at)
+            SELECT t.session_id, c.commit_hash, gc.message, gc.branch, MIN(t.started_at)
             FROM commits c
               JOIN turns t ON t.id = c.turn_id
               LEFT JOIN graph_commits gc ON gc.hash = c.commit_hash
-            WHERE t.session_id = ?
-            GROUP BY c.commit_hash
-            ORDER BY MIN(t.started_at) DESC
-            LIMIT ?""")) {
-            ps.setString(1, sessionId);
-            ps.setInt(2, MAX_COMMITS_PER_SESSION);
+            WHERE t.session_id IN (""" + in + """
+            )
+            GROUP BY t.session_id, c.commit_hash
+            ORDER BY MIN(t.started_at) DESC""")) {
+            int i = 1;
+            for (String id : sessionIds) ps.setString(i++, id);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    commits.add(new CommitRef(rs.getString(1), rs.getString(2)));
-                    String b = rs.getString(3);
-                    if (b != null && !b.isBlank()) all.add(b);
+                    String sid = rs.getString(1);
+                    List<CommitRef> list = commits.computeIfAbsent(sid, k -> new ArrayList<>());
+                    if (list.size() < MAX_COMMITS_PER_SESSION) {
+                        list.add(new CommitRef(rs.getString(2), rs.getString(3)));
+                    }
+                    String b = rs.getString(4);
+                    if (b != null && !b.isBlank()) all.computeIfAbsent(sid, k -> new LinkedHashSet<>()).add(b);
                 }
             }
         }
 
-        List<String> sorted = new ArrayList<>(all);
-        sorted.sort(String::compareTo);
-        Set<String> inferred = new LinkedHashSet<>(sorted);
-        inferred.removeAll(captured);
-        return new GitFacts(sorted, inferred, commits);
+        for (String id : sessionIds) {
+            List<String> sorted = new ArrayList<>(all.getOrDefault(id, Set.of()));
+            sorted.sort(String::compareTo);
+            Set<String> inferred = new LinkedHashSet<>(sorted);
+            inferred.removeAll(captured.getOrDefault(id, Set.of()));
+            out.put(id, new GitFacts(sorted, inferred, commits.getOrDefault(id, List.of())));
+        }
+        return out;
     }
 
     // ── Preview + filter value lists ──────────────────────────────────────────
@@ -463,11 +499,15 @@ public final class SessionSearch {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * True only when the table and all three sync triggers exist, so a partial index is never used.
+     */
     private static boolean hasFts(Connection conn) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT 1 FROM sqlite_master WHERE name = 'turns_fts'");
+            "SELECT COUNT(*) FROM sqlite_master WHERE name IN "
+                + "('turns_fts', 'turns_fts_ai', 'turns_fts_ad', 'turns_fts_au')");
              ResultSet rs = ps.executeQuery()) {
-            return rs.next();
+            return rs.next() && rs.getInt(1) == 4;
         }
     }
 
@@ -503,6 +543,7 @@ public final class SessionSearch {
         try {
             return Instant.parse(iso).toEpochMilli();
         } catch (Exception e) {
+            LOG.debug("SessionSearch: unparseable timestamp '" + iso + "'", e);
             return 0;
         }
     }
