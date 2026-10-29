@@ -97,7 +97,9 @@ class PromptAttributionService(private val project: Project) : Disposable {
     /** A tool created [file]; every line of it belongs to the active turn. */
     fun fileCreatedByAgent(file: VirtualFile) {
         val owner = activeTurn.get() ?: return
-        val doc = FileDocumentManager.getInstance().getDocument(file) ?: return
+        // Called from a pooled tool thread: Document access needs a read action.
+        val doc = ApplicationManager.getApplication()
+            .runReadAction<Document?> { FileDocumentManager.getInstance().getDocument(file) } ?: return
         val model = LineOwnership.empty(doc.lineCount.coerceAtLeast(1))
         model.claimAll(owner.copy(kind = LineOwner.KIND_CREATE, timestampMs = System.currentTimeMillis()))
         models[file.path] = model
