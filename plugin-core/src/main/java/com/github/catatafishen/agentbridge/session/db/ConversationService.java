@@ -455,6 +455,37 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Searches sessions for the session picker. Git facts (branches, commits) are aggregated over
+     * all turns of each session. See {@link SessionSearch}.
+     */
+    @NotNull
+    public List<SessionSearch.SessionSummary> searchSessions(@NotNull SessionSearch.Params params) {
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
+        return new SessionSearch(db).search(params);
+    }
+
+    /**
+     * Turns of one session with the commits each produced, for the picker preview pane.
+     */
+    @NotNull
+    public List<SessionSearch.TurnPreview> listSessionTurns(@NotNull String sessionId) {
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
+        return new SessionSearch(db).listTurns(sessionId);
+    }
+
+    /**
+     * All branches any session has touched, most recently used first.
+     */
+    @NotNull
+    public List<String> listSessionBranches() {
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
+        return new SessionSearch(db).listBranches();
+    }
+
+    /**
      * Loads recent tool call history from the conversation database.
      * Used by the MCP tab to populate historic tool calls on startup.
      */
