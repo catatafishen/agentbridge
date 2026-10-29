@@ -297,6 +297,7 @@ public final class LineAttributionStore {
         try {
             return Instant.parse(iso).toEpochMilli();
         } catch (Exception e) {
+            LOG.debug("LineAttributionStore: unparseable timestamp '" + iso + "'", e);
             return 0;
         }
     }

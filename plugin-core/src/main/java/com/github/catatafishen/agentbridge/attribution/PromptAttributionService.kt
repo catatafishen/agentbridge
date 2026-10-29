@@ -12,10 +12,14 @@ import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.concurrency.AppExecutorUtil
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -29,8 +33,10 @@ import java.util.concurrent.atomic.AtomicReference
  *  * ownership is persisted per file ([LineAttributionStore]) together with a hash of the file, and
  *    re-anchored by content when the file changed while the IDE was not watching.
  *
- * Scope: only explicit IDE editing tool calls are attributed. Changes made by shell commands show up
- * as unattributed.
+ * Scope: edits made through IDE tool calls that bracket their change with [agentEditStarted] (the editing
+ * tools, but also quick-fix/action tools and file moves) are attributed live. Backfill from recorded history
+ * only replays the explicit editing tools, and its owners are flagged inferred. Changes made by shell
+ * commands show up as unattributed.
  */
 @Service(Service.Level.PROJECT)
 class PromptAttributionService(private val project: Project) : Disposable {
@@ -43,13 +49,10 @@ class PromptAttributionService(private val project: Project) : Disposable {
 
     /** Files that have, or may have, stored attribution. Loaded in the background at start. */
     private val attributedPaths: MutableSet<String> = ConcurrentHashMap.newKeySet()
-    private val listeners = java.util.concurrent.CopyOnWriteArrayList<Runnable>()
+    private val listeners = CopyOnWriteArrayList<Runnable>()
 
     @Volatile
     private var started = false
-
-    /** Set while an agent edit runs on this thread; document events then belong to [activeTurn]. */
-    private val agentEditDepth get() = editDepth
 
     private val flushTask = Runnable { flushDirty() }
 
@@ -72,13 +75,16 @@ class PromptAttributionService(private val project: Project) : Disposable {
     /** Called when a prompt starts; edits by tools from now on belong to [turnId]. */
     fun beginTurn(turnId: String) {
         ensureStarted()
-        if (turnId.isNotEmpty()) activeTurn.set(LineOwner(turnId, System.currentTimeMillis()))
+        activeTurn.set(if (turnId.isNotEmpty()) LineOwner(turnId, System.currentTimeMillis()) else null)
     }
 
     /** Called when the prompt ends. Pending attribution is written so the turn row exists by then. */
     fun endTurn() {
         activeTurn.set(null)
-        AppExecutorUtil.getAppExecutorService().execute(flushTask)
+        val scheduler = AppExecutorUtil.getAppScheduledExecutorService()
+        scheduler.execute(flushTask)
+        // The turn row may be saved slightly after the turn ends; retry once so nothing waits for the periodic flush.
+        scheduler.schedule(flushTask, TURN_END_RETRY_SEC, TimeUnit.SECONDS)
     }
 
     val currentTurnId: String? get() = activeTurn.get()?.turnId
@@ -152,7 +158,7 @@ class PromptAttributionService(private val project: Project) : Disposable {
         val base = project.basePath
         for (recorded in store.editedFilesForTurn(turnId)) {
             val absolute = if (recorded.startsWith("/") || base == null) recorded else "$base/$recorded"
-            if (absolute !in result && java.io.File(absolute).isFile) result[absolute] = UNKNOWN_LINES
+            if (absolute !in result && File(absolute).isFile) result[absolute] = UNKNOWN_LINES
         }
         return result
     }
@@ -202,7 +208,7 @@ class PromptAttributionService(private val project: Project) : Disposable {
         for (path in dirty.toList()) {
             val model = models[path] ?: run { dirty.remove(path); continue }
             val text = ApplicationManager.getApplication().runReadAction<String?> {
-                com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path)
+                LocalFileSystem.getInstance().findFileByPath(path)
                     ?.let { FileDocumentManager.getInstance().getDocument(it)?.text }
             } ?: run { dirty.remove(path); continue }
             val lines = LineOwnership.splitLines(text)
@@ -291,33 +297,35 @@ class PromptAttributionService(private val project: Project) : Disposable {
 
     companion object {
         private const val FLUSH_INTERVAL_SEC = 10L
+        private const val TURN_END_RETRY_SEC = 2L
 
         /** Line count for a file known to be edited by a turn whose attribution has not been computed yet. */
         const val UNKNOWN_LINES = -1
 
         /**
-         * Nesting depth of agent edits on this thread. Static so the existing no-argument
-         * `FileTool.notifyEditComplete()` can close it without a project.
+         * Number of agent edits in flight. Deliberately not thread-local: the tool thread typically
+         * dispatches its write command to the EDT, where the document listener fires, so a ThreadLocal set
+         * on the tool thread would never be seen. Edits are short, so a user keystroke racing one is
+         * negligible. Static so the no-argument `FileTool.notifyEditComplete()` can close it.
          */
-        private val editDepth: ThreadLocal<Int> = ThreadLocal.withInitial { 0 }
+        private val editDepth = AtomicInteger(0)
 
         @JvmStatic
         fun getInstance(project: Project): PromptAttributionService =
             project.getService(PromptAttributionService::class.java)
 
-        /** Called before an agent edit on this thread. No-op when the project is gone. */
+        /** Called before an agent edit. No-op when the project is gone. */
         @JvmStatic
         fun agentEditStarted(project: Project) {
             if (project.isDisposed) return
-            editDepth.set(editDepth.get() + 1)
+            editDepth.incrementAndGet()
             getInstance(project).ensureStarted()
         }
 
-        /** Called after an agent edit on this thread, paired with [agentEditStarted]. */
+        /** Called after an agent edit, paired with [agentEditStarted]. */
         @JvmStatic
         fun agentEditFinished() {
-            val depth = editDepth.get() - 1
-            if (depth <= 0) editDepth.remove() else editDepth.set(depth)
+            editDepth.updateAndGet { if (it > 0) it - 1 else 0 }
         }
 
         /** Called when a tool created [file] with the active turn's content. */
