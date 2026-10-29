@@ -92,7 +92,7 @@ class PromptAttributionService(private val project: Project) : Disposable {
     // ── Agent edit bracketing (called by FileTool.notifyBeforeEdit / notifyEditComplete) ──────
 
     private fun currentOwner(): LineOwner? =
-        if (editDepth.get() > 0) activeTurn.get()?.let { it.copy(timestampMs = System.currentTimeMillis()) } else null
+        if (editDepth.get() > 0) activeTurn.get()?.copy(timestampMs = System.currentTimeMillis()) else null
 
     /** A tool created [file]; every line of it belongs to the active turn. */
     fun fileCreatedByAgent(file: VirtualFile) {
@@ -138,8 +138,6 @@ class PromptAttributionService(private val project: Project) : Disposable {
         markDirty(file.path) // persist, so the next open is instant and the result stays stable
         return model
     }
-
-    fun hasAttribution(file: VirtualFile): Boolean = ownershipFor(file)?.isEmpty() == false
 
     /** The in-memory ownership of [file] without touching the database; safe to call while painting. */
     fun peekOwnership(file: VirtualFile): LineOwnership? = models[file.path]
