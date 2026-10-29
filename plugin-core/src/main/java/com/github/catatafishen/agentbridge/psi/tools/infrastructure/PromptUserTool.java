@@ -57,12 +57,13 @@ public final class PromptUserTool extends InfrastructureTool {
 
     @Override
     public @NotNull String description() {
-        return "Ask the user a question, or end your turn with buttons.\n" +
-            "Default: blocks until the user answers.\n" +
-            "With wait=false: returns at once; buttons appear when your turn ends, so finish your turn.\n" +
-            "`replies` buttons send text back to you.\n" +
-            "`actions` buttons run a tool call you specify directly, with no LLM turn; " +
-            "prefer them when the next step is a single tool call the user is likely to want next (e.g. push after a rebase).";
+        return """
+            Ask the user a question, or end your turn with buttons.
+            Default: blocks until the user answers.
+            With wait=false: returns at once; buttons appear when your turn ends, so finish your turn.
+            `replies` buttons send text back to you.
+            `actions` buttons run a tool call you specify directly, with no LLM turn; \
+            prefer them when the next step is a single tool call the user is likely to want next (e.g. push after a rebase).""";
     }
 
     @Override
