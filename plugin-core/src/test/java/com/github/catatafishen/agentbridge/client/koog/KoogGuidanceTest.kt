@@ -1,9 +1,6 @@
 package com.github.catatafishen.agentbridge.client.koog
 
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
@@ -25,7 +22,8 @@ class KoogGuidanceTest {
         fun `the memory section that follows the default text is kept`() {
             val memory = "---\n\nSEMANTIC MEMORY: remember this"
 
-            val composed = KoogGuidance.compose("$default\n$memory", default, userCustomized = false, koogVariant = variant)
+            val composed =
+                KoogGuidance.compose("$default\n$memory", default, userCustomized = false, koogVariant = variant)
 
             assertEquals("$variant\n\n${memory.trim()}", composed)
         }
@@ -70,8 +68,10 @@ class KoogGuidanceTest {
         fun `the Koog variant keeps the guidance that does apply`() {
             val text = resource("/koog/tool-guidance.md")!!
 
-            for (needle in listOf("run_command", "git_*", "create_scratch_file", "auto_format_and_optimize_imports",
-                "get_compilation_errors", "[User nudge]", "[quick-reply:")) {
+            for (needle in listOf(
+                "run_command", "git_*", "create_scratch_file", "auto_format_and_optimize_imports",
+                "get_compilation_errors", "[User nudge]", "prompt_user", "wait=false"
+            )) {
                 assertTrue(text.contains(needle), "missing '$needle'")
             }
         }
