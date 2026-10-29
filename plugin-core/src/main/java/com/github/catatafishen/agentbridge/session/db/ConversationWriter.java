@@ -55,7 +55,9 @@ public final class ConversationWriter implements AutoCloseable {
 
     private static final Logger LOG = Logger.getInstance(ConversationWriter.class);
 
-    /** {@code sub_agent_children.child_type} values; also read back by {@link ConversationReader}. */
+    /**
+     * {@code sub_agent_children.child_type} values; also read back by {@link ConversationReader}.
+     */
     static final String SUB_AGENT_CHILD_TEXT = "text";
     static final String SUB_AGENT_CHILD_THINKING = "thinking";
     static final String SUB_AGENT_CHILD_TOOL_CALL = "tool_call";
@@ -406,7 +408,9 @@ public final class ConversationWriter implements AutoCloseable {
                 lines_added         = ?,
                 lines_removed       = ?,
                 git_branch_at_start = COALESCE(git_branch_at_start, ?),
-                git_branch_at_end   = COALESCE(git_branch_at_end, ?)
+                git_branch_at_end   = COALESCE(git_branch_at_end, ?),
+                git_commit_at_start = COALESCE(git_commit_at_start, ?),
+                git_commit_at_end   = COALESCE(git_commit_at_end, ?)
             WHERE id = ?
             """)) {
             ps.setString(1, endedAt);
@@ -421,7 +425,9 @@ public final class ConversationWriter implements AutoCloseable {
             ps.setInt(10, stats.getLinesRemoved());
             ps.setString(11, stats.getGitBranchAtStart());
             ps.setString(12, stats.getGitBranchAtEnd());
-            ps.setString(13, turnId);
+            ps.setString(13, emptyToNull(stats.getGitCommitAtStart()));
+            ps.setString(14, emptyToNull(stats.getGitCommitAtEnd()));
+            ps.setString(15, turnId);
             ps.executeUpdate();
         }
     }

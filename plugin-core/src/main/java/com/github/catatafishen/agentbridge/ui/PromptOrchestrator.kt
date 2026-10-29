@@ -647,11 +647,12 @@ class PromptOrchestrator(
         val turnDuration = System.currentTimeMillis() - turnStartedAt
         val commitHashes = collectTurnCommits()
         val turnEndGitBranch = captureGitBranch()
+        val turnEndHeadHash = captureGitHead()
         val stats = TurnStatsData(
             turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
             turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, "",
             commitHashes, turnStartGitBranch, turnEndGitBranch, pendingPromptEntryId,
-            turnContextUsed, turnContextSize
+            turnContextUsed, turnContextSize, turnStartHeadHash, turnEndHeadHash
         )
 
         val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage

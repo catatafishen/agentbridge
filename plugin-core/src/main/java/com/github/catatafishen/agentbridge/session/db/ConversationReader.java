@@ -620,7 +620,7 @@ public final class ConversationReader {
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT ended_at, model, token_multiplier, input_tokens, output_tokens,
                    cost_usd, duration_ms, tool_call_count, lines_added, lines_removed,
-                   git_branch_at_start, git_branch_at_end
+                    git_branch_at_start, git_branch_at_end, git_commit_at_start, git_commit_at_end
             FROM turns WHERE id = ? AND ended_at IS NOT NULL
             """)) {
             ps.setString(1, turnId);
@@ -666,14 +666,29 @@ public final class ConversationReader {
         int linesRemoved = rs.getInt("lines_removed");
         String branchAtStart = rs.getString("git_branch_at_start");
         String branchAtEnd = rs.getString("git_branch_at_end");
+        String commitAtStart = columnOrNull(rs, "git_commit_at_start");
+        String commitAtEnd = columnOrNull(rs, "git_commit_at_end");
 
         return new EntryData.TurnStats(
             turnId, durationMs, inputTokens, outputTokens, costUsd,
             toolCallCount, linesAdded, linesRemoved, model, multiplierStr,
             0, 0, 0, 0.0, 0, 0, 0,
             endedAt, turnId + "-stats",
-            commitHashes, branchAtStart, branchAtEnd
+            commitHashes, branchAtStart, branchAtEnd, null, null,
+            commitAtStart, commitAtEnd
         );
+    }
+
+    /**
+     * Reads an optional column; returns null when the result set does not include it.
+     */
+    @Nullable
+    private static String columnOrNull(@NotNull ResultSet rs, @NotNull String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException e) {
+            return null;
+        }
     }
 
     @NotNull

@@ -57,6 +57,7 @@ final class ConversationSchema {
             if (currentVersion < 7) applyV7(stmt);
             if (currentVersion < 8) applyV8(stmt);
             if (currentVersion < 9) applyV9(stmt);
+            if (currentVersion < 10) applyV10(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -445,5 +446,99 @@ final class ConversationSchema {
             """);
         stmt.execute(
             "CREATE INDEX idx_sac_parent ON sub_agent_children(sub_agent_event_id, sequence_num)");
+    }
+
+    /**
+     * V10: session navigation and prompt annotations.
+     *
+     * <ul>
+     *   <li>{@code turns.git_info_inferred}: 1 when the branch was derived from linked commits
+     *       rather than captured at turn time.</li>
+     *   <li>Backfill of {@code git_branch_at_start/end} from {@code commits} joined to
+     *       {@code graph_commits.branch}, for turns that never captured a branch.</li>
+     *   <li>{@code idx_tc_file_path}: file to tool-call lookups (prompt annotations).</li>
+     *   <li>{@code turns_fts}: FTS5 index over prompt text, kept in sync by triggers. Optional: if
+     *       the SQLite build has no FTS5, the readers fall back to {@code LIKE}.</li>
+     *   <li>{@code line_attribution}: which turn (prompt) last wrote which lines of a file through
+     *       an editing tool call.</li>
+     * </ul>
+     */
+    private static void applyV10(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("ALTER TABLE turns ADD COLUMN git_info_inferred INTEGER NOT NULL DEFAULT 0");
+
+        stmt.execute("""
+            UPDATE turns SET
+                git_branch_at_start = (
+                    SELECT gc.branch FROM commits c
+                    JOIN graph_commits gc ON gc.hash = c.commit_hash
+                    WHERE c.turn_id = turns.id AND gc.branch IS NOT NULL AND gc.branch != ''
+                    ORDER BY gc.timestamp LIMIT 1),
+                git_info_inferred = 1
+            WHERE (git_branch_at_start IS NULL OR git_branch_at_start = '')
+              AND EXISTS (
+                    SELECT 1 FROM commits c
+                    JOIN graph_commits gc ON gc.hash = c.commit_hash
+                    WHERE c.turn_id = turns.id AND gc.branch IS NOT NULL AND gc.branch != '')
+            """);
+        stmt.execute("""
+            UPDATE turns SET git_branch_at_end = git_branch_at_start
+            WHERE git_info_inferred = 1 AND git_branch_at_end IS NULL
+            """);
+
+        stmt.execute("CREATE INDEX IF NOT EXISTS idx_tc_file_path ON tool_call_events(file_path)");
+        stmt.execute("CREATE INDEX IF NOT EXISTS idx_commits_hash ON commits(commit_hash)");
+
+        createPromptSearchIndex(stmt);
+
+        stmt.execute("""
+            CREATE TABLE line_attribution (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                turn_id        TEXT NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
+                tool_event_id  TEXT,
+                file_path      TEXT NOT NULL,
+                timestamp      TEXT NOT NULL,
+                kind           TEXT NOT NULL,
+                start_line     INTEGER NOT NULL,
+                end_line       INTEGER NOT NULL,
+                content_hash   TEXT NOT NULL,
+                inferred       INTEGER NOT NULL DEFAULT 0
+            )
+            """);
+        stmt.execute("CREATE INDEX idx_la_file ON line_attribution(file_path, timestamp)");
+        stmt.execute("CREATE INDEX idx_la_turn ON line_attribution(turn_id)");
+    }
+
+    /**
+     * Creates the FTS5 prompt index, its sync triggers and populates it from existing turns.
+     * A SQLite build without FTS5 is tolerated: the index is simply absent.
+     */
+    private static void createPromptSearchIndex(@NotNull Statement stmt) {
+        try {
+            stmt.execute("""
+                CREATE VIRTUAL TABLE turns_fts USING fts5(
+                    prompt_text, content='turns', content_rowid='rowid', tokenize='unicode61')
+                """);
+            stmt.execute("""
+                CREATE TRIGGER turns_fts_ai AFTER INSERT ON turns BEGIN
+                    INSERT INTO turns_fts(rowid, prompt_text) VALUES (new.rowid, new.prompt_text);
+                END
+                """);
+            stmt.execute("""
+                CREATE TRIGGER turns_fts_ad AFTER DELETE ON turns BEGIN
+                    INSERT INTO turns_fts(turns_fts, rowid, prompt_text)
+                    VALUES ('delete', old.rowid, old.prompt_text);
+                END
+                """);
+            stmt.execute("""
+                CREATE TRIGGER turns_fts_au AFTER UPDATE OF prompt_text ON turns BEGIN
+                    INSERT INTO turns_fts(turns_fts, rowid, prompt_text)
+                    VALUES ('delete', old.rowid, old.prompt_text);
+                    INSERT INTO turns_fts(rowid, prompt_text) VALUES (new.rowid, new.prompt_text);
+                END
+                """);
+            stmt.execute("INSERT INTO turns_fts(turns_fts) VALUES ('rebuild')");
+        } catch (SQLException e) {
+            LOG.warn("FTS5 unavailable; session search will use LIKE matching: " + e.getMessage());
+        }
     }
 }

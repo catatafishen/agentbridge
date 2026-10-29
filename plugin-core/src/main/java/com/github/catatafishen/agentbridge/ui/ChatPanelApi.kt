@@ -17,6 +17,8 @@ data class TurnStatsData @JvmOverloads constructor(
     /** Tokens the conversation fills after this turn, and the model's window; null when the agent cannot tell. */
     val contextUsed: Long? = null,
     val contextSize: Long? = null,
+    val gitCommitAtStart: String? = null,
+    val gitCommitAtEnd: String? = null,
 )
 
 /**

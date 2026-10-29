@@ -160,6 +160,10 @@ sealed class EntryData {
         /** Tokens the conversation fills after this turn, and the model's window; null when unknown. */
         val contextUsed: Long? = null,
         val contextSize: Long? = null,
+        /** HEAD commit when the prompt was submitted. Null when git is unavailable. */
+        val gitCommitAtStart: String? = null,
+        /** HEAD commit when the turn ended. Null when git is unavailable. */
+        val gitCommitAtEnd: String? = null,
     ) : EntryData()
 
     data class ContextFiles @JvmOverloads constructor(

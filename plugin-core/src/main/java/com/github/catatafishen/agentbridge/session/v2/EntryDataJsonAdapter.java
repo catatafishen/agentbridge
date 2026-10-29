@@ -2,8 +2,8 @@ package com.github.catatafishen.agentbridge.session.v2;
 
 import com.github.catatafishen.agentbridge.bridge.ContextFileRef;
 import com.github.catatafishen.agentbridge.bridge.EntryData;
-import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.github.catatafishen.agentbridge.bridge.FileRef;
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -220,6 +220,8 @@ public final class EntryDataJsonAdapter {
         addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
         addNonEmpty(json, "gitBranchAtStart", ts.getGitBranchAtStart());
         addNonEmpty(json, "gitBranchAtEnd", ts.getGitBranchAtEnd());
+        addNonEmpty(json, "gitCommitAtStart", ts.getGitCommitAtStart());
+        addNonEmpty(json, "gitCommitAtEnd", ts.getGitCommitAtEnd());
         if (ts.getContextUsed() != null) json.addProperty(KEY_CONTEXT_USED, ts.getContextUsed());
         if (ts.getContextSize() != null) json.addProperty(KEY_CONTEXT_SIZE, ts.getContextSize());
         json.addProperty(KEY_ENTRY_ID, ts.getEntryId());
@@ -374,7 +376,9 @@ public final class EntryDataJsonAdapter {
             strOrNull(json, "gitBranchAtStart"),
             strOrNull(json, "gitBranchAtEnd"),
             json.has(KEY_CONTEXT_USED) && json.get(KEY_CONTEXT_USED).isJsonPrimitive() ? json.get(KEY_CONTEXT_USED).getAsLong() : null,
-            json.has(KEY_CONTEXT_SIZE) && json.get(KEY_CONTEXT_SIZE).isJsonPrimitive() ? json.get(KEY_CONTEXT_SIZE).getAsLong() : null
+            json.has(KEY_CONTEXT_SIZE) && json.get(KEY_CONTEXT_SIZE).isJsonPrimitive() ? json.get(KEY_CONTEXT_SIZE).getAsLong() : null,
+            strOrNull(json, "gitCommitAtStart"),
+            strOrNull(json, "gitCommitAtEnd")
         );
     }
 
