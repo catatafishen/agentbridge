@@ -135,59 +135,49 @@ public final class SessionSearch {
     }
 
     private List<SessionSummary> searchInternal(Connection conn, Params p) throws SQLException {
-        List<String> where = new ArrayList<>();
-        List<Object> args = new ArrayList<>();
-
         String text = p.text() == null ? "" : p.text().trim();
-        if (!text.isEmpty()) {
-            appendTextFilter(conn, text, where, args);
-        }
-        if (notBlank(p.agent())) {
-            where.add("s.agent_name = ?");
-            args.add(p.agent());
-        }
-        if (notBlank(p.branch())) {
-            where.add(branchExists());
-            args.add(p.branch());
-            args.add(p.branch());
-            args.add(p.branch());
-        }
-        if (notBlank(p.commitPrefix())) {
-            where.add("""
-                EXISTS (SELECT 1 FROM commits c JOIN turns t ON t.id = c.turn_id
-                        WHERE t.session_id = s.id AND c.commit_hash LIKE ? ESCAPE '\\')""");
-            args.add(escapeLike(p.commitPrefix().trim().toLowerCase()) + "%");
-        }
-        if (p.onlyWithCommits()) {
-            where.add("""
-                EXISTS (SELECT 1 FROM commits c JOIN turns t ON t.id = c.turn_id
-                        WHERE t.session_id = s.id)""");
-        }
-        if (p.sinceEpochMs() > 0) {
-            where.add("COALESCE(s.ended_at, s.started_at) >= ?");
-            args.add(Instant.ofEpochMilli(p.sinceEpochMs()).toString());
-        }
+        String fts = ftsQuery(text);
+        String like = "%" + escapeLike(text) + "%";
 
-        String sql = """
-            SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
-                   COALESCE(s.ended_at, s.started_at) AS last_activity,
-                   (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count,
-                   COALESCE((SELECT SUM(lines_added) FROM turns WHERE session_id = s.id), 0),
-                   COALESCE((SELECT SUM(lines_removed) FROM turns WHERE session_id = s.id), 0),
-                   COALESCE((SELECT prompt_text FROM turns WHERE session_id = s.id
-                             ORDER BY started_at LIMIT 1), '')
-            FROM sessions s
-            """
-            + (where.isEmpty() ? "" : "WHERE " + String.join(" AND ", where) + "\n")
-            + "ORDER BY last_activity DESC LIMIT ? OFFSET ?";
+        // The statement is constant; optional filters are switched off with "? IS NULL" / "? = 0".
+        String sql;
+        List<Object> args = new ArrayList<>();
+        if (text.isEmpty()) {
+            sql = SEARCH_NO_TEXT;
+        } else {
+            boolean useFts = !fts.isEmpty() && hasFts(conn);
+            sql = useFts ? SEARCH_FTS : SEARCH_LIKE;
+            args.add(like);                          // display_name
+            args.add(useFts ? fts : like);           // prompts
+            args.add(like);                          // branch start
+            args.add(like);                          // branch end
+            args.add(escapeLike(text.toLowerCase()) + "%"); // commit hash
+            args.add(like);                          // commit message
+            args.add(like);                          // commit branch
+        }
+        String agent = notBlank(p.agent()) ? p.agent() : null;
+        String branch = notBlank(p.branch()) ? p.branch() : null;
+        String commit = notBlank(p.commitPrefix())
+            ? escapeLike(p.commitPrefix().trim().toLowerCase()) + "%" : null;
+        args.add(agent);
+        args.add(agent);
+        args.add(branch);
+        args.add(branch);
+        args.add(branch);
+        args.add(branch);
+        args.add(commit);
+        args.add(commit);
+        args.add(p.onlyWithCommits() ? 1 : 0);
+        args.add(p.sinceEpochMs() > 0 ? 1 : 0);
+        args.add(Instant.ofEpochMilli(Math.max(0, p.sinceEpochMs())).toString());
+        args.add(Math.clamp(p.limit(), 1, 500));
+        args.add(Math.max(0, p.offset()));
 
         List<SessionSummary> result = new ArrayList<>();
         List<Object[]> rows = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             int i = 1;
             for (Object a : args) ps.setObject(i++, a);
-            ps.setInt(i++, Math.max(1, Math.min(500, p.limit())));
-            ps.setInt(i, Math.max(0, p.offset()));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     rows.add(new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
@@ -211,58 +201,63 @@ public final class SessionSearch {
         return result;
     }
 
-    private static String branchExists() {
-        return """
-            (EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id
+    // ── Search statements (constants only; see searchInternal) ────────────────
+
+    private static final String SEARCH_SELECT = """
+        SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
+               COALESCE(s.ended_at, s.started_at) AS last_activity,
+               (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count,
+               COALESCE((SELECT SUM(lines_added) FROM turns WHERE session_id = s.id), 0),
+               COALESCE((SELECT SUM(lines_removed) FROM turns WHERE session_id = s.id), 0),
+               COALESCE((SELECT prompt_text FROM turns WHERE session_id = s.id
+                         ORDER BY started_at LIMIT 1), '')
+        FROM sessions s
+        WHERE 1 = 1
+        """;
+
+    private static final String TEXT_HEAD = """
+        AND (s.display_name LIKE ? ESCAPE '\\'
+          OR\s""";
+
+    private static final String PROMPTS_FTS = """
+        s.id IN (SELECT t.session_id FROM turns_fts f JOIN turns t ON t.id = f.turn_id
+                 WHERE turns_fts MATCH ?)""";
+
+    private static final String PROMPTS_LIKE = """
+        EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.prompt_text LIKE ? ESCAPE '\\')""";
+
+    private static final String TEXT_TAIL = """
+
+          OR EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id
+                       AND (t.git_branch_at_start LIKE ? ESCAPE '\\' OR t.git_branch_at_end LIKE ? ESCAPE '\\'))
+          OR EXISTS (SELECT 1 FROM commits c
+                       JOIN turns t ON t.id = c.turn_id
+                       LEFT JOIN graph_commits gc ON gc.hash = c.commit_hash
+                     WHERE t.session_id = s.id
+                       AND (c.commit_hash LIKE ? ESCAPE '\\' OR gc.message LIKE ? ESCAPE '\\'
+                            OR gc.branch LIKE ? ESCAPE '\\')))
+        """;
+
+    private static final String FILTERS = """
+        AND (? IS NULL OR s.agent_name = ?)
+        AND (? IS NULL OR
+             EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id
                        AND (t.git_branch_at_start = ? OR t.git_branch_at_end = ?))
              OR EXISTS (SELECT 1 FROM commits c
                           JOIN turns t ON t.id = c.turn_id
                           JOIN graph_commits gc ON gc.hash = c.commit_hash
-                        WHERE t.session_id = s.id AND gc.branch = ?))""";
-    }
+                        WHERE t.session_id = s.id AND gc.branch = ?))
+        AND (? IS NULL OR EXISTS (SELECT 1 FROM commits c JOIN turns t ON t.id = c.turn_id
+                                  WHERE t.session_id = s.id AND c.commit_hash LIKE ? ESCAPE '\\'))
+        AND (? = 0 OR EXISTS (SELECT 1 FROM commits c JOIN turns t ON t.id = c.turn_id
+                              WHERE t.session_id = s.id))
+        AND (? = 0 OR COALESCE(s.ended_at, s.started_at) >= ?)
+        ORDER BY last_activity DESC LIMIT ? OFFSET ?
+        """;
 
-    /**
-     * Free-text filter: session name, branch names, commit message/hash, or any prompt of the
-     * session (FTS5 when available, otherwise LIKE).
-     */
-    private void appendTextFilter(Connection conn, String text, List<String> where, List<Object> args)
-        throws SQLException {
-        String like = "%" + escapeLike(text) + "%";
-        List<String> any = new ArrayList<>();
-
-        any.add("s.display_name LIKE ? ESCAPE '\\'");
-        args.add(like);
-
-        String fts = ftsQuery(text);
-        if (hasFts(conn) && !fts.isEmpty()) {
-            any.add("""
-                s.id IN (SELECT t.session_id FROM turns_fts f JOIN turns t ON t.id = f.turn_id
-                         WHERE turns_fts MATCH ?)""");
-            args.add(fts);
-        } else {
-            any.add("EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.prompt_text LIKE ? ESCAPE '\\')");
-            args.add(like);
-        }
-
-        any.add("""
-            EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id
-                      AND (t.git_branch_at_start LIKE ? ESCAPE '\\' OR t.git_branch_at_end LIKE ? ESCAPE '\\'))""");
-        args.add(like);
-        args.add(like);
-
-        any.add("""
-            EXISTS (SELECT 1 FROM commits c
-                      JOIN turns t ON t.id = c.turn_id
-                      LEFT JOIN graph_commits gc ON gc.hash = c.commit_hash
-                    WHERE t.session_id = s.id
-                      AND (c.commit_hash LIKE ? ESCAPE '\\' OR gc.message LIKE ? ESCAPE '\\'
-                           OR gc.branch LIKE ? ESCAPE '\\'))""");
-        args.add(escapeLike(text.toLowerCase()) + "%");
-        args.add(like);
-        args.add(like);
-
-        where.add("(" + String.join(" OR ", any) + ")");
-    }
+    private static final String SEARCH_NO_TEXT = SEARCH_SELECT + FILTERS;
+    private static final String SEARCH_FTS = SEARCH_SELECT + TEXT_HEAD + PROMPTS_FTS + TEXT_TAIL + FILTERS;
+    private static final String SEARCH_LIKE = SEARCH_SELECT + TEXT_HEAD + PROMPTS_LIKE + TEXT_TAIL + FILTERS;
 
     @Nullable
     private String findMatchedPrompt(Connection conn, String sessionId, String text) throws SQLException {
@@ -296,31 +291,43 @@ public final class SessionSearch {
 
     // ── Git facts (session level) ─────────────────────────────────────────────
 
+    private static final String BRANCHES_OF_SESSIONS = """
+        SELECT sid, b, MAX(inferred) FROM (
+            SELECT session_id AS sid, git_branch_at_start AS b, git_info_inferred AS inferred
+              FROM turns WHERE session_id IN (""" + SqlJson.EACH + """
+        )
+            UNION ALL
+            SELECT session_id, git_branch_at_end, git_info_inferred
+              FROM turns WHERE session_id IN (""" + SqlJson.EACH + """
+        )
+        ) WHERE b IS NOT NULL AND b != '' GROUP BY sid, b""";
+
+    private static final String COMMITS_OF_SESSIONS = """
+        SELECT t.session_id, c.commit_hash, gc.message, gc.branch, MIN(t.started_at)
+        FROM commits c
+          JOIN turns t ON t.id = c.turn_id
+          LEFT JOIN graph_commits gc ON gc.hash = c.commit_hash
+        WHERE t.session_id IN (""" + SqlJson.EACH + """
+        )
+        GROUP BY t.session_id, c.commit_hash
+        ORDER BY MIN(t.started_at) DESC""";
+
     private record GitFacts(List<String> branches, Set<String> inferred, List<CommitRef> commits) {
     }
 
     private Map<String, GitFacts> loadGitFactsBatch(Connection conn, List<String> sessionIds) throws SQLException {
         Map<String, GitFacts> out = new HashMap<>();
         if (sessionIds.isEmpty()) return out;
-        String in = String.join(",", Collections.nCopies(sessionIds.size(), "?"));
+        // The id list is bound as one JSON array so the SQL text stays constant.
+        String idList = SqlJson.array(sessionIds);
 
         Map<String, Set<String>> captured = new HashMap<>();
         Map<String, Set<String>> all = new HashMap<>();
         Map<String, List<CommitRef>> commits = new HashMap<>();
 
-        try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT sid, b, MAX(inferred) FROM (
-                SELECT session_id AS sid, git_branch_at_start AS b, git_info_inferred AS inferred
-                  FROM turns WHERE session_id IN (""" + in + """
-            )
-                UNION ALL
-                SELECT session_id, git_branch_at_end, git_info_inferred
-                  FROM turns WHERE session_id IN (""" + in + """
-            )
-            ) WHERE b IS NOT NULL AND b != '' GROUP BY sid, b""")) {
-            int i = 1;
-            for (String id : sessionIds) ps.setString(i++, id);
-            for (String id : sessionIds) ps.setString(i++, id);
+        try (PreparedStatement ps = conn.prepareStatement(BRANCHES_OF_SESSIONS)) {
+            ps.setString(1, idList);
+            ps.setString(2, idList);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     all.computeIfAbsent(rs.getString(1), k -> new LinkedHashSet<>()).add(rs.getString(2));
@@ -331,17 +338,8 @@ public final class SessionSearch {
             }
         }
 
-        try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT t.session_id, c.commit_hash, gc.message, gc.branch, MIN(t.started_at)
-            FROM commits c
-              JOIN turns t ON t.id = c.turn_id
-              LEFT JOIN graph_commits gc ON gc.hash = c.commit_hash
-            WHERE t.session_id IN (""" + in + """
-            )
-            GROUP BY t.session_id, c.commit_hash
-            ORDER BY MIN(t.started_at) DESC""")) {
-            int i = 1;
-            for (String id : sessionIds) ps.setString(i++, id);
+        try (PreparedStatement ps = conn.prepareStatement(COMMITS_OF_SESSIONS)) {
+            ps.setString(1, idList);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     String sid = rs.getString(1);

@@ -76,32 +76,7 @@ public final class LineAttributionStore {
             try {
                 conn.setAutoCommit(false);
                 try {
-                    try (PreparedStatement del = conn.prepareStatement(
-                        "DELETE FROM line_attribution WHERE file_path = ?")) {
-                        del.setString(1, path);
-                        del.executeUpdate();
-                    }
-                    int stored = 0;
-                    try (PreparedStatement ins = conn.prepareStatement("""
-                        INSERT INTO line_attribution
-                            (turn_id, file_path, timestamp, kind, start_line, end_line, content_hash,
-                             file_hash, inferred)
-                        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-                        WHERE EXISTS (SELECT 1 FROM turns WHERE id = ?)""")) {
-                        for (RunRow r : runs) {
-                            ins.setString(1, r.turnId());
-                            ins.setString(2, path);
-                            ins.setString(3, Instant.ofEpochMilli(r.timestampMs()).toString());
-                            ins.setString(4, r.kind());
-                            ins.setInt(5, r.startLine());
-                            ins.setInt(6, r.endLine());
-                            ins.setString(7, r.contentHash());
-                            ins.setString(8, fileHash);
-                            ins.setInt(9, r.inferred() ? 1 : 0);
-                            ins.setString(10, r.turnId());
-                            stored += ins.executeUpdate();
-                        }
-                    }
+                    int stored = replaceRows(conn, path, fileHash, runs);
                     conn.commit();
                     return stored;
                 } catch (SQLException e) {
@@ -115,6 +90,37 @@ public final class LineAttributionStore {
                 return 0;
             }
         }
+    }
+
+    private static int replaceRows(Connection conn, String path, String fileHash, List<RunRow> runs)
+        throws SQLException {
+        try (PreparedStatement del = conn.prepareStatement("DELETE FROM line_attribution WHERE file_path = ?")) {
+            del.setString(1, path);
+            del.executeUpdate();
+        }
+        int stored = 0;
+        try (PreparedStatement ins = conn.prepareStatement("""
+            INSERT INTO line_attribution
+                (turn_id, file_path, timestamp, kind, start_line, end_line, content_hash,
+                 file_hash, inferred)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM turns WHERE id = ?)""")) {
+            // Parameters that are the same for every run are bound once; they stay bound across executions.
+            ins.setString(2, path);
+            ins.setString(8, fileHash);
+            for (RunRow r : runs) {
+                ins.setString(1, r.turnId());
+                ins.setString(3, Instant.ofEpochMilli(r.timestampMs()).toString());
+                ins.setString(4, r.kind());
+                ins.setInt(5, r.startLine());
+                ins.setInt(6, r.endLine());
+                ins.setString(7, r.contentHash());
+                ins.setInt(9, r.inferred() ? 1 : 0);
+                ins.setString(10, r.turnId());
+                stored += ins.executeUpdate();
+            }
+        }
+        return stored;
     }
 
     @Nullable
@@ -262,20 +268,21 @@ public final class LineAttributionStore {
         }
     }
 
+    private static final String TURN_INFO_SQL = """
+        SELECT t.id, t.session_id, t.prompt_text, s.agent_name, COALESCE(s.display_name, ''),
+               t.model, t.started_at
+        FROM turns t JOIN sessions s ON s.id = t.session_id
+        WHERE t.id IN (""" + SqlJson.EACH + ")";
+
     @NotNull
     public Map<String, TurnInfo> turnInfo(@NotNull Collection<String> turnIds) {
         if (turnIds.isEmpty()) return Map.of();
         synchronized (database) {
             Connection conn = database.getConnection();
             if (conn == null) return Map.of();
-            String placeholders = String.join(",", java.util.Collections.nCopies(turnIds.size(), "?"));
-            try (PreparedStatement ps = conn.prepareStatement("""
-                SELECT t.id, t.session_id, t.prompt_text, s.agent_name, COALESCE(s.display_name, ''),
-                       t.model, t.started_at
-                FROM turns t JOIN sessions s ON s.id = t.session_id
-                WHERE t.id IN (""" + placeholders + ")")) {
-                int i = 1;
-                for (String id : turnIds) ps.setString(i++, id);
+            String idList = SqlJson.array(turnIds);
+            try (PreparedStatement ps = conn.prepareStatement(TURN_INFO_SQL)) {
+                ps.setString(1, idList);
                 Map<String, TurnInfo> result = new HashMap<>();
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
