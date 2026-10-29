@@ -490,5 +490,13 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
             description="Open an inline diff popup for the agent-edit change at the caret">
       <add-to-group group-id="EditorPopupMenu" anchor="last"/>
     </action>
+    <!-- Gutter column showing which prompt last wrote each line, like "Annotate with Git Blame" -->
+    <action id="AgentBridge.Editor.AnnotateWithPrompts"
+            class="com.github.catatafishen.agentbridge.attribution.AnnotateWithPromptsAction"
+            text="Annotate with AgentBridge Prompts"
+            description="Show, for each line, the AgentBridge prompt that last wrote it through an editing tool">
+      <add-to-group group-id="EditorGutterPopupMenu" anchor="after" relative-to-action="Annotate"/>
+      <add-to-group group-id="AgentBridge.Editor.Menu" anchor="last"/>
+    </action>
   </actions>
 </idea-plugin>

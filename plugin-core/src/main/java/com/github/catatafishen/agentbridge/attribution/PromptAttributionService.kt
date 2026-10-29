@@ -112,6 +112,19 @@ class PromptAttributionService(private val project: Project) : Disposable {
 
     fun hasAttribution(file: VirtualFile): Boolean = ownershipFor(file)?.isEmpty() == false
 
+    /** The in-memory ownership of [file] without touching the database; safe to call while painting. */
+    fun peekOwnership(file: VirtualFile): LineOwnership? = models[file.path]
+
+    /** Prompt details for [turnIds]; blocks on the database, so call from a background thread. */
+    fun turnInfo(turnIds: Collection<String>): Map<String, LineAttributionStore.TurnInfo> =
+        store()?.turnInfo(turnIds) ?: emptyMap()
+
+    /** Files that still hold lines written by [turnId], with the line count; call from a background thread. */
+    fun filesForTurn(turnId: String): Map<String, Int> {
+        flushDirty()
+        return store()?.filesForTurn(turnId) ?: emptyMap()
+    }
+
     /** Forgets everything held in memory (not the database). Used when the project's files are reset. */
     fun reset() {
         activeTurn.set(null)
