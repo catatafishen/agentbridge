@@ -110,7 +110,9 @@ class PromptAttributionService(private val project: Project) : Disposable {
     /** The ownership of [file], restored from the database on first use; null when nothing is known. */
     fun ownershipFor(file: VirtualFile): LineOwnership? {
         models[file.path]?.let { return it }
-        val doc = FileDocumentManager.getInstance().getDocument(file) ?: return null
+        // Called from a pooled thread: Document access needs a read action.
+        val doc = ApplicationManager.getApplication()
+            .runReadAction<Document?> { FileDocumentManager.getInstance().getDocument(file) } ?: return null
         val known = file.path in attributedPaths || store()?.load(file.path) != null
         val restored = (if (known) restore(file.path, doc) else null) ?: backfill(file, doc) ?: return null
         return models.putIfAbsent(file.path, restored) ?: restored
