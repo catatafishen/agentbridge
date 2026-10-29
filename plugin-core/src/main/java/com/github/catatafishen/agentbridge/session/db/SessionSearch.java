@@ -385,6 +385,53 @@ public final class SessionSearch {
     }
 
     /**
+     * A turn that produced a commit, for the "show prompts for this commit" action.
+     */
+    public record CommitTurn(
+        @NotNull String sessionId,
+        @NotNull String sessionName,
+        @NotNull String agentName,
+        @NotNull String turnId,
+        @NotNull String prompt,
+        long startedAtMs
+    ) {
+    }
+
+    /**
+     * Turns whose work produced a commit starting with {@code hashPrefix} (min 4 characters), oldest first.
+     * A commit can be linked to several turns when a turn's commit range overlapped another's.
+     */
+    @NotNull
+    public List<CommitTurn> turnsForCommit(@NotNull String hashPrefix) {
+        String prefix = hashPrefix.trim().toLowerCase();
+        if (prefix.length() < 4) return List.of();
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT s.id, COALESCE(s.display_name, ''), s.agent_name, t.id, t.prompt_text, t.started_at
+                FROM commits c
+                  JOIN turns t ON t.id = c.turn_id
+                  JOIN sessions s ON s.id = t.session_id
+                WHERE c.commit_hash LIKE ? ESCAPE '\\'
+                ORDER BY t.started_at""")) {
+                ps.setString(1, escapeLike(prefix) + "%");
+                List<CommitTurn> result = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(new CommitTurn(rs.getString(1), rs.getString(2), rs.getString(3),
+                            rs.getString(4), rs.getString(5), parseMs(rs.getString(6))));
+                    }
+                }
+                return result;
+            } catch (SQLException e) {
+                LOG.warn("SessionSearch: failed to look up turns for commit " + hashPrefix, e);
+                return List.of();
+            }
+        }
+    }
+
+    /**
      * Distinct branches across all sessions (captured and via commits), most recently used first.
      */
     @NotNull

@@ -206,6 +206,27 @@ class SessionSearchTest {
     }
 
     @Test
+    void turnsForCommitFindsTheTurnThatProducedItByPrefix() throws Exception {
+        seed();
+
+        List<SessionSearch.CommitTurn> turns = search.turnsForCommit("1111");
+
+        assertEquals(1, turns.size());
+        assertEquals("s1", turns.getFirst().sessionId());
+        assertEquals("t1", turns.getFirst().turnId());
+        assertEquals("Implement the payment gateway", turns.getFirst().prompt());
+    }
+
+    @Test
+    void turnsForCommitIgnoresTooShortOrUnknownPrefixes() throws Exception {
+        seed();
+
+        assertTrue(search.turnsForCommit("111").isEmpty());
+        assertTrue(search.turnsForCommit("ffff").isEmpty());
+        assertTrue(search.turnsForCommit("%%%%").isEmpty());
+    }
+
+    @Test
     void ftsQuerySanitisesInput() {
         assertEquals("\"foo\"* \"bar\"*", SessionSearch.ftsQuery("foo* (bar"));
         assertEquals("", SessionSearch.ftsQuery("*** ()"));

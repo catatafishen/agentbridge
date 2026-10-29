@@ -485,6 +485,14 @@ public final class ConversationService implements Disposable {
         return new SessionSearch(db).listBranches();
     }
 
+    /** The turns whose work produced the given commit (hash prefix of at least 4 characters). */
+    @NotNull
+    public List<SessionSearch.CommitTurn> turnsForCommit(@NotNull String hashPrefix) {
+        ConversationDatabase db = getInitializedDbOrNull();
+        if (db == null) return List.of();
+        return new SessionSearch(db).turnsForCommit(hashPrefix);
+    }
+
     /**
      * Loads recent tool call history from the conversation database.
      * Used by the MCP tab to populate historic tool calls on startup.

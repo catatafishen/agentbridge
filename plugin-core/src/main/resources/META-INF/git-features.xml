@@ -1,4 +1,20 @@
 <idea-plugin>
-    <!-- Git4Idea optional dependency extensions -->
-    <!-- Git tools are registered at runtime when Git4Idea is available -->
+  <!-- Git4Idea optional dependency extensions -->
+  <!-- Git tools are registered at runtime when Git4Idea is available -->
+
+  <!-- Link git history to AgentBridge conversations (loaded only when the Git plugin is present). -->
+  <actions>
+    <action id="AgentBridge.Git.ShowPromptsForCommit"
+            class="com.github.catatafishen.agentbridge.ui.sessions.ShowPromptsForCommitAction"
+            text="Show AgentBridge Prompts"
+            description="Open the AgentBridge prompt (and conversation) that produced the selected commit">
+      <add-to-group group-id="Vcs.Log.ContextMenu" anchor="last"/>
+    </action>
+    <action id="AgentBridge.Git.ShowSessionsForBranch"
+            class="com.github.catatafishen.agentbridge.ui.sessions.ShowSessionsForBranchAction"
+            text="Show AgentBridge Sessions on This Branch"
+            description="Search AgentBridge sessions that worked on the selected branch">
+      <add-to-group group-id="Vcs.Log.ContextMenu" anchor="last"/>
+    </action>
+  </actions>
 </idea-plugin>
