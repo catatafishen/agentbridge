@@ -163,6 +163,8 @@ class PromptOrchestrator(
         pendingRawText = rawText
         pendingPromptEntryId = promptEntryId
         stopped = false
+        // Drop buttons left over from an earlier turn; the agent re-registers if still relevant.
+        PendingButtons.getInstance(project).clear()
         // Clear any stale interrupt flag left by a previous stop() call so it doesn't fire
         // immediately on the first blocking operation in the new turn.
         Thread.interrupted()
@@ -472,6 +474,11 @@ class PromptOrchestrator(
 
     private fun buildEffectivePrompt(prompt: String): String {
         var effective = prompt
+        // Tell the agent about actions the user ran from buttons since its last turn.
+        val notes = PendingButtons.getInstance(project).drainNotes()
+        if (notes.isNotEmpty() && !prompt.trimStart().startsWith("/")) {
+            effective = notes.joinToString("\n", prefix = "[", postfix = "]\n\n") + effective
+        }
         if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
             conversationSummaryInjected = true
             val summary = consolePanel().getCompressedSummary()
@@ -643,10 +650,11 @@ class PromptOrchestrator(
         callbacks.notifyIfUnfocused(turnToolCallCount)
 
         callbacks.appendNewEntries()
-        val lastResponse = consolePanel().getLastResponseText()
-        val quickReplies = detectQuickReplies(lastResponse)
-        if (quickReplies.isNotEmpty()) {
-            ApplicationManager.getApplication().invokeLater { consolePanel().showQuickReplies(quickReplies) }
+        // Buttons registered via prompt_user(wait=false) are shown once the turn has ended, so
+        // they land below the final text instead of mid-stream.
+        val strip = PendingButtons.getInstance(project).take()
+        if (strip != null && !strip.isEmpty) {
+            ApplicationManager.getApplication().invokeLater { consolePanel().showButtonStrip(strip) }
         }
 
         val turnDuration = System.currentTimeMillis() - turnStartedAt
@@ -1202,7 +1210,4 @@ class PromptOrchestrator(
             emptyList()
         }
     }
-
-    private fun detectQuickReplies(responseText: String): List<String> =
-        PromptErrorClassifier.detectQuickReplies(responseText)
 }

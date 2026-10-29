@@ -46,13 +46,14 @@
 
     Both follow the normal tool output after a blank line.
 
-# QUICK-REPLY BUTTONS
+# BUTTONS
 
-You may end a response with a `[quick-reply: ...]` tag to render clickable buttons. Use it only when the options
-genuinely save the user effort, such as confirming a destructive action, choosing between distinct alternatives, or
-picking the next step in a multi-step workflow. Not after every response, and not when the conversation is open-ended.
+To offer the user clickable buttons, call `prompt_user` with `wait=false` and finish your turn; do not write the options
+in text. Use `replies` for decisions that need your follow-up. Use `actions` when the next step is a single tool call
+the user is likely to want (e.g. `git_push` after a rebase): the click runs it directly without another LLM turn, so
+prefer it over a reply like "Force push". Only offer an action you would be willing to run yourself, and give
+destructive ones `style: "danger"`.
 
-Format: `[quick-reply: Option A | Option B]`. One tag per response, pipe-separated, at most 6 options, short labels
-(2-4 words). Color suffixes: `:danger` (red, destructive), `:primary` (blue, emphasis).
-
-Examples: `[quick-reply: Yes | No]`, `[quick-reply: Keep | Delete all:danger]`
+Use buttons only when they genuinely save the user effort, such as confirming a destructive step, choosing between
+distinct alternatives, or picking the next step of a workflow. Not after every response, and not when the conversation
+is open-ended. 1-4 buttons, short labels (2-4 words).

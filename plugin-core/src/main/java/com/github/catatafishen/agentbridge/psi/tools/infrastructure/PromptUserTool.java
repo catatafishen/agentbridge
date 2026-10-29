@@ -3,8 +3,13 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.ui.BroadcastChatPanel;
+import com.github.catatafishen.agentbridge.ui.ButtonSpecParser;
+import com.github.catatafishen.agentbridge.ui.ButtonStrip;
+import com.github.catatafishen.agentbridge.ui.ButtonStyle;
+import com.github.catatafishen.agentbridge.ui.PendingButtons;
+import com.github.catatafishen.agentbridge.ui.RegistryToolCatalog;
+import com.github.catatafishen.agentbridge.ui.ReplyButton;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
@@ -30,7 +35,9 @@ import java.util.concurrent.TimeoutException;
 public final class PromptUserTool extends InfrastructureTool {
 
     private static final String PARAM_QUESTION = "question";
-    private static final String PARAM_OPTIONS = "options";
+    private static final String PARAM_WAIT = "wait";
+    private static final String PARAM_REPLIES = ButtonSpecParser.KEY_REPLIES;
+    private static final String PARAM_ACTIONS = ButtonSpecParser.KEY_ACTIONS;
     private static final long RESPONSE_TIMEOUT_MS = 120_000L;
     private static final String NOTIFICATION_GROUP_ID = "AgentBridge Notifications";
 
@@ -50,9 +57,12 @@ public final class PromptUserTool extends InfrastructureTool {
 
     @Override
     public @NotNull String description() {
-        return "Ask the user a question and wait for their response. Blocks until the user replies (timeout: 120s, extensible — the user can request more time). " +
-            "Use options parameter to show quick-reply buttons. " +
-            "The user can also reply by typing in the chat input field and pressing Enter — a free-form reply is not restricted to the provided options.";
+        return "Ask the user a question, or end your turn with buttons.\n" +
+            "Default: blocks until the user answers.\n" +
+            "With wait=false: returns at once; buttons appear when your turn ends, so finish your turn.\n" +
+            "`replies` buttons send text back to you.\n" +
+            "`actions` buttons run a tool call you specify directly, with no LLM turn; " +
+            "prefer them when the next step is a single tool call the user is likely to want next (e.g. push after a rebase).";
     }
 
     @Override
@@ -68,21 +78,81 @@ public final class PromptUserTool extends InfrastructureTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         JsonObject schema = schema(
-            Param.required(PARAM_QUESTION, TYPE_STRING, "Question to ask the user"),
-            Param.optional(PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons (optional — the user can also type a free-form reply in the chat input)")
+            Param.optional(PARAM_QUESTION, TYPE_STRING, "Question to show. Required unless wait=false."),
+            Param.optional(PARAM_WAIT, TYPE_BOOLEAN, "Block for the answer (default) or return at once and end your turn.", true),
+            Param.optional(PARAM_REPLIES, TYPE_ARRAY, "Buttons that send text back to you. Items: label, optional text (sent instead of label), style, dismiss. Strings accepted."),
+            Param.optional(PARAM_ACTIONS, TYPE_ARRAY, "Buttons that run a tool directly. Items: label, tool, arguments, style.")
         );
-        addArrayItems(schema, PARAM_OPTIONS);
+        JsonObject props = schema.getAsJsonObject("properties");
+        props.getAsJsonObject(PARAM_REPLIES).add("items", buttonItemSchema(false));
+        props.getAsJsonObject(PARAM_REPLIES).addProperty("maxItems", ButtonSpecParser.MAX_BUTTONS);
+        props.getAsJsonObject(PARAM_ACTIONS).add("items", buttonItemSchema(true));
+        props.getAsJsonObject(PARAM_ACTIONS).addProperty("maxItems", ButtonSpecParser.MAX_BUTTONS);
         return schema;
+    }
+
+    private static @NotNull JsonObject buttonItemSchema(boolean action) {
+        JsonObject item = new JsonObject();
+        item.addProperty("type", TYPE_OBJECT);
+        JsonObject props = new JsonObject();
+        JsonObject label = new JsonObject();
+        label.addProperty("type", TYPE_STRING);
+        label.addProperty("maxLength", ButtonSpecParser.MAX_LABEL_LENGTH);
+        props.add("label", label);
+        JsonObject style = new JsonObject();
+        style.addProperty("type", TYPE_STRING);
+        JsonArray styles = new JsonArray();
+        for (String s : ButtonStyle.Companion.getNAMES()) styles.add(s);
+        style.add("enum", styles);
+        props.add("style", style);
+        if (action) {
+            JsonObject tool = new JsonObject();
+            tool.addProperty("type", TYPE_STRING);
+            props.add("tool", tool);
+            JsonObject arguments = new JsonObject();
+            arguments.addProperty("type", TYPE_OBJECT);
+            props.add("arguments", arguments);
+        } else {
+            JsonObject text = new JsonObject();
+            text.addProperty("type", TYPE_STRING);
+            props.add("text", text);
+            JsonObject dismiss = new JsonObject();
+            dismiss.addProperty("type", TYPE_BOOLEAN);
+            props.add("dismiss", dismiss);
+        }
+        item.add("properties", props);
+        JsonArray required = new JsonArray();
+        required.add("label");
+        if (action) required.add("tool");
+        item.add("required", required);
+        return item;
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        String question = args.has(PARAM_QUESTION) ? args.get(PARAM_QUESTION).getAsString().trim() : "";
+        String question = args.has(PARAM_QUESTION) && !args.get(PARAM_QUESTION).isJsonNull()
+            ? args.get(PARAM_QUESTION).getAsString().trim() : "";
+        boolean wait = !question.isEmpty() && (!args.has(PARAM_WAIT) || args.get(PARAM_WAIT).getAsBoolean());
+
+        ButtonSpecParser.Result parsed = ButtonSpecParser.INSTANCE.parse(args, new RegistryToolCatalog(project));
+        if (!parsed.getOk()) {
+            return "Error: invalid buttons:\n- " + String.join("\n- ", parsed.getErrors());
+        }
+        ButtonStrip strip = new ButtonStrip(question.isEmpty() ? null : question, parsed.getReplies(), parsed.getActions());
+
+        if (!wait) {
+            if (strip.isEmpty())
+                return "Error: provide a question to wait for, or at least one button (replies/actions).";
+            PendingButtons.Companion.getInstance(project).set(strip);
+            return "Buttons registered (" + strip.getActions().size() + " actions, " + strip.getReplies().size()
+                + " replies). They appear when your turn ends. End your turn now and do not repeat them in text.";
+        }
         if (question.isEmpty()) {
             return "Error: question is required";
         }
 
-        List<String> options = parseOptions(args);
+        List<String> options = new ArrayList<>();
+        for (ReplyButton r : strip.getReplies()) options.add(r.getText());
 
         BroadcastChatPanel panel = BroadcastChatPanel.getInstance(project);
         if (panel == null) {
@@ -102,7 +172,7 @@ public final class PromptUserTool extends InfrastructureTool {
         InFlightMcpToolRegistry registry = InFlightMcpToolRegistry.getInstance(project);
         registry.register(reqId, responseFuture);
 
-        EdtUtil.invokeLater(() -> showAskUserRequestCompat(panel, reqId, question, options, deadlineMs, responseFuture));
+        EdtUtil.invokeLater(() -> showAskUserCompat(panel, reqId, question, strip, deadlineMs, responseFuture));
 
         try {
             return awaitWithExtensibleDeadline(responseFuture, deadlineMs);
@@ -126,11 +196,11 @@ public final class PromptUserTool extends InfrastructureTool {
      * the backend waiter functional, but deadline extension/supersede notifications are not
      * available from that older contract.
      */
-    private static void showAskUserRequestCompat(
+    private static void showAskUserCompat(
         @NotNull com.github.catatafishen.agentbridge.ui.ChatPanelApi panel,
         @NotNull String reqId,
         @NotNull String question,
-        @NotNull List<String> options,
+        @NotNull ButtonStrip strip,
         long @NotNull [] deadlineMs,
         @NotNull CompletableFuture<String> responseFuture
     ) {
@@ -152,32 +222,17 @@ public final class PromptUserTool extends InfrastructureTool {
 
         try {
             panel.getClass().getMethod(
-                "showAskUserRequest",
+                "showAskUserButtons",
                 String.class,
                 String.class,
-                List.class,
+                ButtonStrip.class,
                 long.class,
                 kotlin.jvm.functions.Function1.class,
                 kotlin.jvm.functions.Function0.class,
                 kotlin.jvm.functions.Function0.class
-            ).invoke(panel, reqId, question, options, deadlineMs[0], onRespond, onExtend, onSuperseded);
-            return;
-        } catch (NoSuchMethodException ignored) {
-            // Fall through to the older ABI below.
+            ).invoke(panel, reqId, question, strip, deadlineMs[0], onRespond, onExtend, onSuperseded);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Failed to invoke ask-user panel API", e);
-        }
-
-        try {
-            panel.getClass().getMethod(
-                "showAskUserRequest",
-                String.class,
-                String.class,
-                List.class,
-                kotlin.jvm.functions.Function1.class
-            ).invoke(panel, reqId, question, options, onRespond);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to invoke legacy ask-user panel API", e);
         }
     }
 
@@ -222,21 +277,6 @@ public final class PromptUserTool extends InfrastructureTool {
                 throw ee;
             }
         }
-    }
-
-    private @NotNull List<String> parseOptions(@NotNull JsonObject args) {
-        JsonArray arr = args.has(PARAM_OPTIONS) && args.get(PARAM_OPTIONS).isJsonArray()
-            ? args.getAsJsonArray(PARAM_OPTIONS) : new JsonArray();
-        List<String> options = new ArrayList<>();
-        for (JsonElement el : arr) {
-            if (!el.isJsonNull()) {
-                String option = el.getAsString().trim();
-                if (!option.isEmpty()) {
-                    options.add(option);
-                }
-            }
-        }
-        return options;
     }
 
     private void notifyIfUnfocused(@NotNull String question) {

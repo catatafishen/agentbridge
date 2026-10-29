@@ -279,7 +279,7 @@ class BroadcastChatPanel(
         dispatchUi { nativePanel.emitTurnStats(stats) }
     }
 
-    override fun showQuickReplies(options: List<String>) = dispatchUi { nativePanel.showQuickReplies(options) }
+    override fun showButtonStrip(strip: ButtonStrip) = dispatchUi { nativePanel.showButtonStrip(strip) }
 
     override fun disableQuickReplies() = dispatchUi { nativePanel.disableQuickReplies() }
 
@@ -410,6 +410,18 @@ class BroadcastChatPanel(
         onSuperseded: () -> Unit,
     ) = dispatchUi {
         nativePanel.showAskUserRequest(reqId, question, options, deadlineEpochMs, onRespond, onExtend, onSuperseded)
+    }
+
+    override fun showAskUserButtons(
+        reqId: String,
+        question: String,
+        strip: ButtonStrip,
+        deadlineEpochMs: Long,
+        onRespond: (String) -> Unit,
+        onExtend: () -> Long,
+        onSuperseded: () -> Unit,
+    ) = dispatchUi {
+        nativePanel.showAskUserButtons(reqId, question, strip, deadlineEpochMs, onRespond, onExtend, onSuperseded)
     }
 
     override fun resolvePendingAskUser(answer: String): Boolean = nativePanel.resolvePendingAskUser(answer)

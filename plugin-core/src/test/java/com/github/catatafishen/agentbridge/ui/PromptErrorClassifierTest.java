@@ -329,59 +329,6 @@ class PromptErrorClassifierTest {
             "ES module message should not appear for unrelated crash");
     }
 
-    // ── detectQuickReplies ──────────────────────────────────────────────
-
-    @Test
-    void detectQuickReplies_multipleOptions_returnsParsedList() {
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies("[quick-reply: A | B | C]");
-        assertEquals(List.of("A", "B", "C"), replies);
-    }
-
-    @Test
-    void detectQuickReplies_singleOption_returnsSingleElementList() {
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies("[quick-reply: A]");
-        assertEquals(List.of("A"), replies);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"no quick replies here", "", "[quick-reply: | | ]"})
-    void detectQuickReplies_noValidReplies_returnsEmptyList(String input) {
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies(input);
-        assertTrue(replies.isEmpty());
-    }
-
-    @Test
-    void detectQuickReplies_whitespaceAroundOptions_trimmed() {
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies("[quick-reply:  A  |  B  ]");
-        assertEquals(List.of("A", "B"), replies);
-    }
-
-    @Test
-    void detectQuickReplies_multipleTags_returnsLastMatch() {
-        String text = "[quick-reply: X | Y] some text [quick-reply: A | B | C]";
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies(text);
-        assertEquals(List.of("A", "B", "C"), replies);
-    }
-
-    @Test
-    void detectQuickReplies_tagEmbeddedInLongerText_parsesCorrectly() {
-        String text = "Here is an error. [quick-reply: Retry | Cancel] Please choose.";
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies(text);
-        assertEquals(List.of("Retry", "Cancel"), replies);
-    }
-
-    @Test
-    void detectQuickReplies_extraWhitespaceInTag_parsesCorrectly() {
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies("[  quick-reply:  Yes  |  No  ]");
-        assertEquals(List.of("Yes", "No"), replies);
-    }
-
-    @Test
-    void detectQuickReplies_singleOptionWithTrailingPipe_filtersEmpty() {
-        List<String> replies = PromptErrorClassifier.INSTANCE.detectQuickReplies("[quick-reply: A | ]");
-        assertEquals(List.of("A"), replies);
-    }
-
     // ── isCLINotFoundError ──────────────────────────────────────────────
 
     @Test

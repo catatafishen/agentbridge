@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeTaskOutput
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
 import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
@@ -16,29 +17,24 @@ import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.icons.AllIcons
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.fileTypes.FileTypeManager
-import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
+import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.InplaceButton
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.datatransfer.StringSelection
-import java.awt.event.ComponentAdapter
-import java.awt.event.ComponentEvent
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import java.awt.event.MouseWheelListener
-import kotlin.math.max
-import kotlin.math.min
+import java.awt.event.*
 import javax.swing.*
 import javax.swing.text.SimpleAttributeSet
 import javax.swing.text.StyleConstants
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Native Swing implementation of [ChatPanelApi] with styled chat bubbles,
@@ -1160,7 +1156,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (prompt.isNullOrBlank() || section.promptRow != null) return
         val at = contentPanel.getComponentZOrder(section.row)
         if (at < 0) return
-        val promptRow = rowContainer(createSubAgentPromptBubble(section.label, ChatTheme.SA_COLORS[section.colorIndex], prompt))
+        val promptRow =
+            rowContainer(createSubAgentPromptBubble(section.label, ChatTheme.SA_COLORS[section.colorIndex], prompt))
         contentPanel.add(promptRow, at)
         section.promptRow = promptRow
         contentPanel.revalidate()
@@ -1444,33 +1441,71 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         addRow(createTurnStatsRow(stats))
     }
 
-    override fun showQuickReplies(options: List<String>) {
+    override fun showButtonStrip(strip: ButtonStrip) {
+        if (strip.isEmpty) return
         val panel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
         }
-        val buttons = mutableListOf<JButton>()
-        options.forEach { raw ->
-            val opt = parseQuickReplyOption(raw)
-            val btn = JButton(opt.label).apply {
+        strip.caption?.takeIf { it.isNotBlank() }?.let { caption ->
+            panel.add(JBLabel(caption).apply {
                 applyChatFont()
-                foreground = when {
-                    opt.dismiss -> UIUtil.getContextHelpForeground()
-                    opt.color == QuickReplyColor.DANGER -> JBColor.RED
-                    opt.color == QuickReplyColor.PRIMARY -> USER_COLOR
-                    opt.color == QuickReplyColor.WARNING -> JBColor.ORANGE
-                    else -> null
-                }
-                addActionListener {
-                    currentQuickReplyButtons.forEach { it.isEnabled = false }
-                    if (!opt.dismiss) onQuickReply?.invoke(opt.label)
+                foreground = UIUtil.getContextHelpForeground()
+            })
+        }
+        val buttons = mutableListOf<JButton>()
+        strip.replies.forEach { reply ->
+            val btn = createStyledButton(reply.label, reply.style, reply.dismiss)
+            btn.addActionListener {
+                currentQuickReplyButtons.forEach { it.isEnabled = false }
+                if (!reply.dismiss) onQuickReply?.invoke(reply.text)
+            }
+            buttons.add(btn)
+            panel.add(btn)
+        }
+        strip.actions.forEach { action ->
+            val btn = createStyledButton(action.label, action.style, false)
+            btn.toolTipText = actionTooltip(action)
+            btn.addActionListener {
+                btn.isEnabled = false // single-use
+                btn.text = "${action.label}…"
+                ButtonActionRunner.run(project, action) { outcome ->
+                    btn.text = "${if (outcome.success) "✔" else "✖"} ${action.label}"
+                    btn.toolTipText = outcome.summary.take(500)
+                    // Nobody is waiting for the result: tell the agent on its next prompt.
+                    ButtonActionRunner.recordNote(project, outcome)
                 }
             }
             buttons.add(btn)
             panel.add(btn)
         }
-        currentQuickReplyButtons = buttons
+        val close = JButton(AllIcons.Actions.Close).apply {
+            toolTipText = "Dismiss"
+            isBorderPainted = false
+            isContentAreaFilled = false
+            addActionListener { disableQuickReplies() }
+        }
+        panel.add(close)
+        currentQuickReplyButtons = buttons + close
         addRow(panel)
+    }
+
+    private fun createStyledButton(label: String, style: ButtonStyle, dismiss: Boolean): JButton =
+        JButton(label).apply {
+            applyChatFont()
+            foreground = when {
+                dismiss -> UIUtil.getContextHelpForeground()
+                style == ButtonStyle.DANGER -> JBColor.RED
+                style == ButtonStyle.PRIMARY -> USER_COLOR
+                style == ButtonStyle.WARNING -> JBColor.ORANGE
+                style == ButtonStyle.SUCCESS -> JBColor(0x2E7D32, 0x6AAB73)
+                else -> null
+            }
+        }
+
+    private fun actionTooltip(action: ActionButton): String {
+        val args = action.arguments.toString().let { if (it.length > 300) it.take(300) + "…" else it }
+        return "Runs ${action.tool} $args"
     }
 
     override fun disableQuickReplies() {
@@ -1836,6 +1871,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         deadlineEpochMs: Long, onRespond: (String) -> Unit,
         onExtend: () -> Long, onSuperseded: () -> Unit,
     ) {
+        val strip = ButtonStrip(null, options.map { ReplyButton(it, it) }, emptyList())
+        showAskUserButtons(reqId, question, strip, deadlineEpochMs, onRespond, onExtend, onSuperseded)
+    }
+
+    override fun showAskUserButtons(
+        reqId: String, question: String, strip: ButtonStrip,
+        deadlineEpochMs: Long, onRespond: (String) -> Unit,
+        onExtend: () -> Long, onSuperseded: () -> Unit,
+    ) {
         val pane = createMarkdownPane(question)
         val (bubbleRow, askBubble) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder()) { row ->
             row.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
@@ -1851,7 +1895,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // controls row, and add a user-decision bubble — guarded by an AtomicBoolean
         // so a late timer tick or a duplicate click can't fire onRespond twice.
         val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
-        val completeOnce: (String) -> Unit = { answer ->
+        val completeOnce: (String, String) -> Unit = { bubbleText, answer ->
             if (resolved.compareAndSet(false, true)) {
                 pendingAskUserRespond.set(null)
                 stopWaitingMode()
@@ -1859,7 +1903,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 controlsRow?.let { contentPanel.remove(it) }
                 contentPanel.revalidate()
                 contentPanel.repaint()
-                addUserDecisionBubble(answer)
+                addUserDecisionBubble(bubbleText)
                 onRespond(answer)
             }
         }
@@ -1888,16 +1932,29 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // Populate the controls panel BEFORE handing it to addRow so the layout sees
         // every child on first realization (otherwise dynamic adds after addRow can
         // leave the option buttons invisible until the next revalidate).
-        options.forEach { opt ->
-            val btn = JButton(opt).apply {
-                applyChatFont()
-                addActionListener { completeOnce(opt) }
+        strip.replies.forEach { reply ->
+            val btn = createStyledButton(reply.label, reply.style, reply.dismiss).apply {
+                addActionListener { completeOnce(reply.text, reply.text) }
+            }
+            allButtons.add(btn)
+            buttonsPanel.add(btn)
+        }
+        strip.actions.forEach { action ->
+            val btn = createStyledButton(action.label, action.style, false).apply {
+                toolTipText = actionTooltip(action)
+                addActionListener {
+                    allButtons.forEach { it.isEnabled = false }
+                    text = "${action.label}…"
+                    ButtonActionRunner.run(project, action) { outcome ->
+                        completeOnce("${if (outcome.success) "✔" else "✖"} ${action.label}", outcome.summary)
+                    }
+                }
             }
             allButtons.add(btn)
             buttonsPanel.add(btn)
         }
 
-        if (options.isNotEmpty()) {
+        if (allButtons.isNotEmpty()) {
             val bottomRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
                 isOpaque = false
                 alignmentX = Component.LEFT_ALIGNMENT
@@ -1906,7 +1963,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             bottomRow.add(buttonsPanel)
             controlsRow = addRow(bottomRow)
         }
-        pendingAskUserRespond.set(completeOnce)
+        pendingAskUserRespond.set { answer -> completeOnce(answer, answer) }
         showWaitingMode(deadlineEpochMs, onExtend) { markTimedOut() }
     }
 

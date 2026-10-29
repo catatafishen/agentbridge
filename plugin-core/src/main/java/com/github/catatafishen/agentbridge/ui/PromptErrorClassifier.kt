@@ -3,12 +3,10 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.client.ClientException
 
 /**
- * Pure error classification and quick-reply detection for prompt errors.
+ * Pure error classification for prompt errors.
  * Extracted from [PromptOrchestrator] to enable unit testing without UI dependencies.
  */
 object PromptErrorClassifier {
-
-    private val QUICK_REPLY_TAG_REGEX = Regex("\\[\\s*quick-reply:\\s*([^]]+)]")
 
     /**
      * Classification result for a prompt error — all decisions are captured as data,
@@ -90,15 +88,6 @@ object PromptErrorClassifier {
             shouldRestorePrompt = shouldRestorePrompt,
             displayMessage = msg,
         )
-    }
-
-    /**
-     * Detects `[quick-reply: opt1 | opt2]` tags in response text and returns the parsed options.
-     * Returns an empty list if no quick-reply tag is found.
-     */
-    fun detectQuickReplies(responseText: String): List<String> {
-        val match = QUICK_REPLY_TAG_REGEX.findAll(responseText).lastOrNull() ?: return emptyList()
-        return match.groupValues[1].split("|").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     /**

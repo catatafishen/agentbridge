@@ -27,48 +27,8 @@ internal val THINK_COLOR: Color
 
 internal const val ICON_ERROR = "\u274C"
 
-/** Matches `[quick-reply: Option A | Option B | ...]` tags. */
+/** Matches legacy `[quick-reply: ...]` tags. Kept only to strip them from old transcripts; buttons now come from `prompt_user`. */
 internal val QUICK_REPLY_TAG_REGEX = Regex("""\[\s*quick-reply:\s*([^]]+)]""", RegexOption.MULTILINE)
-
-/** Semantic color variants that may appear as a `:suffix` on a quick-reply option. */
-internal enum class QuickReplyColor { NONE, PRIMARY, DANGER, SUCCESS, WARNING }
-
-/**
- * Parsed quick-reply option. [label] is the clean display text with any
- * `:suffix` stripped. [color] indicates visual emphasis. [dismiss] means the
- * button closes/disables the strip without submitting any text.
- */
-internal data class QuickReplyOption(
-    val label: String,
-    val color: QuickReplyColor,
-    val dismiss: Boolean,
-)
-
-/**
- * Mirrors the parsing in `QuickReplies.ts#parseOption`: only the *last* colon
- * suffix is checked, and only recognised keywords are stripped. Colons inside
- * the label text are preserved.
- */
-internal fun parseQuickReplyOption(raw: String): QuickReplyOption {
-    val idx = raw.lastIndexOf(':')
-    if (idx > 0) {
-        val candidate = raw.substring(idx + 1).trim().lowercase()
-        if (candidate == "dismiss") {
-            return QuickReplyOption(raw.substring(0, idx).trim(), QuickReplyColor.NONE, dismiss = true)
-        }
-        val color = when (candidate) {
-            "primary" -> QuickReplyColor.PRIMARY
-            "danger" -> QuickReplyColor.DANGER
-            "success" -> QuickReplyColor.SUCCESS
-            "warning" -> QuickReplyColor.WARNING
-            else -> null
-        }
-        if (color != null) {
-            return QuickReplyOption(raw.substring(0, idx).trim(), color, dismiss = false)
-        }
-    }
-    return QuickReplyOption(raw, QuickReplyColor.NONE, dismiss = false)
-}
 
 // ── Tool / sub-agent metadata ─────────────────────────────────────────────────
 

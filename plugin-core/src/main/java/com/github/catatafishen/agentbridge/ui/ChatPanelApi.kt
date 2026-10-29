@@ -174,7 +174,11 @@ interface ChatPanelApi : Disposable {
     fun finishResponse(toolCallCount: Int = 0, modelId: String = "", multiplier: String = "1x")
     fun emitTurnStats(stats: TurnStatsData)
 
-    fun showQuickReplies(options: List<String>)
+    /**
+     * Renders the end-of-turn button strip. A reply button invokes [onQuickReply] with its text;
+     * an action button runs its tool via [ButtonActionRunner] without involving the LLM.
+     */
+    fun showButtonStrip(strip: ButtonStrip)
     fun disableQuickReplies()
     fun cancelAllRunning()
 
@@ -217,6 +221,21 @@ interface ChatPanelApi : Disposable {
         reqId: String,
         question: String,
         options: List<String>,
+        deadlineEpochMs: Long,
+        onRespond: (String) -> Unit,
+        onExtend: () -> Long,
+        onSuperseded: () -> Unit,
+    )
+
+    /**
+     * Like [showAskUserRequest] but with styled reply buttons and tool-running action buttons.
+     * A reply click responds with the reply text; an action click runs the tool and responds with
+     * a summary of its result, so the blocked agent continues.
+     */
+    fun showAskUserButtons(
+        reqId: String,
+        question: String,
+        strip: ButtonStrip,
         deadlineEpochMs: Long,
         onRespond: (String) -> Unit,
         onExtend: () -> Long,
