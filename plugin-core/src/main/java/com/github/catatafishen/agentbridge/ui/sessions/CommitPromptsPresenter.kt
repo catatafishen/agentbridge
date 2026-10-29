@@ -35,7 +35,7 @@ object CommitPromptsPresenter {
      */
     fun show(project: Project, commitHash: String, anchor: Component?, onNone: (String) -> Unit) {
         AppExecutorUtil.getAppExecutorService().execute {
-            val turns = ConversationService.getInstance(project).turnsForCommit(commitHash)
+            val turns: List<SessionSearch.CommitTurn> = ConversationService.getInstance(project).turnsForCommit(commitHash)
             ApplicationManager.getApplication().invokeLater {
                 when (turns.size) {
                     0 -> onNone("No AgentBridge prompt is recorded for commit ${SessionFormat.shortHash(commitHash)}")

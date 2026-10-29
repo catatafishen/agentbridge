@@ -72,6 +72,8 @@ object SessionFormat {
         return parts.joinToString(" \u00b7 ")
     }
 
+    private const val MUTED_OPEN_PREFIX = "<p><font color='"
+
     /** Right-hand preview of a session: its metadata, branches, and every turn with its commits. */
     fun previewHtml(
         s: SessionSearch.SessionSummary,
@@ -81,7 +83,7 @@ object SessionFormat {
     ): String {
         val sb = StringBuilder("<html><body>")
         sb.append("<h3>").append(escapeHtml(truncate(s.label(), 120))).append("</h3>")
-        sb.append("<p><font color='").append(mutedColorHex).append("'>")
+        sb.append(MUTED_OPEN_PREFIX).append(mutedColorHex).append("'>")
             .append(escapeHtml(detailLine(s)))
             .append("<br>")
             .append(escapeHtml(dateTime(s.startedAtMs())))
@@ -102,10 +104,10 @@ object SessionFormat {
 
         sb.append("<hr>")
         if (turns.isEmpty()) {
-            sb.append("<p><font color='").append(mutedColorHex).append("'>No prompts recorded.</font></p>")
+            sb.append(MUTED_OPEN_PREFIX).append(mutedColorHex).append("'>No prompts recorded.</font></p>")
         }
         turns.forEachIndexed { i, t ->
-            sb.append("<p><font color='").append(mutedColorHex).append("'>")
+            sb.append(MUTED_OPEN_PREFIX).append(mutedColorHex).append("'>")
                 .append(i + 1).append(". ").append(escapeHtml(dateTime(t.startedAtMs())))
             t.branch()?.takeIf { it.isNotBlank() }?.let { sb.append(" \u00b7 \u2387 ").append(escapeHtml(it)) }
             linesSummary(t.linesAdded(), t.linesRemoved()).takeIf { it.isNotEmpty() }

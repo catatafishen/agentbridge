@@ -76,6 +76,6 @@ class ConversationSchemaV10Test {
         assertEquals("b".repeat(40), scalar("SELECT git_commit_at_start FROM turns WHERE id = 't1'"));
         assertEquals("c".repeat(40), scalar("SELECT git_commit_at_end FROM turns WHERE id = 't1'"));
         assertEquals("feature/x", scalar("SELECT git_branch_at_start FROM turns WHERE id = 't1'"));
-        assertTrue(Integer.parseInt(scalar("SELECT COUNT(*) FROM commits WHERE turn_id = 't1'")) == 1);
+        assertEquals(1, Integer.parseInt(scalar("SELECT COUNT(*) FROM commits WHERE turn_id = 't1'")));
     }
 }

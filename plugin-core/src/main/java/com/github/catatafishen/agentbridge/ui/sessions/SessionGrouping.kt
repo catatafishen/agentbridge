@@ -58,7 +58,7 @@ object SessionGrouping {
             }
             buckets.getValue(key).add(s)
         }
-        return buckets.filterValues { it.isNotEmpty() }.map { (title, list) -> SessionGroup(title, list) }
+        return buckets.filterValues { it.isNotEmpty() }.map { (title, list) -> SessionGroup(title, list.toList()) }
     }
 
     private fun byBranch(

@@ -175,8 +175,8 @@ class SessionPickerDialog(
 
     private fun loadFilterValues() {
         AppExecutorUtil.getAppExecutorService().execute {
-            val branches = service.listSessionBranches()
-            val agents = service.listDistinctAgents()
+            val branches: List<String> = service.listSessionBranches()
+            val agents: List<String> = service.listDistinctAgents()
             ApplicationManager.getApplication().invokeLater({
                 val keepBranch = branchCombo.selectedItem as? String
                 branches.filter { branchModel.getIndexOf(it) < 0 }.forEach(branchModel::addElement)
@@ -206,7 +206,7 @@ class SessionPickerDialog(
         val groupBy = groupCombo.selectedItem as? GroupBy ?: GroupBy.RECENT
         val previousId = (list.selectedValue as? Row.Item)?.session?.id()
         AppExecutorUtil.getAppExecutorService().execute {
-            val result = service.searchSessions(params)
+            val result: List<SessionSearch.SessionSummary> = service.searchSessions(params)
             val groups = SessionGrouping.group(result, groupBy, currentBranch)
             ApplicationManager.getApplication().invokeLater({
                 if (serial == loadSerial.get()) showResults(result.size, groups, previousId)
@@ -260,7 +260,7 @@ class SessionPickerDialog(
         val serial = previewSerial.incrementAndGet()
         val query = lastQuery
         AppExecutorUtil.getAppExecutorService().execute {
-            val turns = service.listSessionTurns(item.session.id())
+            val turns: List<SessionSearch.TurnPreview> = service.listSessionTurns(item.session.id())
             val html = SessionFormat.previewHtml(
                 item.session, turns, query, ColorUtil.toHtmlColor(JBUI.CurrentTheme.ContextHelp.FOREGROUND),
             )
