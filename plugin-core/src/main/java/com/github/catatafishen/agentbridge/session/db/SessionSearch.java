@@ -10,7 +10,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -136,15 +135,43 @@ public final class SessionSearch {
 
     private List<SessionSummary> searchInternal(Connection conn, Params p) throws SQLException {
         String text = p.text() == null ? "" : p.text().trim();
-        String fts = ftsQuery(text);
-        String like = "%" + escapeLike(text) + "%";
+        BoundQuery query = buildQuery(conn, p, text);
 
-        // The statement is constant; optional filters are switched off with "? IS NULL" / "? = 0".
+        List<Object[]> rows = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(query.sql())) {
+            int i = 1;
+            for (Object a : query.args()) ps.setObject(i++, a);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getString(5), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getString(9)});
+                }
+            }
+        }
+        // One batched query per fact instead of several per session.
+        Map<String, GitFacts> facts = loadGitFactsBatch(conn,
+            rows.stream().map(r -> (String) r[0]).toList());
+        List<SessionSummary> result = new ArrayList<>();
+        for (Object[] r : rows) {
+            result.add(toSummary(conn, r, text, facts));
+        }
+        return result;
+    }
+
+    private record BoundQuery(String sql, List<Object> args) {
+    }
+
+    /**
+     * The statement is constant; optional filters are switched off with "? IS NULL" / "? = 0".
+     */
+    private BoundQuery buildQuery(Connection conn, Params p, String text) throws SQLException {
         String sql;
         List<Object> args = new ArrayList<>();
         if (text.isEmpty()) {
             sql = SEARCH_NO_TEXT;
         } else {
+            String fts = ftsQuery(text);
+            String like = "%" + escapeLike(text) + "%";
             boolean useFts = !fts.isEmpty() && hasFts(conn);
             sql = useFts ? SEARCH_FTS : SEARCH_LIKE;
             args.add(like);                          // display_name
@@ -155,6 +182,11 @@ public final class SessionSearch {
             args.add(like);                          // commit message
             args.add(like);                          // commit branch
         }
+        addFilterArgs(args, p);
+        return new BoundQuery(sql, args);
+    }
+
+    private static void addFilterArgs(List<Object> args, Params p) {
         String agent = notBlank(p.agent()) ? p.agent() : null;
         String branch = notBlank(p.branch()) ? p.branch() : null;
         String commit = notBlank(p.commitPrefix())
@@ -172,33 +204,18 @@ public final class SessionSearch {
         args.add(Instant.ofEpochMilli(Math.max(0, p.sinceEpochMs())).toString());
         args.add(Math.clamp(p.limit(), 1, 500));
         args.add(Math.max(0, p.offset()));
+    }
 
-        List<SessionSummary> result = new ArrayList<>();
-        List<Object[]> rows = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            int i = 1;
-            for (Object a : args) ps.setObject(i++, a);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    rows.add(new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getString(9)});
-                }
-            }
-        }
-        // One batched query per fact instead of several per session.
-        Map<String, GitFacts> facts = loadGitFactsBatch(conn,
-            rows.stream().map(r -> (String) r[0]).toList());
-        for (Object[] r : rows) {
-            String id = (String) r[0];
-            GitFacts git = facts.getOrDefault(id, new GitFacts(List.of(), Set.of(), List.of()));
-            result.add(new SessionSummary(
-                id, (String) r[1], (String) r[2], snippet((String) r[8]),
-                text.isEmpty() ? null : findMatchedPrompt(conn, id, text),
-                parseMs((String) r[3]), parseMs((String) r[4]),
-                (Integer) r[5], (Integer) r[6], (Integer) r[7],
-                git.branches, git.inferred, git.commits));
-        }
-        return result;
+    private SessionSummary toSummary(Connection conn, Object[] r, String text, Map<String, GitFacts> facts)
+        throws SQLException {
+        String id = (String) r[0];
+        GitFacts git = facts.getOrDefault(id, new GitFacts(List.of(), Set.of(), List.of()));
+        return new SessionSummary(
+            id, (String) r[1], (String) r[2], snippet((String) r[8]),
+            text.isEmpty() ? null : findMatchedPrompt(conn, id, text),
+            parseMs((String) r[3]), parseMs((String) r[4]),
+            (Integer) r[5], (Integer) r[6], (Integer) r[7],
+            git.branches, git.inferred, git.commits);
     }
 
     // ── Search statements (constants only; see searchInternal) ────────────────
@@ -223,10 +240,11 @@ public final class SessionSearch {
         s.id IN (SELECT t.session_id FROM turns_fts f JOIN turns t ON t.id = f.turn_id
                  WHERE turns_fts MATCH ?)""";
 
-    private static final String PROMPTS_LIKE = """
-        EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.prompt_text LIKE ? ESCAPE '\\')""";
+    private static final String PROMPTS_LIKE =
+        "EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.prompt_text LIKE ? ESCAPE '\\')";
 
-    private static final String TEXT_TAIL = """
+    private static final String TEXT_TAIL =
+        """
 
           OR EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id
                        AND (t.git_branch_at_start LIKE ? ESCAPE '\\' OR t.git_branch_at_end LIKE ? ESCAPE '\\'))

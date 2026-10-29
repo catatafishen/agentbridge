@@ -42,23 +42,17 @@ object SessionGrouping {
         zone: ZoneId,
     ): List<SessionGroup> {
         val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
-        val buckets = linkedMapOf(
-            "Today" to mutableListOf<SessionSearch.SessionSummary>(),
-            "Yesterday" to mutableListOf(),
-            "Last 7 days" to mutableListOf(),
-            "Older" to mutableListOf(),
-        )
-        for (s in sessions) {
+        val byTitle = sessions.groupBy { s ->
             val day: LocalDate = Instant.ofEpochMilli(s.lastActivityMs()).atZone(zone).toLocalDate()
-            val key = when {
+            when {
                 !day.isBefore(today) -> "Today"
                 day == today.minusDays(1) -> "Yesterday"
                 day.isAfter(today.minusDays(7)) -> "Last 7 days"
                 else -> "Older"
             }
-            buckets.getValue(key).add(s)
         }
-        return buckets.filterValues { it.isNotEmpty() }.map { (title, list) -> SessionGroup(title, list.toList()) }
+        return listOf("Today", "Yesterday", "Last 7 days", "Older")
+            .mapNotNull { title -> byTitle[title]?.let { SessionGroup(title, it) } }
     }
 
     private fun byBranch(

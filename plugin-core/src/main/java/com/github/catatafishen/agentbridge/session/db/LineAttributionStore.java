@@ -74,21 +74,26 @@ public final class LineAttributionStore {
             Connection conn = database.getConnection();
             if (conn == null) return 0;
             try {
-                conn.setAutoCommit(false);
-                try {
-                    int stored = replaceRows(conn, path, fileHash, runs);
-                    conn.commit();
-                    return stored;
-                } catch (SQLException e) {
-                    conn.rollback();
-                    throw e;
-                } finally {
-                    conn.setAutoCommit(true);
-                }
+                return replaceInTransaction(conn, path, fileHash, runs);
             } catch (SQLException e) {
                 LOG.warn("LineAttributionStore: failed to store attribution for " + path, e);
                 return 0;
             }
+        }
+    }
+
+    private static int replaceInTransaction(Connection conn, String path, String fileHash, List<RunRow> runs)
+        throws SQLException {
+        conn.setAutoCommit(false);
+        try {
+            int stored = replaceRows(conn, path, fileHash, runs);
+            conn.commit();
+            return stored;
+        } catch (SQLException e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
         }
     }
 
@@ -272,7 +277,7 @@ public final class LineAttributionStore {
         SELECT t.id, t.session_id, t.prompt_text, s.agent_name, COALESCE(s.display_name, ''),
                t.model, t.started_at
         FROM turns t JOIN sessions s ON s.id = t.session_id
-        WHERE t.id IN (""" + SqlJson.EACH + ")";
+        WHERE t.id IN (SELECT value FROM json_each(?))""";
 
     @NotNull
     public Map<String, TurnInfo> turnInfo(@NotNull Collection<String> turnIds) {
