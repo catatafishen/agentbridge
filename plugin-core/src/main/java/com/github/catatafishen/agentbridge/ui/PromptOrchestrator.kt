@@ -28,7 +28,9 @@ data class PromptOrchestratorCallbacks(
     val updateSessionInfo: () -> Unit,
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
-    val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?) -> Unit,
+    val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?, costFromSessionGauge: Boolean) -> Unit,
+    /** Forwards the agent-reported CUMULATIVE session cost (usage_update); the receiver must replace, not add. */
+    val onTimerRecordCumulativeCost: (costUsd: Double) -> Unit,
     val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
@@ -126,6 +128,27 @@ class PromptOrchestrator(
     private var turnCostUsd: Double? = null
     private var turnContextUsed: Long? = null
     private var turnContextSize: Long? = null
+
+    /**
+     * Latest CUMULATIVE session cost reported via ACP usage_update (a running total for the
+     * whole session, not a per-turn value). Snapshotted into [turnStartCumulativeCostUsd] at
+     * each turn start so the turn's own cost can be derived as a diff.
+     */
+    private var sessionCumulativeCostUsd: Double? = null
+    private var turnStartCumulativeCostUsd: Double? = null
+
+    /** True when this turn's [turnCostUsd] was derived from a cumulative session gauge (usage_update diff). */
+    private var turnCostFromSessionGauge = false
+
+    /**
+     * Clears cumulative-cost tracking. Call whenever the agent session is dropped (user reset,
+     * resume failure fallback, corrupted-session reset) so the replacement session's first
+     * usage_update is not diffed against the old session's stale running total.
+     */
+    fun resetCumulativeCostTracking() {
+        sessionCumulativeCostUsd = null
+        turnStartCumulativeCostUsd = null
+    }
     private var turnModelId = ""
     private var turnStartHeadHash: String? = null
     private var turnStartGitBranch: String? = null
@@ -422,6 +445,11 @@ class PromptOrchestrator(
         turnCostUsd = null
         turnContextUsed = null
         turnContextSize = null
+        turnCostFromSessionGauge = false
+        // Snapshot the cumulative session cost BEFORE the turn runs, so a usage_update arriving
+        // during the turn can be diffed into this turn's own cost. Null on the first turn of a
+        // session (fresh sessions start from an implicit 0).
+        turnStartCumulativeCostUsd = sessionCumulativeCostUsd
         turnHadContent = false
         lastStreamBlockType = StreamBlockType.NONE
         activeSubAgentStack.clear()
@@ -609,6 +637,7 @@ class PromptOrchestrator(
                     e
                 )
                 currentSessionId = null
+                resetCumulativeCostTracking()
                 val newSessionId = ensureSessionCreated(client)
 
                 ApplicationManager.getApplication().invokeLater {
@@ -641,7 +670,7 @@ class PromptOrchestrator(
         if (agentManager.client is CopilotClient) {
             billing.recordTurnCompleted()
         }
-        callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
+        callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd, turnCostFromSessionGauge)
 
         val codeChanges = CodeChangeTracker.getAndClear()
         if (codeChanges[0] > 0 || codeChanges[1] > 0) {
@@ -715,6 +744,7 @@ class PromptOrchestrator(
         // flow instead of hitting the early-return "reuse" path with the still-corrupted session.
         // The setter delegates to AbstractClient.dropCurrentSession() (single source of truth).
         currentSessionId = null
+        resetCumulativeCostTracking()
         callbacks.updateSessionInfo()
 
         consolePanel().cancelAllRunning()
@@ -809,8 +839,35 @@ class PromptOrchestrator(
                 turnInputTokens = update.inputTokens()
                 turnOutputTokens = update.outputTokens()
                 turnCostUsd = update.costUsd()
+                turnCostFromSessionGauge = false
                 turnContextUsed = update.contextUsed()
                 turnContextSize = update.contextSize()
+            }
+
+            is SessionUpdate.SessionUsage -> {
+                // ACP usage_update: session-level gauges, NOT per-turn deltas. `used`/`size` are
+                // context-window occupancy; `cost` is the running total for the whole session.
+                // Per-turn cost is the diff against the cumulative value snapshotted at turn
+                // start; the raw cumulative is forwarded so the session total can REPLACE (not
+                // add to) the previous value. A null cost keeps the last reported total (v2
+                // patch semantics).
+                turnContextUsed = update.used()
+                turnContextSize = update.size()
+                update.costUsd()?.let { cumulative ->
+                    sessionCumulativeCostUsd = cumulative
+                    val start = turnStartCumulativeCostUsd
+                    turnCostUsd = when {
+                        // No snapshot (first turn of a session): the cumulative total so far IS
+                        // this turn's cost.
+                        start == null -> cumulative
+                        cumulative >= start -> cumulative - start
+                        // Counter went backwards (agent restarted its session or compacted):
+                        // treat the new total as this turn's cost rather than emitting a negative.
+                        else -> cumulative
+                    }
+                    turnCostFromSessionGauge = true
+                    callbacks.onTimerRecordCumulativeCost(cumulative)
+                }
             }
 
             is SessionUpdate.Banner -> handleStreamingBanner(update)
@@ -1116,6 +1173,9 @@ class PromptOrchestrator(
             } else {
                 agentManager.client.dropCurrentSession()
                 lastInitialisedSessionId = null
+                // Fresh agent session next prompt: stop diffing cost against the dropped
+                // session's cumulative total.
+                resetCumulativeCostTracking()
             }
             callbacks.updateSessionInfo()
         }

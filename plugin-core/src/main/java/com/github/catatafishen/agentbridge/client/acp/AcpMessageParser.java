@@ -108,9 +108,12 @@ class AcpMessageParser {
             case "plan" -> parsePlan(params);
             case "turn_usage" -> parseTurnUsage(params);
             case "banner" -> parseBanner(params);
-            // usage_update: proposed in ACP RFD (rfds/session-usage.md), not yet in the official schema.
-            // Currently used by: OpenCode (fields: used, size, cost.amount, cost.currency).
-            // 'used' is cumulative context tokens (not per-turn delta), so the toolbar value grows each turn.
+            // usage_update: ACP "Session Context Size and Cost" RFD, stabilized in the official
+            // schema (v0.13.6, June 2026). Sent by OpenCode and other conforming agents with
+            // fields: used, size, cost.amount, cost.currency. ALL fields are session-level
+            // cumulative gauges (running totals), not per-turn deltas: consumers must replace
+            // them on every update, never sum. Parsed as SessionUsage to keep it distinct from
+            // the per-turn turn_usage update.
             case "usage_update" -> parseUsageUpdate(params);
             // config_option_update: sent by ACP agents (e.g. Copilot CLI) when available config
             // options change — e.g. when switching to a model with a different set of
@@ -330,17 +333,23 @@ class AcpMessageParser {
         return new SessionUpdate.AvailableModesChanged(null, modeSlug);
     }
 
-    private SessionUpdate.TurnUsage parseUsageUpdate(JsonObject params) {
-        int used = params.has("used") ? params.get("used").getAsInt() : 0;
+    private SessionUpdate.SessionUsage parseUsageUpdate(JsonObject params) {
+        long used = params.has("used") ? params.get("used").getAsLong() : 0L;
+        long size = params.has("size") ? params.get("size").getAsLong() : 0L;
         Double cost = null;
+        String currency = null;
         if (params.has("cost") && params.get("cost").isJsonObject()) {
             JsonObject costObj = params.getAsJsonObject("cost");
             JsonElement amountEl = costObj.get("amount");
             if (amountEl != null && amountEl.isJsonPrimitive()) {
                 cost = amountEl.getAsDouble();
             }
+            JsonElement currencyEl = costObj.get("currency");
+            if (currencyEl != null && currencyEl.isJsonPrimitive()) {
+                currency = currencyEl.getAsString();
+            }
         }
-        return new SessionUpdate.TurnUsage(used, 0, cost);
+        return new SessionUpdate.SessionUsage(used, size, cost, currency);
     }
 
     private List<ContentBlock> parseContentBlocks(JsonObject params) {

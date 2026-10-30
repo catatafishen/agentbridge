@@ -524,7 +524,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                     TOKENS_IN_OUT_SEP +
                     TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
                     TOKENS_OUT_SUFFIX);
-            turnTokensRow.setVisible(true);
+            // Hide the token row when the agent reports no per-turn billing tokens; the cost
+            // row still shows (cost-only usage_update agents).
+            turnTokensRow.setVisible(turnTok > 0);
             turnCostRowLabel.setText("Cost");
             turnCostValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(turnCost != null ? turnCost : 0.0));
             turnCostRow.setVisible(true);
@@ -553,7 +555,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                     TOKENS_IN_OUT_SEP +
                     TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
                     TOKENS_OUT_SUFFIX);
-            tokensRow.setVisible(true);
+            // Hide the token row when the agent reports no billing tokens; the cost row still
+            // shows (cost-only usage_update agents).
+            tokensRow.setVisible(totalTokens > 0);
             costRowLabel.setText("Cost");
             costValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(snap.getSessionCostUsd()));
             costRow.setVisible(true);

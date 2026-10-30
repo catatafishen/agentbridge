@@ -18,6 +18,7 @@ public sealed interface SessionUpdate
     SessionUpdate.ToolCall,
     SessionUpdate.ToolCallUpdate,
     SessionUpdate.TurnUsage,
+    SessionUpdate.SessionUsage,
     SessionUpdate.Banner,
     SessionUpdate.Plan,
     SessionUpdate.AvailableCommandsChanged,
@@ -323,6 +324,31 @@ public sealed interface SessionUpdate
         public TurnUsage(int inputTokens, int outputTokens, @Nullable Double costUsd) {
             this(inputTokens, outputTokens, costUsd, null, null);
         }
+    }
+
+    /**
+     * Session-level usage gauge delivered via the ACP {@code usage_update} session update
+     * (RFD "Session Context Size and Cost", stabilized in ACP schema v0.13.6, June 2026;
+     * sent by OpenCode and other conforming agents).
+     *
+     * <p>All fields are <b>session snapshots, not per-turn deltas</b>:
+     * {@code used} is the number of tokens currently in context, {@code size} is the model's
+     * total context window, and {@code costUsd} is the <b>total cumulative cost for the
+     * session</b> (a running total). Consumers must <b>replace</b> these values on every
+     * update, never sum them; per-turn cost, if needed, is the difference between two
+     * consecutive cumulative values.</p>
+     *
+     * <p>{@code costUsd} is null when the update carried no cost object. Per the v2 spec an
+     * omitted cost leaves the last reported value unchanged, so consumers should keep the
+     * previous cumulative cost when null. {@code costCurrency} is the ISO 4217 currency of
+     * {@code costUsd} (e.g. "USD"), or null when unknown.</p>
+     */
+    record SessionUsage(
+        long used,
+        long size,
+        @Nullable Double costUsd,
+        @Nullable String costCurrency
+    ) implements SessionUpdate {
     }
 
     /**

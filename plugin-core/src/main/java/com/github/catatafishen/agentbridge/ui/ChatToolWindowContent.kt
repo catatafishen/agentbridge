@@ -1245,8 +1245,11 @@ class ChatToolWindowContent(
         onTimerIncrementToolCalls = {
             if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
         },
-        onTimerRecordUsage = { i, o, c ->
-            if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
+        onTimerRecordUsage = { i, o, c, fromGauge ->
+            if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c, fromGauge)
+        },
+        onTimerRecordCumulativeCost = { c ->
+            if (::processingTimerPanel.isInitialized) processingTimerPanel.recordCumulativeSessionCost(c)
         },
         onTimerSetCodeChangeStats = { a, r ->
             if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
@@ -2940,6 +2943,7 @@ class ChatToolWindowContent(
     private fun resetSessionState() {
         promptOrchestrator.currentSessionId = null
         promptOrchestrator.conversationSummaryInjected = false
+        promptOrchestrator.resetCumulativeCostTracking()
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()

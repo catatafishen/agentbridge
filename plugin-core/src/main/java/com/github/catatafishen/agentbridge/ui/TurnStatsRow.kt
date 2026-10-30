@@ -30,7 +30,11 @@ private fun compactTokens(n: Long): String = when {
 fun createTurnStatsRow(stats: TurnStatsData): JComponent {
     val text = buildList {
         add(TimerDisplayFormatter.formatElapsedTime(stats.durationMs / 1000))
-        add("${stats.inputTokens}↑ ${stats.outputTokens}↓")
+        // Omit the token element when the agent reports none (ACP usage_update agents
+        // expose cumulative cost and context occupancy, not per-turn billing tokens).
+        if (stats.inputTokens > 0 || stats.outputTokens > 0) {
+            add("${stats.inputTokens}↑ ${stats.outputTokens}↓")
+        }
         formatContextUsage(stats.contextUsed, stats.contextSize)?.let { add("ctx $it") }
         if (stats.costUsd > 0) add(TimerDisplayFormatter.formatCost(stats.costUsd))
         if (stats.model.isNotEmpty()) add(stats.model.substringAfterLast('/').substringAfterLast(':'))

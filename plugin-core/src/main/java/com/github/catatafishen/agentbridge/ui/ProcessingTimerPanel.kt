@@ -63,6 +63,14 @@ internal class ProcessingTimerPanel : Disposable {
     private var sessionTotalOutputTokens = 0L
     private var sessionTotalCostUsd = 0.0
 
+    /**
+     * True once an ACP usage_update delivered a CUMULATIVE session cost. While set, the session
+     * total is REPLACED by every agent-reported running total (never summed), and the mid-turn
+     * snapshot must not re-add the current turn's cost (the running total already includes it).
+     */
+    @Volatile
+    private var sessionCostFromCumulativeUpdates = false
+
     fun start() {
         startedAt = System.currentTimeMillis()
         toolCallCount = 0
@@ -95,13 +103,31 @@ internal class ProcessingTimerPanel : Disposable {
         onStatsChanged?.run()
     }
 
-    fun recordUsage(inputTokens: Int, outputTokens: Int, costUsd: Double?) {
+    fun recordUsage(inputTokens: Int, outputTokens: Int, costUsd: Double?, fromSessionGauge: Boolean = false) {
         turnInputTokens = inputTokens
         turnOutputTokens = outputTokens
         turnCostUsd = costUsd
         sessionTotalInputTokens += inputTokens
         sessionTotalOutputTokens += outputTokens
-        if (costUsd != null) sessionTotalCostUsd += costUsd
+        // A gauge-derived per-turn cost is already included in the agent-reported cumulative
+        // total (see recordCumulativeSessionCost), so summing it would double-count. A genuine
+        // per-turn delta is always summed, even after cumulative updates were seen: an agent
+        // that reverts to per-turn reporting keeps the total moving instead of freezing it.
+        if (costUsd != null && !fromSessionGauge) sessionTotalCostUsd += costUsd
+        onStatsChanged?.run()
+    }
+
+    /**
+     * Records the agent-reported CUMULATIVE session cost (ACP usage_update). The value is a
+     * running total for the whole session, so it REPLACES the stored session total; summing
+     * successive running totals is what inflated the old display. Also latches cumulative
+     * mode so the mid-turn snapshot stops re-adding the running turn. Per-turn recordUsage
+     * calls whose cost is a gauge-derived diff (fromSessionGauge=true) do not sum onto the
+     * total; genuine per-turn deltas still do.
+     */
+    fun recordCumulativeSessionCost(costUsd: Double) {
+        sessionTotalCostUsd = costUsd
+        sessionCostFromCumulativeUpdates = true
         onStatsChanged?.run()
     }
 
@@ -114,6 +140,7 @@ internal class ProcessingTimerPanel : Disposable {
         sessionTotalInputTokens = 0L
         sessionTotalOutputTokens = 0L
         sessionTotalCostUsd = 0.0
+        sessionCostFromCumulativeUpdates = false
         // Also clear the "Last turn" snapshot so a fresh session shows no stale per-turn data.
         toolCallCount = 0
         addedLineCount = 0
@@ -174,7 +201,10 @@ internal class ProcessingTimerPanel : Disposable {
         val totalRemoved = sessionTotalRemovedLines + if (isRunning) removedLineCount else 0
         val totalInput = sessionTotalInputTokens + if (isRunning) turnInputTokens else 0
         val totalOutput = sessionTotalOutputTokens + if (isRunning) turnOutputTokens else 0
-        val totalCost = sessionTotalCostUsd + if (isRunning) (turnCostUsd ?: 0.0) else 0.0
+        // In cumulative mode the session total already includes the running turn's spend (it is
+        // the agent's own session odometer), so the mid-turn value must not re-add turnCostUsd.
+        val totalCost = if (sessionCostFromCumulativeUpdates) sessionTotalCostUsd
+        else sessionTotalCostUsd + if (isRunning) (turnCostUsd ?: 0.0) else 0.0
         val totalTurns = sessionTurnCount + if (isRunning) 1 else 0
         return SessionStatsSnapshot(
             isRunning = isRunning,

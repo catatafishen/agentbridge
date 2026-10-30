@@ -63,10 +63,10 @@ class BillingCalculatorTest {
     }
 
     @Test
-    void formatUsageChip_zeroTokensButPositiveCost_returnsTokensAndCost() {
-        // not all-zero because cost > 0
+    void formatUsageChip_zeroTokensButPositiveCost_returnsCostOnly() {
+        // cost-only usage (ACP usage_update agents): omit the meaningless "0 tok"
         String result = BillingCalculator.INSTANCE.formatUsageChip(0, 0, 0.005);
-        assertEquals("0 tok · $0.005", result);
+        assertEquals("$0.005", result);
     }
 
     @Test

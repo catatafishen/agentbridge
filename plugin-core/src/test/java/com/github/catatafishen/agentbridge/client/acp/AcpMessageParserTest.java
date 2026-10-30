@@ -240,12 +240,13 @@ class AcpMessageParserTest {
         assertNull(update, "Missing sessionUpdate field should return null");
     }
 
-    // ── usage_update — OpenCode usage tracking ───────────────────────────
+    // ── usage_update: session-level usage gauges (OpenCode, ACP session-usage RFD) ────
 
     @Test
-    void parsesUsageUpdate_withUsedAndCost() {
+    void parsesUsageUpdate_withUsedSizeAndCost() {
         JsonObject params = updateParams("usage_update");
         params.addProperty("used", 5000);
+        params.addProperty("size", 200000);
         JsonObject cost = new JsonObject();
         cost.addProperty("amount", 0.025);
         cost.addProperty("currency", "USD");
@@ -253,34 +254,39 @@ class AcpMessageParserTest {
 
         SessionUpdate update = parser.parse(params);
 
-        assertInstanceOf(SessionUpdate.TurnUsage.class, update);
-        SessionUpdate.TurnUsage usage = (SessionUpdate.TurnUsage) update;
-        assertEquals(5000, usage.inputTokens(), "used → inputTokens");
-        assertEquals(0, usage.outputTokens(), "outputTokens always 0 for usage_update");
-        assertEquals(0.025, usage.costUsd(), 0.001);
+        assertInstanceOf(SessionUpdate.SessionUsage.class, update);
+        SessionUpdate.SessionUsage usage = (SessionUpdate.SessionUsage) update;
+        assertEquals(5000L, usage.used(), "used is context tokens in play, not per-turn input");
+        assertEquals(200000L, usage.size(), "size is the context window");
+        assertEquals(0.025, usage.costUsd(), 0.001, "cost.amount is the cumulative session total");
+        assertEquals("USD", usage.costCurrency());
     }
 
     @Test
     void parsesUsageUpdate_withUsedOnly() {
         JsonObject params = updateParams("usage_update");
         params.addProperty("used", 3000);
+        params.addProperty("size", 128000);
 
         SessionUpdate update = parser.parse(params);
 
-        assertInstanceOf(SessionUpdate.TurnUsage.class, update);
-        SessionUpdate.TurnUsage usage = (SessionUpdate.TurnUsage) update;
-        assertEquals(3000, usage.inputTokens());
+        assertInstanceOf(SessionUpdate.SessionUsage.class, update);
+        SessionUpdate.SessionUsage usage = (SessionUpdate.SessionUsage) update;
+        assertEquals(3000L, usage.used());
+        assertEquals(128000L, usage.size());
         assertNull(usage.costUsd(), "No cost object → null costUsd");
+        assertNull(usage.costCurrency());
     }
 
     @Test
-    void parsesUsageUpdate_missingUsedDefaultsToZero() {
+    void parsesUsageUpdate_missingFieldsDefaultToZero() {
         JsonObject params = updateParams("usage_update");
 
         SessionUpdate update = parser.parse(params);
 
-        assertInstanceOf(SessionUpdate.TurnUsage.class, update);
-        assertEquals(0, ((SessionUpdate.TurnUsage) update).inputTokens());
+        assertInstanceOf(SessionUpdate.SessionUsage.class, update);
+        assertEquals(0L, ((SessionUpdate.SessionUsage) update).used());
+        assertEquals(0L, ((SessionUpdate.SessionUsage) update).size());
     }
 
     @Test
@@ -291,8 +297,8 @@ class AcpMessageParserTest {
 
         SessionUpdate update = parser.parse(params);
 
-        assertInstanceOf(SessionUpdate.TurnUsage.class, update);
-        assertNull(((SessionUpdate.TurnUsage) update).costUsd());
+        assertInstanceOf(SessionUpdate.SessionUsage.class, update);
+        assertNull(((SessionUpdate.SessionUsage) update).costUsd());
     }
 
     // ── Content block edge cases ────────────────────────────────────────

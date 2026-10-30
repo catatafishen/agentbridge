@@ -273,9 +273,9 @@ class AcpClientProtocolTest {
             client.handleSessionUpdate(params);
 
             assertEquals(1, updates.size());
-            assertInstanceOf(SessionUpdate.TurnUsage.class, updates.get(0));
-            SessionUpdate.TurnUsage u = (SessionUpdate.TurnUsage) updates.get(0);
-            assertEquals(50, u.inputTokens());
+            assertInstanceOf(SessionUpdate.SessionUsage.class, updates.get(0));
+            SessionUpdate.SessionUsage u = (SessionUpdate.SessionUsage) updates.get(0);
+            assertEquals(50L, u.used());
         }
 
         @Test

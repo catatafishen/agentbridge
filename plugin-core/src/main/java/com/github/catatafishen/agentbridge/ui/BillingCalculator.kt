@@ -14,19 +14,23 @@ object BillingCalculator {
 
     /**
      * Formats token counts and cost for display in usage chips and toolbar stats.
-     * Returns an empty string if no usage data is available.
+     * Returns an empty string if no usage data is available. Zero token counts are
+     * omitted: agents that report only cumulative cost (ACP usage_update) would
+     * otherwise render a meaningless "0 tok" prefix.
      *
-     * Examples: `"1.2k tok · $0.004"`, `"850 tok · $0.001"`, `""`
+     * Examples: `"1.2k tok · $0.004"`, `"850 tok · $0.001"`, `"$0.004"`, `""`
      */
     fun formatUsageChip(inputTokens: Int, outputTokens: Int, costUsd: Double?): String {
-        if (inputTokens == 0 && outputTokens == 0 && (costUsd == null || costUsd == 0.0)) return ""
         val totalTokens = inputTokens + outputTokens
-        val tokStr = if (totalTokens >= 1000) "${totalTokens / 1000}.${(totalTokens % 1000) / 100}k tok"
-        else "$totalTokens tok"
-        return if (costUsd != null && costUsd > 0.0) "$tokStr · \$${
-            String.format("%.4f", costUsd).trimEnd('0').trimEnd('.')
-        }"
-        else tokStr
+        val costStr = costUsd?.takeIf { it > 0.0 }
+            ?.let { "\$${String.format("%.4f", it).trimEnd('0').trimEnd('.')}" }
+        if (totalTokens == 0 && costStr == null) return ""
+        val tokStr = when {
+            totalTokens >= 1000 -> "${totalTokens / 1000}.${(totalTokens % 1000) / 100}k tok"
+            totalTokens > 0 -> "$totalTokens tok"
+            else -> null
+        }
+        return listOfNotNull(tokStr, costStr).joinToString(" · ")
     }
 
     /**
