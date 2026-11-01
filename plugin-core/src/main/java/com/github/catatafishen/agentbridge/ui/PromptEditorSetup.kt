@@ -503,8 +503,10 @@ internal class PromptEditorSetup(
                         .findFileByIoFile(file) ?: continue
                     // No Document exists for binary files (e.g. images) — don't skip the
                     // chip on that account, just fall back to a zero line count.
-                    val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
-                        .getDocument(vf)
+                    val doc = com.intellij.openapi.application.ApplicationManager.getApplication()
+                        .runReadAction<com.intellij.openapi.editor.Document?> {
+                            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)
+                        }
                     val existing = contextManager.collectInlineContextItems().any { it.path == vf.path }
                     if (!existing) {
                         val data = ContextItemData(
