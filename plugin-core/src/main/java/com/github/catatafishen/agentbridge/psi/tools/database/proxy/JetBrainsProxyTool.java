@@ -121,12 +121,24 @@ public final class JetBrainsProxyTool extends DatabaseTool {
         } catch (IllegalArgumentException e) {
             return "Error: JetBrains MCP tool '" + toolId + "' is not available: " + e.getMessage();
         } catch (ReflectiveOperationException e) {
-            LOG.error("JetBrains MCP proxy failed for '" + toolId + "'", e);
+            if (isExpectedMcpError(e)) {
+                // User/agent input problem (e.g. unknown schema) — report to the agent, not as an IDE error.
+                LOG.info("JetBrains MCP tool '" + toolId + "' rejected the call: " + rootCauseMessage(e));
+            } else {
+                LOG.error("JetBrains MCP proxy failed for '" + toolId + "'", e);
+            }
             return "Error: JetBrains MCP proxy failed for '" + toolId + "': " + rootCauseMessage(e);
         } catch (RuntimeException e) {
             LOG.error("Unexpected failure invoking JetBrains MCP tool '" + toolId + "'", e);
             return "Error: Unexpected failure invoking JetBrains MCP tool '" + toolId + "': " + rootCauseMessage(e);
         }
+    }
+
+    private static boolean isExpectedMcpError(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if ("com.intellij.mcpserver.McpExpectedError".equals(t.getClass().getName())) return true;
+        }
+        return false;
     }
 
     /**
