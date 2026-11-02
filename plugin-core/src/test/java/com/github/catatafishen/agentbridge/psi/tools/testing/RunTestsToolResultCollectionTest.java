@@ -48,6 +48,16 @@ class RunTestsToolResultCollectionTest {
     }
 
     @Test
+    void failedRunReportsThisRunsStructuredResultsInsteadOfTheRawConsole() {
+        String output = RunTestsTool.selectTestOutput(255,
+            () -> "Test Results: 3 tests, 2 passed, 1 failed, 0 errors, 0 skipped\n\n=== Test Details ===\n",
+            "##teamcity[testStarted name='fails']");
+
+        assertTrue(output.startsWith("Test Results: 3 tests, 2 passed, 1 failed"), output);
+        assertFalse(output.contains("##teamcity"));
+    }
+
+    @Test
     void successfulRunStillPrefersStructuredResults() {
         String output = RunTestsTool.selectTestOutput(0,
             () -> "Test Results: 2 tests, 2 passed", "current console output");
