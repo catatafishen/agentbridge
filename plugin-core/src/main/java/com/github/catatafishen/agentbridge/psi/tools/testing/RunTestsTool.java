@@ -823,7 +823,7 @@ public final class RunTestsTool extends TestingTool {
         if (exitCode == Integer.MIN_VALUE) return "Tests timed out after " + timeoutSec + " seconds: " + configName;
 
         String testOutput = selectTestOutput(
-            exitCode, () -> collectTestRunOutput(configName), tracker.capturedOutput());
+            exitCode, () -> collectTestRunOutput(configName, handler, exitCode != 0), tracker.capturedOutput());
         if (exitCode == 0 && !TestResultFormatter.hasTestCounts(testOutput)) {
             // The IDE reported no per-test results (Gradle runs often don't): count them from the report files.
             String xmlResults = freshXmlResults("");
@@ -868,19 +868,26 @@ public final class RunTestsTool extends TestingTool {
         }
 
         String testOutput = selectTestOutput(
-            exitCode, () -> collectTestRunOutput(configName), tracker.capturedOutput());
+            exitCode, () -> collectTestRunOutput(configName, handler, exitCode != 0), tracker.capturedOutput());
         return formatTestSummary(exitCode, configName, testOutput);
     }
 
+    /**
+     * Prefers the structured results model whatever the exit code: a failing run is the one whose failures the
+     * caller most needs. On a failure, {@code structuredOutput} must report only the run that just ended (see
+     * {@link #findTestRunDescriptor}), and anything without test counts gives way to this run's captured console.
+     */
     static @NotNull String selectTestOutput(
         int exitCode,
         @NotNull java.util.function.Supplier<String> structuredOutput,
         @NotNull String capturedOutput
     ) {
-        if (exitCode != 0) {
-            return TestResultFormatter.withConsoleFallback("", capturedOutput);
+        String structured = structuredOutput.get();
+        if (exitCode != 0 && !TestResultFormatter.hasTestCounts(structured)) {
+            String console = TestResultFormatter.withConsoleFallback("", capturedOutput);
+            return console.isEmpty() ? structured : console;
         }
-        return TestResultFormatter.withConsoleFallback(structuredOutput.get(), capturedOutput);
+        return TestResultFormatter.withConsoleFallback(structured, capturedOutput);
     }
 
     /**
@@ -1037,11 +1044,11 @@ public final class RunTestsTool extends TestingTool {
         return TestResultFormatter.formatTestSummary(exitCode, configName, testOutput);
     }
 
-    private String collectTestRunOutput(String configName) {
+    private String collectTestRunOutput(String configName, @NotNull ProcessHandler runHandler, boolean thisRunOnly) {
         // Process termination can precede the Run-content model update. Retry the structured model
         // before falling back to console text, which is usually available earlier than test results.
         for (int attempt = 0; attempt < RESULT_MODEL_POLL_ATTEMPTS; attempt++) {
-            String testResults = collectTestRunOutputOnce(configName, false);
+            String testResults = collectTestRunOutputOnce(configName, runHandler, thisRunOnly, false);
             if (!testResults.isEmpty()) return testResults;
             try {
                 Thread.sleep(RESULT_MODEL_POLL_DELAY_MILLIS);
@@ -1050,14 +1057,18 @@ public final class RunTestsTool extends TestingTool {
                 return "";
             }
         }
-        return collectTestRunOutputOnce(configName, true);
+        return collectTestRunOutputOnce(configName, runHandler, thisRunOnly, true);
     }
 
-    private String collectTestRunOutputOnce(String configName, boolean includeConsoleText) {
+    private String collectTestRunOutputOnce(String configName, ProcessHandler runHandler, boolean thisRunOnly,
+                                            boolean includeConsoleText) {
         try {
             var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
             var descriptors = new ArrayList<>(manager.getAllDescriptors());
-            com.intellij.execution.ui.RunContentDescriptor target = findTestRunDescriptor(descriptors, configName);
+            com.intellij.execution.ui.RunContentDescriptor target = findTestRunDescriptor(descriptors,
+                com.intellij.execution.ui.RunContentDescriptor::getDisplayName,
+                com.intellij.execution.ui.RunContentDescriptor::getProcessHandler,
+                configName, runHandler, thisRunOnly);
             if (target == null || target.getExecutionConsole() == null) return "";
 
             Object console = target.getExecutionConsole();
@@ -1073,12 +1084,24 @@ public final class RunTestsTool extends TestingTool {
         }
     }
 
-    @Nullable
-    private com.intellij.execution.ui.RunContentDescriptor findTestRunDescriptor(
-        List<com.intellij.execution.ui.RunContentDescriptor> descriptors, String configName) {
-        com.intellij.execution.ui.RunContentDescriptor substringFallback = null;
+    /**
+     * The run tab holding this run's results: the one whose process is {@code runHandler}. A tab found only by
+     * name may be an earlier run of the same configuration, so with {@code thisRunOnly} (a failed run, whose
+     * stale passing results would hide the failure) there is no name fallback.
+     */
+    static <D> @Nullable D findTestRunDescriptor(@NotNull List<D> descriptors,
+                                                 @NotNull java.util.function.Function<D, String> displayNameOf,
+                                                 @NotNull java.util.function.Function<D, ?> processHandlerOf,
+                                                 @NotNull String configName,
+                                                 @NotNull Object runHandler,
+                                                 boolean thisRunOnly) {
         for (var descriptor : descriptors) {
-            String displayName = descriptor.getDisplayName();
+            if (processHandlerOf.apply(descriptor) == runHandler) return descriptor;
+        }
+        if (thisRunOnly) return null;
+        D substringFallback = null;
+        for (var descriptor : descriptors) {
+            String displayName = displayNameOf.apply(descriptor);
             if (displayName != null) {
                 if (displayName.equals(configName)) return descriptor;
                 if (displayName.contains(configName)) substringFallback = descriptor;
