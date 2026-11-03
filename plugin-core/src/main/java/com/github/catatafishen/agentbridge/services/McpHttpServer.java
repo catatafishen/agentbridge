@@ -41,7 +41,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private static final long HTTP_SESSION_SWEEP_INTERVAL_MINUTES = 5;
     private static final String HTTP_OWNER_PREFIX = "http:";
     private static final String ALLOWED_REQUEST_HEADERS =
-        CONTENT_TYPE + ", " + MCP_SESSION_ID_HEADER + ", " + MCP_PROTOCOL_VERSION_HEADER;
+        CONTENT_TYPE + ", " + MCP_SESSION_ID_HEADER + ", " + MCP_PROTOCOL_VERSION_HEADER + ", Mcp-Method, Mcp-Name";
 
     /**
      * Fired on the project message bus when the MCP server starts or stops.
@@ -313,6 +313,12 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 LOG.info("[MCP] <<< " + truncateForLog(body));
             }
 
+            String statelessVersion = McpSessionRegistry.statelessVersion(body);
+            if (statelessVersion != null) {
+                handleStatelessPost(exchange, body, statelessVersion, settings);
+                return;
+            }
+
             owner = resolveHttpOwner(exchange, body);
             if (owner == null) return;
             String response;
@@ -363,6 +369,126 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             exchange.close();
             activeConnections.decrementAndGet();
         }
+    }
+
+    /**
+     * Fixed owner for all stateless requests; clientInfo is not unique per instance, so it is not used for ownership.
+     */
+    private static final String STATELESS_OWNER_KEY = "stateless:default";
+    private static final int ERROR_HEADER_MISMATCH = -32020;
+    private static final int ERROR_UNSUPPORTED_PROTOCOL_VERSION = -32022;
+
+    /**
+     * Handles a 2026-07-28+ request: no session, no initialize. Validates the required request
+     * headers against the body, then delegates to the protocol handler under a fixed owner key.
+     * Any {@code Mcp-Session-Id} header is ignored (never minted or echoed), per the spec.
+     */
+    private void handleStatelessPost(HttpExchange exchange, String body, String bodyVersion,
+                                     McpServerSettings settings) throws IOException {
+        if (!McpProtocolHandler.isSupportedProtocolVersion(bodyVersion)) {
+            sendUnsupportedVersion(exchange, bodyVersion);
+            return;
+        }
+        String headerVersion = exchange.getRequestHeaders().getFirst(MCP_PROTOCOL_VERSION_HEADER);
+        if (headerVersion == null || !headerVersion.equals(bodyVersion)) {
+            sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH,
+                "Header mismatch: " + MCP_PROTOCOL_VERSION_HEADER + " header '" + headerVersion
+                    + "' does not match body value '" + bodyVersion + "'");
+            return;
+        }
+
+        JsonObject request = JsonParser.parseString(body).getAsJsonObject();
+        String method = request.has("method") && request.get("method").isJsonPrimitive()
+            ? request.get("method").getAsString() : null;
+        String headerMethod = exchange.getRequestHeaders().getFirst("Mcp-Method");
+        if (method != null && !method.equals(headerMethod)) {
+            sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH,
+                "Header mismatch: Mcp-Method header '" + headerMethod + "' does not match body value '" + method + "'");
+            return;
+        }
+        String nameError = validateNameHeader(exchange, request, method);
+        if (nameError != null) {
+            sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH, nameError);
+            return;
+        }
+
+        boolean gated = "tools/call".equals(method);
+        String response;
+        if (gated) restartGate.readLock().lock();
+        try {
+            response = protocolHandler.handleMessage(body, STATELESS_OWNER_KEY);
+        } finally {
+            if (gated) restartGate.readLock().unlock();
+        }
+
+        if (response == null) {
+            exchange.sendResponseHeaders(202, -1);
+            return;
+        }
+        if (settings.isDebugLoggingEnabled()) {
+            LOG.info("[MCP] >>> " + truncateForLog(response));
+        }
+        byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+    }
+
+    /**
+     * Validates {@code Mcp-Name} for tools/call (params.name) and resources/read (params.uri); null if OK.
+     */
+    static @Nullable String validateNameHeader(HttpExchange exchange, JsonObject request, @Nullable String method) {
+        String field;
+        if ("tools/call".equals(method)) field = "name";
+        else if ("resources/read".equals(method)) field = "uri";
+        else return null;
+
+        String bodyValue = null;
+        if (request.has("params") && request.get("params").isJsonObject()) {
+            var value = request.getAsJsonObject("params").get(field);
+            if (value != null && value.isJsonPrimitive()) bodyValue = value.getAsString();
+        }
+        String raw = exchange.getRequestHeaders().getFirst("Mcp-Name");
+        if (raw == null) return "Header mismatch: missing required Mcp-Name header";
+        String headerValue = decodeHeaderValue(raw);
+        if (headerValue == null) return "Header mismatch: malformed Base64 value in Mcp-Name header";
+        if (bodyValue != null && !headerValue.equals(bodyValue)) {
+            return "Header mismatch: Mcp-Name header value '" + headerValue + "' does not match body value '" + bodyValue + "'";
+        }
+        return null;
+    }
+
+    /**
+     * Decodes the {@code =?base64?...?=} sentinel; returns the input unchanged if not encoded, null if malformed.
+     */
+    static @Nullable String decodeHeaderValue(String raw) {
+        if (raw.startsWith("=?base64?") && raw.endsWith("?=") && raw.length() >= 11) {
+            try {
+                String encoded = raw.substring("=?base64?".length(), raw.length() - 2);
+                return new String(java.util.Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+        return raw;
+    }
+
+    private static void sendUnsupportedVersion(HttpExchange exchange, String requested) throws IOException {
+        JsonObject error = new JsonObject();
+        error.addProperty("code", ERROR_UNSUPPORTED_PROTOCOL_VERSION);
+        error.addProperty("message", "Unsupported protocol version: " + requested);
+        JsonObject data = new JsonObject();
+        com.google.gson.JsonArray supported = new com.google.gson.JsonArray();
+        McpProtocolHandler.supportedProtocolVersions().forEach(supported::add);
+        data.add("supported", supported);
+        error.add("data", data);
+        JsonObject resp = new JsonObject();
+        resp.addProperty("jsonrpc", "2.0");
+        resp.add("error", error);
+        byte[] bytes = resp.toString().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
+        exchange.sendResponseHeaders(400, bytes.length);
+        exchange.getResponseBody().write(bytes);
     }
 
     enum HttpOwnerKind {

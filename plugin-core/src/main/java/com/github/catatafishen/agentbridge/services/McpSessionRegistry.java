@@ -155,6 +155,27 @@ final class McpSessionRegistry {
         }
     }
 
+    /**
+     * Returns the {@code io.modelcontextprotocol/protocolVersion} from {@code params._meta} when the
+     * request opts in to the stateless (2026-07-28+) model, or null for legacy session-based requests.
+     * A present-but-malformed value is returned as an empty string so it is rejected as unsupported.
+     */
+    static @org.jetbrains.annotations.Nullable String statelessVersion(@NotNull String body) {
+        try {
+            var parsed = JsonParser.parseString(body);
+            if (!parsed.isJsonObject()) return null;
+            var params = parsed.getAsJsonObject().get("params");
+            if (params == null || !params.isJsonObject()) return null;
+            var meta = params.getAsJsonObject().get("_meta");
+            if (meta == null || !meta.isJsonObject()) return null;
+            var version = meta.getAsJsonObject().get("io.modelcontextprotocol/protocolVersion");
+            if (version == null) return null;
+            return version.isJsonPrimitive() ? version.getAsString() : "";
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
     static @NotNull String ownerKey(@NotNull String transport, @NotNull String sessionId) {
         return transport + ":" + sessionId;
     }
