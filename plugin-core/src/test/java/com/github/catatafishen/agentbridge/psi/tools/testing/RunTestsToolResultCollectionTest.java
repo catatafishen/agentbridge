@@ -33,18 +33,38 @@ class RunTestsToolResultCollectionTest {
     }
 
     @Test
-    void failedRunUsesCurrentCapturedOutputWithoutReadingStaleStructuredResults() {
-        java.util.concurrent.atomic.AtomicBoolean structuredRead =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        String output = RunTestsTool.selectTestOutput(1, () -> {
-            structuredRead.set(true);
-            return "Test Results: 29 tests, 29 passed";
-        }, "current run failed to compile");
+    void failedRunWithoutTestCountsUsesCurrentCapturedOutput() {
+        String output = RunTestsTool.selectTestOutput(1,
+            () -> "\n=== Console Output ===\nolder tab text", "current run failed to compile");
 
         assertTrue(output.contains("current run failed to compile"));
-        assertFalse(output.contains("29 tests, 29 passed"));
-        assertFalse(structuredRead.get());
+        assertFalse(output.contains("older tab text"));
+    }
+
+    private record Tab(String name, Object handler) {
+    }
+
+    private static Tab findTab(List<Tab> tabs, Object runHandler, boolean thisRunOnly) {
+        return RunTestsTool.findTestRunDescriptor(tabs, Tab::name, Tab::handler, "MyTest", runHandler, thisRunOnly);
+    }
+
+    @Test
+    void failedRunNeverReadsAnEarlierTabOfTheSameConfiguration() {
+        Object thisRun = new Object();
+        Tab stale = new Tab("MyTest", new Object());
+
+        assertNull(findTab(List.of(stale), thisRun, true));
+        assertEquals(stale, findTab(List.of(stale), thisRun, false));
+    }
+
+    @Test
+    void theTabOfThisRunWinsOverASameNamedEarlierTab() {
+        Object thisRun = new Object();
+        Tab stale = new Tab("MyTest", new Object());
+        Tab current = new Tab("MyTest (1)", thisRun);
+
+        assertEquals(current, findTab(List.of(stale, current), thisRun, true));
+        assertEquals(current, findTab(List.of(stale, current), thisRun, false));
     }
 
     @Test
