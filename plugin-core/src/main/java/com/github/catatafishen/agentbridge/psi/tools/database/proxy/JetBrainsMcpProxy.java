@@ -46,6 +46,7 @@ final class JetBrainsMcpProxy {
     private static final String MCPSERVER_PLUGIN_ID = "com.intellij.mcpServer";
     private static final String MCP_SESSION_OPTIONS_CLASS =
         "com.intellij.mcpserver.impl.McpServerService$McpSessionOptions";
+    private static final String MCP_EXPECTED_ERROR_CLASS = "com.intellij.mcpserver.McpExpectedError";
     private static final String DEFAULT_CONSTRUCTOR_MARKER_CLASS_NAME =
         "kotlin.jvm.internal.DefaultConstructorMarker";
 
@@ -94,6 +95,27 @@ final class JetBrainsMcpProxy {
     }
 
     // ── Internal machinery ──────────────────────────────────────────────────
+
+    /**
+     * Returns true when {@code error} (or any cause) is an {@code McpExpectedError}, i.e. the JetBrains tool
+     * rejected the call because of its input (unknown schema, bad connection id, ...) rather than failing.
+     * The class is not on this module's compile classpath, so it is resolved through the MCP plugin's classloader.
+     */
+    static boolean isExpectedError(Throwable error) {
+        ClassLoader cl = mcpClassLoaderRef.get();
+        if (cl == null) return false;
+        Class<?> expectedErrorClass;
+        try {
+            expectedErrorClass = Class.forName(MCP_EXPECTED_ERROR_CLASS, false, cl);
+        } catch (ClassNotFoundException e) {
+            LOG.debug("McpExpectedError class not found in MCP plugin classloader", e);
+            return false;
+        }
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (expectedErrorClass.isInstance(t)) return true;
+        }
+        return false;
+    }
 
     private static Map<String, Object> loadToolCache() throws ReflectiveOperationException {
         Map<String, Object> cached = toolCacheRef.get();

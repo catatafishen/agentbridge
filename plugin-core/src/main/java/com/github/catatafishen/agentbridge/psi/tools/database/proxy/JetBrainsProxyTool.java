@@ -40,7 +40,7 @@ public final class JetBrainsProxyTool extends DatabaseTool {
     private final ToolDefinition.Kind kind;
     private final JsonObject inputSchema;
     private final boolean readOnly;
-    private final Map<String, JsonElement> paramDefaults;
+    private Map<String, JsonElement> paramDefaults = Map.of();
 
     private JetBrainsProxyTool(
         Project project,
@@ -51,19 +51,6 @@ public final class JetBrainsProxyTool extends DatabaseTool {
         boolean readOnly,
         JsonObject inputSchema
     ) {
-        this(project, toolId, displayName, description, kind, readOnly, inputSchema, Map.of());
-    }
-
-    private JetBrainsProxyTool(
-        Project project,
-        String toolId,
-        String displayName,
-        String description,
-        ToolDefinition.Kind kind,
-        boolean readOnly,
-        JsonObject inputSchema,
-        Map<String, JsonElement> paramDefaults
-    ) {
         super(project);
         this.toolId = toolId;
         this.displayName = displayName;
@@ -71,7 +58,14 @@ public final class JetBrainsProxyTool extends DatabaseTool {
         this.kind = kind;
         this.readOnly = readOnly;
         this.inputSchema = inputSchema;
-        this.paramDefaults = paramDefaults;
+    }
+
+    /**
+     * Sets default argument values applied when the caller omits them. Used by factory methods only.
+     */
+    private JetBrainsProxyTool withParamDefaults(Map<String, JsonElement> defaults) {
+        this.paramDefaults = defaults;
+        return this;
     }
 
     @Override
@@ -121,7 +115,7 @@ public final class JetBrainsProxyTool extends DatabaseTool {
         } catch (IllegalArgumentException e) {
             return "Error: JetBrains MCP tool '" + toolId + "' is not available: " + e.getMessage();
         } catch (ReflectiveOperationException e) {
-            if (isExpectedMcpError(e)) {
+            if (JetBrainsMcpProxy.isExpectedError(e)) {
                 // User/agent input problem (e.g. unknown schema) — report to the agent, not as an IDE error.
                 LOG.info("JetBrains MCP tool '" + toolId + "' rejected the call: " + rootCauseMessage(e));
             } else {
@@ -132,13 +126,6 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             LOG.error("Unexpected failure invoking JetBrains MCP tool '" + toolId + "'", e);
             return "Error: Unexpected failure invoking JetBrains MCP tool '" + toolId + "': " + rootCauseMessage(e);
         }
-    }
-
-    private static boolean isExpectedMcpError(Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if ("com.intellij.mcpserver.McpExpectedError".equals(t.getClass().getName())) return true;
-        }
-        return false;
     }
 
     /**
@@ -192,8 +179,8 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             schema(
                 Param.required(PARAM_CONNECTION_ID, TYPE_STRING, DESC_CONNECTION_ID),
                 Param.optional("selectedOnly", TYPE_BOOLEAN,
-                    "True to list only schemas selected in the database tree; false (default) to list all")),
-            Map.of("selectedOnly", new JsonPrimitive(false)));
+                    "True to list only schemas selected in the database tree; false (default) to list all")))
+            .withParamDefaults(Map.of("selectedOnly", new JsonPrimitive(false)));
     }
 
     private static JetBrainsProxyTool listSchemaObjectKinds(Project project) {
