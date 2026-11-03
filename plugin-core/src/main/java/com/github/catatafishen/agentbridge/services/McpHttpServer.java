@@ -315,7 +315,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
             String statelessVersion = McpSessionRegistry.statelessVersion(body);
             if (statelessVersion != null) {
-                handleStatelessPost(exchange, body, statelessVersion, settings);
+                handleStatelessPost(exchange, body, statelessVersion, settings.isDebugLoggingEnabled());
                 return;
             }
 
@@ -383,8 +383,13 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * headers against the body, then delegates to the protocol handler under a fixed owner key.
      * Any {@code Mcp-Session-Id} header is ignored (never minted or echoed), per the spec.
      */
-    private void handleStatelessPost(HttpExchange exchange, String body, String bodyVersion,
-                                     McpServerSettings settings) throws IOException {
+    void handleStatelessPost(HttpExchange exchange, String body, String bodyVersion,
+                             boolean debugLogging) throws IOException {
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (!isAllowedOrigin(origin)) {
+            sendJsonRpcError(exchange, 403, -32600, "Forbidden: invalid Origin");
+            return;
+        }
         if (!McpProtocolHandler.isSupportedProtocolVersion(bodyVersion)) {
             sendUnsupportedVersion(exchange, bodyVersion);
             return;
@@ -425,13 +430,27 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             exchange.sendResponseHeaders(202, -1);
             return;
         }
-        if (settings.isDebugLoggingEnabled()) {
+        if (debugLogging) {
             LOG.info("[MCP] >>> " + truncateForLog(response));
         }
         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
+    }
+
+    /**
+     * DNS-rebinding protection required by the 2026-07-28 spec: an absent Origin is allowed
+     * (non-browser clients); a present one must be a loopback host.
+     */
+    static boolean isAllowedOrigin(@Nullable String origin) {
+        if (origin == null || origin.isEmpty()) return true;
+        try {
+            String host = java.net.URI.create(origin).getHost();
+            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     /**

@@ -194,7 +194,7 @@ custom MCP clients) that cannot use the stdio-based subprocess model.
 | Class                          | Role                                                            |
 |--------------------------------|-----------------------------------------------------------------|
 | `McpHttpServer`                | Starts `com.sun.net.httpserver.HttpServer`, registers endpoints |
-| `McpProtocolHandler`           | JSON-RPC handler; propagates transport-session ownership         |
+| `McpProtocolHandler`           | JSON-RPC handler; propagates transport-session ownership        |
 | `McpSseTransport`              | SSE session management, `/sse` and `/message` endpoints         |
 | `SseSession`                   | Single SSE client connection (event stream, keep-alive)         |
 | `McpServerSettings`            | Persistent settings: port, auto-start, transport mode           |
@@ -209,16 +209,50 @@ Configured in **Settings → Tools → AgentBridge → MCP**.
 
 Single request/response model — the simplest transport for MCP.
 
-| Endpoint  | Method | Description                                           |
-|-----------|--------|-------------------------------------------------------|
-| `/mcp`    | POST   | JSON-RPC request → JSON-RPC response                  |
+| Endpoint  | Method | Description                                            |
+|-----------|--------|--------------------------------------------------------|
+| `/mcp`    | POST   | JSON-RPC request → JSON-RPC response                   |
 | `/mcp`    | DELETE | End the `Mcp-Session-Id` session and release resources |
-| `/health` | GET    | Server status check                                   |
+| `/health` | GET    | Server status check                                    |
 
 The initialize response returns `Mcp-Session-Id`. Clients echo that header on
 subsequent requests. AgentBridge uses the transport session as the ownership
 boundary for stateful resources, so concurrent agents cannot read, write, reuse,
 or close one another's integrated terminals.
+
+##### Protocol versions
+
+The server supports MCP `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26` and
+`2024-11-05` side by side. A request selects its mode itself:
+
+| Mode                      | How it is detected                                                   | Behaviour                                                                                                                                                    |
+|---------------------------|----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Legacy (session-based)    | `initialize` request; no `io.modelcontextprotocol/protocolVersion`   | `initialize` handshake, `Mcp-Session-Id`, per-session ownership. `initialize` echoes the client's `protocolVersion` if supported, else replies `2025-11-25`. |
+| Stateless (`2026-07-28`+) | `params._meta["io.modelcontextprotocol/protocolVersion"]` is present | No handshake, no sessions. See below.                                                                                                                        |
+
+Stateless requests (spec: Streamable HTTP, revision 2026-07-28):
+
+- Every POST must carry `MCP-Protocol-Version` (equal to the `_meta` value), `Mcp-Method`,
+  and, for `tools/call` and `resources/read`, `Mcp-Name` (`params.name` / `params.uri`,
+  `=?base64?…?=` encoding supported). A missing or mismatching header returns HTTP 400 with
+  JSON-RPC `HeaderMismatch` (`-32020`).
+- An unknown version returns HTTP 400 with `UnsupportedProtocolVersion` (`-32022`) and the
+  list of supported versions in `error.data.supported`.
+- A present `Origin` header must be a loopback host, otherwise HTTP 403 (DNS-rebinding
+  protection). An absent `Origin` is allowed.
+- `Mcp-Session-Id` is ignored and never minted or echoed. All stateless requests share the fixed
+  owner key `stateless:default`: `clientInfo` is only a name/version and is not unique per client
+  instance, so it is used for display only. Consequently, per-owner resources such as integrated
+  terminals are shared between concurrent stateless clients.
+- `server/discover` returns supported versions, capabilities and server info.
+- Results carry `resultType: "complete"`; list and read results carry `ttlMs: 0` and
+  `cacheScope: "private"` (no client-side caching); `_meta` carries `io.modelcontextprotocol/serverInfo`.
+- `ping` is not available; a missing resource returns `-32602` instead of `-32002`.
+- `subscriptions/listen`, MRTR and the tasks extension are not implemented. The server advertises
+  `listChanged: false` and makes no server-to-client requests, so none are needed.
+
+The stdio proxy (`mcp-server.jar`) derives the required headers from the body for stateless
+messages, and keeps the session echo and re-initialize retry for legacy ones.
 
 Client config:
 
