@@ -88,6 +88,13 @@ public final class McpProtocolHandler {
     private static final String PROTOCOL_VERSION = "2025-11-25";
     private static final java.util.List<String> SUPPORTED_PROTOCOL_VERSIONS =
         java.util.List.of(PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05");
+    private static final String PROTOCOL_VERSION_STATELESS = "2026-07-28";
+    private static final java.util.List<String> ALL_PROTOCOL_VERSIONS =
+        java.util.List.of(PROTOCOL_VERSION_STATELESS, PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05");
+    private static final String META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
+    private static final String META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
+    private static final String META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
+    private static final int ERROR_UNSUPPORTED_PROTOCOL_VERSION = -32022;
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
     private static final String STARTUP_INSTRUCTIONS = loadInstructions();
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
@@ -151,18 +158,30 @@ public final class McpProtocolHandler {
             String method = msg.has("method") ? msg.get("method").getAsString() : null;
             if (method == null) return null;
 
+            JsonObject statelessMeta = statelessMeta(msg);
+            if (statelessMeta != null) {
+                JsonObject versionError = validateStatelessVersion(msg, statelessMeta);
+                if (versionError != null) return msg.has("id") ? GSON.toJson(versionError) : null;
+                recordStatelessClient(statelessMeta);
+            }
+            boolean stateless = statelessMeta != null;
+
             JsonObject result = switch (method) {
+                case "server/discover" -> handleServerDiscover(msg);
                 case "initialize" -> handleInitialize(msg);
                 case "tools/list" -> handleToolsList(msg);
                 case "tools/call" -> handleToolsCall(msg, sessionKey);
                 case "resources/list" -> handleResourcesList(msg);
                 case "resources/templates/list" -> handleResourceTemplatesList(msg);
                 case "resources/read" -> handleResourcesRead(msg);
-                case "ping" -> respondResult(msg, new JsonObject());
+                case "ping" -> stateless
+                    ? respondError(msg, -32601, "Method not found: " + method)
+                    : respondResult(msg, new JsonObject());
                 default -> respondError(msg, -32601, "Method not found: " + method);
             };
 
             if (!msg.has("id")) return null;
+            if (stateless) applyStatelessDecoration(method, result);
             return GSON.toJson(result);
         } catch (com.google.gson.JsonSyntaxException | com.google.gson.JsonIOException e) {
             // Malformed input from client — warn, not error (this is a caller mistake, not a server fault)
@@ -172,6 +191,103 @@ public final class McpProtocolHandler {
             LOG.error("MCP protocol error processing request", e);
             return GSON.toJson(makeErrorResponse(null, -32603, "Internal error: " + e.getClass().getSimpleName() + ": " + e.getMessage()));
         }
+    }
+
+    /**
+     * Returns the request's {@code params._meta} if it opts in to the stateless 2026-07-28 model
+     * (i.e. carries {@code io.modelcontextprotocol/protocolVersion}), otherwise null.
+     */
+    private static @Nullable JsonObject statelessMeta(JsonObject msg) {
+        if (!msg.has(KEY_PARAMS) || !msg.get(KEY_PARAMS).isJsonObject()) return null;
+        JsonObject params = msg.getAsJsonObject(KEY_PARAMS);
+        if (!params.has(KEY_META) || !params.get(KEY_META).isJsonObject()) return null;
+        JsonObject meta = params.getAsJsonObject(KEY_META);
+        return meta.has(META_PROTOCOL_VERSION) ? meta : null;
+    }
+
+    private static @Nullable JsonObject validateStatelessVersion(JsonObject msg, JsonObject meta) {
+        JsonElement v = meta.get(META_PROTOCOL_VERSION);
+        String version = v != null && v.isJsonPrimitive() ? v.getAsString() : null;
+        if (version != null && ALL_PROTOCOL_VERSIONS.contains(version)) return null;
+        JsonObject response = respondError(msg, ERROR_UNSUPPORTED_PROTOCOL_VERSION,
+            "Unsupported protocol version: " + version);
+        JsonObject data = new JsonObject();
+        JsonArray supported = new JsonArray();
+        ALL_PROTOCOL_VERSIONS.forEach(supported::add);
+        data.add("supported", supported);
+        response.getAsJsonObject(OUTCOME_ERROR).add("data", data);
+        return response;
+    }
+
+    private void recordStatelessClient(JsonObject meta) {
+        if (meta.has(META_CLIENT_INFO) && meta.get(META_CLIENT_INFO).isJsonObject()) {
+            JsonObject info = meta.getAsJsonObject(META_CLIENT_INFO);
+            if (info.has("name") && info.get("name").isJsonPrimitive()) {
+                connectedAgentName = info.get("name").getAsString();
+            }
+        }
+    }
+
+    private JsonObject handleServerDiscover(JsonObject msg) {
+        JsonObject result = new JsonObject();
+        JsonArray versions = new JsonArray();
+        ALL_PROTOCOL_VERSIONS.forEach(versions::add);
+        result.add("supportedVersions", versions);
+        result.add("capabilities", buildCapabilities());
+        result.add("serverInfo", buildServerInfo());
+        result.addProperty("instructions", buildInstructions());
+        return respondResult(msg, result);
+    }
+
+    /**
+     * Adds 2026-07-28 result fields: {@code resultType}, cache hints on list/read results, and
+     * {@code _meta} server info; and maps the legacy resource-not-found code to -32602.
+     */
+    private void applyStatelessDecoration(String method, JsonObject response) {
+        if (response.has(OUTCOME_ERROR)) {
+            JsonObject error = response.getAsJsonObject(OUTCOME_ERROR);
+            if (error.has("code") && error.get("code").getAsInt() == RESOURCE_NOT_FOUND_ERROR) {
+                error.addProperty("code", -32602);
+            }
+            return;
+        }
+        if (!response.has("result") || !response.get("result").isJsonObject()) return;
+        JsonObject result = response.getAsJsonObject("result");
+        if (!result.has("resultType")) result.addProperty("resultType", "complete");
+        switch (method) {
+            case "tools/list", "resources/list", "resources/templates/list", "resources/read" -> {
+                result.addProperty("ttlMs", 0);
+                result.addProperty("cacheScope", "private");
+            }
+            default -> { /* no cache hints */ }
+        }
+        JsonObject meta = result.has(KEY_META) && result.get(KEY_META).isJsonObject()
+            ? result.getAsJsonObject(KEY_META) : new JsonObject();
+        JsonObject serverInfo = new JsonObject();
+        serverInfo.addProperty("name", SERVER_NAME);
+        serverInfo.addProperty("version", SERVER_VERSION);
+        meta.add(META_SERVER_INFO, serverInfo);
+        result.add(KEY_META, meta);
+    }
+
+    private JsonObject buildServerInfo() {
+        JsonObject serverInfo = new JsonObject();
+        String projectName = project.getName();
+        serverInfo.addProperty("name", SERVER_NAME + " (" + projectName + ")");
+        serverInfo.addProperty("version", SERVER_VERSION);
+        serverInfo.addProperty(KEY_DESCRIPTION, "Code Intelligence tools for IntelliJ IDEA — project: " + projectName);
+        return serverInfo;
+    }
+
+    private static JsonObject buildCapabilities() {
+        JsonObject capabilities = new JsonObject();
+        JsonObject toolsCap = new JsonObject();
+        toolsCap.addProperty("listChanged", false);
+        capabilities.add("tools", toolsCap);
+        JsonObject resourcesCap = new JsonObject();
+        resourcesCap.addProperty("listChanged", false);
+        capabilities.add("resources", resourcesCap);
+        return capabilities;
     }
 
     private JsonObject handleInitialize(JsonObject msg) {
@@ -185,29 +301,14 @@ public final class McpProtocolHandler {
             }
         }
 
-        JsonObject serverInfo = new JsonObject();
-        String projectName = project.getName();
-        serverInfo.addProperty("name", SERVER_NAME + " (" + projectName + ")");
-        serverInfo.addProperty("version", SERVER_VERSION);
-        serverInfo.addProperty(KEY_DESCRIPTION, "Code Intelligence tools for IntelliJ IDEA — project: " + projectName);
-
-        JsonObject capabilities = new JsonObject();
-        JsonObject toolsCap = new JsonObject();
-        toolsCap.addProperty("listChanged", false);
-        capabilities.add("tools", toolsCap);
-
-        JsonObject resourcesCap = new JsonObject();
-        resourcesCap.addProperty("listChanged", false);
-        capabilities.add("resources", resourcesCap);
-
         JsonObject result = new JsonObject();
         String requested = params != null && params.has("protocolVersion") && params.get("protocolVersion").isJsonPrimitive()
             ? params.get("protocolVersion").getAsString() : null;
         String negotiated = requested != null && SUPPORTED_PROTOCOL_VERSIONS.contains(requested)
             ? requested : PROTOCOL_VERSION;
         result.addProperty("protocolVersion", negotiated);
-        result.add("capabilities", capabilities);
-        result.add("serverInfo", serverInfo);
+        result.add("capabilities", buildCapabilities());
+        result.add("serverInfo", buildServerInfo());
         result.addProperty("instructions", buildInstructions());
 
         return respondResult(msg, result);
