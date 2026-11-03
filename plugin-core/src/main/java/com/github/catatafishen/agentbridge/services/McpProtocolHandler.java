@@ -100,6 +100,9 @@ public final class McpProtocolHandler {
         return ALL_PROTOCOL_VERSIONS;
     }
 
+    private static final String KEY_RESULT = "result";
+    private static final String KEY_VERSION = "version";
+    private static final String KEY_PROTOCOL_VERSION = "protocolVersion";
     private static final String META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
     private static final String META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
     private static final String META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
@@ -260,8 +263,8 @@ public final class McpProtocolHandler {
             }
             return;
         }
-        if (!response.has("result") || !response.get("result").isJsonObject()) return;
-        JsonObject result = response.getAsJsonObject("result");
+        if (!response.has(KEY_RESULT) || !response.get(KEY_RESULT).isJsonObject()) return;
+        JsonObject result = response.getAsJsonObject(KEY_RESULT);
         if (!result.has("resultType")) result.addProperty("resultType", "complete");
         switch (method) {
             case "tools/list", "resources/list", "resources/templates/list", "resources/read" -> {
@@ -274,7 +277,7 @@ public final class McpProtocolHandler {
             ? result.getAsJsonObject(KEY_META) : new JsonObject();
         JsonObject serverInfo = new JsonObject();
         serverInfo.addProperty("name", SERVER_NAME);
-        serverInfo.addProperty("version", SERVER_VERSION);
+        serverInfo.addProperty(KEY_VERSION, SERVER_VERSION);
         meta.add(META_SERVER_INFO, serverInfo);
         result.add(KEY_META, meta);
     }
@@ -283,7 +286,7 @@ public final class McpProtocolHandler {
         JsonObject serverInfo = new JsonObject();
         String projectName = project.getName();
         serverInfo.addProperty("name", SERVER_NAME + " (" + projectName + ")");
-        serverInfo.addProperty("version", SERVER_VERSION);
+        serverInfo.addProperty(KEY_VERSION, SERVER_VERSION);
         serverInfo.addProperty(KEY_DESCRIPTION, "Code Intelligence tools for IntelliJ IDEA — project: " + projectName);
         return serverInfo;
     }
@@ -311,11 +314,11 @@ public final class McpProtocolHandler {
         }
 
         JsonObject result = new JsonObject();
-        String requested = params != null && params.has("protocolVersion") && params.get("protocolVersion").isJsonPrimitive()
-            ? params.get("protocolVersion").getAsString() : null;
+        String requested = params != null && params.has(KEY_PROTOCOL_VERSION) && params.get(KEY_PROTOCOL_VERSION).isJsonPrimitive()
+            ? params.get(KEY_PROTOCOL_VERSION).getAsString() : null;
         String negotiated = requested != null && SUPPORTED_PROTOCOL_VERSIONS.contains(requested)
             ? requested : PROTOCOL_VERSION;
-        result.addProperty("protocolVersion", negotiated);
+        result.addProperty(KEY_PROTOCOL_VERSION, negotiated);
         result.add("capabilities", buildCapabilities());
         result.add("serverInfo", buildServerInfo());
         result.addProperty("instructions", buildInstructions());
@@ -1204,7 +1207,7 @@ public final class McpProtocolHandler {
         if (request != null && request.has("id")) {
             response.add("id", request.get("id"));
         }
-        response.add("result", result);
+        response.add(KEY_RESULT, result);
         return response;
     }
 

@@ -18,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -377,6 +378,21 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private static final String STATELESS_OWNER_KEY = "stateless:default";
     private static final int ERROR_HEADER_MISMATCH = -32020;
     private static final int ERROR_UNSUPPORTED_PROTOCOL_VERSION = -32022;
+    private static final String KEY_METHOD = "method";
+    private static final String KEY_PARAMS = "params";
+    private static final String KEY_ERROR = "error";
+    private static final String HEADER_MCP_METHOD = "Mcp-Method";
+    private static final String HEADER_MCP_NAME = "Mcp-Name";
+    private static final String HEADER_ORIGIN = "Origin";
+    private static final String METHOD_TOOLS_CALL = "tools/call";
+
+    /**
+     * Builds the HeaderMismatch message for a header whose value differs from the request body.
+     */
+    private static String headerMismatch(String header, @Nullable String headerValue, @Nullable String bodyValue) {
+        return "Header mismatch: " + header + " header '" + headerValue
+            + "' does not match body value '" + bodyValue + "'";
+    }
 
     /**
      * Handles a 2026-07-28+ request: no session, no initialize. Validates the required request
@@ -385,8 +401,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      */
     void handleStatelessPost(HttpExchange exchange, String body, String bodyVersion,
                              boolean debugLogging) throws IOException {
-        String origin = exchange.getRequestHeaders().getFirst("Origin");
-        if (!isAllowedOrigin(origin)) {
+        if (!isAllowedOrigin(exchange.getRequestHeaders().getFirst(HEADER_ORIGIN))) {
             sendJsonRpcError(exchange, 403, -32600, "Forbidden: invalid Origin");
             return;
         }
@@ -395,20 +410,19 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             return;
         }
         String headerVersion = exchange.getRequestHeaders().getFirst(MCP_PROTOCOL_VERSION_HEADER);
-        if (headerVersion == null || !headerVersion.equals(bodyVersion)) {
+        if (!Objects.equals(headerVersion, bodyVersion)) {
             sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH,
-                "Header mismatch: " + MCP_PROTOCOL_VERSION_HEADER + " header '" + headerVersion
-                    + "' does not match body value '" + bodyVersion + "'");
+                headerMismatch(MCP_PROTOCOL_VERSION_HEADER, headerVersion, bodyVersion));
             return;
         }
 
         JsonObject request = JsonParser.parseString(body).getAsJsonObject();
-        String method = request.has("method") && request.get("method").isJsonPrimitive()
-            ? request.get("method").getAsString() : null;
-        String headerMethod = exchange.getRequestHeaders().getFirst("Mcp-Method");
+        String method = request.has(KEY_METHOD) && request.get(KEY_METHOD).isJsonPrimitive()
+            ? request.get(KEY_METHOD).getAsString() : null;
+        String headerMethod = exchange.getRequestHeaders().getFirst(HEADER_MCP_METHOD);
         if (method != null && !method.equals(headerMethod)) {
             sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH,
-                "Header mismatch: Mcp-Method header '" + headerMethod + "' does not match body value '" + method + "'");
+                headerMismatch(HEADER_MCP_METHOD, headerMethod, method));
             return;
         }
         String nameError = validateNameHeader(exchange, request, method);
@@ -417,26 +431,31 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             return;
         }
 
-        boolean gated = "tools/call".equals(method);
-        String response;
-        if (gated) restartGate.readLock().lock();
-        try {
-            response = protocolHandler.handleMessage(body, STATELESS_OWNER_KEY);
-        } finally {
-            if (gated) restartGate.readLock().unlock();
-        }
-
+        String response = dispatchStateless(body, METHOD_TOOLS_CALL.equals(method));
         if (response == null) {
             exchange.sendResponseHeaders(202, -1);
             return;
         }
         if (debugLogging) {
-            LOG.info("[MCP] >>> " + truncateForLog(response));
+            LOG.info("[MCP] stateless response: " + truncateForLog(response));
         }
         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
+    }
+
+    /**
+     * Runs the request under the fixed stateless owner; tool calls hold the shared side of
+     * {@code restartGate} so an agent restart cannot run while one is in flight.
+     */
+    private @Nullable String dispatchStateless(String body, boolean gated) {
+        if (gated) restartGate.readLock().lock();
+        try {
+            return protocolHandler.handleMessage(body, STATELESS_OWNER_KEY);
+        } finally {
+            if (gated) restartGate.readLock().unlock();
+        }
     }
 
     /**
@@ -454,25 +473,32 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     }
 
     /**
+     * The {@code params} field mirrored into {@code Mcp-Name} for a method, or null if none.
+     */
+    private static @Nullable String nameFieldFor(@Nullable String method) {
+        if (METHOD_TOOLS_CALL.equals(method)) return "name";
+        if ("resources/read".equals(method)) return "uri";
+        return null;
+    }
+
+    /**
      * Validates {@code Mcp-Name} for tools/call (params.name) and resources/read (params.uri); null if OK.
      */
     static @Nullable String validateNameHeader(HttpExchange exchange, JsonObject request, @Nullable String method) {
-        String field;
-        if ("tools/call".equals(method)) field = "name";
-        else if ("resources/read".equals(method)) field = "uri";
-        else return null;
+        String field = nameFieldFor(method);
+        if (field == null) return null;
 
         String bodyValue = null;
-        if (request.has("params") && request.get("params").isJsonObject()) {
-            var value = request.getAsJsonObject("params").get(field);
+        if (request.has(KEY_PARAMS) && request.get(KEY_PARAMS).isJsonObject()) {
+            var value = request.getAsJsonObject(KEY_PARAMS).get(field);
             if (value != null && value.isJsonPrimitive()) bodyValue = value.getAsString();
         }
-        String raw = exchange.getRequestHeaders().getFirst("Mcp-Name");
-        if (raw == null) return "Header mismatch: missing required Mcp-Name header";
+        String raw = exchange.getRequestHeaders().getFirst(HEADER_MCP_NAME);
+        if (raw == null) return "Header mismatch: missing required " + HEADER_MCP_NAME + " header";
         String headerValue = decodeHeaderValue(raw);
-        if (headerValue == null) return "Header mismatch: malformed Base64 value in Mcp-Name header";
+        if (headerValue == null) return "Header mismatch: malformed Base64 value in " + HEADER_MCP_NAME + " header";
         if (bodyValue != null && !headerValue.equals(bodyValue)) {
-            return "Header mismatch: Mcp-Name header value '" + headerValue + "' does not match body value '" + bodyValue + "'";
+            return headerMismatch(HEADER_MCP_NAME, headerValue, bodyValue);
         }
         return null;
     }
@@ -503,7 +529,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         error.add("data", data);
         JsonObject resp = new JsonObject();
         resp.addProperty("jsonrpc", "2.0");
-        resp.add("error", error);
+        resp.add(KEY_ERROR, error);
         byte[] bytes = resp.toString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(400, bytes.length);

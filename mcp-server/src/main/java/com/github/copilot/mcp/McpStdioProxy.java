@@ -96,7 +96,7 @@ public class McpStdioProxy {
             if (result.status() == HTTP_SESSION_EXPIRED
                 && lastInitializeMessage != null
                 && !isInitializeMessage(line)
-                && buildStatelessHeaders(line) == null) {
+                && buildStatelessHeaders(line).isEmpty()) {
                 // The MCP Streamable-HTTP spec says a client that gets a 404 for its session
                 // should recover by re-initializing. The agent on the other end of this stdio
                 // pipe never sees Mcp-Session-Id at all, so it has no way to do that itself —
@@ -208,7 +208,7 @@ public class McpStdioProxy {
         conn.setReadTimeout(READ_TIMEOUT_MS);
         conn.setRequestProperty("Content-Type", "application/json");
         Map<String, String> statelessHeaders = buildStatelessHeaders(jsonBody);
-        if (statelessHeaders != null) {
+        if (!statelessHeaders.isEmpty()) {
             // 2026-07-28+: no sessions; mirror body fields into the required request headers.
             statelessHeaders.forEach(conn::setRequestProperty);
         } else if (sessionId != null) {
@@ -255,26 +255,33 @@ public class McpStdioProxy {
     /**
      * For a 2026-07-28+ (stateless) message, returns the HTTP headers the server requires
      * ({@code MCP-Protocol-Version}, {@code Mcp-Method}, and {@code Mcp-Name} for
-     * tools/call and resources/read), derived from the body. Returns null for legacy messages,
-     * which carry no {@code io.modelcontextprotocol/protocolVersion} in {@code params._meta}.
-     * Pure function — no I/O.
+     * tools/call and resources/read), derived from the body. Returns an empty map for legacy
+     * messages, which carry no {@code io.modelcontextprotocol/protocolVersion} in
+     * {@code params._meta}; a stateless message always yields at least the version header, so
+     * "empty" unambiguously means "legacy". Pure function — no I/O.
      */
     static Map<String, String> buildStatelessHeaders(String message) {
-        String version = topLevelParamsMetaString(message, META_PROTOCOL_VERSION);
-        if (version == null) return null;
+        String version = metaProtocolVersion(message);
+        if (version == null) return Map.of();
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("MCP-Protocol-Version", version);
-        String method = topLevelString(message, "method");
+        String method = methodOf(message);
         if (method != null) {
             headers.put("Mcp-Method", method);
-            String nameField = "tools/call".equals(method) ? "name"
-                : "resources/read".equals(method) ? "uri" : null;
-            if (nameField != null) {
-                String name = paramsString(message, nameField);
-                if (name != null) headers.put("Mcp-Name", encodeHeaderValue(name));
-            }
+            String nameField = nameFieldFor(method);
+            String name = nameField == null ? null : paramsString(message, nameField);
+            if (name != null) headers.put("Mcp-Name", encodeHeaderValue(name));
         }
         return headers;
+    }
+
+    /**
+     * The {@code params} field mirrored into {@code Mcp-Name} for a method, or null if none.
+     */
+    private static String nameFieldFor(String method) {
+        if ("tools/call".equals(method)) return "name";
+        if ("resources/read".equals(method)) return "uri";
+        return null;
     }
 
     /**
@@ -293,10 +300,10 @@ public class McpStdioProxy {
     }
 
     /**
-     * String value of a key on the top-level JSON object, or null.
+     * The top-level {@code method} string of a JSON-RPC message, or null.
      */
-    static String topLevelString(String json, String key) {
-        int start = findObjectValue(json, 0, key);
+    static String methodOf(String json) {
+        int start = findObjectValue(json, 0, "method");
         return start < 0 ? null : readJsonString(json, start);
     }
 
@@ -311,14 +318,14 @@ public class McpStdioProxy {
     }
 
     /**
-     * String value of a key on {@code params._meta}, or null.
+     * The {@code io.modelcontextprotocol/protocolVersion} in {@code params._meta}, or null.
      */
-    static String topLevelParamsMetaString(String json, String key) {
+    static String metaProtocolVersion(String json) {
         int params = findObjectValue(json, 0, "params");
         if (params < 0 || json.charAt(params) != '{') return null;
         int meta = findObjectValue(json, params, "_meta");
         if (meta < 0 || json.charAt(meta) != '{') return null;
-        int start = findObjectValue(json, meta, key);
+        int start = findObjectValue(json, meta, META_PROTOCOL_VERSION);
         return start < 0 ? null : readJsonString(json, start);
     }
 
@@ -332,25 +339,35 @@ public class McpStdioProxy {
         while (i < json.length() && json.charAt(i) != '{') i++;
         if (i >= json.length()) return -1;
         i++;
-        while (i < json.length()) {
-            i = skipWhitespace(json, i);
-            if (i >= json.length() || json.charAt(i) == '}') return -1;
-            if (json.charAt(i) == ',') {
-                i++;
-                continue;
-            }
-            if (json.charAt(i) != '"') return -1;
+        while (true) {
+            i = skipSeparators(json, i);
+            if (i >= json.length() || json.charAt(i) != '"') return -1;
             int keyEnd = stringEnd(json, i);
             if (keyEnd < 0) return -1;
             String name = unescape(json.substring(i + 1, keyEnd));
-            i = skipWhitespace(json, keyEnd + 1);
-            if (i >= json.length() || json.charAt(i) != ':') return -1;
-            i = skipWhitespace(json, i + 1);
-            if (name.equals(key)) return i;
-            i = skipValue(json, i);
+            int valueStart = valueStartAfterColon(json, keyEnd + 1);
+            if (valueStart < 0) return -1;
+            if (name.equals(key)) return valueStart;
+            i = skipValue(json, valueStart);
             if (i < 0) return -1;
         }
-        return -1;
+    }
+
+    /**
+     * Skips whitespace and commas between object members.
+     */
+    private static int skipSeparators(String s, int i) {
+        while (i < s.length() && (Character.isWhitespace(s.charAt(i)) || s.charAt(i) == ',')) i++;
+        return i;
+    }
+
+    /**
+     * Index of the first character of the value after the ':' following a key, or -1.
+     */
+    private static int valueStartAfterColon(String s, int from) {
+        int i = skipWhitespace(s, from);
+        if (i >= s.length() || s.charAt(i) != ':') return -1;
+        return skipWhitespace(s, i + 1);
     }
 
     private static int skipWhitespace(String s, int i) {
@@ -362,10 +379,11 @@ public class McpStdioProxy {
      * Index of the closing quote for the string starting at {@code start}, or -1.
      */
     private static int stringEnd(String s, int start) {
-        for (int i = start + 1; i < s.length(); i++) {
+        int i = start + 1;
+        while (i < s.length()) {
             char c = s.charAt(i);
-            if (c == '\\') i++;
-            else if (c == '"') return i;
+            if (c == '"') return i;
+            i += (c == '\\') ? 2 : 1;
         }
         return -1;
     }
@@ -380,25 +398,32 @@ public class McpStdioProxy {
             int end = stringEnd(s, i);
             return end < 0 ? -1 : end + 1;
         }
-        if (c == '{' || c == '[') {
-            int depth = 0;
-            for (int j = i; j < s.length(); j++) {
-                char d = s.charAt(j);
-                if (d == '"') {
-                    j = stringEnd(s, j);
-                    if (j < 0) return -1;
-                } else if (d == '{' || d == '[') {
-                    depth++;
-                } else if (d == '}' || d == ']') {
-                    depth--;
-                    if (depth == 0) return j + 1;
-                }
-            }
-            return -1;
-        }
+        if (c == '{' || c == '[') return skipContainer(s, i);
         int j = i;
         while (j < s.length() && ",}]".indexOf(s.charAt(j)) < 0) j++;
         return j;
+    }
+
+    /**
+     * Returns the index just past the object/array starting at {@code start}, or -1 if unterminated.
+     */
+    private static int skipContainer(String s, int start) {
+        int depth = 0;
+        int j = start;
+        while (j < s.length()) {
+            char d = s.charAt(j);
+            if (d == '"') {
+                j = stringEnd(s, j);
+                if (j < 0) return -1;
+            } else if (d == '{' || d == '[') {
+                depth++;
+            } else if (d == '}' || d == ']') {
+                depth--;
+                if (depth == 0) return j + 1;
+            }
+            j++;
+        }
+        return -1;
     }
 
     /**
@@ -413,35 +438,52 @@ public class McpStdioProxy {
     private static String unescape(String raw) {
         if (raw.indexOf('\\') < 0) return raw;
         StringBuilder sb = new StringBuilder(raw.length());
-        for (int i = 0; i < raw.length(); i++) {
+        int i = 0;
+        while (i < raw.length()) {
             char c = raw.charAt(i);
             if (c != '\\' || i + 1 >= raw.length()) {
                 sb.append(c);
-                continue;
-            }
-            char n = raw.charAt(++i);
-            switch (n) {
-                case 'n' -> sb.append('\n');
-                case 't' -> sb.append('\t');
-                case 'r' -> sb.append('\r');
-                case 'b' -> sb.append('\b');
-                case 'f' -> sb.append('\f');
-                case 'u' -> {
-                    if (i + 4 < raw.length()) {
-                        try {
-                            sb.append((char) Integer.parseInt(raw.substring(i + 1, i + 5), 16));
-                            i += 4;
-                        } catch (NumberFormatException e) {
-                            sb.append("\\u");
-                        }
-                    } else {
-                        sb.append("\\u");
-                    }
-                }
-                default -> sb.append(n); // covers \" \\ \/
+                i++;
+            } else if (raw.charAt(i + 1) == 'u') {
+                i = appendUnicodeEscape(raw, i, sb);
+            } else {
+                sb.append(simpleEscape(raw.charAt(i + 1)));
+                i += 2;
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Maps the character after a backslash to its value; unknown escapes (including {@code \" \\ \/})
+     * map to themselves.
+     */
+    private static char simpleEscape(char n) {
+        return switch (n) {
+            case 'n' -> '\n';
+            case 't' -> '\t';
+            case 'r' -> '\r';
+            case 'b' -> '\b';
+            case 'f' -> '\f';
+            default -> n;
+        };
+    }
+
+    /**
+     * Appends the character for the {@code \}{@code uXXXX} escape whose backslash is at {@code i}
+     * (or the literal text if malformed) and returns the index after the consumed input.
+     */
+    private static int appendUnicodeEscape(String raw, int i, StringBuilder sb) {
+        if (i + 6 <= raw.length()) {
+            try {
+                sb.append((char) Integer.parseInt(raw.substring(i + 2, i + 6), 16));
+                return i + 6;
+            } catch (NumberFormatException ignored) {
+                // fall through: keep the text as-is
+            }
+        }
+        sb.append("\\u");
+        return i + 2;
     }
 
     /**

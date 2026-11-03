@@ -25,31 +25,31 @@ class McpStdioProxyTest {
         @Test
         @DisplayName("legacy initialize gets no stateless headers")
         void legacyInitializeIsNull() {
-            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
-                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}"));
+            assertTrue(McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}").isEmpty());
         }
 
         @Test
         @DisplayName("legacy tools/call with only a progressToken gets no stateless headers")
         void legacyToolsCallIsNull() {
-            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
+            assertTrue(McpStdioProxy.buildStatelessHeaders(
                 "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\","
-                    + "\"params\":{\"name\":\"x\",\"_meta\":{\"progressToken\":\"t\"}}}"));
+                    + "\"params\":{\"name\":\"x\",\"_meta\":{\"progressToken\":\"t\"}}}").isEmpty());
         }
 
         @Test
         @DisplayName("message without params gets no stateless headers")
         void noParamsIsNull() {
-            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
-                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"));
+            assertTrue(McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}").isEmpty());
         }
 
         @Test
         @DisplayName("the version only counts when it is inside params._meta")
         void versionElsewhereIsIgnored() {
-            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
+            assertTrue(McpStdioProxy.buildStatelessHeaders(
                 "{\"method\":\"tools/list\",\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
-                    + "\"params\":{\"arguments\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}}"));
+                    + "\"params\":{\"arguments\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}}").isEmpty());
         }
 
         @Test
@@ -99,6 +99,31 @@ class McpStdioProxyTest {
             assertTrue(McpStdioProxy.encodeHeaderValue(" padded ").startsWith("=?base64?"));
             assertTrue(McpStdioProxy.encodeHeaderValue("=?base64?x?=").startsWith("=?base64?"));
             assertTrue(McpStdioProxy.encodeHeaderValue("a\nb").startsWith("=?base64?"));
+        }
+
+        @Test
+        @DisplayName("JSON string escapes in names are decoded before being mirrored")
+        void escapesAreDecoded() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"method\":\"tools/call\",\"params\":{\"name\":\"a\\\"b\\\\c\\u0041\\/d\"," + META + "}}");
+            // Decoded name is a"b\cA/d: printable ASCII, so it is sent as-is (not Base64).
+            assertEquals("a\"b\\cA/d", headers.get("Mcp-Name"));
+        }
+
+        @Test
+        @DisplayName("an escaped quote does not end a key or value early")
+        void escapedQuoteInsideValue() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"method\":\"tools/call\",\"params\":{\"note\":\"x\\\"name\\\":\\\"evil\",\"name\":\"real\"," + META + "}}");
+            assertEquals("real", headers.get("Mcp-Name"));
+        }
+
+        @Test
+        @DisplayName("a malformed unicode escape is kept literally instead of failing")
+        void malformedUnicodeEscape() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"method\":\"tools/call\",\"params\":{\"name\":\"a\\uZZZZb\"," + META + "}}");
+            assertEquals("a\\uZZZZb", headers.get("Mcp-Name"));
         }
     }
 
