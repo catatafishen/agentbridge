@@ -91,6 +91,15 @@ public final class McpProtocolHandler {
     private static final String PROTOCOL_VERSION_STATELESS = "2026-07-28";
     private static final java.util.List<String> ALL_PROTOCOL_VERSIONS =
         java.util.List.of(PROTOCOL_VERSION_STATELESS, PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05");
+
+    static boolean isSupportedProtocolVersion(@Nullable String version) {
+        return version != null && ALL_PROTOCOL_VERSIONS.contains(version);
+    }
+
+    static List<String> supportedProtocolVersions() {
+        return ALL_PROTOCOL_VERSIONS;
+    }
+
     private static final String META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
     private static final String META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
     private static final String META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";

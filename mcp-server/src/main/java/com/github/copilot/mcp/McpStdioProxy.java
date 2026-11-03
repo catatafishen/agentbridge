@@ -8,6 +8,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -34,6 +37,7 @@ public class McpStdioProxy {
 
     private static final Logger LOG = Logger.getLogger(McpStdioProxy.class.getName());
     private static final String SESSION_ID_HEADER = "Mcp-Session-Id";
+    private static final String META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
     private static final int HTTP_SESSION_EXPIRED = 404;
     private static final int CONNECT_TIMEOUT_MS = 500;
     private static final int READ_TIMEOUT_MS = 600_000;
@@ -91,7 +95,8 @@ public class McpStdioProxy {
             ForwardResult result = forwardToServer(mcpUrl, line);
             if (result.status() == HTTP_SESSION_EXPIRED
                 && lastInitializeMessage != null
-                && !isInitializeMessage(line)) {
+                && !isInitializeMessage(line)
+                && buildStatelessHeaders(line) == null) {
                 // The MCP Streamable-HTTP spec says a client that gets a 404 for its session
                 // should recover by re-initializing. The agent on the other end of this stdio
                 // pipe never sees Mcp-Session-Id at all, so it has no way to do that itself —
@@ -202,7 +207,11 @@ public class McpStdioProxy {
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(READ_TIMEOUT_MS);
         conn.setRequestProperty("Content-Type", "application/json");
-        if (sessionId != null) {
+        Map<String, String> statelessHeaders = buildStatelessHeaders(jsonBody);
+        if (statelessHeaders != null) {
+            // 2026-07-28+: no sessions; mirror body fields into the required request headers.
+            statelessHeaders.forEach(conn::setRequestProperty);
+        } else if (sessionId != null) {
             conn.setRequestProperty(SESSION_ID_HEADER, sessionId);
         }
 
@@ -241,6 +250,198 @@ public class McpStdioProxy {
         if (header != null && !header.isBlank()) {
             sessionId = header;
         }
+    }
+
+    /**
+     * For a 2026-07-28+ (stateless) message, returns the HTTP headers the server requires
+     * ({@code MCP-Protocol-Version}, {@code Mcp-Method}, and {@code Mcp-Name} for
+     * tools/call and resources/read), derived from the body. Returns null for legacy messages,
+     * which carry no {@code io.modelcontextprotocol/protocolVersion} in {@code params._meta}.
+     * Pure function — no I/O.
+     */
+    static Map<String, String> buildStatelessHeaders(String message) {
+        String version = topLevelParamsMetaString(message, META_PROTOCOL_VERSION);
+        if (version == null) return null;
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("MCP-Protocol-Version", version);
+        String method = topLevelString(message, "method");
+        if (method != null) {
+            headers.put("Mcp-Method", method);
+            String nameField = "tools/call".equals(method) ? "name"
+                : "resources/read".equals(method) ? "uri" : null;
+            if (nameField != null) {
+                String name = paramsString(message, nameField);
+                if (name != null) headers.put("Mcp-Name", encodeHeaderValue(name));
+            }
+        }
+        return headers;
+    }
+
+    /**
+     * Encodes a header value as plain ASCII when safe, otherwise as {@code =?base64?...?=}.
+     */
+    static String encodeHeaderValue(String value) {
+        boolean safe = !value.isEmpty() && !value.startsWith("=?base64?")
+            && !Character.isWhitespace(value.charAt(0))
+            && !Character.isWhitespace(value.charAt(value.length() - 1));
+        for (int i = 0; safe && i < value.length(); i++) {
+            char c = value.charAt(i);
+            safe = c >= 0x20 && c <= 0x7E;
+        }
+        if (safe) return value;
+        return "=?base64?" + Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8)) + "?=";
+    }
+
+    /**
+     * String value of a key on the top-level JSON object, or null.
+     */
+    static String topLevelString(String json, String key) {
+        int start = findObjectValue(json, 0, key);
+        return start < 0 ? null : readJsonString(json, start);
+    }
+
+    /**
+     * String value of a key on {@code params}, or null.
+     */
+    static String paramsString(String json, String key) {
+        int params = findObjectValue(json, 0, "params");
+        if (params < 0 || json.charAt(params) != '{') return null;
+        int start = findObjectValue(json, params, key);
+        return start < 0 ? null : readJsonString(json, start);
+    }
+
+    /**
+     * String value of a key on {@code params._meta}, or null.
+     */
+    static String topLevelParamsMetaString(String json, String key) {
+        int params = findObjectValue(json, 0, "params");
+        if (params < 0 || json.charAt(params) != '{') return null;
+        int meta = findObjectValue(json, params, "_meta");
+        if (meta < 0 || json.charAt(meta) != '{') return null;
+        int start = findObjectValue(json, meta, key);
+        return start < 0 ? null : readJsonString(json, start);
+    }
+
+    /**
+     * Given the index of an opening '{', returns the index of the first character of the value for
+     * {@code key} among that object's direct members (skipping nested objects/arrays), or -1.
+     * The index passed may be 0 for a document whose first non-space character is '{'.
+     */
+    private static int findObjectValue(String json, int objectStart, String key) {
+        int i = objectStart;
+        while (i < json.length() && json.charAt(i) != '{') i++;
+        if (i >= json.length()) return -1;
+        i++;
+        while (i < json.length()) {
+            i = skipWhitespace(json, i);
+            if (i >= json.length() || json.charAt(i) == '}') return -1;
+            if (json.charAt(i) == ',') {
+                i++;
+                continue;
+            }
+            if (json.charAt(i) != '"') return -1;
+            int keyEnd = stringEnd(json, i);
+            if (keyEnd < 0) return -1;
+            String name = unescape(json.substring(i + 1, keyEnd));
+            i = skipWhitespace(json, keyEnd + 1);
+            if (i >= json.length() || json.charAt(i) != ':') return -1;
+            i = skipWhitespace(json, i + 1);
+            if (name.equals(key)) return i;
+            i = skipValue(json, i);
+            if (i < 0) return -1;
+        }
+        return -1;
+    }
+
+    private static int skipWhitespace(String s, int i) {
+        while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
+        return i;
+    }
+
+    /**
+     * Index of the closing quote for the string starting at {@code start}, or -1.
+     */
+    private static int stringEnd(String s, int start) {
+        for (int i = start + 1; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') i++;
+            else if (c == '"') return i;
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the index just past the JSON value starting at {@code i}, or -1 if malformed.
+     */
+    private static int skipValue(String s, int i) {
+        if (i >= s.length()) return -1;
+        char c = s.charAt(i);
+        if (c == '"') {
+            int end = stringEnd(s, i);
+            return end < 0 ? -1 : end + 1;
+        }
+        if (c == '{' || c == '[') {
+            int depth = 0;
+            for (int j = i; j < s.length(); j++) {
+                char d = s.charAt(j);
+                if (d == '"') {
+                    j = stringEnd(s, j);
+                    if (j < 0) return -1;
+                } else if (d == '{' || d == '[') {
+                    depth++;
+                } else if (d == '}' || d == ']') {
+                    depth--;
+                    if (depth == 0) return j + 1;
+                }
+            }
+            return -1;
+        }
+        int j = i;
+        while (j < s.length() && ",}]".indexOf(s.charAt(j)) < 0) j++;
+        return j;
+    }
+
+    /**
+     * Reads the JSON string literal at {@code start}; null if the value there is not a string.
+     */
+    private static String readJsonString(String s, int start) {
+        if (start >= s.length() || s.charAt(start) != '"') return null;
+        int end = stringEnd(s, start);
+        return end < 0 ? null : unescape(s.substring(start + 1, end));
+    }
+
+    private static String unescape(String raw) {
+        if (raw.indexOf('\\') < 0) return raw;
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c != '\\' || i + 1 >= raw.length()) {
+                sb.append(c);
+                continue;
+            }
+            char n = raw.charAt(++i);
+            switch (n) {
+                case 'n' -> sb.append('\n');
+                case 't' -> sb.append('\t');
+                case 'r' -> sb.append('\r');
+                case 'b' -> sb.append('\b');
+                case 'f' -> sb.append('\f');
+                case 'u' -> {
+                    if (i + 4 < raw.length()) {
+                        try {
+                            sb.append((char) Integer.parseInt(raw.substring(i + 1, i + 5), 16));
+                            i += 4;
+                        } catch (NumberFormatException e) {
+                            sb.append("\\u");
+                        }
+                    } else {
+                        sb.append("\\u");
+                    }
+                }
+                default -> sb.append(n); // covers \" \\ \/
+            }
+        }
+        return sb.toString();
     }
 
     /**

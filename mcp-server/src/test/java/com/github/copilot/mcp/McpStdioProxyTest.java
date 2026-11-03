@@ -12,6 +12,96 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("McpStdioProxy")
 class McpStdioProxyTest {
 
+    // ── stateless (2026-07-28) headers ──────────────────────────────────
+
+    @Nested
+    @DisplayName("buildStatelessHeaders")
+    class BuildStatelessHeaders {
+
+        private static final String META =
+            "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                + "\"io.modelcontextprotocol/clientInfo\":{\"name\":\"X\",\"version\":\"1\"}}";
+
+        @Test
+        @DisplayName("legacy initialize gets no stateless headers")
+        void legacyInitializeIsNull() {
+            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}"));
+        }
+
+        @Test
+        @DisplayName("legacy tools/call with only a progressToken gets no stateless headers")
+        void legacyToolsCallIsNull() {
+            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\","
+                    + "\"params\":{\"name\":\"x\",\"_meta\":{\"progressToken\":\"t\"}}}"));
+        }
+
+        @Test
+        @DisplayName("message without params gets no stateless headers")
+        void noParamsIsNull() {
+            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"));
+        }
+
+        @Test
+        @DisplayName("the version only counts when it is inside params._meta")
+        void versionElsewhereIsIgnored() {
+            assertEquals(null, McpStdioProxy.buildStatelessHeaders(
+                "{\"method\":\"tools/list\",\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                    + "\"params\":{\"arguments\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}}"));
+        }
+
+        @Test
+        @DisplayName("tools/call yields version, method and name headers")
+        void toolsCallHeaders() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\","
+                    + "\"params\":{\"name\":\"read_file\",\"arguments\":{\"name\":\"decoy\"}," + META + "}}");
+            assertEquals("2026-07-28", headers.get("MCP-Protocol-Version"));
+            assertEquals("tools/call", headers.get("Mcp-Method"));
+            assertEquals("read_file", headers.get("Mcp-Name"));
+        }
+
+        @Test
+        @DisplayName("resources/read uses params.uri for Mcp-Name")
+        void resourcesReadHeaders() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\","
+                    + "\"params\":{\"uri\":\"file:///a.txt\"," + META + "}}");
+            assertEquals("file:///a.txt", headers.get("Mcp-Name"));
+        }
+
+        @Test
+        @DisplayName("methods other than tools/call and resources/read get no Mcp-Name")
+        void listHasNoName() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{" + META + "}}");
+            assertEquals("tools/list", headers.get("Mcp-Method"));
+            assertFalse(headers.containsKey("Mcp-Name"));
+        }
+
+        @Test
+        @DisplayName("non-ASCII names are Base64-encoded")
+        void nonAsciiNameIsEncoded() {
+            var headers = McpStdioProxy.buildStatelessHeaders(
+                "{\"method\":\"tools/call\",\"params\":{\"name\":\"h\u00e9llo\"," + META + "}}");
+            String expected = "=?base64?"
+                + java.util.Base64.getEncoder().encodeToString("h\u00e9llo".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                + "?=";
+            assertEquals(expected, headers.get("Mcp-Name"));
+        }
+
+        @Test
+        @DisplayName("encodeHeaderValue leaves plain values and encodes padded or sentinel-like ones")
+        void encodeHeaderValue() {
+            assertEquals("plain_name", McpStdioProxy.encodeHeaderValue("plain_name"));
+            assertTrue(McpStdioProxy.encodeHeaderValue(" padded ").startsWith("=?base64?"));
+            assertTrue(McpStdioProxy.encodeHeaderValue("=?base64?x?=").startsWith("=?base64?"));
+            assertTrue(McpStdioProxy.encodeHeaderValue("a\nb").startsWith("=?base64?"));
+        }
+    }
+
     // ── buildMcpUrl ─────────────────────────────────────────────────────
 
     @Nested
