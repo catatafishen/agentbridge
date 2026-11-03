@@ -56,6 +56,78 @@ class McpProtocolHandlerTest {
         assertFalse(capabilities.getAsJsonObject("resources").get("listChanged").getAsBoolean());
     }
 
+    private static JsonObject statelessParams(String version) {
+        JsonObject meta = new JsonObject();
+        meta.addProperty("io.modelcontextprotocol/protocolVersion", version);
+        JsonObject params = new JsonObject();
+        params.add("_meta", meta);
+        return params;
+    }
+
+    @Test
+    void testInitializeEchoesSupportedProtocolVersion() {
+        JsonObject params = new JsonObject();
+        params.addProperty("protocolVersion", "2025-06-18");
+        JsonObject response = parseResponse(sendRequest("initialize", params));
+        assertEquals("2025-06-18", response.getAsJsonObject("result").get("protocolVersion").getAsString());
+    }
+
+    @Test
+    void testInitializeFallsBackForUnknownProtocolVersion() {
+        JsonObject params = new JsonObject();
+        params.addProperty("protocolVersion", "1999-01-01");
+        JsonObject response = parseResponse(sendRequest("initialize", params));
+        assertEquals("2025-11-25", response.getAsJsonObject("result").get("protocolVersion").getAsString());
+    }
+
+    @Test
+    void testServerDiscoverListsVersionsAndCapabilities() {
+        JsonObject response = parseResponse(sendRequest("server/discover", statelessParams("2026-07-28")));
+        JsonObject result = response.getAsJsonObject("result");
+        assertTrue(result.getAsJsonArray("supportedVersions").toString().contains("2026-07-28"));
+        assertNotNull(result.getAsJsonObject("capabilities").getAsJsonObject("tools"));
+        assertNotNull(result.getAsJsonObject("serverInfo"));
+        assertEquals("complete", result.get("resultType").getAsString());
+    }
+
+    @Test
+    void testStatelessResultsCarryResultTypeAndCacheHints() {
+        JsonObject response = parseResponse(sendRequest("resources/list", statelessParams("2026-07-28")));
+        JsonObject result = response.getAsJsonObject("result");
+        assertEquals("complete", result.get("resultType").getAsString());
+        assertTrue(result.has("ttlMs"));
+        assertEquals("private", result.get("cacheScope").getAsString());
+        assertTrue(result.getAsJsonObject("_meta").has("io.modelcontextprotocol/serverInfo"));
+    }
+
+    @Test
+    void testLegacyResultsAreNotDecorated() {
+        JsonObject response = parseResponse(sendRequest("resources/list", new JsonObject()));
+        JsonObject result = response.getAsJsonObject("result");
+        assertFalse(result.has("resultType"));
+        assertFalse(result.has("ttlMs"));
+    }
+
+    @Test
+    void testStatelessUnsupportedVersionReturnsError() {
+        JsonObject response = parseResponse(sendRequest("tools/list", statelessParams("2030-01-01")));
+        assertEquals(-32022, response.getAsJsonObject("error").get("code").getAsInt());
+    }
+
+    @Test
+    void testStatelessPingIsRemoved() {
+        JsonObject response = parseResponse(sendRequest("ping", statelessParams("2026-07-28")));
+        assertEquals(-32601, response.getAsJsonObject("error").get("code").getAsInt());
+    }
+
+    @Test
+    void testStatelessResourceNotFoundUsesInvalidParamsCode() {
+        JsonObject params = statelessParams("2026-07-28");
+        params.addProperty("uri", "resource://does-not-exist");
+        JsonObject response = parseResponse(sendRequest("resources/read", params));
+        assertEquals(-32602, response.getAsJsonObject("error").get("code").getAsInt());
+    }
+
     @Test
     void testResourcesListIncludesOnlyStartupInstructions() {
         Path file = tempDir.resolve("README.md");
