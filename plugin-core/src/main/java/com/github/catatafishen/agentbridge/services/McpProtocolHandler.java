@@ -86,6 +86,8 @@ public final class McpProtocolHandler {
     private static final String SERVER_NAME = "agentbridge";
     private static final String SERVER_VERSION = BuildInfo.getVersion();
     private static final String PROTOCOL_VERSION = "2025-11-25";
+    private static final java.util.List<String> SUPPORTED_PROTOCOL_VERSIONS =
+        java.util.List.of(PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05");
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
     private static final String STARTUP_INSTRUCTIONS = loadInstructions();
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
@@ -199,7 +201,11 @@ public final class McpProtocolHandler {
         capabilities.add("resources", resourcesCap);
 
         JsonObject result = new JsonObject();
-        result.addProperty("protocolVersion", PROTOCOL_VERSION);
+        String requested = params != null && params.has("protocolVersion") && params.get("protocolVersion").isJsonPrimitive()
+            ? params.get("protocolVersion").getAsString() : null;
+        String negotiated = requested != null && SUPPORTED_PROTOCOL_VERSIONS.contains(requested)
+            ? requested : PROTOCOL_VERSION;
+        result.addProperty("protocolVersion", negotiated);
         result.add("capabilities", capabilities);
         result.add("serverInfo", serverInfo);
         result.addProperty("instructions", buildInstructions());
