@@ -91,6 +91,106 @@ class McpProtocolHandlerTest {
     }
 
     @Test
+    void testServerDiscoverCarriesNoCacheHints() {
+        JsonObject result = parseResponse(sendRequest("server/discover", statelessParams("2026-07-28")))
+            .getAsJsonObject("result");
+
+        // The 2026-07-28 caching rules require both fields on a complete discovery result too, so a
+        // schema-validating client does not reject the first response it ever gets from us.
+        assertTrue(result.has("ttlMs"), "discovery must carry ttlMs");
+        assertEquals(0, result.get("ttlMs").getAsInt(), "and ask not to be cached");
+        assertEquals("private", result.get("cacheScope").getAsString());
+    }
+
+    private static JsonObject statelessParamsFor(String clientName) {
+        JsonObject params = statelessParams("2026-07-28");
+        JsonObject info = new JsonObject();
+        info.addProperty("name", clientName);
+        params.getAsJsonObject("_meta").add("io.modelcontextprotocol/clientInfo", info);
+        return params;
+    }
+
+    @Test
+    void testStatelessClientNameIsNotStoredOnTheSharedHandler() {
+        parseResponse(sendRequest("server/discover", statelessParamsFor("client-a")));
+
+        // The handler is shared by every stateless client, so a field would hold whoever spoke last and
+        // hooks (which attribute commits by this name) could read the wrong client's.
+        assertNull(handler.getConnectedAgentName(), "no handler-wide name after a stateless request");
+        assertNull(McpCallContext.currentClientName(), "and nothing is left bound to the thread");
+    }
+
+    @Test
+    void testTwoStatelessClientsInSequenceLeaveNoNameBehind() {
+        parseResponse(sendRequest("server/discover", statelessParamsFor("client-a")));
+        parseResponse(sendRequest("server/discover", statelessParamsFor("client-b")));
+
+        assertNull(handler.getConnectedAgentName(), "the last client's name must not stick either");
+    }
+
+    @Test
+    void testStatelessClientNameIsBoundToThreadWhileTheRequestIsHandled() {
+        McpCallContext.setClientName("client-a");
+        try {
+            assertEquals("client-a", handler.getConnectedAgentName());
+        } finally {
+            McpCallContext.clearClientName();
+        }
+        assertNull(handler.getConnectedAgentName());
+    }
+
+    @Test
+    void testConcurrentStatelessClientsNeverSeeEachOthersName() throws Exception {
+        java.util.concurrent.CountDownLatch bothBound = new java.util.concurrent.CountDownLatch(2);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ConcurrentHashMap<String, String> seen = new java.util.concurrent.ConcurrentHashMap<>();
+
+        Runnable a = clientThread("client-a", bothBound, release, seen);
+        Runnable b = clientThread("client-b", bothBound, release, seen);
+        Thread ta = new Thread(a);
+        Thread tb = new Thread(b);
+        ta.start();
+        tb.start();
+        // Both are bound and paused, as if both were waiting in a pre-hook, before either reads its name.
+        assertTrue(bothBound.await(10, java.util.concurrent.TimeUnit.SECONDS));
+        release.countDown();
+        ta.join(10_000);
+        tb.join(10_000);
+
+        assertEquals("client-a", seen.get("client-a"));
+        assertEquals("client-b", seen.get("client-b"));
+    }
+
+    private Runnable clientThread(String name, java.util.concurrent.CountDownLatch bound,
+                                  java.util.concurrent.CountDownLatch release,
+                                  java.util.Map<String, String> seen) {
+        return () -> {
+            McpCallContext.setClientName(name);
+            try {
+                bound.countDown();
+                release.await();
+                seen.put(name, handler.getConnectedAgentName());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                McpCallContext.clearClientName();
+            }
+        };
+    }
+
+    @Test
+    void testLegacyInitializeStillRecordsTheConnectedAgent() {
+        JsonObject params = new JsonObject();
+        JsonObject info = new JsonObject();
+        info.addProperty("name", "legacy-client");
+        params.add("clientInfo", info);
+
+        parseResponse(sendRequest("initialize", params));
+
+        assertEquals("legacy-client", handler.getConnectedAgentName());
+    }
+
+    @Test
     void testStatelessResultsCarryResultTypeAndCacheHints() {
         JsonObject response = parseResponse(sendRequest("resources/list", statelessParams("2026-07-28")));
         JsonObject result = response.getAsJsonObject("result");

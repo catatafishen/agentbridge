@@ -27,8 +27,36 @@ import org.jetbrains.annotations.Nullable;
 public final class McpCallContext {
 
     private static final ThreadLocal<String> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<String> CLIENT_NAME = new ThreadLocal<>();
 
     private McpCallContext() {
+    }
+
+    /**
+     * Binds the calling client's display name to the current thread for the duration of one stateless
+     * request. A stateless client has no session to remember it in, and the handler is shared by every
+     * client, so a handler-wide field would let one client's name overwrite another's while a hook is
+     * paused (and hooks use the name to attribute commits). Pass {@code null} to clear it.
+     */
+    public static void setClientName(@Nullable String clientName) {
+        if (clientName == null) {
+            CLIENT_NAME.remove();
+        } else {
+            CLIENT_NAME.set(clientName);
+        }
+    }
+
+    public static void clearClientName() {
+        CLIENT_NAME.remove();
+    }
+
+    /**
+     * The client name bound to the current thread by {@link #setClientName}, or {@code null} when the
+     * current request did not carry one (legacy sessions, and anything outside a request).
+     */
+    @Nullable
+    public static String currentClientName() {
+        return CLIENT_NAME.get();
     }
 
     /**

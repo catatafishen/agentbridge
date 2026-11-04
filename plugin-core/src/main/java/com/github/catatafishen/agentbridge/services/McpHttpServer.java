@@ -4,7 +4,9 @@ import com.github.catatafishen.agentbridge.services.hooks.HookQueryHandler;
 import com.github.catatafishen.agentbridge.services.hooks.HookToolHandler;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.TransportMode;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
@@ -40,6 +42,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     static final String MCP_SESSION_ID_HEADER = "Mcp-Session-Id";
     private static final String MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
     private static final long HTTP_SESSION_SWEEP_INTERVAL_MINUTES = 5;
+    private static final String LOOPBACK_HOST = "127.0.0.1";
     private static final String HTTP_OWNER_PREFIX = "http:";
     private static final String ALLOWED_REQUEST_HEADERS =
         CONTENT_TYPE + ", " + MCP_SESSION_ID_HEADER + ", " + MCP_PROTOCOL_VERSION_HEADER + ", Mcp-Method, Mcp-Name";
@@ -168,7 +171,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         JdkHttpServerConfig.ensureNoDelay();
         if (isStatic) {
             try {
-                httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
+                httpServer = HttpServer.create(new InetSocketAddress(LOOPBACK_HOST, port), 0);
             } catch (IOException e) {
                 throw new IOException("MCP server port " + port + " is already in use. "
                     + "Disable 'Static Port' in settings to allow automatic port allocation, "
@@ -181,7 +184,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         IOException lastError = null;
         for (int attempt = 0; attempt < 100; attempt++) {
             try {
-                httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", actualPort), 0);
+                httpServer = HttpServer.create(new InetSocketAddress(LOOPBACK_HOST, actualPort), 0);
                 return actualPort;
             } catch (IOException e) {
                 lastError = e;
@@ -203,12 +206,17 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         boolean notify;
         synchronized (this) {
             if (!running || httpServer == null) return;
+            // Flipped before anything is torn down: a stateless request that finishes while the server is
+            // stopping then sees running == false and releases the terminals it created itself, instead of
+            // being missed by the sweep below, which may have run before the request created its terminal.
+            running = false;
             if (sseTransport != null) {
                 sseTransport.stop();
                 sseTransport = null;
             }
             stopHttpSessionCleanup();
             closeAllHttpSessions();
+            closeStatelessOwnerTerminals();
             httpServer.stop(1);
             httpServer = null;
             if (requestExecutor != null) {
@@ -217,7 +225,6 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             }
             protocolHandler = null;
             activeTransportMode = null;
-            running = false;
             activeConnections.set(0);
             notify = !project.isDisposed();
             LOG.info("[MCP] server stopped for project: " + project.getBasePath());
@@ -401,33 +408,41 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      */
     void handleStatelessPost(HttpExchange exchange, String body, String bodyVersion,
                              boolean debugLogging) throws IOException {
+        // The id is read first so that every rejection below can echo it: the stdio proxy forwards these
+        // bodies unchanged, and a client cannot correlate (and may time out on) an error without it.
+        JsonObject request = parseRequestObject(body);
+        JsonElement id = request != null ? request.get("id") : null;
+
         if (!isAllowedOrigin(exchange.getRequestHeaders().getFirst(HEADER_ORIGIN))) {
-            sendJsonRpcError(exchange, 403, -32600, "Forbidden: invalid Origin");
+            sendJsonRpcError(exchange, 403, -32600, "Forbidden: invalid Origin", id);
             return;
         }
         if (!McpProtocolHandler.isSupportedProtocolVersion(bodyVersion)) {
-            sendUnsupportedVersion(exchange, bodyVersion);
+            sendUnsupportedVersion(exchange, bodyVersion, id);
             return;
         }
         String headerVersion = exchange.getRequestHeaders().getFirst(MCP_PROTOCOL_VERSION_HEADER);
         if (!Objects.equals(headerVersion, bodyVersion)) {
             sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH,
-                headerMismatch(MCP_PROTOCOL_VERSION_HEADER, headerVersion, bodyVersion));
+                headerMismatch(MCP_PROTOCOL_VERSION_HEADER, headerVersion, bodyVersion), id);
+            return;
+        }
+        if (request == null) {
+            sendJsonRpcError(exchange, 400, -32600, "Request body must be a JSON object", null);
             return;
         }
 
-        JsonObject request = JsonParser.parseString(body).getAsJsonObject();
         String method = request.has(KEY_METHOD) && request.get(KEY_METHOD).isJsonPrimitive()
             ? request.get(KEY_METHOD).getAsString() : null;
         String headerMethod = exchange.getRequestHeaders().getFirst(HEADER_MCP_METHOD);
         if (method != null && !method.equals(headerMethod)) {
             sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH,
-                headerMismatch(HEADER_MCP_METHOD, headerMethod, method));
+                headerMismatch(HEADER_MCP_METHOD, headerMethod, method), id);
             return;
         }
         String nameError = validateNameHeader(exchange, request, method);
         if (nameError != null) {
-            sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH, nameError);
+            sendJsonRpcError(exchange, 400, ERROR_HEADER_MISMATCH, nameError, id);
             return;
         }
 
@@ -448,14 +463,32 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     /**
      * Runs the request under the fixed stateless owner; tool calls hold the shared side of
      * {@code restartGate} so an agent restart cannot run while one is in flight.
+     *
+     * <p>Stateless requests have no session to end, so their terminals would otherwise outlive the server:
+     * {@link #stop()} releases them, and a call that finishes after the server stopped releases whatever it
+     * created, the same way {@link #finishHttpRequest} does for sessions that ended mid-call.</p>
      */
     private @Nullable String dispatchStateless(String body, boolean gated) {
         if (gated) restartGate.readLock().lock();
+        // Captured before the call: stop() nulls the field, and the handler may be gone by the time we return.
+        McpProtocolHandler handler = protocolHandler;
         try {
-            return protocolHandler.handleMessage(body, STATELESS_OWNER_KEY);
+            return handler.handleMessage(body, STATELESS_OWNER_KEY);
         } finally {
             if (gated) restartGate.readLock().unlock();
+            if (!running) closeStatelessOwnerTerminals();
         }
+    }
+
+    /**
+     * Releases the terminals created under the shared stateless owner. Uses {@code getServiceIfCreated}
+     * for the same reason as {@link #closeAllHttpSessions}: requesting the service while the project is
+     * being disposed throws, and a tracker that was never created has nothing to close.
+     */
+    private void closeStatelessOwnerTerminals() {
+        if (project.isDisposed()) return;
+        AgentTabTracker tracker = project.getServiceIfCreated(AgentTabTracker.class);
+        if (tracker != null) tracker.closeOwnedTerminalTabs(STATELESS_OWNER_KEY);
     }
 
     /**
@@ -466,7 +499,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         if (origin == null || origin.isEmpty()) return true;
         try {
             String host = java.net.URI.create(origin).getHost();
-            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
+            return "localhost".equalsIgnoreCase(host) || LOOPBACK_HOST.equals(host) || "[::1]".equals(host);
         } catch (IllegalArgumentException e) {
             return false;
         }
@@ -518,7 +551,17 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         return raw;
     }
 
-    private static void sendUnsupportedVersion(HttpExchange exchange, String requested) throws IOException {
+    private static @Nullable JsonObject parseRequestObject(String body) {
+        try {
+            JsonElement parsed = JsonParser.parseString(body);
+            return parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
+        } catch (JsonParseException e) {
+            return null;
+        }
+    }
+
+    private static void sendUnsupportedVersion(HttpExchange exchange, String requested,
+                                               @Nullable JsonElement id) throws IOException {
         JsonObject error = new JsonObject();
         error.addProperty("code", ERROR_UNSUPPORTED_PROTOCOL_VERSION);
         error.addProperty("message", "Unsupported protocol version: " + requested);
@@ -529,6 +572,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         error.add("data", data);
         JsonObject resp = new JsonObject();
         resp.addProperty("jsonrpc", "2.0");
+        if (id != null) resp.add("id", id);
         resp.add(KEY_ERROR, error);
         byte[] bytes = resp.toString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
@@ -637,7 +681,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         if (response == null) return false;
         try {
             JsonObject parsed = JsonParser.parseString(response).getAsJsonObject();
-            return !parsed.has("error")
+            return !parsed.has(KEY_ERROR)
                 && parsed.has("result")
                 && parsed.get("result").isJsonObject();
         } catch (RuntimeException ignored) {
@@ -888,12 +932,21 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * Package-private for testing.
      */
     static String buildJsonRpcErrorResponse(int rpcCode, String message) {
+        return buildJsonRpcErrorResponse(rpcCode, message, null);
+    }
+
+    /**
+     * As {@link #buildJsonRpcErrorResponse(int, String)}, echoing the request's {@code id} when it has one
+     * so the client can correlate the error with its request.
+     */
+    static String buildJsonRpcErrorResponse(int rpcCode, String message, @Nullable JsonElement id) {
         com.google.gson.JsonObject error = new com.google.gson.JsonObject();
         error.addProperty("code", rpcCode);
         error.addProperty("message", message);
         com.google.gson.JsonObject resp = new com.google.gson.JsonObject();
         resp.addProperty("jsonrpc", "2.0");
-        resp.add("error", error);
+        if (id != null) resp.add("id", id);
+        resp.add(KEY_ERROR, error);
         return resp.toString();
     }
 
@@ -901,7 +954,12 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * Sends a JSON-RPC error response over the HTTP exchange.
      */
     private static void sendJsonRpcError(HttpExchange exchange, int httpStatus, int rpcCode, String message) throws IOException {
-        byte[] bytes = buildJsonRpcErrorResponse(rpcCode, message).getBytes(StandardCharsets.UTF_8);
+        sendJsonRpcError(exchange, httpStatus, rpcCode, message, null);
+    }
+
+    private static void sendJsonRpcError(HttpExchange exchange, int httpStatus, int rpcCode, String message,
+                                         @Nullable JsonElement id) throws IOException {
+        byte[] bytes = buildJsonRpcErrorResponse(rpcCode, message, id).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(httpStatus, bytes.length);
         exchange.getResponseBody().write(bytes);
