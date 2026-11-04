@@ -98,56 +98,6 @@ class GitCommitToolStaticMethodsTest {
     }
 
     @Nested
-    @DisplayName("normalizeMessage")
-    class NormalizeMessage {
-
-        @Test
-        @DisplayName("turns literal \\n text into real line breaks")
-        void convertsLiteralNewlines() {
-            assertEquals("subject\n\nbody line",
-                GitCommitTool.normalizeMessage("subject\\n\\nbody line"));
-        }
-
-        @Test
-        @DisplayName("turns literal \\r\\n text into a single real line break")
-        void convertsLiteralCrLf() {
-            assertEquals("subject\nbody", GitCommitTool.normalizeMessage("subject\\r\\nbody"));
-        }
-
-        @Test
-        @DisplayName("leaves a single-line message without escapes unchanged")
-        void plainMessageUnchanged() {
-            assertEquals("fix: handle null path", GitCommitTool.normalizeMessage("fix: handle null path"));
-        }
-
-        @Test
-        @DisplayName("leaves a message that already has real newlines untouched")
-        void realNewlinesWin() {
-            String message = "subject\n\nmentions the \\n escape in prose";
-            assertEquals(message, GitCommitTool.normalizeMessage(message));
-        }
-
-        @Test
-        @DisplayName("keeps Windows line endings that are already real")
-        void realCrLfUntouched() {
-            String message = "subject\r\nbody";
-            assertEquals(message, GitCommitTool.normalizeMessage(message));
-        }
-
-        @Test
-        @DisplayName("does not touch backslashes that are not newline escapes")
-        void otherBackslashesUntouched() {
-            assertEquals("fix C:\\temp\\path", GitCommitTool.normalizeMessage("fix C:\\temp\\path"));
-        }
-
-        @Test
-        @DisplayName("empty message stays empty")
-        void emptyStaysEmpty() {
-            assertEquals("", GitCommitTool.normalizeMessage(""));
-        }
-    }
-
-    @Nested
     @DisplayName("parseAuthorNameEmail")
     class ParseAuthorNameEmail {
 

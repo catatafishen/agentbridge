@@ -79,7 +79,7 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
         approveButtons().get(0).doClick();
 
         assertNull("approving must release the gate with no error", result.get(WAIT_MS, TimeUnit.MILLISECONDS));
-        waitUntil(() -> markdown().contains("Review complete"), "the message to be marked complete");
+        waitUntil(() -> markdown().contains("Review finished"), "the message to be marked finished");
         assertFalse("buttons must be greyed out once released", approveButtons().get(0).isEnabled());
         assertEquals("the message stays in the chat", 1, approveButtons().size());
         assertFalse("the file must no longer be pending", session.hasPendingIn(List.of(path)));
@@ -115,7 +115,7 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
 
         assertNull(result.get(WAIT_MS, TimeUnit.MILLISECONDS));
         assertFalse("a worktree-wide operation approves every pending file", session.hasPendingChanges());
-        waitUntil(() -> markdown().contains("Review complete"), "the message to be marked complete");
+        waitUntil(() -> markdown().contains("Review finished"), "the message to be marked finished");
     }
 
     public void testApprovingThroughTheReviewPanelAlsoRetiresTheMessage() throws Exception {
@@ -129,7 +129,7 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
         session.acceptFile(path);
 
         assertNull(result.get(WAIT_MS, TimeUnit.MILLISECONDS));
-        waitUntil(() -> markdown().contains("Review complete"), "the message to be marked complete");
+        waitUntil(() -> markdown().contains("Review finished"), "the message to be marked finished");
         assertFalse(approveButtons().get(0).isEnabled());
     }
 
@@ -148,7 +148,7 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
         assertNotNull(error);
         assertTrue("interrupt must surface as an error: " + error, error.startsWith("Error"));
         waitUntil(() -> markdown().contains("no longer pending"), "the message to be retired");
-        assertFalse("must not claim approval", markdown().contains("Review complete"));
+        assertFalse("must not claim the review finished", markdown().contains("Review finished"));
         assertFalse(approveButtons().get(0).isEnabled());
         assertTrue("the edits are still unreviewed", session.hasPendingIn(List.of(path)));
     }
@@ -171,7 +171,7 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
 
         assertNull(a.get(WAIT_MS, TimeUnit.MILLISECONDS));
         assertNull(b.get(WAIT_MS, TimeUnit.MILLISECONDS));
-        waitUntil(() -> markdown().contains("Review complete"), "the message to be marked complete");
+        waitUntil(() -> markdown().contains("Review finished"), "the message to be marked finished");
         assertEquals(1, approveButtons().size());
         assertFalse(approveButtons().get(0).isEnabled());
     }
@@ -208,6 +208,95 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
 
         assertNull("no pending review means the gate does not block", result);
         assertTrue("and no message is added", approveButtons().isEmpty());
+    }
+
+    public void testWaitsWithDifferentScopesGetSeparateMessagesAndControls() throws Exception {
+        String first = trackedPath("scope-first.txt");
+        String second = trackedPath("scope-second.txt");
+        session.registerNewFile(first);
+        session.registerNewFile(second);
+
+        CompletableFuture<String> a = runGate(() -> session.awaitReviewForPaths("git commit", List.of(first)));
+        waitUntil(() -> approveButtons().size() == 1, "the first message to appear");
+        CompletableFuture<String> b = runGate(() -> session.awaitReviewForPaths("git commit", List.of(second)));
+        waitUntil(() -> approveButtons().size() == 2, "a separate message for the other scope");
+
+        // Approving the first scope must release only that wait, and leave the other message live.
+        approveButtons().get(0).doClick();
+
+        assertNull(a.get(WAIT_MS, TimeUnit.MILLISECONDS));
+        waitUntil(() -> !approveButtons().get(0).isEnabled(), "the first message to be retired");
+        assertTrue("the other scope still has a live Approve button", approveButtons().get(1).isEnabled());
+        assertFalse("the other wait must still be blocked", b.isDone());
+        assertTrue("and its file must still be pending", session.hasPendingIn(List.of(second)));
+
+        approveButtons().get(1).doClick();
+        assertNull(b.get(WAIT_MS, TimeUnit.MILLISECONDS));
+    }
+
+    public void testScopedWaitKeepsItsOwnControlsWhenAWorktreeWideWaitEnds() throws Exception {
+        String committed = trackedPath("scoped-survivor.txt");
+        String other = trackedPath("worktree-other.txt");
+        session.registerNewFile(committed);
+        session.registerNewFile(other);
+
+        Thread[] wide = new Thread[1];
+        CompletableFuture<String> worktreeWide = runGate(
+            () -> session.awaitReviewCompletion("branch create 'x'"), wide);
+        waitUntil(() -> approveButtons().size() == 1, "the worktree-wide message to appear");
+        CompletableFuture<String> scoped = runGate(
+            () -> session.awaitReviewForPaths("git commit", List.of(committed)));
+        waitUntil(() -> approveButtons().size() == 2, "a separate message for the scoped commit");
+
+        // The worktree-wide wait goes away without approving anything.
+        wide[0].interrupt();
+        assertNotNull(worktreeWide.get(WAIT_MS, TimeUnit.MILLISECONDS));
+        waitUntil(() -> !approveButtons().get(0).isEnabled(), "the worktree-wide message to be retired");
+
+        // The scoped commit's button must still approve only its own file, not everything.
+        assertTrue(approveButtons().get(1).isEnabled());
+        approveButtons().get(1).doClick();
+
+        assertNull(scoped.get(WAIT_MS, TimeUnit.MILLISECONDS));
+        assertTrue("the unrelated file must stay pending", session.hasPendingIn(List.of(other)));
+    }
+
+    public void testWaitsWithTheSameOperationAndScopeInDifferentOrderShareOneMessage() {
+        String one = trackedPath("order-one.txt");
+        String two = trackedPath("order-two.txt");
+        session.registerNewFile(one);
+        session.registerNewFile(two);
+
+        Thread[] first = new Thread[1];
+        Thread[] second = new Thread[1];
+        runGate(() -> session.awaitReviewForPaths("git commit", List.of(one, two)), first);
+        waitUntil(() -> approveButtons().size() == 1, "the message to appear");
+        runGate(() -> session.awaitReviewForPaths("git commit", List.of(two, one)), second);
+        waitUntil(() -> isBlocked(first[0]) && isBlocked(second[0]), "both calls to be waiting");
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+
+        assertEquals("the same files in a different order are the same wait", 1, approveButtons().size());
+    }
+
+    public void testApprovingManyFilesPublishesOneReviewStateEvent() throws Exception {
+        List<String> paths = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            String path = trackedPath("batch-" + i + ".txt");
+            session.registerNewFile(path);
+            paths.add(path);
+        }
+        CompletableFuture<String> result = runGate(() -> session.awaitReviewForPaths("git commit", paths));
+        waitUntil(() -> approveButtons().size() == 1, "the review message to appear");
+
+        java.util.concurrent.atomic.AtomicInteger events = new java.util.concurrent.atomic.AtomicInteger();
+        getProject().getMessageBus().connect(getTestRootDisposable())
+            .subscribe(ReviewSessionTopic.TOPIC, events::incrementAndGet);
+
+        approveButtons().get(0).doClick();
+
+        assertNull(result.get(WAIT_MS, TimeUnit.MILLISECONDS));
+        assertEquals("approving N files must publish one event, not one per file", 1, events.get());
+        assertFalse(session.hasPendingIn(paths));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

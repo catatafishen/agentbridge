@@ -436,8 +436,8 @@ class BroadcastChatPanel(
         reqId: String, operation: String, fileCount: Int, controls: ReviewPendingControls
     ) = dispatchUi { nativePanel.showReviewPending(reqId, operation, fileCount, controls) }
 
-    override fun endReviewPending(reqId: String, approved: Boolean) =
-        dispatchUi { nativePanel.endReviewPending(reqId, approved) }
+    override fun endReviewPending(reqId: String, released: Boolean) =
+        dispatchUi { nativePanel.endReviewPending(reqId, released) }
 
     // ── PermissionPromptProvider (Java interface bridge) ────────────────────────
 

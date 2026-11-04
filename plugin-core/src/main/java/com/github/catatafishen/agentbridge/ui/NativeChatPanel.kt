@@ -873,10 +873,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         reviewPendingCards[reqId] = ReviewPendingCard(operation, fileCount, pane, listOf(approveButton, openButton))
     }
 
-    override fun endReviewPending(reqId: String, approved: Boolean) {
+    override fun endReviewPending(reqId: String, released: Boolean) {
         val card = reviewPendingCards.remove(reqId) ?: return
         card.buttons.forEach { it.isEnabled = false }
-        card.pane.setCompleteMarkdown(reviewResolvedText(card.operation, approved))
+        card.pane.setCompleteMarkdown(reviewResolvedText(card.operation, released))
         contentPanel.revalidate()
         contentPanel.repaint()
     }
@@ -887,9 +887,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             "$fileCount $noun are approved."
     }
 
-    private fun reviewResolvedText(operation: String, approved: Boolean): String =
-        if (approved) "**Review complete**\n\n`$operation` was released after the edits were approved."
-        else "**Review no longer pending**\n\n`$operation` stopped waiting without the edits being approved."
+    /**
+     * [released] means the gate let the call go: every edit it waited on was approved or reverted. It does not
+     * say which, so the text must not claim the edits were approved.
+     */
+    private fun reviewResolvedText(operation: String, released: Boolean): String =
+        if (released) "**Review finished**\n\n`$operation` is no longer waiting: the edits it was waiting on were reviewed."
+        else "**Review no longer pending**\n\n`$operation` stopped waiting without the review finishing."
 
     /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user or sleep completes. */
     private fun stopWaitingMode() {

@@ -833,7 +833,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
                 .getInstance(project).expandReviewPanel();
         });
-        beginReviewPendingMessage(operation, fileCount, null);
+        ReviewWaitKey waitKey = beginReviewPendingMessage(operation, fileCount, null);
 
         PsiBridgeService psi = PsiBridgeService.getInstance(project);
         java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
@@ -866,7 +866,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         } finally {
             writeSemaphore.acquireUninterruptibly();
             if (syncLock != null) syncLock.lock();
-            endReviewPendingMessage(released);
+            endReviewPendingMessage(waitKey, released);
         }
     }
 
@@ -900,7 +900,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
                 .getInstance(project).expandReviewPanel();
         });
-        beginReviewPendingMessage(operation, fileCount, scopedPaths);
+        ReviewWaitKey waitKey = beginReviewPendingMessage(operation, fileCount, scopedPaths);
 
         PsiBridgeService psi = PsiBridgeService.getInstance(project);
         java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
@@ -936,79 +936,114 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             // here in finally on every path. The lock contract is owned by the caller.
             writeSemaphore.acquireUninterruptibly();
             if (syncLock != null) syncLock.lock();
-            endReviewPendingMessage(released);
+            endReviewPendingMessage(waitKey, released);
         }
     }
 
     // ── Chat message while a tool call waits for review ─────────────────────
 
     private final Object reviewMessageLock = new Object();
-    private @Nullable String reviewMessageId;
-    private int reviewMessageWaiters;
 
     /**
-     * Shows one "waiting for review" chat message for however many tool calls are blocked at once
-     * (an agent that retries leaves earlier calls waiting), so retries do not stack messages.
+     * Waits are grouped by what their Approve button would do: the same operation over the same scope
+     * (null = every pending file). Waits in a group share one message; waits that differ get their own, with
+     * their own controls and lifetime, so one wait finishing can never leave another's button approving
+     * files it should not touch.
+     */
+    private record ReviewWaitKey(@NotNull String operation, @Nullable Set<String> scope) {
+    }
+
+    private static final class ReviewMessage {
+        final String id = java.util.UUID.randomUUID().toString();
+        int waiters;
+    }
+
+    private final Map<ReviewWaitKey, ReviewMessage> reviewMessages = new HashMap<>();
+
+    /**
+     * Shows a "waiting for review" chat message for a blocked tool call. Calls that would do the same thing
+     * on Approve (same operation, same scope) share one message, so an agent retrying does not stack
+     * messages; calls that differ each get their own message, controls and lifetime.
      * The Approve button approves the pending rows within {@code scope}, or all of them when
      * {@code scope} is null, so a commit never approves files it does not touch.
+     *
+     * @return the key to pass to {@link #endReviewPendingMessage} when this call leaves the gate
      */
-    private void beginReviewPendingMessage(
+    private @NotNull ReviewWaitKey beginReviewPendingMessage(
         @NotNull String operation, int fileCount, @Nullable Collection<String> scope) {
-        String id;
+        Set<String> scopeCopy = scope == null ? null : Set.copyOf(scope);
+        ReviewWaitKey key = new ReviewWaitKey(operation, scopeCopy);
+        ReviewMessage message;
         synchronized (reviewMessageLock) {
-            reviewMessageWaiters++;
-            if (reviewMessageId != null) return;
-            id = java.util.UUID.randomUUID().toString();
-            reviewMessageId = id;
+            ReviewMessage existing = reviewMessages.get(key);
+            if (existing != null) {
+                existing.waiters++;
+                return key;
+            }
+            message = new ReviewMessage();
+            message.waiters = 1;
+            reviewMessages.put(key, message);
         }
         com.github.catatafishen.agentbridge.ui.BroadcastChatPanel panel =
             com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
-        if (panel == null) return;
-        Set<String> scopeCopy = scope == null ? null : new HashSet<>(scope);
-        panel.showReviewPending(id, operation, fileCount,
-            new com.github.catatafishen.agentbridge.ui.ReviewPendingControls() {
-                @Override
-                public void approve() {
-                    if (scopeCopy == null) acceptAll();
-                    else acceptPendingIn(scopeCopy);
-                }
+        if (panel != null) {
+            panel.showReviewPending(message.id, operation, fileCount,
+                new com.github.catatafishen.agentbridge.ui.ReviewPendingControls() {
+                    @Override
+                    public void approve() {
+                        if (scopeCopy == null) acceptAll();
+                        else acceptPendingIn(scopeCopy);
+                    }
 
-                @Override
-                public void openReview() {
-                    com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
-                        .getInstance(project).expandReviewPanel();
-                }
-            });
+                    @Override
+                    public void openReview() {
+                        com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
+                            .getInstance(project).expandReviewPanel();
+                    }
+                });
+        }
+        return key;
     }
 
     /**
-     * Greys out the message once the last waiting tool call has left the gate.
+     * Retires the message once the last tool call waiting on it has left the gate. {@code released} says only
+     * that the gate let the call go (every row it waited on was approved or reverted), not that the edits
+     * were approved.
      */
-    private void endReviewPendingMessage(boolean released) {
+    private void endReviewPendingMessage(@NotNull ReviewWaitKey key, boolean released) {
         String id;
         synchronized (reviewMessageLock) {
-            if (--reviewMessageWaiters > 0) return;
-            reviewMessageWaiters = 0;
-            id = reviewMessageId;
-            reviewMessageId = null;
+            ReviewMessage message = reviewMessages.get(key);
+            if (message == null) return;
+            if (--message.waiters > 0) return;
+            reviewMessages.remove(key);
+            id = message.id;
         }
-        if (id == null) return;
         com.github.catatafishen.agentbridge.ui.BroadcastChatPanel panel =
             com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
         if (panel != null) panel.endReviewPending(id, released);
     }
 
     /**
-     * Approves every pending row inside {@code scope}; the gate wakes once nothing it waits on is pending.
+     * Approves every pending row inside {@code scope} as one change: a single editor-notification refresh and a
+     * single review-state event, however many files there are (the review panel refreshes its whole list on
+     * each event). Then wakes the gates; each re-checks its own scope and goes back to sleep if it is still
+     * pending.
      */
     private void acceptPendingIn(@NotNull Set<String> scope) {
+        boolean changed = false;
         for (Map.Entry<String, ApprovalState> e : new ArrayList<>(approvals.entrySet())) {
-            if (e.getValue() == ApprovalState.PENDING && scope.contains(e.getKey())) {
-                acceptFile(e.getKey());
+            String path = e.getKey();
+            if (e.getValue() == ApprovalState.PENDING && scope.contains(path) && pathIsTracked(path)) {
+                approvals.put(path, ApprovalState.APPROVED);
+                changed = true;
             }
         }
-        // acceptFile only wakes the gate when nothing at all is pending; this gate cares about its
-        // own scope only. The wait loop re-checks and goes back to sleep if its scope is still pending.
+        if (changed) {
+            com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+            fireReviewStateChanged();
+        }
+        completeGateIfNoPending();
         completeGate();
     }
 

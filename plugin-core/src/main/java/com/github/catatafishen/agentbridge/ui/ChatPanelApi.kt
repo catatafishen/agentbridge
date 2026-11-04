@@ -273,11 +273,12 @@ interface ChatPanelApi : Disposable {
     }
 
     /**
-     * Marks the message shown for [reqId] as no longer pending: buttons are disabled and the text
-     * says whether the edits were [approved] or the wait ended some other way (revert, timeout).
+     * Marks the message shown for [reqId] as no longer pending: buttons are disabled and the text says
+     * whether the gate [released] the tool call (every edit it waited on was approved or reverted, which
+     * does not mean they were approved) or the wait ended some other way (revert-and-cancel, timeout).
      * Safe to call for an unknown or already-ended id.
      */
-    fun endReviewPending(reqId: String, approved: Boolean) { /* no-op default */
+    fun endReviewPending(reqId: String, released: Boolean) { /* no-op default */
     }
 
     fun showNudgeBubble(id: String, text: String, source: NudgeSource = NudgeSource.HUMAN)
