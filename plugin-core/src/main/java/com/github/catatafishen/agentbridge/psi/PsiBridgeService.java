@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolCallRecord;
 import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
+import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonElement;
@@ -727,6 +728,11 @@ public final class PsiBridgeService implements Disposable {
             return "Error: Permission denied: tool '" + toolName + "' is disabled in Tool Permissions settings.";
         }
 
+        if (AutopilotPolicy.apply(perm, isAutopilotSelected()) == ToolPermission.ALLOW) {
+            LOG.info("PSI Bridge: autopilot allowed " + toolName);
+            return null;
+        }
+
         // Session-scoped allow: if user previously chose "Allow for session", skip the prompt
         if (sessionAllowedTools.contains(toolName)) {
             LOG.info("PSI Bridge: session-allowed for " + toolName);
@@ -963,6 +969,12 @@ public final class PsiBridgeService implements Disposable {
         return choice == Messages.YES
             ? com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ONCE
             : com.github.catatafishen.agentbridge.bridge.PermissionResponse.DENY;
+    }
+
+    private boolean isAutopilotSelected() {
+        String stored = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project)
+            .getSettings().getSessionOptionValue(AutopilotPolicy.OPTION_KEY);
+        return AutopilotPolicy.isAutopilot(stored);
     }
 
     private ToolPermission resolvePluginPermission(String toolName, JsonObject arguments) {

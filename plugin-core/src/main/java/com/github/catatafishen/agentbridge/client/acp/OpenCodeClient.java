@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.client.acp;
 import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
+import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
@@ -49,6 +50,7 @@ public final class OpenCodeClient extends AcpClient {
     private static final String GENERAL_AGENT = "general";
     private static final String EXPLORE_AGENT = "explore";
     private static final String MCP_SERVER_NAME = "agentbridge";
+    private volatile boolean autopilot;
     private static final String SCOUT_AGENT = "scout";
     private static final String PROJECT_AGENT_DIR = ".opencode/agent";
     private static final String PROJECT_AGENTS_DIR = ".opencode/agents";
@@ -781,6 +783,35 @@ public final class OpenCodeClient extends AcpClient {
         String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
         markSessionHistoryLoadedInternally();
         return result;
+    }
+
+    /**
+     * The plugin-side Autopilot / Supervised switch. OpenCode advertises no autopilot option of its
+     * own, so the plugin provides one, shown in the same dropdown as Kiro's.
+     */
+    static com.github.catatafishen.agentbridge.bridge.SessionOption autopilotSessionOption(boolean enabled) {
+        String current = enabled ? AutopilotPolicy.AUTOPILOT : AutopilotPolicy.SUPERVISED;
+        return new com.github.catatafishen.agentbridge.bridge.SessionOption(
+            AutopilotPolicy.OPTION_KEY, "Autopilot",
+            List.of(AutopilotPolicy.AUTOPILOT, AutopilotPolicy.SUPERVISED),
+            Map.of(AutopilotPolicy.AUTOPILOT, "Autopilot", AutopilotPolicy.SUPERVISED, "Supervised"), current);
+    }
+
+    @Override
+    protected List<com.github.catatafishen.agentbridge.bridge.SessionOption> localSessionOptions() {
+        return List.of(autopilotSessionOption(autopilot));
+    }
+
+    @Override
+    protected boolean applyLocalSessionOption(@org.jetbrains.annotations.NotNull String key,
+                                              @org.jetbrains.annotations.NotNull String value) {
+        if (!AutopilotPolicy.OPTION_KEY.equals(key)) {
+            return false;
+        }
+        // The permission gate reads the stored choice (PsiBridgeService); this only keeps the
+        // dropdown's selected value in step with it.
+        autopilot = AutopilotPolicy.isAutopilot(value);
+        return true;
     }
 
     @Override
