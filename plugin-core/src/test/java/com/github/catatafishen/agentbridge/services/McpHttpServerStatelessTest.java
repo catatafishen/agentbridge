@@ -10,10 +10,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -72,7 +76,7 @@ class McpHttpServerStatelessTest {
         String version = McpSessionRegistry.statelessVersion(
             "{\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":{}}}}");
         assertEquals("", version);
-        assertTrue(!McpProtocolHandler.isSupportedProtocolVersion(version));
+        assertFalse(McpProtocolHandler.isSupportedProtocolVersion(version));
     }
 
     @Test
@@ -80,8 +84,8 @@ class McpHttpServerStatelessTest {
         for (String v : new String[]{"2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}) {
             assertTrue(McpProtocolHandler.isSupportedProtocolVersion(v), v);
         }
-        assertTrue(!McpProtocolHandler.isSupportedProtocolVersion("2030-01-01"));
-        assertTrue(!McpProtocolHandler.isSupportedProtocolVersion(null));
+        assertFalse(McpProtocolHandler.isSupportedProtocolVersion("2030-01-01"));
+        assertFalse(McpProtocolHandler.isSupportedProtocolVersion(null));
     }
 
     // ── Mcp-Name validation ──
@@ -151,9 +155,9 @@ class McpHttpServerStatelessTest {
         assertTrue(McpHttpServer.isAllowedOrigin("http://localhost:3000"));
         assertTrue(McpHttpServer.isAllowedOrigin("http://127.0.0.1:8642"));
         assertTrue(McpHttpServer.isAllowedOrigin("http://[::1]:8642"));
-        assertTrue(!McpHttpServer.isAllowedOrigin("https://evil.example.com"));
-        assertTrue(!McpHttpServer.isAllowedOrigin("http://localhost.evil.com"));
-        assertTrue(!McpHttpServer.isAllowedOrigin("not a uri"));
+        assertFalse(McpHttpServer.isAllowedOrigin("https://evil.example.com"));
+        assertFalse(McpHttpServer.isAllowedOrigin("http://localhost.evil.com"));
+        assertFalse(McpHttpServer.isAllowedOrigin("not a uri"));
     }
 
     // ── handleStatelessPost end to end (mock exchange, mock protocol handler) ──
@@ -184,7 +188,7 @@ class McpHttpServerStatelessTest {
         String version = McpSessionRegistry.statelessVersion(body);
         server.handleStatelessPost(exchange, body, version, false);
 
-        org.mockito.Mockito.verify(exchange).sendResponseHeaders(status.capture(), org.mockito.ArgumentMatchers.anyLong());
+        verify(exchange).sendResponseHeaders(status.capture(), org.mockito.ArgumentMatchers.anyLong());
         return new Call(status.getValue(), out.toString(StandardCharsets.UTF_8), responseHeaders, handler);
     }
 
@@ -204,7 +208,7 @@ class McpHttpServerStatelessTest {
 
         assertEquals(200, call.status());
         assertNull(call.responseHeaders().getFirst("Mcp-Session-Id"));
-        org.mockito.Mockito.verify(call.handler()).handleMessage(TOOLS_CALL_BODY, "stateless:default");
+        verify(call.handler()).handleMessage(TOOLS_CALL_BODY, "stateless:default");
     }
 
     @Test
@@ -215,7 +219,7 @@ class McpHttpServerStatelessTest {
 
         assertEquals(400, call.status());
         assertEquals(-32020, json(call.body()).getAsJsonObject("error").get("code").getAsInt());
-        org.mockito.Mockito.verifyNoInteractions(call.handler());
+        verifyNoInteractions(call.handler());
     }
 
     @Test
@@ -235,7 +239,7 @@ class McpHttpServerStatelessTest {
         Call call = post(TOOLS_CALL_BODY, h, "{}");
 
         assertEquals(400, call.status());
-        org.mockito.Mockito.verifyNoInteractions(call.handler());
+        verifyNoInteractions(call.handler());
     }
 
     @Test
@@ -257,7 +261,7 @@ class McpHttpServerStatelessTest {
         Call call = post(TOOLS_CALL_BODY, h, "{}");
 
         assertEquals(403, call.status());
-        org.mockito.Mockito.verifyNoInteractions(call.handler());
+        verifyNoInteractions(call.handler());
     }
 
     @Test
@@ -269,5 +273,132 @@ class McpHttpServerStatelessTest {
         Call call = post(body, h, null);
 
         assertEquals(202, call.status());
+    }
+
+    // ── rejections echo the request id so the client can correlate them ──
+
+    @Test
+    void headerMismatchEchoesTheRequestId() throws Exception {
+        Headers h = validHeaders();
+        h.set("Mcp-Method", "tools/list");
+        Call call = post(TOOLS_CALL_BODY, h, "{}");
+
+        assertEquals(400, call.status());
+        assertEquals(1, json(call.body()).get("id").getAsInt());
+    }
+
+    @Test
+    void missingProtocolVersionHeaderEchoesTheRequestId() throws Exception {
+        Headers h = validHeaders();
+        h.remove("MCP-Protocol-Version");
+        Call call = post(TOOLS_CALL_BODY, h, "{}");
+
+        assertEquals(1, json(call.body()).get("id").getAsInt());
+    }
+
+    @Test
+    void nameMismatchEchoesTheRequestId() throws Exception {
+        Headers h = validHeaders();
+        h.set("Mcp-Name", "write_file");
+        Call call = post(TOOLS_CALL_BODY, h, "{}");
+
+        assertEquals(1, json(call.body()).get("id").getAsInt());
+    }
+
+    @Test
+    void forbiddenOriginEchoesTheRequestId() throws Exception {
+        Headers h = validHeaders();
+        h.set("Origin", "https://evil.example.com");
+        Call call = post(TOOLS_CALL_BODY, h, "{}");
+
+        assertEquals(403, call.status());
+        assertEquals(1, json(call.body()).get("id").getAsInt());
+    }
+
+    @Test
+    void unsupportedVersionEchoesTheRequestId() throws Exception {
+        String body = "{\"jsonrpc\":\"2.0\",\"id\":\"req-7\",\"method\":\"tools/list\",\"params\":"
+            + "{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2030-01-01\"}}}";
+        Call call = post(body, new Headers(), "{}");
+
+        assertEquals(400, call.status());
+        assertEquals("req-7", json(call.body()).get("id").getAsString(), "string ids must round-trip too");
+    }
+
+    @Test
+    void rejectionOfARequestWithoutAnIdHasNoId() throws Exception {
+        String body = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/x\",\"params\":{" + META + "}}";
+        Call call = post(body, new Headers(), "{}");
+
+        assertEquals(400, call.status());
+        assertFalse(json(call.body()).has("id"), "a notification has no id to echo");
+    }
+
+    // ── terminals created under the shared stateless owner must not outlive the server ──
+
+    private static HttpExchange emptyExchange(Headers requestHeaders) {
+        HttpExchange exchange = mock(HttpExchange.class);
+        when(exchange.getRequestHeaders()).thenReturn(requestHeaders);
+        when(exchange.getResponseHeaders()).thenReturn(new Headers());
+        when(exchange.getResponseBody()).thenReturn(new java.io.ByteArrayOutputStream());
+        return exchange;
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        java.lang.reflect.Field f = McpHttpServer.class.getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
+    @Test
+    void aCallFinishingAfterTheServerStoppedReleasesTheTerminalsItCreated() throws Exception {
+        com.intellij.openapi.project.Project project = mock(com.intellij.openapi.project.Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getServiceIfCreated(AgentTabTracker.class)).thenReturn(tracker);
+        McpHttpServer server = new McpHttpServer(project);
+        McpProtocolHandler handler = mock(McpProtocolHandler.class);
+        // The request outlives the server: stop() has already run by the time the handler returns.
+        when(handler.handleMessage(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}");
+        setField(server, "protocolHandler", handler);
+        setField(server, "running", false);
+
+        server.handleStatelessPost(emptyExchange(validHeaders()), TOOLS_CALL_BODY, "2026-07-28", false);
+
+        verify(tracker).closeOwnedTerminalTabs("stateless:default");
+    }
+
+    @Test
+    void aCallOnARunningServerLeavesItsTerminalsAlone() throws Exception {
+        com.intellij.openapi.project.Project project = mock(com.intellij.openapi.project.Project.class);
+        AgentTabTracker tracker = mock(AgentTabTracker.class);
+        when(project.getServiceIfCreated(AgentTabTracker.class)).thenReturn(tracker);
+        McpHttpServer server = new McpHttpServer(project);
+        McpProtocolHandler handler = mock(McpProtocolHandler.class);
+        when(handler.handleMessage(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}");
+        setField(server, "protocolHandler", handler);
+        setField(server, "running", true);
+
+        server.handleStatelessPost(emptyExchange(validHeaders()), TOOLS_CALL_BODY, "2026-07-28", false);
+
+        verifyNoInteractions(tracker);
+    }
+
+    @Test
+    void aDisposedProjectIsNotAskedForTheTracker() throws Exception {
+        com.intellij.openapi.project.Project project = mock(com.intellij.openapi.project.Project.class);
+        when(project.isDisposed()).thenReturn(true);
+        McpHttpServer server = new McpHttpServer(project);
+        McpProtocolHandler handler = mock(McpProtocolHandler.class);
+        when(handler.handleMessage(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}");
+        setField(server, "protocolHandler", handler);
+        setField(server, "running", false);
+
+        server.handleStatelessPost(emptyExchange(validHeaders()), TOOLS_CALL_BODY, "2026-07-28", false);
+
+        // Asking a disposed project for a service throws; the cleanup must not even try.
+        verify(project, never()).getServiceIfCreated(AgentTabTracker.class);
     }
 }

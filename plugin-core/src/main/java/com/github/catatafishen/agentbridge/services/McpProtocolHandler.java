@@ -143,11 +143,17 @@ public final class McpProtocolHandler {
     }
 
     /**
-     * Returns the name of the agent that connected via MCP {@code initialize},
-     * or {@code null} if no agent has connected yet.
+     * Returns the name of the agent that connected via MCP {@code initialize}, or {@code null} if no agent
+     * has connected yet.
+     *
+     * <p>A stateless request carries its client's name with it and has no session to remember it in, so
+     * while one is being handled (including its hooks, which run on the same thread) the name bound to the
+     * thread by {@link McpCallContext#setClientName} wins. Reading a handler-wide field instead would
+     * let a concurrent client overwrite it and misattribute this client's commits.</p>
      */
     public @Nullable String getConnectedAgentName() {
-        return connectedAgentName;
+        String requestScoped = McpCallContext.currentClientName();
+        return requestScoped != null ? requestScoped : connectedAgentName;
     }
 
     /**
@@ -174,27 +180,16 @@ public final class McpProtocolHandler {
             if (statelessMeta != null) {
                 JsonObject versionError = validateStatelessVersion(msg, statelessMeta);
                 if (versionError != null) return msg.has("id") ? GSON.toJson(versionError) : null;
-                recordStatelessClient(statelessMeta);
             }
             boolean stateless = statelessMeta != null;
-
-            JsonObject result = switch (method) {
-                case "server/discover" -> handleServerDiscover(msg);
-                case "initialize" -> handleInitialize(msg);
-                case "tools/list" -> handleToolsList(msg);
-                case "tools/call" -> handleToolsCall(msg, sessionKey);
-                case "resources/list" -> handleResourcesList(msg);
-                case "resources/templates/list" -> handleResourceTemplatesList(msg);
-                case "resources/read" -> handleResourcesRead(msg);
-                case "ping" -> stateless
-                    ? respondError(msg, -32601, "Method not found: " + method)
-                    : respondResult(msg, new JsonObject());
-                default -> respondError(msg, -32601, "Method not found: " + method);
-            };
-
-            if (!msg.has("id")) return null;
-            if (stateless) applyStatelessDecoration(method, result);
-            return GSON.toJson(result);
+            // Bind this request's client name to the thread, never to a handler-wide field: stateless
+            // clients share one handler, so a field would be overwritten by whichever client spoke last.
+            McpCallContext.setClientName(stateless ? statelessClientName(statelessMeta) : null);
+            try {
+                return dispatchMessage(msg, method, sessionKey, stateless);
+            } finally {
+                McpCallContext.clearClientName();
+            }
         } catch (com.google.gson.JsonSyntaxException | com.google.gson.JsonIOException e) {
             // Malformed input from client — warn, not error (this is a caller mistake, not a server fault)
             LOG.warn("MCP protocol error: malformed JSON from client", e);
@@ -203,6 +198,26 @@ public final class McpProtocolHandler {
             LOG.error("MCP protocol error processing request", e);
             return GSON.toJson(makeErrorResponse(null, -32603, "Internal error: " + e.getClass().getSimpleName() + ": " + e.getMessage()));
         }
+    }
+
+    private @Nullable String dispatchMessage(JsonObject msg, String method, String sessionKey, boolean stateless) {
+        JsonObject result = switch (method) {
+            case "server/discover" -> handleServerDiscover(msg);
+            case "initialize" -> handleInitialize(msg);
+            case "tools/list" -> handleToolsList(msg);
+            case "tools/call" -> handleToolsCall(msg, sessionKey);
+            case "resources/list" -> handleResourcesList(msg);
+            case "resources/templates/list" -> handleResourceTemplatesList(msg);
+            case "resources/read" -> handleResourcesRead(msg);
+            case "ping" -> stateless
+                ? respondError(msg, -32601, "Method not found: " + method)
+                : respondResult(msg, new JsonObject());
+            default -> respondError(msg, -32601, "Method not found: " + method);
+        };
+
+        if (!msg.has("id")) return null;
+        if (stateless) applyStatelessDecoration(method, result);
+        return GSON.toJson(result);
     }
 
     /**
@@ -231,13 +246,14 @@ public final class McpProtocolHandler {
         return response;
     }
 
-    private void recordStatelessClient(JsonObject meta) {
-        if (meta.has(META_CLIENT_INFO) && meta.get(META_CLIENT_INFO).isJsonObject()) {
-            JsonObject info = meta.getAsJsonObject(META_CLIENT_INFO);
-            if (info.has("name") && info.get("name").isJsonPrimitive()) {
-                connectedAgentName = info.get("name").getAsString();
-            }
-        }
+    /**
+     * The client's display name from the request's {@code clientInfo}, or null when it sent none.
+     */
+    private static @Nullable String statelessClientName(@NotNull JsonObject meta) {
+        if (!meta.has(META_CLIENT_INFO) || !meta.get(META_CLIENT_INFO).isJsonObject()) return null;
+        JsonObject info = meta.getAsJsonObject(META_CLIENT_INFO);
+        if (!info.has("name") || !info.get("name").isJsonPrimitive()) return null;
+        return info.get("name").getAsString();
     }
 
     private JsonObject handleServerDiscover(JsonObject msg) {
@@ -267,7 +283,7 @@ public final class McpProtocolHandler {
         JsonObject result = response.getAsJsonObject(KEY_RESULT);
         if (!result.has("resultType")) result.addProperty("resultType", "complete");
         switch (method) {
-            case "tools/list", "resources/list", "resources/templates/list", "resources/read" -> {
+            case "server/discover", "tools/list", "resources/list", "resources/templates/list", "resources/read" -> {
                 result.addProperty("ttlMs", 0);
                 result.addProperty("cacheScope", "private");
             }

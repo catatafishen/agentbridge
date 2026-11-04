@@ -240,12 +240,18 @@ Stateless requests (spec: Streamable HTTP, revision 2026-07-28):
   list of supported versions in `error.data.supported`.
 - A present `Origin` header must be a loopback host, otherwise HTTP 403 (DNS-rebinding
   protection). An absent `Origin` is allowed.
+- Every one of these rejections echoes the request's JSON-RPC `id` (omitted only when the request
+  had none, as for a notification), so a client can correlate the error with its request.
 - `Mcp-Session-Id` is ignored and never minted or echoed. All stateless requests share the fixed
   owner key `stateless:default`: `clientInfo` is only a name/version and is not unique per client
-  instance, so it is used for display only. Consequently, per-owner resources such as integrated
-  terminals are shared between concurrent stateless clients.
+  instance, so it is not used for ownership. Consequently, per-owner resources such as integrated
+  terminals are shared between concurrent stateless clients. They are released when the MCP server
+  stops (including by a call that finishes after the stop began).
+- The client's name is request-scoped: it is bound to the handling thread for the duration of the
+  request, which is what hooks (`Hook.agentName()`, `AGENTBRIDGE_AGENT_NAME`) read, instead of a
+  field shared by all clients. Concurrent stateless clients therefore never see each other's name.
 - `server/discover` returns supported versions, capabilities and server info.
-- Results carry `resultType: "complete"`; list and read results carry `ttlMs: 0` and
+- Results carry `resultType: "complete"`; discovery, list and read results carry `ttlMs: 0` and
   `cacheScope: "private"` (no client-side caching); `_meta` carries `io.modelcontextprotocol/serverInfo`.
 - `ping` is not available; a missing resource returns `-32602` instead of `-32002`.
 - `subscriptions/listen`, MRTR and the tasks extension are not implemented. The server advertises
