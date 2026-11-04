@@ -5,12 +5,17 @@ import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
+import com.intellij.ide.starter.ide.installer.ExistingIdeInstaller
 import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.Path
@@ -30,7 +35,16 @@ object IdeBench {
     private val diConfigured = AtomicBoolean(false)
 
     /** Static MCP port pre-seeded by every fixture's `.idea/mcpServer.xml`. */
-    private const val MCP_PORT = 8642
+    private const val DEFAULT_MCP_PORT = 8642
+
+    private const val INDEXING_SETTLE_MILLIS = 5_000L
+
+    /**
+     * Optional system property (Gradle property `agentbridge.ide.path`): path to an installed IDE
+     * (e.g. `/Applications/IntelliJ IDEA.app` on macOS) that must match `agentbridge.ide`. When set,
+     * nothing is downloaded.
+     */
+    private const val LOCAL_IDE_PATH_PROPERTY = "agentbridge.ide.path"
 
     /**
      * Installs the Starter DI override that intercepts IDE-reported problems. Idempotent —
@@ -68,23 +82,54 @@ object IdeBench {
      * Launches [IdeUnderTest.current], drives it through [block], and dumps IDE logs on failure.
      *
      * @param contextName short Starter context name (also the on-disk test-home directory)
+     * @param largeGraphNodes when positive, a [LargeGraphFixture] of that many classes is generated into the
+     *   fixture before launch (so it is indexed at startup) and deleted again afterwards
      * @param block assertion body; receives the active [IdeUnderTest] and a connected [McpClient]
      */
-    fun run(contextName: String, block: (IdeUnderTest, McpClient) -> Unit) {
+    fun run(contextName: String, largeGraphNodes: Int = 0, block: (IdeUnderTest, McpClient) -> Unit) {
+        if (largeGraphNodes <= 0) {
+            launch(contextName, block)
+            return
+        }
+        val ide = IdeUnderTest.current()
+        val fixtureRoot = Path(requireFixturesDir()).resolve(ide.fixture)
+        val generated = LargeGraphFixture.generate(ide, fixtureRoot, largeGraphNodes)
+        try {
+            launch(contextName, block)
+        } finally {
+            LargeGraphFixture.delete(generated)
+        }
+    }
+
+    private fun requireFixturesDir(): String = System.getProperty("agentbridge.fixtures.dir")
+        ?: error("agentbridge.fixtures.dir system property is required")
+
+    /**
+     * The Starter's own HTTP client ignores JVM proxy settings, so behind a proxy its IDE download
+     * fails. When [LOCAL_IDE_PATH_PROPERTY] is set, the product's installer is replaced by one that
+     * uses the installed IDE at that path.
+     */
+    private fun withLocalIdeIfConfigured(testCase: TestCase<*>): TestCase<*> {
+        val idePath = System.getProperty(LOCAL_IDE_PATH_PROPERTY)?.takeIf { it.isNotBlank() } ?: return testCase
+        println("[integration] using locally installed IDE at $idePath instead of downloading")
+        val localIde = testCase.ideInfo.copy(getInstaller = { ExistingIdeInstaller(Path(idePath)) })
+        return testCase.copy(ideInfo = localIde)
+    }
+
+    private fun launch(contextName: String, block: (IdeUnderTest, McpClient) -> Unit) {
         ensureDi()
         val ide = IdeUnderTest.current()
 
         val pluginPath = System.getProperty("agentbridge.plugin.zip")
             ?: error("agentbridge.plugin.zip system property is required (build :plugin-core:buildPlugin first)")
-        val fixturesDir = System.getProperty("agentbridge.fixtures.dir")
-            ?: error("agentbridge.fixtures.dir system property is required")
+        val fixturesDir = requireFixturesDir()
 
         val fixture = Path(fixturesDir).resolve(ide.fixture)
 
-        val context = Starter.newTestContainer().newContext(
-            contextName,
-            TestCase(ide.product, LocalProjectInfo(fixture)).withVersion(ide.version),
-        )
+        val mcpPort = pickMcpPort()
+        val restoreMcpSettings = overrideFixtureMcpPort(fixture, mcpPort)
+        val testCase = TestCase(ide.product, LocalProjectInfo(fixture)).withVersion(ide.version)
+        val context = Starter.newTestContainer().newContext(contextName, withLocalIdeIfConfigured(testCase))
 
         // Rider needs extra configuration the other IDEs don't, applied before launch. Without it
         // the bench times out: a modal trust dialog blocks the EDT for the whole run, and the MCP
@@ -181,7 +226,7 @@ object IdeBench {
                 """<?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="McpServerSettings">
-    <option name="port" value="$MCP_PORT"/>
+    <option name="port" value="$mcpPort"/>
     <option name="staticPort" value="true"/>
     <option name="autoStart" value="true"/>
     <option name="transportMode" value="STREAMABLE_HTTP"/>
@@ -206,7 +251,7 @@ object IdeBench {
                 // Everything is driven over the plugin's MCP server — the same boundary an agent
                 // (and the bug reporter) uses — so we deliberately do NOT depend on the Driver UI
                 // DSL. The lambda body just keeps the IDE alive while we issue HTTP calls.
-                McpClient(port = MCP_PORT).use { mcp ->
+                McpClient(port = mcpPort).use { mcp ->
                     val version = mcp.awaitHealthy(timeout = ide.bootTimeout)
                     println("[integration] ${ide.key}: MCP healthy — plugin version $version")
                     mcp.initialize()
@@ -216,13 +261,49 @@ object IdeBench {
                     val indexing = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
                     println("[integration] ${ide.key}: get_indexing_status → $indexing")
 
+                    // get_indexing_status only sees DumbService, so right after project open it can report
+                    // "complete" before the initial indexing has even been scheduled (find_references then
+                    // finds nothing). Let it settle and gate again.
+                    Thread.sleep(INDEXING_SETTLE_MILLIS)
+                    val settled = mcp.callTool("get_indexing_status", mapOf("wait" to true, "timeout" to 300))
+                    println("[integration] ${ide.key}: get_indexing_status (after settle) → $settled")
+
                     block(ide, mcp)
                     passed = true
                 }
             }
         } finally {
+            restoreMcpSettings()
             if (!passed) IdeLogDump.dump(context.paths.testHome)
         }
+    }
+
+    /** The fixtures' static port, or a free one when a running IDE (e.g. the developer's own) already holds it. */
+    private fun pickMcpPort(): Int {
+        // Probe by connecting: on macOS a wildcard bind succeeds even while another process listens
+        // on 127.0.0.1:<port>, so a bind test would wrongly report the port as free.
+        val defaultInUse = runCatching {
+            Socket().use { it.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), DEFAULT_MCP_PORT), 500) }
+        }.isSuccess
+        if (!defaultInUse) return DEFAULT_MCP_PORT
+        val port = ServerSocket(0).use { it.localPort }
+        println("[integration] MCP port $DEFAULT_MCP_PORT is in use — running the bench on port $port")
+        return port
+    }
+
+    /**
+     * Rewrites the fixture's committed `.idea/mcpServer.xml` to use [port] and returns an action that
+     * restores the original content. A no-op for the default port and for Rider (its config is written
+     * separately under a git-ignored directory).
+     */
+    private fun overrideFixtureMcpPort(fixture: Path, port: Int): () -> Unit {
+        val settingsFile = fixture.resolve(".idea").resolve("mcpServer.xml").toFile()
+        if (port == DEFAULT_MCP_PORT || !settingsFile.isFile) return {}
+        val original = settingsFile.readText()
+        settingsFile.writeText(
+            original.replace(Regex("""(<option name="port" value=")\d+(")"""), "$1$port$2")
+        )
+        return { settingsFile.writeText(original) }
     }
 }
 
