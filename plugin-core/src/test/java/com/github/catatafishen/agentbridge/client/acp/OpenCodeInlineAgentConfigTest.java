@@ -27,8 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class OpenCodeInlineAgentConfigTest {
 
+    private static final int MCP_PORT = 8642;
+
     private static JsonObject configFor(String version) {
-        Map<String, String> env = OpenCodeClient.buildInitConfig(version);
+        Map<String, String> env = OpenCodeClient.buildInitConfig(version, MCP_PORT);
         String content = env.get("OPENCODE_CONFIG_CONTENT");
         assertNotNull(content, "OPENCODE_CONFIG_CONTENT must always be set");
         return JsonParser.parseString(content).getAsJsonObject();
@@ -123,6 +125,23 @@ class OpenCodeInlineAgentConfigTest {
         }
         // question denied so agents ask through the plugin's prompt_user MCP tool.
         assertEquals("deny", effectOf(rules, "question"));
+    }
+
+    @Test
+    void v2DeclaresAgentBridgeMcpServerInConfig() {
+        JsonObject server = configFor("2.2.5").getAsJsonObject("mcp")
+            .getAsJsonObject("servers").getAsJsonObject("agentbridge");
+        assertEquals("remote", server.get("type").getAsString());
+        assertEquals("http://127.0.0.1:" + MCP_PORT + "/mcp", server.get("url").getAsString());
+        assertFalse(server.get("oauth").getAsBoolean(), "loopback endpoint must not start OAuth");
+    }
+
+    @Test
+    void v1AndUnknownVersionsGetNoMcpInConfig() {
+        for (String version : new String[] {"1.19.0", null}) {
+            assertFalse(configFor(version).has("mcp"),
+                "only a confirmed v2 declares MCP in the launch config, version: " + version);
+        }
     }
 
     @Test
