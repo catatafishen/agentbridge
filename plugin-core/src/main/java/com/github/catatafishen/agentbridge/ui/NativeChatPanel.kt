@@ -830,6 +830,67 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         stopWaitingMode()
     }
 
+    /** A "waiting for review" message kept in the chat; [operation] is needed to rewrite its text. */
+    private class ReviewPendingCard(
+        val operation: String,
+        val fileCount: Int,
+        val pane: NativeMarkdownPane,
+        val buttons: List<JButton>,
+    )
+
+    private val reviewPendingCards = HashMap<String, ReviewPendingCard>()
+
+    override fun showReviewPending(
+        reqId: String, operation: String, fileCount: Int, controls: ReviewPendingControls
+    ) {
+        if (reviewPendingCards.containsKey(reqId)) return
+        val pane = createMarkdownPane(reviewPendingText(operation, fileCount))
+        val (bubbleRow, _) = createMessageRow(pane, agentBg(), explicitBorder = agentBorder())
+        addRow(bubbleRow)
+
+        val approveButton = JButton("Approve changes").apply {
+            applyChatFont()
+            toolTipText = "Approve the pending edits so the tool call can continue"
+        }
+        val openButton = JButton("Open review").apply {
+            applyChatFont()
+            toolTipText = "Show the diffs in the review panel"
+        }
+        approveButton.addActionListener {
+            approveButton.isEnabled = false
+            controls.approve()
+        }
+        openButton.addActionListener { controls.openReview() }
+
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyLeft(8)
+            add(approveButton)
+            add(openButton)
+        }
+        addRow(buttonsPanel)
+        reviewPendingCards[reqId] = ReviewPendingCard(operation, fileCount, pane, listOf(approveButton, openButton))
+    }
+
+    override fun endReviewPending(reqId: String, approved: Boolean) {
+        val card = reviewPendingCards.remove(reqId) ?: return
+        card.buttons.forEach { it.isEnabled = false }
+        card.pane.setCompleteMarkdown(reviewResolvedText(card.operation, approved))
+        contentPanel.revalidate()
+        contentPanel.repaint()
+    }
+
+    private fun reviewPendingText(operation: String, fileCount: Int): String {
+        val noun = if (fileCount == 1) "file" else "files"
+        return "**Waiting for your review**\n\n`$operation` is paused until the agent's edits to " +
+            "$fileCount $noun are approved."
+    }
+
+    private fun reviewResolvedText(operation: String, approved: Boolean): String =
+        if (approved) "**Review complete**\n\n`$operation` was released after the edits were approved."
+        else "**Review no longer pending**\n\n`$operation` stopped waiting without the edits being approved."
+
     /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user or sleep completes. */
     private fun stopWaitingMode() {
         isWaitingMode = false

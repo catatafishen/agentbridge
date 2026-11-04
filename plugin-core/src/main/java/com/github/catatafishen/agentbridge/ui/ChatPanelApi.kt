@@ -262,6 +262,24 @@ interface ChatPanelApi : Disposable {
     /** Removes the sleep countdown shown for [reqId]. Safe to call for an unknown or stale id. */
     fun endSleepRequest(reqId: String)
 
+    /**
+     * Shows a message that tool call [operation] is paused until [fileCount] edited files are
+     * reviewed, with buttons that act through [controls]. The message stays in the chat after it
+     * stops being relevant; [endReviewPending] only greys its buttons out.
+     * Default is a no-op for panels that cannot render it.
+     */
+    fun showReviewPending(reqId: String, operation: String, fileCount: Int, controls: ReviewPendingControls) {
+        /* no-op default */
+    }
+
+    /**
+     * Marks the message shown for [reqId] as no longer pending: buttons are disabled and the text
+     * says whether the edits were [approved] or the wait ended some other way (revert, timeout).
+     * Safe to call for an unknown or already-ended id.
+     */
+    fun endReviewPending(reqId: String, approved: Boolean) { /* no-op default */
+    }
+
     fun showNudgeBubble(id: String, text: String, source: NudgeSource = NudgeSource.HUMAN)
     fun resolveNudgeBubble(id: String)
     fun removeNudgeBubble(id: String)

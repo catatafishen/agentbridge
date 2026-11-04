@@ -1,10 +1,10 @@
 package com.github.catatafishen.agentbridge.psi.review;
 
+import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
-import com.github.catatafishen.agentbridge.bridge.NudgeSource;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -833,6 +833,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
                 .getInstance(project).expandReviewPanel();
         });
+        beginReviewPendingMessage(operation, fileCount, null);
 
         PsiBridgeService psi = PsiBridgeService.getInstance(project);
         java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
@@ -840,6 +841,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
 
         if (syncLock != null) syncLock.unlock();
         writeSemaphore.release();
+        boolean released = false;
         try {
             while (hasPendingChanges() && pendingGateCancelMessage == null) {
                 java.util.concurrent.CompletableFuture<Void> future = getOrCreateReviewCompletionFuture();
@@ -851,6 +853,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                 pendingGateCancelMessage = null;
                 return ERR_PREFIX + operation + " cancelled by user revert.\n" + cancelMessage;
             }
+            released = true;
             flushBufferedRevertsToPendingNudge();
             return null;
         } catch (java.util.concurrent.TimeoutException e) {
@@ -863,6 +866,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         } finally {
             writeSemaphore.acquireUninterruptibly();
             if (syncLock != null) syncLock.lock();
+            endReviewPendingMessage(released);
         }
     }
 
@@ -879,9 +883,6 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
      * @param scopedPaths absolute paths of files to check
      * @return error string if blocked or timed out, {@code null} if clear
      */
-    // S2222: caller-owned lock contract — this method intentionally releases the
-    // PSI sync lock for the wait and re-acquires it before returning so the
-    // caller (which acquired it) keeps holding it on return.
     @SuppressWarnings("java:S2222")
     public @Nullable String awaitReviewForPaths(
         @NotNull String operation,
@@ -899,6 +900,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
                 .getInstance(project).expandReviewPanel();
         });
+        beginReviewPendingMessage(operation, fileCount, scopedPaths);
 
         PsiBridgeService psi = PsiBridgeService.getInstance(project);
         java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
@@ -906,6 +908,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
 
         if (syncLock != null) syncLock.unlock();
         writeSemaphore.release();
+        boolean released = false;
         try {
             while (hasPendingIn(scopedPaths) && pendingGateCancelMessage == null) {
                 java.util.concurrent.CompletableFuture<Void> future = getOrCreateReviewCompletionFuture();
@@ -917,6 +920,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                 pendingGateCancelMessage = null;
                 return ERR_PREFIX + operation + " cancelled by user revert.\n" + cancelMessage;
             }
+            released = true;
             flushBufferedRevertsToPendingNudge();
             return null;
         } catch (java.util.concurrent.TimeoutException e) {
@@ -932,7 +936,80 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             // here in finally on every path. The lock contract is owned by the caller.
             writeSemaphore.acquireUninterruptibly();
             if (syncLock != null) syncLock.lock();
+            endReviewPendingMessage(released);
         }
+    }
+
+    // ── Chat message while a tool call waits for review ─────────────────────
+
+    private final Object reviewMessageLock = new Object();
+    private @Nullable String reviewMessageId;
+    private int reviewMessageWaiters;
+
+    /**
+     * Shows one "waiting for review" chat message for however many tool calls are blocked at once
+     * (an agent that retries leaves earlier calls waiting), so retries do not stack messages.
+     * The Approve button approves the pending rows within {@code scope}, or all of them when
+     * {@code scope} is null, so a commit never approves files it does not touch.
+     */
+    private void beginReviewPendingMessage(
+        @NotNull String operation, int fileCount, @Nullable Collection<String> scope) {
+        String id;
+        synchronized (reviewMessageLock) {
+            reviewMessageWaiters++;
+            if (reviewMessageId != null) return;
+            id = java.util.UUID.randomUUID().toString();
+            reviewMessageId = id;
+        }
+        com.github.catatafishen.agentbridge.ui.BroadcastChatPanel panel =
+            com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
+        if (panel == null) return;
+        Set<String> scopeCopy = scope == null ? null : new HashSet<>(scope);
+        panel.showReviewPending(id, operation, fileCount,
+            new com.github.catatafishen.agentbridge.ui.ReviewPendingControls() {
+                @Override
+                public void approve() {
+                    if (scopeCopy == null) acceptAll();
+                    else acceptPendingIn(scopeCopy);
+                }
+
+                @Override
+                public void openReview() {
+                    com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
+                        .getInstance(project).expandReviewPanel();
+                }
+            });
+    }
+
+    /**
+     * Greys out the message once the last waiting tool call has left the gate.
+     */
+    private void endReviewPendingMessage(boolean released) {
+        String id;
+        synchronized (reviewMessageLock) {
+            if (--reviewMessageWaiters > 0) return;
+            reviewMessageWaiters = 0;
+            id = reviewMessageId;
+            reviewMessageId = null;
+        }
+        if (id == null) return;
+        com.github.catatafishen.agentbridge.ui.BroadcastChatPanel panel =
+            com.github.catatafishen.agentbridge.ui.BroadcastChatPanel.getInstance(project);
+        if (panel != null) panel.endReviewPending(id, released);
+    }
+
+    /**
+     * Approves every pending row inside {@code scope}; the gate wakes once nothing it waits on is pending.
+     */
+    private void acceptPendingIn(@NotNull Set<String> scope) {
+        for (Map.Entry<String, ApprovalState> e : new ArrayList<>(approvals.entrySet())) {
+            if (e.getValue() == ApprovalState.PENDING && scope.contains(e.getKey())) {
+                acceptFile(e.getKey());
+            }
+        }
+        // acceptFile only wakes the gate when nothing at all is pending; this gate cares about its
+        // own scope only. The wait loop re-checks and goes back to sleep if its scope is still pending.
+        completeGate();
     }
 
     private int countPending() {
