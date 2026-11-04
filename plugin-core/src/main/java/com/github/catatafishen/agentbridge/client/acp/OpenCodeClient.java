@@ -48,6 +48,7 @@ public final class OpenCodeClient extends AcpClient {
     private static final String PLAN_AGENT = "plan";
     private static final String GENERAL_AGENT = "general";
     private static final String EXPLORE_AGENT = "explore";
+    private static final String MCP_SERVER_NAME = "agentbridge";
     private static final String SCOUT_AGENT = "scout";
     private static final String PROJECT_AGENT_DIR = ".opencode/agent";
     private static final String PROJECT_AGENTS_DIR = ".opencode/agents";
@@ -401,7 +402,7 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        return buildInitConfig(probedVersion);
+        return buildInitConfig(probedVersion, mcpPort);
     }
 
     @Override
@@ -433,6 +434,11 @@ public final class OpenCodeClient extends AcpClient {
      * names are not v2 actions, so the ruleset is what actually denies on v2; the map stays for
      * v1 and unknown versions.</p>
      *
+     * <p>A confirmed v2 also declares the AgentBridge MCP server under {@code mcp.servers} so it
+     * is part of the launch config and survives OpenCode's instance reloads, which drop servers
+     * registered only through {@code session/new}. {@code oauth} is disabled because the endpoint
+     * is a local loopback server that uses no credentials.</p>
+     *
      * <p>NOTE: We do NOT set {@code "default_agent"} here. OpenCode v1.4.10+ rejects
      * subagent slugs (like "build", "plan", "explore") as the {@code default_agent} value,
      * causing {@code session/new} to fail with
@@ -440,11 +446,14 @@ public final class OpenCodeClient extends AcpClient {
      * agent internally — the plugin's agent dropdown controls which agent to start via
      * the session/create flow instead.</p>
      */
-    static Map<String, String> buildInitConfig(@Nullable String installedVersion) {
+    static Map<String, String> buildInitConfig(@Nullable String installedVersion, int mcpPort) {
         JsonObject config = new JsonObject();
         config.add("permission", permissionDenyConfig());
         if (isDefinitelyOpenCodeV2(installedVersion)) {
             config.add("permissions", v2PermissionDenyRules());
+            if (mcpPort > 0) {
+                config.add("mcp", v2McpServersConfig(mcpPort));
+            }
             JsonObject explore = inlineExploreAgent();
             if (explore != null) {
                 JsonObject agents = new JsonObject();
@@ -453,6 +462,22 @@ public final class OpenCodeClient extends AcpClient {
             }
         }
         return Map.of("OPENCODE_CONFIG_CONTENT", new Gson().toJson(config));
+    }
+
+    /**
+     * The v2 {@code mcp} config object registering the AgentBridge loopback endpoint as a
+     * remote server with OAuth disabled (it has no credentials to exchange).
+     */
+    private static JsonObject v2McpServersConfig(int mcpPort) {
+        JsonObject agentbridge = new JsonObject();
+        agentbridge.addProperty("type", "remote");
+        agentbridge.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
+        agentbridge.addProperty("oauth", false);
+        JsonObject servers = new JsonObject();
+        servers.add(MCP_SERVER_NAME, agentbridge);
+        JsonObject mcp = new JsonObject();
+        mcp.add("servers", servers);
+        return mcp;
     }
 
     /** True only when the version is known and its major is ≥ 2 (unknown versions are NOT v2 here). */
@@ -760,7 +785,11 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        addMcpServerConfig(mcpPort, params);
+        // A confirmed v2 registers AgentBridge in the launch config (see buildInitConfig); sending
+        // it again per session would register the same server twice.
+        if (!(isDefinitelyOpenCodeV2(probedVersion) && mcpPort > 0)) {
+            addMcpServerConfig(mcpPort, params);
+        }
     }
 
     /**
