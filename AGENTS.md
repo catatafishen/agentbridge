@@ -3,8 +3,9 @@
 Rules for anyone (human or agent) changing this repository. Product-facing agent instructions that ship to end users
 live in `plugin-core/src/main/resources/default-startup-instructions.md`, not here.
 
-**Agents that do not load this file** (for example the built-in Koog agent, which builds its prompt from bundled
-resources only) will not see these rules. Do not rely on this file being in an agent's context; put anything that must
+**Not every agent reads this file by itself.** CLI agents load it on their own. The built-in Koog agent builds its prompt
+from bundled resources, so the plugin reads `AGENTS.md` from the project root and adds it to Koog's system prompt
+(`ProjectInstructions`), dropping any plugin-generated block first. Other agents may not see it; put anything that must
 reach every agent in the bundled instructions instead.
 
 ## Instruction Scope
@@ -63,12 +64,7 @@ enforces, such as `Thread.sleep` in tests and unused `throws`. Do not silence a 
 
 ### CI
 
-CI takes 3-5 minutes. Do not wait on it; check `gh pr checks <number>` between other work. If it fails, use
-`gh run view <run-id> --log-failed`.
-
-`gh` caveats (not AgentBridge bugs): `gh pr view`/`gh issue view` without `--json` can fail on the retired Projects
-(classic) GraphQL field, so use `--json title,state,body,...`; `gh issue view N --comments` prints only comments; edit
-a PR body with `gh api repos/catatafishen/agentbridge/pulls/N --method PATCH -f body=...`.
+CI takes 3-5 minutes. Do not wait on it; If it fails, use `gh run view <run-id> --log-failed`.
 
 ### PR review comments
 

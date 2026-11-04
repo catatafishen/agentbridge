@@ -119,7 +119,7 @@ class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
             userCustomized = settings.isUsingCustomInstructions,
             koogVariant = bundled(TOOL_GUIDANCE_RESOURCE),
         )
-        return KoogClient.systemPrompt(bundled(SYSTEM_PROMPT_RESOURCE), cwd, guidance)
+        return KoogClient.systemPrompt(bundled(SYSTEM_PROMPT_RESOURCE), cwd, guidance, ProjectInstructions.load(cwd))
     }
 
     override fun previousConversation(): List<EntryData> {

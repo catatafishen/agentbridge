@@ -270,10 +270,23 @@ class KoogClient(
             else -> "$tokens tokens"
         }
 
-        /** Our preamble, the project root, then tool guidance (see [KoogGuidance] for which text that is). */
+        /**
+         * Our preamble, the project root, the project's own `AGENTS.md` when it has one, then tool guidance
+         * (see [KoogGuidance] for which text that is).
+         */
         @JvmStatic
-        fun systemPrompt(preamble: String, projectRoot: String, mcpInstructions: String): String =
-            listOf(preamble, "Project root: $projectRoot", mcpInstructions.trim())
+        fun systemPrompt(
+            preamble: String,
+            projectRoot: String,
+            mcpInstructions: String,
+            projectInstructions: String? = null,
+        ): String =
+            listOfNotNull(
+                preamble,
+                "Project root: $projectRoot",
+                projectInstructions?.let { "Project instructions (${ProjectInstructions.FILE_NAME}):\n\n$it" },
+                mcpInstructions.trim(),
+            )
                 .filter { it.isNotBlank() }
                 .joinToString("\n\n")
     }

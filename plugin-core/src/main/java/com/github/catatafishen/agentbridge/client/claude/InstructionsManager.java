@@ -113,6 +113,18 @@ public final class InstructionsManager {
         }
     }
 
+    /**
+     * Removes the plugin's auto-generated block (see {@link #ensureInstructions}) from {@code content},
+     * leaving everything else. Returns {@code content} unchanged when it holds no such block.
+     *
+     * <p>For readers that load the same file the block was written into (for example Koog reading
+     * {@code AGENTS.md}) and already receive the startup instructions another way.</p>
+     */
+    public static @NotNull String stripGeneratedBlock(@NotNull String content) {
+        String stripped = spliceInPlace(content, "");
+        return stripped == null ? content : stripped;
+    }
+
     @NotNull
     private static String buildInstructions(@NotNull String additionalInstructions, boolean sandboxEnabled) {
         var application = ApplicationManager.getApplication();
