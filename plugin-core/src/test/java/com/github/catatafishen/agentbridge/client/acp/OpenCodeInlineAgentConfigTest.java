@@ -137,6 +137,26 @@ class OpenCodeInlineAgentConfigTest {
     }
 
     @Test
+    void v2SessionParamsCarryEmptyMcpServersNotMissing() {
+        JsonObject params = new JsonObject();
+        OpenCodeClient.applySessionMcpServers("2.2.5", MCP_PORT, params);
+        assertTrue(params.has("mcpServers"), "v2 rejects session/new without mcpServers (-32602)");
+        assertEquals(0, params.getAsJsonArray("mcpServers").size(),
+            "AgentBridge is declared in the launch config, so it must not be registered twice");
+    }
+
+    @Test
+    void v1AndUnknownSessionParamsStillRegisterAgentBridge() {
+        for (String version : new String[] {"1.19.0", null}) {
+            JsonObject params = new JsonObject();
+            OpenCodeClient.applySessionMcpServers(version, MCP_PORT, params);
+            var servers = params.getAsJsonArray("mcpServers");
+            assertEquals(1, servers.size(), "version: " + version);
+            assertEquals("agentbridge", servers.get(0).getAsJsonObject().get("name").getAsString());
+        }
+    }
+
+    @Test
     void v1AndUnknownVersionsGetNoMcpInConfig() {
         for (String version : new String[] {"1.19.0", null}) {
             assertFalse(configFor(version).has("mcp"),
