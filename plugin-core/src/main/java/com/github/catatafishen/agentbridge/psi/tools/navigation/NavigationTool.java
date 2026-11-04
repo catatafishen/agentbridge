@@ -37,9 +37,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -187,14 +189,17 @@ public abstract class NavigationTool extends Tool {
      * suffix of {@code [com, example, MyClass]} even though the package segments aren't PSI
      * ancestors of the method.
      *
-     * <p>For unqualified names the word index search stops at the first structural match,
-     * preserving existing behavior.
+     * <p>For unqualified names a single definition is returned: the first one in file-path and offset
+     * order, so repeated calls pick the same definition.
      */
     protected List<PsiElement> findDefinitions(String name, GlobalSearchScope scope) {
         String simpleName = simpleNameOf(name);
         boolean isQualified = !simpleName.equals(name);
 
-        List<PsiElement> candidates = new ArrayList<>();
+        // The platform invokes the processor from several worker threads at once: the list must be
+        // thread-safe, and stopping at the "first" match would pick a different definition per run.
+        // Collect every candidate and choose deterministically afterwards.
+        List<PsiElement> candidates = new CopyOnWriteArrayList<>();
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
                 PsiElement parent = element.getParent();
@@ -202,7 +207,6 @@ public abstract class NavigationTool extends Tool {
                     String type = ToolUtils.classifyElement(parent);
                     if (type != null && !type.equals(ToolUtils.ELEMENT_TYPE_FIELD)) {
                         candidates.add(parent);
-                        if (!isQualified) return false; // unqualified: stop at first match
                     }
                 }
                 return true;
@@ -210,13 +214,22 @@ public abstract class NavigationTool extends Tool {
             scope, simpleName, UsageSearchContext.IN_CODE, true
         );
 
-        if (isQualified) {
-            String[] qualifierTokens = qualifierTokensOf(name);
-            return readAction(() -> candidates.stream()
-                .filter(e -> e.isValid() && matchesQualifier(e, qualifierTokens))
-                .toList());
-        }
-        return candidates;
+        String[] qualifierTokens = isQualified ? qualifierTokensOf(name) : new String[0];
+        return readAction(() -> {
+            var ordered = candidates.stream()
+                .filter(e -> e.isValid() && (!isQualified || matchesQualifier(e, qualifierTokens)))
+                .distinct()
+                .sorted(Comparator.comparing(NavigationTool::definitionPath)
+                    .thenComparingInt(PsiElement::getTextOffset))
+                .toList();
+            // Unqualified: a single definition (the first in path order), as before.
+            return isQualified || ordered.size() <= 1 ? ordered : ordered.subList(0, 1);
+        });
+    }
+
+    private static String definitionPath(PsiElement element) {
+        PsiFile file = element.getContainingFile();
+        return file != null && file.getVirtualFile() != null ? file.getVirtualFile().getPath() : "";
     }
 
     /**

@@ -15,9 +15,13 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Finds all usages of a symbol throughout the project.
@@ -25,6 +29,10 @@ import java.util.regex.Pattern;
 public final class FindReferencesTool extends NavigationTool {
 
     private static final String FORMAT_RICH_REF = "%s:%d %s %s";
+    private static final Comparator<Hit> HIT_ORDER = Comparator.comparing(Hit::path)
+        .thenComparingInt(Hit::line)
+        .thenComparing(Hit::context)
+        .thenComparing(Hit::lineText);
 
     public FindReferencesTool(Project project) {
         super(project);
@@ -93,14 +101,12 @@ public final class FindReferencesTool extends NavigationTool {
 
         showSearchFeedback("🔍 Finding references: " + symbol);
         String result = computeWithProgress(() -> {
-            List<String> results = new ArrayList<>();
+            List<Hit> hits = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = resolveScope(scopeName);
 
-            List<PsiElement> definitions = findDefinitions(symbol, scope);
-            for (PsiElement definition : definitions) {
-                collectDefinitionReferences(definition, scope, filePattern, basePath, results, maxResults, offset);
-                if (results.size() >= maxResults) break;
+            for (PsiElement definition : findDefinitions(symbol, scope)) {
+                collectDefinitionReferences(definition, scope, filePattern, basePath, hits);
             }
             // Word-index text fallback: only for unqualified symbols. A qualified symbol like
             // "WidgetA.render" that finds no PSI definitions must NOT fall back to a raw text
@@ -109,24 +115,30 @@ public final class FindReferencesTool extends NavigationTool {
             // If PSI couldn't identify the qualified symbol, the correct answer is "no references
             // found" rather than a set of false positives.
             boolean isQualified = !simpleNameOf(symbol).equals(symbol);
-            if (results.isEmpty() && !isQualified) {
-                collectWordReferences(symbol, scope, filePattern, basePath, results, maxResults, offset);
+            if (hits.isEmpty() && !isQualified) {
+                collectWordReferences(symbol, scope, filePattern, basePath, hits);
             }
-            if (results.isEmpty()) return "No references found for '" + symbol + "'";
-            String footer = results.size() >= maxResults
-                ? "\n\n(Showing " + maxResults + " results starting at offset " + offset + ". Use offset=" + (offset + maxResults) + " to see more)"
+            if (hits.isEmpty()) return "No references found for '" + symbol + "'";
+
+            // The platform searches files in parallel and returns hits in no fixed order. Sorting makes
+            // the output (and therefore offset/max_results pagination) identical across repeated calls.
+            List<Hit> ordered = hits.stream().distinct().sorted(HIT_ORDER).toList();
+            if (offset >= ordered.size()) return "No references found for '" + symbol + "' at offset " + offset;
+            List<Hit> page = ordered.subList(offset, Math.min(ordered.size(), offset + maxResults));
+            String footer = offset + page.size() < ordered.size()
+                ? "\n\n(Showing " + page.size() + " of " + ordered.size() + " results starting at offset " + offset
+                + ". Use offset=" + (offset + page.size()) + " to see more)"
                 : "";
-            return results.size() + " references found:\n" + String.join("\n", results) + footer;
+            return page.size() + " references found:\n"
+                + page.stream().map(Hit::format).collect(Collectors.joining("\n")) + footer;
         });
         showSearchFeedback("✓ Reference search complete: " + symbol);
         return result;
     }
 
     private void collectDefinitionReferences(PsiElement definition, GlobalSearchScope scope,
-                                             String filePattern, String basePath, List<String> results,
-                                             int maxResults, int offset) {
+                                             String filePattern, String basePath, List<Hit> hits) {
         var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
-        int seen = 0;
         // The query is built under a read action, but findAll() runs outside one: the platform takes a
         // short read action per file, so a pending write action is never blocked for the whole search.
         // A definition deleted by a concurrent edit since findDefinitions() has nothing left to search for.
@@ -135,63 +147,59 @@ public final class FindReferencesTool extends NavigationTool {
             : Optional.empty());
         if (query.isEmpty()) return;
         for (PsiReference ref : query.get().findAll()) {
-            if (results.size() >= maxResults) break;
-            String entry = readAction(() -> ref.getElement().isValid()
-                ? buildRichReferenceEntry(ref, filePattern, compiledGlob, basePath)
+            Hit hit = readAction(() -> ref.getElement().isValid()
+                ? buildRichReferenceHit(ref, filePattern, compiledGlob, basePath)
                 : null);
-            if (entry != null && seen++ >= offset) {
-                results.add(entry);
-            }
+            if (hit != null) hits.add(hit);
         }
     }
 
     /**
-     * Builds a rich reference entry from a PSI reference, including usage type and container context.
+     * Builds a rich reference hit from a PSI reference, including usage type and container context.
      */
-    private @Nullable String buildRichReferenceEntry(PsiReference ref, String filePattern,
-                                                     Pattern compiledGlob, String basePath) {
+    private @Nullable Hit buildRichReferenceHit(PsiReference ref, String filePattern,
+                                                Pattern compiledGlob, String basePath) {
         PsiElement refEl = ref.getElement();
         String context = ReferenceClassifier.formatContext(
             ReferenceClassifier.classifyUsage(ref),
             ReferenceClassifier.findContainerName(refEl));
-        return buildRichEntry(refEl, filePattern, compiledGlob, basePath, context);
+        return buildRichHit(refEl, filePattern, compiledGlob, basePath, context);
     }
 
     private void collectWordReferences(String symbol, GlobalSearchScope scope,
-                                       String filePattern, String basePath, List<String> results,
-                                       int maxResults, int offset) {
+                                       String filePattern, String basePath, List<Hit> hits) {
         var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
-        int[] seen = {0};
+        // The platform invokes this processor from several worker threads at once, so the collection
+        // must be thread-safe: appending to a plain ArrayList silently loses hits.
+        Queue<Hit> found = new ConcurrentLinkedQueue<>();
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
-                String entry = buildWordEntry(element, filePattern, compiledGlob, basePath);
-                if (entry == null || results.contains(entry)) return results.size() < maxResults;
-                if (seen[0]++ >= offset) {
-                    results.add(entry);
-                }
-                return results.size() < maxResults;
+                Hit hit = buildWordHit(element, filePattern, compiledGlob, basePath);
+                if (hit != null) found.add(hit);
+                return true;
             },
             scope, symbol, UsageSearchContext.IN_CODE, true
         );
+        hits.addAll(found);
     }
 
     /**
-     * Builds a reference entry for a word-search element with rich context, or returns null if filtered out.
+     * Builds a reference hit for a word-search element with rich context, or returns null if filtered out.
      */
-    private @Nullable String buildWordEntry(PsiElement element,
-                                            String filePattern, Pattern compiledGlob, String basePath) {
+    private @Nullable Hit buildWordHit(PsiElement element,
+                                       String filePattern, Pattern compiledGlob, String basePath) {
         String context = ReferenceClassifier.formatContext(
             ReferenceClassifier.classifyUsage(element),
             ReferenceClassifier.findContainerName(element));
-        return buildRichEntry(element, filePattern, compiledGlob, basePath, context);
+        return buildRichHit(element, filePattern, compiledGlob, basePath, context);
     }
 
     /**
-     * Common helper: resolves element → file → relPath → line → formatted rich entry.
+     * Common helper: resolves element → file → relPath → line → rich hit.
      * Returns null if the element's file is null or filtered out by the glob pattern.
      */
-    private @Nullable String buildRichEntry(PsiElement element, String filePattern,
-                                            Pattern compiledGlob, String basePath, String context) {
+    private @Nullable Hit buildRichHit(PsiElement element, String filePattern,
+                                       Pattern compiledGlob, String basePath, String context) {
         com.intellij.psi.PsiFile file = element.getContainingFile();
         if (file == null || file.getVirtualFile() == null) return null;
         String relPath = safeRelativize(basePath, file.getVirtualFile().getPath());
@@ -200,7 +208,12 @@ public final class FindReferencesTool extends NavigationTool {
             .getDocument(file.getVirtualFile());
         if (doc == null) return null;
         int line = doc.getLineNumber(element.getTextOffset()) + 1;
-        String lineText = ToolUtils.getLineText(doc, line - 1);
-        return String.format(FORMAT_RICH_REF, relPath, line, context, lineText);
+        return new Hit(relPath, line, context, ToolUtils.getLineText(doc, line - 1));
+    }
+
+    private record Hit(String path, int line, String context, String lineText) {
+        String format() {
+            return String.format(FORMAT_RICH_REF, path, line, context, lineText);
+        }
     }
 }
