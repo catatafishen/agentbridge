@@ -785,9 +785,19 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        // A confirmed v2 registers AgentBridge in the launch config (see buildInitConfig); sending
-        // it again per session would register the same server twice.
-        if (!(isDefinitelyOpenCodeV2(probedVersion) && mcpPort > 0)) {
+        applySessionMcpServers(probedVersion, mcpPort, params);
+    }
+
+    /**
+     * Sets {@code mcpServers} on session/new and session/resume params. A confirmed v2 registers
+     * AgentBridge in the launch config (see {@link #buildInitConfig}); sending it again per session
+     * would register the same server twice. The ACP schema still requires the field, and v2 rejects
+     * a missing one with -32602 ("mcpServers: Required value is missing"), so v2 gets an empty list.
+     */
+    static void applySessionMcpServers(@Nullable String installedVersion, int mcpPort, JsonObject params) {
+        if (isDefinitelyOpenCodeV2(installedVersion) && mcpPort > 0) {
+            params.add("mcpServers", new JsonArray());
+        } else {
             addMcpServerConfig(mcpPort, params);
         }
     }
