@@ -200,7 +200,7 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
         assertNull(b.get(WAIT_MS, TimeUnit.MILLISECONDS));
     }
 
-    public void testNoMessageWhenNothingIsPending() throws Exception {
+    public void testNoMessageWhenNothingIsPending() {
         String path = trackedPath("nothing-pending.txt");
 
         String result = session.awaitReviewForPaths("git commit", List.of(path));
@@ -246,14 +246,9 @@ public class AgentEditSessionReviewPendingMessageTest extends BasePlatformTestCa
     /**
      * Pumps the EDT, which delivers the gate's {@code invokeLater} UI updates, until the condition holds.
      */
-    private static void waitUntil(BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.currentTimeMillis() + WAIT_MS;
-        while (System.currentTimeMillis() < deadline) {
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
-            if (condition.getAsBoolean()) return;
-            Thread.sleep(20);
-        }
-        fail("Timed out waiting for " + what);
+    private static void waitUntil(BooleanSupplier condition, String what) {
+        PlatformTestUtil.waitWithEventsDispatching(
+            "Timed out waiting for " + what, condition, (int) TimeUnit.MILLISECONDS.toSeconds(WAIT_MS));
     }
 
     private List<JButton> approveButtons() {
