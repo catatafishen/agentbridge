@@ -33,5 +33,4 @@ view, not the host. Read this section before you reach for a shell tool.
    computed at launch and you cannot escape it from inside.
 4. **Report tool surprises early.** If even MCP tools start failing or
    returning empty data on paths that should exist, that is a real bug worth
-   filing — see the "Unexpected Tool Behaviour" section in the project's
-   `AGENTS.md`.
+   reporting to the AgentBridge maintainers.

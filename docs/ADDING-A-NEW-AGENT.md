@@ -97,7 +97,8 @@ Run them with `./gradlew :plugin-core:test`. For the permission flow, see the pr
 
 ## 8. Documentation
 
-- Add the agent to the tables in the [README](../README.md) and in `AGENTS.md`.
+- Add the agent to the tables in the [README](../README.md) and in
+  [AGENT-DEFINITION-FORMATS.md](AGENT-DEFINITION-FORMATS.md).
 - Add a short setup guide in `docs/getting-started/` following
   [the existing ones](getting-started/opencode.md): install, sign-in, how to select it in the tool window, limitations.
 - Add the agent to the supported-agents list in `plugin.xml` if it is meant for the Marketplace description.
