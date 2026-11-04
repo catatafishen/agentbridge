@@ -1433,14 +1433,43 @@ public abstract class AcpClient extends AbstractClient {
         Set<String> modeSlugs = availableModes.isEmpty()
             ? Collections.emptySet()
             : availableModes.stream().map(AgentMode::slug).collect(Collectors.toSet());
-        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds, agentSlugs, modeSlugs);
+        List<SessionOption> acpOptions = filterSessionOptionsStatic(availableConfigOptions, sessionModelIds, agentSlugs, modeSlugs);
+        List<SessionOption> localOptions = localSessionOptions();
+        if (localOptions.isEmpty()) {
+            return acpOptions;
+        }
+        List<SessionOption> all = new ArrayList<>(acpOptions);
+        all.addAll(localOptions);
+        return List.copyOf(all);
     }
 
     /**
-     * Delegates to {@link #setConfigOption} so the ACP server is notified.
+     * Session options handled entirely by the plugin, not sent to the agent. Appended after the
+     * options the agent advertises. Default: none.
+     */
+    @NotNull
+    protected List<SessionOption> localSessionOptions() {
+        return List.of();
+    }
+
+    /**
+     * Applies a plugin-local session option (see {@link #localSessionOptions}).
+     *
+     * @return {@code true} if the key was handled locally and must not be sent to the agent
+     */
+    protected boolean applyLocalSessionOption(@NotNull String key, @NotNull String value) {
+        return false;
+    }
+
+    /**
+     * Delegates to {@link #setConfigOption} so the ACP server is notified, unless the option is
+     * plugin-local.
      */
     @Override
     public final void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
+        if (applyLocalSessionOption(key, value)) {
+            return;
+        }
         setConfigOption(sessionId, key, value);
     }
 
