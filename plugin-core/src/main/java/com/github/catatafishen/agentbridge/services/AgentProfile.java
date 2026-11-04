@@ -133,7 +133,7 @@ public final class AgentProfile {
 
     /**
      * Relative path (from project root) to the agent-instructions file that plugin context
-     * should be prepended to on launch (e.g. {@code ".copilot/copilot-instructions.md"} or
+     * should be prepended to on launch (e.g. {@code ".github/copilot-instructions.md"} or
      * {@code "CLAUDE.md"}). Empty/null means skip file injection (rely on MCP instructions field).
      */
     private String prependInstructionsTo;
