@@ -27,6 +27,12 @@ public final class FindFileTool extends NavigationTool {
     private static final String PARAM_MAX_RESULTS = "max_results";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 500;
+    private static final int NAME_BATCH_SIZE = 25;
+    // Safety bound for very permissive queries (single character, path patterns) on huge projects.
+    private static final int MAX_NAMES = 100_000;
+    private static final Comparator<FileMatch> FILE_ORDER = Comparator
+        .comparingInt(FileMatch::score).reversed()
+        .thenComparing(FileMatch::path);
 
     public FindFileTool(Project project) {
         super(project);
@@ -110,41 +116,66 @@ public final class FindFileTool extends NavigationTool {
         int collectFileLimit = Math.clamp(Math.multiplyExact(limit, 5), DEFAULT_LIMIT, MAX_LIMIT);
         Map<String, FileMatch> matchesByPath = new LinkedHashMap<>();
 
-        // Cap the names collected to keep the second-stage batched lookup bounded, even when the
-        // predicate is unusually permissive (e.g. a single-character query or a path-pattern, which
-        // matches every filename and relies on the per-file path filter inside addFileMatch).
-        int maxNames = Math.max(collectFileLimit * 4, 1_000);
-        Set<String> matchingNames = new LinkedHashSet<>();
-        FilenameIndex.processAllFileNames(name -> {
-            if (predicate.matchesName(name)) {
-                matchingNames.add(name);
+        List<String> rankedNames = rankedMatchingNames(predicate, scope);
+        // Files are looked up in small batches in rank order instead of one huge unordered lookup: the
+        // index returns names and files in no meaningful order, so truncating that unordered stream would
+        // drop the best matches (e.g. an exact name) before ranking. One lookup per name was the freeze
+        // culprit on large projects, hence batches rather than single names.
+        for (int from = 0; from < rankedNames.size(); from += NAME_BATCH_SIZE) {
+            if (matchesByPath.size() >= collectFileLimit
+                || canStopBeforeBatch(matchesByPath, limit, predicate.score(rankedNames.get(from)))) {
+                break;
             }
-            return matchingNames.size() < maxNames;
-        }, scope, null);
-
-        if (!matchingNames.isEmpty()) {
-            // Single batched lookup. The previous one-name-at-a-time
-            // FilenameIndex.processFilesByNames(Set.of(name), ...) call inside the iterator was
-            // the freeze culprit on large projects: it issued thousands of index queries while
-            // holding the read lock, starving every write action (EDT, indexing, daemon).
-            FilenameIndex.processFilesByNames(matchingNames, false, scope, null, file -> {
-                if (matchesByPath.size() >= collectFileLimit) return false;
+            Set<String> batch = new LinkedHashSet<>(
+                rankedNames.subList(from, Math.min(rankedNames.size(), from + NAME_BATCH_SIZE)));
+            FilenameIndex.processFilesByNames(batch, false, scope, null, file -> {
                 addFileMatch(file, basePath, scope, predicate, matchesByPath);
-                return matchesByPath.size() < collectFileLimit;
+                return true;
             });
         }
 
         if (matchesByPath.isEmpty()) return "No files found";
 
-        List<FileMatch> matches = new ArrayList<>(matchesByPath.values());
-        matches.sort(Comparator
-            .comparingInt(FileMatch::score).reversed()
-            .thenComparing(FileMatch::path));
-        List<String> lines = matches.stream()
+        List<String> lines = matchesByPath.values().stream()
+            .sorted(FILE_ORDER)
             .limit(limit)
             .map(FileMatch::format)
             .toList();
         return lines.size() + " files:\n" + String.join("\n", lines);
+    }
+
+    /**
+     * Returns all indexed file names accepted by the predicate, best match first. Ties are broken by name so
+     * the order is the same on every call, independent of the index iteration order.
+     */
+    private static List<String> rankedMatchingNames(MatchPredicate predicate, GlobalSearchScope scope) {
+        List<ScoredName> names = new ArrayList<>();
+        FilenameIndex.processAllFileNames(name -> {
+            if (predicate.matchesName(name)) {
+                names.add(new ScoredName(name, predicate.score(name)));
+            }
+            return names.size() < MAX_NAMES;
+        }, scope, null);
+        names.sort(Comparator.comparingInt(ScoredName::score).reversed().thenComparing(ScoredName::name));
+        return names.stream().map(ScoredName::name).toList();
+    }
+
+    /**
+     * True once {@code limit} files are collected and every remaining name scores strictly lower than the
+     * weakest of the best {@code limit} files, so no further batch can change the final result.
+     */
+    private static boolean canStopBeforeBatch(Map<String, FileMatch> matchesByPath, int limit, int nextScore) {
+        if (matchesByPath.size() < limit) return false;
+        int limitThScore = matchesByPath.values().stream()
+            .map(FileMatch::score)
+            .sorted(Comparator.reverseOrder())
+            .skip(limit - 1L)
+            .findFirst()
+            .orElse(Integer.MIN_VALUE);
+        return nextScore < limitThScore;
+    }
+
+    private record ScoredName(String name, int score) {
     }
 
     private void addFileMatch(VirtualFile file, String basePath, GlobalSearchScope scope,
@@ -152,7 +183,7 @@ public final class FindFileTool extends NavigationTool {
         if (file.isDirectory() || !scope.contains(file)) return;
 
         String path = safeRelativize(basePath, file.getPath());
-        if (!predicate.matchesPath(path)) return;
+        if (!predicate.matchesPath(path, file.getPath())) return;
 
         String directory = file.getParent() == null ? "" : safeRelativize(basePath, file.getParent().getPath());
         matchesByPath.putIfAbsent(path, new FileMatch(file.getName(), path, directory, predicate.score(file.getName())));
@@ -171,16 +202,23 @@ public final class FindFileTool extends NavigationTool {
         String lowerQuery,
         MinusculeMatcher matcher,
         Pattern globPattern,
-        boolean pathPattern) {
+        boolean pathPattern,
+        String lowerPathQuery) {
 
         private static MatchPredicate create(String query) {
             Pattern glob = hasWildcard(query) ? ToolUtils.compileGlob(query) : null;
+            boolean isPath = query.indexOf('/') >= 0 || query.indexOf('\\') >= 0;
+            // A path query without wildcards (e.g. "src/Foo.java") is matched by path suffix/infix; its file
+            // name part drives the name lookup and ranking. Without this, every file would match.
+            String normalized = query.replace('\\', '/');
+            String nameQuery = isPath && glob == null ? nameFromPath(normalized) : query;
             return new MatchPredicate(
-                query,
-                query.toLowerCase(Locale.ROOT),
-                PlatformApiCompat.buildFilenameMatcher("*" + query),
+                nameQuery,
+                nameQuery.toLowerCase(Locale.ROOT),
+                PlatformApiCompat.buildFilenameMatcher("*" + nameQuery),
                 glob,
-                query.indexOf('/') >= 0 || query.indexOf('\\') >= 0
+                isPath,
+                isPath && glob == null ? normalized.toLowerCase(Locale.ROOT) : null
             );
         }
 
@@ -189,13 +227,14 @@ public final class FindFileTool extends NavigationTool {
         }
 
         private boolean matchesName(String name) {
-            if (pathPattern) return true;
+            if (pathPattern && globPattern != null) return true;
             return globPattern != null
                 ? globPattern.matcher(name).matches()
                 : name.toLowerCase(Locale.ROOT).contains(lowerQuery) || matcher.matches(name);
         }
 
-        private boolean matchesPath(String path) {
+        private boolean matchesPath(String path, String absolutePath) {
+            if (lowerPathQuery != null) return absolutePath.replace('\\', '/').toLowerCase(Locale.ROOT).contains(lowerPathQuery);
             return globPattern == null || globPattern.matcher(path).matches() || globPattern.matcher(nameFromPath(path)).matches();
         }
 

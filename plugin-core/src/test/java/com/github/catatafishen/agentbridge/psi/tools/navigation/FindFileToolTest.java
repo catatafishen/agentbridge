@@ -231,6 +231,46 @@ public class FindFileToolTest extends BasePlatformTestCase {
         assertNotNull(tool.category());
     }
 
+    public void testExactNameSurvivesManyWeakerMatches() {
+        for (int i = 0; i < 1_200; i++) {
+            myFixture.addFileToProject("src/bulk/BulkRankUnique" + i + ".txt", "x");
+        }
+        myFixture.addFileToProject("src/bulk/BulkRankUnique", "x");
+
+        JsonObject params = args(QUERY, "BulkRankUnique");
+        params.addProperty(LIMIT, 5);
+        String result = tool.execute(params);
+
+        String firstEntry = result.lines().skip(1).findFirst().orElse("");
+        assertTrue("Exact name must rank first even among 1200 weaker matches, got: " + result,
+            firstEntry.contains("[BulkRankUnique,"));
+    }
+
+    public void testRepeatedCallsReturnIdenticalResults() {
+        for (int i = 0; i < 300; i++) {
+            myFixture.addFileToProject("src/repeat/RepeatUnique" + i + ".txt", "x");
+        }
+
+        JsonObject params = args(QUERY, "RepeatUnique");
+        params.addProperty(LIMIT, 20);
+        String first = tool.execute(params);
+        for (int i = 0; i < 20; i++) {
+            assertEquals("Call " + i + " differs", first, tool.execute(params));
+        }
+    }
+
+    public void testPathQueryWithoutWildcardMatchesOnlyThatPath() {
+        myFixture.addFileToProject("src/pathq/a/SamePathName.java", "class SamePathName {}");
+        myFixture.addFileToProject("src/pathq/b/SamePathName.java", "class SamePathName {}");
+        myFixture.addFileToProject("src/pathq/b/Unrelated.java", "class Unrelated {}");
+
+        String result = tool.execute(args(QUERY, "pathq/b/SamePathName.java"));
+
+        assertTrue("Expected the requested file, got: " + result, result.contains("dir=b") || result.contains("pathq/b"));
+        assertEquals("Only the file in directory b may match, got: " + result, "1 files:", result.lines().findFirst().orElse(""));
+        assertFalse("Unrelated file must not match, got: " + result, result.contains("Unrelated.java"));
+    }
+
     private static JsonObject args(String... pairs) {
         JsonObject obj = new JsonObject();
         for (int i = 0; i < pairs.length; i += 2) {

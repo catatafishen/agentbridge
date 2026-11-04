@@ -24,6 +24,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -137,6 +138,10 @@ public final class SearchTextTool extends NavigationTool {
         int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
         boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
         String scopeName = readScopeParam(args);
+        if (SCOPE_LIBRARIES.equalsIgnoreCase(scopeName)) {
+            return ToolUtils.ERROR_PREFIX + "search_text does not search library sources (scope='libraries'). "
+                + "Use search_symbols or find_references with scope='libraries' instead.";
+        }
         Predicate<VirtualFile> scopeFilter = buildScopeFilter(scopeName);
 
         var cfg = new SearchConfig(query, filePattern, isRegex, caseSensitive, maxResults, offset, contextLines, followAgent);
@@ -151,6 +156,9 @@ public final class SearchTextTool extends NavigationTool {
             () -> performSearch(cfg, scopeFilter)
         ).executeSynchronously();
         showSearchFeedback("Text search complete: " + query);
+        if (SCOPE_ALL.equalsIgnoreCase(scopeName)) {
+            result += "\n(scope='all': library sources are not searched by search_text; only project files were searched)";
+        }
         return result;
     }
 
@@ -163,7 +171,8 @@ public final class SearchTextTool extends NavigationTool {
     private static @Nullable Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {
         try {
             int flags = isRegex ? 0 : Pattern.LITERAL;
-            if (!caseSensitive) flags |= Pattern.CASE_INSENSITIVE;
+            // UNICODE_CASE: without it CASE_INSENSITIVE only folds ASCII, so "ÄÖ" would not find "äö".
+            if (!caseSensitive) flags |= Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
             return Pattern.compile(query, flags);
         } catch (PatternSyntaxException e) {
             return null;
@@ -204,7 +213,18 @@ public final class SearchTextTool extends NavigationTool {
         var params = new SearchParams(pattern, basePath, cfg.filePattern(), compiledFileGlob, results, positions,
             skippedLarge, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes,
             outputTruncated, entrySeparator, scopeFilter);
-        ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
+        // Collect and sort first: the content iteration order depends on module and content-root order, and
+        // offset pagination is only correct if every call visits the files in the same order.
+        List<SearchCandidate> candidates = new ArrayList<>();
+        ProjectFileIndex.getInstance(project).iterateContent(vf -> {
+            String relPath = candidatePath(vf, params);
+            if (relPath != null) candidates.add(new SearchCandidate(vf, relPath));
+            return true;
+        });
+        candidates.sort(Comparator.comparing(SearchCandidate::relPath).thenComparing(c -> c.vf().getPath()));
+        for (SearchCandidate candidate : candidates) {
+            if (!searchCandidate(candidate, params)) break;
+        }
 
         if (positions != null && !positions.isEmpty()) {
             showResultsInUsageView(cfg.query(), positions);
@@ -232,7 +252,7 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     private void showResultsInUsageView(String query, List<MatchPosition> positions) {
-        // PsiFile objects are pre-resolved in the read-action pass (processFile → searchFileForPattern).
+        // PsiFile objects are pre-resolved in the read-action pass (searchCandidate → searchFileForPattern).
         // No PsiManager lookup needed on the EDT.
         List<MatchPosition> snapshot = List.copyOf(positions);
         ApplicationManager.getApplication().invokeLater(() -> {
@@ -278,13 +298,28 @@ public final class SearchTextTool extends NavigationTool {
         }
     }
 
-    private boolean processFile(VirtualFile vf, SearchParams p) {
-        if (vf.isDirectory()) return true;
-        if (p.scopeFilter() != null && !p.scopeFilter().test(vf)) return true;
+    private record SearchCandidate(VirtualFile vf, String relPath) {
+    }
+
+    /**
+     * Returns the project-relative path if the file passes scope and glob filters, otherwise null.
+     */
+    private @Nullable String candidatePath(VirtualFile vf, SearchParams p) {
+        if (vf.isDirectory()) return null;
+        if (p.scopeFilter() != null && !p.scopeFilter().test(vf)) return null;
         String relPath = relativize(p.basePath(), vf.getPath());
-        if (relPath == null) return true;
+        if (relPath == null) return null;
         if (!p.filePattern().isEmpty() && ToolUtils.doesNotMatchGlob(relPath, p.filePattern(), p.compiledFileGlob()))
-            return true;
+            return null;
+        return relPath;
+    }
+
+    /**
+     * Searches one file; returns false once the result limit or output budget is reached.
+     */
+    private boolean searchCandidate(SearchCandidate candidate, SearchParams p) {
+        VirtualFile vf = candidate.vf();
+        String relPath = candidate.relPath();
         if (vf.getLength() > 1_000_000) {
             p.skippedLarge().incrementAndGet();
             return p.results().size() < p.maxResults();

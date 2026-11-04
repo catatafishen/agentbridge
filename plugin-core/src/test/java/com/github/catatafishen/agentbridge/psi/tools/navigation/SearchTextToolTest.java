@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.navigation;
 
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
@@ -243,7 +244,7 @@ public class SearchTextToolTest extends BasePlatformTestCase {
     public void testOutputCapUsesReturnedEntriesAndReportsNextOffset() {
         StringBuilder content = new StringBuilder();
         for (int i = 0; i < 100; i++) {
-            content.append("// INLINE_BUDGET_TOKEN_7841 ").append("é".repeat(600)).append('\n');
+            content.append("// INLINE_BUDGET_TOKEN_7841 ").repeat("é", 600).append('\n');
         }
         myFixture.addFileToProject("InlineBudget.java", content.toString());
 
@@ -264,6 +265,49 @@ public class SearchTextToolTest extends BasePlatformTestCase {
             returnedEntries < 80);
         assertTrue("Expected pagination to continue after returned entries, got: " + result,
             result.contains("Use offset=" + (20 + returnedEntries)));
+    }
+
+    /**
+     * Paging one match at a time must visit the files in a fixed (path-sorted) order, independent of the
+     * order in which they were created, so that offset pagination never skips or repeats a match.
+     */
+    public void testPagingVisitsFilesInSortedOrder() {
+        myFixture.addFileToProject("pageorder/c/Gamma.txt", "PAGE_ORDER_TOKEN_5521\n");
+        myFixture.addFileToProject("pageorder/a/Alpha.txt", "PAGE_ORDER_TOKEN_5521\n");
+        myFixture.addFileToProject("pageorder/b/Beta.txt", "PAGE_ORDER_TOKEN_5521\n");
+
+        StringBuilder order = new StringBuilder();
+        for (int offset = 0; offset < 3; offset++) {
+            JsonObject a = args("query", "PAGE_ORDER_TOKEN_5521");
+            a.addProperty("max_results", 1);
+            a.addProperty("offset", offset);
+            String result = tool.execute(a);
+            order.append(result.contains("Alpha.txt") ? 'A' : result.contains("Beta.txt") ? 'B'
+                : result.contains("Gamma.txt") ? 'G' : '?');
+        }
+        assertEquals("Expected files in path order across pages", "ABG", order.toString());
+    }
+
+    public void testCaseInsensitiveSearchFoldsNonAsciiLetters() {
+        myFixture.addFileToProject("UnicodeCase.txt", "// Grüße ÄÖÜ_UNICODE_CASE_9913\n");
+
+        JsonObject a = args("query", "äöü_unicode_case_9913");
+        a.addProperty("case_sensitive", false);
+        String result = tool.execute(a);
+
+        assertTrue("Non-ASCII letters must be matched case-insensitively, got: " + result,
+            result.startsWith("1 matches:"));
+    }
+
+    public void testLibrariesScopeIsRejectedInsteadOfSearchingProject() {
+        myFixture.addFileToProject("LibScope.txt", "LIBSCOPE_TOKEN_2288\n");
+
+        String result = tool.execute(args("query", "LIBSCOPE_TOKEN_2288", "scope", "libraries"));
+
+        assertTrue("Expected error for unsupported scope, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertFalse("Must not return project matches for scope=libraries, got: " + result,
+            result.contains("LibScope.txt"));
     }
 
     /**

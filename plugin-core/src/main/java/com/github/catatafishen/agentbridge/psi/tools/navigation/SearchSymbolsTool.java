@@ -18,9 +18,11 @@ import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Searches for classes, methods, or fields by name using IntelliJ's symbol index.
@@ -168,8 +170,11 @@ public final class SearchSymbolsTool extends NavigationTool {
     }
 
     private String searchExact(String query, String typeFilter, GlobalSearchScope scope, int maxResults, int offset) {
-        List<String> results = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        // The platform invokes the processor from several worker threads at once, so the collections must be
+        // thread-safe. The search also must not stop early: which hits arrive first differs from run to run,
+        // so cutting off at offset+maxResults would return a different page each time.
+        List<String> found = Collections.synchronizedList(new ArrayList<>());
+        Set<String> seen = ConcurrentHashMap.newKeySet();
         String basePath = project.getBasePath();
 
         PsiSearchHelper.getInstance(project).processElementsWithWord(
@@ -178,13 +183,16 @@ public final class SearchSymbolsTool extends NavigationTool {
                 if (parent instanceof PsiNamedElement named && query.equals(named.getName())) {
                     String type = ToolUtils.classifyElement(parent);
                     if (type != null && (typeFilter.isEmpty() || type.equals(typeFilter))) {
-                        addSymbolResult(parent, basePath, seen, results);
+                        addSymbolResult(parent, basePath, seen, found);
                     }
                 }
-                return results.size() < offset + maxResults;
+                return true;
             },
             scope, query, UsageSearchContext.IN_CODE, true
         );
+
+        List<String> results = new ArrayList<>(found);
+        Collections.sort(results);
 
         // Apply offset
         List<String> page = offset >= results.size() ? List.of() : results.subList(offset, Math.min(results.size(), offset + maxResults));
