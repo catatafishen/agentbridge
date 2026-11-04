@@ -81,7 +81,7 @@ public class NativeChatReviewPendingTest extends NativeMarkdownPaneTestBase {
         assertTrue(button(panel, OPEN).isEnabled());
     }
 
-    public void testEndApprovedKeepsMessageAndGreysButtons() {
+    public void testEndReleasedKeepsMessageAndGreysButtons() {
         NativeChatPanel panel = new NativeChatPanel(getProject());
         panel.showReviewPending("req-1", "git commit", 2, new CountingControls());
 
@@ -91,11 +91,23 @@ public class NativeChatReviewPendingTest extends NativeMarkdownPaneTestBase {
         assertFalse(button(panel, APPROVE).isEnabled());
         assertFalse(button(panel, OPEN).isEnabled());
         String text = allMarkdown(panel);
-        assertTrue("text must say the review is complete: " + text, text.contains("Review complete"));
+        assertTrue("text must say the review finished: " + text, text.contains("Review finished"));
         assertFalse("pending wording must be replaced: " + text, text.contains("Waiting for your review"));
     }
 
-    public void testEndNotApprovedSaysNoLongerPending() {
+    public void testReleasedTextDoesNotClaimTheEditsWereApproved() {
+        // "Released" also covers the last pending file being reverted, so the text must not say "approved".
+        NativeChatPanel panel = new NativeChatPanel(getProject());
+        panel.showReviewPending("req-1", "git commit", 2, new CountingControls());
+
+        panel.endReviewPending("req-1", true);
+
+        String text = allMarkdown(panel);
+        assertFalse("must not claim approval: " + text, text.contains("approved"));
+        assertFalse("must not claim approval: " + text, text.contains("Review complete"));
+    }
+
+    public void testEndNotReleasedSaysNoLongerPending() {
         NativeChatPanel panel = new NativeChatPanel(getProject());
         panel.showReviewPending("req-1", "git commit", 2, new CountingControls());
 
@@ -105,7 +117,7 @@ public class NativeChatReviewPendingTest extends NativeMarkdownPaneTestBase {
         assertFalse(button(panel, OPEN).isEnabled());
         String text = allMarkdown(panel);
         assertTrue("text must say it is no longer pending: " + text, text.contains("no longer pending"));
-        assertFalse("must not claim approval: " + text, text.contains("Review complete"));
+        assertFalse("must not say the review finished: " + text, text.contains("Review finished"));
     }
 
     public void testEndUnknownIdIsNoOp() {
@@ -126,7 +138,7 @@ public class NativeChatReviewPendingTest extends NativeMarkdownPaneTestBase {
         panel.endReviewPending("req-1", false);
 
         assertTrue("the first outcome wins: " + allMarkdown(panel),
-            allMarkdown(panel).contains("Review complete"));
+            allMarkdown(panel).contains("Review finished"));
     }
 
     public void testShowingSameIdTwiceDoesNotDuplicate() {

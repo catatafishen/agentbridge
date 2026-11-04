@@ -147,15 +147,7 @@ public final class GitCommitTool extends GitTool {
 
     private static @Nullable String requiredMessage(@NotNull JsonObject args) {
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) return null;
-        return normalizeMessage(args.get(PARAM_MESSAGE).getAsString());
-    }
-
-    /**
-     * Some clients send line breaks as literal backslash-n text; convert them to real newlines.
-     */
-    static @NotNull String normalizeMessage(@NotNull String message) {
-        if (message.indexOf('\n') >= 0) return message;
-        return message.replace("\\r\\n", "\n").replace("\\n", "\n");
+        return args.get(PARAM_MESSAGE).getAsString();
     }
 
     private String awaitCommitReview(@NotNull String root, boolean commitAll, boolean isAmend) {
