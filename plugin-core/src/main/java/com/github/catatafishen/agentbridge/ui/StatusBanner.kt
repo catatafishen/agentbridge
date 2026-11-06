@@ -37,8 +37,9 @@ internal fun statusBorderColor(status: EditorNotificationPanel.Status): java.awt
     EditorNotificationPanel.Status.Warning -> JBUI.CurrentTheme.Banner.WARNING_BORDER_COLOR
     EditorNotificationPanel.Status.Error -> JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR
     EditorNotificationPanel.Status.Promo -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
-    EditorNotificationPanel.Status.InfoMuted -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
-    EditorNotificationPanel.Status.NeutralMuted -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+    // Newer IDEs (2026.3+) added InfoMuted/NeutralMuted; referencing them by name would break
+    // compilation against older supported IDEs, so cover them (and any future entries) with else.
+    else -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
 }
 
 /**

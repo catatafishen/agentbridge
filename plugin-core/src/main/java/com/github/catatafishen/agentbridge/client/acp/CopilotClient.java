@@ -640,7 +640,7 @@ public final class CopilotClient extends AcpClient {
     private String buildDefaultAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Default",
-            InstructionBuilder.build("Full-featured ${" + InstructionBuilder.KEY_IDE_NAME + "} coding assistant with access to all IDE tools"),
+            InstructionBuilder.build("Full-featured " + InstructionBuilder.KEY_IDE_NAME + " coding assistant with access to all IDE tools"),
             merge(allMcpToolIds(), WEB_TOOLS),
             defaultAgentInstructions()
         );
@@ -649,7 +649,7 @@ public final class CopilotClient extends AcpClient {
     private String buildExploreAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Explore",
-            InstructionBuilder.build("Read-only ${" + InstructionBuilder.KEY_IDE_NAME + "} code explorer for analysing and understanding a codebase"),
+            InstructionBuilder.build("Read-only " + InstructionBuilder.KEY_IDE_NAME + " code explorer for analysing and understanding a codebase"),
             merge(exploreMcpToolIds(), WEB_TOOLS),
                 InstructionBuilder.build("""
                 You are a read-only code analysis assistant running inside a ${IDE_NAME}
@@ -671,8 +671,8 @@ public final class CopilotClient extends AcpClient {
     private String buildEditAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Edit",
-            InstructionBuilder.build("Focused ${" + InstructionBuilder.KEY_IDE_NAME
-                + "}\" code editing assistant — makes targeted changes and validates them"),
+            InstructionBuilder.build("Focused " + InstructionBuilder.KEY_IDE_NAME
+                + " code editing assistant — makes targeted changes and validates them"),
             merge(editMcpToolIds(), WEB_TOOLS),
                 InstructionBuilder.build("""
                 You are a precise code editing assistant running inside a ${IDE_NAME}
