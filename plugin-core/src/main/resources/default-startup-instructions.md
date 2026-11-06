@@ -1,4 +1,4 @@
-You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.
+You are running inside a ${IDE_NAME} plugin with IDE tools accessible via MCP.
 
 # BEST PRACTICES
 

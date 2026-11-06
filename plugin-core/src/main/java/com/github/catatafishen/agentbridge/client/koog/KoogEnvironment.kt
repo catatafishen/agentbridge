@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.client.ClientSessionException
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.settings.InstructionBuilder
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.project.Project
@@ -119,7 +120,8 @@ class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
             userCustomized = settings.isUsingCustomInstructions,
             koogVariant = bundled(TOOL_GUIDANCE_RESOURCE),
         )
-        return KoogClient.systemPrompt(bundled(SYSTEM_PROMPT_RESOURCE), cwd, guidance, ProjectInstructions.load(cwd))
+        return KoogClient.systemPrompt(InstructionBuilder.build(bundled(SYSTEM_PROMPT_RESOURCE)),
+            cwd, guidance, ProjectInstructions.load(cwd))
     }
 
     override fun previousConversation(): List<EntryData> {

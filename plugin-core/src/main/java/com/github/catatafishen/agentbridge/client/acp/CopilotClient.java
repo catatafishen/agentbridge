@@ -13,6 +13,7 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.InstructionBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.notification.Notification;
@@ -617,12 +618,12 @@ public final class CopilotClient extends AcpClient {
     }
 
     static String defaultAgentInstructions() {
-        return """
-            You are running inside an IntelliJ IDEA plugin. All interactions with the
+        return InstructionBuilder.build("""
+            You are running inside a ${IDE_NAME} plugin. All interactions with the"
             system go through AgentBridge MCP tools. You do NOT have direct access to
             git, curl, gh, or any CLI tool — use the agentbridge equivalents instead.
 
-            IMPORTANT — use IntelliJ MCP tools, not shell commands, for the following:
+            IMPORTANT — use ${IDE_NAME} MCP tools, not shell commands, for the following:
             - Git: use git_status, git_diff, git_log, git_commit, git_stage, git_branch, etc.
               Do NOT run git via run_command or run_in_terminal — it causes editor buffer desync.
             - File reading: use read_file, not cat/head/tail via run_command.
@@ -633,13 +634,13 @@ public final class CopilotClient extends AcpClient {
               the dedicated IDE action cannot complete the required build or test.
             - HTTP/API calls: use http_request, not curl/gh/wget via run_command.
               It applies the project's configured AgentBridge hooks and keeps requests visible in the IDE.
-            """;
+            """);
     }
 
     private String buildDefaultAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Default",
-            "Full-featured IntelliJ coding assistant with access to all IDE tools",
+            InstructionBuilder.build("Full-featured ${" + InstructionBuilder.KEY_IDE_NAME + "} coding assistant with access to all IDE tools"),
             merge(allMcpToolIds(), WEB_TOOLS),
             defaultAgentInstructions()
         );
@@ -648,43 +649,44 @@ public final class CopilotClient extends AcpClient {
     private String buildExploreAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Explore",
-            "Read-only IntelliJ code explorer for analysing and understanding a codebase",
+            InstructionBuilder.build("Read-only ${" + InstructionBuilder.KEY_IDE_NAME + "} code explorer for analysing and understanding a codebase"),
             merge(exploreMcpToolIds(), WEB_TOOLS),
-            """
-                You are a read-only code analysis assistant running inside an IntelliJ IDEA
+                InstructionBuilder.build("""
+                You are a read-only code analysis assistant running inside a ${IDE_NAME}
                 plugin. Your role is to explore, search, and explain the codebase — not to
                 make any changes. You do NOT have direct access to git, curl, gh, or any
                 CLI tool — use only the AgentBridge MCP tools provided.
 
-                Use IntelliJ tools for all exploration:
+                Use ${IDE_NAME} tools for all exploration:
                 - read_file, list_project_files, get_file_outline for file content
                 - search_text, search_symbols, find_references, find_implementations for search
                 - git_status, git_diff, git_log for git history
                 - get_compilation_errors, get_problems for diagnostics
 
                 Do NOT suggest or make any edits to files.
-                """
+                """)
         );
     }
 
     private String buildEditAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Edit",
-            "Focused IntelliJ code editing assistant — makes targeted changes and validates them",
+            InstructionBuilder.build("Focused ${" + InstructionBuilder.KEY_IDE_NAME
+                + "}\" code editing assistant — makes targeted changes and validates them"),
             merge(editMcpToolIds(), WEB_TOOLS),
-            """
-                You are a precise code editing assistant running inside an IntelliJ IDEA
+                InstructionBuilder.build("""
+                You are a precise code editing assistant running inside a ${IDE_NAME}
                 plugin. Make targeted, minimal changes and verify them with build_project
                 or run_tests after each edit. You do NOT have direct access to git, curl,
                 gh, or any CLI tool — use only the AgentBridge MCP tools provided.
 
-                IMPORTANT — use IntelliJ MCP tools, not shell commands:
+                IMPORTANT — use ${IDE_NAME} MCP tools, not shell commands:
                 - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
                 - File editing: use edit_text, write_file, replace_symbol_body.
                 - Search: use search_text, search_symbols, not grep via run_command.
                 - Build/test: prefer build_project and run_tests; use run_command as a fallback when needed.
                 - HTTP/API calls: use http_request, not curl/gh via run_command.
-                """
+                """)
         );
     }
 

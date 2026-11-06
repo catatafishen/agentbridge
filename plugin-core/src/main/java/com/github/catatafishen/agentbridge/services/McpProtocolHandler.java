@@ -22,6 +22,7 @@ import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
+import com.github.catatafishen.agentbridge.settings.InstructionBuilder;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
@@ -404,13 +405,13 @@ public final class McpProtocolHandler {
     private static String loadInstructions() {
         try (java.io.InputStream is = McpProtocolHandler.class.getResourceAsStream("/default-startup-instructions.md")) {
             if (is != null) {
-                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                return InstructionBuilder.build(new String(is.readAllBytes(), StandardCharsets.UTF_8));
             }
             LOG.warn("Resource /default-startup-instructions.md not found in classpath for MCP initialize");
         } catch (IOException e) {
             LOG.error("Failed to read /default-startup-instructions.md from classpath for MCP initialize", e);
         }
-        return "You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.";
+        return InstructionBuilder.buildDefault();
     }
 
     private JsonObject handleToolsList(JsonObject msg) {
