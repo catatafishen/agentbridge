@@ -546,6 +546,21 @@ tasks {
         useJUnitPlatform {
             excludeTags("integration")
         }
+        // The tests assert English-formatted output ("1.5 KB", "On branch 'x'"), so they
+        // depend on the JVM default locale. A dev machine is not always English: under a
+        // German locale "1.5 KB" is rendered "1,5 KB" and "On branch" becomes
+        // "Auf Branch", and 47 tests then fail for a reason unrelated to the change under
+        // test. Pin the test JVM to en_US, the locale the CI runners use, so local and CI
+        // runs compare against the same strings.
+        systemProperty("user.language", "en")
+        systemProperty("user.country", "US")
+        // git4idea hands us the git command line's own output, and git localizes that from
+        // the process environment, not from the JVM: under a German locale "On branch"
+        // arrives as "Auf Branch", so GitToolsTest's assertion on the verbose status text
+        // fails locally and passes on CI. C.UTF-8 is the neutral locale git answers in
+        // there; plain "C" would do the same for git but leaves the JVM filesystem encoding
+        // unmappable for non-ASCII paths (BinaryDetectorTest scans a path with ö and å).
+        environment("LC_ALL", "C.UTF-8")
         // isIncludeNoLocationClasses: includes classes with no ProtectionDomain in the
         // report (e.g. dynamically generated classes).
         extensions.configure<JacocoTaskExtension> {
