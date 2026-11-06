@@ -35,6 +35,10 @@ dependencies {
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
         bundledPlugin("com.intellij.database")
+        // The VCS platform plugin is not always on the compile classpath in IntelliJ
+        // even though Git / VCS APIs are used indirectly by the IDE agent. Without it, Gradle
+        // fails with "Could not find bundled plugin with ID: 'com.intellij.platform.vcs'".
+        bundledPlugin("com.intellij.platform.vcs")
         // Required in IU 2026.1+ (moved from lib/modules/ to lib/). IU 2026.2 removed the jar
         // entirely, so only request it when we know it exists — see plugin-core/build.gradle.kts
         // for the matching guard and rationale.
