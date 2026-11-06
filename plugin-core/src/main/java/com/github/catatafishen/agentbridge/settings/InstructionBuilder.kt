@@ -6,34 +6,32 @@ import com.intellij.openapi.application.ApplicationInfo
  * Builds the agents' startup instructions with the IDE name dynamically inserted.
  * This allows the instructions to better fit to **all** JetBrains IDEs.
  */
-class InstructionBuilder {
-    companion object {
-        /**
-         * The placeholder for the IDE name in the instructions.
-         * The IDE name is dynamically inserted at runtime.
-         */
-        @JvmField
-        var KEY_IDE_NAME: String = $$"${IDE_NAME}"
+object InstructionBuilder {
 
-        private fun ideName(): String = ApplicationInfo.getInstance().fullApplicationName
+    /**
+     * The placeholder for the IDE name in the instructions (literally `${IDE_NAME}`).
+     * The IDE name is dynamically inserted at runtime.
+     */
+    const val KEY_IDE_NAME: String = "\${IDE_NAME}"
 
-        /**
-         * Default instructions for the agent, with the IDE name dynamically inserted.
-         */
-        @JvmStatic
-        fun buildDefault(): String {
-            return "You are running inside a ${ideName()} plugin with IDE tools accessible via MCP."
-        }
+    private fun ideName(): String = ApplicationInfo.getInstance().fullApplicationName
 
-        /**
-         * Builds a string with the IDE name dynamically inserted. The string must contain the placeholder
-         * `${IDE_NAME}` / [KEY_IDE_NAME] for the IDE name to be inserted.
-         */
-        @JvmStatic
-        fun build(string: String): String {
-            return string.replace(
-                KEY_IDE_NAME, ideName()
-            )
-        }
-    }
+    /**
+     * Default instructions for the agent, with the IDE name dynamically inserted.
+     */
+    @JvmStatic
+    fun buildDefault(): String =
+        build("You are running inside a $KEY_IDE_NAME plugin with IDE tools accessible via MCP.")
+
+    /**
+     * Replaces every [KEY_IDE_NAME] placeholder in [string] with the running IDE's name.
+     */
+    @JvmStatic
+    fun build(string: String): String = replacePlaceholder(string, ideName())
+
+    /**
+     * Pure substitution, separated from [ApplicationInfo] so it can be unit-tested.
+     */
+    @JvmStatic
+    fun replacePlaceholder(string: String, ideName: String): String = string.replace(KEY_IDE_NAME, ideName)
 }

@@ -370,9 +370,9 @@ public final class JunieClient extends AcpClient {
      */
     static String buildInstructionsStatic(@Nullable String userInstructions) {
         StringBuilder sb = new StringBuilder();
-        sb.append("CRITICAL: You are running inside a ${")
+        sb.append("CRITICAL: You are running inside a ")
             .append(InstructionBuilder.KEY_IDE_NAME)
-            .append("} plugin. ")
+            .append(" plugin. ")
             .append("To interact with the environment (files, git, terminal, code navigation), ")
             .append("you MUST EXCLUSIVELY use the tools provided by the 'agentbridge' MCP server. ")
             .append("DO NOT use your built-in tools for these operations. ")
