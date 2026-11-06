@@ -32,11 +32,13 @@ import javax.swing.event.AncestorListener
  * so we map each status to its corresponding [com.intellij.util.ui.JBUI.CurrentTheme.Banner] color.
  */
 internal fun statusBorderColor(status: EditorNotificationPanel.Status): java.awt.Color = when (status) {
-    EditorNotificationPanel.Status.Info -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
-    EditorNotificationPanel.Status.Success -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.SUCCESS_BORDER_COLOR
-    EditorNotificationPanel.Status.Warning -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.WARNING_BORDER_COLOR
-    EditorNotificationPanel.Status.Error -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR
-    EditorNotificationPanel.Status.Promo -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+    EditorNotificationPanel.Status.Info -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+    EditorNotificationPanel.Status.Success -> JBUI.CurrentTheme.Banner.SUCCESS_BORDER_COLOR
+    EditorNotificationPanel.Status.Warning -> JBUI.CurrentTheme.Banner.WARNING_BORDER_COLOR
+    EditorNotificationPanel.Status.Error -> JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR
+    EditorNotificationPanel.Status.Promo -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+    EditorNotificationPanel.Status.InfoMuted -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+    EditorNotificationPanel.Status.NeutralMuted -> JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
 }
 
 /**

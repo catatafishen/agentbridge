@@ -62,6 +62,13 @@ dependencies {
         // modules. IU 262 (2026.2) stopped auto-including every lib/*.jar product module on the
         // compile classpath, so request them explicitly. Harmless no-op on older versions where
         // they were already auto-included.
+        //
+        // com.intellij.platform.vcs is the plugin that *contains* the vcs.dvcs / vcs.log.impl
+        // modules. IU 263 (2026.3) moved those jars from lib/modules/ into
+        // plugins/platform-vcs-plugin/lib/modules/, so IPGP bundledModule() can only find them
+        // when the containing plugin is declared. Harmless no-op on 262 and older (the jars were
+        // in lib/modules/ where they are scanned unconditionally).
+        bundledPlugin("com.intellij.platform.vcs")
         bundledModule("intellij.platform.vcs.dvcs")
         bundledModule("intellij.platform.vcs.dvcs.impl")
         bundledModule("intellij.platform.vcs.log.impl")
@@ -71,6 +78,15 @@ dependencies {
         // an unconditional bundledLibrary() call here would break every local 2026.2 build outright.
         if (localPath == null || file("$localPath/lib/intellij.libraries.lucene.common.jar").exists()) {
             bundledLibrary("lib/intellij.libraries.lucene.common.jar")
+        }
+        // com.intellij.vcs.log.impl.HashImpl (used by FileNavigator and PlatformApiCompat) was inside
+        // the intellij.platform.vcs.log.impl module jar through IU 262, where bundledModule() above
+        // resolves it. In IU 263 (2026.3) it moved to lib/intellij.platform.vcs.impl.shared.jar, which
+        // local() does NOT auto-include (IPGP excludes intellij.*.jar files from the boot classpath).
+        // The file is not present in lib/ in 2026.1 (CI), so guard with localPath != null to avoid
+        // breaking the CI build.
+        if (localPath != null && file("$localPath/lib/intellij.platform.vcs.impl.shared.jar").exists()) {
+            bundledLibrary("lib/intellij.platform.vcs.impl.shared.jar")
         }
     }
 
