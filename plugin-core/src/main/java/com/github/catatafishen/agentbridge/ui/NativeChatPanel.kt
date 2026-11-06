@@ -593,11 +593,13 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             override fun isVisible() = super.isVisible() && comp.isVisible
             override fun getMaximumSize(): Dimension {
                 val compMax = comp.maximumSize
-                return if (compMax.height in 1 until Short.MAX_VALUE) {
-                    Dimension(Short.MAX_VALUE.toInt(), compMax.height + inset)
-                } else {
-                    Dimension(Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                // Preserve unbounded child heights; Short.MAX_VALUE clips long markdown bubbles.
+                val maxHeight = when {
+                    compMax.height <= 0 -> Int.MAX_VALUE
+                    compMax.height >= Int.MAX_VALUE - inset -> Int.MAX_VALUE
+                    else -> compMax.height + inset
                 }
+                return Dimension(Short.MAX_VALUE.toInt(), maxHeight)
             }
         }.apply {
             isOpaque = false

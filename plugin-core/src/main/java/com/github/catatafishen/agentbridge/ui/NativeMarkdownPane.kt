@@ -294,10 +294,9 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * HTML rendering) and stores the result.
      *
      * **During a resize burst** (within [RESIZE_BURST_WINDOW_NANOS] of the last observed
-     * width change): draws the previous frame at its original dimensions. The image may be
-     * slightly clipped or padded, but this is imperceptible while the user is dragging. Once
-     * the burst settles, [resizeSettleTimer] forces a revalidation so the next paint captures
-     * an accurate frame at the final width.
+     * width change): reuses the previous frame when it is no wider than the component. When
+     * the component narrows, renders immediately at the new width to avoid clipping text.
+     * Once the burst settles, [resizeSettleTimer] forces a revalidation for an accurate layout.
      *
      * **Text selection**: if the user has selected text, the cache is bypassed so the
      * selection highlight is always painted live.
@@ -322,18 +321,23 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             return
         }
 
-        // Resize burst: draw the stale frame rather than triggering an expensive re-render
-        // on every pixel of drag. The old image is drawn at its stored dimensions; Swing's
-        // clip region limits any over-draw beyond the component's current bounds.
+        // During a resize burst, defer rendering only when the cached frame cannot crop text.
         if (paintCache != null && ResizeBurstClock.isBurstActive()) {
-            UIUtil.drawImage(g, paintCache!!, 0, 0, null)
-            return
+            resizeSettleTimer.restart()
+            // A wider cached frame would clip its right-hand text when the pane narrows.
+            // Re-render shrink operations immediately; only defer paints that cannot crop text.
+            if (paintCacheW <= w) {
+                UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+                return
+            }
         }
 
         // Stale-frame (tab switch after resize): content unchanged but dimensions differ.
         // Blit the old frame immediately for a zero-cost first paint, then schedule a single
         // accurate repaint on the next EDT pass so the correct frame appears right after.
-        if (paintCache != null && paintCacheVersion == contentVersion && !staleRepaintPending) {
+        if (paintCache != null && paintCacheW <= w &&
+            paintCacheVersion == contentVersion && !staleRepaintPending
+        ) {
             UIUtil.drawImage(g, paintCache!!, 0, 0, null)
             staleRepaintPending = true
             SwingUtilities.invokeLater {
@@ -894,13 +898,19 @@ internal class WrappingInlineView(elem: Element) : InlineView(elem) {
 
 /**
  * An [HTMLEditorKit] whose view factory creates [ScrollableCodeView] for `<pre>` elements and
- * [WrappingInlineView] for the text everywhere else.
+ * [WrappingInlineView] for the text everywhere else. The body can shrink below its children's
+ * minimum width so a wide table does not force surrounding paragraphs beyond the pane.
  */
 internal class ScrollableHTMLEditorKit : HTMLEditorKit() {
     private val factory = object : HTMLFactory() {
         override fun create(elem: Element): View {
             val tag = tagOf(elem)
             if (tag == HTML.Tag.PRE) return ScrollableCodeView(elem)
+            if (tag == HTML.Tag.BODY) return object : BlockView(elem, View.Y_AXIS) {
+                // A table's minimum width must not widen sibling prose beyond the pane.
+                override fun getMinimumSpan(axis: Int): Float =
+                    if (axis == X_AXIS) 0f else super.getMinimumSpan(axis)
+            }
             // Code blocks keep their lines intact and scroll sideways instead.
             if (tag == HTML.Tag.CONTENT && !isInsideCodeBlock(elem)) return WrappingInlineView(elem)
             return super.create(elem)
