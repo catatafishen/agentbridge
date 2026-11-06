@@ -93,11 +93,11 @@ public final class StartupInstructionsSettings implements PersistentStateCompone
     public String getDefaultTemplate() {
         try (InputStream is = getClass().getResourceAsStream("/default-startup-instructions.md")) {
             if (is != null) {
-                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                return InstructionBuilder.build(new String(is.readAllBytes(), StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
             // Fallback if resource not found
         }
-        return "You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.";
+        return InstructionBuilder.buildDefault();
     }
 }

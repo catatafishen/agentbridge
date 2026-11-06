@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
+import com.github.catatafishen.agentbridge.settings.InstructionBuilder;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -161,14 +162,14 @@ public final class InstructionsManager {
     private static void appendResource(@NotNull StringBuilder sb, @NotNull String resourcePath) {
         try (InputStream is = InstructionsManager.class.getResourceAsStream(resourcePath)) {
             if (is != null) {
-                sb.append(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+                sb.append(InstructionBuilder.build(new String(is.readAllBytes(), StandardCharsets.UTF_8)));
             } else {
                 LOG.warn("Resource " + resourcePath + " not found in classpath");
-                sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
+                sb.append(InstructionBuilder.buildDefault());
             }
         } catch (IOException e) {
             LOG.error("Failed to read " + resourcePath + " from classpath", e);
-            sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
+            sb.append(InstructionBuilder.buildDefault());
         }
     }
 

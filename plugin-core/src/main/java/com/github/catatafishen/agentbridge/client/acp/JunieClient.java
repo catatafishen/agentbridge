@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.settings.InstructionBuilder;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -369,7 +370,9 @@ public final class JunieClient extends AcpClient {
      */
     static String buildInstructionsStatic(@Nullable String userInstructions) {
         StringBuilder sb = new StringBuilder();
-        sb.append("CRITICAL: You are running inside an IntelliJ IDEA plugin. ")
+        sb.append("CRITICAL: You are running inside a ${")
+            .append(InstructionBuilder.KEY_IDE_NAME)
+            .append("} plugin. ")
             .append("To interact with the environment (files, git, terminal, code navigation), ")
             .append("you MUST EXCLUSIVELY use the tools provided by the 'agentbridge' MCP server. ")
             .append("DO NOT use your built-in tools for these operations. ")
@@ -379,6 +382,6 @@ public final class JunieClient extends AcpClient {
         if (userInstructions != null && !userInstructions.isBlank()) {
             sb.append("\n\n").append(userInstructions);
         }
-        return sb.toString();
+        return InstructionBuilder.build(sb.toString());
     }
 }
