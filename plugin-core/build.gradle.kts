@@ -68,7 +68,13 @@ dependencies {
         // plugins/platform-vcs-plugin/lib/modules/, so IPGP bundledModule() can only find them
         // when the containing plugin is declared. Harmless no-op on 262 and older (the jars were
         // in lib/modules/ where they are scanned unconditionally).
-        bundledPlugin("com.intellij.platform.vcs")
+        //
+        // The plugin ID does not exist in older IDEs (CI builds against 2026.1 and fails with
+        // "Could not find bundled plugin with ID"), so only request it for a local IDE that
+        // actually ships the plugin directory.
+        if (localPath != null && file("$localPath/plugins/platform-vcs-plugin").exists()) {
+            bundledPlugin("com.intellij.platform.vcs")
+        }
         bundledModule("intellij.platform.vcs.dvcs")
         bundledModule("intellij.platform.vcs.dvcs.impl")
         bundledModule("intellij.platform.vcs.log.impl")

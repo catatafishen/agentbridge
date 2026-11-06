@@ -38,7 +38,11 @@ dependencies {
         // The VCS platform plugin is not always on the compile classpath in IntelliJ
         // even though Git / VCS APIs are used indirectly by the IDE agent. Without it, Gradle
         // fails with "Could not find bundled plugin with ID: 'com.intellij.platform.vcs'".
-        bundledPlugin("com.intellij.platform.vcs")
+        // Only request it for a local IDE that ships it (2026.3+); the ID does not exist in the
+        // IDE CI builds against. See plugin-core/build.gradle.kts for rationale.
+        if (localPath != null && file("$localPath/plugins/platform-vcs-plugin").exists()) {
+            bundledPlugin("com.intellij.platform.vcs")
+        }
         // Required in IU 2026.1+ (moved from lib/modules/ to lib/). IU 2026.2 removed the jar
         // entirely, so only request it when we know it exists — see plugin-core/build.gradle.kts
         // for the matching guard and rationale.
