@@ -1896,6 +1896,11 @@ public abstract class AcpClient extends AbstractClient {
         while (true) {
             try {
                 return future.get(INITIALIZE_POLL_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (ExecutionException failed) {
+                // e.g. the transport read loop failed pending requests on EOF after the process exited
+                Throwable cause = failed.getCause() != null ? failed.getCause() : failed;
+                throw new ExecutionException(startupFailureMessage(
+                    "failed before answering 'initialize' (" + cause.getMessage() + ")"), cause);
             } catch (TimeoutException pollElapsed) {
                 Process p = agentProcess;
                 if (p != null && !p.isAlive()) {

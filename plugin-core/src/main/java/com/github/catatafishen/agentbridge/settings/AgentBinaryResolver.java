@@ -123,9 +123,15 @@ public abstract class AgentBinaryResolver {
      */
     @Nullable
     public String detectVersion() {
-        String custom = customBinaryPath();
-        String primary = (custom != null && !custom.isEmpty()) ? custom : primaryBinaryName();
-        return BinaryDetector.detectBinaryVersion(primary, alternateNames());
+        // Go through resolve() so the desktop-bundle filter and custom path are honoured and
+        // the excluded GUI executable is never launched just to read a version.
+        String resolved = resolve();
+        if (resolved == null || resolved.isEmpty()) return null;
+        if (!resolved.contains("/") && !resolved.contains("\\")) {
+            // Bare custom name (not an absolute path): let the shell find it.
+            return BinaryDetector.detectBinaryVersion(resolved, new String[0]);
+        }
+        return BinaryDetector.getVersionForPath(resolved);
     }
 
     /**
