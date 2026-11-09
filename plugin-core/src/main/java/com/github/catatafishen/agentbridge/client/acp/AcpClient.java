@@ -89,6 +89,9 @@ public abstract class AcpClient extends AbstractClient {
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
 
     private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
+    private static final long INITIALIZE_POLL_MILLIS = 500;
+    private static final int STDERR_TAIL_LINES = 10;
+    private final java.util.Deque<String> recentStderr = new java.util.ArrayDeque<>();
     private static final long SESSION_TIMEOUT_SECONDS = 30;
     private static final long AUTH_TIMEOUT_SECONDS = 30;
     private static final long STOP_TIMEOUT_SECONDS = 5;
@@ -330,6 +333,9 @@ public abstract class AcpClient extends AbstractClient {
             LOG.info(displayName() + " starting...");
             int mcpPort = resolveMcpPort();
             LOG.info(displayName() + " launching process (MCP port: " + mcpPort + ")");
+            synchronized (recentStderr) {
+                recentStderr.clear();
+            }
             agentProcess = launchProcess(mcpPort);
             LOG.info(displayName() + " process launched, starting transport");
             transport.start(agentProcess);
@@ -1879,6 +1885,45 @@ public abstract class AcpClient extends AbstractClient {
         }
     }
 
+    /**
+     * Waits for the {@code initialize} reply, but fails fast if the child process exits first
+     * and explains which binary was launched, so a wrong executable (for example a desktop GUI
+     * app instead of the CLI) is diagnosable instead of a silent 90 s hang.
+     */
+    private JsonElement awaitInitializeResponse(CompletableFuture<JsonElement> future)
+        throws InterruptedException, ExecutionException, TimeoutException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(INITIALIZE_TIMEOUT_SECONDS);
+        while (true) {
+            try {
+                return future.get(INITIALIZE_POLL_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException pollElapsed) {
+                Process p = agentProcess;
+                if (p != null && !p.isAlive()) {
+                    throw new ExecutionException(startupFailureMessage(
+                        "exited with code " + p.exitValue() + " before answering 'initialize'"), pollElapsed);
+                }
+                if (System.nanoTime() >= deadline) {
+                    throw new TimeoutException(startupFailureMessage(
+                        "did not answer 'initialize' within " + INITIALIZE_TIMEOUT_SECONDS + "s"));
+                }
+            }
+        }
+    }
+
+    private String startupFailureMessage(String problem) {
+        StringBuilder sb = new StringBuilder(displayName()).append(' ').append(problem)
+            .append(". Launched: ").append(resolvedBinaryPath == null ? "<unknown>" : resolvedBinaryPath)
+            .append(". Make sure this is the command-line agent that supports ACP, not a desktop app. "
+                + "You can set the correct binary in Settings → Tools → AgentBridge → ")
+            .append(displayName()).append('.');
+        synchronized (recentStderr) {
+            if (!recentStderr.isEmpty()) {
+                sb.append(" Last stderr: ").append(String.join(" | ", recentStderr));
+            }
+        }
+        return sb.toString();
+    }
+
     private InitializeResponse initialize() throws InterruptedException, ExecutionException, TimeoutException {
         InitializeRequest request = new InitializeRequest(
             PROTOCOL_VERSION,
@@ -1889,7 +1934,7 @@ public abstract class AcpClient extends AbstractClient {
         JsonObject params = gson.toJsonTree(request).getAsJsonObject();
         CompletableFuture<JsonElement> future = transport.sendRequest("initialize", params);
 
-        JsonElement result = future.get(INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        JsonElement result = awaitInitializeResponse(future);
         InitializeResponse response = gson.fromJson(result, InitializeResponse.class);
 
         // ACP spec: version negotiation — if agent responds with a different version,
@@ -2055,8 +2100,13 @@ public abstract class AcpClient extends AbstractClient {
 
         transport.onRequest(this::handleAgentRequest);
 
-        transport.onStderr(line ->
-            LOG.warn("[" + agentId() + " stderr] " + line));
+        transport.onStderr(line -> {
+            LOG.warn("[" + agentId() + " stderr] " + line);
+            synchronized (recentStderr) {
+                recentStderr.addLast(line);
+                while (recentStderr.size() > STDERR_TAIL_LINES) recentStderr.removeFirst();
+            }
+        });
     }
 
     protected void handleSessionUpdate(@Nullable JsonObject params) {

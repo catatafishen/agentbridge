@@ -63,6 +63,18 @@ public abstract class AgentBinaryResolver {
     }
 
     /**
+     * Returns true for executables inside an unpacked Electron desktop-app bundle
+     * (electron-builder's {@code win-unpacked}/{@code linux-unpacked} output).
+     * Such a GUI app shares a name with the agent CLI but does not speak ACP, and running it
+     * for version detection opens a window. Users can still pick one explicitly via the
+     * custom binary path setting, which bypasses this filter.
+     */
+    static boolean isDesktopAppBundle(@NotNull String path) {
+        String normalized = path.replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("/win-unpacked/") || normalized.contains("/linux-unpacked/");
+    }
+
+    /**
      * Finds all matching binaries for primary and alternate names, then picks
      * the one with the highest version. If version detection fails for all
      * candidates, returns the first-found path.
@@ -74,6 +86,7 @@ public abstract class AgentBinaryResolver {
         for (String alt : alternateNames()) {
             allCandidates.addAll(BinaryDetector.findAllBinaryPaths(alt));
         }
+        allCandidates.removeIf(AgentBinaryResolver::isDesktopAppBundle);
 
         if (allCandidates.isEmpty()) return null;
         if (allCandidates.size() == 1) return allCandidates.getFirst();
