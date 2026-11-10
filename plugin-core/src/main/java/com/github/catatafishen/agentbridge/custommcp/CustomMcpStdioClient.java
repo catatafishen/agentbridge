@@ -223,6 +223,11 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
 
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (true) {
+            // readResponseLine only checks the deadline while stdout is empty, so a server that keeps
+            // emitting unmatched lines would otherwise hold this loop (and the exchange lock) forever.
+            if (System.currentTimeMillis() >= deadline) {
+                throw new IOException("Read timeout after " + timeoutMs + "ms for method " + method);
+            }
             String responseLine;
             try {
                 responseLine = readResponseLine(method, timeoutMs, deadline);
