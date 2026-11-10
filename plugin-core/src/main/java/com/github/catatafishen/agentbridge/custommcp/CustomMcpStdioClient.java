@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -229,24 +230,34 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
                 if (e.getMessage() != null && e.getMessage().contains("Read timeout")) throw e;
                 throw new IOException("Failed to read from MCP server process", e);
             }
-            if (responseLine.isBlank()) {
-                continue;
+            JsonObject response = parseResponseFor(responseLine, id);
+            if (response != null) {
+                return response;
             }
-            JsonObject message;
-            try {
-                message = JsonParser.parseString(responseLine).getAsJsonObject();
-            } catch (RuntimeException e) {
-                LOG.debug("Ignoring non-JSON-object line from stdio MCP server: " + responseLine);
-                continue;
-            }
-            // Only a message carrying our id and no method is our response. Notifications,
-            // server-initiated requests and stale replies (e.g. from a timed-out call) are skipped,
-            // otherwise every later call would receive the previous call's result.
-            if (!message.has("method") && message.has("id") && matchesId(message, id)) {
-                return message;
-            }
-            LOG.debug("Skipping unmatched message while waiting for id " + id + ": " + responseLine);
         }
+    }
+
+    /**
+     * Returns the parsed line if it is the response to request {@code id}, otherwise {@code null}.
+     * Only a message carrying our id and no method is our response. Blank lines, non-JSON output,
+     * notifications, server-initiated requests and stale replies (e.g. from a timed-out call) are
+     * skipped, otherwise every later call would receive the previous call's result.
+     */
+    @Nullable
+    private static JsonObject parseResponseFor(@NotNull String line, int id) {
+        if (line.isBlank()) return null;
+        JsonObject message;
+        try {
+            message = JsonParser.parseString(line).getAsJsonObject();
+        } catch (RuntimeException e) {
+            LOG.debug("Ignoring non-JSON-object line from stdio MCP server: " + line);
+            return null;
+        }
+        if (!message.has("method") && message.has("id") && matchesId(message, id)) {
+            return message;
+        }
+        LOG.debug("Skipping unmatched message while waiting for id " + id + ": " + line);
+        return null;
     }
 
     private static boolean matchesId(@NotNull JsonObject message, int id) {
