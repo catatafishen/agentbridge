@@ -90,7 +90,10 @@ public final class CloseTerminalTool extends TerminalTool {
             Thread.currentThread().interrupt();
             return "Error: Terminal close interrupted.";
         } catch (TimeoutException e) {
-            return "Error: Terminal close timed out.";
+            return "Error: Terminal close timed out after " + unit.toMillis(timeout) / 1000
+                + "s waiting for the IDE; it may still complete (the IDE may be showing a confirmation dialog "
+                + "for a running process). Call list_terminals to check whether it is gone, "
+                + "or stop the process with write_terminal_input '{ctrl-c}' and retry.";
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             LOG.warn("Terminal close failed", cause);
