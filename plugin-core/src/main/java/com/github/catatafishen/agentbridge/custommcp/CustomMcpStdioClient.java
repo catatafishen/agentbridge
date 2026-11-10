@@ -210,7 +210,8 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
 
         JsonObject request = new JsonObject();
         request.addProperty("jsonrpc", "2.0");
-        request.addProperty("id", requestId.getAndIncrement());
+        int id = requestId.getAndIncrement();
+        request.addProperty("id", id);
         request.addProperty("method", method);
         request.add("params", params);
 
@@ -219,27 +220,48 @@ public final class CustomMcpStdioClient implements AutoCloseable, McpToolCaller 
         // Drain any stderr lines (MCP servers log there) to avoid deadlock
         drainStderr();
 
-        String responseLine;
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (true) {
+            String responseLine;
+            try {
+                responseLine = readResponseLine(method, timeoutMs, deadline);
+            } catch (IOException e) {
+                if (e.getMessage() != null && e.getMessage().contains("Read timeout")) throw e;
+                throw new IOException("Failed to read from MCP server process", e);
+            }
+            if (responseLine.isBlank()) {
+                continue;
+            }
+            JsonObject message;
+            try {
+                message = JsonParser.parseString(responseLine).getAsJsonObject();
+            } catch (RuntimeException e) {
+                LOG.debug("Ignoring non-JSON-object line from stdio MCP server: " + responseLine);
+                continue;
+            }
+            // Only a message carrying our id and no method is our response. Notifications,
+            // server-initiated requests and stale replies (e.g. from a timed-out call) are skipped,
+            // otherwise every later call would receive the previous call's result.
+            if (!message.has("method") && message.has("id") && matchesId(message, id)) {
+                return message;
+            }
+            LOG.debug("Skipping unmatched message while waiting for id " + id + ": " + responseLine);
+        }
+    }
+
+    private static boolean matchesId(@NotNull JsonObject message, int id) {
         try {
-            responseLine = readResponseLine(method, timeoutMs);
-        } catch (IOException e) {
-            if (e.getMessage() != null && e.getMessage().contains("Read timeout")) throw e;
-            throw new IOException("Failed to read from MCP server process", e);
+            return message.get("id").getAsLong() == id;
+        } catch (RuntimeException e) {
+            return false;
         }
-
-        if (responseLine.isBlank()) {
-            throw new IOException("Empty response from MCP server");
-        }
-
-        return JsonParser.parseString(responseLine).getAsJsonObject();
     }
 
     /**
      * Polls stdout until a line is available or the deadline passes, then reads that line.
      */
     @NotNull
-    private String readResponseLine(@NotNull String method, int timeoutMs) throws IOException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
+    private String readResponseLine(@NotNull String method, int timeoutMs, long deadline) throws IOException {
         while (!stdout.ready()) {
             if (System.currentTimeMillis() >= deadline) {
                 throw new IOException("Read timeout after " + timeoutMs + "ms for method " + method);
