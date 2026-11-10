@@ -285,7 +285,8 @@ public class TerminalToolsTest extends BasePlatformTestCase {
 
         String result = CloseTerminalTool.awaitCloseResult(resultFuture, 1, TimeUnit.MILLISECONDS);
 
-        assertEquals("Error: Terminal close timed out.", result);
+        assertTrue(result, result.startsWith("Error: Terminal close timed out"));
+        assertTrue(result, result.contains("list_terminals"));
     }
 
     public void testTrackerCountsAndSelectsOnlyOwnedTerminals() {
