@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Parses a shell command string into the individual {@code grep}/{@code rg} invocations it
@@ -97,8 +98,9 @@ public final class GrepCommandSafety {
 
     /**
      * Returns every {@code grep}/{@code rg} invocation in {@code command}: the top-level ones in
-     * order, then those inside double-quoted {@code $(...)}. An empty
-     * list means the command does not invoke grep at all.
+     * order, then those inside {@code $(...)}. An empty list means the command does not invoke
+     * grep at all. Commands in text this parser cannot read are not listed; check
+     * {@link #hidesCommands(String)} before treating the list as complete.
      */
     public static @NotNull List<GrepInvocation> analyze(@NotNull String command) {
         List<GrepInvocation> invocations = new ArrayList<>();
@@ -108,21 +110,39 @@ public final class GrepCommandSafety {
             invocations.add(new GrepInvocation(
                 segment.fedByPipe(), collectPathArgs(segment.tokens(), grepIndex + 1)));
         }
-        // A $(...) inside double quotes still runs, but the tokenizer sees it as one quoted word.
-        for (String inner : quotedCommandSubstitutions(command)) {
+        // A $(...) still runs, but the tokenizer sees it as part of a word.
+        for (String inner : commandSubstitutions(command)) {
             invocations.addAll(analyze(inner));
         }
         return invocations;
     }
 
     /**
-     * Returns the inner command of every {@code $(...)} that sits inside double quotes, e.g.
+     * Shell text that runs commands {@link #analyze(String)} cannot see: a backtick
+     * substitution, {@code eval}, a shell's {@code -c} script, process substitution, ANSI-C
+     * quoting ({@code $'...'}, where {@code \'} does not end the quote), and a comment (a
+     * {@code )} or quote inside it would be misread).
+     */
+    private static final Pattern HIDDEN_COMMANDS = Pattern.compile(
+        "`|\\$'|[<>]\\(|(?:^|\\s)#|(?:^|[\\s;&|(])(?:eval|(?:ba|z|da|k)?sh\\s+(?:-\\w+\\s+)*-\\w*c)(?=\\s|$)");
+
+    /**
+     * Returns {@code true} when {@code command} holds shell text that may run commands this
+     * parser cannot see (see {@link #HIDDEN_COMMANDS}). Such a command cannot be proven to grep
+     * only outside source roots.
+     */
+    public static boolean hidesCommands(@NotNull String command) {
+        return HIDDEN_COMMANDS.matcher(command).find();
+    }
+
+    /**
+     * Returns the inner command of every {@code $(...)} outside single quotes, e.g.
      * {@code gh api x | grep -c y} for {@code n="$(gh api x | grep -c y)"}. Single-quoted text is
      * literal and skipped, and a backslash-escaped character is never read as a quote. An
      * unterminated substitution ends the scan; the shell rejects such a command as a syntax
      * error, so nothing in it runs.
      */
-    static @NotNull List<String> quotedCommandSubstitutions(@NotNull String command) {
+    static @NotNull List<String> commandSubstitutions(@NotNull String command) {
         List<String> out = new ArrayList<>();
         char quote = 0;
         for (int i = 0; i < command.length(); i++) {
@@ -133,7 +153,7 @@ public final class GrepCommandSafety {
                 i++; // an escaped quote or $ is literal
             } else if (c == '"' || (c == '\'' && quote == 0)) {
                 quote = nextQuote(quote, c);
-            } else if (quote == '"' && startsSubstitution(command, i)) {
+            } else if (startsSubstitution(command, i)) {
                 int end = matchingParen(command, i + 1);
                 if (end < 0) break;
                 out.add(command.substring(i + 2, end));

@@ -933,9 +933,13 @@ public final class ToolUtils {
      * <p>Example: {@code gh pr create --body "filter it with | grep"} becomes
      * {@code gh pr create --body ''}. A double-quoted value that the shell expands
      * ({@code --body "$(cat notes.md)"}) is left as it is, and so is a flag that sits inside
-     * quotes ({@code echo "--body 'x"; grep -r foo src}), where it is text, not a flag.
+     * quotes ({@code echo "--body 'x"; grep -r foo src}), where it is text, not a flag. Nothing
+     * is stripped from a command that may run its arguments as code ({@code eval},
+     * {@code bash -c}) or quotes in ways this scan does not follow
+     * ({@link GrepCommandSafety#hidesCommands(String)}).
      */
     static String stripQuotedProseArguments(String command) {
+        if (GrepCommandSafety.hidesCommands(command)) return command;
         StringBuilder out = new StringBuilder(command.length());
         java.util.regex.Matcher flag = PROSE_FLAG_PATTERN.matcher(command);
         char quote = 0;
@@ -1011,6 +1015,7 @@ public final class ToolUtils {
     public static boolean grepTargetsOnlyOutsideSourceRoots(@Nullable Project project, @NotNull String command) {
         if (project == null) return false;
 
+        if (GrepCommandSafety.hidesCommands(command)) return false;
         java.util.List<GrepCommandSafety.GrepInvocation> invocations = GrepCommandSafety.analyze(command);
         if (invocations.isEmpty()) return false;
 

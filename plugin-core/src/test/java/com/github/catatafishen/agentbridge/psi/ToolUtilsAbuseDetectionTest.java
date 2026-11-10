@@ -484,6 +484,46 @@ class ToolUtilsAbuseDetectionTest {
         }
 
         @Test
+        @DisplayName("a prose-looking flag inside an ordinary single-quoted word cannot hide a later grep")
+        void singleQuotedFlagKeepsFollowingSourceGrep() {
+            String cmd = "echo 'can --message \"xx'; grep foo src/Main.java; echo '\"'";
+            assertEquals(cmd, ToolUtils.stripQuotedProseArguments(cmd));
+            assertEquals("grep", ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @ParameterizedTest
+        @DisplayName("an escaped apostrophe in an ANSI-C string cannot turn its text into a prose flag")
+        @ValueSource(strings = {
+            "echo $'can\\' --message \"xx'; grep foo src/Main.java; echo '\"'",
+            "echo $'can\\' --body=\"xx'; grep foo src/Main.java; echo '\"'"
+        })
+        void ansiQuotedFlagKeepsFollowingSourceGrep(String cmd) {
+            assertEquals("grep", ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @Test
+        @DisplayName("an ordinary program receives --message as data")
+        void literalMessageArgumentRemainsProse() {
+            assertNull(ToolUtils.detectCommandAbuseType("echo --message 'x; grep foo src/Main.java'"));
+        }
+
+        @ParameterizedTest
+        @DisplayName("eval and bash -c can execute a prose-looking argument")
+        @ValueSource(strings = {
+            "eval echo --message 'x; grep foo src/Main.java'",
+            "bash -c 'eval \"$2\"' bash --body 'true; grep foo src/Main.java'"
+        })
+        void executableMessageArgumentIsNotProse(String cmd) {
+            assertEquals("grep", ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @Test
+        @DisplayName("ordinary quoted prose mentioning grep remains allowed")
+        void plainQuotedProseRemainsAllowed() {
+            assertNull(ToolUtils.detectCommandAbuseType("gh pr comment 5 --body \"Use | grep here\""));
+        }
+
+        @Test
         @DisplayName("stripQuotedProseArguments empties the value and keeps the flag")
         void stripKeepsFlag() {
             assertEquals("gh pr create --title '' --body=''",
