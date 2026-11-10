@@ -280,4 +280,69 @@ class GrepCommandSafetyTest {
     void emptyCommandYieldsNothing() {
         assertEquals(List.of(), GrepCommandSafety.analyze(""));
     }
+
+    // Regression coverage for issue #975: a $(...) inside double quotes still runs, but the
+    // tokenizer reads the whole quoted word as one token and never saw the grep inside it.
+    @Nested
+    @DisplayName("double-quoted command substitutions")
+    class QuotedCommandSubstitutions {
+
+        @Test
+        @DisplayName("a pipe filter inside \"$(...)\" is found and is a pipe filter")
+        void pipeFilterInsideQuotedSubstitution() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("n=\"$(gh api repos/o/r/issues/1 --jq .body | grep -c x)\"");
+            assertEquals(1, found.size());
+            assertTrue(found.getFirst().isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("a quoted pattern inside \"$(...)\" keeps the pipe filter")
+        void quotedPatternInsideQuotedSubstitution() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("n=\"$(gh api x --jq '.body' | grep -c \"a b\")\"");
+            assertEquals(1, found.size());
+            assertTrue(found.getFirst().isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("a file grep inside \"$(...)\" keeps its path operand")
+        void fileGrepInsideQuotedSubstitutionKeepsPath() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("n=\"$(grep -c foo src/Main.java)\"");
+            assertEquals(1, found.size());
+            assertFalse(found.getFirst().isPipeFilter());
+            assertEquals(List.of("src/Main.java"), found.getFirst().paths());
+        }
+
+        @Test
+        @DisplayName("a nested \"$(...)\" inside a quoted substitution is found")
+        void nestedQuotedSubstitution() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("echo \"$(echo \"$(grep -r foo src)\")\"");
+            assertEquals(1, found.size());
+            assertEquals(List.of("src"), found.getFirst().paths());
+        }
+
+        @Test
+        @DisplayName("an escaped quote does not hide the substitution after it")
+        void escapedQuoteDoesNotEndTheQuotedWord() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("echo \"\\\"$(grep -r foo src)\"");
+            assertEquals(1, found.size());
+            assertEquals(List.of("src"), found.getFirst().paths());
+        }
+
+        @Test
+        @DisplayName("$(...) inside single quotes is literal text, not a command")
+        void singleQuotedSubstitutionIsLiteral() {
+            assertEquals(List.of(), GrepCommandSafety.quotedCommandSubstitutions("n='$(ls | grep x)'"));
+        }
+
+        @Test
+        @DisplayName("an unterminated quoted substitution yields nothing")
+        void unterminatedQuotedSubstitution() {
+            assertEquals(List.of(), GrepCommandSafety.quotedCommandSubstitutions("n=\"$(ls | grep x\""));
+        }
+    }
 }

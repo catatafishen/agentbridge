@@ -96,7 +96,8 @@ public final class GrepCommandSafety {
     }
 
     /**
-     * Returns every {@code grep}/{@code rg} invocation in {@code command}, in order. An empty
+     * Returns every {@code grep}/{@code rg} invocation in {@code command}: the top-level ones in
+     * order, then those inside double-quoted {@code $(...)}. An empty
      * list means the command does not invoke grep at all.
      */
     public static @NotNull List<GrepInvocation> analyze(@NotNull String command) {
@@ -107,7 +108,68 @@ public final class GrepCommandSafety {
             invocations.add(new GrepInvocation(
                 segment.fedByPipe(), collectPathArgs(segment.tokens(), grepIndex + 1)));
         }
+        // A $(...) inside double quotes still runs, but the tokenizer sees it as one quoted word.
+        for (String inner : quotedCommandSubstitutions(command)) {
+            invocations.addAll(analyze(inner));
+        }
         return invocations;
+    }
+
+    /**
+     * Returns the inner command of every {@code $(...)} that sits inside double quotes, e.g.
+     * {@code gh api x | grep -c y} for {@code n="$(gh api x | grep -c y)"}. Single-quoted text is
+     * literal and skipped, and a backslash-escaped character is never read as a quote. An
+     * unterminated substitution ends the scan; the shell rejects such a command as a syntax
+     * error, so nothing in it runs.
+     */
+    static @NotNull List<String> quotedCommandSubstitutions(@NotNull String command) {
+        List<String> out = new ArrayList<>();
+        char quote = 0;
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (quote == '\'') {
+                if (c == '\'') quote = 0;
+            } else if (c == '\\') {
+                i++; // an escaped quote or $ is literal
+            } else if (c == '"' || (c == '\'' && quote == 0)) {
+                quote = nextQuote(quote, c);
+            } else if (quote == '"' && startsSubstitution(command, i)) {
+                int end = matchingParen(command, i + 1);
+                if (end < 0) break;
+                out.add(command.substring(i + 2, end));
+                i = end;
+            }
+        }
+        return out;
+    }
+
+    private static char nextQuote(char quote, char c) {
+        if (c == '\'') return '\'';
+        return quote == '"' ? 0 : '"';
+    }
+
+    private static boolean startsSubstitution(@NotNull String s, int i) {
+        return s.charAt(i) == '$' && i + 1 < s.length() && s.charAt(i + 1) == '(';
+    }
+
+    private static int matchingParen(@NotNull String s, int open) {
+        int depth = 0;
+        char quote = 0;
+        for (int i = open; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && quote != '\'') {
+                i++;
+            } else if (quote != 0) {
+                if (c == quote) quote = 0;
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

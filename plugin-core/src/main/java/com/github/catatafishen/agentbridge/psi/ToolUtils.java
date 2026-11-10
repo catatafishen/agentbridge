@@ -82,6 +82,14 @@ public final class ToolUtils {
         );
 
     /**
+     * A flag that carries prose ({@code --body}, {@code --title}, {@code --notes},
+     * {@code --message}) followed by {@code =} or whitespace. Used by
+     * {@link #stripQuotedProseArguments(String)}, which only tries it outside quotes.
+     */
+    private static final java.util.regex.Pattern PROSE_FLAG_PATTERN =
+        java.util.regex.Pattern.compile("--(?:body|title|notes|message)(?:=|\\s+)");
+
+    /**
      * Maximum levels to walk up the PSI parent chain when searching for a named ancestor.
      * A small limit avoids incorrectly returning an enclosing method or class when the caret
      * is on an unresolved reference expression — in the "go to declaration on a declaration"
@@ -855,9 +863,11 @@ public final class ToolUtils {
      * @return the abuse type ("git", "cat", "sed", "grep", "find", "test", "compile") or null if allowed
      */
     public static String detectCommandAbuseType(String command) {
-        // Strip heredoc bodies before classification — they contain arbitrary user-supplied text
-        // (e.g. a PR description mentioning "./gradlew test") that should not influence routing.
-        String cmd = stripHeredocBodies(command).toLowerCase().trim();
+        // Strip heredoc bodies and quoted --body/--title/--notes/--message values before
+        // classification — they
+        // contain arbitrary user-supplied text (e.g. a PR description mentioning "./gradlew test")
+        // that should not influence routing.
+        String cmd = stripQuotedProseArguments(stripHeredocBodies(command)).toLowerCase().trim();
 
         // Block git — causes IntelliJ editor buffer desync
         if (isGitCommand(cmd)) {
@@ -913,6 +923,77 @@ public final class ToolUtils {
             "<<" + java.util.regex.Matcher.quoteReplacement(mr.group(1))
                 + "\n" + java.util.regex.Matcher.quoteReplacement(mr.group(1))
         );
+    }
+
+    /**
+     * Empties the quoted value of each prose flag ({@code --body}, {@code --title},
+     * {@code --notes}, {@code --message}), keeping the flag itself. Like a heredoc body, the value
+     * is text handed to the program, not a command the shell runs.
+     *
+     * <p>Example: {@code gh pr create --body "filter it with | grep"} becomes
+     * {@code gh pr create --body ''}. A double-quoted value that the shell expands
+     * ({@code --body "$(cat notes.md)"}) is left as it is, and so is a flag that sits inside
+     * quotes ({@code echo "--body 'x"; grep -r foo src}), where it is text, not a flag.
+     */
+    static String stripQuotedProseArguments(String command) {
+        StringBuilder out = new StringBuilder(command.length());
+        java.util.regex.Matcher flag = PROSE_FLAG_PATTERN.matcher(command);
+        char quote = 0;
+        int i = 0;
+        while (i < command.length()) {
+            char c = command.charAt(i);
+            int next = quote == 0 && c == '-' ? stripProseFlagAt(command, i, flag, out) : -1;
+            if (next > 0) {
+                i = next;
+                continue;
+            }
+            if (c == '\\' && quote != '\'' && i + 1 < command.length()) {
+                out.append(c).append(command.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+            if (quote == 0 && (c == '\'' || c == '"')) quote = c;
+            else if (c == quote) quote = 0;
+            out.append(c);
+            i++;
+        }
+        return out.toString();
+    }
+
+    /**
+     * When a prose flag with a quoted value starts at {@code i}, appends the flag and an empty
+     * value to {@code out} and returns the index past the value; otherwise returns {@code -1}.
+     */
+    private static int stripProseFlagAt(
+        String command, int i, java.util.regex.Matcher flag, StringBuilder out
+    ) {
+        boolean wordStart = i == 0 || Character.isWhitespace(command.charAt(i - 1));
+        if (!wordStart || !flag.region(i, command.length()).lookingAt()) return -1;
+        int valueEnd = quotedProseValueEnd(command, flag.end());
+        if (valueEnd < 0) return -1;
+        out.append(command, i, flag.end()).append("''");
+        return valueEnd;
+    }
+
+    /**
+     * Returns the index just past the quoted value starting at {@code start}, or {@code -1} when
+     * there is no quoted value there, it is unterminated, or it is double-quoted and holds
+     * {@code $} or a backtick (the shell expands those, so they may run a command) or a
+     * backslash (it may escape the closing quote, so the value's end is unknown).
+     */
+    private static int quotedProseValueEnd(String command, int start) {
+        if (start >= command.length()) return -1;
+        char open = command.charAt(start);
+        if (open != '\'' && open != '"') return -1;
+        int close = command.indexOf(open, start + 1);
+        if (close < 0) return -1;
+        if (open == '"') {
+            for (int j = start + 1; j < close; j++) {
+                char c = command.charAt(j);
+                if (c == '$' || c == '`' || c == '\\') return -1;
+            }
+        }
+        return close + 1;
     }
 
     /**
