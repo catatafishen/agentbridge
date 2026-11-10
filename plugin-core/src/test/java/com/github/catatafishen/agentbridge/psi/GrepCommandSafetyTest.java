@@ -325,6 +325,79 @@ class GrepCommandSafetyTest {
         }
 
         @Test
+        @DisplayName("a safe quoted filter does not exempt a second quoted source grep")
+        void mixedQuotedSubstitutionsKeepSourceGrep() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("echo \"$(printf x | grep x)\" \"$(grep foo src/Main.java)\"");
+            assertEquals(2, found.size());
+            assertTrue(found.getFirst().isPipeFilter());
+            assertEquals(List.of("src/Main.java"), found.get(1).paths());
+        }
+
+        @ParameterizedTest
+        @DisplayName("a safe quoted filter must not hide another source grep in executable shell text")
+        @ValueSource(strings = {
+            "echo \"$(printf x | grep x)\" \"`grep foo src/Main.java`\"",
+            "echo \"$(printf x | grep x)\"; bash -c 'grep foo src/Main.java'",
+            "echo \"$(printf x | grep x; echo $(grep foo src/Main.java))\""
+        })
+        void mixedExecutableCommandsAreNotOnlyPipeFilters(String command) {
+            assertFalse(looksLikeOnlyPipeFilters(command), command);
+        }
+
+        @Test
+        @DisplayName("an uncommented parenthesis closes its own substitution")
+        void separateSubstitutionsKeepSourceGrep() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("echo \"$(printf x | grep x)$(grep foo src/Main.java)\"");
+            assertEquals(2, found.size());
+            assertTrue(found.getFirst().isPipeFilter());
+            assertEquals(List.of("src/Main.java"), found.get(1).paths());
+        }
+
+        @Test
+        @DisplayName("a parenthesis in a comment does not hide the source grep after the comment")
+        void commentParenthesisDoesNotExemptSourceGrep() {
+            String command = "echo \"$(printf x | grep x; # )\ntrue; grep foo src/Main.java\n)\"";
+            assertFalse(looksLikeOnlyPipeFilters(command), command);
+        }
+
+        @Test
+        @DisplayName("a pipe filter with no trailing comment remains safe")
+        void pipeFilterWithoutCommentRemainsSafe() {
+            List<GrepCommandSafety.GrepInvocation> found =
+                GrepCommandSafety.analyze("echo \"$(printf x | grep x)\"");
+            assertEquals(1, found.size());
+            assertTrue(found.getFirst().isPipeFilter());
+        }
+
+        @Test
+        @DisplayName("an unquoted $(...) is read too")
+        void unquotedSubstitutionKeepsSourceGrep() {
+            assertTrue(GrepCommandSafety.analyze("ls | grep x; echo $(grep foo src/Main.java)").stream()
+                .anyMatch(inv -> List.of("src/Main.java").equals(inv.paths())));
+        }
+
+        @ParameterizedTest
+        @DisplayName("ordinary commands are not marked as hiding commands")
+        @ValueSource(strings = {
+            "n=\"$(gh api repos/o/r/issues/1 --jq .body | grep -c x)\"",
+            "gh pr checks 5 | grep '#123'",
+            "echo $# | grep 1",
+            "ls | grep shell"
+        })
+        void ordinaryCommandsDoNotHideCommands(String command) {
+            assertFalse(GrepCommandSafety.hidesCommands(command), command);
+        }
+
+        /** What grepTargetsOnlyOutsideSourceRoots would exempt, before it checks any path. */
+        private static boolean looksLikeOnlyPipeFilters(String command) {
+            List<GrepCommandSafety.GrepInvocation> found = GrepCommandSafety.analyze(command);
+            return !GrepCommandSafety.hidesCommands(command) && !found.isEmpty()
+                && found.stream().allMatch(GrepCommandSafety.GrepInvocation::isPipeFilter);
+        }
+
+        @Test
         @DisplayName("an escaped quote does not hide the substitution after it")
         void escapedQuoteDoesNotEndTheQuotedWord() {
             List<GrepCommandSafety.GrepInvocation> found =
@@ -336,13 +409,13 @@ class GrepCommandSafetyTest {
         @Test
         @DisplayName("$(...) inside single quotes is literal text, not a command")
         void singleQuotedSubstitutionIsLiteral() {
-            assertEquals(List.of(), GrepCommandSafety.quotedCommandSubstitutions("n='$(ls | grep x)'"));
+            assertEquals(List.of(), GrepCommandSafety.commandSubstitutions("n='$(ls | grep x)'"));
         }
 
         @Test
         @DisplayName("an unterminated quoted substitution yields nothing")
         void unterminatedQuotedSubstitution() {
-            assertEquals(List.of(), GrepCommandSafety.quotedCommandSubstitutions("n=\"$(ls | grep x\""));
+            assertEquals(List.of(), GrepCommandSafety.commandSubstitutions("n=\"$(ls | grep x\""));
         }
     }
 }
