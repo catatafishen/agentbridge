@@ -522,6 +522,23 @@ class ToolUtilsTest {
             assertTrue(p.matcher("").matches());
             assertFalse(p.matcher("x").matches());
         }
+
+        @Test
+        void braceAlternationMatchesAnyAlternative() throws Exception {
+            Pattern p = invoke("*.{js,java,html}");
+            assertTrue(p.matcher("a.js").matches());
+            assertTrue(p.matcher("a.java").matches());
+            assertTrue(p.matcher("a.html").matches());
+            assertFalse(p.matcher("a.png").matches());
+            assertFalse(p.matcher("a.{js,java,html}").matches(), "braces are syntax, not literals");
+        }
+
+        @Test
+        void commaOutsideBracesIsLiteral() throws Exception {
+            Pattern p = invoke("a,b");
+            assertTrue(p.matcher("a,b").matches());
+            assertFalse(p.matcher("a").matches());
+        }
     }
 
     @Nested

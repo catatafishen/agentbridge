@@ -713,9 +713,22 @@ public final class ToolUtils {
         StringBuilder sb = new StringBuilder("^");
         int len = glob.length();
         int i = 0;
+        int braceDepth = 0;
         while (i < len) {
             char c = glob.charAt(i);
-            if (c == '*' && i + 1 < len && glob.charAt(i + 1) == '*') {
+            if (c == '{') {
+                // Brace alternation: {a,b,c} -> (?:a|b|c)
+                braceDepth++;
+                sb.append("(?:");
+                i++;
+            } else if (c == '}' && braceDepth > 0) {
+                braceDepth--;
+                sb.append(')');
+                i++;
+            } else if (c == ',' && braceDepth > 0) {
+                sb.append('|');
+                i++;
+            } else if (c == '*' && i + 1 < len && glob.charAt(i + 1) == '*') {
                 sb.append(".*");
                 i += 2; // consume **
                 if (i < len && glob.charAt(i) == '/') {
