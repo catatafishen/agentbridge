@@ -442,4 +442,52 @@ class ToolUtilsAbuseDetectionTest {
             assertEquals(cmd, ToolUtils.stripHeredocBodies(cmd));
         }
     }
+
+    // ── Quoted prose flag stripping (issue #975) ─────────────────────────────
+
+    @Nested
+    @DisplayName("quoted prose flag stripping")
+    class QuotedProseStripping {
+
+        @ParameterizedTest
+        @DisplayName("a quoted --body/--title value that only mentions grep is NOT blocked")
+        @ValueSource(strings = {
+            "gh pr create --title \"t\" --body \"filter it with | grep\"",
+            "gh pr comment 5 --body 'run ls | grep foo first'",
+            "gh issue create --title=\"| grep is refused\" --body x",
+            "gh release create v1 --notes \"; grep -r was refused\""
+        })
+        void proseValueMentioningGrepNotBlocked(String cmd) {
+            assertNull(ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @Test
+        @DisplayName("a real grep after a prose flag IS still blocked")
+        void realGrepAfterProseFlagStillBlocked() {
+            assertEquals("grep",
+                ToolUtils.detectCommandAbuseType("gh pr comment 5 --body \"x\" && grep -r foo src"));
+        }
+
+        @Test
+        @DisplayName("a --body value the shell expands is kept, so its grep IS still blocked")
+        void expandedBodyValueStillBlocked() {
+            assertEquals("grep",
+                ToolUtils.detectCommandAbuseType("gh pr comment 5 --body \"$(ls | grep foo)\""));
+        }
+
+        @Test
+        @DisplayName("a --body inside quotes is text, not a flag, so the grep after it IS still blocked")
+        void flagInsideQuotesIsNotStripped() {
+            String cmd = "echo \"--body 'x\"; grep -r foo src; echo \"'\"";
+            assertEquals(cmd, ToolUtils.stripQuotedProseArguments(cmd));
+            assertEquals("grep", ToolUtils.detectCommandAbuseType(cmd));
+        }
+
+        @Test
+        @DisplayName("stripQuotedProseArguments empties the value and keeps the flag")
+        void stripKeepsFlag() {
+            assertEquals("gh pr create --title '' --body=''",
+                ToolUtils.stripQuotedProseArguments("gh pr create --title \"a | grep b\" --body='c'"));
+        }
+    }
 }
