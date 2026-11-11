@@ -14,6 +14,14 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 
+import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadBuildOutputTool;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.task.ProjectTaskManager;
+import org.jetbrains.concurrency.Promise;
+
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -31,11 +39,127 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class ProjectBuildSupport {
     private static final Logger LOG = Logger.getInstance(ProjectBuildSupport.class);
+    private static final int BUILD_OUTPUT_MAX_CHARS = 12_000;
 
     private ProjectBuildSupport() {
     }
 
-    public static String buildProject(Project project, String moduleName, AtomicBoolean buildInProgress)
+    /**
+     * Builds through {@link ProjectTaskManager}, the same API behind Build → Build Project.
+     * The IDE picks the runner (Gradle, Maven or JPS), so a Gradle-delegated project runs the
+     * Gradle build instead of IntelliJ's own compiler, which skips Gradle-only steps such as
+     * code generation. Falls back to the JPS {@link CompilerManager} only if the task manager fails
+     * to start; a failed build is reported, never retried.
+     *
+     * @param rebuild   rebuild instead of an incremental build
+     * @param filePaths when non-empty, only these files are compiled (paths absolute or project-relative)
+     */
+    public static String buildProject(Project project, String moduleName, boolean rebuild,
+                                      List<String> filePaths, AtomicBoolean buildInProgress)
+        throws ExecutionException, InterruptedException, TimeoutException {
+        long startNanos = System.nanoTime();
+        CompletableFuture<ProjectTaskManager.Result> taskFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> startTaskManagerBuild(project, moduleName, rebuild, filePaths, taskFuture));
+
+        ProjectTaskManager.Result result;
+        try {
+            result = taskFuture.get(300, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof BuildRequestException bre) {
+                buildInProgress.set(false);
+                return bre.getMessage();
+            }
+            LOG.warn("ProjectTaskManager build failed to run, falling back to JPS compiler", e);
+            return buildWithCompilerManager(project, moduleName, buildInProgress);
+        } catch (InterruptedException | TimeoutException e) {
+            buildInProgress.set(false);
+            throw e;
+        }
+        buildInProgress.set(false);
+        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+        return formatTaskHeader(result.isAborted(), result.hasErrors(), elapsedMs)
+            + readBuildWindowOutput(project);
+    }
+
+    private static void startTaskManagerBuild(Project project, String moduleName, boolean rebuild,
+                                              List<String> filePaths,
+                                              CompletableFuture<ProjectTaskManager.Result> future) {
+        try {
+            ProjectTaskManager manager = ProjectTaskManager.getInstance(project);
+            Promise<ProjectTaskManager.Result> promise;
+            if (!filePaths.isEmpty()) {
+                VirtualFile[] files = resolveFiles(project, filePaths);
+                if (files.length != filePaths.size()) {
+                    future.completeExceptionally(new BuildRequestException(
+                        "Error: Could not find all files to compile: " + filePaths));
+                    return;
+                }
+                promise = manager.compile(files);
+            } else if (!moduleName.isEmpty()) {
+                Module module = resolveModule(project, moduleName);
+                if (module == null) {
+                    future.completeExceptionally(new BuildRequestException(
+                        "Error: Module '" + moduleName + "' not found.\n" + listAvailableModules(project)));
+                    return;
+                }
+                // Expand to child modules: for Gradle the named module is an empty parent whose
+                // sources live in "<name>.main" / "<name>.test" (#1160).
+                Module[] scope = expandWithChildModules(project, module);
+                promise = rebuild ? manager.rebuild(scope) : manager.build(scope);
+            } else {
+                promise = rebuild ? manager.rebuildAllModules() : manager.buildAllModules();
+            }
+            promise.onSuccess(future::complete);
+            promise.onError(future::completeExceptionally);
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
+    }
+
+    private static VirtualFile[] resolveFiles(Project project, List<String> paths) {
+        String base = project.getBasePath();
+        return paths.stream()
+            .map(p -> java.nio.file.Path.of(p).isAbsolute() || base == null ? p : base + "/" + p)
+            .map(p -> LocalFileSystem.getInstance().refreshAndFindFileByPath(p))
+            .filter(java.util.Objects::nonNull)
+            .toArray(VirtualFile[]::new);
+    }
+
+    /**
+     * Reads the Build tool window text, which holds the real compiler/Gradle output.
+     * {@code ProjectTaskManager.Result} carries only success flags, no messages.
+     */
+    private static String readBuildWindowOutput(Project project) {
+        JsonObject args = new JsonObject();
+        args.addProperty("max_chars", BUILD_OUTPUT_MAX_CHARS);
+        args.addProperty("offset", -1);
+        return new ReadBuildOutputTool(project).execute(args);
+    }
+
+    /**
+     * Header for task-manager builds. Error and warning counts are unavailable from
+     * {@code ProjectTaskManager.Result}, so only the outcome is reported. Pure function.
+     */
+    static String formatTaskHeader(boolean aborted, boolean hasErrors, long elapsedMs) {
+        String outcome;
+        if (aborted) {
+            outcome = "Build aborted";
+        } else if (hasErrors) {
+            outcome = "✗ Build failed";
+        } else {
+            outcome = "✓ Build succeeded";
+        }
+        return String.format("%s (%.1fs)%nBuild tool window output:%n", outcome, elapsedMs / 1000.0);
+    }
+
+    private static final class BuildRequestException extends Exception {
+        BuildRequestException(String message) {
+            super(message);
+        }
+    }
+
+    private static String buildWithCompilerManager(Project project, String moduleName, AtomicBoolean buildInProgress)
         throws ExecutionException, InterruptedException, TimeoutException {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         long startNanos = System.nanoTime();
