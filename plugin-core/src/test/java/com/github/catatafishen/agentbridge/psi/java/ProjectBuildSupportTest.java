@@ -103,19 +103,34 @@ class ProjectBuildSupportTest {
 
     @Test
     void selectBuildOutput_prefersCapturedExternalOutput() {
-        // project is only dereferenced on the Build-window fallback, so null is safe when output was captured
-        String out = ProjectBuildSupport.selectBuildOutput("> Task :a:compileJava\nBUILD SUCCESSFUL\n", null);
+        String out = ProjectBuildSupport.selectBuildOutput(
+            "> Task :a:compileJava\nBUILD SUCCESSFUL\n", false, "", () -> "WINDOW");
         assertTrue(out.startsWith("Build output:\n"));
         assertTrue(out.contains("BUILD SUCCESSFUL"));
+        assertFalse(out.contains("WINDOW"));
+        assertFalse(out.contains("truncated"));
     }
 
     @Test
-    void selectBuildOutput_truncatesToTail() {
-        String captured = "HEAD-MARKER" + "x".repeat(20_000) + "TAIL-MARKER";
-        String out = ProjectBuildSupport.selectBuildOutput(captured, null);
-        assertTrue(out.contains("TAIL-MARKER"));
-        assertFalse(out.contains("HEAD-MARKER"));
-        assertTrue(out.contains("truncated"));
+    void selectBuildOutput_marksTruncation() {
+        String out = ProjectBuildSupport.selectBuildOutput("tail", true, "", () -> "WINDOW");
+        assertTrue(out.contains("… (truncated)"));
+        assertTrue(out.contains("tail"));
+    }
+
+    @Test
+    void selectBuildOutput_appendsJpsErrorsAfterSuccessfulGradlePass() {
+        String out = ProjectBuildSupport.selectBuildOutput(
+            "BUILD SUCCESSFUL", false, "  ERROR Foo.java:3 cannot find symbol\n", () -> "WINDOW");
+        assertTrue(out.contains("BUILD SUCCESSFUL"));
+        assertTrue(out.contains("Compiler errors:"));
+        assertTrue(out.contains("cannot find symbol"));
+    }
+
+    @Test
+    void selectBuildOutput_fallsBackToBuildWindowWhenNoExternalTaskRan() {
+        String out = ProjectBuildSupport.selectBuildOutput("  ", false, "", () -> "WINDOW");
+        assertEquals("Build tool window output:\nWINDOW", out);
     }
 
     @Test
