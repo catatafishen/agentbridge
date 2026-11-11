@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.psi;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.intellij.openapi.compiler.CompilerManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType;
+import com.intellij.openapi.externalSystem.service.internal.ExternalSystemProcessingManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -228,19 +230,40 @@ public final class ToolReadinessGate {
 
     /**
      * Pre-flight check for build-style tools: returns an error if a project
-     * build is currently in progress, otherwise null. Independent of
+     * build is currently in progress, otherwise null. Covers both runners a build can use:
+     * the JPS compiler and external-system (Gradle/Maven) tasks. Independent of
      * {@link #checkReady} because only build tools care.
      */
     @Nullable
     public static String checkNoBuildInProgress(@NotNull Project project, @NotNull String toolName) {
-        try {
-            CompilerManager cm = CompilerManager.getInstance(project);
-            if (cm != null && cm.isCompilationActive()) {
-                return buildInProgressErrorMessage(toolName);
-            }
-        } catch (Exception e) {
-            LOG.debug("Build-in-progress check failed", e);
+        if (isJpsCompilationActive(project) || isExternalTaskRunning(project)) {
+            return buildInProgressErrorMessage(toolName);
         }
         return null;
+    }
+
+    private static boolean isJpsCompilationActive(@NotNull Project project) {
+        try {
+            CompilerManager cm = CompilerManager.getInstance(project);
+            return cm != null && cm.isCompilationActive();
+        } catch (Exception e) {
+            LOG.debug("JPS build-in-progress check failed", e);
+            return false;
+        }
+    }
+
+    /**
+     * Gradle/Maven builds started through the task manager do not register with {@link CompilerManager},
+     * so they are only visible as running external-system EXECUTE_TASK tasks.
+     */
+    private static boolean isExternalTaskRunning(@NotNull Project project) {
+        try {
+            return ExternalSystemProcessingManager.getInstance()
+                .hasTaskOfTypeInProgress(ExternalSystemTaskType.EXECUTE_TASK, project);
+        } catch (Exception | LinkageError e) {
+            // LinkageError: the external-system module is absent in some IDEs; treat as "nothing running".
+            LOG.debug("External-system build-in-progress check failed", e);
+            return false;
+        }
     }
 }
