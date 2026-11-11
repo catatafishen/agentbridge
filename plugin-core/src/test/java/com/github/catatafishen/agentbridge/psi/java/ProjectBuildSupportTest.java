@@ -8,9 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for {@link ProjectBuildSupport#formatBuildHeader(boolean, int, int, long)}.
+ * Tests for the pure helpers of {@link ProjectBuildSupport}.
  * <p>
- * Same package as the production class so we can call the package-private method directly.
+ * Same package as the production class so we can call the package-private methods directly.
  */
 class ProjectBuildSupportTest {
 
@@ -27,6 +27,11 @@ class ProjectBuildSupportTest {
         var all = java.util.List.of("plugin-core", "plugin-core.main", "plugin-core.test");
         assertEquals(java.util.List.of("plugin-core.main"),
             ProjectBuildSupport.selectModuleNames("plugin-core.main", all));
+    }
+
+    @Test
+    void selectModuleNames_noMatchReturnsEmpty() {
+        assertTrue(ProjectBuildSupport.selectModuleNames("missing", java.util.List.of("a", "b")).isEmpty());
     }
 
     @Test
@@ -94,5 +99,24 @@ class ProjectBuildSupportTest {
         String result = ProjectBuildSupport.formatBuildHeader(false, 1, 0, 1000);
         assertTrue(result.endsWith(System.lineSeparator()),
             "Result must end with system newline, got: [" + result + "]");
+    }
+
+    @Test
+    void taskHeader_successReportsSuccessAndElapsedTime() {
+        String header = ProjectBuildSupport.formatTaskHeader(false, false, 1500);
+        assertTrue(header.startsWith("✓ Build succeeded"));
+        assertTrue(header.contains("1.5s"));
+    }
+
+    @Test
+    void taskHeader_errorsReportFailure() {
+        assertTrue(ProjectBuildSupport.formatTaskHeader(false, true, 0).startsWith("✗ Build failed"));
+    }
+
+    @Test
+    void taskHeader_abortTakesPrecedenceOverErrors() {
+        String header = ProjectBuildSupport.formatTaskHeader(true, true, 0);
+        assertTrue(header.startsWith("Build aborted"));
+        assertFalse(header.contains("failed"));
     }
 }
