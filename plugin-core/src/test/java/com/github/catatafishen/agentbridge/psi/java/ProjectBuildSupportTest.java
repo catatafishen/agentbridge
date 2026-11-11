@@ -102,6 +102,23 @@ class ProjectBuildSupportTest {
     }
 
     @Test
+    void selectBuildOutput_prefersCapturedExternalOutput() {
+        // project is only dereferenced on the Build-window fallback, so null is safe when output was captured
+        String out = ProjectBuildSupport.selectBuildOutput("> Task :a:compileJava\nBUILD SUCCESSFUL\n", null);
+        assertTrue(out.startsWith("Build output:\n"));
+        assertTrue(out.contains("BUILD SUCCESSFUL"));
+    }
+
+    @Test
+    void selectBuildOutput_truncatesToTail() {
+        String captured = "HEAD-MARKER" + "x".repeat(20_000) + "TAIL-MARKER";
+        String out = ProjectBuildSupport.selectBuildOutput(captured, null);
+        assertTrue(out.contains("TAIL-MARKER"));
+        assertFalse(out.contains("HEAD-MARKER"));
+        assertTrue(out.contains("truncated"));
+    }
+
+    @Test
     void taskHeader_successReportsSuccessAndElapsedTime() {
         String header = ProjectBuildSupport.formatTaskHeader(false, false, 1500);
         assertTrue(header.startsWith("✓ Build succeeded"));

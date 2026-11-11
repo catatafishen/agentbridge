@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.psi.java;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
+import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadBuildOutputTool;
+import com.google.gson.JsonObject;
 import com.intellij.compiler.CompilerMessageImpl;
 import com.intellij.openapi.compiler.CompileContext;
 import com.intellij.openapi.compiler.CompileStatusNotification;
@@ -13,9 +15,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
-
-import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadBuildOutputTool;
-import com.google.gson.JsonObject;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.task.ProjectTaskManager;
@@ -59,27 +58,45 @@ public class ProjectBuildSupport {
         throws ExecutionException, InterruptedException, TimeoutException {
         long startNanos = System.nanoTime();
         CompletableFuture<ProjectTaskManager.Result> taskFuture = new CompletableFuture<>();
-        EdtUtil.invokeLater(() -> startTaskManagerBuild(project, moduleName, rebuild, filePaths, taskFuture));
+        try (BuildOutputCapture capture = new BuildOutputCapture(project)) {
+            EdtUtil.invokeLater(() -> startTaskManagerBuild(project, moduleName, rebuild, filePaths, taskFuture));
 
-        ProjectTaskManager.Result result;
-        try {
-            result = taskFuture.get(300, TimeUnit.SECONDS);
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof BuildRequestException bre) {
+            ProjectTaskManager.Result result;
+            try {
+                result = taskFuture.get(300, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof BuildRequestException bre) {
+                    buildInProgress.set(false);
+                    return bre.getMessage();
+                }
+                LOG.warn("ProjectTaskManager build failed to run, falling back to JPS compiler", e);
+                return buildWithCompilerManager(project, moduleName, buildInProgress);
+            } catch (InterruptedException | TimeoutException e) {
                 buildInProgress.set(false);
-                return bre.getMessage();
+                throw e;
             }
-            LOG.warn("ProjectTaskManager build failed to run, falling back to JPS compiler", e);
-            return buildWithCompilerManager(project, moduleName, buildInProgress);
-        } catch (InterruptedException | TimeoutException e) {
             buildInProgress.set(false);
-            throw e;
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+            return formatTaskHeader(result.isAborted(), result.hasErrors(), elapsedMs)
+                + selectBuildOutput(capture.text(), project);
         }
-        buildInProgress.set(false);
-        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
-        return formatTaskHeader(result.isAborted(), result.hasErrors(), elapsedMs)
-            + readBuildWindowOutput(project);
+    }
+
+    /**
+     * Prefers the output captured from external-system (Gradle/Maven) tasks, which is complete for the
+     * whole build. The shared Build tool window only holds the last pass, so it is used just when no
+     * external task ran (a JPS-only build). Keeps the tail, where errors and the summary are.
+     */
+    static String selectBuildOutput(String captured, Project project) {
+        if (captured.isBlank()) {
+            return "Build tool window output:\n" + readBuildWindowOutput(project);
+        }
+        String trimmed = captured.strip();
+        if (trimmed.length() > BUILD_OUTPUT_MAX_CHARS) {
+            trimmed = "… (truncated)\n" + trimmed.substring(trimmed.length() - BUILD_OUTPUT_MAX_CHARS);
+        }
+        return "Build output:\n" + trimmed;
     }
 
     private static void startTaskManagerBuild(Project project, String moduleName, boolean rebuild,
@@ -150,7 +167,7 @@ public class ProjectBuildSupport {
         } else {
             outcome = "✓ Build succeeded";
         }
-        return String.format("%s (%.1fs)%nBuild tool window output:%n", outcome, elapsedMs / 1000.0);
+        return String.format("%s (%.1fs)%n", outcome, elapsedMs / 1000.0);
     }
 
     private static final class BuildRequestException extends Exception {
