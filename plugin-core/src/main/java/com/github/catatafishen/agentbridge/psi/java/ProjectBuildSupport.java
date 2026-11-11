@@ -56,10 +56,20 @@ public class ProjectBuildSupport {
     public static String buildProject(Project project, String moduleName, boolean rebuild,
                                       List<String> filePaths, AtomicBoolean buildInProgress)
         throws ExecutionException, InterruptedException, TimeoutException {
+        // Resolve (and VFS-refresh) files here on the calling background thread, never on the UI thread.
+        VirtualFile[] files = resolveFiles(project, filePaths);
+        if (files.length != filePaths.size()) {
+            buildInProgress.set(false);
+            return "Error: Could not find all files to compile: " + filePaths;
+        }
+
         long startNanos = System.nanoTime();
         CompletableFuture<ProjectTaskManager.Result> taskFuture = new CompletableFuture<>();
-        try (BuildOutputCapture capture = new BuildOutputCapture(project)) {
-            EdtUtil.invokeLater(() -> startTaskManagerBuild(project, moduleName, rebuild, filePaths, taskFuture));
+        // The guard is released when the submitted task actually finishes, not when we stop waiting for it:
+        // a timeout or interrupt leaves the build running, and a second one must not start on top of it.
+        taskFuture.whenComplete((r, t) -> buildInProgress.set(false));
+        try (BuildOutputCapture capture = new BuildOutputCapture(project, BUILD_OUTPUT_MAX_CHARS)) {
+            EdtUtil.invokeLater(() -> startTaskManagerBuild(project, moduleName, rebuild, files, taskFuture));
 
             ProjectTaskManager.Result result;
             try {
@@ -67,51 +77,55 @@ public class ProjectBuildSupport {
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof BuildRequestException bre) {
-                    buildInProgress.set(false);
                     return bre.getMessage();
                 }
+                if (rebuild || files.length > 0) {
+                    // The JPS fallback can only run an incremental module/project build; running it would
+                    // report success without doing what was asked.
+                    LOG.warn("ProjectTaskManager build failed to run", e);
+                    return "Error: The build could not be started (" + e.getMessage() + "), and the JPS fallback cannot "
+                        + "honour mode='rebuild' or 'files'. Retry with a plain or module build, or check the IDE log.";
+                }
                 LOG.warn("ProjectTaskManager build failed to run, falling back to JPS compiler", e);
+                buildInProgress.set(true);
                 return buildWithCompilerManager(project, moduleName, buildInProgress);
-            } catch (InterruptedException | TimeoutException e) {
-                buildInProgress.set(false);
-                throw e;
             }
-            buildInProgress.set(false);
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
             return formatTaskHeader(result.isAborted(), result.hasErrors(), elapsedMs)
-                + selectBuildOutput(capture.text(), project);
+                + selectBuildOutput(capture.text(), capture.isTruncated(), capture.diagnostics(),
+                () -> readBuildWindowOutput(project));
         }
     }
 
     /**
-     * Prefers the output captured from external-system (Gradle/Maven) tasks, which is complete for the
-     * whole build. The shared Build tool window only holds the last pass, so it is used just when no
-     * external task ran (a JPS-only build). Keeps the tail, where errors and the summary are.
+     * Prefers the output captured from external-system (Gradle/Maven) tasks. The shared Build tool window
+     * only holds the last pass, so it is used just when no external task ran (a JPS-only build). JPS compiler
+     * errors collected during the build are appended, so a JPS failure after a successful Gradle pass is not
+     * hidden behind Gradle's "BUILD SUCCESSFUL". Keeps the tail, where errors and the summary are.
      */
-    static String selectBuildOutput(String captured, Project project) {
+    static String selectBuildOutput(String captured, boolean truncated, String diagnostics,
+                                    java.util.function.Supplier<String> buildWindowOutput) {
         if (captured.isBlank()) {
-            return "Build tool window output:\n" + readBuildWindowOutput(project);
+            return "Build tool window output:\n" + buildWindowOutput.get();
         }
-        String trimmed = captured.strip();
-        if (trimmed.length() > BUILD_OUTPUT_MAX_CHARS) {
-            trimmed = "… (truncated)\n" + trimmed.substring(trimmed.length() - BUILD_OUTPUT_MAX_CHARS);
+        StringBuilder sb = new StringBuilder("Build output:\n");
+        if (truncated) {
+            sb.append("… (truncated)\n");
         }
-        return "Build output:\n" + trimmed;
+        sb.append(captured.strip());
+        if (!diagnostics.isBlank()) {
+            sb.append("\n\nCompiler errors:\n").append(diagnostics.strip());
+        }
+        return sb.toString();
     }
 
     private static void startTaskManagerBuild(Project project, String moduleName, boolean rebuild,
-                                              List<String> filePaths,
+                                              VirtualFile[] files,
                                               CompletableFuture<ProjectTaskManager.Result> future) {
         try {
             ProjectTaskManager manager = ProjectTaskManager.getInstance(project);
             Promise<ProjectTaskManager.Result> promise;
-            if (!filePaths.isEmpty()) {
-                VirtualFile[] files = resolveFiles(project, filePaths);
-                if (files.length != filePaths.size()) {
-                    future.completeExceptionally(new BuildRequestException(
-                        "Error: Could not find all files to compile: " + filePaths));
-                    return;
-                }
+            if (files.length > 0) {
                 promise = manager.compile(files);
             } else if (!moduleName.isEmpty()) {
                 Module module = resolveModule(project, moduleName);
@@ -274,7 +288,7 @@ public class ProjectBuildSupport {
         return sb.toString();
     }
 
-    private static void appendCompilerMessages(StringBuilder sb, CompileContext context,
+    static void appendCompilerMessages(StringBuilder sb, CompileContext context,
                                                CompilerMessageCategory category,
                                                String label, int maxCount) {
         CompilerMessage[] messages = context.getMessages(category);
