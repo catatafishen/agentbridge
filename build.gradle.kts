@@ -13,7 +13,7 @@ plugins {
     id("java")
     id("org.sonarqube") version "7.5.0.8588"
     id("org.jetbrains.kotlin.jvm") version "2.4.21" apply false
-    id("org.jetbrains.intellij.platform") version "2.19.0" apply false
+    id("org.jetbrains.intellij.platform") version "2.20.0" apply false
     idea
 }
 
