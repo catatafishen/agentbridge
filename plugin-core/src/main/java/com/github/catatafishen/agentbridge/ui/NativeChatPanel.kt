@@ -667,15 +667,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             applyChatFont(-1)
             isVisible = false
         }
-        val actionsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+        val actionsPanel = JPanel(WrapLayout(FlowLayout.LEFT, 4, 0)).apply {
             isOpaque = false
             isVisible = false
         }
-        val innerPanel = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+        val labelRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
             isOpaque = false
             add(label)
             add(extendBtn)
-            add(actionsPanel)
+        }
+        // Buttons get their own full-width row so WrapLayout can wrap them on narrow panels;
+        // a FlowLayout reports a single row as its height and clips the wrapped buttons.
+        val innerPanel = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(labelRow, BorderLayout.NORTH)
+            add(actionsPanel, BorderLayout.CENTER)
         }
         val (row, bubble) = createBubble(agentBg(), explicitBorder = agentBorder())
         bubble.add(innerPanel, BorderLayout.CENTER)

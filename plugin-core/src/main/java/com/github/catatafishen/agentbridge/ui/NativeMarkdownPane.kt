@@ -326,7 +326,8 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             resizeSettleTimer.restart()
             // A wider cached frame would clip its right-hand text when the pane narrows.
             // Re-render shrink operations immediately; only defer paints that cannot crop text.
-            if (paintCacheW <= w) {
+            // Also never reuse a frame shorter than the pane: the missing bottom would stay blank.
+            if (paintCacheW <= w && paintCacheH >= h) {
                 UIUtil.drawImage(g, paintCache!!, 0, 0, null)
                 return
             }
@@ -335,7 +336,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // Stale-frame (tab switch after resize): content unchanged but dimensions differ.
         // Blit the old frame immediately for a zero-cost first paint, then schedule a single
         // accurate repaint on the next EDT pass so the correct frame appears right after.
-        if (paintCache != null && paintCacheW <= w &&
+        if (paintCache != null && paintCacheW <= w && paintCacheH >= h &&
             paintCacheVersion == contentVersion && !staleRepaintPending
         ) {
             UIUtil.drawImage(g, paintCache!!, 0, 0, null)
