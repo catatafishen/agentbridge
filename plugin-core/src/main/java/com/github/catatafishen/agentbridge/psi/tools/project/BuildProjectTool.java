@@ -80,40 +80,34 @@ public final class BuildProjectTool extends ProjectTool {
 
         // Parse before taking the guard: a malformed argument (e.g. mode: null, files: [null]) must not
         // leave the guard set and block every later build.
-        String moduleName;
-        boolean rebuild;
-        java.util.List<String> files = new java.util.ArrayList<>();
-        try {
-            moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
-            rebuild = args.has(JSON_MODE) && "rebuild".equalsIgnoreCase(args.get(JSON_MODE).getAsString());
-            if (args.has(JSON_FILES) && args.get(JSON_FILES).isJsonArray()) {
-                for (var e : args.getAsJsonArray(JSON_FILES)) {
-                    files.add(e.getAsString());
-                }
-            }
-        } catch (UnsupportedOperationException | IllegalStateException | ClassCastException e) {
-            return "Error: Invalid arguments. 'module' and 'mode' must be strings and 'files' an array of strings"
-                + " (null values are not allowed).";
-        }
+        BuildRequest request = BuildRequest.parse(args);
+        if (request == null) return BuildRequest.INVALID_ARGUMENTS_ERROR;
 
         if (!buildInProgress.compareAndSet(false, true)) {
             return "Error: Build already in progress. Please wait for the current build to complete before requesting another.";
         }
 
-        // Show Build tool window in follow mode without stealing focus from chat prompt
-        if (com.github.catatafishen.agentbridge.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
-            com.github.catatafishen.agentbridge.psi.EdtUtil.invokeLater(() -> {
-                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Build");
-                if (tw == null) return;
-                if (PsiBridgeService.isChatToolWindowActive(project)) {
-                    tw.show();
-                } else {
-                    tw.activate(null);
-                }
-            });
-        }
+        showBuildWindowIfFollowing();
 
         return com.github.catatafishen.agentbridge.psi.java.ProjectBuildSupport.buildProject(
-            project, moduleName, rebuild, files, buildInProgress);
+            project, request.moduleName(), request.rebuild(), request.files(), buildInProgress);
+    }
+
+    /**
+     * In follow mode, shows the Build tool window without stealing focus from the chat prompt.
+     */
+    private void showBuildWindowIfFollowing() {
+        if (!com.github.catatafishen.agentbridge.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            return;
+        }
+        com.github.catatafishen.agentbridge.psi.EdtUtil.invokeLater(() -> {
+            var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Build");
+            if (tw == null) return;
+            if (PsiBridgeService.isChatToolWindowActive(project)) {
+                tw.show();
+            } else {
+                tw.activate(null);
+            }
+        });
     }
 }
