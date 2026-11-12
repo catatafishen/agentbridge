@@ -9,6 +9,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static com.github.catatafishen.agentbridge.psi.PlatformApiCompat.SourceRootKind;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -374,6 +375,34 @@ class PlatformApiCompatPureLogicTest {
             } else {
                 System.clearProperty(key);
             }
+        }
+    }
+
+    // ── describeConfigError ───────────────────────────────────
+
+    @Nested
+    class DescribeConfigError {
+
+        @Test
+        void messageWinsOverGenericTitle() {
+            assertEquals("Node interpreter is not specified",
+                PlatformApiCompat.describeConfigError("Node interpreter is not specified", "Error"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"", "   "})
+        void blankMessageFallsBackToTitle(String message) {
+            assertEquals("Error", PlatformApiCompat.describeConfigError(message, "Error"));
+        }
+
+        @Test
+        void nullMessageFallsBackToTitle() {
+            assertEquals("Error", PlatformApiCompat.describeConfigError(null, "Error"));
+        }
+
+        @Test
+        void nullBothReturnsNull() {
+            assertNull(PlatformApiCompat.describeConfigError(null, null));
         }
     }
 }
