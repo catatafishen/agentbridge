@@ -23,6 +23,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ToolUtilsTest {
 
     @Nested
+    @DisplayName("isRelativePath")
+    class IsRelativePath {
+        @Test
+        void bareFileNameIsRelative() {
+            assertTrue(ToolUtils.isRelativePath("AGENTS.md"));
+            assertTrue(ToolUtils.isRelativePath("src/Main.java"));
+        }
+
+        @Test
+        void posixAbsoluteIsNotRelative() {
+            assertFalse(ToolUtils.isRelativePath("/home/user/proj/AGENTS.md"));
+        }
+
+        @Test
+        void windowsDriveIsNotRelative() {
+            assertFalse(ToolUtils.isRelativePath("C:/proj/AGENTS.md"));
+        }
+    }
+
+    @Nested
     @DisplayName("relativize")
     class Relativize {
         @Test
