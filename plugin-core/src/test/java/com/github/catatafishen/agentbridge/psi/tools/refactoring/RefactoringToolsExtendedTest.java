@@ -785,11 +785,54 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
 
         String result = executeSync(() -> refactorTool.execute(args(
             "operation", "invalid_op",
-            "file", vf.getPath(),
+            "path", vf.getPath(),
             "symbol", "RefactorInvalidOp"
         )));
         assertNotNull("Result must not be null", result);
         assertTrue("Expected error for invalid operation, got: " + result,
             result.startsWith("Error:") || result.contains("Error"));
+    }
+
+    /**
+     * Regression for issue #1238: renaming a local variable named after a common word must
+     * never rewrite that word in comments or strings, even when text search is requested,
+     * and the result must list the touched file.
+     */
+    public void testRenameLocalVariableNeverTouchesTextOccurrences() throws Exception {
+        String content = String.join("\n",
+            "public class RenameLocal {",
+            "    // include the header",
+            "    String label = \"include\";",
+            "    int run() {",
+            "        int include = 1;",
+            "        return include + 1;",
+            "    }",
+            "}",
+            "");
+        VirtualFile vf = createTestFile("RenameLocal.java", content);
+
+        JsonObject request = args(
+            "operation", "rename",
+            "path", vf.getPath(),
+            "symbol", "include",
+            "line", "5",
+            "new_name", "scope");
+        request.addProperty("search_text_occurrences", true);
+        String result = executeSync(() -> refactorTool.execute(request));
+
+        assertFalse("Rename must succeed, got: " + result, result.startsWith("Error"));
+        assertTrue("Result must say text search was ignored, got: " + result,
+            result.contains("search_text_occurrences ignored"));
+        assertTrue("Result must list the touched file, got: " + result, result.contains("RenameLocal.java"));
+
+        String after = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            var doc = FileDocumentManager.getInstance().getDocument(vf);
+            assertNotNull("Renamed file must have a document", doc);
+            return doc.getText();
+        });
+        assertTrue("Local and its usage must be renamed:\n" + after,
+            after.contains("int scope = 1;") && after.contains("return scope + 1;"));
+        assertTrue("Comment must be untouched:\n" + after, after.contains("// include the header"));
+        assertTrue("String literal must be untouched:\n" + after, after.contains("\"include\""));
     }
 }
