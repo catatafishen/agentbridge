@@ -98,7 +98,10 @@ public final class ProjectFileScanner {
         }
 
         // Scopes are used as cache keys by the index; two scopes are equal only when they wrap the
-        // same base scope and select the same categories.
+        // same base scope and select the same categories. The matching hash lives in calcHashCode():
+        // GlobalSearchScope.hashCode() is not overridable (platform API), caches the value and
+        // delegates to calcHashCode(), so Sonar's "override hashCode too" rule does not apply.
+        @SuppressWarnings("java:S1206")
         @Override
         public boolean equals(Object o) {
             return o instanceof CategoryScope other
