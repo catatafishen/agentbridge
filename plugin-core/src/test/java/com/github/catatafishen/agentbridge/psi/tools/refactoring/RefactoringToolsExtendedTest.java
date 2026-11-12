@@ -11,6 +11,7 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -99,6 +100,10 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
                 fem.closeFile(openFile);
             }
             ConversationDatabase.getInstance(getProject()).dispose();
+            // Delete through the VFS, not java.nio: the VFS writes saved documents to disk
+            // asynchronously, and a raw delete can race a pending write and fail tearDown.
+            VirtualFile tempRoot = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(tempDir);
+            if (tempRoot != null) WriteAction.runAndWait(() -> tempRoot.delete(this));
             deleteDir(tempDir);
         } finally {
             super.tearDown();
@@ -823,7 +828,8 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
         assertFalse("Rename must succeed, got: " + result, result.startsWith("Error"));
         assertTrue("Result must say text search was ignored, got: " + result,
             result.contains("search_text_occurrences ignored"));
-        assertTrue("Result must list the touched file, got: " + result, result.contains("RenameLocal.java"));
+        assertTrue("Touched-file list must contain the file, got: " + result,
+            result.lines().anyMatch(l -> l.startsWith("  - ") && l.endsWith("RenameLocal.java")));
 
         String after = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             var doc = FileDocumentManager.getInstance().getDocument(vf);
@@ -834,5 +840,28 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
             after.contains("int scope = 1;") && after.contains("return scope + 1;"));
         assertTrue("Comment must be untouched:\n" + after, after.contains("// include the header"));
         assertTrue("String literal must be untouched:\n" + after, after.contains("\"include\""));
+    }
+
+    /**
+     * An unused symbol has no usages, but renaming it still changes its declaration file, which
+     * must be counted and listed.
+     */
+    public void testRenameUnusedSymbolListsDeclarationFile() throws Exception {
+        VirtualFile vf = createTestFile("RenameUnused.java", String.join("\n",
+            "public class RenameUnused {",
+            "    private void unusedHelper() {}",
+            "}",
+            ""));
+
+        String result = executeSync(() -> refactorTool.execute(args(
+            "operation", "rename",
+            "path", vf.getPath(),
+            "symbol", "unusedHelper",
+            "new_name", "renamedHelper")));
+
+        assertFalse("Rename must succeed, got: " + result, result.startsWith("Error"));
+        assertTrue("Declaration file must be counted, got: " + result, result.contains("in 1 file(s)"));
+        assertTrue("Declaration file must be listed, got: " + result,
+            result.lines().anyMatch(l -> l.startsWith("  - ") && l.endsWith("RenameUnused.java")));
     }
 }

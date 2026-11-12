@@ -24,6 +24,7 @@ import com.intellij.usageView.UsageInfo;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
@@ -168,12 +169,13 @@ public final class RefactorTool extends RefactoringTool {
                     result[0] = "Error during refactoring: " + e.getMessage();
                 }
             });
+            // Save outside the write action, so before-save hooks (trailing-space stripping etc.)
+            // are not nested inside the refactoring, but still inside the agent-edit scope so
+            // the edits those hooks make are tracked for review.
+            FileDocumentManager.getInstance().saveAllDocuments();
         } finally {
             FileTool.notifyEditComplete();
         }
-        // Save outside the write action: saving runs before-save hooks (trailing-space
-        // stripping etc.) that must not be nested inside the refactoring's write action.
-        FileDocumentManager.getInstance().saveAllDocuments();
         return result[0];
     }
 
@@ -204,7 +206,14 @@ public final class RefactorTool extends RefactoringTool {
         var rename = factory.createRename(targetElement, newName);
         rename.setSearchInComments(textSearch);
         rename.setSearchInNonJavaFiles(textSearch);
-        Set<String> touchedFiles = new TreeSet<>();
+        // VirtualFile handles survive file renames (e.g. renaming a class renames its file), so the
+        // paths are resolved only after the refactoring. The declaration file is always included:
+        // an unused symbol has no usages but its own file still changes.
+        Set<VirtualFile> touched = new LinkedHashSet<>();
+        PsiFile declarationFile = targetElement.getContainingFile();
+        if (declarationFile != null && declarationFile.getVirtualFile() != null) {
+            touched.add(declarationFile.getVirtualFile());
+        }
         int[] usageCount = new int[1];
         CommandProcessor.getInstance().executeCommand(
             project,
@@ -213,7 +222,7 @@ public final class RefactorTool extends RefactoringTool {
                 usageCount[0] = usages.length;
                 for (UsageInfo usage : usages) {
                     VirtualFile file = usage.getVirtualFile();
-                    if (file != null) touchedFiles.add(relativize(file));
+                    if (file != null) touched.add(file);
                 }
                 rename.doRefactoring(usages);
             },
@@ -222,6 +231,8 @@ public final class RefactorTool extends RefactoringTool {
         );
 
         PsiDocumentManager.getInstance(project).commitAllDocuments();
+        Set<String> touchedFiles = new TreeSet<>();
+        for (VirtualFile file : touched) touchedFiles.add(relativize(file));
 
         StringBuilder sb = new StringBuilder()
             .append("Renamed '").append(symbolName).append("' to '").append(newName).append("'\n")
