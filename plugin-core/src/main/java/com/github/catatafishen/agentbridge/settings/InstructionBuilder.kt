@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.intellij.openapi.application.ApplicationInfo
+import com.intellij.openapi.application.ApplicationManager
 
 /**
  * Builds the agents' startup instructions with the IDE name dynamically inserted.
@@ -14,7 +15,14 @@ object InstructionBuilder {
      */
     const val KEY_IDE_NAME: String = "\${IDE_NAME}"
 
-    private fun ideName(): String = ApplicationInfo.getInstance().fullApplicationName
+    /**
+     * The running IDE's full name. Without an IDE Application (plain unit tests that load
+     * McpProtocolHandler, whose static initializer builds the instructions) there is no name to insert,
+     * so the placeholder is kept visibly instead of failing class initialization.
+     */
+    private fun ideName(): String =
+        if (ApplicationManager.getApplication() == null) KEY_IDE_NAME
+        else ApplicationInfo.getInstance().fullApplicationName
 
     /**
      * Default instructions for the agent, with the IDE name dynamically inserted.
