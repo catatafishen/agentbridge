@@ -246,14 +246,25 @@ public final class ToolUtils {
         VirtualFile jarFile = resolveJarPath(normalized);
         if (jarFile != null) return jarFile;
 
-        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(normalized);
-        if (vf != null) return vf;
-
         String basePath = project.getBasePath();
-        if (basePath != null) {
-            vf = LocalFileSystem.getInstance().findFileByPath(basePath + "/" + normalized);
+        // Relative paths must resolve against the project base path only. Passing them to
+        // LocalFileSystem.findFileByPath resolves against the IDE process CWD, which can be
+        // another open project (it silently returned that project's AGENTS.md).
+        if (isRelativePath(normalized)) {
+            return basePath != null
+                ? LocalFileSystem.getInstance().findFileByPath(basePath + "/" + normalized) : null;
         }
-        return vf;
+        return LocalFileSystem.getInstance().findFileByPath(normalized);
+    }
+
+    /**
+     * True when the path is neither POSIX-absolute nor a Windows drive/UNC path.
+     * Expects backslashes already normalized to '/'.
+     */
+    static boolean isRelativePath(String normalized) {
+        if (normalized.startsWith("/")) return false;
+        return !(normalized.length() >= 2 && normalized.charAt(1) == ':'
+            && Character.isLetter(normalized.charAt(0)));
     }
 
     /**
@@ -277,9 +288,9 @@ public final class ToolUtils {
         if (jarFile != null) return jarFile;
 
         String basePath = project.getBasePath();
-        if (basePath != null) {
-            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + normalized);
-            if (vf != null) return vf;
+        if (isRelativePath(normalized)) {
+            return basePath != null
+                ? LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + normalized) : null;
         }
         return LocalFileSystem.getInstance().refreshAndFindFileByPath(normalized);
     }
