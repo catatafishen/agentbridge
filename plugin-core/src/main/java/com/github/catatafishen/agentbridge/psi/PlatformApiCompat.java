@@ -1498,14 +1498,17 @@ public final class PlatformApiCompat {
      * Checks whether a run configuration is valid and returns an error description if not.
      *
      * <p>Returns {@code null} when the configuration is valid or only has a non-fatal
-     * {@code RuntimeConfigurationWarning}. Returns the error title for
-     * {@code RuntimeConfigurationError} and other hard failures.
+     * {@code RuntimeConfigurationWarning}. Returns the error message for
+     * {@code RuntimeConfigurationError} and other hard failures, falling back to the
+     * title when the message is blank (the title alone is often just "Error").
      *
      * <p><b>Why extracted:</b> {@code RuntimeConfigurationError} and
      * {@code RuntimeConfigurationException} fail to resolve as {@code Throwable} subtypes in
      * the IDE daemon due to the {@code CONFIGURATION_TYPE_EP} cascade. Gradle compiles cleanly.
-     * Additionally, {@code RuntimeConfigurationException.getMessage()} is deprecated — the
-     * correct API is {@code getTitle()}.
+     * Additionally, {@code RuntimeConfigurationException.getMessage()} is deprecated. The
+     * message is read through {@code getLocalizedMessage()}, as {@code RunTestsTool} does;
+     * it returns the same text. {@code getTitle()} is only the dialog title, which
+     * {@code RuntimeConfigurationError} always sets to "Error".
      */
     public static @Nullable String checkRunConfigForError(
         @NotNull com.intellij.execution.configurations.RunConfiguration config) {
@@ -1515,10 +1518,19 @@ public final class PlatformApiCompat {
         } catch (com.intellij.execution.configurations.RuntimeConfigurationWarning ignored) {
             return null;
         } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {
-            return e.getTitle();
+            return describeConfigError(e.getLocalizedMessage(), e.getTitle());
         } catch (Exception e) {
             return null; // Unknown exception during validation — don't block creation.
         }
+    }
+
+    /**
+     * Picks the text to report for a failed run configuration check: the message when it
+     * has one, since it names the problem, otherwise the title.
+     */
+    static @Nullable String describeConfigError(@Nullable String message, @Nullable String title) {
+        if (message != null && !message.isBlank()) return message;
+        return title;
     }
 
     /**
