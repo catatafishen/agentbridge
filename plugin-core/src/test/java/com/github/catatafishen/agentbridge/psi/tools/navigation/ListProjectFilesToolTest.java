@@ -76,7 +76,7 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
         assertNotNull("Result must not be null", result);
         assertFalse("Result must not be blank", result.isBlank());
         assertTrue("Expected file listing or 'No files found', got: " + result,
-            result.contains("files:") || result.equals("No files found"));
+            result.contains("files:") || result.startsWith("No files found"));
         if (result.contains("files:")) {
             assertTrue("Expected FileA.java, got: " + result, result.contains("FileA.java"));
             assertTrue("Expected FileB.java, got: " + result, result.contains("FileB.java"));
@@ -185,16 +185,17 @@ public class ListProjectFilesToolTest extends BasePlatformTestCase {
     }
 
     /**
-     * A glob pattern that matches no indexed files must return exactly
-     * {@code "No files found"}.
+     * A glob pattern that matches no files returns {@code "No files found"}, followed by a note naming the
+     * categories that were not searched.
      */
     public void testListWithNoMatchingPattern() {
         myFixture.addFileToProject("SomeFile.java", "class SomeFile {}");
 
         String result = tool.execute(args("file_pattern", "*.frobnicator"));
 
-        assertEquals("Expected 'No files found' for non-matching pattern, got: " + result,
-            "No files found", result);
+        assertTrue("Expected 'No files found' for non-matching pattern, got: " + result,
+            result.startsWith("No files found"));
+        assertTrue("Expected the excluded-directories hint, got: " + result, result.contains("Excluded"));
     }
 
     /**

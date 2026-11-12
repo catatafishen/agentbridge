@@ -57,7 +57,7 @@ public final class FindReferencesTool extends NavigationTool {
     public @NotNull String description() {
         return "Find all usages of a symbol throughout the project. Semantic — finds references even through " +
             "renames and imports. Returns file paths and line numbers with usage context (CALL, IMPORT, TYPE_REF, " +
-            "etc.) and containing method/class name. Use the 'scope' parameter to also search inside library / JDK " +
+            "etc.) and containing method/class name. Add \"libraries\" to 'scope' to also search inside library / JDK " +
             "sources (after running download_sources). " +
             "For textual search, use search_text. For finding symbol definitions, use search_symbols.";
     }
@@ -74,13 +74,12 @@ public final class FindReferencesTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        return FileCategory.withScopeParam(schema(
             Param.required("symbol", TYPE_STRING, "The exact symbol name to search for"),
             Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", ""),
-            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of results to skip for pagination (default: 0)")
-        );
+        ));
     }
 
     @Override
@@ -94,7 +93,8 @@ public final class FindReferencesTool extends NavigationTool {
             return "Error: 'symbol' parameter is required";
         String symbol = args.get(PARAM_SYMBOL).getAsString();
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
-        String scopeName = readScopeParam(args);
+        FileCategory.Selection selection = FileCategory.parseScope(args);
+        if (selection.error() != null) return selection.error();
         int[] pagination = readPaginationParams(args, DEFAULT_MAX_RESULTS);
         int maxResults = pagination[0];
         int offset = pagination[1];
@@ -103,9 +103,13 @@ public final class FindReferencesTool extends NavigationTool {
         String result = computeWithProgress(() -> {
             List<Hit> hits = new ArrayList<>();
             String basePath = project.getBasePath();
-            GlobalSearchScope scope = resolveScope(scopeName);
+            GlobalSearchScope scope = resolveScope(selection);
+            // The categories restrict where usages are reported, not where the symbol is declared: a symbol
+            // declared in generated_sources must still be found when only usages in sources are asked for.
+            GlobalSearchScope definitionScope = selection.includes(FileCategory.LIBRARIES)
+                ? GlobalSearchScope.allScope(project) : GlobalSearchScope.projectScope(project);
 
-            for (PsiElement definition : findDefinitions(symbol, scope)) {
+            for (PsiElement definition : findDefinitions(symbol, definitionScope)) {
                 collectDefinitionReferences(definition, scope, filePattern, basePath, hits);
             }
             // Word-index text fallback: only for unqualified symbols. A qualified symbol like

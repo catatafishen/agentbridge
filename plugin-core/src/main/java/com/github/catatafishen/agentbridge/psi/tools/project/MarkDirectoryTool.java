@@ -2,7 +2,9 @@ package com.github.catatafishen.agentbridge.psi.tools.project;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.psi.tools.navigation.FileCategory;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.module.Module;
@@ -46,7 +48,11 @@ public final class MarkDirectoryTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Mark a directory as source root, test root, resources, excluded, etc.";
+        return "Mark a directory as sources, test_sources, resources, test_resources, generated_sources, "
+            + "generated_test_sources or excluded, or 'unmark' it. The source types are the same category names "
+            + "that the 'scope' parameter of search_text, list_project_files, find_file, search_symbols and "
+            + "find_references uses. "
+            + "'excluded' removes the directory from IDE indexing, so those tools no longer see its contents.";
     }
 
     @Override
@@ -66,11 +72,25 @@ public final class MarkDirectoryTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        JsonObject s = schema(
             Param.required("path", TYPE_STRING, "Directory path (absolute or project-relative)"),
-            Param.required("type", TYPE_STRING, "Directory type: 'sources', 'test_sources', 'resources', 'test_resources', 'generated_sources', 'excluded', or 'unmark' to remove marking")
+            Param.required("type", TYPE_STRING, "Directory type: one of " + String.join(", ", VALID_TYPES)
+                + ". 'unmark' removes any marking.")
         );
+        JsonArray values = new JsonArray();
+        VALID_TYPES.forEach(values::add);
+        s.getAsJsonObject("properties").getAsJsonObject("type").add("enum", values);
+        return s;
     }
+
+    /**
+     * Markable categories (FileCategory ids except the derived 'ide' and 'other'), plus 'excluded' and 'unmark'.
+     */
+    static final List<String> VALID_TYPES = java.util.stream.Stream.concat(
+        java.util.Arrays.stream(FileCategory.values())
+            .filter(c -> c != FileCategory.IDE && c != FileCategory.OTHER && c != FileCategory.LIBRARIES)
+            .map(FileCategory::id),
+        java.util.stream.Stream.of(FileCategory.EXCLUDED_ID, "unmark")).toList();
 
     @Override
     public @NotNull Object resultRenderer() {
@@ -82,10 +102,8 @@ public final class MarkDirectoryTool extends ProjectTool {
         String pathStr = args.get("path").getAsString();
         String type = args.get("type").getAsString();
 
-        List<String> validTypes = List.of("sources", "test_sources", "resources",
-            "test_resources", "generated_sources", "excluded", "unmark");
-        if (!validTypes.contains(type)) {
-            return "Error: invalid type '" + type + "'. Must be one of: " + String.join(", ", validTypes);
+        if (!VALID_TYPES.contains(type)) {
+            return "Error: invalid type '" + type + "'. Must be one of: " + String.join(", ", VALID_TYPES);
         }
 
         String basePath = project.getBasePath();

@@ -92,7 +92,14 @@ public class FindFileToolTest extends BasePlatformTestCase {
     public void testNoMatchesReturnsMessage() {
         String result = tool.execute(args(QUERY, "ZzzNonexistentFileXyz123"));
 
-        assertEquals("No files found", result);
+        assertTrue(result, result.startsWith("No files found"));
+    }
+
+    public void testResultTagsCategory() {
+        myFixture.addFileToProject("CategoryTagUnique.txt", "x");
+        String result = tool.execute(args(QUERY, "CategoryTagUnique.txt"));
+        assertTrue("Expected a category tag, got: " + result,
+            result.contains("CategoryTagUnique.txt [CategoryTagUnique.txt, "));
     }
 
     public void testExactNameRanksFirst() {
@@ -138,7 +145,7 @@ public class FindFileToolTest extends BasePlatformTestCase {
         myFixture.addFileToProject("src/scope/ScopeProjUnique.java", "class ScopeProjUnique {}");
 
         JsonObject params = args(QUERY, "ScopeProjUnique");
-        params.addProperty(SCOPE, "project");
+        params.addProperty(SCOPE, "sources,other");
         String result = tool.execute(params);
 
         assertTrue("Should find file in project scope: " + result,
@@ -163,18 +170,16 @@ public class FindFileToolTest extends BasePlatformTestCase {
         params.addProperty(SCOPE, "libraries");
         String result = tool.execute(params);
 
-        assertEquals("No files found", result);
+        assertTrue(result, result.startsWith("No files found"));
     }
 
-    public void testUnknownScopeFallsBackToProject() {
-        myFixture.addFileToProject("src/scope/ScopeFallbackUnique.java", "class ScopeFallbackUnique {}");
-
-        JsonObject params = args(QUERY, "ScopeFallbackUnique");
+    public void testUnknownScopeIsAnError() {
+        JsonObject params = args(QUERY, "Anything");
         params.addProperty(SCOPE, "totally-bogus-scope");
         String result = tool.execute(params);
 
-        assertTrue("Unknown scope should fall back to project: " + result,
-            result.contains("ScopeFallbackUnique.java"));
+        assertTrue("Unknown scope should be rejected: " + result,
+            result.startsWith("Error: unknown scope category 'totally-bogus-scope'"));
     }
 
     public void testLimitClampedToMaximum() {

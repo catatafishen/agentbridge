@@ -23,7 +23,11 @@ object ListProjectFilesRenderer : ToolResultRenderer {
         val countMatch = COUNT_HEADER.find(lines.first().trim()) ?: return null
         val fileCount = countMatch.groupValues[1].toIntOrNull() ?: return null
 
-        val entries = lines.drop(1).mapNotNull { parseEntry(it.trim()) }
+        // The file list ends at the first blank line; anything after it (the excluded-directories
+        // section and its guidance) is plain text, not file entries.
+        val (fileLines, trailer) = splitBody(lines.drop(1))
+
+        val entries = fileLines.mapNotNull { parseEntry(it.trim()) }
         if (entries.isEmpty()) return null
 
         val displayEntries = entries.take(ToolRenderers.MAX_LIST_ENTRIES)
@@ -39,7 +43,21 @@ object ListProjectFilesRenderer : ToolResultRenderer {
         if (remaining > 0) {
             ToolRenderers.addTruncationIndicator(panel, remaining, "files")
         }
+        for (text in trailer) {
+            panel.add(ToolRenderers.mutedLabel(text.trim()).apply { border = JBUI.Borders.emptyTop(2) })
+        }
         return panel
+    }
+
+    /**
+     * Splits the lines after the count header into file-entry lines (up to the first blank line) and the
+     * non-blank trailing text lines after it.
+     */
+    @JvmStatic
+    fun splitBody(body: List<String>): Pair<List<String>, List<String>> {
+        val split = body.indexOfFirst { it.isBlank() }
+        if (split < 0) return body to emptyList()
+        return body.subList(0, split) to body.subList(split, body.size).filter { it.isNotBlank() }
     }
 
     private fun renderDirectoryGroup(panel: JComponent, dir: String, files: List<FileEntry>) {
@@ -90,9 +108,8 @@ object ListProjectFilesRenderer : ToolResultRenderer {
     }
 
     private fun tagColor(tag: String): Color = when (tag.lowercase()) {
-        "test" -> ToolRenderers.SUCCESS_COLOR
-        "generated" -> ToolRenderers.MUTED_COLOR
-        "excluded" -> ToolRenderers.FAIL_COLOR
+        "test_sources", "test_resources", "generated_test_sources" -> ToolRenderers.SUCCESS_COLOR
+        "generated_sources", "ide", "other" -> ToolRenderers.MUTED_COLOR
         else -> UIUtil.getLabelForeground()
     }
 }

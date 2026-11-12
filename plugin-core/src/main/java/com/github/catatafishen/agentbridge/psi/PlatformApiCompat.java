@@ -49,12 +49,13 @@ public final class PlatformApiCompat {
     private static final String LANG_PYTHON = "Python";
     private static final String ROOT_TYPE_RESOURCES = "resources";
     private static final String ROOT_TYPE_GENERATED_SOURCES = "generated_sources";
+    private static final String ROOT_TYPE_GENERATED_TEST_SOURCES = "generated_test_sources";
 
     /**
      * Categories of source root types, used by {@link #classifySourceRootType(String)}.
      */
     enum SourceRootKind {
-        SOURCE, TEST_SOURCE, RESOURCE, TEST_RESOURCE, GENERATED_SOURCE
+        SOURCE, TEST_SOURCE, RESOURCE, TEST_RESOURCE, GENERATED_SOURCE, GENERATED_TEST_SOURCE
     }
 
     private PlatformApiCompat() {
@@ -1141,6 +1142,9 @@ public final class PlatformApiCompat {
         if (ROOT_TYPE_GENERATED_SOURCES.equals(type)) {
             return SourceRootKind.GENERATED_SOURCE;
         }
+        if (ROOT_TYPE_GENERATED_TEST_SOURCES.equals(type)) {
+            return SourceRootKind.GENERATED_TEST_SOURCE;
+        }
         return isTest ? SourceRootKind.TEST_SOURCE : SourceRootKind.SOURCE;
     }
 
@@ -1160,12 +1164,11 @@ public final class PlatformApiCompat {
             case TEST_RESOURCE ->
                 entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaResourceRootType.TEST_RESOURCE);
             case RESOURCE -> entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaResourceRootType.RESOURCE);
-            case GENERATED_SOURCE -> {
-                var rootType = org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE;
-                var props = org.jetbrains.jps.model.java.JpsJavaExtensionService.getInstance()
-                    .createSourceRootProperties("", true);
-                entry.addSourceFolder(dir, rootType, props);
-            }
+            case GENERATED_SOURCE -> entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE,
+                org.jetbrains.jps.model.java.JpsJavaExtensionService.getInstance().createSourceRootProperties("", true));
+            case GENERATED_TEST_SOURCE ->
+                entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaSourceRootType.TEST_SOURCE,
+                    org.jetbrains.jps.model.java.JpsJavaExtensionService.getInstance().createSourceRootProperties("", true));
             case TEST_SOURCE -> entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaSourceRootType.TEST_SOURCE);
             case SOURCE -> entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE);
         }
@@ -1194,7 +1197,7 @@ public final class PlatformApiCompat {
             && rootType == org.jetbrains.jps.model.java.JavaResourceRootType.TEST_RESOURCE;
         boolean isResource = rootType instanceof org.jetbrains.jps.model.java.JavaResourceRootType;
 
-        if (isGenerated) return isTest || isTestResource ? "generated_test_sources" : ROOT_TYPE_GENERATED_SOURCES;
+        if (isGenerated) return isTest || isTestResource ? ROOT_TYPE_GENERATED_TEST_SOURCES : ROOT_TYPE_GENERATED_SOURCES;
         if (isTestResource) return "test_resources";
         if (isTest) return "test_sources";
         if (isResource) return ROOT_TYPE_RESOURCES;
@@ -1222,7 +1225,7 @@ public final class PlatformApiCompat {
         result.put(ROOT_TYPE_RESOURCES, new java.util.ArrayList<>());
         result.put("test_resources", new java.util.ArrayList<>());
         result.put(ROOT_TYPE_GENERATED_SOURCES, new java.util.ArrayList<>());
-        result.put("generated_test_sources", new java.util.ArrayList<>());
+        result.put(ROOT_TYPE_GENERATED_TEST_SOURCES, new java.util.ArrayList<>());
         result.put("excluded", new java.util.ArrayList<>());
 
         com.intellij.openapi.roots.ProjectFileIndex fileIndex =
