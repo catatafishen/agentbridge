@@ -123,21 +123,26 @@ public final class FindReferencesTool extends NavigationTool {
                 collectWordReferences(symbol, scope, filePattern, basePath, hits);
             }
             if (hits.isEmpty()) return "No references found for '" + symbol + "'";
-
-            // The platform searches files in parallel and returns hits in no fixed order. Sorting makes
-            // the output (and therefore offset/max_results pagination) identical across repeated calls.
-            List<Hit> ordered = hits.stream().distinct().sorted(HIT_ORDER).toList();
-            if (offset >= ordered.size()) return "No references found for '" + symbol + "' at offset " + offset;
-            List<Hit> page = ordered.subList(offset, Math.min(ordered.size(), offset + maxResults));
-            String footer = offset + page.size() < ordered.size()
-                ? "\n\n(Showing " + page.size() + " of " + ordered.size() + " results starting at offset " + offset
-                + ". Use offset=" + (offset + page.size()) + " to see more)"
-                : "";
-            return page.size() + " references found:\n"
-                + page.stream().map(Hit::format).collect(Collectors.joining("\n")) + footer;
+            return formatPage(symbol, hits, offset, maxResults);
         });
         showSearchFeedback("✓ Reference search complete: " + symbol);
         return result;
+    }
+
+    /**
+     * Sorts, de-duplicates and paginates hits. The platform searches files in parallel and returns hits
+     * in no fixed order; sorting makes the output (and therefore pagination) identical across calls.
+     */
+    private static String formatPage(String symbol, List<Hit> hits, int offset, int maxResults) {
+        List<Hit> ordered = hits.stream().distinct().sorted(HIT_ORDER).toList();
+        if (offset >= ordered.size()) return "No references found for '" + symbol + "' at offset " + offset;
+        List<Hit> page = ordered.subList(offset, Math.min(ordered.size(), offset + maxResults));
+        String footer = offset + page.size() < ordered.size()
+            ? "\n\n(Showing " + page.size() + " of " + ordered.size() + " results starting at offset " + offset
+            + ". Use offset=" + (offset + page.size()) + " to see more)"
+            : "";
+        return page.size() + " references found:\n"
+            + page.stream().map(Hit::format).collect(Collectors.joining("\n")) + footer;
     }
 
     private void collectDefinitionReferences(PsiElement definition, GlobalSearchScope scope,

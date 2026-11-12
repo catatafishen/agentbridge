@@ -83,11 +83,11 @@ public final class ProjectFileScanner {
      * Narrows a base scope to the files whose {@link #categorize category} is selected.
      */
     private static final class CategoryScope extends DelegatingGlobalSearchScope {
-        private final transient ProjectFileIndex index;
-        private final transient FileCategory.Selection selection;
+        private final ProjectFileIndex index;
+        private final FileCategory.Selection selection;
 
         CategoryScope(GlobalSearchScope base, ProjectFileIndex index, FileCategory.Selection selection) {
-            super(base, selection.categories());
+            super(base);
             this.index = index;
             this.selection = selection;
         }
@@ -95,6 +95,20 @@ public final class ProjectFileScanner {
         @Override
         public boolean contains(@NotNull VirtualFile file) {
             return super.contains(file) && selection.includes(categorize(index, file));
+        }
+
+        // Scopes are used as cache keys by the index; two scopes are equal only when they wrap the
+        // same base scope and select the same categories.
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof CategoryScope other
+                && super.equals(other)
+                && selection.categories().equals(other.selection.categories());
+        }
+
+        @Override
+        public int calcHashCode() {
+            return 31 * super.calcHashCode() + selection.categories().hashCode();
         }
     }
 
