@@ -143,6 +143,7 @@ These use only `com.intellij.modules.platform` APIs:
 | `refactor` / `go_to_declaration` / `get_documentation` / `get_symbol_info`         | RefactoringTools    |
 | `get_call_hierarchy` / `get_type_hierarchy` / `find_implementations`               | RefactoringTools    |
 | `get_problems` / `get_highlights` / `get_compilation_errors`                       | CodeQualityTools    |
+| `get_commit_problems`                                                              | CodeQualityTools    |
 | `run_inspections` / `apply_quickfix`                                               | CodeQualityTools    |
 | `suppress_inspection` / `add_to_dictionary`                                        | CodeQualityTools    |
 | `optimize_imports` / `format_code`                                                 | CodeQualityTools    |

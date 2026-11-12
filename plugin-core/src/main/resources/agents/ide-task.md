@@ -23,6 +23,7 @@ tools:
   - agentbridge/read_run_output
   - agentbridge/get_compilation_errors
   - agentbridge/get_problems
+  - agentbridge/get_commit_problems
   # Git context (read-only)
   - agentbridge/git_log
   - agentbridge/git_status
@@ -64,6 +65,7 @@ they miss unsaved changes and bypass IDE state.
 | `read_run_output`        | Read run panel output                                    |
 | `get_compilation_errors` | Fast compilation error check                             |
 | `get_problems`           | Cached editor warnings/errors                            |
+| `get_commit_problems`    | Errors/warnings for all uncommitted files                |
 
 ### Memory (when enabled)
 

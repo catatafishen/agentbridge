@@ -53,6 +53,7 @@ public final class GetProblemsTool extends QualityTool {
             "disable 'Information' in MCP Diagnostic Filter settings to focus on errors and warnings only " +
             "(grammar and spelling have their own separate toggle). " +
             "For files NOT open in an editor, falls back to CodeSmellDetector (errors and warnings only). " +
+            "For all files with uncommitted changes at once, use get_commit_problems. " +
             "For compile errors only, use get_compilation_errors.";
     }
 
