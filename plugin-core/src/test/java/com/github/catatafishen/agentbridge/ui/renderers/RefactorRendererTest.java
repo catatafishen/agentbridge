@@ -4,7 +4,9 @@ import kotlin.text.MatchResult;
 import kotlin.text.Regex;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Tests all 8 regex patterns in {@link RefactorRenderer}.
@@ -118,8 +120,37 @@ class RefactorRendererTest {
     }
 
     @Test
+    void refCount_matchesUsagesWording() {
+        MatchResult m = refCount.find("  Updated 3 usages in 2 file(s).", 0);
+        assertNotNull(m);
+        assertEquals("3", m.getGroupValues().get(1));
+    }
+
+    @Test
     void refCount_doesNotMatchNoNumber() {
         assertNull(refCount.find("No references updated", 0));
+    }
+
+    // ── AFFECTED_FILE / NOTE_LINE ───────────────────────────
+
+    @Test
+    void affectedFile_matchesListEntry() {
+        MatchResult m = RefactorRenderer.INSTANCE.getAFFECTED_FILE().find("  - src/Main.java", 0);
+        assertNotNull(m);
+        assertEquals("src/Main.java", m.getGroupValues().get(1));
+    }
+
+    @Test
+    void affectedFile_doesNotMatchFileHeader() {
+        assertNull(RefactorRenderer.INSTANCE.getAFFECTED_FILE().find("  File: src/Main.java", 0));
+    }
+
+    @Test
+    void noteLine_capturesText() {
+        MatchResult m = RefactorRenderer.INSTANCE.getNOTE_LINE()
+            .find("  Note: search_text_occurrences ignored", 0);
+        assertNotNull(m);
+        assertEquals("search_text_occurrences ignored", m.getGroupValues().get(1));
     }
 
     // ── FILE_LINE ───────────────────────────────────────────

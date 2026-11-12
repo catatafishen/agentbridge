@@ -1336,6 +1336,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             if (vf == null || !vf.isValid()) return;
 
             String path = vf.getPath();
+            boolean bulk = doc.isInBulkUpdate();
             // Re-edit of an APPROVED row: keep the existing tracking baseline (snapshot for
             // modified files, whole-file line count for new files) so the row stays stable.
             // Only flip the approval state back to PENDING so the user reviews the new change
@@ -1345,9 +1346,14 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                     approvals.put(path, ApprovalState.PENDING);
                 }
                 lastEditedAt.put(path, System.currentTimeMillis());
-                fireReviewStateChanged();
+                // During a bulk update bulkUpdateFinished publishes once for the whole batch.
+                if (!bulk) fireReviewStateChanged();
                 return;
             }
+            // A bulk update emits one event per small edit. The baseline is captured on the first
+            // event; re-capturing on each later one would re-diff the whole file every time and
+            // reintroduce the quadratic EDT freeze from issue #1238.
+            if (bulk && pathIsTracked(path)) return;
 
             captureBeforeContent(vf, doc.getText());
         }

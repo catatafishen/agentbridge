@@ -17,9 +17,11 @@ object RefactorRenderer : ToolResultRenderer {
     val EXTRACT = Regex("""^Extracted method '(.+)'""")
     val INLINE = Regex("""^Inlined '(.+)'""")
     val DELETE_FAIL = Regex("""^Cannot safely delete '(.+)' — it has (\d+) usages?:""")
-    val REF_COUNT = Regex("""Updated (\d+) references?""")
+    val REF_COUNT = Regex("""Updated (\d+) (?:references?|usages?)""")
     val FILE_LINE = Regex("""^\s*File:\s+(.+)$""")
     val USAGE_LINE = Regex("""^\s+(.+?):(\d+)""")
+    val AFFECTED_FILE = Regex("""^\s+-\s+(.+)$""")
+    val NOTE_LINE = Regex("""^\s*Note:\s+(.+)$""")
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -60,6 +62,19 @@ object RefactorRenderer : ToolResultRenderer {
         panel.add(nameRow)
 
         addMeta(panel, lines)
+        for (line in lines) {
+            NOTE_LINE.find(line)?.let { note ->
+                panel.add(
+                    ToolRenderers.mutedLabel(note.groupValues[1]).apply { alignmentX = JComponent.LEFT_ALIGNMENT })
+            }
+        }
+        for (line in lines) {
+            val path = AFFECTED_FILE.find(line)?.groupValues?.get(1)?.trim() ?: continue
+            val row = ToolRenderers.rowPanel()
+            row.border = JBUI.Borders.emptyLeft(8)
+            row.add(ToolRenderers.fileLink(path, path))
+            panel.add(row)
+        }
         return panel
     }
 
@@ -136,7 +151,7 @@ object RefactorRenderer : ToolResultRenderer {
         if (refCount == null && file == null) return
 
         val metaRow = ToolRenderers.rowPanel()
-        if (refCount != null) metaRow.add(ToolRenderers.mutedLabel("$refCount references updated"))
+        if (refCount != null) metaRow.add(ToolRenderers.mutedLabel("$refCount usages updated"))
         if (file != null) metaRow.add(ToolRenderers.fileLink(file.substringAfterLast('/'), file))
         panel.add(metaRow)
     }
