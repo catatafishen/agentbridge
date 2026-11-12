@@ -7,7 +7,6 @@ import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
@@ -771,11 +770,11 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
      * Reads the document text under a read action, returning {@code null} when the
      * platform has no live document for the file (e.g. binary, deleted, or not opened).
      * Extracted so the {@code @Nullable} contract is visible to static analysis — without
-     * it, Sonar incorrectly assumes {@link ReadAction#compute} returns non-null.
+     * it, Sonar incorrectly assumes the read-action helper returns non-null.
      */
     private static @Nullable String readDocumentText(@NotNull VirtualFile vf) {
         // getDocument() requires a read action, not just getText().
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             Document doc = FileDocumentManager.getInstance().getDocument(vf);
             return doc != null ? doc.getText() : null;
         });
@@ -1353,9 +1352,24 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             captureBeforeContent(vf, doc.getText());
         }
 
+        /**
+         * Skipped during bulk updates: bulk operations (trailing-space stripping on save,
+         * reformat, large refactorings) emit one event per small edit, and re-diffing the
+         * whole file for each one is quadratic and froze the EDT for minutes (issue #1238).
+         * {@link #bulkUpdateFinished} recomputes once instead.
+         */
         @Override
         public void documentChanged(@NotNull DocumentEvent event) {
-            Document doc = event.getDocument();
+            if (event.getDocument().isInBulkUpdate()) return;
+            onContentChanged(event.getDocument());
+        }
+
+        @Override
+        public void bulkUpdateFinished(@NotNull Document document) {
+            onContentChanged(document);
+        }
+
+        private void onContentChanged(@NotNull Document doc) {
             VirtualFile vf = FileDocumentManager.getInstance().getFile(doc);
             if (vf == null || !vf.isValid()) return;
 

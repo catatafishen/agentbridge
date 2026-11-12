@@ -18,12 +18,17 @@ import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
+import com.intellij.usageView.UsageInfo;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @SuppressWarnings("java:S112")
 public final class RefactorTool extends RefactoringTool {
@@ -32,6 +37,9 @@ public final class RefactorTool extends RefactoringTool {
     private static final String PARAM_SYMBOL = "symbol";
     private static final String PARAM_NEW_NAME = "new_name";
     private static final String PARAM_OPERATION = "operation";
+    private static final String PARAM_TEXT_OCCURRENCES = "search_text_occurrences";
+    private static final int TIMEOUT_SECONDS = 30;
+    private static final int MAX_LISTED_FILES = 20;
 
     public RefactorTool(Project project) {
         super(project);
@@ -54,7 +62,10 @@ public final class RefactorTool extends RefactoringTool {
 
     @Override
     public @NotNull String description() {
-        return "Rename or safe-delete a symbol using IntelliJ's refactoring engine";
+        return "Rename or safe-delete a symbol using IntelliJ's refactoring engine. Rename updates the declaration "
+            + "and all semantic references, and lists the files it changed. By default it does NOT touch comments, "
+            + "strings or non-code files; pass search_text_occurrences=true to also rename textual mentions "
+            + "(ignored for locals and parameters). Safe-delete refuses and lists usages if the symbol is still used.";
     }
 
     @Override
@@ -74,7 +85,10 @@ public final class RefactorTool extends RefactoringTool {
             Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
             Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"),
             Param.optional("line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"),
-            Param.optional(PARAM_NEW_NAME, TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'")
+            Param.optional(PARAM_NEW_NAME, TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'"),
+            Param.optional(PARAM_TEXT_OCCURRENCES, TYPE_BOOLEAN, "Rename only: also replace the name in comments, strings "
+                + "and non-code files (default: false). Plain-text matching: use only for distinctive names. "
+                + "Ignored for local variables and parameters")
         );
     }
 
@@ -93,6 +107,7 @@ public final class RefactorTool extends RefactoringTool {
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         int targetLine = args.has("line") ? args.get("line").getAsInt() : -1;
         String newName = args.has(PARAM_NEW_NAME) ? args.get(PARAM_NEW_NAME).getAsString() : null;
+        boolean textSearch = args.has(PARAM_TEXT_OCCURRENCES) && args.get(PARAM_TEXT_OCCURRENCES).getAsBoolean();
 
         if ("rename".equals(operation) && (newName == null || newName.isEmpty())) {
             return "Error: 'new_name' is required for rename operation";
@@ -102,14 +117,23 @@ public final class RefactorTool extends RefactoringTool {
 
         EdtUtil.invokeLater(() -> {
             try {
-                String result = resolveAndRefactor(operation, pathStr, symbolName, targetLine, newName);
+                String result = resolveAndRefactor(operation, pathStr, symbolName, targetLine, newName, textSearch);
                 resultFuture.complete(result);
             } catch (Exception e) {
                 resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
         });
 
-        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        String result;
+        try {
+            result = resultFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            // The refactoring is queued or running on the EDT and cannot be cancelled from here,
+            // so it may still complete. Reporting a plain failure hid applied changes (issue #1238).
+            return "Error: '" + operation + "' of '" + symbolName + "' did not finish within " + TIMEOUT_SECONDS
+                + "s. It may still be running and may have been partially or fully applied. "
+                + "Check git_status / git_diff before retrying; do not issue further refactor calls until it settles.";
+        }
         if (!result.startsWith("Error")) {
             FileTool.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
                 FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " refactored");
@@ -118,7 +142,7 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     private String resolveAndRefactor(String operation, String pathStr, String symbolName,
-                                      int targetLine, String newName) throws Exception {
+                                      int targetLine, String newName, boolean textSearch) throws Exception {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -138,7 +162,7 @@ public final class RefactorTool extends RefactoringTool {
         try {
             PlatformApiCompat.writeActionRunAndWait(() -> {
                 try {
-                    result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr);
+                    result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr, textSearch);
                 } catch (Exception e) {
                     LOG.warn("Refactoring error", e);
                     result[0] = "Error during refactoring: " + e.getMessage();
@@ -147,13 +171,17 @@ public final class RefactorTool extends RefactoringTool {
         } finally {
             FileTool.notifyEditComplete();
         }
+        // Save outside the write action: saving runs before-save hooks (trailing-space
+        // stripping etc.) that must not be nested inside the refactoring's write action.
+        FileDocumentManager.getInstance().saveAllDocuments();
         return result[0];
     }
 
     private String executeRefactoring(String operation, PsiNamedElement targetElement,
-                                      String symbolName, String newName, String pathStr) {
+                                      String symbolName, String newName, String pathStr,
+                                      boolean textSearch) {
         return switch (operation) {
-            case "rename" -> performRename(targetElement, symbolName, newName, pathStr);
+            case "rename" -> performRename(targetElement, symbolName, newName, pathStr, textSearch);
             case "safe_delete" -> performSafeDelete(targetElement, symbolName, pathStr);
             case "inline" -> "Error: 'inline' refactoring is not yet supported via this tool. " +
                 "Use edit_text to manually inline the code.";
@@ -165,18 +193,28 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     private String performRename(PsiNamedElement targetElement, String symbolName,
-                                 String newName, String pathStr) {
-        var refs = ReferencesSearch.search(targetElement, GlobalSearchScope.projectScope(project)).findAll();
-        int refCount = refs.size();
+                                 String newName, String pathStr, boolean textSearchRequested) {
+        // Locally-scoped symbols (locals, parameters) can never be referenced from comments or
+        // non-code files elsewhere; a text search for a common word like "include" rewrote
+        // LICENSE, docs and C++ #include lines across the repo (issue #1238).
+        boolean localSymbol = targetElement.getUseScope() instanceof LocalSearchScope;
+        boolean textSearch = textSearchRequested && !localSymbol;
 
         var factory = com.intellij.refactoring.RefactoringFactory.getInstance(project);
         var rename = factory.createRename(targetElement, newName);
-        rename.setSearchInComments(true);
-        rename.setSearchInNonJavaFiles(true);
+        rename.setSearchInComments(textSearch);
+        rename.setSearchInNonJavaFiles(textSearch);
+        Set<String> touchedFiles = new TreeSet<>();
+        int[] usageCount = new int[1];
         CommandProcessor.getInstance().executeCommand(
             project,
             () -> {
-                var usages = rename.findUsages();
+                UsageInfo[] usages = rename.findUsages();
+                usageCount[0] = usages.length;
+                for (UsageInfo usage : usages) {
+                    VirtualFile file = usage.getVirtualFile();
+                    if (file != null) touchedFiles.add(relativize(file));
+                }
                 rename.doRefactoring(usages);
             },
             "Rename " + symbolName + " to " + newName,
@@ -184,11 +222,30 @@ public final class RefactorTool extends RefactoringTool {
         );
 
         PsiDocumentManager.getInstance(project).commitAllDocuments();
-        FileDocumentManager.getInstance().saveAllDocuments();
 
-        return "Renamed '" + symbolName + "' to '" + newName + "'\n" +
-            "  Updated " + refCount + " references across the project.\n" +
-            "  File: " + pathStr;
+        StringBuilder sb = new StringBuilder()
+            .append("Renamed '").append(symbolName).append("' to '").append(newName).append("'\n")
+            .append("  Updated ").append(usageCount[0]).append(" usages in ")
+            .append(touchedFiles.size()).append(" file(s).\n")
+            .append("  File: ").append(pathStr).append('\n');
+        if (textSearchRequested && localSymbol) {
+            sb.append("  Note: search_text_occurrences ignored — the symbol is locally scoped.\n");
+        }
+        int shown = 0;
+        for (String file : touchedFiles) {
+            if (shown++ >= MAX_LISTED_FILES) {
+                sb.append("  ... and ").append(touchedFiles.size() - MAX_LISTED_FILES).append(" more\n");
+                break;
+            }
+            sb.append("  - ").append(file).append('\n');
+        }
+        return sb.toString().stripTrailing();
+    }
+
+    private String relativize(VirtualFile file) {
+        String basePath = project.getBasePath();
+        String path = file.getPath();
+        return basePath != null && path.startsWith(basePath + "/") ? path.substring(basePath.length() + 1) : path;
     }
 
     private String performSafeDelete(PsiNamedElement targetElement, String symbolName, String pathStr) {
