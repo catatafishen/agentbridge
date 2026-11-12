@@ -52,6 +52,7 @@
     "@intellij-code-tools/git_merge",
     "@intellij-code-tools/git_cherry_pick",
     "@intellij-code-tools/get_problems",
+    "@intellij-code-tools/get_commit_problems",
     "@intellij-code-tools/get_highlights",
     "@intellij-code-tools/get_available_actions",
     "@intellij-code-tools/get_action_options",

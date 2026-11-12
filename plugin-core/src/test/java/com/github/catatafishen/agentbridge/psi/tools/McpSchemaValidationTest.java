@@ -155,6 +155,7 @@ class McpSchemaValidationTest {
         "com.github.catatafishen.agentbridge.psi.tools.project.GetProjectDependenciesTool",
         // quality
         "com.github.catatafishen.agentbridge.psi.tools.quality.GetProblemsTool",
+        "com.github.catatafishen.agentbridge.psi.tools.quality.GetCommitProblemsTool",
         "com.github.catatafishen.agentbridge.psi.tools.quality.GetHighlightsTool",
         "com.github.catatafishen.agentbridge.psi.tools.quality.GetAvailableActionsTool",
         "com.github.catatafishen.agentbridge.psi.tools.quality.GetActionOptionsTool",

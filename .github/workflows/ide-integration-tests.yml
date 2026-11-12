@@ -233,6 +233,7 @@ jobs:
               ('Code Quality', [
                   'get_highlights',
                   'get_problems',
+                  'get_commit_problems',
                   'get_compilation_errors',
                   'get_available_actions',
                   'apply_action',

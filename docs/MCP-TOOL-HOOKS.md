@@ -503,6 +503,7 @@ rejected with an error.
 | `git_log`                | READ   | Commit history                                |
 | `get_compilation_errors` | READ   | Check for compilation errors                  |
 | `get_highlights`         | READ   | Get editor highlights (errors, warnings)      |
+| `get_commit_problems`    | READ   | Errors/warnings for all uncommitted files     |
 
 **Shell helper:**
 

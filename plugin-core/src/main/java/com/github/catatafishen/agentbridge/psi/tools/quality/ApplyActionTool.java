@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.McpCallContext;
 import com.github.catatafishen.agentbridge.ui.renderers.GitDiffRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.undo.UndoManager;
@@ -28,6 +29,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -69,7 +71,12 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
     @Override
     public @NotNull String description() {
         return "Invoke a named IDE quick-fix or intention action at a specific file and line. "
-            + "Action names come from get_highlights or get_available_actions output. "
+            + "Action names come from get_highlights, get_commit_problems or get_available_actions output. "
+            + "The file does not need to be open: for a closed file the quick-fixes are computed on demand "
+            + "(without opening an editor), and the editor is opened only briefly to apply the change. "
+            + "Fixes that the IDE computes lazily, such as 'Import class' for an unresolved symbol, are only "
+            + "available for a file open in an editor; for a closed file a 'not found' answer says so, "
+            + "and you should open the file in the IDE and retry, or use optimize_imports / edit_text. "
             + "Use 'symbol' (preferred) or 'column' to position the caret at the correct symbol. "
             + "Use 'option' to select a radio-button or checkbox in a dialog the action may show "
             + "(get options first with get_action_options). "
@@ -132,7 +139,10 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
         if (readPathParam(args) == null || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
             return "Error: 'path', 'line', and 'action_name' parameters are required";
         }
-        ActionRequest request = ActionRequest.from(args, handler, isReplay);
+        ActionRequest request = ActionRequest.from(args, handler, isReplay)
+            // The editor daemon only analyzes open files, so without this the quick-fixes that get_highlights or
+            // get_commit_problems just listed for a closed file would not be found here ("Action not found").
+            .withAnalyzed(analyzeClosedFileForEditing(readPathParam(args), "Collecting quick-fixes"));
 
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> invokeActionSafely(request, future));
@@ -180,7 +190,8 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
                                  @Nullable String symbol, @Nullable Integer targetCol,
                                  @Nullable String option, boolean dryRun,
                                  @NotNull JsonObject originalArgs,
-                                 @NotNull PopupHandler handler, boolean isReplay) {
+                                 @NotNull PopupHandler handler, boolean isReplay,
+                                 @Nullable Map<Document, List<HighlightInfo>> analyzed) {
         static ActionRequest from(@NotNull JsonObject args, @NotNull PopupHandler handler, boolean isReplay) {
             return new ActionRequest(
                 readPathParam(args),
@@ -192,8 +203,14 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
                 args.has(PARAM_DRY_RUN) && args.get(PARAM_DRY_RUN).getAsBoolean(),
                 args,
                 handler,
-                isReplay
+                isReplay,
+                null
             );
+        }
+
+        ActionRequest withAnalyzed(@Nullable Map<Document, List<HighlightInfo>> analyzed) {
+            return new ActionRequest(pathStr, targetLine, actionName, symbol, targetCol, option, dryRun,
+                originalArgs, handler, isReplay, analyzed);
         }
     }
 
@@ -242,12 +259,16 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
             int caretCol = resolveColumn(doc, targetLine, symbol, targetCol);
             editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, caretCol));
 
-            IntentionAction action = findActionToApply(doc, targetLine, actionName, editor, psiFile);
+            IntentionAction action = findActionToApply(doc, targetLine, actionName, editor, psiFile,
+                request.analyzed());
             if (action == null) {
-                List<String> available = collectAvailableActionNames(doc, targetLine, editor, psiFile);
+                List<String> available = collectAvailableActionNames(doc, targetLine, editor, psiFile,
+                    request.analyzed());
                 String hint = available.isEmpty() ? "none" : String.join(", ", available);
+                String why = pendingLazyFixesExplanation(doc, targetLine, request.analyzed());
                 return ACTION_PREFIX + actionName + "' not found at " + pathStr + LINE_LABEL + targetLine
-                    + ". Available: [" + hint + "]";
+                    + ". Available: [" + hint + "]"
+                    + (why == null ? "" : ". Note: " + why);
             }
 
             if (!action.isAvailable(project, editor, psiFile)) {
@@ -587,11 +608,15 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
     /**
      * Finds the named action by first searching highlight quick-fixes, then falling back to
      * {@code IntentionManager} intention actions at the current caret position.
+     *
+     * @param analyzed highlights computed on demand for a file that was not open when the tool was called, or
+     *                 {@code null} to read the editor daemon's cache
      */
     @Nullable
     private IntentionAction findActionToApply(Document doc, int targetLine, String name,
-                                              Editor editor, PsiFile psiFile) {
-        for (var h : highlightsOnLine(doc, targetLine)) {
+                                              Editor editor, PsiFile psiFile,
+                                              @Nullable Map<Document, List<HighlightInfo>> analyzed) {
+        for (var h : highlightsOnLine(doc, targetLine, analyzed)) {
             IntentionAction found = h.findRegisteredQuickFix((descriptor, range) -> {
                 IntentionAction a = descriptor.getAction();
                 if (name.equals(a.getText())) return a;
@@ -607,9 +632,10 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
      * caret position, for use in "not found" error messages.
      */
     private List<String> collectAvailableActionNames(Document doc, int targetLine,
-                                                     Editor editor, PsiFile psiFile) {
+                                                     Editor editor, PsiFile psiFile,
+                                                     @Nullable Map<Document, List<HighlightInfo>> analyzed) {
         List<String> names = new ArrayList<>();
-        highlightsOnLine(doc, targetLine).forEach(h -> names.addAll(collectQuickFixNames(h)));
+        highlightsOnLine(doc, targetLine, analyzed).forEach(h -> names.addAll(collectQuickFixNames(h)));
         names.addAll(collectIntentionNames(editor, psiFile));
         return names;
     }

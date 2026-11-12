@@ -96,6 +96,7 @@ import com.github.catatafishen.agentbridge.psi.tools.quality.ApplyQuickfixTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.FormatCodeTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.GetActionOptionsTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.GetAvailableActionsTool;
+import com.github.catatafishen.agentbridge.psi.tools.quality.GetCommitProblemsTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.GetCompilationErrorsTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.GetHighlightsTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.GetProblemsTool;
@@ -294,6 +295,7 @@ class ToolDefinitionContractTest {
     static Stream<Tool> qualityTools() {
         return Stream.of(
             new GetProblemsTool(null),
+            new GetCommitProblemsTool(null),
             new GetHighlightsTool(null),
             new GetAvailableActionsTool(null),
             new GetActionOptionsTool(null),

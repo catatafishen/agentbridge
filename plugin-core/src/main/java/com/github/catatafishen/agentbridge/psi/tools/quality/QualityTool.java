@@ -7,8 +7,10 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.ui.renderers.InspectionResultRenderer;
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.codeInsight.daemon.impl.MainPassesRunner;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.IntentionManager;
+import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -17,6 +19,7 @@ import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.util.ProgressIndicatorBase;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -30,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -111,6 +115,71 @@ public abstract class QualityTool extends Tool {
             }),
             new EmptyProgressIndicator()
         );
+        return names;
+    }
+
+    /**
+     * Placeholder listed instead of fixes that exist but have not been computed yet.
+     */
+    protected static final String FIXES_NOT_COMPUTED =
+        "… (more fixes exist but are only computed for a file open in an editor, e.g. 'Import class'; "
+            + "open the file in the IDE and call get_available_actions, or use optimize_imports / edit_text)";
+
+    /**
+     * Counts the highlights whose quick-fixes are lazy and still uncomputed. The editor computes lazy fixes itself,
+     * while the headless {@code MainPassesRunner} leaves them pending, so for a file analyzed that way a fix can
+     * exist although it cannot be listed or applied by name.
+     */
+    protected static long countPendingLazyFixes(@NotNull List<HighlightInfo> highlights) {
+        return highlights.stream()
+            .filter(h -> h.hasLazyQuickFixes() && collectQuickFixNames(h).isEmpty())
+            .count();
+    }
+
+    /**
+     * Explains why quick-fixes are missing on {@code targetLine} of a file that was analyzed without an editor: a
+     * fix can exist but be lazy, which {@code MainPassesRunner} does not compute. Without this explanation an agent
+     * concludes that no such fix exists (e.g. 'Import class' for an unresolved symbol) and gives up or picks a worse
+     * one.
+     *
+     * @param analyzed the on-demand analysis, or {@code null} for a file open in an editor (the editor computes lazy
+     *                 fixes itself, so there is nothing to explain)
+     * @return the explanation, or {@code null} when no fix on the line is pending
+     */
+    protected @Nullable String pendingLazyFixesExplanation(
+        @NotNull Document doc, int targetLine, @Nullable Map<Document, List<HighlightInfo>> analyzed) {
+        if (analyzed == null) return null;
+        long pending = countPendingLazyFixes(highlightsOnLine(doc, targetLine, analyzed));
+        if (pending == 0) return null;
+        return pending + " problem(s) on this line have quick-fixes that were not computed because the "
+            + "file is not open in an editor (typically 'Import class'). Open the file in the IDE and retry, "
+            + "or use optimize_imports / edit_text.";
+    }
+
+    /**
+     * {@link #analyzeIfNotOpen} for tools that need an editor afterwards (to position a caret and evaluate
+     * intentions): skips the analysis when the editor may not be opened anyway, because the tool then fails with a
+     * clear message and an analysis would be wasted.
+     */
+    protected @Nullable Map<Document, List<HighlightInfo>> analyzeClosedFileForEditing(
+        @Nullable String pathStr, @NotNull String title) {
+        if (pathStr == null) return null;
+        VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
+        if (vf == null || checkEditorAccess(vf) != null) return null;
+        return analyzeIfNotOpen(vf, title);
+    }
+
+    /**
+     * Like {@link #collectQuickFixNames}, but never silently reports "no fixes" for a highlight whose fixes are
+     * lazy and still pending. The editor computes lazy fixes itself, while the headless
+     * {@code MainPassesRunner} leaves them uncomputed (e.g. the import fixes of an unresolved symbol), so an empty
+     * list there means "not determined", not "none exist".
+     */
+    protected static List<String> collectQuickFixNamesOrPending(HighlightInfo h) {
+        List<String> names = collectQuickFixNames(h);
+        if (names.isEmpty() && h.hasLazyQuickFixes()) {
+            return List.of(FIXES_NOT_COMPUTED);
+        }
         return names;
     }
 
@@ -254,9 +323,26 @@ public abstract class QualityTool extends Tool {
      * Safe to call from a read action or from the EDT.
      */
     protected List<HighlightInfo> highlightsOnLine(Document doc, int targetLine) {
+        return highlightsOnLine(doc, targetLine, null);
+    }
+
+    /**
+     * Like {@link #highlightsOnLine(Document, int)}, but reads {@code analyzed} (highlights computed on demand by
+     * {@link #analyzeIfNotOpen}) when it holds the document, instead of the editor daemon's cache, which is always
+     * empty for a file that is not open in an editor.
+     */
+    protected List<HighlightInfo> highlightsOnLine(
+        Document doc, int targetLine, @Nullable Map<Document, List<HighlightInfo>> analyzed) {
         int lineStart = doc.getLineStartOffset(targetLine - 1);
         int lineEnd = doc.getLineEndOffset(targetLine - 1);
         List<HighlightInfo> result = new ArrayList<>();
+        List<HighlightInfo> onDemand = analyzed == null ? null : analyzed.get(doc);
+        if (onDemand != null) {
+            for (HighlightInfo h : onDemand) {
+                if (h.getStartOffset() <= lineEnd && h.getEndOffset() >= lineStart) result.add(h);
+            }
+            return result;
+        }
         DaemonCodeAnalyzerEx.processHighlights(doc, project, null, 0, doc.getTextLength(), h -> {
             if (h.getStartOffset() <= lineEnd && h.getEndOffset() >= lineStart) {
                 result.add(h);
@@ -372,5 +458,54 @@ public abstract class QualityTool extends Tool {
             });
         }
         return files;
+    }
+
+    /**
+     * Runs the main highlighting passes (inspections, annotators, quick-fix registration) over {@code files}
+     * without an editor, so closed files can be analyzed without opening them and without waiting for a daemon
+     * event. The returned {@link HighlightInfo}s carry their quick-fixes.
+     *
+     * <p>Must be called from a background thread and not inside a read action: the runner manages its own
+     * progress and read actions, and needs an explicit progress indicator on a pooled thread. Read the result
+     * (descriptions, offsets, fixes) inside a read action afterwards.</p>
+     *
+     * @param minimumSeverity lowest severity to report; pass a low value such as
+     *                        {@link HighlightSeverity#INFORMATION} to mirror "all severities"
+     */
+    protected @NotNull Map<Document, List<HighlightInfo>> runMainPasses(
+        @NotNull List<VirtualFile> files, @NotNull HighlightSeverity minimumSeverity, @NotNull String title) {
+        List<Map<Document, List<HighlightInfo>>> holder = new ArrayList<>(1);
+        ProgressManager.getInstance().runProcess(
+            () -> holder.add(new MainPassesRunner(project, title, null).runMainPasses(files, minimumSeverity)),
+            new ProgressIndicatorBase());
+        return holder.getFirst();
+    }
+
+    /**
+     * Lowest possible severity, so that on-demand analysis reports the same "all severities" the editor cache
+     * holds (typos, grammar and information hints included). The name is only used for display.
+     */
+    protected static final HighlightSeverity ALL_SEVERITIES = new HighlightSeverity("ALL", 0);
+
+    /**
+     * Analyzes {@code vf} on demand when it is not open in an editor, so its highlights and quick-fixes are
+     * available although the editor daemon never analyzed it (the daemon only analyzes open files).
+     *
+     * <p>Same threading rules as {@link #runMainPasses}: call from a background thread, outside a read action.</p>
+     *
+     * @return the highlights per document, or {@code null} when the file is open (the editor cache is the source
+     * of truth then) or when the analysis failed (logged, so callers fall back to the cache)
+     */
+    protected @Nullable Map<Document, List<HighlightInfo>> analyzeIfNotOpen(
+        @NotNull VirtualFile vf, @NotNull String title) {
+        if (FileEditorManager.getInstance(project).isFileOpen(vf)) return null;
+        try {
+            return runMainPasses(List.of(vf), ALL_SEVERITIES, title);
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn(title + ": on-demand analysis failed for " + vf.getPath(), e);
+            return null;
+        }
     }
 }

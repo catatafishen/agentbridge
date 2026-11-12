@@ -24,6 +24,7 @@ public final class QualityToolFactory {
     public static @NotNull List<Tool> create(@NotNull Project project, boolean hasSonar) {
         var tools = new ArrayList<Tool>();
         tools.add(new GetProblemsTool(project));
+        tools.add(new GetCommitProblemsTool(project));
         tools.add(new GetHighlightsTool(project));
         tools.add(new GetAvailableActionsTool(project));
         tools.add(new GetActionOptionsTool(project));

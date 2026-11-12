@@ -29,6 +29,7 @@ tools:
 - agentbridge/read_run_output
 - agentbridge/get_compilation_errors
 - agentbridge/get_problems
+- agentbridge/get_commit_problems
 
 # Git context (read-only)
 
@@ -74,6 +75,7 @@ they miss unsaved changes and bypass IDE state.
 | `read_build_output`      | Read Gradle/Maven build output                           |
 | `read_run_output`        | Read run panel output                                    |
 | `get_compilation_errors` | Fast compilation error check                             |
+| `get_commit_problems`    | Errors/warnings for all uncommitted files                |
 | `get_problems`           | Cached editor warnings/errors                            |
 
 ### Reading Code (when needed)

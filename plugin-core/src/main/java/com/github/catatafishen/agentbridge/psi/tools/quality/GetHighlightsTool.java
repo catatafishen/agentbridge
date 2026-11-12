@@ -5,7 +5,10 @@ import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
+import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -18,7 +21,9 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -64,9 +69,12 @@ public final class GetHighlightsTool extends QualityTool {
      * @param startLine        1-based inclusive lower line bound, or 0 for none
      * @param endLine          1-based inclusive upper line bound, or 0 for none
      * @param includeFixes     whether to list quick-fix action names under each problem
+     * @param analyzed         highlights computed on demand for a file that is not open in an editor, or
+     *                         {@code null} to read the editor daemon's cache instead
      */
-    private record HighlightQuery(int limit, boolean includeUnindexed,
-                                  int startLine, int endLine, boolean includeFixes) {
+    private record HighlightQuery(int limit, boolean includeUnindexed, int startLine, int endLine,
+                                  boolean includeFixes,
+                                  Map<Document, List<HighlightInfo>> analyzed) {
     }
 
     public GetHighlightsTool(Project project) {
@@ -90,11 +98,16 @@ public final class GetHighlightsTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Get cached editor highlights for a focused section of a file. " +
+        return "Get editor highlights for a focused section of a file. " +
+            "For a file that is open in an editor this reads the editor's cached analysis; for a closed file " +
+            "(requested with 'path') it analyzes the file on demand, without opening an editor and without waiting. " +
+            "Without 'path' only files that are already analyzed (open in an editor) are reported. " +
             "Returns the richest diagnostic output available: all severities, inspections, typos " +
             "and grammar errors, one problem per line. " +
             "Set include_fixes=true to also list the available quick-fix action names per problem " +
             "(needed before calling apply_quickfix; off by default because it multiplies output size). " +
+            "Fixes that the IDE computes lazily, such as 'Import class' for an unresolved symbol, are only " +
+            "listed for a file open in an editor; for a closed file the entry says so instead of listing none. " +
             "Designed for targeted inspection using start_line/end_line (e.g. a single method or class). " +
             "Large files without a line range produce many results — if output is truncated, " +
             "narrow with start_line/end_line. " +
@@ -142,13 +155,12 @@ public final class GetHighlightsTool extends QualityTool {
         String rangeError = validateLineRange(startLine, endLine);
         if (rangeError != null) return rangeError;
 
-        HighlightQuery query = new HighlightQuery(limit, includeUnindexed, startLine, endLine, includeFixes);
-
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
         }
 
-        ensureFileAnalyzed(pathStr);
+        Map<Document, List<HighlightInfo>> analyzed = analyzeRequestedFile(pathStr, includeUnindexed);
+        HighlightQuery query = new HighlightQuery(limit, includeUnindexed, startLine, endLine, includeFixes, analyzed);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -173,12 +185,26 @@ public final class GetHighlightsTool extends QualityTool {
         return null;
     }
 
-    private void ensureFileAnalyzed(String pathStr) {
-        if (pathStr == null || pathStr.isEmpty()) return;
+    /**
+     * Analyzes the requested file on demand when it is not open in an editor.
+     *
+     * <p>The editor daemon only analyzes files with an open editor, so its cache is empty for a closed file. The
+     * old implementation opened the file and waited up to 15 s for a daemon event. {@code MainPassesRunner}
+     * computes the same highlights, with their quick-fixes, without an editor and without waiting.</p>
+     *
+     * @return the highlights per document, or {@code null} when the file is open (its cache is read instead),
+     * when no single file was requested, or when the file is not part of the analysis
+     */
+    private Map<Document, List<HighlightInfo>> analyzeRequestedFile(String pathStr, boolean includeUnindexed) {
+        if (pathStr == null || pathStr.isEmpty()) return null;
         VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
-        if (vf != null) {
-            ensureDaemonAnalyzed(vf);
-        }
+        if (vf == null) return null;
+
+        boolean analyzable = ReadAction.computeBlocking(() ->
+            includeUnindexed || ProjectRootManager.getInstance(project).getFileIndex().isInSourceContent(vf));
+        if (!analyzable) return null;
+
+        return analyzeIfNotOpen(vf, "Collecting highlights");
     }
 
     private void getHighlightsCached(String pathStr, HighlightQuery query,
@@ -201,14 +227,14 @@ public final class GetHighlightsTool extends QualityTool {
         appendEditorNotificationsIfPresent(result, pathStr);
 
         ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
-        if (!settings.getFollowAgentFiles() && !settings.getAllowTransientFileOpens()) {
+        boolean computedOnDemand = query.analyzed() != null;
+        if (!computedOnDemand && !settings.getFollowAgentFiles() && !settings.getAllowTransientFileOpens()) {
             result.append("""
 
 
                 Note: Results above are from cached analysis only.
-                Temporary file opens are disabled in AgentBridge settings, so files not
-                already open in the editor were not analyzed. Enable 'Open files temporarily
-                for code quality data' in AgentBridge → UI/UX settings for complete results.""");
+                Files not already open in the editor were not analyzed, because the editor daemon only
+                analyzes open files. Request a single file with 'path' to analyze it without opening it.""");
         }
 
         resultFuture.complete(result.toString());
@@ -250,88 +276,6 @@ public final class GetHighlightsTool extends QualityTool {
         }
     }
 
-    private void ensureDaemonAnalyzed(@NotNull VirtualFile vf) {
-        // Check on EDT whether the file is already open
-        CompletableFuture<Boolean> openCheck = new CompletableFuture<>();
-        EdtUtil.invokeLater(() ->
-            openCheck.complete(
-                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf)));
-        boolean alreadyOpen;
-        try {
-            alreadyOpen = openCheck.get(5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return;
-        } catch (Exception e) {
-            return;
-        }
-        if (alreadyOpen) return;
-
-        boolean followAgent = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
-        boolean allowTransient = ToolLayerSettings.getInstance(project).getAllowTransientFileOpens();
-        if (!followAgent && !allowTransient) {
-            LOG.debug("get_highlights: skipping transient file open — allowTransientFileOpens=false");
-            return;
-        }
-
-        // Subscribe BEFORE opening so we don't miss the daemon pass
-        var latch = new java.util.concurrent.CountDownLatch(1);
-        Runnable disconnect = PlatformApiCompat.subscribeDaemonListener(project,
-            new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
-                @Override
-                public void daemonFinished(
-                    @NotNull java.util.Collection<? extends com.intellij.openapi.fileEditor.FileEditor> fileEditors) {
-                    if (fileEditors.stream().anyMatch(fe -> vf.equals(fe.getFile()))) {
-                        latch.countDown();
-                    }
-                }
-            });
-        try {
-            // The daemon only analyzes files that have an open editor — DaemonCodeAnalyzerEx.processHighlights
-            // reads from a per-document cache that is populated exclusively when the file is visible in an editor.
-            // We therefore open the file here to trigger daemon analysis, then close it afterward (via
-            // closeFileIfNotFollowing) if Follow Agent Files is disabled. This causes a brief, visible editor
-            // tab while analysis runs (up to 15 s for slow analyzers like CLion's Clang-Tidy). There is currently
-            // no headless alternative: DaemonCodeAnalyzer.restart(psiFile) was considered but rejected because
-            // it clears the existing cache and forces a full re-analysis, which exceeds the timeout for C++ files.
-            CompletableFuture<Void> opened = new CompletableFuture<>();
-            EdtUtil.invokeLater(() -> {
-                try {
-                    PlatformApiCompat.edtReadAction(() ->
-                        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                            .openFile(vf, false));
-                } finally {
-                    opened.complete(null);
-                }
-            });
-            opened.get(15, TimeUnit.SECONDS);
-
-            if (!latch.await(15, TimeUnit.SECONDS)) {
-                LOG.info("get_highlights: daemon analysis timed out for " + vf.getPath());
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (Exception e) {
-            LOG.info("get_highlights: ensureDaemonAnalyzed failed for " + vf.getPath()
-                + ": " + e.getMessage());
-        } finally {
-            disconnect.run();
-            closeFileIfNotFollowing(vf, followAgent);
-        }
-    }
-
-    /**
-     * Closes the file in the editor if follow-agent mode is off.
-     * Called from {@link #ensureDaemonAnalyzed} after analysis completes to avoid leaving
-     * stale editor tabs from silent background analysis.
-     */
-    private void closeFileIfNotFollowing(@NotNull VirtualFile vf, boolean followAgent) {
-        if (!followAgent) {
-            EdtUtil.invokeLater(() ->
-                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).closeFile(vf));
-        }
-    }
-
     private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, HighlightQuery query,
                                             List<String> problems) {
         String basePath = project.getBasePath();
@@ -352,12 +296,22 @@ public final class GetHighlightsTool extends QualityTool {
 
     private int collectFileHighlights(Document doc, String relPath, int remaining,
                                       HighlightQuery query, List<String> problems) {
-        List<com.intellij.codeInsight.daemon.impl.HighlightInfo> highlights = new ArrayList<>();
+        List<HighlightInfo> highlights = new ArrayList<>();
         int added = 0;
         DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
         try {
-            com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx.processHighlights(
-                doc, project, null, 0, doc.getTextLength(), highlights::add);
+            List<HighlightInfo> onDemand = query.analyzed() == null ? null : query.analyzed().get(doc);
+            if (onDemand != null) {
+                highlights.addAll(onDemand);
+                // MainPassesRunner returns the highlights in pass order (errors from a later pass come last), the
+                // editor cache in document order. Sort the same way so that max_results keeps the first problems
+                // of the file instead of whichever pass finished first.
+                highlights.sort(Comparator.comparingInt(HighlightInfo::getStartOffset)
+                    .thenComparingInt(HighlightInfo::getEndOffset));
+            } else {
+                DaemonCodeAnalyzerEx.processHighlights(
+                    doc, project, null, 0, doc.getTextLength(), highlights::add);
+            }
 
             for (var h : highlights) {
                 if (added >= remaining) break;
@@ -388,10 +342,9 @@ public final class GetHighlightsTool extends QualityTool {
      * <p>Grammar and spelling problems are skipped entirely: their fixes come from Grazie and the
      * spell checker, which {@code apply_quickfix} cannot invoke, so listing them is pure noise.</p>
      */
-    private static void appendFixNames(StringBuilder entry,
-                                       com.intellij.codeInsight.daemon.impl.HighlightInfo h) {
+    private static void appendFixNames(StringBuilder entry, HighlightInfo h) {
         if (DiagnosticFilterSettings.isNaturalLanguageSeverity(h.getSeverity())) return;
-        entry.append(formatFixLines(collectQuickFixNames(h)));
+        entry.append(formatFixLines(collectQuickFixNamesOrPending(h)));
     }
 
     /**

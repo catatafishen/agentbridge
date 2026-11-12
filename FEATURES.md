@@ -38,6 +38,10 @@ Run the same inspections you see in the editor — plus Qodana and SonarQube —
 - **`run_qodana`** — Run Qodana static analysis
 - **`run_sonarqube_analysis`** — Run SonarQube for IDE analysis (requires SonarLint plugin)
 - **`get_problems`** — Get cached errors and warnings for open files
+- **`get_commit_problems`** — Get errors and warnings for all files with uncommitted changes in one call (the pre-commit
+  "Analyze code" check; files need not be open). Starts with a per-file summary, paginates (`max_results`/`offset`),
+  filters (`errors_only`, `summary_only`) and can attach quick-fix names with `include_fixes` for use with
+  `apply_action`
 - **`get_highlights`** — Get cached editor highlights (errors, warnings, info)
 - **`get_compilation_errors`** — Fast compilation error check using cached daemon results
 - **`apply_quickfix`** — Apply an IntelliJ quick-fix at a specific file and line
