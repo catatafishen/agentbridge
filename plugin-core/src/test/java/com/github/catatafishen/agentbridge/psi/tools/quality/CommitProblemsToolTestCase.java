@@ -1,7 +1,9 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.google.gson.JsonObject;
 import com.intellij.codeInspection.redundantCast.RedundantCastInspection;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -57,6 +59,12 @@ abstract class CommitProblemsToolTestCase extends BasePlatformTestCase {
             for (VirtualFile openFile : fem.getOpenFiles()) {
                 fem.closeFile(openFile);
             }
+            // The light fixture's project, and with it these settings, is shared with the tests that run after this
+            // one in the same JVM. Subclasses set them to non-default values; leaving them behind made unrelated tests
+            // (e.g. QualityToolsExtendedTest, which relies on the default) fail only in a full run.
+            PropertiesComponent props = PropertiesComponent.getInstance(getProject());
+            props.unsetValue(ToolLayerSettings.FOLLOW_AGENT_FILES_KEY);
+            props.unsetValue(ToolLayerSettings.ALLOW_TRANSIENT_FILE_OPENS_KEY);
         } finally {
             super.tearDown();
         }
