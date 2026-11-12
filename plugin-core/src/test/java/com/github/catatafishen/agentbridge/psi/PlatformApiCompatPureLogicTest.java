@@ -55,6 +55,12 @@ class PlatformApiCompatPureLogicTest {
         }
 
         @Test
+        void generatedTestSourcesReturnsGeneratedTestSource() {
+            assertEquals(SourceRootKind.GENERATED_TEST_SOURCE,
+                PlatformApiCompat.classifySourceRootType("generated_test_sources"));
+        }
+
+        @Test
         void unknownTypeDefaultsToSource() {
             assertEquals(SourceRootKind.SOURCE,
                 PlatformApiCompat.classifySourceRootType("something_else"));
@@ -121,8 +127,8 @@ class PlatformApiCompatPureLogicTest {
     class SourceRootKindEnum {
 
         @Test
-        void hasFiveValues() {
-            assertEquals(5, SourceRootKind.values().length);
+        void hasSixValues() {
+            assertEquals(6, SourceRootKind.values().length);
         }
 
         @ParameterizedTest

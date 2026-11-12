@@ -197,9 +197,7 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
     }
 
     /**
-     * Explicit {@code scope=project} must behave the same as the default and find
-     * a class declared in the project — guards backward compatibility for callers
-     * that always pass the parameter.
+     * A scope with only project categories must find a class declared in the project.
      */
     public void testSearchSymbolsExplicitProjectScopeFindsProjectSymbol() {
         myFixture.addFileToProject(
@@ -210,7 +208,7 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
                 """);
 
         String result = searchSymbolsTool.execute(
-            args("query", "ScopedSymbol_4451", "scope", "project"));
+            args("query", "ScopedSymbol_4451", "scope", "sources,other"));
 
         assertFalse("Expected non-error result, got: " + result,
             result.startsWith(ToolUtils.ERROR_PREFIX));
@@ -248,11 +246,11 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
             args("query", "*", "type", "class", "scope", "libraries"));
 
         assertTrue("Expected wildcard-scope error, got: " + result,
-            result.contains("Wildcard symbol listing is only supported with scope='project'"));
+            result.contains("Wildcard symbol listing covers project files only"));
     }
 
     /**
-     * The tool schema must declare the new {@code scope} parameter so MCP clients
+     * The tool schema must declare {@code scope} as an array of category names so MCP clients
      * can advertise it to agents.
      */
     public void testSearchSymbolsSchemaDeclaresScopeParameter() {
@@ -261,10 +259,8 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
 
         assertTrue("Schema must include 'scope' property",
             properties.has("scope"));
-        assertEquals("string",
+        assertEquals("array",
             properties.getAsJsonObject("scope").get("type").getAsString());
-        assertEquals("project",
-            properties.getAsJsonObject("scope").get("default").getAsString());
     }
 
     /**
@@ -295,7 +291,7 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
         JsonObject properties = schema.getAsJsonObject("properties");
 
         assertTrue("Schema must include 'scope' property", properties.has("scope"));
-        assertEquals("string",
+        assertEquals("array",
             properties.getAsJsonObject("scope").get("type").getAsString());
     }
 

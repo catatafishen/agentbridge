@@ -29,7 +29,6 @@ import com.intellij.psi.PsiModifierList;
 import com.intellij.psi.PsiModifierListOwner;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.GlobalSearchScopes;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
@@ -39,7 +38,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
@@ -56,20 +54,6 @@ public abstract class NavigationTool extends Tool {
     protected static final String FORMAT_LOCATION = "%s:%d [%s] %s";
     protected static final String FORMAT_LINE_REF = "%s:%d: %s";
     protected static final String PARAM_QUERY = "query";
-    protected static final String PARAM_SCOPE = "scope";
-    protected static final String SCOPE_PROJECT = "project";
-    protected static final String SCOPE_PRODUCTION = "production";
-    protected static final String SCOPE_TESTS = "tests";
-    protected static final String SCOPE_LIBRARIES = "libraries";
-    protected static final String SCOPE_ALL = "all";
-    protected static final String SCOPE_DESCRIPTION =
-        """
-            Search scope: 'project' (default — all project sources), \
-            'production' (non-test code only — files in sources, resources, generated_sources roots), \
-            'tests' (test code only — files in test_sources, test_resources roots), \
-            'libraries' (only library/JDK sources — \
-            use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). \
-            Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.""";
 
     protected static final String PARAM_MAX_RESULTS = "max_results";
     protected static final String PARAM_OFFSET = "offset";
@@ -89,24 +73,10 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
-     * Resolves a user-supplied scope name to a {@link GlobalSearchScope}. Falls back to project scope
-     * when the value is missing or unrecognised so existing callers keep their current behaviour.
+     * Index search scope for a parsed {@code scope} selection (see {@link FileCategory}).
      */
-    protected GlobalSearchScope resolveScope(String scopeName) {
-        if (scopeName == null) return GlobalSearchScope.projectScope(project);
-        return switch (scopeName.toLowerCase(Locale.ROOT)) {
-            case SCOPE_PRODUCTION -> GlobalSearchScopes.projectProductionScope(project);
-            case SCOPE_TESTS -> GlobalSearchScopes.projectTestScope(project);
-            case SCOPE_LIBRARIES -> com.intellij.psi.search.ProjectScope.getLibrariesScope(project);
-            case SCOPE_ALL -> GlobalSearchScope.allScope(project);
-            default -> GlobalSearchScope.projectScope(project);
-        };
-    }
-
-    protected String readScopeParam(com.google.gson.JsonObject args) {
-        return args.has(PARAM_SCOPE) && !args.get(PARAM_SCOPE).isJsonNull()
-            ? args.get(PARAM_SCOPE).getAsString()
-            : SCOPE_PROJECT;
+    protected GlobalSearchScope resolveScope(FileCategory.Selection selection) {
+        return ProjectFileScanner.searchScope(project, selection);
     }
 
     /**

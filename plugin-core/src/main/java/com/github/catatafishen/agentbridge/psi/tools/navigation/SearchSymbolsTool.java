@@ -6,7 +6,6 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -70,13 +69,12 @@ public final class SearchSymbolsTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        return FileCategory.withScopeParam(schema(
             Param.required("query", TYPE_STRING, "Symbol name to search for, or '*' to list all symbols in the project"),
             Param.optional("type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", ""),
-            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 50 for exact, 200 for wildcard)"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of results to skip for pagination (default: 0)")
-        );
+        ));
     }
 
     @Override
@@ -88,27 +86,28 @@ public final class SearchSymbolsTool extends NavigationTool {
     public @NotNull String execute(@NotNull JsonObject args) {
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
-        String scopeName = readScopeParam(args);
         int[] pagination = readPaginationParams(args, -1); // -1 means "use per-mode default"
         int maxResults = pagination[0];
         int offset = pagination[1];
+        FileCategory.Selection scope = FileCategory.parseScope(args);
+        if (scope.error() != null) return scope.error();
 
         showSearchFeedback("🔍 Searching symbols: " + query);
         String result = computeWithProgress(() -> {
             if (query.isEmpty() || "*".equals(query)) {
-                if (!SCOPE_PROJECT.equalsIgnoreCase(scopeName)) {
-                    return "Error: Wildcard symbol listing is only supported with scope='project'. "
-                        + "Use an exact query name when searching scope='libraries' or scope='all'.";
+                if (scope.includes(FileCategory.LIBRARIES)) {
+                    return "Error: Wildcard symbol listing covers project files only; remove 'libraries' from "
+                        + "scope, or use an exact query name to search libraries.";
                 }
-                return searchWildcard(typeFilter, maxResults > 0 ? maxResults : 200, offset);
+                return searchWildcard(typeFilter, maxResults > 0 ? maxResults : 200, offset, scope);
             }
-            return searchExact(query, typeFilter, resolveScope(scopeName), maxResults > 0 ? maxResults : 50, offset);
+            return searchExact(query, typeFilter, resolveScope(scope), maxResults > 0 ? maxResults : 50, offset);
         });
         showSearchFeedback("✓ Symbol search complete: " + query);
         return result;
     }
 
-    private String searchWildcard(String typeFilter, int maxResults, int offset) {
+    private String searchWildcard(String typeFilter, int maxResults, int offset, FileCategory.Selection scope) {
         if (typeFilter.isEmpty())
             return "Provide a 'type' filter (class, interface, method, field) when using wildcard query";
 
@@ -117,7 +116,7 @@ public final class SearchSymbolsTool extends NavigationTool {
         String basePath = project.getBasePath();
 
         int scanned = 0;
-        for (VirtualFile vf : collectSourceFiles()) {
+        for (VirtualFile vf : collectSourceFiles(scope)) {
             scanned++;
             collectSymbolsFromVirtualFile(vf, typeFilter, basePath, seen, results);
             if (results.size() >= offset + maxResults) break;
@@ -142,14 +141,11 @@ public final class SearchSymbolsTool extends NavigationTool {
      * in its own short read action (see {@link #collectSymbolsFromVirtualFile}) rather than holding one
      * read action across the whole scan, which would block any pending write action until it finished.
      */
-    private List<VirtualFile> collectSourceFiles() {
-        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+    private List<VirtualFile> collectSourceFiles(FileCategory.Selection scope) {
         return readAction(() -> {
             List<VirtualFile> files = new ArrayList<>();
-            fileIndex.iterateContent(vf -> {
-                if (!vf.isDirectory() && !vf.getFileType().isBinary() && fileIndex.isInSourceContent(vf)) {
-                    files.add(vf);
-                }
+            ProjectFileScanner.scan(project, scope, (vf, category) -> {
+                if (!vf.getFileType().isBinary()) files.add(vf);
                 return true;
             });
             return files;

@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.psi.search.FilenameIndex;
@@ -75,11 +76,10 @@ public final class FindFileTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        return FileCategory.withScopeParam(schema(
             Param.required(PARAM_QUERY, TYPE_STRING, "File name query. Supports substring, camel-case (e.g. 'US' for UserService), and wildcard patterns."),
-            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum files to return (default 50, max 500)", String.valueOf(DEFAULT_LIMIT))
-        );
+        ));
     }
 
     @Override
@@ -91,13 +91,14 @@ public final class FindFileTool extends NavigationTool {
             return ToolUtils.ERROR_PREFIX + "'query' parameter is required";
         final String finalQuery = query;
         int limit = readLimit(args);
-        String scopeName = readScopeParam(args);
+        FileCategory.Selection selection = FileCategory.parseScope(args);
+        if (selection.error() != null) return selection.error();
         // NonBlockingReadAction: iterating the filename index can hold the read lock for a long time
         // on large projects. runReadAction() would block ALL write actions (EDT, indexing, daemon
         // analysis) for the entire duration and cause "IDE not responding" freezes.
         // executeSynchronously() yields to write actions when they need to run, then restarts the
         // search (computeMatches creates fresh collections, so restart is safe).
-        return ReadAction.nonBlocking(() -> computeMatches(finalQuery, scopeName, limit))
+        return ReadAction.nonBlocking(() -> computeMatches(finalQuery, limit, selection))
             .executeSynchronously();
     }
 
@@ -107,20 +108,36 @@ public final class FindFileTool extends NavigationTool {
         return DEFAULT_LIMIT;
     }
 
-    private String computeMatches(String query, String scopeName, int limit) {
+    private String computeMatches(String query, int limit, FileCategory.Selection selection) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
-        GlobalSearchScope scope = resolveScope(scopeName);
+        GlobalSearchScope scope = resolveScope(selection);
         MatchPredicate predicate = MatchPredicate.create(query);
+        Map<String, FileMatch> matchesByPath = collectMatches(scope, predicate, basePath, limit);
+
+        if (matchesByPath.isEmpty()) return "No files found" + FileCategory.skippedNote(selection);
+
+        List<String> lines = matchesByPath.values().stream()
+            .sorted(FILE_ORDER)
+            .limit(limit)
+            .map(FileMatch::format)
+            .toList();
+        return lines.size() + " files:\n" + String.join("\n", lines);
+    }
+
+    /**
+     * Looks files up in small batches in rank order instead of one huge unordered lookup: the index returns
+     * names and files in no meaningful order, so truncating that unordered stream would drop the best matches
+     * (e.g. an exact name) before ranking. One lookup per name was the freeze culprit on large projects, hence
+     * batches rather than single names.
+     */
+    private Map<String, FileMatch> collectMatches(GlobalSearchScope scope, MatchPredicate predicate,
+                                                  String basePath, int limit) {
+        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
         int collectFileLimit = Math.clamp(Math.multiplyExact(limit, 5), DEFAULT_LIMIT, MAX_LIMIT);
         Map<String, FileMatch> matchesByPath = new LinkedHashMap<>();
-
         List<String> rankedNames = rankedMatchingNames(predicate, scope);
-        // Files are looked up in small batches in rank order instead of one huge unordered lookup: the
-        // index returns names and files in no meaningful order, so truncating that unordered stream would
-        // drop the best matches (e.g. an exact name) before ranking. One lookup per name was the freeze
-        // culprit on large projects, hence batches rather than single names.
         for (int from = 0; from < rankedNames.size(); from += NAME_BATCH_SIZE) {
             if (matchesByPath.size() >= collectFileLimit
                 || canStopBeforeBatch(matchesByPath, limit, predicate.score(rankedNames.get(from)))) {
@@ -129,19 +146,16 @@ public final class FindFileTool extends NavigationTool {
             Set<String> batch = new LinkedHashSet<>(
                 rankedNames.subList(from, Math.min(rankedNames.size(), from + NAME_BATCH_SIZE)));
             FilenameIndex.processFilesByNames(batch, false, scope, null, file -> {
-                addFileMatch(file, basePath, scope, predicate, matchesByPath);
+                // The scope already restricts to the selected categories; contains() re-check guards
+                // against index entries outside it.
+                if (!file.isDirectory() && scope.contains(file)) {
+                    addFileMatch(file, ProjectFileScanner.categorize(fileIndex, file), basePath, predicate,
+                        matchesByPath);
+                }
                 return true;
             });
         }
-
-        if (matchesByPath.isEmpty()) return "No files found";
-
-        List<String> lines = matchesByPath.values().stream()
-            .sorted(FILE_ORDER)
-            .limit(limit)
-            .map(FileMatch::format)
-            .toList();
-        return lines.size() + " files:\n" + String.join("\n", lines);
+        return matchesByPath;
     }
 
     /**
@@ -178,22 +192,21 @@ public final class FindFileTool extends NavigationTool {
     private record ScoredName(String name, int score) {
     }
 
-    private void addFileMatch(VirtualFile file, String basePath, GlobalSearchScope scope,
+    private void addFileMatch(VirtualFile file, FileCategory category, String basePath,
                               MatchPredicate predicate, Map<String, FileMatch> matchesByPath) {
-        if (file.isDirectory() || !scope.contains(file)) return;
-
         String path = safeRelativize(basePath, file.getPath());
         if (!predicate.matchesPath(path, file.getPath())) return;
 
         String directory = file.getParent() == null ? "" : safeRelativize(basePath, file.getParent().getPath());
-        matchesByPath.putIfAbsent(path, new FileMatch(file.getName(), path, directory, predicate.score(file.getName())));
+        matchesByPath.putIfAbsent(path,
+            new FileMatch(file.getName(), path, directory, category, predicate.score(file.getName())));
     }
 
-    private record FileMatch(String name, String path, String directory, int score) {
+    private record FileMatch(String name, String path, String directory, FileCategory category, int score) {
         private String format() {
             return directory.isEmpty()
-                ? path + " [" + name + "]"
-                : path + " [" + name + ", dir=" + directory + "]";
+                ? path + " [" + name + ", " + category.id() + "]"
+                : path + " [" + name + ", " + category.id() + ", dir=" + directory + "]";
         }
     }
 
@@ -234,7 +247,8 @@ public final class FindFileTool extends NavigationTool {
         }
 
         private boolean matchesPath(String path, String absolutePath) {
-            if (lowerPathQuery != null) return absolutePath.replace('\\', '/').toLowerCase(Locale.ROOT).contains(lowerPathQuery);
+            if (lowerPathQuery != null)
+                return absolutePath.replace('\\', '/').toLowerCase(Locale.ROOT).contains(lowerPathQuery);
             return globPattern == null || globPattern.matcher(path).matches() || globPattern.matcher(nameFromPath(path)).matches();
         }
 

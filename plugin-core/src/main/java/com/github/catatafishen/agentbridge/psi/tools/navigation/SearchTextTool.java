@@ -10,7 +10,6 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.usageView.UsageInfo;
@@ -26,10 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -63,16 +60,16 @@ public final class SearchTextTool extends NavigationTool {
      */
     private record SearchConfig(String query, String filePattern, boolean isRegex,
                                 boolean caseSensitive, int maxResults, int offset,
-                                int contextLines, boolean followAgent) {
+                                int contextLines, boolean followAgent, FileCategory.Selection scope) {
     }
 
-    private record SearchParams(Pattern pattern, String basePath, String filePattern,
+    private record SearchParams(Pattern pattern, String basePath, FilePattern filePattern,
                                 Pattern compiledFileGlob,
                                 List<String> results, @Nullable List<MatchPosition> positions,
-                                AtomicInteger skippedLarge, int maxResults, int offset,
+                                AtomicInteger skippedLarge, List<String> skippedFiles, int maxResults, int offset,
                                 AtomicInteger totalSeen, int contextLines,
                                 AtomicInteger totalOutputBytes, AtomicBoolean outputTruncated,
-                                String entrySeparator, @Nullable Predicate<VirtualFile> scopeFilter) {
+                                String entrySeparator) {
     }
 
     public SearchTextTool(Project project) {
@@ -108,16 +105,15 @@ public final class SearchTextTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(
+        return FileCategory.withScopeParam(schema(
             Param.required("query", TYPE_STRING, "Text or regex pattern to search for"),
-            Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""),
-            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
+            Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern matched against project-relative paths (e.g., '*.kt', 'src/**/*.java'). An absolute path inside the project is converted to relative.", ""),
             Param.optional(PARAM_REGEX, TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"),
             Param.optional(PARAM_CASE_SENSITIVE, TYPE_BOOLEAN, "Case-sensitive search. Default: true"),
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"),
             Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of results to skip for pagination (default: 0)"),
             Param.optional(PARAM_CONTEXT_LINES, TYPE_INTEGER, "Lines of context before and after each match (default: 0). Reduces need for follow-up read_file calls.")
-        );
+        ));
     }
 
     @Override
@@ -137,14 +133,15 @@ public final class SearchTextTool extends NavigationTool {
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
         boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
-        String scopeName = readScopeParam(args);
-        if (SCOPE_LIBRARIES.equalsIgnoreCase(scopeName)) {
-            return ToolUtils.ERROR_PREFIX + "search_text does not search library sources (scope='libraries'). "
-                + "Use search_symbols or find_references with scope='libraries' instead.";
+        FileCategory.Selection scope = FileCategory.parseScope(args);
+        if (scope.error() != null) return scope.error();
+        if (!scope.includesProject()) {
+            return ToolUtils.ERROR_PREFIX + "search_text searches project files only; library sources are not "
+                + "searchable as text. Use search_symbols or find_references with scope=[\"libraries\"] instead.";
         }
-        Predicate<VirtualFile> scopeFilter = buildScopeFilter(scopeName);
 
-        var cfg = new SearchConfig(query, filePattern, isRegex, caseSensitive, maxResults, offset, contextLines, followAgent);
+        var cfg = new SearchConfig(query, filePattern, isRegex, caseSensitive, maxResults, offset, contextLines,
+            followAgent, scope);
 
         showSearchFeedback("Searching text: " + query);
         // NonBlockingReadAction: iterating all project files can hold the read lock for several
@@ -152,12 +149,10 @@ public final class SearchTextTool extends NavigationTool {
         // daemon analysis) for the entire duration and cause "IDE not responding" freezes.
         // executeSynchronously() yields to write actions when they need to run, then restarts the
         // search (performSearch creates fresh collections, so restart is safe).
-        String result = ReadAction.nonBlocking(
-            () -> performSearch(cfg, scopeFilter)
-        ).executeSynchronously();
+        String result = ReadAction.nonBlocking(() -> performSearch(cfg)).executeSynchronously();
         showSearchFeedback("Text search complete: " + query);
-        if (SCOPE_ALL.equalsIgnoreCase(scopeName)) {
-            result += "\n(scope='all': library sources are not searched by search_text; only project files were searched)";
+        if (scope.includes(FileCategory.LIBRARIES)) {
+            result += "\n(library sources are not searched by search_text; only project files were searched)";
         }
         return result;
     }
@@ -179,17 +174,7 @@ public final class SearchTextTool extends NavigationTool {
         }
     }
 
-    private @Nullable Predicate<VirtualFile> buildScopeFilter(String scopeName) {
-        if (scopeName == null) return null;
-        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-        return switch (scopeName.toLowerCase(Locale.ROOT)) {
-            case SCOPE_PRODUCTION -> vf -> !fileIndex.isInTestSourceContent(vf);
-            case SCOPE_TESTS -> fileIndex::isInTestSourceContent;
-            default -> null;
-        };
-    }
-
-    private String performSearch(SearchConfig cfg, @Nullable Predicate<VirtualFile> scopeFilter) {
+    private String performSearch(SearchConfig cfg) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -209,14 +194,17 @@ public final class SearchTextTool extends NavigationTool {
         AtomicInteger totalOutputBytes = new AtomicInteger(0);
         AtomicBoolean outputTruncated = new AtomicBoolean(false);
         String entrySeparator = cfg.contextLines() > 0 ? "\n---\n" : "\n";
-        var compiledFileGlob = cfg.filePattern().isEmpty() ? null : ToolUtils.compileGlob(cfg.filePattern());
-        var params = new SearchParams(pattern, basePath, cfg.filePattern(), compiledFileGlob, results, positions,
-            skippedLarge, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes,
-            outputTruncated, entrySeparator, scopeFilter);
+        List<String> skippedFiles = new ArrayList<>();
+        FilePattern filePattern = relativizeFilePattern(cfg.filePattern(), basePath,
+            com.intellij.openapi.util.SystemInfo.isFileSystemCaseSensitive);
+        var compiledFileGlob = filePattern.glob().isEmpty() ? null : ToolUtils.compileGlob(filePattern.glob());
+        var params = new SearchParams(pattern, basePath, filePattern, compiledFileGlob, results, positions,
+            skippedLarge, skippedFiles, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes,
+            outputTruncated, entrySeparator);
         // Collect and sort first: the content iteration order depends on module and content-root order, and
         // offset pagination is only correct if every call visits the files in the same order.
         List<SearchCandidate> candidates = new ArrayList<>();
-        ProjectFileIndex.getInstance(project).iterateContent(vf -> {
+        ProjectFileScanner.scan(project, cfg.scope(), (vf, category) -> {
             String relPath = candidatePath(vf, params);
             if (relPath != null) candidates.add(new SearchCandidate(vf, relPath));
             return true;
@@ -229,21 +217,25 @@ public final class SearchTextTool extends NavigationTool {
         if (positions != null && !positions.isEmpty()) {
             showResultsInUsageView(cfg.query(), positions);
         }
+        return formatResults(cfg, params);
+    }
 
+    private static String formatResults(SearchConfig cfg, SearchParams p) {
+        List<String> results = p.results();
         StringBuilder sb = new StringBuilder();
         if (results.isEmpty()) {
             sb.append("No matches found for '").append(truncateUtf8(cfg.query(), 128)).append("'");
         } else {
             sb.append(results.size()).append(" matches:\n");
-            sb.append(String.join(entrySeparator, results));
+            sb.append(String.join(p.entrySeparator(), results));
         }
-        if (skippedLarge.get() > 0) {
-            sb.append("\n(").append(skippedLarge.get()).append(" file(s) >1 MB skipped)");
-        }
-        if (outputTruncated.get()) {
+        sb.append(formatSkippedLarge(p.skippedLarge().get(), p.skippedFiles()));
+        boolean truncated = p.outputTruncated().get();
+        if (truncated) {
             sb.append("\n(output truncated at 16 KiB)");
         }
-        if (outputTruncated.get() || results.size() >= cfg.maxResults()) {
+        if (results.isEmpty()) sb.append(FileCategory.skippedNote(cfg.scope()));
+        if (truncated || results.size() >= cfg.maxResults()) {
             int nextOffset = cfg.offset() + results.size();
             sb.append("\n\n(Showing ").append(results.size()).append(" results starting at offset ").append(cfg.offset())
                 .append(". Use offset=").append(nextOffset).append(" to see more)");
@@ -302,15 +294,55 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     /**
+     * "(N file(s) >1 MB skipped: a, b, ...)", or empty when nothing was skipped.
+     */
+    static String formatSkippedLarge(int count, List<String> listed) {
+        if (count <= 0) return "";
+        StringBuilder sb = new StringBuilder("\n(").append(count).append(" file(s) >1 MB skipped");
+        if (!listed.isEmpty()) {
+            sb.append(": ").append(String.join(", ", listed));
+            if (count > listed.size()) sb.append(", ...");
+        }
+        return sb.append(")").toString();
+    }
+
+    private static final int MAX_LISTED_SKIPPED = 10;
+
+    /**
+     * Converts an absolute {@code file_pattern} inside the project to a project-relative one. The result is
+     * always path-anchored: a root-level {@code /p/proj/AGENTS.md} must not also match {@code sub/AGENTS.md},
+     * so callers match it against the full relative path ({@link FilePattern#anchored}). The prefix check
+     * follows the file system's case sensitivity (Windows drive letters differ in case).
+     */
+    static FilePattern relativizeFilePattern(String filePattern, String basePath, boolean caseSensitiveFs) {
+        String normalized = filePattern.replace('\\', '/');
+        String prefix = basePath.replace('\\', '/');
+        if (!prefix.endsWith("/")) prefix += "/";
+        boolean under = normalized.regionMatches(!caseSensitiveFs, 0, prefix, 0, prefix.length());
+        return under
+            ? new FilePattern(normalized.substring(prefix.length()), true)
+            : new FilePattern(filePattern, false);
+    }
+
+    /**
+     * @param anchored true when the pattern came from an absolute path and must match the whole relative path
+     */
+    record FilePattern(String glob, boolean anchored) {
+        boolean rejects(String relPath, @Nullable Pattern compiled) {
+            if (glob.isEmpty()) return false;
+            if (!anchored) return ToolUtils.doesNotMatchGlob(relPath, glob, compiled);
+            Pattern p = compiled != null ? compiled : ToolUtils.compileGlob(glob);
+            return !p.matcher(relPath.replace('\\', '/')).matches();
+        }
+    }
+
+    /**
      * Returns the project-relative path if the file passes scope and glob filters, otherwise null.
      */
     private @Nullable String candidatePath(VirtualFile vf, SearchParams p) {
-        if (vf.isDirectory()) return null;
-        if (p.scopeFilter() != null && !p.scopeFilter().test(vf)) return null;
         String relPath = relativize(p.basePath(), vf.getPath());
         if (relPath == null) return null;
-        if (!p.filePattern().isEmpty() && ToolUtils.doesNotMatchGlob(relPath, p.filePattern(), p.compiledFileGlob()))
-            return null;
+        if (p.filePattern().rejects(relPath, p.compiledFileGlob())) return null;
         return relPath;
     }
 
@@ -321,7 +353,7 @@ public final class SearchTextTool extends NavigationTool {
         VirtualFile vf = candidate.vf();
         String relPath = candidate.relPath();
         if (vf.getLength() > 1_000_000) {
-            p.skippedLarge().incrementAndGet();
+            if (p.skippedLarge().incrementAndGet() <= MAX_LISTED_SKIPPED) p.skippedFiles().add(relPath);
             return p.results().size() < p.maxResults();
         }
         // Pre-resolve PsiFile here (inside the existing read action) so showResultsInUsageView
