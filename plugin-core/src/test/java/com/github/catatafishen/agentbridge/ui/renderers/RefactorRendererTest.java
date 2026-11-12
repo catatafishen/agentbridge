@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.ui.renderers;
 import kotlin.text.MatchResult;
 import kotlin.text.Regex;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -105,25 +107,17 @@ class RefactorRendererTest {
 
     // ── REF_COUNT ───────────────────────────────────────────
 
-    @Test
-    void refCount_matchesPluralReferences() {
-        MatchResult m = refCount.find("Updated 5 references", 0);
+    @ParameterizedTest
+    @CsvSource({
+        "'Updated 5 references', 5",
+        "'Updated 1 reference', 1",
+        "'  Updated 3 usages in 2 file(s).', 3",
+        "'  Updated 1 usage in 1 file(s).', 1",
+    })
+    void refCount_capturesCountForEveryWording(String text, String expected) {
+        MatchResult m = refCount.find(text, 0);
         assertNotNull(m);
-        assertEquals("5", m.getGroupValues().get(1));
-    }
-
-    @Test
-    void refCount_matchesSingularReference() {
-        MatchResult m = refCount.find("Updated 1 reference", 0);
-        assertNotNull(m);
-        assertEquals("1", m.getGroupValues().get(1));
-    }
-
-    @Test
-    void refCount_matchesUsagesWording() {
-        MatchResult m = refCount.find("  Updated 3 usages in 2 file(s).", 0);
-        assertNotNull(m);
-        assertEquals("3", m.getGroupValues().get(1));
+        assertEquals(expected, m.getGroupValues().get(1));
     }
 
     @Test
