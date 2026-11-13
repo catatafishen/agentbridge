@@ -164,6 +164,13 @@ tasks.named<Zip>("buildPlugin") {
 }
 
 intellijPlatform {
+    // Settings search is non-essential for this experimental variant, and building its index
+    // launches a headless IDE that crashes with PathClassLoader errors on Java 21. Disabling it
+    // through the extension skips the whole chain; disabling only the buildSearchableOptions
+    // task breaks prepareJarSearchableOptions on IntelliJ Platform Gradle Plugin 2.20+, which
+    // then validates the missing output directory.
+    buildSearchableOptions = false
+
     pluginConfiguration {
         id = "com.github.catatafishen.ideagentforcopilot"
         name = "IDE Agent for Copilot (Experimental)"
@@ -214,11 +221,6 @@ tasks {
         }
         finalizedBy("jacocoTestReport")
     }
-
-    // buildSearchableOptions launches a headless IDE subprocess and crashes with
-    // PathClassLoader initialization errors on Java 21 with recent platform plugin
-    // versions. Settings search is non-essential for this experimental variant.
-    named("buildSearchableOptions") { enabled = false }
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {
