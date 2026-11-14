@@ -129,8 +129,7 @@ public class ApplyActionClosedFileTest extends CommitProblemsToolTestCase {
         String result = executeSync(() -> applyActionTool.execute(args));
 
         assertTrue(result, result.contains("'Import class' not found"));
-        assertTrue("The reason must be given: " + result,
-            result.contains("quick-fixes that were not computed because the file is not open in an editor"));
+        assertTrue("The reason must be given: " + result, result.contains(QualityTool.EDITOR_ONLY_FIXES_NOTE));
         assertTrue("A way forward must be named: " + result, result.contains("optimize_imports"));
         assertFalse("No editor may be left behind", isOpen(vf));
     }
@@ -141,7 +140,8 @@ public class ApplyActionClosedFileTest extends CommitProblemsToolTestCase {
         String result = applyFix(changedFiles.get(5), 2, "No such action");
 
         assertTrue(result, result.contains("'No such action' not found"));
-        assertFalse("Nothing is pending here, so no note: " + result, result.contains("were not computed"));
+        assertFalse("Every problem here has its fix listed, so no note: " + result,
+            result.contains(QualityTool.EDITOR_ONLY_FIXES_NOTE));
     }
 
     public void testNoLazyFixNoteForAnOpenFile() throws Exception {

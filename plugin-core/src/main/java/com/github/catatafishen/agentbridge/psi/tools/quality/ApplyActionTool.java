@@ -265,7 +265,7 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
                 List<String> available = collectAvailableActionNames(doc, targetLine, editor, psiFile,
                     request.analyzed());
                 String hint = available.isEmpty() ? "none" : String.join(", ", available);
-                String why = pendingLazyFixesExplanation(doc, targetLine, request.analyzed());
+                String why = editorOnlyFixesNote(doc, targetLine, request.analyzed());
                 return ACTION_PREFIX + actionName + "' not found at " + pathStr + LINE_LABEL + targetLine
                     + ". Available: [" + hint + "]"
                     + (why == null ? "" : ". Note: " + why);

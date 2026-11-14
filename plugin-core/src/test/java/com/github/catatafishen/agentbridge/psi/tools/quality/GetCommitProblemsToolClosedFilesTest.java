@@ -111,24 +111,21 @@ public class GetCommitProblemsToolClosedFilesTest extends CommitProblemsToolTest
 
     /**
      * A problem whose fixes are lazy (the import fixes of an unresolved symbol) cannot be listed without an editor.
-     * It must be marked as "not computed" with a way forward, never shown as having no fix, while the problems with
-     * eager fixes in the same listing keep theirs.
+     * The response must say that fixes may be missing and name a way forward, never imply that none exist, while the
+     * problems with eager fixes in the same listing keep theirs.
      */
-    public void testLazyFixesAreMarkedAsNotComputedInTheListing() throws Exception {
+    public void testLazyFixesAreFlaggedByANoteInTheListing() throws Exception {
         configure(false, true);
         changedFiles.add(myFixture.addFileToProject("Lazy.java",
             "public class Lazy {\n    Missing broken;\n}\n").getVirtualFile());
 
         String result = run(json("max_results", 100, "include_fixes", true));
 
-        String lazyEntry = result.lines()
-            .dropWhile(l -> !l.contains("Cannot resolve symbol 'Missing'"))
-            .limit(2)
-            .collect(java.util.stream.Collectors.joining("\n"));
-        assertTrue("The unresolved symbol must be listed: " + result, lazyEntry.contains("Cannot resolve symbol"));
-        assertTrue("Its fixes must be marked as not computed: " + lazyEntry,
-            lazyEntry.contains("Fix: " + QualityTool.FIXES_NOT_COMPUTED));
-        assertTrue("The marker names a way forward: " + lazyEntry, lazyEntry.contains("optimize_imports"));
+        assertTrue("The unresolved symbol must be listed: " + result, result.contains("Cannot resolve symbol 'Missing'"));
+        assertTrue("The response must say fixes may be missing: " + result,
+            result.contains("Note: " + QualityTool.EDITOR_ONLY_FIXES_NOTE));
+        assertEquals("The note appears once per response", 1,
+            countOccurrences(result, QualityTool.EDITOR_ONLY_FIXES_NOTE));
         assertEquals("The eager fixes of the other problems are unaffected", EXPECTED_FINDINGS,
             countOccurrences(result, "Fix: " + REDUNDANT_CAST_FIX));
     }

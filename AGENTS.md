@@ -3,7 +3,8 @@
 Rules for anyone (human or agent) changing this repository. Product-facing agent instructions that ship to end users
 live in `plugin-core/src/main/resources/default-startup-instructions.md`, not here.
 
-**Not every agent reads this file by itself.** CLI agents load it on their own. The built-in Koog agent builds its prompt
+**Not every agent reads this file by itself.** CLI agents load it on their own. The built-in Koog agent builds its
+prompt
 from bundled resources, so the plugin reads `AGENTS.md` from the project root and adds it to Koog's system prompt
 (`ProjectInstructions`), dropping any plugin-generated block first. Other agents may not see it; put anything that must
 reach every agent in the bundled instructions instead.
@@ -76,7 +77,8 @@ gh api repos/catatafishen/agentbridge/pulls/N/comments/ID/replies -f body="Fixed
 gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_..."}) { thread { isResolved } } }'
 ```
 
-Get thread ids from `repository(...) { pullRequest(number: N) { reviewThreads(first: 50) { nodes { id isResolved } } } }`.
+Get thread ids from
+`repository(...) { pullRequest(number: N) { reviewThreads(first: 50) { nodes { id isResolved } } } }`.
 
 ## Identity
 
@@ -121,7 +123,12 @@ Do not skip this because the workaround is easy. Whether it is a real bug is for
 - Avoid `getText()` / `getTextRange()` on large PSI; use `textMatches()` or `textLength`. Cache PSI-derived data in
   `UserData` or an index.
 - **Never** use deprecated, `@ApiStatus.Experimental` or `@ApiStatus.Internal` APIs; replace a deprecated call when you
-  meet it. The Marketplace flags them.
+  meet it. The Marketplace flags them. Calling them by reflection does not help: the Marketplace verifier catches that
+  too (we tried). If an internal API has no public replacement, drop or degrade the feature.
+- The replacement for a deprecated API may not exist in the oldest supported IDE (`sinceBuild` in
+  `plugin-core/build.gradle.kts`). Check before switching: `ReadAction.computeBlocking` replaces the deprecated
+  `ReadAction.compute` but is missing from 2025.3, and release 1.229.0 was rejected for it. Use a `PlatformApiCompat`
+  wrapper such as `readActionCompute` instead.
 - API calls that differ across supported IDE versions go through `PlatformApiCompat`, with a Javadoc
   `<b>Why extracted:</b>` block. Check it for an existing wrapper before calling a JetBrains API directly, and never
   bypass it from business code.
@@ -133,7 +140,8 @@ Do not skip this because the workaround is easy. Whether it is a real bug is for
 - Priority: compilation errors, then warnings, then `[INFORMATION]` hints (apply when they genuinely improve
   readability, not mechanically), then style. Grammar only if asked.
 - Fix the cause; do not suppress. The only acceptable suppressions are a framework-required signature, a defensive null
-  check the IDE calls "always true", and an overload the IDE wrongly calls redundant. Each needs a comment explaining why.
+  check the IDE calls "always true", and an overload the IDE wrongly calls redundant. Each needs a comment explaining
+  why.
 - Common fixes: extract duplicate string literals to constants; reduce cognitive complexity by extracting methods; log
   or document empty `catch` blocks; call `Thread.currentThread().interrupt()` after catching `InterruptedException`;
   remove unused parameters and methods; replace deprecated JetBrains APIs.
@@ -177,7 +185,8 @@ dependency on Swing or IntelliJ UI APIs belongs in a standalone class that can b
 
 ## Reference
 
-- Agent definition formats and the per-agent support table: [docs/AGENT-DEFINITION-FORMATS.md](docs/AGENT-DEFINITION-FORMATS.md)
+- Agent definition formats and the per-agent support
+  table: [docs/AGENT-DEFINITION-FORMATS.md](docs/AGENT-DEFINITION-FORMATS.md)
 - Adding an agent: [docs/ADDING-A-NEW-AGENT.md](docs/ADDING-A-NEW-AGENT.md)
 - Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/MCP-ARCHITECTURE.md](docs/MCP-ARCHITECTURE.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
