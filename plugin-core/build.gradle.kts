@@ -457,20 +457,26 @@ intellijPlatform {
     }
 
     pluginVerification {
-        // Don't fail on COMPATIBILITY_PROBLEMS or MISSING_DEPENDENCIES: our Java support
-        // classes (psi.java package) reference Java PSI and Compiler APIs that are absent in
+        // Don't fail on COMPATIBILITY_PROBLEMS or MISSING_DEPENDENCIES in non-Java IDEs: our Java
+        // support classes (psi.java package) reference Java PSI and Compiler APIs that are absent in
         // non-Java IDEs (PY, WS, GO). These classes are guarded at runtime by
         // isPluginInstalled("com.intellij.modules.java") + NoClassDefFoundError catch.
         // TODO: Move psi.java classes to a separate Gradle module (separate JAR) so the
         //       verifier only checks them against IDEs with Java support.
         //
+        // IntelliJ IDEA has Java support, so there a compatibility problem is a real bug: it is how
+        // a method missing from the oldest supported IDE is caught (ReadAction.computeBlocking does
+        // not exist in 2025.3; release 1.229.0 was rejected for it). Fail on it for the IU jobs.
+        val verifyTarget = if (project.hasProperty("verifyIde")) project.property("verifyIde") as String else null
+        val javaIde = verifyTarget == "IU" || verifyTarget == "IU-EAP"
         failureLevel.set(
-            listOf(
+            listOfNotNull(
                 FailureLevel.INVALID_PLUGIN,
                 FailureLevel.INTERNAL_API_USAGES,
                 FailureLevel.OVERRIDE_ONLY_API_USAGES,
                 FailureLevel.NON_EXTENDABLE_API_USAGES,
                 FailureLevel.PLUGIN_STRUCTURE_WARNINGS,
+                if (javaIde) FailureLevel.COMPATIBILITY_PROBLEMS else null,
             )
         )
         ides {

@@ -1,7 +1,7 @@
 name: IDE Compatibility Check
 
-# Runs automatically on every push to master and can be triggered manually
-# for any branch (e.g. to validate a PR before merging).
+# Runs on every pull request that can change the plugin, on every push to master, and on demand
+# for any branch.
 #
 # Architecture:
 #   build-plugin  — compiles and packages the plugin ZIP once
@@ -9,13 +9,22 @@ name: IDE Compatibility Check
 #                   process with its own isolated copy of JARs. No shared
 #                   CachingJarFileSystemProvider, no ClosedFileSystemException.
 #                   Verifies: IU 2025.3 (legacy/min), PY 2026.1, WS 2026.1, GO 2026.1,
-#                   and IU 2026.1 (latest stable, to catch API removals early).
+#                   and IU 2026.2 EAP (to catch API removals early).
 #
 # Results are checked by publish-marketplace.yml: if this workflow has not
 # run for a given release commit, or if it failed, marketplace publishing
 # is blocked until the check passes.
 
 on:
+  pull_request:
+    paths:
+      - 'plugin-core/**'
+      - 'mcp-server/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/ide-compatibility.yml'
   push:
     branches: [ master ]
   workflow_dispatch:
@@ -31,6 +40,12 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # One plugin version for every job of the run. Without it, build.gradle.kts derives a dev
+  # version containing the current minute, so the verify jobs (separate Gradle processes,
+  # minutes later) expected a ZIP name that the build-plugin job never produced. verifyPlugin
+  # then had no input, was skipped as NO-SOURCE and reported success: the verifier did not run
+  # in CI from at least October 2026, and release 1.229.0 shipped internal-API usages.
+  PLUGIN_VERSION: 0.0.0-ci-${{ github.run_id }}
 
 jobs:
   build-plugin:
@@ -138,6 +153,21 @@ jobs:
           -PverifyIde=${{ matrix.ide.id }}
           -x :plugin-core:buildPlugin
           -x :plugin-core:buildChatUi
+
+      - name: Fail if the verifier did not run
+        # Gradle reports success when verifyPlugin is skipped (NO-SOURCE, e.g. because the
+        # downloaded ZIP name does not match the version this process computed). The verifier
+        # always writes a report per IDE when it runs, so an empty report directory means it did
+        # not, and the job must not pass.
+        run: |
+          reports=plugin-core/build/reports/pluginVerifier
+          if [ -z "$(find "$reports" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
+            echo "::error::verifyPlugin produced no report in $reports: the plugin verifier did not run."
+            ls -la plugin-core/build/distributions/ || true
+            exit 1
+          fi
+          echo "Verifier reports:"
+          ls "$reports"
 
       - name: Show disk space after verification
         if: always()
