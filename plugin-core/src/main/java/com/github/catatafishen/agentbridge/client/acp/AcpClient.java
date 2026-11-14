@@ -2122,7 +2122,8 @@ public abstract class AcpClient extends AbstractClient {
 
         JsonObject updateObj = normalizeSessionUpdateParams(params);
 
-        SessionUpdate update = messageParser.parse(updateObj);
+        SessionUpdate agentSpecific = parseAgentSpecificUpdate(updateObj);
+        SessionUpdate update = agentSpecific != null ? agentSpecific : messageParser.parse(updateObj);
 
         // Side-effects that happen regardless of whether a UI consumer is attached:
         if (update instanceof SessionUpdate.ConfigOptionsChanged(var options)) {
@@ -2190,6 +2191,17 @@ public abstract class AcpClient extends AbstractClient {
      * The base implementation unwraps that envelope. Override only if an agent uses a
      * genuinely different structure.
      */
+    /**
+     * Hook for agent-specific extensions of standard {@code session/update} notifications, e.g.
+     * vendor data under {@code _meta} that changes what an update means. Called with the
+     * normalized update before the standard {@link AcpMessageParser}.
+     *
+     * @return the parsed update, or {@code null} to parse it the standard way (the default)
+     */
+    protected @Nullable SessionUpdate parseAgentSpecificUpdate(@NotNull JsonObject update) {
+        return null;
+    }
+
     protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
         if (params.has(KEY_UPDATE) && params.get(KEY_UPDATE).isJsonObject()) {
             return params.getAsJsonObject(KEY_UPDATE);
