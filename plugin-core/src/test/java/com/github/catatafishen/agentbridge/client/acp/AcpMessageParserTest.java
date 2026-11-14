@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -50,6 +51,74 @@ class AcpMessageParserTest {
     );
 
     // ── agent_message_chunk — per spec: streamed text response ───────────────
+
+    // ── session_info_update with OpenCode's compaction marker (issue #1240) ──
+
+    private JsonObject compactionMarker(String status, String reason) {
+        JsonObject params = updateParams("session_info_update");
+        JsonObject marker = new JsonObject();
+        marker.addProperty("status", status);
+        marker.addProperty("messageId", "msg_1");
+        marker.addProperty("reason", reason);
+        JsonObject meta = new JsonObject();
+        meta.add("opencode/compaction", marker);
+        params.add("_meta", meta);
+        return params;
+    }
+
+    @Test
+    void manualCompactionCompletionIsParsedAsCompactionNotTitleChange() {
+        SessionUpdate update = parser.parse(compactionMarker("completed", "manual"));
+
+        var compaction = assertInstanceOf(SessionUpdate.Compaction.class, update);
+        assertEquals(SessionUpdate.CompactionStatus.COMPLETED, compaction.status());
+        assertTrue(compaction.manual());
+        assertNull(compaction.error());
+    }
+
+    @Test
+    void autoCompactionStartIsNotManual() {
+        var compaction = assertInstanceOf(SessionUpdate.Compaction.class,
+            parser.parse(compactionMarker("started", "auto")));
+
+        assertEquals(SessionUpdate.CompactionStatus.STARTED, compaction.status());
+        assertFalse(compaction.manual());
+    }
+
+    @Test
+    void failedCompactionCarriesTheErrorMessage() {
+        JsonObject params = compactionMarker("failed", "manual");
+        JsonObject error = new JsonObject();
+        error.addProperty("type", "compaction.failed");
+        error.addProperty("message", "summarizer timed out");
+        params.getAsJsonObject("_meta").getAsJsonObject("opencode/compaction").add("error", error);
+
+        var compaction = assertInstanceOf(SessionUpdate.Compaction.class, parser.parse(params));
+
+        assertEquals(SessionUpdate.CompactionStatus.FAILED, compaction.status());
+        assertEquals("summarizer timed out", compaction.error());
+    }
+
+    @Test
+    void unknownCompactionStatusFallsBackToSessionInfo() {
+        assertInstanceOf(SessionUpdate.SessionInfoChanged.class, parser.parse(compactionMarker("paused", "auto")));
+    }
+
+    @Test
+    void sessionInfoUpdateWithoutMarkerIsStillATitleChange() {
+        JsonObject params = updateParams("session_info_update");
+        params.addProperty("title", "Fix login");
+
+        var info = assertInstanceOf(SessionUpdate.SessionInfoChanged.class, parser.parse(params));
+
+        assertEquals("Fix login", info.title());
+    }
+
+    @Test
+    void compactionMarkerIsNotBackgroundAgentActivity() {
+        // A trailing marker after end_turn must not trip the "background agent still running" banner.
+        assertFalse(AcpClient.isBackgroundAgentActivity(parser.parse(compactionMarker("completed", "auto"))));
+    }
 
     @Test
     void parsesAgentMessageChunk() {
