@@ -36,6 +36,7 @@ class AcpMessageParser {
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String KEY_THINKING = "thinking";
     private static final String KEY_TITLE = "title";
+    private static final String OPENCODE_COMPACTION_META = "opencode/compaction";
     private static final String KEY_CONFIG_OPTIONS = "configOptions";
     private static final String KEY_AVAILABLE_COMMANDS = "availableCommands";
     private static final String KEY_COMMANDS = "commands";
@@ -321,10 +322,43 @@ class AcpMessageParser {
         );
     }
 
-    private SessionUpdate.SessionInfoChanged parseSessionInfoUpdate(JsonObject params) {
+    private SessionUpdate parseSessionInfoUpdate(JsonObject params) {
+        SessionUpdate.Compaction compaction = parseCompactionMarker(params);
+        if (compaction != null) return compaction;
         String title = params.has(KEY_TITLE) && params.get(KEY_TITLE).isJsonPrimitive()
             ? params.get(KEY_TITLE).getAsString() : null;
         return new SessionUpdate.SessionInfoChanged(title);
+    }
+
+    /**
+     * OpenCode reports compaction (including a manual {@code /compact}) to clients that do not
+     * advertise {@code session.compaction} as a {@code session_info_update} carrying
+     * {@code _meta["opencode/compaction"] = {status, messageId, reason, error?}}; the summary is
+     * deliberately not sent as message text. See OpenCode {@code packages/cli/src/acp/compaction.ts}.
+     *
+     * @return the compaction, or {@code null} when the update carries no (recognisable) marker
+     */
+    static @Nullable SessionUpdate.Compaction parseCompactionMarker(JsonObject params) {
+        JsonElement meta = params.get("_meta");
+        if (meta == null || !meta.isJsonObject()) return null;
+        JsonElement markerEl = meta.getAsJsonObject().get(OPENCODE_COMPACTION_META);
+        if (markerEl == null || !markerEl.isJsonObject()) return null;
+        JsonObject marker = markerEl.getAsJsonObject();
+        SessionUpdate.CompactionStatus status = SessionUpdate.CompactionStatus.fromWire(stringOrNull(marker, KEY_STATUS));
+        if (status == null) return null;
+        boolean manual = "manual".equals(stringOrNull(marker, "reason"));
+        String error = null;
+        if (status == SessionUpdate.CompactionStatus.FAILED) {
+            JsonElement errorEl = marker.get(KEY_ERROR);
+            if (errorEl != null && errorEl.isJsonObject()) error = stringOrNull(errorEl.getAsJsonObject(), KEY_MESSAGE);
+            else if (errorEl != null && errorEl.isJsonPrimitive()) error = errorEl.getAsString();
+        }
+        return new SessionUpdate.Compaction(status, manual, error);
+    }
+
+    private static @Nullable String stringOrNull(JsonObject obj, String key) {
+        JsonElement el = obj.get(key);
+        return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
     }
 
     private SessionUpdate.AvailableModesChanged parseCurrentModeUpdate(JsonObject params) {

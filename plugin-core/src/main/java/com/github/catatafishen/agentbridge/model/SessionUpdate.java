@@ -24,7 +24,8 @@ public sealed interface SessionUpdate
     SessionUpdate.AvailableCommandsChanged,
     SessionUpdate.AvailableModesChanged,
     SessionUpdate.ConfigOptionsChanged,
-    SessionUpdate.SessionInfoChanged {
+    SessionUpdate.SessionInfoChanged,
+    SessionUpdate.Compaction {
 
     // ── Enums ────────────────────────────────────────────────────────────────
 
@@ -366,5 +367,36 @@ public sealed interface SessionUpdate
      * notification. Consumers should update the session display name in the conversation DB.
      */
     record SessionInfoChanged(@Nullable String title) implements SessionUpdate {
+    }
+
+    /**
+     * The agent compacted (summarized) the conversation context. OpenCode reports a compaction,
+     * manual ({@code /compact}) or automatic, as a {@code session_info_update} whose
+     * {@code _meta["opencode/compaction"]} carries the lifecycle, instead of as message text.
+     * Without handling it a {@code /compact} turn looks empty (issue #1240).
+     *
+     * @param status lifecycle stage
+     * @param manual whether the user requested it ({@code /compact}) rather than the agent
+     * @param error  failure message, only for {@link CompactionStatus#FAILED}
+     */
+    record Compaction(@NotNull CompactionStatus status, boolean manual, @Nullable String error)
+        implements SessionUpdate {
+    }
+
+    enum CompactionStatus {
+        STARTED, COMPLETED, FAILED;
+
+        /**
+         * @return the status for an OpenCode marker value, or {@code null} if unknown
+         */
+        public static @Nullable CompactionStatus fromWire(@Nullable String value) {
+            if (value == null) return null;
+            return switch (value) {
+                case "started" -> STARTED;
+                case "completed" -> COMPLETED;
+                case "failed" -> FAILED;
+                default -> null;
+            };
+        }
     }
 }

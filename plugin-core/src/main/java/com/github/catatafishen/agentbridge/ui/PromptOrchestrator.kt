@@ -149,6 +149,7 @@ class PromptOrchestrator(
         sessionCumulativeCostUsd = null
         turnStartCumulativeCostUsd = null
     }
+
     private var turnModelId = ""
     private var turnStartHeadHash: String? = null
     private var turnStartGitBranch: String? = null
@@ -325,6 +326,7 @@ class PromptOrchestrator(
             // likely corrupted (e.g. OpenCode's compaction state is broken). Handle it
             // explicitly — NOT via handlePromptError, which shows a misleading "Reconnect"
             // banner. We reset the session and tell the user clearly what happened.
+            // A compaction reported by the agent (SessionUpdate.Compaction) counts as content.
             if (!turnHadContent) {
                 handleSessionCorrupted()
                 return
@@ -877,6 +879,11 @@ class PromptOrchestrator(
             is SessionUpdate.SessionInfoChanged -> { /* handled by AcpClient internally */
             }
 
+            // OpenCode reports /compact (and auto-compaction) only through these markers, never as
+            // message text (issue #1240). A finished or failed compaction is the turn's output, so
+            // it must count as content; otherwise the turn looks empty and the session is reset.
+            is SessionUpdate.Compaction -> handleCompaction(update)
+
             // Forwarded so the UI can refresh the model dropdown: some agents (e.g. Kiro v3)
             // deliver models as a `model` config option and push updates via config_option_update
             // notifications (notably after /session-clear). AcpClient re-syncs availableModels
@@ -890,6 +897,26 @@ class PromptOrchestrator(
 
     private fun handleClientUpdate(update: SessionUpdate) {
         callbacks.onClientUpdate(update)
+    }
+
+    private fun handleCompaction(update: SessionUpdate.Compaction) {
+        turnHadContent = true
+        val agentName = agentManager.activeProfile.displayName
+        when (update.status()) {
+            SessionUpdate.CompactionStatus.STARTED ->
+                consolePanel().addInfoEntry("$agentName is compacting the conversation context…")
+
+            SessionUpdate.CompactionStatus.COMPLETED ->
+                consolePanel().addInfoEntry(
+                    "$agentName compacted the conversation context. The session continues with a summary of it."
+                )
+
+            SessionUpdate.CompactionStatus.FAILED ->
+                consolePanel().addErrorEntry(
+                    "$agentName could not compact the conversation context" +
+                        (update.error()?.let { ": $it" } ?: ".")
+                )
+        }
     }
 
     private fun handleStreamingBanner(banner: SessionUpdate.Banner) {
