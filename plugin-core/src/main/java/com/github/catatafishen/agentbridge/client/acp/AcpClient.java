@@ -2185,13 +2185,6 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     /**
-     * Normalize the raw {@code session/update} notification params before parsing.
-     * Both Copilot and Junie wrap the actual payload in a nested {@code update} sub-object:
-     * {@code {sessionId, update: {sessionUpdate, content, ...}}}
-     * The base implementation unwraps that envelope. Override only if an agent uses a
-     * genuinely different structure.
-     */
-    /**
      * Hook for agent-specific extensions of standard {@code session/update} notifications, e.g.
      * vendor data under {@code _meta} that changes what an update means. Called with the
      * normalized update before the standard {@link AcpMessageParser}.
@@ -2202,6 +2195,13 @@ public abstract class AcpClient extends AbstractClient {
         return null;
     }
 
+    /**
+     * Normalize the raw {@code session/update} notification params before parsing.
+     * Both Copilot and Junie wrap the actual payload in a nested {@code update} sub-object:
+     * {@code {sessionId, update: {sessionUpdate, content, ...}}}
+     * The base implementation unwraps that envelope. Override only if an agent uses a
+     * genuinely different structure.
+     */
     protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
         if (params.has(KEY_UPDATE) && params.get(KEY_UPDATE).isJsonObject()) {
             return params.getAsJsonObject(KEY_UPDATE);
