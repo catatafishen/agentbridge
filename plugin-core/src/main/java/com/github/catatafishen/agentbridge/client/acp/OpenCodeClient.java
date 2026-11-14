@@ -3,9 +3,10 @@ package com.github.catatafishen.agentbridge.client.acp;
 import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
-import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
+import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -482,7 +483,9 @@ public final class OpenCodeClient extends AcpClient {
         return mcp;
     }
 
-    /** True only when the version is known and its major is ≥ 2 (unknown versions are NOT v2 here). */
+    /**
+     * True only when the version is known and its major is ≥ 2 (unknown versions are NOT v2 here).
+     */
     private static boolean isDefinitelyOpenCodeV2(@Nullable String version) {
         int[] parsed = KiroClient.parseVersion(version);
         return parsed != null && parsed[0] >= 2;
@@ -501,7 +504,9 @@ public final class OpenCodeClient extends AcpClient {
         "agentbridge_get_problems", "agentbridge_get_compilation_errors"
     );
 
-    /** Mutating plugin MCP tools the explore subagent is explicitly denied. */
+    /**
+     * Mutating plugin MCP tools the explore subagent is explicitly denied.
+     */
     private static final List<String> EXPLORE_DENIED_MCP_TOOLS = List.of(
         "agentbridge_write_file", "agentbridge_edit_text", "agentbridge_delete_file",
         "agentbridge_git_commit", "agentbridge_git_stage", "agentbridge_run_command",
@@ -721,6 +726,16 @@ public final class OpenCodeClient extends AcpClient {
     protected JsonObject parseToolCallArguments(@NotNull JsonObject params) {
         JsonObject fromRawInput = extractRawInputArgs(params);
         return fromRawInput != null ? fromRawInput : super.parseToolCallArguments(params);
+    }
+
+    /**
+     * OpenCode reports compaction (including {@code /compact}) through its own
+     * {@code _meta["opencode/compaction"]} marker on {@code session_info_update} unless the standard
+     * capability is advertised; see {@link OpenCodeCompactionMarker}.
+     */
+    @Override
+    protected @Nullable SessionUpdate parseAgentSpecificUpdate(@NotNull JsonObject update) {
+        return OpenCodeCompactionMarker.parse(update);
     }
 
     /**
