@@ -36,6 +36,7 @@ class AcpMessageParser {
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String KEY_THINKING = "thinking";
     private static final String KEY_TITLE = "title";
+    private static final String KEY_COMPACTION_ID = "compactionId";
     private static final String KEY_CONFIG_OPTIONS = "configOptions";
     private static final String KEY_AVAILABLE_COMMANDS = "availableCommands";
     private static final String KEY_COMMANDS = "commands";
@@ -130,6 +131,10 @@ class AcpMessageParser {
             // available_commands_update: sent by ACP agents when slash commands change.
             // Contains an "availableCommands" array of {name, description, input?} objects.
             case "available_commands_update" -> parseAvailableCommandsUpdate(params);
+            // compaction_update / compaction_summary_chunk: standard ACP session compaction. Agents only
+            // send these because AgentBridge advertises clientCapabilities.session.compaction.
+            case "compaction_update" -> parseCompactionUpdate(params);
+            case "compaction_summary_chunk" -> parseCompactionSummaryChunk(params);
             default -> {
                 LOG.warn(displayName.get() + ": unknown session update type: '" + type + "'");
                 yield null;
@@ -325,6 +330,54 @@ class AcpMessageParser {
         String title = params.has(KEY_TITLE) && params.get(KEY_TITLE).isJsonPrimitive()
             ? params.get(KEY_TITLE).getAsString() : null;
         return new SessionUpdate.SessionInfoChanged(title);
+    }
+
+    /**
+     * Standard {@code compaction_update}: {@code compactionId} and {@code status} are required;
+     * {@code summary} (content blocks) and {@code error} are optional.
+     *
+     * @return the compaction, or {@code null} when a required field is missing
+     */
+    private @Nullable SessionUpdate.Compaction parseCompactionUpdate(JsonObject params) {
+        String id = stringOrNull(params, KEY_COMPACTION_ID);
+        SessionUpdate.CompactionStatus status = SessionUpdate.CompactionStatus.fromWire(stringOrNull(params, KEY_STATUS));
+        if (id == null || status == null) {
+            LOG.warn(displayName.get() + ": compaction_update without compactionId or status");
+            return null;
+        }
+        String summary = null;
+        JsonElement summaryEl = params.get("summary");
+        if (summaryEl != null && summaryEl.isJsonArray()) {
+            summary = textOf(parseContentArray(summaryEl.getAsJsonArray()));
+        }
+        return new SessionUpdate.Compaction(id, status, false, stringOrNull(params, KEY_ERROR), summary);
+    }
+
+    /**
+     * Standard {@code compaction_summary_chunk}: one content block appended to a compaction's summary.
+     *
+     * @return the chunk, or {@code null} when the ID is missing
+     */
+    private @Nullable SessionUpdate.CompactionSummaryChunk parseCompactionSummaryChunk(JsonObject params) {
+        String id = stringOrNull(params, KEY_COMPACTION_ID);
+        if (id == null) {
+            LOG.warn(displayName.get() + ": compaction_summary_chunk without compactionId");
+            return null;
+        }
+        return new SessionUpdate.CompactionSummaryChunk(id, textOf(parseContentBlocks(params)));
+    }
+
+    private static String textOf(List<ContentBlock> blocks) {
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock block : blocks) {
+            if (block instanceof ContentBlock.Text(String text)) sb.append(text);
+        }
+        return sb.toString();
+    }
+
+    private static @Nullable String stringOrNull(JsonObject obj, String key) {
+        JsonElement el = obj.get(key);
+        return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
     }
 
     private SessionUpdate.AvailableModesChanged parseCurrentModeUpdate(JsonObject params) {
