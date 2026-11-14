@@ -1342,6 +1342,20 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Computes a value under a read action, blocking until read access is granted.
+     *
+     * <p><b>Why extracted:</b> {@code ReadAction.compute} is deprecated in 2026.x, and its replacement
+     * {@code ReadAction.computeBlocking} does not exist in 2025.3 (build 253), which this plugin still
+     * supports: calling it there throws {@code NoSuchMethodError}, and the Marketplace verifier rejected
+     * release 1.229.0 for it. {@code Application.runReadAction(Computable)} exists and is not deprecated
+     * in every supported version.</p>
+     */
+    public static <T> T readActionCompute(@NotNull java.util.function.Supplier<T> supplier) {
+        return com.intellij.openapi.application.ApplicationManager.getApplication()
+            .runReadAction((com.intellij.openapi.util.Computable<T>) supplier::get);
+    }
+
+    /**
      * Returns all registered configuration type display names.
      *
      * <p><b>Why extracted:</b> {@code ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()}

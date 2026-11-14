@@ -8,7 +8,6 @@ import com.google.gson.JsonObject;
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -200,7 +199,7 @@ public final class GetHighlightsTool extends QualityTool {
         VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
         if (vf == null) return null;
 
-        boolean analyzable = ReadAction.computeBlocking(() ->
+        boolean analyzable = PlatformApiCompat.readActionCompute(() ->
             includeUnindexed || ProjectRootManager.getInstance(project).getFileIndex().isInSourceContent(vf));
         if (!analyzable) return null;
 
@@ -221,6 +220,10 @@ public final class GetHighlightsTool extends QualityTool {
             List<String> problems = new ArrayList<>();
             int[] counts = analyzeFilesForHighlights(allFiles, query, problems);
             result.append(buildHighlightsSummary(counts, problems, query.limit(), allFiles.size()));
+            // Only an on-demand analysis can leave fixes uncomputed; the editor computes all of them.
+            if (query.analyzed() != null && counts[2] > 0) {
+                result.append("\n\nNote: ").append(EDITOR_ONLY_FIXES_NOTE);
+            }
         });
         if (resultFuture.isDone()) return;
 
@@ -276,26 +279,31 @@ public final class GetHighlightsTool extends QualityTool {
         }
     }
 
+    /**
+     * @return {@code [problem count, files with problems, problems listed without fixes]}
+     */
     private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, HighlightQuery query,
                                             List<String> problems) {
         String basePath = project.getBasePath();
         int totalCount = 0;
         int filesWithProblems = 0;
+        int[] problemsWithoutFixes = {0};
         for (VirtualFile vf : files) {
             if (totalCount >= query.limit()) break;
             Document doc = FileDocumentManager.getInstance().getDocument(vf);
             if (doc != null) {
                 String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getName();
-                int added = collectFileHighlights(doc, relPath, query.limit() - totalCount, query, problems);
+                int added = collectFileHighlights(doc, relPath, query.limit() - totalCount, query, problems,
+                    problemsWithoutFixes);
                 if (added > 0) filesWithProblems++;
                 totalCount += added;
             }
         }
-        return new int[]{totalCount, filesWithProblems};
+        return new int[]{totalCount, filesWithProblems, problemsWithoutFixes[0]};
     }
 
     private int collectFileHighlights(Document doc, String relPath, int remaining,
-                                      HighlightQuery query, List<String> problems) {
+                                      HighlightQuery query, List<String> problems, int[] problemsWithoutFixes) {
         List<HighlightInfo> highlights = new ArrayList<>();
         int added = 0;
         DiagnosticFilterSettings filter = DiagnosticFilterSettings.getInstance(project);
@@ -321,8 +329,8 @@ public final class GetHighlightsTool extends QualityTool {
                     if (isInLineRange(line, query.startLine(), query.endLine())) {
                         StringBuilder entry = new StringBuilder(
                             String.format(FORMAT_LOCATION, relPath, line, h.getSeverity().getName(), description));
-                        if (query.includeFixes()) {
-                            appendFixNames(entry, h);
+                        if (query.includeFixes() && appendFixNames(entry, h)) {
+                            problemsWithoutFixes[0]++;
                         }
                         problems.add(entry.toString());
                         added++;
@@ -341,10 +349,14 @@ public final class GetHighlightsTool extends QualityTool {
      *
      * <p>Grammar and spelling problems are skipped entirely: their fixes come from Grazie and the
      * spell checker, which {@code apply_quickfix} cannot invoke, so listing them is pure noise.</p>
+     *
+     * @return {@code true} when the problem is eligible for fixes but none are listed
      */
-    private static void appendFixNames(StringBuilder entry, HighlightInfo h) {
-        if (DiagnosticFilterSettings.isNaturalLanguageSeverity(h.getSeverity())) return;
-        entry.append(formatFixLines(collectQuickFixNamesOrPending(h)));
+    private static boolean appendFixNames(StringBuilder entry, HighlightInfo h) {
+        if (DiagnosticFilterSettings.isNaturalLanguageSeverity(h.getSeverity())) return false;
+        List<String> fixes = collectQuickFixNames(h);
+        entry.append(formatFixLines(fixes));
+        return fixes.isEmpty();
     }
 
     /**

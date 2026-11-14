@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.github.catatafishen.agentbridge.ui.renderers.InspectionResultRenderer;
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
@@ -119,41 +120,51 @@ public abstract class QualityTool extends Tool {
     }
 
     /**
-     * Placeholder listed instead of fixes that exist but have not been computed yet.
+     * Note added to a response for a file analyzed without an editor when a listed problem has no fixes. The editor
+     * computes some quick-fixes lazily, only for an open file (e.g. 'Import class' for an unresolved symbol), and
+     * {@code MainPassesRunner} leaves them uncomputed. Without this note an agent concludes that no such fix exists.
+     *
+     * <p>Which problems are affected cannot be told: the only check, {@code HighlightInfo.hasLazyQuickFixes()},
+     * is {@code @ApiStatus.Internal}, and the Marketplace verifier rejects it (release 1.229.0), even when it is
+     * called by reflection. So the note is general and appears once per response.</p>
      */
-    protected static final String FIXES_NOT_COMPUTED =
-        "… (more fixes exist but are only computed for a file open in an editor, e.g. 'Import class'; "
-            + "open the file in the IDE and call get_available_actions, or use optimize_imports / edit_text)";
+    protected static final String EDITOR_ONLY_FIXES_NOTE =
+        "Problems without listed fixes may still have quick-fixes that were not computed because the file is not "
+            + "open in an editor (the IDE computes fixes such as 'Import class' only there). Open the file in the IDE "
+            + "and call get_available_actions again, or use optimize_imports / edit_text.";
 
     /**
-     * Counts the highlights whose quick-fixes are lazy and still uncomputed. The editor computes lazy fixes itself,
-     * while the headless {@code MainPassesRunner} leaves them pending, so for a file analyzed that way a fix can
-     * exist although it cannot be listed or applied by name.
+     * Whether {@link #EDITOR_ONLY_FIXES_NOTE} applies to a set of highlights: the file was analyzed without an editor
+     * and at least one real problem has no listed fix.
+     *
+     * <p>Only problems count (a description, at least weak-warning severity, not grammar or spelling): symbol and
+     * information highlights never have fixes, and counting them would add the note to almost every response.</p>
+     *
+     * @param analyzed the on-demand analysis, or {@code null} for a file open in an editor (the editor computes every
+     *                 fix itself, so nothing can be missing)
      */
-    protected static long countPendingLazyFixes(@NotNull List<HighlightInfo> highlights) {
-        return highlights.stream()
-            .filter(h -> h.hasLazyQuickFixes() && collectQuickFixNames(h).isEmpty())
-            .count();
+    protected static boolean editorOnlyFixesMayBeMissing(@NotNull List<HighlightInfo> highlights,
+                                                         @Nullable Map<Document, List<HighlightInfo>> analyzed) {
+        return analyzed != null && highlights.stream()
+            .filter(QualityTool::isFixableProblem)
+            .anyMatch(h -> collectQuickFixNames(h).isEmpty());
+    }
+
+    private static boolean isFixableProblem(@NotNull HighlightInfo h) {
+        String description = h.getDescription();
+        return description != null && !description.isBlank()
+            && h.getSeverity().compareTo(HighlightSeverity.WEAK_WARNING) >= 0
+            && !DiagnosticFilterSettings.isNaturalLanguageSeverity(h.getSeverity());
     }
 
     /**
-     * Explains why quick-fixes are missing on {@code targetLine} of a file that was analyzed without an editor: a
-     * fix can exist but be lazy, which {@code MainPassesRunner} does not compute. Without this explanation an agent
-     * concludes that no such fix exists (e.g. 'Import class' for an unresolved symbol) and gives up or picks a worse
-     * one.
-     *
-     * @param analyzed the on-demand analysis, or {@code null} for a file open in an editor (the editor computes lazy
-     *                 fixes itself, so there is nothing to explain)
-     * @return the explanation, or {@code null} when no fix on the line is pending
+     * {@link #EDITOR_ONLY_FIXES_NOTE} for {@code targetLine} of a file, or {@code null} when it does not apply.
      */
-    protected @Nullable String pendingLazyFixesExplanation(
+    protected @Nullable String editorOnlyFixesNote(
         @NotNull Document doc, int targetLine, @Nullable Map<Document, List<HighlightInfo>> analyzed) {
         if (analyzed == null) return null;
-        long pending = countPendingLazyFixes(highlightsOnLine(doc, targetLine, analyzed));
-        if (pending == 0) return null;
-        return pending + " problem(s) on this line have quick-fixes that were not computed because the "
-            + "file is not open in an editor (typically 'Import class'). Open the file in the IDE and retry, "
-            + "or use optimize_imports / edit_text.";
+        return editorOnlyFixesMayBeMissing(highlightsOnLine(doc, targetLine, analyzed), analyzed)
+            ? EDITOR_ONLY_FIXES_NOTE : null;
     }
 
     /**
@@ -167,20 +178,6 @@ public abstract class QualityTool extends Tool {
         VirtualFile vf = resolveVirtualFileWithFallback(pathStr);
         if (vf == null || checkEditorAccess(vf) != null) return null;
         return analyzeIfNotOpen(vf, title);
-    }
-
-    /**
-     * Like {@link #collectQuickFixNames}, but never silently reports "no fixes" for a highlight whose fixes are
-     * lazy and still pending. The editor computes lazy fixes itself, while the headless
-     * {@code MainPassesRunner} leaves them uncomputed (e.g. the import fixes of an unresolved symbol), so an empty
-     * list there means "not determined", not "none exist".
-     */
-    protected static List<String> collectQuickFixNamesOrPending(HighlightInfo h) {
-        List<String> names = collectQuickFixNames(h);
-        if (names.isEmpty() && h.hasLazyQuickFixes()) {
-            return List.of(FIXES_NOT_COMPUTED);
-        }
-        return names;
     }
 
     /**

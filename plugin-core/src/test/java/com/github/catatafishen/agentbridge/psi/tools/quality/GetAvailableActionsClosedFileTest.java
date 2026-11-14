@@ -97,10 +97,8 @@ public class GetAvailableActionsClosedFileTest extends CommitProblemsToolTestCas
         String result = available(vf, 2, null);
 
         assertTrue("The problem must be listed: " + result, result.contains("Cannot resolve symbol 'Missing'"));
-        assertTrue("Its fixes must be marked as not computed: " + result,
-            result.contains("Fix: " + QualityTool.FIXES_NOT_COMPUTED));
-        assertTrue("The reason must be given: " + result,
-            result.contains("quick-fixes that were not computed because the file is not open in an editor"));
+        assertTrue("The response must say fixes may be missing and why: " + result,
+            result.contains(QualityTool.EDITOR_ONLY_FIXES_NOTE));
         assertTrue("A way forward must be named: " + result, result.contains("optimize_imports"));
         assertFalse("A placeholder is not an action name to copy: " + result,
             result.contains("Copy the action name exactly as shown (after 'Fix:')"));
@@ -114,7 +112,7 @@ public class GetAvailableActionsClosedFileTest extends CommitProblemsToolTestCas
 
         assertTrue(result, result.startsWith("Actions at "));
         assertTrue("The reason must be given on the intention path as well: " + result,
-            result.contains("quick-fixes that were not computed because the file is not open in an editor"));
+            result.contains(QualityTool.EDITOR_ONLY_FIXES_NOTE));
         assertFalse("No editor tab may be left behind", isOpen(vf));
     }
 
@@ -125,7 +123,8 @@ public class GetAvailableActionsClosedFileTest extends CommitProblemsToolTestCas
 
         assertTrue("The quick-fix section must list the redundant-cast fix: " + result,
             result.contains("[QUICK FIX]") && result.contains(REDUNDANT_CAST_FIX));
-        assertFalse("No note when nothing is pending: " + result, result.contains("were not computed"));
+        assertFalse("Every problem here has its fix listed, so no note: " + result,
+            result.contains(QualityTool.EDITOR_ONLY_FIXES_NOTE));
         assertFalse(isOpen(vf));
     }
 

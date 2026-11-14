@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.settings.DiagnosticFilterSettings;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.CodeSmellInfo;
@@ -7,7 +8,6 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.MainPassesRunner;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -159,7 +159,7 @@ public final class GetCommitProblemsTool extends QualityTool {
     }
 
     private @NotNull String analyze(CommitProblemsFormatter.Page page, boolean includeFixes) {
-        List<VirtualFile> files = ReadAction.computeBlocking(changedFilesSupplier::get);
+        List<VirtualFile> files = PlatformApiCompat.readActionCompute(changedFilesSupplier);
         if (files.isEmpty()) {
             return "No changed files to analyze. Nothing is modified or staged.";
         }
@@ -175,7 +175,10 @@ public final class GetCommitProblemsTool extends QualityTool {
             ? attachFixes(pageEntries, filesByPath)
             : new FixLookup(pageEntries, List.of(), null);
         String response = CommitProblemsFormatter.format(sorted, files.size(), lookup.entries(), page);
-        return response + CommitProblemsFormatter.fixesUnavailableNote(lookup.unavailablePaths(), lookup.reason());
+        String note = includeFixes && lookup.entries().stream().anyMatch(e -> e.fixes().isEmpty())
+            ? "\n\nNote: " + EDITOR_ONLY_FIXES_NOTE : "";
+        return response + CommitProblemsFormatter.fixesUnavailableNote(lookup.unavailablePaths(), lookup.reason())
+            + note;
     }
 
     /**
@@ -266,7 +269,7 @@ public final class GetCommitProblemsTool extends QualityTool {
         Map<Document, List<HighlightInfo>> highlights =
             runMainPasses(files, HighlightSeverity.WARNING, "Collecting quick-fixes");
 
-        return ReadAction.computeBlocking(() -> {
+        return PlatformApiCompat.readActionCompute(() -> {
             Map<String, Map<String, List<String>>> byPath = new LinkedHashMap<>();
             for (var entry : highlights.entrySet()) {
                 Document doc = entry.getKey();
@@ -287,7 +290,7 @@ public final class GetCommitProblemsTool extends QualityTool {
             || DiagnosticFilterSettings.isNaturalLanguageSeverity(h.getSeverity())) {
             return;
         }
-        List<String> fixes = collectQuickFixNamesOrPending(h);
+        List<String> fixes = collectQuickFixNames(h);
         if (!fixes.isEmpty()) {
             perFile.putIfAbsent(fixKey(doc.getLineNumber(h.getStartOffset()) + 1, description), fixes);
         }

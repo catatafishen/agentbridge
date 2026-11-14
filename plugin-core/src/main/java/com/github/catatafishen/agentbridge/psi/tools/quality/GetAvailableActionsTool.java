@@ -156,14 +156,13 @@ public final class GetAvailableActionsTool extends QualityTool {
 
             int actualLine = doc.getLineNumber(h.getStartOffset()) + 1;
             String severity = h.getSeverity().getName();
-            // For a file analyzed on demand an empty list can mean "not computed", which must not look like "none".
-            List<String> fixes = analyzed == null ? collectQuickFixNames(h) : collectQuickFixNamesOrPending(h);
+            List<String> fixes = collectQuickFixNames(h);
 
             StringBuilder entry = new StringBuilder(pathStr).append(':').append(actualLine)
                 .append(" [").append(severity).append("] ").append(desc);
             for (String fix : fixes) {
                 entry.append("\n    Fix: ").append(fix);
-                if (!FIXES_NOT_COMPUTED.equals(fix)) allFixNames.add(fix);
+                allFixNames.add(fix);
             }
             entries.add(entry.toString());
         }
@@ -178,7 +177,8 @@ public final class GetAvailableActionsTool extends QualityTool {
         if (!allFixNames.isEmpty()) {
             sb.append("\n\nCopy the action name exactly as shown (after 'Fix:') and pass to apply_action.");
         }
-        String why = pendingLazyFixesExplanation(doc, targetLine, analyzed);
+        // For a file analyzed on demand an empty fix list can mean "not computed", which must not look like "none".
+        String why = editorOnlyFixesNote(doc, targetLine, analyzed);
         if (why != null) sb.append("\n\nNote: ").append(why);
         return sb.toString();
     }
@@ -235,7 +235,7 @@ public final class GetAvailableActionsTool extends QualityTool {
                 .toList();
 
             List<String> intentions = collectIntentionNames(editor, psiFile);
-            String pendingFixes = pendingLazyFixesExplanation(doc, targetLine, analyzed);
+            String pendingFixes = editorOnlyFixesNote(doc, targetLine, analyzed);
 
             if (quickFixes.isEmpty() && intentions.isEmpty()) {
                 // Diagnose why nothing was found to help with non-Java IDEs (e.g. CLion C++).
