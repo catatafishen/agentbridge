@@ -47,6 +47,15 @@ class InitializeRequestTest {
         void terminalIsTrue() {
             assertEquals(true, caps.terminal());
         }
+
+        @Test
+        @DisplayName("advertises session.compaction as {} on the wire")
+        void advertisesSessionCompaction() {
+            // ACP: "Supplying {} advertises the complete contract"; agents must not send
+            // compaction_update otherwise.
+            var json = new com.google.gson.Gson().toJsonTree(caps).getAsJsonObject();
+            assertEquals("{\"compaction\":{}}", json.get("session").toString());
+        }
     }
 
     @Nested
@@ -65,6 +74,13 @@ class InitializeRequestTest {
         @DisplayName("terminal is null")
         void terminalIsNull() {
             assertNull(caps.terminal());
+        }
+
+        @Test
+        @DisplayName("session is omitted from the wire")
+        void sessionIsOmitted() {
+            var json = new com.google.gson.Gson().toJsonTree(caps).getAsJsonObject();
+            assertNull(json.get("session"));
         }
     }
 

@@ -21,15 +21,17 @@ public record InitializeRequest(
 
     public record ClientCapabilities(
         @Nullable FsCapabilities fs,
-        @Nullable Boolean terminal
+        @Nullable Boolean terminal,
+        @Nullable SessionCapabilities session
     ) {
         /**
-         * Advertise read/write file and terminal capabilities.
+         * Advertise read/write file, terminal and session-compaction capabilities.
          */
         public static ClientCapabilities standard() {
             return new ClientCapabilities(
                 new FsCapabilities(true, true),
-                true
+                true,
+                SessionCapabilities.withCompaction()
             );
         }
 
@@ -37,7 +39,7 @@ public record InitializeRequest(
          * Empty capabilities — use when the agent rejects unknown capability fields.
          */
         public static ClientCapabilities empty() {
-            return new ClientCapabilities(null, null);
+            return new ClientCapabilities(null, null, null);
         }
     }
 
@@ -45,5 +47,24 @@ public record InitializeRequest(
         @Nullable Boolean readTextFile,
         @Nullable Boolean writeTextFile
     ) {
+    }
+
+    /**
+     * {@code clientCapabilities.session}. {@code compaction: {}} declares support for the standard
+     * {@code compaction_update} / {@code compaction_summary_chunk} session updates; agents must not
+     * send them otherwise.
+     *
+     * @see <a href="https://agentclientprotocol.com/protocol/v1/prompt-turn#session-compaction">ACP Session Compaction</a>
+     */
+    public record SessionCapabilities(@Nullable CompactionCapabilities compaction) {
+        public static SessionCapabilities withCompaction() {
+            return new SessionCapabilities(new CompactionCapabilities());
+        }
+    }
+
+    /**
+     * Serialized as {@code {}}: advertises the complete compaction contract.
+     */
+    public record CompactionCapabilities() {
     }
 }

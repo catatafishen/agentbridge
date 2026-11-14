@@ -25,7 +25,8 @@ public sealed interface SessionUpdate
     SessionUpdate.AvailableModesChanged,
     SessionUpdate.ConfigOptionsChanged,
     SessionUpdate.SessionInfoChanged,
-    SessionUpdate.Compaction {
+    SessionUpdate.Compaction,
+    SessionUpdate.CompactionSummaryChunk {
 
     // ── Enums ────────────────────────────────────────────────────────────────
 
@@ -370,32 +371,55 @@ public sealed interface SessionUpdate
     }
 
     /**
-     * The agent compacted (summarized) the conversation context. OpenCode reports a compaction,
-     * manual ({@code /compact}) or automatic, as a {@code session_info_update} whose
-     * {@code _meta["opencode/compaction"]} carries the lifecycle, instead of as message text.
-     * Without handling it a {@code /compact} turn looks empty (issue #1240).
+     * The agent compacted (summarized) the conversation context: the standard ACP
+     * {@code compaction_update}, or OpenCode's equivalent {@code _meta["opencode/compaction"]}
+     * marker for clients that do not advertise {@code session.compaction}. Without handling it a
+     * {@code /compact} turn looks empty (issue #1240).
      *
-     * @param status lifecycle stage
-     * @param manual whether the user requested it ({@code /compact}) rather than the agent
-     * @param error  failure message, only for {@link CompactionStatus#FAILED}
+     * @param compactionId agent-owned ID tying later updates and summary chunks to this compaction;
+     *                     {@code null} for OpenCode's marker, which has no stable ID semantics
+     * @param status       lifecycle stage
+     * @param manual       whether the user requested it ({@code /compact}); only known from OpenCode's marker
+     * @param error        failure message, only for {@link CompactionStatus#FAILED}
+     * @param summary      user-displayable summary text, or {@code null} when none was sent
      */
-    record Compaction(@NotNull CompactionStatus status, boolean manual, @Nullable String error)
-        implements SessionUpdate {
+    record Compaction(
+        @Nullable String compactionId,
+        @NotNull CompactionStatus status,
+        boolean manual,
+        @Nullable String error,
+        @Nullable String summary
+    ) implements SessionUpdate {
+    }
+
+    /**
+     * Part of the summary of a standard ACP compaction ({@code compaction_summary_chunk}), to be
+     * appended to the summary of the compaction with the same ID.
+     */
+    record CompactionSummaryChunk(@NotNull String compactionId, @NotNull String text) implements SessionUpdate {
     }
 
     enum CompactionStatus {
-        STARTED, COMPLETED, FAILED;
+        STARTED, COMPLETED, FAILED, CANCELLED,
+        /**
+         * A status the client does not know (the ACP enum is open); shown generically.
+         */
+        UNKNOWN;
 
         /**
-         * @return the status for an OpenCode marker value, or {@code null} if unknown
+         * Maps both the standard ACP statuses ({@code in_progress}, {@code completed}, {@code failed},
+         * {@code cancelled}) and OpenCode's marker statuses ({@code started}, ...).
+         *
+         * @return the status, {@link #UNKNOWN} for an unrecognised value, or {@code null} if absent
          */
         public static @Nullable CompactionStatus fromWire(@Nullable String value) {
             if (value == null) return null;
             return switch (value) {
-                case "started" -> STARTED;
+                case "started", "in_progress" -> STARTED;
                 case "completed" -> COMPLETED;
                 case "failed" -> FAILED;
-                default -> null;
+                case "cancelled" -> CANCELLED;
+                default -> UNKNOWN;
             };
         }
     }

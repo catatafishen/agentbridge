@@ -2179,6 +2179,7 @@ public abstract class AcpClient extends AbstractClient {
         }
         return !(update instanceof SessionUpdate.SessionInfoChanged
             || update instanceof SessionUpdate.Compaction
+            || update instanceof SessionUpdate.CompactionSummaryChunk
             || update instanceof SessionUpdate.AvailableCommandsChanged
             || update instanceof SessionUpdate.AvailableModesChanged
             || update instanceof SessionUpdate.ConfigOptionsChanged);
