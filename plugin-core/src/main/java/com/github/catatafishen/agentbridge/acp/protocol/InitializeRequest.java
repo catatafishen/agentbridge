@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.acp.protocol;
 
+import com.google.gson.JsonObject;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -52,19 +53,14 @@ public record InitializeRequest(
     /**
      * {@code clientCapabilities.session}. {@code compaction: {}} declares support for the standard
      * {@code compaction_update} / {@code compaction_summary_chunk} session updates; agents must not
-     * send them otherwise.
+     * send them otherwise. The spec defines no compaction options yet, so the value is a plain
+     * empty JSON object.
      *
      * @see <a href="https://agentclientprotocol.com/protocol/v1/prompt-turn#session-compaction">ACP Session Compaction</a>
      */
-    public record SessionCapabilities(@Nullable CompactionCapabilities compaction) {
+    public record SessionCapabilities(@Nullable JsonObject compaction) {
         public static SessionCapabilities withCompaction() {
-            return new SessionCapabilities(new CompactionCapabilities());
+            return new SessionCapabilities(new JsonObject());
         }
-    }
-
-    /**
-     * Serialized as {@code {}}: advertises the complete compaction contract.
-     */
-    public record CompactionCapabilities() {
     }
 }

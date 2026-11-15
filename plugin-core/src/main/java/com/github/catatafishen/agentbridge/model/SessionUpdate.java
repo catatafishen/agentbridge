@@ -30,6 +30,17 @@ public sealed interface SessionUpdate
 
     // ── Enums ────────────────────────────────────────────────────────────────
 
+    /**
+     * ACP wire values shared by several enums. A holder class because interface fields are
+     * implicitly public, and {@code @SerializedName} needs a compile-time constant.
+     */
+    final class Wire {
+        static final String IN_PROGRESS = "in_progress";
+
+        private Wire() {
+        }
+    }
+
     enum ToolKind {
         @SerializedName("read") READ("read"),
         @SerializedName("edit") EDIT("edit"),
@@ -75,8 +86,8 @@ public sealed interface SessionUpdate
     enum ToolCallStatus {
         @SerializedName("completed") COMPLETED("completed"),
         @SerializedName("failed") FAILED("failed"),
-        @SerializedName("pending") PENDING("in_progress"),
-        @SerializedName("in_progress") IN_PROGRESS("in_progress");
+        @SerializedName("pending") PENDING(Wire.IN_PROGRESS),
+        @SerializedName(Wire.IN_PROGRESS) IN_PROGRESS(Wire.IN_PROGRESS);
 
         private final String value;
 
@@ -415,7 +426,7 @@ public sealed interface SessionUpdate
         public static @Nullable CompactionStatus fromWire(@Nullable String value) {
             if (value == null) return null;
             return switch (value) {
-                case "started", "in_progress" -> STARTED;
+                case "started", Wire.IN_PROGRESS -> STARTED;
                 case "completed" -> COMPLETED;
                 case "failed" -> FAILED;
                 case "cancelled" -> CANCELLED;
