@@ -132,6 +132,8 @@ public final class SearchTextTool extends NavigationTool {
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
+        String pagingError = checkPaging(maxResults, offset);
+        if (pagingError != null) return pagingError;
         boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
         FileCategory.Selection scope = FileCategory.parseScope(args);
         if (scope.error() != null) return scope.error();
@@ -220,11 +222,41 @@ public final class SearchTextTool extends NavigationTool {
         return formatResults(cfg, params);
     }
 
+    /**
+     * Returns an error for paging values the search cannot honour, or null when both are usable.
+     * A max_results below 1 stops the search before its first match, so it would report
+     * "No matches found" for a query that matches.
+     */
+    static @Nullable String checkPaging(int maxResults, int offset) {
+        if (maxResults < 1)
+            return ToolUtils.ERROR_PREFIX + "max_results must be >= 1, got: " + maxResults;
+        if (offset < 0)
+            return ToolUtils.ERROR_PREFIX + "offset must be >= 0, got: " + offset;
+        return null;
+    }
+
+    /**
+     * First line of a page with no results. While the page is empty every match in the searched files is
+     * counted, so an offset past the last match can say how many matches there were; pass 0 when the count
+     * is incomplete.
+     */
+    static String emptyPageLine(String query, int offset, int totalSeen) {
+        String line = "No matches found for '" + truncateUtf8(query, 128) + "'";
+        if (offset > 0 && totalSeen > 0) {
+            line += " at offset " + offset + " (" + totalSeen + (totalSeen == 1 ? " match" : " matches")
+                + " in total; use an offset below " + totalSeen + ")";
+        }
+        return line;
+    }
+
     private static String formatResults(SearchConfig cfg, SearchParams p) {
         List<String> results = p.results();
         StringBuilder sb = new StringBuilder();
         if (results.isEmpty()) {
-            sb.append("No matches found for '").append(truncateUtf8(cfg.query(), 128)).append("'");
+            // No total when it would be too low: the output budget stopped the walk, or large files were skipped.
+            boolean incomplete = p.outputTruncated().get() || p.skippedLarge().get() > 0;
+            int total = incomplete ? 0 : p.totalSeen().get();
+            sb.append(emptyPageLine(cfg.query(), cfg.offset(), total));
         } else {
             sb.append(results.size()).append(" matches:\n");
             sb.append(String.join(p.entrySeparator(), results));

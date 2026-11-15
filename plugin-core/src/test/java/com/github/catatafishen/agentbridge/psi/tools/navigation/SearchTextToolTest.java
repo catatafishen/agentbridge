@@ -268,6 +268,67 @@ public class SearchTextToolTest extends BasePlatformTestCase {
     }
 
     /**
+     * An offset past the last match must not claim the query matched nothing: the page is empty, but
+     * the search found matches, and the agent needs to know to page back.
+     */
+    public void testOffsetPastLastMatchReportsMatchCount() {
+        myFixture.addFileToProject("PastEnd.java",
+            "// PAST_END_TOKEN_3307 one\n// PAST_END_TOKEN_3307 two\n// PAST_END_TOKEN_3307 three\n");
+
+        JsonObject a = args("query", "PAST_END_TOKEN_3307");
+        a.addProperty("offset", 5);
+        String result = tool.execute(a);
+
+        assertEquals("No matches found for 'PAST_END_TOKEN_3307' at offset 5 (3 matches in total; "
+            + "use an offset below 3)", result.lines().findFirst().orElse(""));
+    }
+
+    /**
+     * A match too large for the output budget stops the walk before later matches are counted, so the
+     * empty page must not print a total.
+     */
+    public void testOversizedMatchPastOffsetPrintsNoTotal() {
+        myFixture.addFileToProject("Oversized.txt", ("é".repeat(9_000) + "\n").repeat(4));
+
+        JsonObject a = args("query", "(?m)^é+$");
+        a.addProperty("regex", true);
+        a.addProperty("offset", 1);
+        String result = tool.execute(a);
+
+        assertTrue("Expected the truncation notice, got: " + result, result.contains("output truncated at 16 KiB"));
+        assertFalse("A cut-short walk must not print a total, got: " + result, result.contains("in total"));
+    }
+
+    /**
+     * Files over 1 MB are skipped before matching, so their matches are never counted and the empty
+     * page must not print a total.
+     */
+    public void testSkippedLargeFilePastOffsetPrintsNoTotal() {
+        myFixture.addFileToProject("Small.java", "// SKIPPED_LARGE_TOKEN_5521\n");
+        myFixture.addFileToProject("Large.txt", "// SKIPPED_LARGE_TOKEN_5521\n".repeat(40_000));
+
+        JsonObject a = args("query", "SKIPPED_LARGE_TOKEN_5521");
+        a.addProperty("offset", 5);
+        String result = tool.execute(a);
+
+        assertTrue("Expected the empty page, got: " + result, result.startsWith("No matches found"));
+        assertFalse("Skipped large files leave the count incomplete, got: " + result, result.contains("in total"));
+    }
+
+    /**
+     * max_results 0 cannot return any match, so it is refused rather than reported as "No matches found".
+     */
+    public void testZeroMaxResultsIsRefused() {
+        myFixture.addFileToProject("ZeroMax.java", "// ZERO_MAX_TOKEN_6619\n");
+
+        JsonObject a = args("query", "ZERO_MAX_TOKEN_6619");
+        a.addProperty("max_results", 0);
+        String result = tool.execute(a);
+
+        assertEquals("Error: max_results must be >= 1, got: 0", result);
+    }
+
+    /**
      * Paging one match at a time must visit the files in a fixed (path-sorted) order, independent of the
      * order in which they were created, so that offset pagination never skips or repeats a match.
      */
