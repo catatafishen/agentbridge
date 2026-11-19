@@ -48,6 +48,8 @@ class ChatToolWindowContent(
         const val CARD_CHAT = "chat"
         private const val PREF_SIDE_PANEL_OPEN = "agentbridge.sidePanelOpen"
         private const val PREF_INPUT_PANEL_HEIGHT = "agentbridge.inputPanelHeight"
+        private const val BACKGROUND_AGENT_RUNNING_MESSAGE =
+            "Agent finished its turn but is still sending messages. Press Stop to cancel, or wait for it to finish."
 
         /** Title-bar thinking toggle icons: plain bubble when shown, slashed bubble when hidden. */
         private val THINKING_ON_ICON = com.intellij.openapi.util.IconLoader.getIcon(
@@ -1277,6 +1279,7 @@ class ChatToolWindowContent(
             ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
         },
         onPostTurnBackgroundDetected = { showBackgroundAgentRunningBanner() },
+        onPostTurnBackgroundEnded = { hideBackgroundAgentRunningBanner() },
     )
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
@@ -1650,6 +1653,7 @@ class ChatToolWindowContent(
         if (sending) {
             // New turn starting — clear any lingering background-agent state
             isBackgroundAgentRunning = false
+            statusBanner?.dismissIfShowing(BACKGROUND_AGENT_RUNNING_MESSAGE)
         }
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
@@ -1672,11 +1676,21 @@ class ChatToolWindowContent(
 
     private fun showBackgroundAgentRunningBanner() {
         isBackgroundAgentRunning = true
-        statusBanner?.showWarning(
-            "Agent finished its turn but is still sending messages. " +
-                "Press Stop to cancel, or wait for it to finish."
-        )
+        statusBanner?.showWarning(BACKGROUND_AGENT_RUNNING_MESSAGE)
         ApplicationManager.getApplication().invokeLater {
+            controlsToolbar.updateActionsAsync()
+        }
+    }
+
+    /**
+     * The agent went quiet after its turn, so nothing it sends later is shown: drop the notice and the
+     * Stop button. A new turn or Stop may already have cleared them.
+     */
+    private fun hideBackgroundAgentRunningBanner() {
+        ApplicationManager.getApplication().invokeLater {
+            if (!isBackgroundAgentRunning) return@invokeLater
+            isBackgroundAgentRunning = false
+            statusBanner?.dismissIfShowing(BACKGROUND_AGENT_RUNNING_MESSAGE)
             controlsToolbar.updateActionsAsync()
         }
     }
@@ -2854,7 +2868,7 @@ class ChatToolWindowContent(
         if (isBackgroundAgentRunning) {
             promptOrchestrator.stopPostTurnBackground()
             isBackgroundAgentRunning = false
-            statusBanner?.dismissCurrent()
+            statusBanner?.dismissIfShowing(BACKGROUND_AGENT_RUNNING_MESSAGE)
         }
         setSendingState(false)
         restoreQueuedMessagesToInput()
