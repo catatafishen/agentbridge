@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.client.acp;
 
 import org.jetbrains.annotations.Nullable;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -13,23 +14,24 @@ import java.util.regex.Pattern;
  * message when it goes idle. …
  * </pre>
  * <p>
- * The tool call completes at once, but the sub-agent is still working. Its own tool calls are
- * forwarded over ACP with the title {@code "<description>: <tool>"} and never complete, and its report
- * reaches the chat only as a message the main agent sends after its turn has ended.
+ * The tool call completes at once, but the sub-agent is still working, in the child session the note
+ * names; {@link OpenCodeChildSessions} reports when it finishes.
  */
 public final class OpenCodeBackgroundSubAgent {
 
     private static final Pattern LAUNCH_RESULT = Pattern.compile(
-        "\\A\\s*The subagent is working in the background \\(sessionID: [^)\\s]+\\)");
+        "\\A\\s*The subagent is working in the background \\(sessionID: ([^)\\s]+)\\)");
 
     private OpenCodeBackgroundSubAgent() {
     }
 
     /**
-     * @return whether {@code result} is the note of a sub-agent started in the background; false for a
-     * sub-agent's final answer, even one that quotes the note
+     * @return the sub-agent's session id when {@code result} is the note of a sub-agent started in the
+     * background; null for a sub-agent's final answer, even one that quotes the note
      */
-    public static boolean isLaunchResult(@Nullable String result) {
-        return result != null && LAUNCH_RESULT.matcher(result).find();
+    public static @Nullable String sessionIdOfLaunch(@Nullable String result) {
+        if (result == null) return null;
+        Matcher matcher = LAUNCH_RESULT.matcher(result);
+        return matcher.find() ? matcher.group(1) : null;
     }
 }

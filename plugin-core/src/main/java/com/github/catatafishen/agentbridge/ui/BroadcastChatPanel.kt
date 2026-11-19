@@ -242,6 +242,9 @@ class BroadcastChatPanel(
         arguments: String?, kind: String?
     ) = dispatchUi { nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind) }
 
+    override fun appendSubAgentText(subAgentId: String, text: String) =
+        dispatchUi { nativePanel.appendSubAgentText(subAgentId, text) }
+
     override fun updateSubAgentToolCall(
         toolId: String, status: String, details: String?, description: String?,
         autoDenied: Boolean, denialReason: String?

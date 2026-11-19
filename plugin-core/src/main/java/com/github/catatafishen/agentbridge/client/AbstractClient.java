@@ -382,13 +382,14 @@ public abstract class AbstractClient {
     }
 
     /**
-     * Whether a sub-agent tool call that completed with {@code subAgentResult} only started the sub-agent
-     * in the background. Such a sub-agent is still working; its result reaches the chat later as a
-     * message from the main agent.
-     * Default: false, for clients whose sub-agents always finish before their tool call completes.
+     * The session id of a sub-agent that a tool call completing with {@code subAgentResult} only started in
+     * the background, or null when the result is not such a launch. That sub-agent is still working; the
+     * client reports it as a {@link com.github.catatafishen.agentbridge.model.SessionUpdate.ChildSessionStatus}
+     * when it finishes.
+     * Default: null, for clients whose sub-agents always finish before their tool call completes.
      */
-    public boolean isBackgroundSubAgentLaunch(@Nullable String subAgentResult) {
-        return false;
+    public @Nullable String backgroundSubAgentSessionId(@Nullable String subAgentResult) {
+        return null;
     }
 
     /**

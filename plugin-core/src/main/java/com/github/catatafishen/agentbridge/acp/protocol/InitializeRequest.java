@@ -1,6 +1,10 @@
 package com.github.catatafishen.agentbridge.acp.protocol;
 
+import com.google.gson.annotations.SerializedName;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Map;
 
 /**
  * Client → Agent: protocol handshake.
@@ -19,9 +23,13 @@ public record InitializeRequest(
     public record ClientInfo(String name, String title, String version) {
     }
 
+    /**
+     * @param meta agent-specific capabilities, sent as {@code _meta}; omitted when null
+     */
     public record ClientCapabilities(
         @Nullable FsCapabilities fs,
-        @Nullable Boolean terminal
+        @Nullable Boolean terminal,
+        @SerializedName("_meta") @Nullable Map<String, Object> meta
     ) {
         /**
          * Advertise read/write file and terminal capabilities.
@@ -29,7 +37,8 @@ public record InitializeRequest(
         public static ClientCapabilities standard() {
             return new ClientCapabilities(
                 new FsCapabilities(true, true),
-                true
+                true,
+                null
             );
         }
 
@@ -37,7 +46,12 @@ public record InitializeRequest(
          * Empty capabilities — use when the agent rejects unknown capability fields.
          */
         public static ClientCapabilities empty() {
-            return new ClientCapabilities(null, null);
+            return new ClientCapabilities(null, null, null);
+        }
+
+        /** These capabilities with {@code _meta} set to {@code meta}. */
+        public @NotNull ClientCapabilities withMeta(@NotNull Map<String, Object> meta) {
+            return new ClientCapabilities(fs, terminal, Map.copyOf(meta));
         }
     }
 

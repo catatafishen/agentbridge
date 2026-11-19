@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.acp;
 
+import com.github.catatafishen.agentbridge.acp.protocol.InitializeRequest;
 import com.github.catatafishen.agentbridge.bridge.EntryData;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcTransport;
@@ -108,6 +109,8 @@ public final class OpenCodeClient extends AcpClient {
      */
     private volatile boolean serverReachableByDesign = true;
 
+    private final OpenCodeChildSessions childSessions = new OpenCodeChildSessions();
+
     public OpenCodeClient(Project project) {
         super(project);
     }
@@ -193,6 +196,7 @@ public final class OpenCodeClient extends AcpClient {
      */
     @Override
     protected void onSessionCreated(String sessionId) {
+        childSessions.clear();
         if (!isOpenCodeV2OrLater()) {
             return;
         }
@@ -368,6 +372,32 @@ public final class OpenCodeClient extends AcpClient {
     protected void afterStop() {
         // The port belonged to the process that has just been destroyed.
         serverEndpoint.clear();
+        childSessions.clear();
+    }
+
+    /**
+     * Asks OpenCode to report sub-agents through {@code opencode/session/child_update}: each sub-agent's
+     * updates and its status, during the turn and after it. See {@link OpenCodeChildSessions}.
+     */
+    @Override
+    protected InitializeRequest.ClientCapabilities buildClientCapabilities() {
+        return super.buildClientCapabilities().withMeta(Map.of(OpenCodeChildSessions.CAPABILITY, true));
+    }
+
+    @Override
+    protected void handleAgentSpecificNotification(@NotNull String method, @Nullable JsonObject params) {
+        if (!OpenCodeChildSessions.METHOD.equals(method)) {
+            super.handleAgentSpecificNotification(method, params);
+            return;
+        }
+        SessionUpdate update = childSessions.accept(params, getCurrentSessionId(), this::parseStandardUpdate);
+        if (update != null) deliverUpdate(update);
+    }
+
+    /** A background sub-agent that has not finished keeps the post-turn window open. */
+    @Override
+    protected boolean hasOpenBackgroundWork() {
+        return childSessions.anyWorking();
     }
 
     /**
@@ -735,12 +765,12 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     /**
-     * OpenCode 2.3's {@code subagent} tool can run the sub-agent in the background: the tool call
-     * completes at once with a note saying so, and the sub-agent's report reaches the main agent later.
+     * OpenCode 2.3's {@code subagent} tool runs the sub-agent in the background: the tool call completes at
+     * once with a note that names the sub-agent's session.
      */
     @Override
-    public boolean isBackgroundSubAgentLaunch(@Nullable String subAgentResult) {
-        return OpenCodeBackgroundSubAgent.isLaunchResult(subAgentResult);
+    public @Nullable String backgroundSubAgentSessionId(@Nullable String subAgentResult) {
+        return OpenCodeBackgroundSubAgent.sessionIdOfLaunch(subAgentResult);
     }
 
     @Override

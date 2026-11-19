@@ -1174,6 +1174,14 @@ public abstract class AcpClient extends AbstractClient {
         if (quietCallback != null) quietCallback.run();
     }
 
+    /**
+     * Whether the agent has said that background work of its own is still running, such as a
+     * sub-agent that has not finished. Keeps the post-turn window open however quiet the agent is.
+     */
+    protected boolean hasOpenBackgroundWork() {
+        return false;
+    }
+
     /** @return whether the window closed; the caller then notifies listeners outside the lock */
     private boolean closePostTurnWindowIfQuiet(long generation) {
         synchronized (postTurnLock) {
@@ -1185,7 +1193,7 @@ public abstract class AcpClient extends AbstractClient {
                 now,
                 lastPostTurnActivityNanos,
                 tools != null ? tools.lastWorkerActivityNanos() : lastPostTurnActivityNanos,
-                tools != null && tools.hasRunningWorkers(),
+                (tools != null && tools.hasRunningWorkers()) || hasOpenBackgroundWork(),
                 PostTurnWindow.QUIET_NANOS);
             if (delay > 0) {
                 schedulePostTurnCheck(generation, delay);
@@ -2164,6 +2172,8 @@ public abstract class AcpClient extends AbstractClient {
         transport.onNotification(notification -> {
             if ("session/update".equals(notification.method())) {
                 handleSessionUpdate(notification.params());
+            } else {
+                handleAgentSpecificNotification(notification.method(), notification.params());
             }
         });
 
@@ -2181,13 +2191,29 @@ public abstract class AcpClient extends AbstractClient {
     protected void handleSessionUpdate(@Nullable JsonObject params) {
         if (params == null) return;
 
-        // Reset inactivity clock on EVERY update — keeps long agentic turns alive
-        lastActivityNanos = System.nanoTime();
-
         JsonObject updateObj = normalizeSessionUpdateParams(params);
 
         SessionUpdate agentSpecific = parseAgentSpecificUpdate(updateObj);
-        SessionUpdate update = agentSpecific != null ? agentSpecific : messageParser.parse(updateObj);
+        deliverUpdate(agentSpecific != null ? agentSpecific : messageParser.parse(updateObj));
+    }
+
+    /**
+     * Hook for notifications other than {@code session/update}, such as an agent's own extension
+     * methods. Overrides that turn one into a {@link SessionUpdate} pass it to {@link #deliverUpdate}.
+     */
+    protected void handleAgentSpecificNotification(@NotNull String method, @Nullable JsonObject params) {
+        LOG.debug(displayName() + ": ignoring notification " + method);
+    }
+
+    /**
+     * Handles an update that arrived from the agent, while a turn or post-turn window is listening or not:
+     * applies its side effects and hands it to the update consumer.
+     *
+     * @param update the parsed update, or null when it could not be parsed
+     */
+    protected final void deliverUpdate(@Nullable SessionUpdate update) {
+        // Reset inactivity clock on EVERY update — keeps long agentic turns alive
+        lastActivityNanos = System.nanoTime();
 
         // Side-effects that happen regardless of whether a UI consumer is attached:
         if (update instanceof SessionUpdate.ConfigOptionsChanged(var options)) {
@@ -2271,6 +2297,14 @@ public abstract class AcpClient extends AbstractClient {
      */
     protected @Nullable SessionUpdate parseAgentSpecificUpdate(@NotNull JsonObject update) {
         return null;
+    }
+
+    /**
+     * Parses a normalized update the standard way, such as one an agent nests in a notification of its
+     * own (see {@link #handleAgentSpecificNotification}).
+     */
+    protected final @Nullable SessionUpdate parseStandardUpdate(@NotNull JsonObject update) {
+        return messageParser.parse(update);
     }
 
     /**
