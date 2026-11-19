@@ -391,6 +391,15 @@ public abstract class AbstractClient {
     }
 
     /**
+     * Registers a callback that fires each time the window after a turn, in which the agent's late
+     * messages are still shown, closes because the agent went quiet. It does not fire when the window
+     * is cleared by a new turn or by Stop. Default: no-op for non-ACP clients.
+     */
+    public void setPostTurnQuietCallback(@Nullable Runnable callback) {
+        // no-op by default
+    }
+
+    /**
      * Clears post-turn state immediately: stops routing post-turn messages, cancels the
      * auto-clear timer, and nulls the update consumer.
      * Called when the user stops a background agent, or at the start of the next turn.
