@@ -156,9 +156,9 @@ interface ChatPanelApi : Disposable {
     )
 
     /**
-     * Streams a chunk of the sub-agent's own text into its section, while it works. The chunk continues
-     * the section's last text bubble, unless a tool call was added since. Shown only: not stored with
-     * the conversation, like the section's tool chips.
+     * Streams a chunk of the sub-agent's own text into its section, while it works. All chunks go into one
+     * text bubble, also across tool calls. Shown only: not stored with the conversation, like the
+     * section's tool chips.
      */
     fun appendSubAgentText(subAgentId: String, text: String)
 

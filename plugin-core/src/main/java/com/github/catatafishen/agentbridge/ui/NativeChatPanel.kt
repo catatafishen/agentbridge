@@ -533,7 +533,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var promptRow: JPanel? = null,
         var resultRow: JPanel? = null,
         var transcriptPanel: JPanel? = null,
-        /** The bubble [appendSubAgentText] streams into; null until text arrives and after each tool call. */
+        /**
+         * The bubble [appendSubAgentText] streams into; null until text arrives. Tool calls don't start a new
+         * one: their chips sit in [chipStrip] above it, and OpenCode sends a tool call in mid-sentence.
+         */
         var liveTextPane: NativeMarkdownPane? = null,
     )
 
@@ -1130,7 +1133,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             if (update.autoDenied) data.autoDenied = true
             update.denialReason?.let { data.denialReason = it }
         }
-        if (status == "complete" || status == "completed" || status == "failed" || status == "denied") {
+        // Only a chip of the current turn ends its text segment: a sub-agent's tool calls complete while the
+        // main agent is mid-sentence.
+        val inCurrentTurn = currentTurn?.chipStrip?.hasToolChip(chip) == true
+        if (inCurrentTurn && (status == "complete" || status == "completed" || status == "failed" || status == "denied")) {
             toolJustCompleted = true
         }
         if (allChips.values.none { it.isSpinning() }) spinTimer.stop()
@@ -1422,7 +1428,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             return
         }
         addToolChipTo(section.chipStrip, toolId, title, arguments, kind)
-        section.liveTextPane = null
         if (autoScrollEnabled) scrollToBottom()
     }
 

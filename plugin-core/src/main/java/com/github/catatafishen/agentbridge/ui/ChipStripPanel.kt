@@ -226,6 +226,9 @@ class ChipStripPanel : JPanel() {
         scrollToEnd()
     }
 
+    /** Whether [chip] was added to this strip with [addToolChip]. */
+    fun hasToolChip(chip: JComponent): Boolean = chip in toolChips
+
     private fun scrollToEnd() {
         SwingUtilities.invokeLater {
             hbar.value = hbar.maximum
