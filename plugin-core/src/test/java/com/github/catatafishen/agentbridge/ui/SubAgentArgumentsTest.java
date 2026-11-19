@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui;
 
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -75,6 +76,31 @@ class SubAgentArgumentsTest {
         assertNull(SubAgentArguments.parse(""));
         assertNull(SubAgentArguments.parse("[1, 2]"));
         assertNull(SubAgentArguments.parse("not json"));
+    }
+
+    @Test
+    void popupParamsHoldWhatTheSubAgentWasGiven() {
+        var params = SubAgentArguments.popupParams(null, "explore", "Find usages", "Search for Foo");
+
+        assertEquals("{\"agent\":\"explore\",\"description\":\"Find usages\",\"prompt\":\"Search for Foo\"}", params);
+    }
+
+    @Test
+    void popupParamsKeepKnownValuesWhenALaterUpdateLeavesThemOut() {
+        var first = SubAgentArguments.popupParams(null, "general", "subagent", null);
+
+        var updated = JsonParser.parseString(SubAgentArguments.popupParams(first, "explore", " ", "Search for Foo"))
+            .getAsJsonObject();
+
+        assertEquals("explore", updated.get("agent").getAsString(), "a later type replaces the guess");
+        assertEquals("subagent", updated.get("description").getAsString(), "a blank description keeps the earlier one");
+        assertEquals("Search for Foo", updated.get("prompt").getAsString());
+    }
+
+    @Test
+    void popupParamsStartAfreshFromUnreadableJson() {
+        assertEquals("{}", SubAgentArguments.popupParams("not json", null, null, null));
+        assertEquals("{\"agent\":\"explore\"}", SubAgentArguments.popupParams("[1]", "explore", null, ""));
     }
 
     @Test

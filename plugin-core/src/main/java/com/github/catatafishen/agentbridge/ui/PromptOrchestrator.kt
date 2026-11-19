@@ -72,17 +72,29 @@ class PromptOrchestrator(
     private val statusBanner: () -> StatusBanner?,
     private val callbacks: PromptOrchestratorCallbacks,
 ) {
-    private companion object {
-        const val STOPPED_BY_USER = "Stopped by user"
-        const val BACKGROUND_RUNNING_NOTE =
+    companion object {
+        private const val STOPPED_BY_USER = "Stopped by user"
+        private const val BACKGROUND_RUNNING_NOTE =
             "Working in the background. The main agent reports the result when the sub-agent finishes."
-        const val BACKGROUND_COMPLETED_NOTE = "✓ Finished. The main agent's report follows."
-        const val BACKGROUND_FAILED_NOTE = "✖ The sub-agent failed"
-        const val BACKGROUND_INTERRUPTED_NOTE = "✖ The sub-agent was interrupted."
-        const val BACKGROUND_CONTINUED_NOTE = "✓ A follow-up continues this sub-agent's work below."
-        const val BACKGROUND_QUIET_NOTE = "✓ No more activity from the agent, so this is treated as finished."
-        const val BACKGROUND_STOPPED_NOTE = "✖ $STOPPED_BY_USER"
-        const val BACKGROUND_SESSION_ENDED_NOTE = "✖ The session ended before the sub-agent reported."
+        private const val BACKGROUND_COMPLETED_NOTE = "✓ Finished. The main agent's report follows."
+        private const val BACKGROUND_FAILED_NOTE = "✖ The sub-agent failed"
+        private const val BACKGROUND_INTERRUPTED_NOTE = "✖ The sub-agent was interrupted."
+        private const val BACKGROUND_CONTINUED_NOTE = "✓ A follow-up continues this sub-agent's work below."
+        private const val BACKGROUND_QUIET_NOTE = "✓ No more activity from the agent, so this is treated as finished."
+        private const val BACKGROUND_STOPPED_NOTE = "✖ $STOPPED_BY_USER"
+        private const val BACKGROUND_SESSION_ENDED_NOTE = "✖ The session ended before the sub-agent reported."
+        private val BACKGROUND_NOTES = setOf(
+            BACKGROUND_RUNNING_NOTE, BACKGROUND_COMPLETED_NOTE, BACKGROUND_INTERRUPTED_NOTE, BACKGROUND_CONTINUED_NOTE,
+            BACKGROUND_QUIET_NOTE, BACKGROUND_STOPPED_NOTE, BACKGROUND_SESSION_ENDED_NOTE
+        )
+
+        /**
+         * True when [text] is a status note shown in a background sub-agent's section in place of its answer.
+         * Notes are saved as the sub-agent's result, so this also recognises them after a restore.
+         */
+        @JvmStatic
+        fun isBackgroundNote(text: String): Boolean =
+            text in BACKGROUND_NOTES || text.startsWith(BACKGROUND_FAILED_NOTE)
     }
 
     private val log = Logger.getInstance(PromptOrchestrator::class.java)
@@ -1232,7 +1244,8 @@ class PromptOrchestrator(
                 update.result,
                 update.description,
                 update.autoDenied,
-                update.denialReason
+                update.denialReason,
+                update.arguments
             )
         } else {
             consolePanel().updateToolCall(
@@ -1273,6 +1286,8 @@ class PromptOrchestrator(
             null
         }
         if (backgroundSessionId != null) {
+            // The chip's popup shows what the launch returned; the section shows the running note.
+            consolePanel().updateSubAgentToolCall(recordId, MessageFormatter.ChipStatus.RUNNING, update.result, null, false, null)
             subAgentSessions.launchedInBackground(recordId, backgroundSessionId)?.let {
                 finishBackgroundSubAgent(it, MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_CONTINUED_NOTE)
             }
