@@ -8,6 +8,8 @@ import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpStdioLaunch;
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptQueue;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientPromptException;
@@ -2397,7 +2399,44 @@ public abstract class AcpClient extends AbstractClient {
         if (decision.isDone()) {
             return null;
         }
+        // One prompt at a time (see PermissionPromptQueue): wait until earlier prompts are
+        // resolved, so this card and its diff tab appear alone and the 120 s timeout below
+        // starts only once the user can see the prompt. A turn cancelled while this request
+        // waits completes the decision, which withdraws it from the queue.
+        PermissionPromptQueue.Turn turn;
+        try {
+            turn = awaitPromptTurn(decision);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn(displayName() + ": interrupted while queued for permission for '" + toolTitle + "'", e);
+            return findDenyOption(params);
+        }
+        if (turn == null) {
+            return null;
+        }
+        try (turn) {
+            return showPromptAndAwaitDecision(pending, decision, requestKey, toolCallId, toolTitle, toolCall, params);
+        }
+    }
 
+    /**
+     * Waits for this project's permission-prompt turn; {@code null} when {@code decision}
+     * completed first (the request was cancelled while queued). Without a live project there
+     * is no queue and no UI to share, so the request proceeds immediately.
+     */
+    private @Nullable PermissionPromptQueue.Turn awaitPromptTurn(@NotNull CompletableFuture<JsonObject> decision)
+        throws InterruptedException {
+        if (project == null || project.isDisposed()) {
+            return PermissionPromptQueue.NO_QUEUE;
+        }
+        return PermissionPromptQueue.getInstance(project).awaitTurn(decision);
+    }
+
+    @Nullable
+    private JsonObject showPromptAndAwaitDecision(PendingPermissionRequest pending,
+                                                  CompletableFuture<JsonObject> decision, String requestKey,
+                                                  String toolCallId, String toolTitle,
+                                                  @Nullable JsonObject toolCall, @Nullable JsonObject params) {
         String promptId = toolCallId.isBlank() ? requestKey : toolCallId;
         pending.promptId = promptId;
         String displayName = toolTitle.isBlank() ? "Unknown tool" : toolTitle;
@@ -2453,7 +2492,7 @@ public abstract class AcpClient extends AbstractClient {
         // is confirmed (chat-panel listener or prompt provider) — otherwise the tab would
         // outlive a request that was already denied here.
         if (listener != null || (project != null && !project.isDisposed()
-            && com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project) != null)) {
+            && PermissionPromptProvider.getInstance(project) != null)) {
             // Native auto-open (the web panel auto-opens via the autoOpenDiff flag in the
             // arguments): open the editor-area diff right before the card appears. Runs on
             // BOTH permission paths, so hop to the EDT here — open() touches
@@ -2473,7 +2512,7 @@ public abstract class AcpClient extends AbstractClient {
             if (listener != null) {
                 listener.accept(prompt);
             } else if (project != null && !project.isDisposed()) {
-                var promptProvider = com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+                var promptProvider = PermissionPromptProvider.getInstance(project);
                 if (promptProvider == null) {
                     LOG.warn(displayName() + ": no permission prompt provider is registered; rejecting '" + displayName + "'");
                     return findDenyOption(params);
@@ -2519,8 +2558,7 @@ public abstract class AcpClient extends AbstractClient {
      */
     private void notifyPermissionRequestExpired(@NotNull String promptId) {
         if (project == null || project.isDisposed()) return;
-        com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider provider =
-            com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+        PermissionPromptProvider provider = PermissionPromptProvider.getInstance(project);
         if (provider != null) provider.expirePermissionPrompt(promptId);
     }
 

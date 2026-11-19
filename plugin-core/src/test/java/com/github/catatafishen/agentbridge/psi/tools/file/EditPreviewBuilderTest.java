@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,6 +19,18 @@ class EditPreviewBuilderTest {
 
     private static JsonObject args() {
         return new JsonObject();
+    }
+
+    // ── isPreviewableTool ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("only write_file and edit_text get an edit preview")
+    void previewableTools() {
+        assertTrue(EditPreviewBuilder.isPreviewableTool("write_file"));
+        assertTrue(EditPreviewBuilder.isPreviewableTool("edit_text"));
+        assertFalse(EditPreviewBuilder.isPreviewableTool("delete_file"));
+        assertFalse(EditPreviewBuilder.isPreviewableTool("run_command"));
+        assertFalse(EditPreviewBuilder.isPreviewableTool(null));
     }
 
     // ── buildPreview: argument precedence ─────────────────────────────────────
