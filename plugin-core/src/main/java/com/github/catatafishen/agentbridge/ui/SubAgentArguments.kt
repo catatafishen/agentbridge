@@ -30,6 +30,20 @@ object SubAgentArguments {
         else Details(agentType, description, prompt)
     }
 
+    /**
+     * The inputs shown in a sub-agent chip's popup: [existing] (JSON from an earlier call, or null) with each
+     * non-blank value given here set under `agent`, `description` and `prompt`. Blank values keep what [existing] has.
+     */
+    @JvmStatic
+    fun popupParams(existing: String?, agentType: String?, description: String?, prompt: String?): String {
+        val obj = existing?.let { runCatching { JsonParser.parseString(it) }.getOrNull() }
+            ?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+        agentType?.takeIf { it.isNotBlank() }?.let { obj.addProperty("agent", it) }
+        description?.takeIf { it.isNotBlank() }?.let { obj.addProperty("description", it) }
+        prompt?.takeIf { it.isNotBlank() }?.let { obj.addProperty("prompt", it) }
+        return obj.toString()
+    }
+
     private fun JsonObject.text(key: String): String? =
         get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString?.takeIf { it.isNotBlank() }
 }

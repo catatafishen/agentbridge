@@ -12,7 +12,8 @@ import java.util.List;
 
 /**
  * A sub-agent's own work, as OpenCode forwards it while the main agent is still writing: its text streams
- * into its section, and neither that text nor its tool calls split the main agent's bubble.
+ * into its section, and neither that text nor its tool calls split the main agent's bubble. Its chip's popup
+ * shows what it was given and what it answered.
  */
 public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
 
@@ -45,7 +46,7 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
         panel.addSubAgentToolCall("sa1", "t1", "execute", null, "other");
 
         panel.appendText("Searching for occurrences of `Foo");
-        panel.updateSubAgentToolCall("t1", "completed", "done", null, false, null);
+        panel.updateSubAgentToolCall("t1", "completed", "done", null, false, null, null);
         panel.appendText("Config`.");
 
         assertTrue("the main agent's sentence must stay in one bubble, got " + rawTexts(panel),
@@ -104,6 +105,43 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
         panel.appendSubAgentText("missing", "lost");
 
         assertFalse(rawTexts(panel).contains("lost"));
+    }
+
+    public void testSubAgentChipPopupShowsItsInputsAndAnswer() {
+        NativeChatPanel panel = new NativeChatPanel(getProject());
+        panel.addSubAgentEntry("sa2", "explore", "Find usages", "Find all usages of Foo",
+            new ChatPanelApi.SubAgentInitialState());
+        panel.updateSubAgentResult("sa2", "completed", FINDING, null, false, null);
+
+        String inputs = panel.popupInputs("sa2");
+        assertTrue(inputs, inputs.contains("\"agent\":\"explore\""));
+        assertTrue(inputs, inputs.contains("\"prompt\":\"Find all usages of Foo\""));
+        assertEquals(FINDING, panel.popupOutput("sa2"));
+    }
+
+    public void testDetailsArrivingLaterFillTheChipPopupInputs() {
+        NativeChatPanel panel = panelWithSubAgent();
+        panel.updateSubAgentDetails("sa1", "explore", "Find usages", "Find all usages of Foo");
+
+        assertTrue(panel.popupInputs("sa1"), panel.popupInputs("sa1").contains("\"prompt\":\"Find all usages of Foo\""));
+    }
+
+    public void testBackgroundNotesDoNotReplaceTheChipPopupOutput() {
+        NativeChatPanel panel = panelWithSubAgent();
+        String launch = "The subagent is working in the background (sessionID: ses_1).";
+        panel.updateSubAgentToolCall("sa1", "running", launch, null, false, null, null);
+        panel.updateSubAgentResult("sa1", "running",
+            "Working in the background. The main agent reports the result when the sub-agent finishes.", null, false, null);
+        panel.updateSubAgentResult("sa1", "completed", "✓ Finished. The main agent's report follows.", null, false, null);
+
+        assertEquals(launch, panel.popupOutput("sa1"));
+    }
+
+    public void testBackgroundNotesAreRecognisedButAnswersAreNot() {
+        assertTrue(PromptOrchestrator.isBackgroundNote("✓ Finished. The main agent's report follows."));
+        assertTrue(PromptOrchestrator.isBackgroundNote("✖ The sub-agent failed: rate limited"));
+        assertFalse(PromptOrchestrator.isBackgroundNote(FINDING));
+        assertFalse(PromptOrchestrator.isBackgroundNote("Finished. The main agent's report follows."));
     }
 
     private static List<String> rawTexts(NativeChatPanel panel) {

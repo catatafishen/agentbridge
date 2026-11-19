@@ -247,7 +247,7 @@ class BroadcastChatPanel(
 
     override fun updateSubAgentToolCall(
         toolId: String, status: String, details: String?, description: String?,
-        autoDenied: Boolean, denialReason: String?
+        autoDenied: Boolean, denialReason: String?, arguments: String?
     ) = dispatchUi {
         nativePanel.updateSubAgentToolCall(
             toolId,
@@ -255,7 +255,8 @@ class BroadcastChatPanel(
             details,
             description,
             autoDenied,
-            denialReason
+            denialReason,
+            arguments
         )
     }
 

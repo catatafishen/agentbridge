@@ -28,6 +28,7 @@ import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import org.jetbrains.annotations.TestOnly
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.*
@@ -1142,6 +1143,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (allChips.values.none { it.isSpinning() }) spinTimer.stop()
     }
 
+    /** The inputs a tool chip's popup shows. */
+    @TestOnly
+    fun popupInputs(toolId: String): String? = toolCallData[toolId]?.arguments
+
+    /** The output a tool chip's popup shows. */
+    @TestOnly
+    fun popupOutput(toolId: String): String? = toolCallData[toolId]?.result
+
     private fun showToolPopup(toolId: String) {
         val data = toolCallData[toolId] ?: return
         val toolDef = toolRegistry?.findById(data.rawToolName)
@@ -1193,7 +1202,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         // Sub-agent chip in the parent turn's chip strip.
         val chipTitle = "[$label] $description"
-        toolCallData[id] = ToolCallData(chipTitle, "think", agentType, null)
+        toolCallData[id] =
+            ToolCallData(chipTitle, "think", agentType, SubAgentArguments.popupParams(null, agentType, description, prompt))
         val chip = ToolChipComponent(
             chipTitle, "think", "running", false,
             McpServerSettings.getInstance(project)
@@ -1247,6 +1257,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val chipTitle = "[${section.label}] ${section.description}"
         toolCallData[id]?.title = chipTitle
         allChips[id]?.updateTitle(chipTitle)
+        toolCallData[id]?.let { it.arguments = SubAgentArguments.popupParams(it.arguments, agentType, description, prompt) }
         if (prompt.isNullOrBlank() || section.promptRow != null) return
         val at = contentPanel.getComponentZOrder(section.row)
         if (at < 0) return
@@ -1261,14 +1272,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         id: String, status: String, result: String?,
         description: String?, autoDenied: Boolean, denialReason: String?
     ) {
-        // Update the parent chip status.
-        updateToolCall(id, status, ChatPanelApi.ToolCallUpdate())
+        // OpenCode wraps the subagent's answer in <task id="…">; show only the answer.
+        val answer = OpenCodeTaskOutput.parse(result)?.body() ?: result
+
+        // The chip's popup shows the answer as its output, never a background sub-agent's status note.
+        val output = answer?.takeIf { it.isNotBlank() && !PromptOrchestrator.isBackgroundNote(it) }
+        updateToolCall(
+            id, status,
+            ChatPanelApi.ToolCallUpdate(
+                details = output, description = description, autoDenied = autoDenied, denialReason = denialReason
+            )
+        )
 
         val section = subAgentSections[id] ?: return
         val accent = ChatTheme.SA_COLORS[section.colorIndex]
-
-        // OpenCode wraps the subagent's answer in <task id="…">; show only the answer.
-        val answer = OpenCodeTaskOutput.parse(result)?.body() ?: result
 
         // Show the result text in the sub-agent's indented section.
         val resultText = when {
@@ -1472,7 +1489,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun updateSubAgentToolCall(
         toolId: String, status: String, details: String?,
-        description: String?, autoDenied: Boolean, denialReason: String?
+        description: String?, autoDenied: Boolean, denialReason: String?, arguments: String?
     ) = updateToolCall(
         toolId,
         status,
@@ -1480,7 +1497,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             details = details,
             description = description,
             autoDenied = autoDenied,
-            denialReason = denialReason
+            denialReason = denialReason,
+            arguments = arguments
         )
     )
 

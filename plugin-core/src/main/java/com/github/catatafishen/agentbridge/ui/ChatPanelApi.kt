@@ -150,9 +150,10 @@ interface ChatPanelApi : Disposable {
         kind: String? = null
     )
 
+    /** [arguments] are the tool's inputs when the agent reveals them only in this update (OpenCode). */
     fun updateSubAgentToolCall(
         toolId: String, status: String, details: String? = null, description: String? = null,
-        autoDenied: Boolean = false, denialReason: String? = null
+        autoDenied: Boolean = false, denialReason: String? = null, arguments: String? = null
     )
 
     /**
