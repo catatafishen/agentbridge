@@ -44,6 +44,12 @@ public final class InFlightMcpToolRegistry {
      * tools that block on an externally completed future (e.g. {@code prompt_user}).
      */
     private final Set<Thread> workers = ConcurrentHashMap.newKeySet();
+    /**
+     * {@link System#nanoTime()} of the last time a tool worker started or finished. An agent's
+     * background work can be visible only through the tools it calls (see
+     * {@code client.acp.PostTurnWindow}), so this is read as a sign that the agent is still busy.
+     */
+    private volatile long lastWorkerActivityNanos = System.nanoTime();
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
     private volatile String cancelReason = "agent stopped";
 
@@ -93,6 +99,7 @@ public final class InFlightMcpToolRegistry {
      * shutdown), the thread is interrupted immediately so a late-arriving tool unwinds at once.
      */
     public void registerWorker(@NotNull Thread worker) {
+        lastWorkerActivityNanos = System.nanoTime();
         workers.add(worker);
         if (cancelled.get()) {
             worker.interrupt();
@@ -102,6 +109,17 @@ public final class InFlightMcpToolRegistry {
 
     public void unregisterWorker(@NotNull Thread worker) {
         workers.remove(worker);
+        lastWorkerActivityNanos = System.nanoTime();
+    }
+
+    /** Whether a tool's {@code execute()} is running now. */
+    public boolean hasRunningWorkers() {
+        return !workers.isEmpty();
+    }
+
+    /** {@link System#nanoTime()} of the last time a tool worker started or finished. */
+    public long lastWorkerActivityNanos() {
+        return lastWorkerActivityNanos;
     }
 
     /**

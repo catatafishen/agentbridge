@@ -69,8 +69,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -190,10 +192,28 @@ public abstract class AcpClient extends AbstractClient {
     private final AtomicReference<Runnable> firstPostTurnCallback = new AtomicReference<>();
 
     /**
-     * Auto-clear future — cancels the post-turn consumer after 120s of silence.
+     * The next check of the post-turn window; see {@link #checkPostTurnWindow(long)}.
      */
-    private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>> postTurnClearFuture =
-        new java.util.concurrent.atomic.AtomicReference<>();
+    private final AtomicReference<ScheduledFuture<?>> postTurnCheckFuture = new AtomicReference<>();
+
+    /**
+     * Guards opening, checking and closing the post-turn window, so that a check scheduled for one
+     * window can never close the next one.
+     */
+    private final Object postTurnLock = new Object();
+
+    /** Incremented whenever a post-turn window opens or closes. Guarded by {@link #postTurnLock}. */
+    private long postTurnGeneration;
+
+    /**
+     * {@link System#nanoTime()} of the last post-turn message that shows the agent is still working
+     * ({@link #isBackgroundAgentActivity}). Unlike {@link #lastActivityNanos}, metadata updates do
+     * not move it.
+     */
+    private volatile long lastPostTurnActivityNanos = System.nanoTime();
+
+    /** Whether agent activity dropped after the post-turn window closed has been logged yet. */
+    private final AtomicBoolean lateActivityDropLogged = new AtomicBoolean(false);
 
     /**
      * Conversation history replayed by the agent during {@code session/load}.
@@ -1117,30 +1137,53 @@ public abstract class AcpClient extends AbstractClient {
     /**
      * Called in the finally block after {@code sendPrompt} completes (success or failure).
      * Enters post-turn mode: transfers the pending callback registered by
-     * PromptOrchestrator into the active slot, keeps the consumer alive,
-     * and starts a 120-second inactivity timer. The timer is reset on each arriving
-     * message — see {@link #reschedulePostTurnTimer()}.
+     * PromptOrchestrator into the active slot, keeps the consumer alive, and opens the post-turn
+     * window. {@link PostTurnWindow} decides when it closes.
      */
     protected void afterPromptComplete() {
-        postTurnActive = true;
-        // Transfer the callback that survived clearPostTurnState() at turn-start.
-        firstPostTurnCallback.set(pendingPostTurnCallback.getAndSet(null));
-        postTurnClearFuture.set(AppExecutorUtil.getAppScheduledExecutorService()
-            .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS));
+        synchronized (postTurnLock) {
+            postTurnActive = true;
+            lastPostTurnActivityNanos = System.nanoTime();
+            lateActivityDropLogged.set(false);
+            // Transfer the callback that survived clearPostTurnState() at turn-start.
+            firstPostTurnCallback.set(pendingPostTurnCallback.getAndSet(null));
+            schedulePostTurnCheck(++postTurnGeneration, PostTurnWindow.QUIET_NANOS);
+        }
+    }
+
+    private void schedulePostTurnCheck(long generation, long delayNanos) {
+        ScheduledFuture<?> next = AppExecutorUtil.getAppScheduledExecutorService()
+            .schedule(() -> checkPostTurnWindow(generation), delayNanos, TimeUnit.NANOSECONDS);
+        ScheduledFuture<?> previous = postTurnCheckFuture.getAndSet(next);
+        if (previous != null) previous.cancel(false);
     }
 
     /**
-     * Resets the post-turn auto-clear timer, extending the inactivity window to 120 seconds
-     * from the most recent message. Called on every arriving message while {@link #postTurnActive}
-     * is true, so the consumer stays alive as long as the background agent keeps streaming.
+     * Closes the post-turn window once the agent has been quiet long enough, otherwise checks
+     * again later. AgentBridge tool calls count as activity, because a background sub-agent may
+     * send nothing over ACP while it works (OpenCode); see {@link PostTurnWindow}.
      */
-    private void reschedulePostTurnTimer() {
-        if (!postTurnActive) return;
-        // Atomically replace the old scheduled future with a new one, then cancel the old one.
-        java.util.concurrent.ScheduledFuture<?> old = postTurnClearFuture.getAndSet(
-            AppExecutorUtil.getAppScheduledExecutorService()
-                .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS));
-        if (old != null) old.cancel(false);
+    private void checkPostTurnWindow(long generation) {
+        synchronized (postTurnLock) {
+            if (!postTurnActive || generation != postTurnGeneration) return;
+            InFlightMcpToolRegistry tools = project == null || project.isDisposed()
+                ? null : InFlightMcpToolRegistry.getInstance(project);
+            long now = System.nanoTime();
+            long delay = PostTurnWindow.nanosUntilNextCheck(
+                now,
+                lastPostTurnActivityNanos,
+                tools != null ? tools.lastWorkerActivityNanos() : lastPostTurnActivityNanos,
+                tools != null && tools.hasRunningWorkers(),
+                PostTurnWindow.QUIET_NANOS);
+            if (delay > 0) {
+                schedulePostTurnCheck(generation, delay);
+                return;
+            }
+            LOG.info(displayName() + ": no agent message or tool call for "
+                + TimeUnit.NANOSECONDS.toSeconds(PostTurnWindow.QUIET_NANOS)
+                + " s after the turn ended; later messages are not shown");
+            clearPostTurnState();
+        }
     }
 
     /**
@@ -1155,13 +1198,16 @@ public abstract class AcpClient extends AbstractClient {
      */
     @Override
     public void clearPostTurnState() {
-        postTurnActive = false;
-        firstPostTurnCallback.set(null);
-        java.util.concurrent.ScheduledFuture<?> f = postTurnClearFuture.getAndSet(null);
-        if (f != null) {
-            f.cancel(false);
+        synchronized (postTurnLock) {
+            postTurnGeneration++;
+            postTurnActive = false;
+            firstPostTurnCallback.set(null);
+            ScheduledFuture<?> f = postTurnCheckFuture.getAndSet(null);
+            if (f != null) {
+                f.cancel(false);
+            }
+            updateConsumer.set(null);
         }
-        updateConsumer.set(null);
     }
 
     @Override
@@ -2141,11 +2187,11 @@ public abstract class AcpClient extends AbstractClient {
 
         Consumer<SessionUpdate> consumer = updateConsumer.get();
         if (consumer == null) {
-            LOG.debug("Session update received but no consumer registered");
+            logUpdateWithoutConsumer(update);
             return;
         }
         // Fire the one-shot post-turn callback on the first message that arrives after turn end,
-        // and extend the auto-clear timer so the window stays open as long as messages keep arriving.
+        // and record the activity so the post-turn window stays open while messages keep arriving.
         // Only real agent activity (message/thought chunks, tool calls, plans) counts as a
         // "background sub-agent still running" — pure metadata updates that some agents emit AFTER
         // the prompt response (e.g. Kiro v3's trailing session_info_update context-usage telemetry)
@@ -2153,7 +2199,7 @@ public abstract class AcpClient extends AbstractClient {
         if (postTurnActive && isBackgroundAgentActivity(update)) {
             Runnable cb = firstPostTurnCallback.getAndSet(null);
             if (cb != null) cb.run();
-            reschedulePostTurnTimer();
+            lastPostTurnActivityNanos = System.nanoTime();
         }
         if (update != null) {
             update = processUpdate(update);
@@ -2161,6 +2207,20 @@ public abstract class AcpClient extends AbstractClient {
                 consumer.accept(update);
             }
         }
+    }
+
+    /**
+     * Logs an update that arrived while no turn or post-turn window was listening. Agent activity
+     * dropped this way is content the user never sees, so the first such update after each turn is
+     * logged as a warning; metadata updates and the rest are logged at debug level.
+     */
+    private void logUpdateWithoutConsumer(@Nullable SessionUpdate update) {
+        if (update != null && isBackgroundAgentActivity(update) && lateActivityDropLogged.compareAndSet(false, true)) {
+            LOG.warn(displayName() + ": agent activity arrived after the turn's post-turn window closed and is "
+                + "not shown in the chat (first dropped update: " + update.getClass().getSimpleName() + ")");
+            return;
+        }
+        LOG.debug("Session update received but no consumer registered");
     }
 
     /**
