@@ -1,26 +1,36 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
+import com.github.catatafishen.agentbridge.bridge.PermissionPromptQueue;
+import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
+import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs;
 import com.github.catatafishen.agentbridge.psi.tools.file.EditPreviewBuilder;
 import com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
+import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
 import com.github.catatafishen.agentbridge.services.ToolCallRecord;
 import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
-import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -28,8 +38,14 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -165,6 +181,17 @@ public final class PsiBridgeService implements Disposable {
     private final ThreadLocal<ReentrantLock> currentSyncLock = new ThreadLocal<>();
 
     /**
+     * Longest time an approved edit keeps the permission-prompt turn while it is applied (see
+     * {@link #askUserPermission}). Edits apply in milliseconds; the cap only matters when the
+     * write is stuck, and then the next prompt shows with a possibly stale preview rather than
+     * never.
+     */
+    private static final long MAX_EDIT_TURN_HOLD_SECONDS = 30;
+
+    /** MCP worker threads currently blocked on a permission prompt; see {@link #isAwaitingUserPermission}. */
+    private final Set<Thread> threadsAwaitingUserPermission = ConcurrentHashMap.newKeySet();
+
+    /**
      * Returns the per-tool sync lock currently held by the calling thread, or {@code null}
      * if none is active. Used by {@link com.github.catatafishen.agentbridge.psi.review.AgentEditSession}
      * to release and re-acquire the lock around the blocking review wait.
@@ -211,7 +238,7 @@ public final class PsiBridgeService implements Disposable {
 
     private final Project project;
     private final ToolRegistry registry;
-    private final java.util.Set<String> sessionAllowedTools =
+    private final Set<String> sessionAllowedTools =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public PsiBridgeService(@NotNull Project project) {
@@ -356,7 +383,10 @@ public final class PsiBridgeService implements Disposable {
         boolean requiresSync = isSyncCategory(categoryName);
         boolean needsGlobalLock = def.needsWriteLock();
         boolean isWriteOp = needsGlobalLock && isWriteToolName(toolName);
-        java.util.concurrent.atomic.AtomicBoolean writeRegistered = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AtomicBoolean writeRegistered = new AtomicBoolean(false);
+        // Permission-prompt turn kept by an approved edit until the edit is applied (see
+        // askUserPermission); released at the latest when this call ends.
+        AtomicReference<PermissionPromptQueue.Turn> promptTurn = new AtomicReference<>();
 
         // Use original (pre-hook) arguments for chip correlation when available
         JsonObject chipArgs = originalArguments != null ? originalArguments : arguments;
@@ -366,11 +396,12 @@ public final class PsiBridgeService implements Disposable {
             inputSize, categoryName, startMs, chatWasActive);
 
         try {
-            String preflightError = acquireExecutionContext(req, isWriteOp, needsGlobalLock, writeRegistered);
+            String preflightError = acquireExecutionContext(req, isWriteOp, needsGlobalLock, writeRegistered, promptTurn);
             if (preflightError != null) return ToolResult.error(preflightError);
 
-            return runToolExecution(req, requiresSync, needsGlobalLock, writeRegistered);
+            return runToolExecution(req, requiresSync, needsGlobalLock, writeRegistered, promptTurn);
         } finally {
+            releasePromptTurn(promptTurn);
             // Uninstall the focus guard after the tool completes so it does not interfere
             // with the restoreFocus() request fired from runToolExecution's finally block.
             if (focusGuard != null) focusGuard.uninstall();
@@ -396,27 +427,32 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Handles the pre-execution phase: write-batch registration, tool permission check, and
+     * Handles the pre-execution phase: tool permission check, write-batch registration, and
      * global write-lock acquisition. These must happen in order, and <em>outside</em> the main
      * execution try-block so that a permission prompt (up to 120 s) does not hold the semaphore.
      *
      * @param writeRegistered updated to {@code true} when a write is registered so
      *                        {@link #runToolExecution} can clean it up on any exit path.
+     * @param promptTurn      receives the permission-prompt turn an approved edit keeps
+     *                        until it is applied; the caller releases it.
      * @return {@code null} on success, or an error string if setup fails (caller should return it).
      */
     @Nullable
     private String acquireExecutionContext(ToolCallRequest req,
                                            boolean isWriteOp, boolean needsGlobalLock,
-                                           java.util.concurrent.atomic.AtomicBoolean writeRegistered) {
+                                           AtomicBoolean writeRegistered,
+                                           AtomicReference<PermissionPromptQueue.Turn> promptTurn) {
+        String denied = checkPluginToolPermission(req.toolName(), req.arguments(), promptTurn);
+        if (denied != null) {
+            fireToolCallEvent(req.toolName(), req.startMs(), false, req.inputSize(), 0, req.categoryName(), denied);
+            return denied;
+        }
+        // Registered after the permission check but still before the write lock (the batch
+        // contract): a write that is still waiting for the user's approval is not "pending", so
+        // an earlier write's highlight drain never waits on the user's decision.
         if (isWriteOp) {
             writeBatchCoordinator.registerWrite();
             writeRegistered.set(true);
-        }
-        String denied = checkPluginToolPermission(req.toolName(), req.arguments());
-        if (denied != null) {
-            if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
-            fireToolCallEvent(req.toolName(), req.startMs(), false, req.inputSize(), 0, req.categoryName(), denied);
-            return denied;
         }
         if (needsGlobalLock) {
             String lockError = acquireWriteLock(req.toolName(), req.startMs(), req.inputSize(), req.categoryName());
@@ -431,15 +467,16 @@ public final class PsiBridgeService implements Disposable {
     @SuppressWarnings("java:S2139") // intentional re-throw of ProcessCanceledException
     private ToolResult runToolExecution(ToolCallRequest req,
                                         boolean requiresSync, boolean needsGlobalLock,
-                                        java.util.concurrent.atomic.AtomicBoolean writeRegistered) {
+                                        AtomicBoolean writeRegistered,
+                                        AtomicReference<PermissionPromptQueue.Turn> promptTurn) {
         boolean success = true;
         String errorMessage = null;
         long outputSize = 0;
-        java.util.concurrent.atomic.AtomicBoolean semaphoreReleasedEarly =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
+        AtomicBoolean semaphoreReleasedEarly =
+            new AtomicBoolean(false);
 
         String filePathForHighlights = isWriteToolName(req.toolName()) ? extractFilePath(req.arguments()) : null;
-        com.intellij.openapi.vfs.VirtualFile vfForHighlights = filePathForHighlights != null
+        VirtualFile vfForHighlights = filePathForHighlights != null
             ? ToolUtils.resolveVirtualFile(project, filePathForHighlights) : null;
         long preWriteStamp = getDocumentStamp(vfForHighlights);
 
@@ -458,6 +495,9 @@ public final class PsiBridgeService implements Disposable {
             }
 
             ToolResult toolResult = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), requiresSync);
+            // The approved edit is applied: let the next prompt build its preview from the
+            // result. Released before the highlight drain below, which waits for queued writes.
+            releasePromptTurn(promptTurn);
             if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
 
             String content = appendHighlightsIfApplicable(
@@ -515,7 +555,7 @@ public final class PsiBridgeService implements Disposable {
      */
     @Nullable
     private ToolResult checkToolReadiness(ToolCallRequest req,
-                                          java.util.concurrent.atomic.AtomicBoolean writeRegistered,
+                                          AtomicBoolean writeRegistered,
                                           ToolCallTracker tracker, ToolCallRecord callRecord) {
         String readinessError = ToolReadinessGate.checkReady(project, req.def());
         if (readinessError == null) return null;
@@ -561,8 +601,8 @@ public final class PsiBridgeService implements Disposable {
         String toolName, String result,
         @Nullable DaemonWaiter daemonWaiter,
         @Nullable String filePathForHighlights,
-        @Nullable com.intellij.openapi.vfs.VirtualFile vfForHighlights,
-        java.util.concurrent.atomic.AtomicBoolean semaphoreReleasedEarly) throws InterruptedException {
+        @Nullable VirtualFile vfForHighlights,
+        AtomicBoolean semaphoreReleasedEarly) throws InterruptedException {
 
         if (!isSuccessfulWrite(toolName, result) || daemonWaiter == null) return result;
         if (writeBatchCoordinator.hasPendingWrites()) {
@@ -599,7 +639,7 @@ public final class PsiBridgeService implements Disposable {
     private String acquireWriteLock(String toolName, long startTimeMs,
                                     long inputSizeBytes, @Nullable String category) {
         try {
-            if (!writeToolSemaphore.tryAcquire(60, java.util.concurrent.TimeUnit.SECONDS)) {
+            if (!writeToolSemaphore.tryAcquire(60, TimeUnit.SECONDS)) {
                 String err = "Error: IDE is busy processing another tool call. Please retry shortly.";
                 fireToolCallEvent(toolName, startTimeMs, false, inputSizeBytes, 0, category, err);
                 return err;
@@ -658,7 +698,7 @@ public final class PsiBridgeService implements Disposable {
                 latch.countDown();
             });
             try {
-                boolean completed = latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                boolean completed = latch.await(100, TimeUnit.MILLISECONDS);
                 if (!completed) {
                     LOG.debug("isChatToolWindowActive: EDT did not refresh cache within 100ms; returning stale value");
                 }
@@ -717,9 +757,13 @@ public final class PsiBridgeService implements Disposable {
      * Returns null if the call is allowed, or an error message string if it is denied/rejected.
      * For ASK, injects a permission bubble into the chat panel and blocks until user responds.
      * Falls back to a modal dialog if the chat panel is unavailable (no JCEF, etc.).
+     *
+     * @param promptTurn receives the prompt turn when an approved edit keeps it (see
+     *                   {@link #askUserPermission}); untouched otherwise
      */
     @Nullable
-    private String checkPluginToolPermission(String toolName, JsonObject arguments) {
+    private String checkPluginToolPermission(String toolName, JsonObject arguments,
+                                             AtomicReference<PermissionPromptQueue.Turn> promptTurn) {
         ToolPermission perm = resolvePluginPermission(toolName, arguments);
         if (perm == ToolPermission.ALLOW) return null;
 
@@ -740,14 +784,75 @@ public final class PsiBridgeService implements Disposable {
         }
 
         // ASK: show a permission bubble in the chat panel and block until user responds
-        return askUserPermission(toolName, arguments);
+        return askUserPermission(toolName, arguments, promptTurn);
+    }
+
+    /**
+     * Asks the user once it is this call's turn in the project's {@link PermissionPromptQueue}:
+     * agents that run tool calls in parallel would otherwise show several approval cards and
+     * diff tabs at once. The 120 s prompt timeout starts only when the prompt is shown.
+     * <p>
+     * A {@code write_file}/{@code edit_text} the user approved in a prompt keeps the turn
+     * (handed over through {@code promptTurn}) until its edit is applied, so the next prompt's
+     * diff preview is built from the file after this edit rather than before it. The hold is
+     * capped at {@link #MAX_EDIT_TURN_HOLD_SECONDS}: a write stuck on the write lock or the EDT
+     * must not block every later approval. Every other outcome, including a call that skipped
+     * the prompt because the tool became session-allowed while it waited, releases the turn
+     * here as soon as it is decided.
+     */
+    @Nullable
+    private String askUserPermission(String toolName, JsonObject arguments,
+                                     AtomicReference<PermissionPromptQueue.Turn> promptTurn) {
+        Thread worker = Thread.currentThread();
+        threadsAwaitingUserPermission.add(worker);
+        try {
+            PermissionPromptQueue.Turn turn;
+            try {
+                turn = PermissionPromptQueue.getInstance(project).awaitTurn();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "Error: Permission request interrupted for tool '" + toolName + "'.";
+            }
+            boolean keepTurn = false;
+            try {
+                // A prompt answered while this call waited may have allowed the tool for the
+                // session ("Allow Session" / "Allow Always"); do not ask again.
+                if (sessionAllowedTools.contains(toolName)) return null;
+                String denied = promptUserForPermission(toolName, arguments);
+                keepTurn = denied == null && EditPreviewBuilder.isPreviewableTool(toolName);
+                if (keepTurn) {
+                    promptTurn.set(turn);
+                    AppExecutorUtil.getAppScheduledExecutorService()
+                        .schedule(turn::close, MAX_EDIT_TURN_HOLD_SECONDS, TimeUnit.SECONDS);
+                }
+                return denied;
+            } finally {
+                if (!keepTurn) turn.close();
+            }
+        } finally {
+            threadsAwaitingUserPermission.remove(worker);
+        }
+    }
+
+    /**
+     * Whether {@code worker} is blocked on the user: queued behind earlier permission prompts or
+     * showing its own. {@code McpProtocolHandler} does not count that time as tool run time, so the
+     * "tool is still running" dialog never pops up over an approval card. {@code null} → false.
+     */
+    public boolean isAwaitingUserPermission(@Nullable Thread worker) {
+        return worker != null && threadsAwaitingUserPermission.contains(worker);
+    }
+
+    private static void releasePromptTurn(AtomicReference<PermissionPromptQueue.Turn> promptTurn) {
+        PermissionPromptQueue.Turn turn = promptTurn.getAndSet(null);
+        if (turn != null) turn.close();
     }
 
     @Nullable
-    private String askUserPermission(String toolName, JsonObject arguments) {
+    private String promptUserForPermission(String toolName, JsonObject arguments) {
         ToolDefinition entry = registry.findById(toolName);
         String displayName = entry != null ? entry.displayName() : toolName;
-        String reqId = java.util.UUID.randomUUID().toString();
+        String reqId = UUID.randomUUID().toString();
 
         String resolvedQuestion = entry != null ? entry.resolvePermissionQuestion(arguments) : null;
         com.google.gson.JsonObject context = new com.google.gson.JsonObject();
@@ -757,8 +862,8 @@ public final class PsiBridgeService implements Disposable {
         EditPreviewBuilder.Preview preview = appendEditPreviewArgs(context, toolName, arguments);
         String argsJson = context.toString();
 
-        com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider promptProvider =
-            com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider.getInstance(project);
+        PermissionPromptProvider promptProvider =
+            PermissionPromptProvider.getInstance(project);
 
         // Opt-in auto-open: same setting and tab lifecycle as the ACP edit approvals —
         // when a previewable diff exists and the chat panel will show the prompt
@@ -769,27 +874,27 @@ public final class PsiBridgeService implements Disposable {
         // resolution path the chat panels already implement, plus the failure exits
         // below (the request was answered without the user, like AcpClient does).
         if (preview != null && promptProvider != null
-            && com.github.catatafishen.agentbridge.services.ActiveAgentManager
+            && ActiveAgentManager
                 .getEditApprovalAutoDiff(project)) {
             final EditPreviewBuilder.Preview p = preview;
             ApplicationManager.getApplication().invokeLater(() -> {
                 if (project.isDisposed()) return;
-                com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
+                EditApprovalDiffTabs
                     .getInstance(project)
                     .open(project, reqId, p.path(), p.oldText(), p.newText());
-            }, com.intellij.openapi.application.ModalityState.any());
+            }, ModalityState.any());
         }
 
-        com.github.catatafishen.agentbridge.bridge.PermissionResponse response;
+        PermissionResponse response;
         try {
             response = promptProvider != null
                 ? askViaChatPanel(displayName, reqId, argsJson, promptProvider)
                 : askViaModalDialog(displayName, arguments);
-        } catch (java.util.concurrent.TimeoutException e) {
+        } catch (TimeoutException e) {
             LOG.info("PSI Bridge: ASK timed out for " + toolName);
             closeEditPreviewTab(reqId, preview);
             return "Error: Permission request timed out for tool '" + toolName + "'.";
-        } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
+        } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
             closeEditPreviewTab(reqId, preview);
             return "Error: Permission request interrupted for tool '" + toolName + "'.";
@@ -833,7 +938,7 @@ public final class PsiBridgeService implements Disposable {
      */
     private @Nullable EditPreviewBuilder.Preview appendEditPreviewArgs(
             com.google.gson.JsonObject context, String toolName, @Nullable JsonObject arguments) {
-        if (!"write_file".equals(toolName) && !"edit_text".equals(toolName)) return null;
+        if (!EditPreviewBuilder.isPreviewableTool(toolName)) return null;
         if (arguments == null) return null;
         try {
             String path = arguments.has("path") && arguments.get("path").isJsonPrimitive()
@@ -854,7 +959,7 @@ public final class PsiBridgeService implements Disposable {
             // content it already shows are dropped from the k/v rows (the ACP path
             // never sends them either — its bubble context carries only card args).
             // Small scalar flags stay visible; they affect what the edit will do.
-            java.util.Set<String> cardAbsorbed = java.util.Set.of(
+            Set<String> cardAbsorbed = Set.of(
                 "old_str", "new_str", "content", "start_line", "end_line", "file");
             for (var e : arguments.entrySet()) {
                 if (!cardAbsorbed.contains(e.getKey())) {
@@ -879,7 +984,7 @@ public final class PsiBridgeService implements Disposable {
                 args.addProperty("newText", preview.newText());
                 // Web-panel auto-open signal: the card clicks its own "Open in editor"
                 // button on render when the setting is on (same flag the ACP path sets).
-                if (com.github.catatafishen.agentbridge.services.ActiveAgentManager
+                if (ActiveAgentManager
                         .getEditApprovalAutoDiff(project)) {
                     args.addProperty("autoOpenDiff", true);
                 }
@@ -902,7 +1007,7 @@ public final class PsiBridgeService implements Disposable {
                                      @Nullable EditPreviewBuilder.Preview preview) {
         if (preview == null) return;
         if (project.isDisposed()) return;
-        com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
+        EditApprovalDiffTabs
             .getInstance(project).close(project, reqId);
     }
 
@@ -918,61 +1023,61 @@ public final class PsiBridgeService implements Disposable {
     private static final String UNREADABLE_FILE = "\u0000__agentbridge_unreadable__";
 
     private @Nullable String readCurrentFileText(@NotNull String path) {
-        com.intellij.openapi.vfs.VirtualFile vf = com.intellij.openapi.application.ReadAction.compute(
+        VirtualFile vf = PlatformApiCompat.readActionCompute(
             () -> ToolUtils.resolveVirtualFile(project, path));
         if (vf == null) return null;
-        String docText = com.intellij.openapi.application.ReadAction.compute(() -> {
-            com.intellij.openapi.editor.Document doc =
-                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+        String docText = PlatformApiCompat.readActionCompute(() -> {
+            Document doc =
+                FileDocumentManager.getInstance().getDocument(vf);
             return doc != null ? doc.getText() : null;
         });
         if (docText != null) return docText;
         try {
-            return com.intellij.openapi.vfs.VfsUtilCore.loadText(vf);
+            return VfsUtilCore.loadText(vf);
         } catch (Exception e) {
             return UNREADABLE_FILE;
         }
     }
 
     @NotNull
-    private com.github.catatafishen.agentbridge.bridge.PermissionResponse askViaChatPanel(
+    private PermissionResponse askViaChatPanel(
         String displayName, String reqId, String argsJson,
-        com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider promptProvider)
-        throws java.util.concurrent.TimeoutException, InterruptedException, java.util.concurrent.ExecutionException {
-        java.util.concurrent.CompletableFuture<com.github.catatafishen.agentbridge.bridge.PermissionResponse> future =
-            new java.util.concurrent.CompletableFuture<>();
+        PermissionPromptProvider promptProvider)
+        throws TimeoutException, InterruptedException, ExecutionException {
+        CompletableFuture<PermissionResponse> future =
+            new CompletableFuture<>();
         EdtUtil.invokeLater(() ->
             promptProvider.showPermissionPrompt(reqId, displayName, argsJson, future::complete)
         );
-        return future.get(120, java.util.concurrent.TimeUnit.SECONDS);
+        return future.get(120, TimeUnit.SECONDS);
     }
 
     @NotNull
-    private com.github.catatafishen.agentbridge.bridge.PermissionResponse askViaModalDialog(
+    private PermissionResponse askViaModalDialog(
         String displayName, @Nullable JsonObject arguments)
-        throws java.util.concurrent.TimeoutException, InterruptedException, java.util.concurrent.ExecutionException {
+        throws TimeoutException, InterruptedException, ExecutionException {
         // Must NOT use EdtUtil.invokeAndWait here: the modal detector in EdtUtil.pollUntilDone
         // detects the dialog it just opened and throws after ~1.5 s, leaving the dialog open
         // as an orphan. Use invokeLater + CompletableFuture instead so the background thread
         // waits for the user's actual response without triggering the modal blocker check.
         String message = "<html><b>Allow: " + StringUtil.escapeXmlEntities(displayName) + "</b><br><br>"
             + buildArgSummary(arguments != null ? arguments : new com.google.gson.JsonObject()) + "</html>";
-        java.util.concurrent.CompletableFuture<Integer> choiceFuture = new java.util.concurrent.CompletableFuture<>();
+        CompletableFuture<Integer> choiceFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().invokeLater(() -> {
             int choice = Messages.showYesNoDialog(
                 project, message, "Tool Permission Request",
                 "Allow", "Deny", Messages.getQuestionIcon()
             );
             choiceFuture.complete(choice);
-        }, com.intellij.openapi.application.ModalityState.defaultModalityState());
-        int choice = choiceFuture.get(120, java.util.concurrent.TimeUnit.SECONDS);
+        }, ModalityState.defaultModalityState());
+        int choice = choiceFuture.get(120, TimeUnit.SECONDS);
         return choice == Messages.YES
-            ? com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ONCE
-            : com.github.catatafishen.agentbridge.bridge.PermissionResponse.DENY;
+            ? PermissionResponse.ALLOW_ONCE
+            : PermissionResponse.DENY;
     }
 
     private boolean isAutopilotSelected() {
-        String stored = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project)
+        String stored = ActiveAgentManager.getInstance(project)
             .getSettings().getSessionOptionValue(AutopilotPolicy.OPTION_KEY);
         return AutopilotPolicy.isAutopilot(stored);
     }
@@ -1144,18 +1249,18 @@ public final class PsiBridgeService implements Disposable {
      * or -1 if the document is not loaded or the file is null.
      * Must be called inside a read action (or from EDT); wraps itself if needed.
      */
-    private static long getDocumentStamp(@Nullable com.intellij.openapi.vfs.VirtualFile vf) {
+    private static long getDocumentStamp(@Nullable VirtualFile vf) {
         if (vf == null) return -1L;
         return ApplicationManager.getApplication().runReadAction((Computable<Long>) () -> {
-            com.intellij.openapi.editor.Document doc =
-                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+            Document doc =
+                FileDocumentManager.getInstance().getDocument(vf);
             return doc != null ? doc.getModificationStamp() : -1L;
         });
     }
 
     private String appendAutoHighlights(
         String toolName, String writeResult, String path, DaemonWaiter preWriteWaiter) {
-        com.intellij.openapi.vfs.VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
+        VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
         // Snapshot whether the file was open BEFORE we do anything, so the finally block
         // knows whether to close it. (followFileIfEnabled uses invokeLater so the open may not
         // be visible yet — we intentionally use the current state here.)
@@ -1214,7 +1319,7 @@ public final class PsiBridgeService implements Disposable {
         String toolName,
         String writeResult,
         String path,
-        @Nullable com.intellij.openapi.vfs.VirtualFile vf) {
+        @Nullable VirtualFile vf) {
 
         if (vf == null) vf = ToolUtils.resolveVirtualFile(project, path);
         if (vf == null) return writeResult;
@@ -1224,7 +1329,7 @@ public final class PsiBridgeService implements Disposable {
         // the current stamp itself while rejecting all prior versions.
         long postDrainStamp = getDocumentStamp(vf) - 1;
 
-        com.intellij.openapi.vfs.VirtualFile target = vf;
+        VirtualFile target = vf;
         try (DaemonWaiter freshWaiter = new DaemonWaiter(project, vf, postDrainStamp)) {
             // Explicitly restart daemon analysis to guarantee a fresh pass fires after
             // all writes. replace_symbol_body starts that pass synchronously so a queued
@@ -1304,7 +1409,7 @@ public final class PsiBridgeService implements Disposable {
 
     private DaemonWaiter resolveActiveWaiter(
         DaemonWaiter preWriteWaiter,
-        @Nullable com.intellij.openapi.vfs.VirtualFile vf,
+        @Nullable VirtualFile vf,
         String path,
         boolean requireFreshAnalysis) {
         boolean alreadyOpen = vf != null
@@ -1325,7 +1430,7 @@ public final class PsiBridgeService implements Disposable {
         return fresh;
     }
 
-    private void restartDaemonAnalysis(@NotNull com.intellij.openapi.vfs.VirtualFile vf) {
+    private void restartDaemonAnalysis(@NotNull VirtualFile vf) {
         // Match get_compilation_errors' freshness sequence: restart synchronously after subscribing
         // so no queued pre-write daemon result can be mistaken for the replacement's diagnostics.
         ApplicationManager.getApplication().runReadAction(() -> {
@@ -1351,11 +1456,11 @@ public final class PsiBridgeService implements Disposable {
      * {@code docs/bugs/OPENFILE-TRANSACTIONGUARD-WARNING.md} for the full analysis and a
      * candidate JetBrains feature request.
      */
-    private void openFileSilently(@Nullable com.intellij.openapi.vfs.VirtualFile vf, String path) {
+    private void openFileSilently(@Nullable VirtualFile vf, String path) {
         CompletableFuture<Void> opened = new CompletableFuture<>();
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
             try {
-                com.intellij.openapi.vfs.VirtualFile target = vf != null
+                VirtualFile target = vf != null
                     ? vf : ToolUtils.resolveVirtualFile(project, path);
                 if (target != null) {
                     com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
@@ -1374,7 +1479,7 @@ public final class PsiBridgeService implements Disposable {
             }
         });
         try {
-            opened.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            opened.get(5, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.info("openFileSilently interrupted for " + path);
@@ -1387,7 +1492,7 @@ public final class PsiBridgeService implements Disposable {
      * Closes {@code vf} in the editor, dispatching to the EDT if needed.
      * No-op if the file is not currently open.
      */
-    private void closeFileSilently(@NotNull com.intellij.openapi.vfs.VirtualFile vf) {
+    private void closeFileSilently(@NotNull VirtualFile vf) {
         ApplicationManager.getApplication().invokeLater(() ->
             com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).closeFile(vf));
     }
@@ -1427,7 +1532,7 @@ public final class PsiBridgeService implements Disposable {
          *                      accept any daemon pass (e.g. for freshly created files where the write
          *                      has already happened before this waiter is constructed).
          */
-        DaemonWaiter(Project proj, @Nullable com.intellij.openapi.vfs.VirtualFile targetFile,
+        DaemonWaiter(Project proj, @Nullable VirtualFile targetFile,
                      long preWriteStamp) {
             disconnect = PlatformApiCompat.subscribeDaemonListener(proj,
                 new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
@@ -1466,7 +1571,7 @@ public final class PsiBridgeService implements Disposable {
 
         boolean await() throws InterruptedException {
             // Phase 1: wait for the first qualifying daemon pass (up to 5s)
-            if (!firstPassLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            if (!firstPassLatch.await(5, TimeUnit.SECONDS)) {
                 LOG.info("Auto-highlights: daemon wait timed out");
                 return false;
             }

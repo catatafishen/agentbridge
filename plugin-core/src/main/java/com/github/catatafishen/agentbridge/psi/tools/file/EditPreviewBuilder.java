@@ -54,6 +54,11 @@ public final class EditPreviewBuilder {
                           @NotNull String newText) {
     }
 
+    /** Whether calls to this MCP tool get an edit preview in their approval prompt. */
+    public static boolean isPreviewableTool(@Nullable String toolName) {
+        return "write_file".equals(toolName) || "edit_text".equals(toolName);
+    }
+
     /**
      * Computes the before/after texts for a {@code write_file} / {@code edit_text}
      * call. {@code currentText} is the file's current content ({@code null} when the

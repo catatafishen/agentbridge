@@ -843,7 +843,10 @@ public final class McpProtocolHandler {
                 return getFutureResult(future, workerThread, toolName, "self-managed wait");
             }
             int initialTimeoutSeconds = Math.max(1, ChatInputSettings.getInstance().getToolTimeoutSeconds());
-            return future.get(initialTimeoutSeconds, TimeUnit.SECONDS);
+            // Time spent on an approval card (or queued behind one) is not run time: the
+            // "still running" dialog must not pop up over a prompt the user is reading.
+            return ToolRunTimeout.await(future, TimeUnit.SECONDS.toNanos(initialTimeoutSeconds),
+                () -> bridge.isAwaitingUserPermission(workerThread.get()), ToolRunTimeout.DEFAULT_POLL_NANOS);
         } catch (TimeoutException e) {
             int elapsedSeconds = (int) ((System.currentTimeMillis() - startMs) / 1000);
             return waitAfterTimeout(future, workerThread, toolName, displayName, elapsedSeconds);
