@@ -17,7 +17,6 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Callbacks the orchestrator invokes back into the UI layer for side-effects it cannot own.
@@ -77,7 +76,10 @@ class PromptOrchestrator(
         const val STOPPED_BY_USER = "Stopped by user"
         const val BACKGROUND_RUNNING_NOTE =
             "Working in the background. The main agent reports the result when the sub-agent finishes."
-        const val BACKGROUND_REPORTED_NOTE = "✓ Finished. The main agent's report follows."
+        const val BACKGROUND_COMPLETED_NOTE = "✓ Finished. The main agent's report follows."
+        const val BACKGROUND_FAILED_NOTE = "✖ The sub-agent failed"
+        const val BACKGROUND_INTERRUPTED_NOTE = "✖ The sub-agent was interrupted."
+        const val BACKGROUND_CONTINUED_NOTE = "✓ A follow-up continues this sub-agent's work below."
         const val BACKGROUND_QUIET_NOTE = "✓ No more activity from the agent, so this is treated as finished."
         const val BACKGROUND_STOPPED_NOTE = "✖ $STOPPED_BY_USER"
         const val BACKGROUND_SESSION_ENDED_NOTE = "✖ The session ended before the sub-agent reported."
@@ -183,19 +185,13 @@ class PromptOrchestrator(
     private val activeSubAgentId: String? get() = activeSubAgentStack.lastOrNull()
 
     /**
-     * Sub-agents still working after their tool call completed. Kept across turns: such a sub-agent
-     * outlives the turn that started it, and its report arrives after that turn has ended.
+     * Sub-agents with sessions of their own. Kept across turns: a background sub-agent outlives the turn
+     * that started it.
      */
-    private val backgroundSubAgents = BackgroundSubAgents()
+    private val subAgentSessions = SubAgentSessions()
 
-    /** What each sub-agent in flight was asked to do, by chat record id; matches a background sub-agent's tool calls. */
-    private val subAgentDescriptions = ConcurrentHashMap<String, String>()
-
-    /**
-     * Set when agent activity arrives after the turn ended. The main agent's next text is then the
-     * report of a background sub-agent: it speaks after its turn only when something wakes it.
-     */
-    private val awaitingBackgroundReport = AtomicBoolean(false)
+    /** Child sessions already logged as having no sub-agent entry, so each is logged once. */
+    private val unroutedChildSessions = ConcurrentHashMap.newKeySet<String>()
     private var pendingBanner: PendingBanner? = null
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
@@ -229,12 +225,8 @@ class PromptOrchestrator(
         // after this turn ends (background sub-agent still running). Suppress it if the
         // user cancelled the turn — residual "cancelled" messages from the remote agent
         // must not be misreported as a background sub-agent still running.
-        awaitingBackgroundReport.set(false)
         agentManager.client.setFirstPostTurnCallback {
-            if (!stopped) {
-                callbacks.onPostTurnBackgroundDetected()
-                awaitingBackgroundReport.set(true)
-            }
+            if (!stopped) callbacks.onPostTurnBackgroundDetected()
         }
         agentManager.client.setPostTurnQuietCallback {
             finishBackgroundSubAgents(MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_QUIET_NOTE)
@@ -490,7 +482,6 @@ class PromptOrchestrator(
         turnHadContent = false
         lastStreamBlockType = StreamBlockType.NONE
         activeSubAgentStack.clear()
-        subAgentDescriptions.clear()
         // Reset nudgesHeld so nudges from the previous turn are not permanently suppressed.
         // nudgesHeld is cleared automatically when activeSubAgentStack goes empty (see updateToolCallUi),
         // but if a turn ended with a stuck sub-agent (e.g. agent stopped mid-sub-agent, completion never
@@ -802,12 +793,6 @@ class PromptOrchestrator(
         when (update) {
             is SessionUpdate.AgentMessageChunk -> {
                 turnHadContent = true
-                if (awaitingBackgroundReport.compareAndSet(true, false) && !stopped) {
-                    // Several sub-agents' reports cannot be told apart; those end when the window closes.
-                    backgroundSubAgents.takeIfOnlyOne()?.let {
-                        finishBackgroundSubAgent(it, MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_REPORTED_NOTE)
-                    }
-                }
                 val text = update.text()
                 when (lastStreamBlockType) {
                     StreamBlockType.THOUGHT -> {
@@ -934,6 +919,83 @@ class PromptOrchestrator(
 
             is SessionUpdate.UserMessageChunk -> { /* replayed user messages during session/load — no-op during streaming */
             }
+
+            is SessionUpdate.ChildSessionUpdate -> handleChildSessionUpdate(update)
+
+            is SessionUpdate.ChildSessionStatus -> handleChildSessionStatus(update)
+        }
+    }
+
+    /**
+     * An update from a sub-agent's own session. Its text and tool calls go to the sub-agent's section and
+     * leave the main agent's open bubble alone. Tool call updates find their chip by id, wherever it is, so
+     * they take the usual path.
+     */
+    private fun handleChildSessionUpdate(update: SessionUpdate.ChildSessionUpdate) {
+        val inner = update.update()
+        // A nested sub-agent gets an entry of its own, which its own session is then matched to.
+        if (inner is SessionUpdate.ToolCallUpdate || (inner is SessionUpdate.ToolCall && inner.isSubAgent)) {
+            handlePromptStreamingUpdate(inner)
+            return
+        }
+        val owner = subAgentSessions.ownerOf(update.childSessionId(), update.title())
+        if (owner == null) {
+            logUnroutedChildSession(update.childSessionId(), update.title())
+            return
+        }
+        when (inner) {
+            is SessionUpdate.AgentMessageChunk -> {
+                turnHadContent = true
+                if (!stopped) consolePanel().appendSubAgentText(owner, inner.text())
+            }
+
+            is SessionUpdate.ToolCall -> {
+                turnHadContent = true
+                if (inner.toolCallId().isEmpty()) return
+                addSubAgentSectionToolCall(
+                    owner, SubAgentSessions.toolTitle(update.title(), inner.title()),
+                    inner.toolCallId(), inner.acpName(), inner.title(), inner.arguments(),
+                    inner.kind()?.value() ?: "other"
+                )
+            }
+
+            // The section has no place for the rest (reasoning, plans, usage, session settings), and they
+            // are not the main agent's.
+            else -> log.debug("Not showing ${inner.javaClass.simpleName} of child session ${update.childSessionId()}")
+        }
+    }
+
+    /** A sub-agent's session started, ran or finished; a background sub-agent that finished ends its chip. */
+    private fun handleChildSessionStatus(status: SessionUpdate.ChildSessionStatus) {
+        val sessionId = status.childSessionId()
+        if (subAgentSessions.ownerOf(sessionId, status.title()) == null) {
+            logUnroutedChildSession(sessionId, status.title())
+            return
+        }
+        if (!status.state().isFinished) return
+        val end = SubAgentSessions.SessionEnd(status.state(), status.error())
+        subAgentSessions.finish(sessionId, end)?.let { endBackgroundSubAgent(it, end) }
+    }
+
+    private fun endBackgroundSubAgent(finished: SubAgentSessions.Finished, end: SubAgentSessions.SessionEnd) {
+        when (end.state) {
+            SessionUpdate.ChildSessionState.COMPLETED ->
+                finishBackgroundSubAgent(finished, MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_COMPLETED_NOTE)
+
+            SessionUpdate.ChildSessionState.INTERRUPTED ->
+                finishBackgroundSubAgent(finished, MessageFormatter.ChipStatus.FAILED, BACKGROUND_INTERRUPTED_NOTE)
+
+            else -> finishBackgroundSubAgent(
+                finished, MessageFormatter.ChipStatus.FAILED,
+                end.error?.let { "$BACKGROUND_FAILED_NOTE: $it" } ?: "$BACKGROUND_FAILED_NOTE."
+            )
+        }
+    }
+
+    /** Logs, once per session, a sub-agent session that matches no sub-agent entry; its updates are not shown. */
+    private fun logUnroutedChildSession(sessionId: String, title: String?) {
+        if (unroutedChildSessions.add(sessionId)) {
+            log.warn("No sub-agent entry matches child session $sessionId titled '$title'; its updates are not shown")
         }
     }
 
@@ -989,11 +1051,7 @@ class PromptOrchestrator(
             return
         }
 
-        // OpenCode forwards a background sub-agent's tool calls as "<description>: <tool>".
-        val backgroundOwner = if (toolCall.isSubAgent) null else backgroundSubAgents.ownerOf(title)
-        if (backgroundOwner != null) {
-            addBackgroundSubAgentToolCall(backgroundOwner, toolCallId, acpName, title, arguments, kind)
-        } else if (toolCall.isSubAgent) {
+        if (toolCall.isSubAgent) {
             val agentType = toolCall.agentType() ?: return
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
@@ -1010,7 +1068,7 @@ class PromptOrchestrator(
             val description = reportedDescription ?: title.ifBlank { "Sub-agent task" }
             val record =
                 acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT)
-            reportedDescription?.let { subAgentDescriptions[record.recordId] = it }
+            subAgentSessions.started(record.recordId, reportedDescription)
             consolePanel().addSubAgentEntry(record.recordId, agentType, description, toolCall.subAgentPrompt())
         } else if (activeSubAgentId != null) {
             turnToolCallCount++
@@ -1049,19 +1107,19 @@ class PromptOrchestrator(
     }
 
     /**
-     * Shows a tool call of a background sub-agent in that sub-agent's section, under the tool's own name.
-     * OpenCode never completes these; [finishBackgroundSubAgent] does, when the sub-agent is done.
+     * Shows a tool call of the sub-agent [ownerRecordId] in its section, as [toolTitle]. The sub-agent also
+     * remembers it, so that [finishBackgroundSubAgent] can end it if the agent never does.
      */
-    private fun addBackgroundSubAgentToolCall(
-        owner: BackgroundSubAgents.Owner, toolCallId: String, acpName: String?, title: String,
+    private fun addSubAgentSectionToolCall(
+        ownerRecordId: String, toolTitle: String, toolCallId: String, acpName: String?, title: String,
         arguments: String?, kind: String
     ) {
         turnToolCallCount++
         callbacks.onTimerIncrementToolCalls()
         val record =
             acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL)
-        backgroundSubAgents.addChildTool(owner.recordId, BackgroundSubAgents.ChildTool(toolCallId, record.recordId))
-        consolePanel().addSubAgentToolCall(owner.recordId, record.recordId, owner.toolTitle, arguments, kind)
+        subAgentSessions.addChildTool(ownerRecordId, SubAgentSessions.ChildTool(toolCallId, record.recordId))
+        consolePanel().addSubAgentToolCall(ownerRecordId, record.recordId, toolTitle, arguments, kind)
     }
 
     private fun acpRegisterToolCall(
@@ -1148,7 +1206,7 @@ class PromptOrchestrator(
      */
     private fun applySubAgentDetails(recordId: String, arguments: String?) {
         val details = SubAgentArguments.parse(arguments) ?: return
-        details.description?.let { subAgentDescriptions[recordId] = it }
+        subAgentSessions.describe(recordId, details.description)
         consolePanel().updateSubAgentDetails(recordId, details.agentType, details.description, details.prompt)
     }
 
@@ -1194,8 +1252,8 @@ class PromptOrchestrator(
 
     /**
      * The sub-agent's tool call has completed or failed. Usually the sub-agent is done; one started in the
-     * background ([AbstractClient.isBackgroundSubAgentLaunch]) keeps its chip running until
-     * [finishBackgroundSubAgent].
+     * background ([AbstractClient.backgroundSubAgentSessionId]) keeps its chip running until its session
+     * reports that it finished ([handleChildSessionStatus]).
      */
     private fun endSubAgentToolCall(toolCallId: String, recordId: String, uiStatus: String, update: ToolCallUiUpdate) {
         activeSubAgentStack.remove(toolCallId)
@@ -1209,16 +1267,22 @@ class PromptOrchestrator(
                 agentManager.activeProfile.clientCssClass
             )
         }
-        val description = subAgentDescriptions.remove(recordId)
-        if (uiStatus == MessageFormatter.ChipStatus.COMPLETE &&
-            agentManager.client.isBackgroundSubAgentLaunch(update.result)
-        ) {
-            backgroundSubAgents.launched(recordId, description)
+        val backgroundSessionId = if (uiStatus == MessageFormatter.ChipStatus.COMPLETE) {
+            agentManager.client.backgroundSubAgentSessionId(update.result)
+        } else {
+            null
+        }
+        if (backgroundSessionId != null) {
+            subAgentSessions.launchedInBackground(recordId, backgroundSessionId)?.let {
+                finishBackgroundSubAgent(it, MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_CONTINUED_NOTE)
+            }
             consolePanel().updateSubAgentResult(
                 recordId, MessageFormatter.ChipStatus.RUNNING, BACKGROUND_RUNNING_NOTE, update.description
             )
+            subAgentSessions.takeEndedBeforeLaunch(recordId)?.let { (finished, end) -> endBackgroundSubAgent(finished, end) }
             return
         }
+        subAgentSessions.forget(recordId)
         consolePanel().updateSubAgentResult(
             recordId,
             uiStatus,
@@ -1231,14 +1295,14 @@ class PromptOrchestrator(
     }
 
     private fun finishBackgroundSubAgents(status: String, note: String) {
-        backgroundSubAgents.takeAll().forEach { finishBackgroundSubAgent(it, status, note) }
+        subAgentSessions.takeAll().forEach { finishBackgroundSubAgent(it, status, note) }
     }
 
     /**
      * Ends a background sub-agent's chip with [status] and replaces its "working in the background" note
      * with [note]. Its tool calls end with the same status unless the agent already completed them.
      */
-    private fun finishBackgroundSubAgent(sub: BackgroundSubAgents.Finished, status: String, note: String) {
+    private fun finishBackgroundSubAgent(sub: SubAgentSessions.Finished, status: String, note: String) {
         val tracker = ToolCallTracker.getInstance(project)
         val success = status == MessageFormatter.ChipStatus.COMPLETE
         for (child in sub.children) {

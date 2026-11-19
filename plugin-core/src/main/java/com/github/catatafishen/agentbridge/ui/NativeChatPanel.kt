@@ -17,6 +17,7 @@ import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.icons.AllIcons
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -532,6 +533,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var promptRow: JPanel? = null,
         var resultRow: JPanel? = null,
         var transcriptPanel: JPanel? = null,
+        /** The bubble [appendSubAgentText] streams into; null until text arrives and after each tool call. */
+        var liveTextPane: NativeMarkdownPane? = null,
     )
 
     private val subAgentSections = mutableMapOf<String, SubAgentSection>()
@@ -1282,11 +1285,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** Creates a sub-agent colored markdown bubble row; the caller adds it to a container. */
     private fun createSubAgentBubble(accent: Color, markdown: String): JPanel {
-        val pane = NativeMarkdownPane(fileNavigator).also {
-            it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
-            allMarkdownPanes += it
-        }
+        val pane = createSubAgentPane()
         pane.setCompleteMarkdown(markdown)
+        return createSubAgentBubbleRow(accent, pane)
+    }
+
+    private fun createSubAgentPane(): NativeMarkdownPane = NativeMarkdownPane(fileNavigator).also {
+        it.onHeightGrew = { if (autoScrollEnabled) scrollToBottom() }
+        allMarkdownPanes += it
+    }
+
+    private fun createSubAgentBubbleRow(accent: Color, pane: NativeMarkdownPane): JPanel {
         val bubbleRow = createBubble(
             NativeChatColors.agentBubbleBg(accent),
             explicitBorder = NativeChatColors.agentBubbleBorder(accent)
@@ -1373,7 +1382,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override fun setSubAgentTranscript(id: String, children: List<EntryData>) {
         val section = subAgentSections[id] ?: return
-        if (section.transcriptPanel != null) return
+        // A section that streamed its sub-agent's session already shows the transcript's text and tools.
+        if (section.transcriptPanel != null || section.liveTextPane != null) return
         // The result bubble already shows the sub-agent's final answer, which is also its last
         // text part; showing it in both places would duplicate it.
         val answer = section.resultRow?.let { findMarkdownPane(it)?.getRawText() }?.trim()
@@ -1412,6 +1422,24 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             return
         }
         addToolChipTo(section.chipStrip, toolId, title, arguments, kind)
+        section.liveTextPane = null
+        if (autoScrollEnabled) scrollToBottom()
+    }
+
+    override fun appendSubAgentText(subAgentId: String, text: String) {
+        val section = subAgentSections[subAgentId] ?: run {
+            LOG.warn("No sub-agent section $subAgentId for streamed sub-agent text; dropping ${text.length} chars")
+            return
+        }
+        val pane = section.liveTextPane ?: createSubAgentPane().also { pane ->
+            val bubble = rowContainer(createSubAgentBubbleRow(ChatTheme.SA_COLORS[section.colorIndex], pane))
+            // Keep the result bubble last, as in setSubAgentTranscript.
+            val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
+            if (resultIndex >= 0) section.contentBox.add(bubble, resultIndex) else section.contentBox.add(bubble)
+            section.liveTextPane = pane
+            section.contentBox.revalidate()
+        }
+        pane.appendMarkdown(text)
         if (autoScrollEnabled) scrollToBottom()
     }
 
@@ -2510,6 +2538,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     companion object {
+        private val LOG = Logger.getInstance(NativeChatPanel::class.java)
         private const val BUTTON_LABEL_MAX_CHARS = 40
         private const val ROW_SPACING = 8
 

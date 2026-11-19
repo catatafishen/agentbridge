@@ -572,6 +572,7 @@ class ChatToolWindowContent(
             is SessionUpdate.ToolCallUpdate -> handleToolCallUpdate(update)
             is SessionUpdate.Plan -> handlePlanUpdate(update)
             is SessionUpdate.ConfigOptionsChanged -> handleConfigOptionsChanged()
+            is SessionUpdate.ChildSessionUpdate -> handleClientUpdate(update.update())
             else -> Unit
         }
     }

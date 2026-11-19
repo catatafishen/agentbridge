@@ -25,7 +25,9 @@ public sealed interface SessionUpdate
     SessionUpdate.AvailableModesChanged,
     SessionUpdate.ConfigOptionsChanged,
     SessionUpdate.SessionInfoChanged,
-    SessionUpdate.Compaction {
+    SessionUpdate.Compaction,
+    SessionUpdate.ChildSessionUpdate,
+    SessionUpdate.ChildSessionStatus {
 
     // ── Enums ────────────────────────────────────────────────────────────────
 
@@ -381,6 +383,41 @@ public sealed interface SessionUpdate
      */
     record Compaction(@NotNull CompactionStatus status, boolean manual, @Nullable String error)
         implements SessionUpdate {
+    }
+
+    /**
+     * An update that a sub-agent's own session (an OpenCode child session) sent: its text, reasoning and
+     * tool calls. They belong in the sub-agent's section, not in the main agent's bubble.
+     *
+     * @param childSessionId the sub-agent's session id
+     * @param title          the sub-agent's session title (OpenCode uses the description the main agent gave
+     *                       the sub-agent), or null
+     * @param update         the update itself, parsed as if the sub-agent's session had sent it on its own
+     */
+    record ChildSessionUpdate(@NotNull String childSessionId, @Nullable String title, @NotNull SessionUpdate update)
+        implements SessionUpdate {
+    }
+
+    /**
+     * A sub-agent's session (an OpenCode child session) changed state, during the turn or after it.
+     *
+     * @param childSessionId the sub-agent's session id
+     * @param title          the sub-agent's session title, or null
+     * @param state          the new state
+     * @param error          why it failed, or null
+     */
+    record ChildSessionStatus(@NotNull String childSessionId, @Nullable String title,
+                              @NotNull ChildSessionState state, @Nullable String error)
+        implements SessionUpdate {
+    }
+
+    enum ChildSessionState {
+        CREATED, RUNNING, COMPLETED, FAILED, INTERRUPTED;
+
+        /** Whether the sub-agent has stopped working; a follow-up can make it run again. */
+        public boolean isFinished() {
+            return this == COMPLETED || this == FAILED || this == INTERRUPTED;
+        }
     }
 
     enum CompactionStatus {

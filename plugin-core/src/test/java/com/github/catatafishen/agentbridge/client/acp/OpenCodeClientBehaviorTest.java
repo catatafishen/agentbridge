@@ -76,6 +76,17 @@ class OpenCodeClientBehaviorTest {
     }
 
     @Test
+    void initializeAsksForChildSessionUpdatesAndKeepsTheStandardCapabilities() {
+        OpenCodeClient client = new OpenCodeClient(mock(Project.class));
+
+        JsonObject caps = GSON.toJsonTree(client.buildClientCapabilities()).getAsJsonObject();
+
+        assertTrue(caps.getAsJsonObject("_meta").get("opencode/child-session-updates").getAsBoolean());
+        assertTrue(caps.getAsJsonObject("fs").get("readTextFile").getAsBoolean());
+        assertTrue(caps.get("terminal").getAsBoolean());
+    }
+
+    @Test
     void getAvailableAgentsIncludesProjectAgentsWithoutShadowingBuiltIns() throws Exception {
         Project project = mock(Project.class);
         when(project.getBasePath()).thenReturn(tempDir.toString());

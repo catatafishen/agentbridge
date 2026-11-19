@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.protocol;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -9,9 +11,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("InitializeRequest and McpServerConfig")
 class InitializeRequestTest {
@@ -65,6 +69,33 @@ class InitializeRequestTest {
         @DisplayName("terminal is null")
         void terminalIsNull() {
             assertNull(caps.terminal());
+        }
+    }
+
+    @Nested
+    @DisplayName("ClientCapabilities._meta")
+    class ClientCapabilitiesMeta {
+
+        private final Gson gson = new Gson();
+
+        @Test
+        @DisplayName("is left out of the JSON when not set")
+        void omittedByDefault() {
+            JsonObject json = gson.toJsonTree(InitializeRequest.ClientCapabilities.standard()).getAsJsonObject();
+            assertFalse(json.has("_meta"));
+            assertFalse(json.has("meta"));
+        }
+
+        @Test
+        @DisplayName("withMeta sends it as _meta and keeps the other capabilities")
+        void sentAsUnderscoreMeta() {
+            var caps = InitializeRequest.ClientCapabilities.standard().withMeta(Map.of("vendor/feature", true));
+
+            JsonObject json = gson.toJsonTree(caps).getAsJsonObject();
+
+            assertTrue(json.getAsJsonObject("_meta").get("vendor/feature").getAsBoolean());
+            assertTrue(json.get("terminal").getAsBoolean());
+            assertTrue(json.getAsJsonObject("fs").get("writeTextFile").getAsBoolean());
         }
     }
 
