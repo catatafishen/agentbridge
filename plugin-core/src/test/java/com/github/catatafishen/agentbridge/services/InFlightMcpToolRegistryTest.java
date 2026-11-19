@@ -175,6 +175,42 @@ class InFlightMcpToolRegistryTest {
             "cancelInFlight must not latch — a worker registered afterward runs normally");
     }
 
+    @Test
+    void hasRunningWorkers_isTrueOnlyWhileAWorkerIsRegistered() {
+        Thread worker = new Thread(() -> { });
+        assertFalse(registry.hasRunningWorkers());
+
+        registry.registerWorker(worker);
+        assertTrue(registry.hasRunningWorkers());
+
+        registry.unregisterWorker(worker);
+        assertFalse(registry.hasRunningWorkers());
+    }
+
+    @Test
+    void lastWorkerActivityNanos_movesWhenAToolStartsAndWhenItFinishes() {
+        Thread worker = new Thread(() -> { });
+
+        long beforeStart = System.nanoTime();
+        registry.registerWorker(worker);
+        long started = registry.lastWorkerActivityNanos();
+        assertTrue(started - beforeStart >= 0, "a tool starting counts as activity");
+
+        long beforeFinish = System.nanoTime();
+        registry.unregisterWorker(worker);
+        assertTrue(registry.lastWorkerActivityNanos() - beforeFinish >= 0, "a tool finishing counts as activity");
+    }
+
+    @Test
+    void cancelInFlight_leavesNoRunningWorkers() {
+        Thread worker = new Thread(() -> { });
+        registry.registerWorker(worker);
+
+        registry.cancelInFlight("stopped by user");
+
+        assertFalse(registry.hasRunningWorkers());
+    }
+
     /**
      * Spawns a worker that registers itself and blocks, then runs {@code cancelAction} and
      * asserts the worker was interrupted and unblocked.
