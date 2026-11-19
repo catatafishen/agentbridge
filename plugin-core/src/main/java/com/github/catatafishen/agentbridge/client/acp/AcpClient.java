@@ -217,6 +217,9 @@ public abstract class AcpClient extends AbstractClient {
     /** Whether agent activity dropped after the post-turn window closed has been logged yet. */
     private final AtomicBoolean lateActivityDropLogged = new AtomicBoolean(false);
 
+    /** Fired when the post-turn window closes because the agent went quiet; see {@link #setPostTurnQuietCallback}. */
+    private volatile @Nullable Runnable postTurnQuietCallback;
+
     /**
      * Conversation history replayed by the agent during {@code session/load}.
      * Non-null and non-empty when the agent successfully restored a session with
@@ -1166,8 +1169,15 @@ public abstract class AcpClient extends AbstractClient {
      * send nothing over ACP while it works (OpenCode); see {@link PostTurnWindow}.
      */
     private void checkPostTurnWindow(long generation) {
+        if (!closePostTurnWindowIfQuiet(generation)) return;
+        Runnable quietCallback = postTurnQuietCallback;
+        if (quietCallback != null) quietCallback.run();
+    }
+
+    /** @return whether the window closed; the caller then notifies listeners outside the lock */
+    private boolean closePostTurnWindowIfQuiet(long generation) {
         synchronized (postTurnLock) {
-            if (!postTurnActive || generation != postTurnGeneration) return;
+            if (!postTurnActive || generation != postTurnGeneration) return false;
             InFlightMcpToolRegistry tools = project == null || project.isDisposed()
                 ? null : InFlightMcpToolRegistry.getInstance(project);
             long now = System.nanoTime();
@@ -1179,12 +1189,13 @@ public abstract class AcpClient extends AbstractClient {
                 PostTurnWindow.QUIET_NANOS);
             if (delay > 0) {
                 schedulePostTurnCheck(generation, delay);
-                return;
+                return false;
             }
             LOG.info(displayName() + ": no agent message or tool call for "
                 + TimeUnit.NANOSECONDS.toSeconds(PostTurnWindow.QUIET_NANOS)
                 + " s after the turn ended; later messages are not shown");
             clearPostTurnState();
+            return true;
         }
     }
 
@@ -1215,6 +1226,11 @@ public abstract class AcpClient extends AbstractClient {
     @Override
     public void setFirstPostTurnCallback(@Nullable Runnable callback) {
         pendingPostTurnCallback.set(callback);
+    }
+
+    @Override
+    public void setPostTurnQuietCallback(@Nullable Runnable callback) {
+        postTurnQuietCallback = callback;
     }
 
     /**
