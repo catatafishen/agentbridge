@@ -7,14 +7,15 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Parses OpenCode's own compaction marker.
+ * Parses OpenCode's own compaction marker: the fallback for OpenCode versions that do not support
+ * the standard ACP {@code compaction_update} (which AgentBridge parses in {@link AcpMessageParser}
+ * and requests by advertising {@code clientCapabilities.session.compaction}).
  * <p>
- * To clients that do not advertise the standard ACP {@code session.compaction} capability, OpenCode
- * reports a compaction (including a manual {@code /compact}) as a {@code session_info_update}
- * carrying {@code _meta["opencode/compaction"] = {status, messageId, reason, error?}} instead of the
- * standard {@code compaction_update}; the summary is deliberately not sent as message text. Without
- * handling it a {@code /compact} turn looks empty (issue #1240). See OpenCode
- * {@code packages/cli/src/acp/compaction.ts}.
+ * To clients that do not advertise that capability, OpenCode reports a compaction (including a
+ * manual {@code /compact}) as a {@code session_info_update} carrying
+ * {@code _meta["opencode/compaction"] = {status, messageId, reason, error?}}; the summary is
+ * deliberately not sent as message text. Without handling it a {@code /compact} turn looks empty
+ * (issue #1240). See OpenCode {@code packages/cli/src/acp/compaction.ts}.
  */
 final class OpenCodeCompactionMarker {
 
@@ -37,10 +38,11 @@ final class OpenCodeCompactionMarker {
         JsonObject marker = markerEl.getAsJsonObject();
 
         SessionUpdate.CompactionStatus status = SessionUpdate.CompactionStatus.fromWire(string(marker, "status"));
-        if (status == null) return null;
+        // OpenCode only sends started / completed / failed; anything else is not a marker we understand.
+        if (status == null || status == SessionUpdate.CompactionStatus.UNKNOWN) return null;
         boolean manual = "manual".equals(string(marker, "reason"));
         String error = status == SessionUpdate.CompactionStatus.FAILED ? errorMessage(marker.get("error")) : null;
-        return new SessionUpdate.Compaction(status, manual, error);
+        return new SessionUpdate.Compaction(null, status, manual, error, null);
     }
 
     private static @Nullable String errorMessage(@Nullable JsonElement error) {
