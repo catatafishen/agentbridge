@@ -415,6 +415,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var workingStartMs = 0L
     private val workingTimer = Timer(1000) { updateWorkingLabel() }.apply { isRepeats = true }
 
+    /** Ids of the unanswered permission cards shown while the current working indicator exists. */
+    private val cardsHidingWorkingIndicator = HashSet<String>()
+
     /** True when the indicator is counting elapsed/total time waiting for a prompt_user response. */
     private var isWaitingMode = false
     private var waitStartMs = 0L
@@ -711,6 +714,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         waitLabelPrefix = "Waiting"
         waitTimeoutAction = null
         isWaitingMode = false
+        cardsHidingWorkingIndicator.clear()
         workingIndicatorWrapper?.let {
             contentPanel.remove(it)
             contentPanel.revalidate()
@@ -787,6 +791,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         waitStartMs = System.currentTimeMillis()
         waitDeadlineMs = deadlineEpochMs
         waitTimeoutAction = onTimeout
+        updateWorkingIndicatorVisibility()
     }
 
     override fun showSleepRequest(reqId: String, deadlineEpochMs: Long, controls: SleepControls) {
@@ -917,6 +922,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         waitExtendButton?.isVisible = false
         workingLabel?.text = "Working\u2026"
         if (!workingTimer.isRunning && workingLabel != null) workingTimer.start()
+        updateWorkingIndicatorVisibility()
     }
 
     /** Creates a markdown pane pre-filled with [text] and registers it for disposal. */
@@ -1805,7 +1811,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         reqId: String, toolDisplayName: String, description: String,
         onRespond: (PermissionResponse) -> Unit
     ) {
-        hideWorkingIndicator()
+        // Hidden, not removed, so its timer and countdown state survive the card.
+        if (workingIndicatorWrapper != null) {
+            cardsHidingWorkingIndicator += reqId
+            updateWorkingIndicatorVisibility()
+        }
         val parsed = PermissionRequestContent.parse(toolDisplayName, description)
         // Unified diff of the proposed edit renders as a collapsible card (see below);
         // its header carries the path and +/- stats, so those args must not also appear
@@ -1893,6 +1903,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 contentPanel.revalidate()
                 contentPanel.repaint()
                 addUserDecisionBubble(label)
+                onPermissionCardResolved(reqId)
                 // Close the editor diff tab opened for this request (auto-open or the
                 // card's "Open in editor" link); no-op when none was opened.
                 EditApprovalDiffTabs.getInstance(project).close(project, reqId)
@@ -1915,10 +1926,32 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             if (resolved.compareAndSet(false, true)) {
                 pendingPermissionResolvers.remove(reqId)
                 buttons.forEach { it.isEnabled = false }
+                onPermissionCardResolved(reqId)
                 contentPanel.revalidate()
                 contentPanel.repaint()
             }
         }
+    }
+
+    /**
+     * Hides the working indicator while a permission card waits on the user, but never during a sleep or
+     * ask-user countdown, whose buttons must stay reachable.
+     */
+    private fun updateWorkingIndicatorVisibility() {
+        val wrapper = workingIndicatorWrapper ?: return
+        val visible = isWaitingMode || cardsHidingWorkingIndicator.isEmpty()
+        if (wrapper.isVisible == visible) return
+        wrapper.isVisible = visible
+        contentPanel.revalidate()
+        if (visible && autoScrollEnabled) scrollToBottom()
+    }
+
+    /** Ignores cards shown before the current indicator: they never hid it. */
+    private fun onPermissionCardResolved(reqId: String) {
+        if (!cardsHidingWorkingIndicator.remove(reqId)) return
+        // The label counts from the agent's last activity; the time spent deciding is not activity.
+        if (cardsHidingWorkingIndicator.isEmpty() && !isWaitingMode) workingStartMs = System.currentTimeMillis()
+        updateWorkingIndicatorVisibility()
     }
 
     /** Display label for a permission decision, matching the card button texts. */
@@ -2027,6 +2060,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 pendingAskUserRespond.set(null)
                 waitExtendButton?.isVisible = false
                 workingLabel?.text = "\u23f1 Time expired"
+                updateWorkingIndicatorVisibility()
                 allButtons.forEach { it.isEnabled = false }
                 controlsRow?.let { contentPanel.remove(it) }
                 contentPanel.revalidate()
