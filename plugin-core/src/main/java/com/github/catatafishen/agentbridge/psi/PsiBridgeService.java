@@ -892,11 +892,11 @@ public final class PsiBridgeService implements Disposable {
                 : askViaModalDialog(displayName, arguments);
         } catch (TimeoutException e) {
             LOG.info("PSI Bridge: ASK timed out for " + toolName);
-            closeEditPreviewTab(reqId, preview);
+            retireUnansweredPrompt(reqId, preview, promptProvider);
             return "Error: Permission request timed out for tool '" + toolName + "'.";
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
-            closeEditPreviewTab(reqId, preview);
+            retireUnansweredPrompt(reqId, preview, promptProvider);
             return "Error: Permission request interrupted for tool '" + toolName + "'.";
         }
 
@@ -998,17 +998,15 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Closes the auto-opened editor diff tab for a permission request that failed
-     * without a user decision (timeout, interrupt): the request was answered on the
-     * agent side already, so a lingering tab would let the user keep reviewing a
-     * dead approval. No-op when no tab was opened (preview null) or none is keyed.
+     * Retires a permission request that failed without a user decision (timeout, interrupt): the
+     * tool call already got its error, so the chat card must stop accepting answers and the
+     * auto-opened editor diff tab, if any, must close.
      */
-    private void closeEditPreviewTab(String reqId,
-                                     @Nullable EditPreviewBuilder.Preview preview) {
-        if (preview == null) return;
+    private void retireUnansweredPrompt(String reqId, @Nullable EditPreviewBuilder.Preview preview,
+                                        @Nullable PermissionPromptProvider promptProvider) {
         if (project.isDisposed()) return;
-        EditApprovalDiffTabs
-            .getInstance(project).close(project, reqId);
+        if (promptProvider != null) promptProvider.expirePermissionPrompt(reqId);
+        if (preview != null) EditApprovalDiffTabs.getInstance(project).close(project, reqId);
     }
 
     /**
