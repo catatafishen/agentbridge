@@ -9,7 +9,8 @@ import java.util.List;
 
 /**
  * Pure preview builder for the Ask-permission bubble of the file-edit MCP tools
- * ({@code write_file} / {@code edit_text}): computes the whole-file before/after
+ * ({@code write_file} / {@code edit_text}, and {@code create_scratch_file} once its args are mapped
+ * to {@code write_file} shape by {@code CreateScratchFileTool.toWriteFileArgs}): computes the whole-file before/after
  * texts the proposed edit would produce, so the chat panels can render the same
  * collapsible diff card the ACP edit approvals use (args {@code path},
  * {@code diff}, {@code diffAdded}, {@code diffRemoved}, {@code oldText},
@@ -56,12 +57,18 @@ public final class EditPreviewBuilder {
 
     /** Whether calls to this MCP tool get an edit preview in their approval prompt. */
     public static boolean isPreviewableTool(@Nullable String toolName) {
-        return "write_file".equals(toolName) || "edit_text".equals(toolName);
+        return "write_file".equals(toolName) || "edit_text".equals(toolName)
+            || "create_scratch_file".equals(toolName);
+    }
+
+    /** The file a {@code write_file}-shaped call targets: {@code path}, else {@code file}. */
+    public static @Nullable String targetPath(@NotNull JsonObject args) {
+        String path = stringArg(args, "path");
+        return path != null ? path : stringArg(args, "file");
     }
 
     /**
-     * Computes the before/after texts for a {@code write_file} / {@code edit_text}
-     * call. {@code currentText} is the file's current content ({@code null} when the
+     * Computes the before/after texts for a {@code write_file}-shaped call. {@code currentText} is the file's current content ({@code null} when the
      * file does not exist — a new file), exactly as the tool itself would read it.
      * Returns {@code null} when the arguments do not describe a file edit, the edit
      * cannot be previewed (e.g. line range out of bounds), or the texts are equal.
@@ -69,8 +76,7 @@ public final class EditPreviewBuilder {
     public static @Nullable Preview buildPreview(@Nullable JsonObject args,
                                                  @Nullable String currentText) {
         if (args == null) return null;
-        String path = stringArg(args, "path");
-        if (path == null) path = stringArg(args, "file");
+        String path = targetPath(args);
         if (path == null || path.isBlank()) return null;
 
         if (args.has("content") && args.get("content").isJsonPrimitive()) {
@@ -311,7 +317,7 @@ public final class EditPreviewBuilder {
     }
 
     private static @NotNull List<String> splitLines(@Nullable String text) {
-        if (text == null) return List.of();
+        if (text == null || text.isEmpty()) return List.of();
         return List.of(text.split("\\R", -1));
     }
 

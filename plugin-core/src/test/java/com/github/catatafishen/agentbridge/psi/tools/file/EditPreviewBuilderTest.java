@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -24,13 +25,33 @@ class EditPreviewBuilderTest {
     // ── isPreviewableTool ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("only write_file and edit_text get an edit preview")
+    @DisplayName("only write_file, edit_text and create_scratch_file get an edit preview")
     void previewableTools() {
         assertTrue(EditPreviewBuilder.isPreviewableTool("write_file"));
         assertTrue(EditPreviewBuilder.isPreviewableTool("edit_text"));
+        assertTrue(EditPreviewBuilder.isPreviewableTool("create_scratch_file"));
         assertFalse(EditPreviewBuilder.isPreviewableTool("delete_file"));
         assertFalse(EditPreviewBuilder.isPreviewableTool("run_command"));
         assertFalse(EditPreviewBuilder.isPreviewableTool(null));
+    }
+
+    @Test
+    @DisplayName("an empty new file has no lines to add, so it gets no diff card")
+    void emptyNewFileHasNoDiff() {
+        assertNull(EditPreviewBuilder.boundedDiff(null, ""));
+        assertArrayEquals(new int[]{0, 0}, EditPreviewBuilder.changeStats(null, ""));
+        assertArrayEquals(new int[]{1, 0}, EditPreviewBuilder.changeStats("", "a"));
+    }
+
+    @Test
+    @DisplayName("targetPath prefers path over file")
+    void targetPathPrecedence() {
+        JsonObject a = args();
+        a.addProperty("file", "f.txt");
+        assertEquals("f.txt", EditPreviewBuilder.targetPath(a));
+        a.addProperty("path", "p.txt");
+        assertEquals("p.txt", EditPreviewBuilder.targetPath(a));
+        assertNull(EditPreviewBuilder.targetPath(args()));
     }
 
     // ── buildPreview: argument precedence ─────────────────────────────────────
