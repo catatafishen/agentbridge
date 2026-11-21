@@ -132,7 +132,7 @@ public final class CreateScratchFileTool extends EditorTool {
             }
             return null;
         } catch (InvalidPathException e) {
-            return "Invalid scratch file name '" + name + "': " + e.getMessage();
+            return "Scratch file name '" + name + "' is not a valid path: " + e.getMessage();
         }
     }
 
