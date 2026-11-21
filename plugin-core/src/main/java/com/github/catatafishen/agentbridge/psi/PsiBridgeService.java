@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptQueue;
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
 import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs;
+import com.github.catatafishen.agentbridge.psi.tools.editor.CreateScratchFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.file.EditPreviewBuilder;
 import com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
@@ -792,7 +793,7 @@ public final class PsiBridgeService implements Disposable {
      * agents that run tool calls in parallel would otherwise show several approval cards and
      * diff tabs at once. The 120 s prompt timeout starts only when the prompt is shown.
      * <p>
-     * A {@code write_file}/{@code edit_text} the user approved in a prompt keeps the turn
+     * An edit ({@link EditPreviewBuilder#isPreviewableTool}) the user approved in a prompt keeps the turn
      * (handed over through {@code promptTurn}) until its edit is applied, so the next prompt's
      * diff preview is built from the file after this edit rather than before it. The hold is
      * capped at {@link #MAX_EDIT_TURN_HOLD_SECONDS}: a write stuck on the write lock or the EDT
@@ -855,7 +856,7 @@ public final class PsiBridgeService implements Disposable {
         String reqId = UUID.randomUUID().toString();
 
         String resolvedQuestion = entry != null ? entry.resolvePermissionQuestion(arguments) : null;
-        com.google.gson.JsonObject context = new com.google.gson.JsonObject();
+        JsonObject context = new JsonObject();
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
             : "Can I use " + displayName + "?");
         if (arguments != null) context.add("args", arguments);
@@ -926,7 +927,7 @@ public final class PsiBridgeService implements Disposable {
     /**
      * Adds the edit-preview args ({@code path}, {@code diff}, {@code diffAdded},
      * {@code diffRemoved}, {@code oldText}, {@code newText}) to the Ask bubble
-     * context for {@code write_file}/{@code edit_text} calls, so both chat panels
+     * context for {@code write_file}/{@code edit_text}/{@code create_scratch_file} calls, so both chat panels
      * render the same collapsible diff card the ACP edit approvals show. Returns
      * the preview that was rendered ({@code null} for non-previewable calls) so the
      * caller can apply the auto-open setting. Runs on the pooled MCP worker thread
@@ -937,19 +938,19 @@ public final class PsiBridgeService implements Disposable {
      * blocking the permission ask.
      */
     private @Nullable EditPreviewBuilder.Preview appendEditPreviewArgs(
-            com.google.gson.JsonObject context, String toolName, @Nullable JsonObject arguments) {
+            JsonObject context, String toolName, @Nullable JsonObject arguments) {
         if (!EditPreviewBuilder.isPreviewableTool(toolName)) return null;
         if (arguments == null) return null;
         try {
-            String path = arguments.has("path") && arguments.get("path").isJsonPrimitive()
-                ? arguments.get("path").getAsString()
-                : arguments.has("file") && arguments.get("file").isJsonPrimitive()
-                ? arguments.get("file").getAsString() : null;
+            JsonObject editArgs = CreateScratchFileTool.TOOL_ID.equals(toolName)
+                ? CreateScratchFileTool.toWriteFileArgs(arguments) : arguments;
+            if (editArgs == null) return null;
+            String path = EditPreviewBuilder.targetPath(editArgs);
             if (path == null || path.isBlank()) return null;
             String currentText = readCurrentFileText(path);
             if (UNREADABLE_FILE.equals(currentText)) return null;
             EditPreviewBuilder.Preview preview =
-                EditPreviewBuilder.buildPreview(arguments, currentText);
+                EditPreviewBuilder.buildPreview(editArgs, currentText);
             if (preview == null) return null;
             String diff = EditPreviewBuilder.boundedDiff(preview.oldText(), preview.newText());
             if (diff == null) return null;
@@ -960,7 +961,7 @@ public final class PsiBridgeService implements Disposable {
             // never sends them either — its bubble context carries only card args).
             // Small scalar flags stay visible; they affect what the edit will do.
             Set<String> cardAbsorbed = Set.of(
-                "old_str", "new_str", "content", "start_line", "end_line", "file");
+                "old_str", "new_str", "content", "start_line", "end_line", "file", "name");
             for (var e : arguments.entrySet()) {
                 if (!cardAbsorbed.contains(e.getKey())) {
                     args.add(e.getKey(), e.getValue());
@@ -1061,7 +1062,7 @@ public final class PsiBridgeService implements Disposable {
         // as an orphan. Use invokeLater + CompletableFuture instead so the background thread
         // waits for the user's actual response without triggering the modal blocker check.
         String message = "<html><b>Allow: " + StringUtil.escapeXmlEntities(displayName) + "</b><br><br>"
-            + buildArgSummary(arguments != null ? arguments : new com.google.gson.JsonObject()) + "</html>";
+            + buildArgSummary(arguments != null ? arguments : new JsonObject()) + "</html>";
         CompletableFuture<Integer> choiceFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().invokeLater(() -> {
             int choice = Messages.showYesNoDialog(

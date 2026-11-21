@@ -3,9 +3,16 @@ package com.github.catatafishen.agentbridge.psi.tools.editor;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
+import com.github.catatafishen.agentbridge.psi.tools.file.EditPreviewBuilder;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import com.intellij.ide.scratch.ScratchFileService;
+import com.intellij.ide.scratch.ScratchRootType;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
@@ -332,6 +339,92 @@ public class EditorToolsTest extends BasePlatformTestCase {
         // Failure path (e.g. IO error in test env): must still be a descriptive error.
         assertTrue("Expected success or error response, got: " + result,
             result.startsWith("Created scratch file:") || result.startsWith("Error"));
+    }
+
+    /**
+     * The approval preview for {@code create_scratch_file} targets the file {@code execute} writes,
+     * and previews the call as a full-content {@code write_file}.
+     */
+    public void testCreateScratchFilePreviewArgsTargetTheWrittenFile() throws Exception {
+        JsonObject argsObj = new JsonObject();
+        argsObj.addProperty("name", "preview.md");
+        argsObj.addProperty("content", "# Preview");
+
+        JsonObject writeArgs = CreateScratchFileTool.toWriteFileArgs(argsObj);
+        assertNotNull(writeArgs);
+        assertEquals("# Preview", writeArgs.get("content").getAsString());
+        EditPreviewBuilder.Preview preview = EditPreviewBuilder.buildPreview(writeArgs, null);
+        assertNotNull("A new scratch file must preview as an all-added diff", preview);
+        assertNull(preview.oldText());
+
+        String result = createScratchFileTool.execute(argsObj);
+        assertTrue(result, result.startsWith("Created scratch file:"));
+        VirtualFile written = ScratchFileService.getInstance().findFile(
+            ScratchRootType.getInstance(), "preview.md", ScratchFileService.Option.existing_only);
+        assertNotNull(written);
+        assertEquals(written.getPath(), writeArgs.get("path").getAsString());
+    }
+
+    public void testCreateScratchFilePreviewArgsUseExecuteDefaults() {
+        JsonObject writeArgs = CreateScratchFileTool.toWriteFileArgs(new JsonObject());
+
+        assertNotNull(writeArgs);
+        assertTrue(writeArgs.get("path").getAsString().endsWith("/scratch.txt"));
+        assertEquals("", writeArgs.get("content").getAsString());
+    }
+
+    public void testCreateScratchFileRejectsNameOutsideScratchRoot() throws Exception {
+        JsonObject argsObj = new JsonObject();
+        argsObj.addProperty("name", "../escaped.txt");
+        argsObj.addProperty("content", "x");
+
+        assertNull("No preview for a name execute rejects", CreateScratchFileTool.toWriteFileArgs(argsObj));
+        String result = createScratchFileTool.execute(argsObj);
+        assertTrue(result, result.startsWith("Error: "));
+        assertTrue(result, result.contains("outside the scratches directory"));
+    }
+
+    public void testScratchNameValidation() {
+        String root = "/config/scratches";
+        assertNull(CreateScratchFileTool.invalidNameReason(root, "notes.md"));
+        assertNull(CreateScratchFileTool.invalidNameReason(root, "sub/notes.md"));
+        assertNotNull(CreateScratchFileTool.invalidNameReason(root, "../notes.md"));
+        assertNotNull(CreateScratchFileTool.invalidNameReason(root, "sub/../../notes.md"));
+        assertNotNull(CreateScratchFileTool.invalidNameReason(root, "."));
+        assertNotNull(CreateScratchFileTool.invalidNameReason(root, " "));
+    }
+
+    public void testCreateScratchFileNullArgsUseDefaults() throws Exception {
+        JsonObject argsObj = new JsonObject();
+        argsObj.add("name", JsonNull.INSTANCE);
+        argsObj.add("content", JsonNull.INSTANCE);
+
+        String result = createScratchFileTool.execute(argsObj);
+
+        assertTrue(result, result.startsWith("Created scratch file:") && result.contains("scratch.txt"));
+    }
+
+    /** An open scratch with unsaved edits is replaced through its Document, exactly as the diff showed. */
+    public void testCreateScratchFileReplacesUnsavedDocumentText() throws Exception {
+        JsonObject first = new JsonObject();
+        first.addProperty("name", "unsaved.md");
+        first.addProperty("content", "saved");
+        createScratchFileTool.execute(first);
+        VirtualFile file = ScratchFileService.getInstance().findFile(
+            ScratchRootType.getInstance(), "unsaved.md", ScratchFileService.Option.existing_only);
+        assertNotNull(file);
+        Document document = FileDocumentManager.getInstance().getDocument(file);
+        assertNotNull(document);
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> document.setText("unsaved edit"));
+
+        JsonObject second = new JsonObject();
+        second.addProperty("name", "unsaved.md");
+        second.addProperty("content", "agent\r\ntext");
+        String result = createScratchFileTool.execute(second);
+
+        assertTrue(result, result.startsWith("Created scratch file:"));
+        assertEquals("agent\ntext", document.getText());
+        assertFalse(FileDocumentManager.getInstance().isDocumentUnsaved(document));
     }
 
     // ── ListThemesTool ────────────────────────────────────────────────────────
