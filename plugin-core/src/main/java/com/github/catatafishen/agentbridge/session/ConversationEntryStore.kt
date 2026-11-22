@@ -176,16 +176,18 @@ class ConversationEntryStore {
     }
 
     /**
-     * Fills in the description and prompt of a sub-agent whose tool_call arrived without them.
+     * Fills in the type, description and prompt of a sub-agent whose tool_call arrived without them.
      *
      * @return false when no sub-agent entry with [id] is tracked
      */
-    fun updateSubAgentDetails(id: String, description: String?, prompt: String?): Boolean = synchronized(lock) {
-        val entry = _subAgentEntries[id] ?: return false
-        description?.takeIf { it.isNotBlank() }?.let { entry.description = it }
-        prompt?.takeIf { it.isNotBlank() }?.let { entry.prompt = it }
-        true
-    }
+    fun updateSubAgentDetails(id: String, agentType: String?, description: String?, prompt: String?): Boolean =
+        synchronized(lock) {
+            val entry = _subAgentEntries[id] ?: return false
+            agentType?.takeIf { it.isNotBlank() }?.let { entry.agentType = it }
+            description?.takeIf { it.isNotBlank() }?.let { entry.description = it }
+            prompt?.takeIf { it.isNotBlank() }?.let { entry.prompt = it }
+            true
+        }
 
     fun updateSubAgentResult(
         id: String,

@@ -215,14 +215,17 @@ class BroadcastChatPanel(
         dispatchUi { nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason) }
     }
 
-    override fun updateSubAgentDetails(id: String, description: String?, prompt: String?) {
-        if (entryStore.updateSubAgentDetails(id, description, prompt)) {
+    override fun updateSubAgentDetails(id: String, agentType: String?, description: String?, prompt: String?) {
+        if (entryStore.updateSubAgentDetails(id, agentType, description, prompt)) {
             // The row may already be persisted without them; this queued UPDATE follows its INSERT.
             ConversationService.getInstance(project).updateSubAgentDetailsAsync(
-                id, description?.takeIf { it.isNotBlank() }, prompt?.takeIf { it.isNotBlank() }
+                id,
+                agentType?.takeIf { it.isNotBlank() },
+                description?.takeIf { it.isNotBlank() },
+                prompt?.takeIf { it.isNotBlank() }
             )
         }
-        dispatchUi { nativePanel.updateSubAgentDetails(id, description, prompt) }
+        dispatchUi { nativePanel.updateSubAgentDetails(id, agentType, description, prompt) }
     }
 
     override fun setSubAgentTranscript(id: String, children: List<EntryData>) {

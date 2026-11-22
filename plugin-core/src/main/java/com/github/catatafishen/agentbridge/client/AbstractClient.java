@@ -382,6 +382,16 @@ public abstract class AbstractClient {
     }
 
     /**
+     * Whether a sub-agent tool call that completed with {@code subAgentResult} only started the sub-agent
+     * in the background. Such a sub-agent is still working; its result reaches the chat later as a
+     * message from the main agent.
+     * Default: false, for clients whose sub-agents always finish before their tool call completes.
+     */
+    public boolean isBackgroundSubAgentLaunch(@Nullable String subAgentResult) {
+        return false;
+    }
+
+    /**
      * Registers a one-shot callback that fires the first time an ACP message arrives
      * after the parent turn has ended (post-turn background mode).
      * Default: no-op for non-ACP clients.

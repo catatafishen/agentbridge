@@ -47,6 +47,7 @@ internal val SUB_AGENT_INFO = mapOf(
     AGENT_TYPE_GENERAL to SubAgentInfo("General"),
     // Legacy / lowercase aliases
     "explore" to SubAgentInfo("Explore"),
+    "general" to SubAgentInfo("General"),
     "scout" to SubAgentInfo("Scout"),
     "task" to SubAgentInfo("Task Agent"),
     // Custom intellij-* agents (recommended in startup instructions)

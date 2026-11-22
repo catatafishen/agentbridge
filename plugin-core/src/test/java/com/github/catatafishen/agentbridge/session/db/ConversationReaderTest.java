@@ -318,12 +318,13 @@ class ConversationReaderTest {
         writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
             new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", null, "t1", "t1"), early));
 
-        writer.updateSubAgentDetails("sa1", "Find the title", "Read README.md");
+        writer.updateSubAgentDetails("sa1", "explore", "Find the title", "Read README.md");
         // Blank/absent values keep what is stored.
-        writer.updateSubAgentDetails("sa1", null, null);
+        writer.updateSubAgentDetails("sa1", null, null, null);
 
         EntryData.SubAgent loaded =
             assertInstanceOf(EntryData.SubAgent.class, reader.loadEntries("sess-1").get(1));
+        assertEquals("explore", loaded.getAgentType());
         assertEquals("Find the title", loaded.getDescription());
         assertEquals("Read README.md", loaded.getPrompt());
     }

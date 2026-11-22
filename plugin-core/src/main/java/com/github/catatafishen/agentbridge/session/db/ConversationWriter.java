@@ -948,12 +948,13 @@ public final class ConversationWriter implements AutoCloseable {
     }
 
     /**
-     * Fills in a sub-agent's description and prompt after it was persisted without them (OpenCode
-     * reveals both in a later tool_call_update). Null arguments keep the stored value. Safe to call
+     * Fills in a sub-agent's type, description and prompt after it was persisted without them (OpenCode
+     * reveals them in a later tool_call_update). Null arguments keep the stored value. Safe to call
      * if the row does not exist yet (0 rows affected): the in-memory entry then already holds them.
      */
     public void updateSubAgentDetails(
         @NotNull String eventId,
+        @Nullable String agentType,
         @Nullable String description,
         @Nullable String prompt
     ) {
@@ -962,13 +963,15 @@ public final class ConversationWriter implements AutoCloseable {
             if (conn == null) return;
             try (PreparedStatement ps = conn.prepareStatement("""
                 UPDATE sub_agent_events SET
+                    agent_type = COALESCE(?, agent_type),
                     description = COALESCE(?, description),
                     prompt_text = COALESCE(?, prompt_text)
                 WHERE event_id = ?
                 """)) {
-                ps.setString(1, description);
-                ps.setString(2, prompt);
-                ps.setString(3, eventId);
+                ps.setString(1, agentType);
+                ps.setString(2, description);
+                ps.setString(3, prompt);
+                ps.setString(4, eventId);
                 ps.executeUpdate();
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to update sub-agent details for " + eventId, e);
