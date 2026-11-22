@@ -235,6 +235,46 @@ class OpenCodeClientStaticMethodsTest {
         }
 
         @Test
+        @DisplayName("returns the 'agent' of OpenCode 2.3's subagent tool")
+        void returnsSubagentToolAgent() {
+            JsonObject params = new JsonObject();
+            JsonObject rawInput = new JsonObject();
+            rawInput.addProperty("agent", "explore");
+            rawInput.addProperty("description", "Find usages");
+            params.add("rawInput", rawInput);
+
+            assertEquals("explore", OpenCodeClient.extractTaskSubAgentType(params));
+        }
+
+        @Test
+        @DisplayName("subagent_type takes precedence over agent")
+        void subagentTypeBeforeAgent() {
+            JsonObject params = new JsonObject();
+            JsonObject rawInput = new JsonObject();
+            rawInput.addProperty("agent", "general");
+            rawInput.addProperty("subagent_type", "explore");
+            params.add("rawInput", rawInput);
+
+            assertEquals("explore", OpenCodeClient.extractTaskSubAgentType(params));
+        }
+
+        @Test
+        @DisplayName("blank or non-text agent returns 'general'")
+        void blankOrNonTextAgent() {
+            JsonObject blank = new JsonObject();
+            JsonObject blankInput = new JsonObject();
+            blankInput.addProperty("agent", " ");
+            blank.add("rawInput", blankInput);
+            JsonObject nested = new JsonObject();
+            JsonObject nestedInput = new JsonObject();
+            nestedInput.add("agent", new JsonObject());
+            nested.add("rawInput", nestedInput);
+
+            assertEquals("general", OpenCodeClient.extractTaskSubAgentType(blank));
+            assertEquals("general", OpenCodeClient.extractTaskSubAgentType(nested));
+        }
+
+        @Test
         @DisplayName("empty rawInput returns 'general'")
         void emptyRawInput() {
             JsonObject params = new JsonObject();

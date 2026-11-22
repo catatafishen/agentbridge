@@ -127,10 +127,11 @@ interface ChatPanelApi : Disposable {
     )
 
     /**
-     * Supplies the description and prompt of a sub-agent whose entry was created without them
-     * (OpenCode reveals them in a later tool_call_update). Safe to call repeatedly with the same values.
+     * Supplies the type, description and prompt of a sub-agent whose entry was created without them
+     * (OpenCode reveals them in a later tool_call_update). Null or blank values keep what the entry has.
+     * Safe to call repeatedly with the same values.
      */
-    fun updateSubAgentDetails(id: String, description: String?, prompt: String?)
+    fun updateSubAgentDetails(id: String, agentType: String?, description: String?, prompt: String?)
 
     /**
      * Attaches the sub-agent's own conversation ([EntryData.Text], [EntryData.Thinking] and

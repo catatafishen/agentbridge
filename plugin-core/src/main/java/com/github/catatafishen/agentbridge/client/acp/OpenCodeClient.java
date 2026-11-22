@@ -10,6 +10,7 @@ import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -56,6 +57,10 @@ public final class OpenCodeClient extends AcpClient {
     private static final String PROJECT_AGENT_DIR = ".opencode/agent";
     private static final String PROJECT_AGENTS_DIR = ".opencode/agents";
     private static final String DEPLOYED_AGENT_DIR = ".agent-work/opencode/agent";
+    /** OpenCode's sub-agent tools: {@code task}, and {@code subagent} since OpenCode 2.3. */
+    private static final Set<String> SUB_AGENT_TOOLS = Set.of("task", "subagent");
+    /** rawInput keys naming the sub-agent: {@code subagent_type} ({@code task}), {@code agent} ({@code subagent}). */
+    private static final List<String> SUB_AGENT_TYPE_KEYS = List.of("subagent_type", "agent");
 
     /**
      * OpenCode version probed during {@link #finalizeCommand}, before the process is spawned.
@@ -702,23 +707,40 @@ public final class OpenCodeClient extends AcpClient {
     @Override
     protected String extractSubAgentType(@NotNull JsonObject params, @NotNull String resolvedTitle,
                                          @Nullable JsonObject argumentsObj) {
-        if ("task".equals(resolvedTitle)) {
+        if (SUB_AGENT_TOOLS.contains(resolvedTitle)) {
             return extractTaskSubAgentType(params);
         }
         return super.extractSubAgentType(params, resolvedTitle, argumentsObj);
     }
 
     /**
-     * Extracts the sub-agent type from a "task" tool call's rawInput.
-     * Returns the {@code subagent_type} value if present, otherwise {@code "general"}.
+     * Extracts the sub-agent type from the rawInput of a sub-agent tool call: {@code subagent_type} for
+     * the {@code task} tool, {@code agent} for the {@code subagent} tool of OpenCode 2.3. Returns
+     * {@code "general"} when neither is present, which is the case for the first tool_call: OpenCode
+     * sends it with empty input and the real type follows in a tool_call_update
+     * ({@link com.github.catatafishen.agentbridge.ui.SubAgentArguments}).
      */
     static String extractTaskSubAgentType(JsonObject params) {
         JsonObject raw = params.has(KEY_RAW_INPUT) && params.get(KEY_RAW_INPUT).isJsonObject()
             ? params.getAsJsonObject(KEY_RAW_INPUT) : null;
-        if (raw != null && raw.has("subagent_type")) {
-            return raw.get("subagent_type").getAsString();
+        if (raw != null) {
+            for (String key : SUB_AGENT_TYPE_KEYS) {
+                JsonElement value = raw.get(key);
+                if (value != null && value.isJsonPrimitive() && !value.getAsString().isBlank()) {
+                    return value.getAsString();
+                }
+            }
         }
         return GENERAL_AGENT;
+    }
+
+    /**
+     * OpenCode 2.3's {@code subagent} tool can run the sub-agent in the background: the tool call
+     * completes at once with a note saying so, and the sub-agent's report reaches the main agent later.
+     */
+    @Override
+    public boolean isBackgroundSubAgentLaunch(@Nullable String subAgentResult) {
+        return OpenCodeBackgroundSubAgent.isLaunchResult(subAgentResult);
     }
 
     @Override

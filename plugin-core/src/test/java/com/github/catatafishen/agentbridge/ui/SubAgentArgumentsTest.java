@@ -15,8 +15,38 @@ class SubAgentArgumentsTest {
             """);
 
         assertNotNull(details);
+        assertEquals("general", details.getAgentType());
         assertEquals("Find the title", details.getDescription());
         assertEquals("Read README.md", details.getPrompt());
+    }
+
+    @Test
+    void readsTheAgentOfOpenCodesSubagentTool() {
+        var details = SubAgentArguments.parse("""
+            {"agent": "explore", "description": "Find usages", "prompt": "Search for Foo"}
+            """);
+
+        assertNotNull(details);
+        assertEquals("explore", details.getAgentType());
+        assertEquals("Find usages", details.getDescription());
+    }
+
+    @Test
+    void subagentTypeTakesPrecedenceOverAgent() {
+        var details = SubAgentArguments.parse("{\"agent\": \"general\", \"subagent_type\": \"explore\"}");
+
+        assertNotNull(details);
+        assertEquals("explore", details.getAgentType());
+    }
+
+    @Test
+    void anAgentAloneIsADetail() {
+        var details = SubAgentArguments.parse("{\"agent\": \"explore\"}");
+
+        assertNotNull(details);
+        assertEquals("explore", details.getAgentType());
+        assertNull(details.getDescription());
+        assertNull(details.getPrompt());
     }
 
     @Test
@@ -25,6 +55,7 @@ class SubAgentArgumentsTest {
         var descriptionOnly = SubAgentArguments.parse("{\"description\": \"Short\"}");
 
         assertNotNull(promptOnly);
+        assertNull(promptOnly.getAgentType());
         assertNull(promptOnly.getDescription());
         assertEquals("Do it", promptOnly.getPrompt());
         assertNotNull(descriptionOnly);
@@ -35,7 +66,7 @@ class SubAgentArgumentsTest {
     @Test
     void emptyInputCarriesNothing() {
         assertNull(SubAgentArguments.parse("{}"), "OpenCode's first tool_call has an empty rawInput");
-        assertNull(SubAgentArguments.parse("{\"description\": \"  \", \"prompt\": \"\"}"));
+        assertNull(SubAgentArguments.parse("{\"description\": \"  \", \"prompt\": \"\", \"agent\": \" \"}"));
     }
 
     @Test

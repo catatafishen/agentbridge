@@ -521,7 +521,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private class SubAgentSection(
         val colorIndex: Int,
-        val label: String,
+        /** Display name of the sub-agent type; OpenCode reveals the real type only in a later update. */
+        var label: String,
+        /** What the sub-agent was asked to do, as shown in its chip title after the label. */
+        var description: String,
         val chipStrip: ChipStripPanel,
         val contentBox: JPanel,
         /** The row in [contentPanel] holding this section; the late prompt bubble is inserted before it. */
@@ -1171,7 +1174,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         prompt: String?, initialState: ChatPanelApi.SubAgentInitialState
     ) {
         if (currentTurn?.markdownPane != null) finalizeTurn()
-        val label = SUB_AGENT_INFO[agentType]?.displayName ?: agentType
+        val label = subAgentLabel(agentType)
         // Start allocation one slot past the main agent's color so sub-agents never share
         // the same accent as the parent (e.g. both "copilot" and the first sub-agent would
         // otherwise both land on SA_COLORS[0]).
@@ -1212,7 +1215,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             add(contentBox, BorderLayout.CENTER)
         }
         val sectionRow = addRow(sectionWrapper)
-        subAgentSections[id] = SubAgentSection(colorIndex, label, subChipStrip, contentBox, sectionRow, promptRow)
+        subAgentSections[id] =
+            SubAgentSection(colorIndex, label, description, subChipStrip, contentBox, sectionRow, promptRow)
 
         if (initialState.status != null) {
             updateSubAgentResult(
@@ -1222,16 +1226,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
+    private fun subAgentLabel(agentType: String): String = SUB_AGENT_INFO[agentType]?.displayName ?: agentType
+
     private fun createSubAgentPromptBubble(label: String, accent: Color, prompt: String): JPanel =
         createSubAgentBubble(accent, "**@$label** $prompt")
 
-    override fun updateSubAgentDetails(id: String, description: String?, prompt: String?) {
+    override fun updateSubAgentDetails(id: String, agentType: String?, description: String?, prompt: String?) {
         val section = subAgentSections[id] ?: return
-        if (!description.isNullOrBlank()) {
-            val chipTitle = "[${section.label}] $description"
-            toolCallData[id]?.title = chipTitle
-            allChips[id]?.updateTitle(chipTitle)
-        }
+        if (!agentType.isNullOrBlank()) section.label = subAgentLabel(agentType)
+        if (!description.isNullOrBlank()) section.description = description
+        val chipTitle = "[${section.label}] ${section.description}"
+        toolCallData[id]?.title = chipTitle
+        allChips[id]?.updateTitle(chipTitle)
         if (prompt.isNullOrBlank() || section.promptRow != null) return
         val at = contentPanel.getComponentZOrder(section.row)
         if (at < 0) return
