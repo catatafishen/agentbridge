@@ -30,7 +30,11 @@ class OpenCodeInlineAgentConfigTest {
     private static final int MCP_PORT = 8642;
 
     private static JsonObject configFor(String version) {
-        Map<String, String> env = OpenCodeClient.buildInitConfig(version, MCP_PORT);
+        return configFor(version, true);
+    }
+
+    private static JsonObject configFor(String version, boolean mcpCodeMode) {
+        Map<String, String> env = OpenCodeClient.buildInitConfig(version, MCP_PORT, () -> mcpCodeMode);
         String content = env.get("OPENCODE_CONFIG_CONTENT");
         assertNotNull(content, "OPENCODE_CONFIG_CONTENT must always be set");
         return JsonParser.parseString(content).getAsJsonObject();
@@ -137,6 +141,20 @@ class OpenCodeInlineAgentConfigTest {
     }
 
     @Test
+    void v2LeavesCodeModeToOpenCodeWhenEnabled() {
+        JsonObject server = configFor("2.4.0", true).getAsJsonObject("mcp")
+            .getAsJsonObject("servers").getAsJsonObject("agentbridge");
+        assertFalse(server.has("codemode"), "OpenCode's own default (Code Mode on) applies");
+    }
+
+    @Test
+    void v2DisablesCodeModeForAgentBridgeWhenTurnedOff() {
+        JsonObject server = configFor("2.4.0", false).getAsJsonObject("mcp")
+            .getAsJsonObject("servers").getAsJsonObject("agentbridge");
+        assertFalse(server.get("codemode").getAsBoolean());
+    }
+
+    @Test
     void v2SessionParamsCarryEmptyMcpServersNotMissing() {
         JsonObject params = new JsonObject();
         OpenCodeClient.applySessionMcpServers("2.2.5", MCP_PORT, params);
@@ -161,7 +179,15 @@ class OpenCodeInlineAgentConfigTest {
         for (String version : new String[] {"1.19.0", null}) {
             assertFalse(configFor(version).has("mcp"),
                 "only a confirmed v2 declares MCP in the launch config, version: " + version);
+            assertFalse(configFor(version, false).has("mcp"),
+                "Code Mode off must not add MCP config for version: " + version);
         }
+    }
+
+    @Test
+    void v2WithoutMcpPortGetsNoMcpEvenWithCodeModeOff() {
+        Map<String, String> env = OpenCodeClient.buildInitConfig("2.4.0", 0, () -> false);
+        assertFalse(JsonParser.parseString(env.get("OPENCODE_CONFIG_CONTENT")).getAsJsonObject().has("mcp"));
     }
 
     @Test

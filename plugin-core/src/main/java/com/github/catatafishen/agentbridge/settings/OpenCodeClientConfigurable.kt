@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.client.acp.AcpClient
+import com.github.catatafishen.agentbridge.client.acp.OpenCodeClient
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.github.catatafishen.agentbridge.services.GenericSettings
 import com.github.catatafishen.agentbridge.ui.ThemeColor
@@ -94,6 +95,17 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
                     { AgentProfileManager.getInstance().loadExtraCliArgs(AGENT_ID) },
                     { AgentProfileManager.getInstance().saveExtraCliArgs(AGENT_ID, it.trim()) }
                 )
+        }
+        row {
+            checkBox("Call AgentBridge tools through Code Mode")
+                .comment(
+                    "OpenCode 2 only. Code Mode wraps MCP tools in one <code>execute</code> tool that runs " +
+                        "generated code, so the chat shows a single gray chip instead of one colored chip per " +
+                        "tool. Unchecked, OpenCode offers every AgentBridge tool to the model directly: tool " +
+                        "chips show as usual, but every request carries all tool definitions, several times " +
+                        "more input tokens. Applies from the next OpenCode start."
+                )
+                .bindSelected(OpenCodeClient::isMcpCodeModeEnabled, OpenCodeClient::setMcpCodeModeEnabled)
         }
         row("Bubble color:") {
             cell(ThemeColorComboBox())
