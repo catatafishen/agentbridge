@@ -125,6 +125,36 @@ class ConversationServiceTest {
         }
     }
 
+    // ── findCurrentSessionId ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("findCurrentSessionId is null and creates nothing when no session is current")
+    void findCurrentSessionId_nullWithoutFile() {
+        ConversationService service = newService();
+
+        assertNull(service.findCurrentSessionId(tempDir.toString()));
+        assertFalse(currentSessionIdFile().toFile().exists(), "must not create a session id");
+    }
+
+    @Test
+    @DisplayName("findCurrentSessionId is null when the id file is blank")
+    void findCurrentSessionId_nullForBlankFile() throws IOException {
+        ConversationService service = newService();
+        Files.createDirectories(currentSessionIdFile().getParent());
+        Files.writeString(currentSessionIdFile(), "  \n");
+
+        assertNull(service.findCurrentSessionId(tempDir.toString()));
+    }
+
+    @Test
+    @DisplayName("findCurrentSessionId returns the persisted id")
+    void findCurrentSessionId_returnsPersistedId() {
+        ConversationService service = newService();
+        String id = service.getCurrentSessionId(tempDir.toString());
+
+        assertEquals(id, service.findCurrentSessionId(tempDir.toString()));
+    }
+
     // ── resetCurrentSessionId ─────────────────────────────────────────────
 
     @Test

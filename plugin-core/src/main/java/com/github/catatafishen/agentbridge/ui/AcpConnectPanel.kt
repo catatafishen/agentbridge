@@ -60,6 +60,17 @@ class AcpConnectPanel(
 
         override fun toString(): String = displayText
 
+        /**
+         * The session this choice switches to when [currentSessionId] is the current one, or null when it keeps
+         * the current session ([Latest] already current) or starts a fresh one ([None]). [Latest] is the most
+         * recently active session, which is not the current one after an older session was resumed.
+         */
+        fun switchTarget(currentSessionId: String?): String? = when (this) {
+            is Latest -> record.id.takeIf { it != currentSessionId }
+            is Older -> record.id
+            None -> null
+        }
+
         companion object {
             private fun formatSession(record: ConversationService.SessionRecord): String {
                 val date = SESSION_DATE_FORMAT.format(Date(record.updatedAt))
@@ -700,8 +711,8 @@ class AcpConnectPanel(
         connectSpinner.isVisible = true
 
         // Defer the actual work to the next EDT cycle so the button state paints first.
-        // applySessionChoice may do file I/O (deleteIfExists for None/Older cases) which
-        // should not block the current event handler.
+        // applySessionChoice reads and writes the small current-session-id file and may export
+        // the session, which should not block the current event handler.
         ApplicationManager.getApplication().invokeLater {
             val freshSession = applySessionChoice(profileId)
             onConnect(profileId, customCommand, freshSession)
@@ -709,16 +720,15 @@ class AcpConnectPanel(
     }
 
     /**
-     * Applies the user's session choice and returns `true` if a genuinely fresh session
-     * was requested (i.e. [SessionChoice.None]), `false` otherwise.
-     *
-     * The caller uses the return value to decide whether to clear the chat panel before
-     * showing the new session (needed when reconnecting with an existing chat already visible).
+     * Applies the user's session choice and returns `true` when the chat panel must be cleared and reloaded:
+     * a fresh session ([SessionChoice.None]) or a switch to another session; `false` when the current session
+     * stays.
      */
     private fun applySessionChoice(profileId: String): Boolean {
         val settings = GenericSettings(profileId, project)
         val sameAgent = agentManager.activeProfileId == profileId
         val sessionSwitch = SessionSwitchService.getInstance(project)
+        val conversations = ConversationService.getInstance(project)
 
         return when (val choice = sessionCombo.selectedItem as? SessionChoice) {
             is SessionChoice.None -> {
@@ -727,41 +737,35 @@ class AcpConnectPanel(
                 if (sameAgent) sessionSwitch.clearClaudeResumeState()
                 // Delete the session ID file so restoreConversation() finds nothing and
                 // the chat pane opens empty rather than restoring the previous session.
-                ConversationService.getInstance(project).resetCurrentSessionId(project.basePath)
+                conversations.resetCurrentSessionId(project.basePath)
                 true
             }
 
-            is SessionChoice.Latest -> {
-                // Re-export the current session so the JSONL has the correct last-prompt.
-                // Without this, a stale export (e.g. from a previous IDE session) would be
-                // reused and Claude CLI could branch from the wrong message.
+            is SessionChoice.Latest, is SessionChoice.Older -> {
+                val target = choice.switchTarget(conversations.findCurrentSessionId(project.basePath))
+                val switched = target != null && switchCurrentSession(target)
+                if (switched) settings.resumeSessionId = null
+                // Export the now-current session so Claude CLI resumes from its last prompt.
+                // For agent switches, onAgentSwitch() exports it.
                 if (sameAgent) sessionSwitch.exportForRestart(profileId)
-                false
-            }
-
-            is SessionChoice.Older -> {
-                switchCurrentSession(choice.record.id)
-                settings.resumeSessionId = null
-                // Export the older session to Claude CLI format. switchCurrentSession()
-                // already updated .current-session-id, so exportForRestart() will pick
-                // up the correct session. For agent switches, onAgentSwitch() handles this.
-                if (sameAgent) sessionSwitch.exportForRestart(profileId)
-                // Chat must be cleared and reloaded from the newly selected session.
-                true
+                switched
             }
 
             null -> false // no selection — keep defaults
         }
     }
 
-    private fun switchCurrentSession(sessionId: String) {
+    /** Makes [sessionId] the current session; false (with an error banner) when the id file cannot be written. */
+    private fun switchCurrentSession(sessionId: String): Boolean {
         val sessionsDir = com.github.catatafishen.agentbridge.session.exporters.ExportUtils.sessionsDir(project)
         val currentIdFile = java.io.File(sessionsDir, ".current-session-id")
-        try {
+        return try {
             sessionsDir.mkdirs()
             currentIdFile.writeText(sessionId)
+            true
         } catch (e: Exception) {
             statusBanner.showError("Failed to switch session: ${e.message}")
+            false
         }
     }
 
