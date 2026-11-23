@@ -79,7 +79,85 @@ class AcpMessageParserTest {
     void compactionIsNotBackgroundAgentActivity() {
         // A trailing compaction notice after end_turn must not trip the "background agent still running" banner.
         assertFalse(AcpClient.isBackgroundAgentActivity(
-            new SessionUpdate.Compaction(SessionUpdate.CompactionStatus.COMPLETED, false, null)));
+            new SessionUpdate.Compaction("cmp_1", SessionUpdate.CompactionStatus.COMPLETED, false, null, null)));
+        assertFalse(AcpClient.isBackgroundAgentActivity(new SessionUpdate.CompactionSummaryChunk("cmp_1", "x")));
+    }
+
+    // ── compaction_update / compaction_summary_chunk — standard ACP session compaction ──
+
+    private JsonObject compactionUpdate(String id, String status) {
+        JsonObject params = updateParams("compaction_update");
+        params.addProperty("compactionId", id);
+        params.addProperty("status", status);
+        return params;
+    }
+
+    @Test
+    void compactionUpdateInProgressIsStarted() {
+        var c = assertInstanceOf(SessionUpdate.Compaction.class, parser.parse(compactionUpdate("cmp_001", "in_progress")));
+
+        assertEquals("cmp_001", c.compactionId());
+        assertEquals(SessionUpdate.CompactionStatus.STARTED, c.status());
+        assertNull(c.summary());
+    }
+
+    @Test
+    void completedCompactionUpdateCarriesTheSummaryText() {
+        JsonObject params = compactionUpdate("cmp_001", "completed");
+        JsonArray summary = new JsonArray();
+        JsonObject block = new JsonObject();
+        block.addProperty("type", "text");
+        block.addProperty("text", "## Retained context");
+        summary.add(block);
+        params.add("summary", summary);
+
+        var c = assertInstanceOf(SessionUpdate.Compaction.class, parser.parse(params));
+
+        assertEquals(SessionUpdate.CompactionStatus.COMPLETED, c.status());
+        assertEquals("## Retained context", c.summary());
+    }
+
+    @Test
+    void failedCompactionUpdateCarriesTheErrorString() {
+        JsonObject params = compactionUpdate("cmp_001", "failed");
+        params.addProperty("error", "Compaction failed");
+
+        var c = assertInstanceOf(SessionUpdate.Compaction.class, parser.parse(params));
+
+        assertEquals(SessionUpdate.CompactionStatus.FAILED, c.status());
+        assertEquals("Compaction failed", c.error());
+    }
+
+    @Test
+    void cancelledAndExtensionStatusesAreKept() {
+        assertEquals(SessionUpdate.CompactionStatus.CANCELLED,
+            assertInstanceOf(SessionUpdate.Compaction.class, parser.parse(compactionUpdate("a", "cancelled"))).status());
+        // The ACP status enum is open: unknown values are preserved and shown generically.
+        assertEquals(SessionUpdate.CompactionStatus.UNKNOWN,
+            assertInstanceOf(SessionUpdate.Compaction.class, parser.parse(compactionUpdate("b", "_vendor_paused"))).status());
+    }
+
+    @Test
+    void compactionUpdateWithoutIdIsDropped() {
+        JsonObject params = updateParams("compaction_update");
+        params.addProperty("status", "completed");
+
+        assertNull(parser.parse(params));
+    }
+
+    @Test
+    void compactionSummaryChunkCarriesIdAndText() {
+        JsonObject params = updateParams("compaction_summary_chunk");
+        params.addProperty("compactionId", "cmp_001");
+        JsonObject content = new JsonObject();
+        content.addProperty("type", "text");
+        content.addProperty("text", "part 1");
+        params.add("content", content);
+
+        var chunk = assertInstanceOf(SessionUpdate.CompactionSummaryChunk.class, parser.parse(params));
+
+        assertEquals("cmp_001", chunk.compactionId());
+        assertEquals("part 1", chunk.text());
     }
 
     // ── agent_message_chunk — per spec: streamed text response ───────────────

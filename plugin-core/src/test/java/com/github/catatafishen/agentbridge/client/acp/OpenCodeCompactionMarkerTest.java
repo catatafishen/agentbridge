@@ -69,6 +69,15 @@ class OpenCodeCompactionMarkerTest {
     }
 
     @Test
+    void markerHasNoCompactionIdOrSummary() {
+        SessionUpdate.Compaction c = OpenCodeCompactionMarker.parse(marker("completed", "auto"));
+
+        assertNotNull(c);
+        assertNull(c.compactionId());
+        assertNull(c.summary());
+    }
+
+    @Test
     void sessionInfoUpdateWithoutMarkerIsLeftToTheStandardParser() {
         JsonObject update = new JsonObject();
         update.addProperty("sessionUpdate", "session_info_update");

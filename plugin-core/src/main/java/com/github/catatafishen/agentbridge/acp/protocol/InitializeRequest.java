@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.acp.protocol;
 
+import com.google.gson.JsonObject;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -21,15 +22,17 @@ public record InitializeRequest(
 
     public record ClientCapabilities(
         @Nullable FsCapabilities fs,
-        @Nullable Boolean terminal
+        @Nullable Boolean terminal,
+        @Nullable SessionCapabilities session
     ) {
         /**
-         * Advertise read/write file and terminal capabilities.
+         * Advertise read/write file, terminal and session-compaction capabilities.
          */
         public static ClientCapabilities standard() {
             return new ClientCapabilities(
                 new FsCapabilities(true, true),
-                true
+                true,
+                SessionCapabilities.withCompaction()
             );
         }
 
@@ -37,7 +40,7 @@ public record InitializeRequest(
          * Empty capabilities — use when the agent rejects unknown capability fields.
          */
         public static ClientCapabilities empty() {
-            return new ClientCapabilities(null, null);
+            return new ClientCapabilities(null, null, null);
         }
     }
 
@@ -45,5 +48,19 @@ public record InitializeRequest(
         @Nullable Boolean readTextFile,
         @Nullable Boolean writeTextFile
     ) {
+    }
+
+    /**
+     * {@code clientCapabilities.session}. {@code compaction: {}} declares support for the standard
+     * {@code compaction_update} / {@code compaction_summary_chunk} session updates; agents must not
+     * send them otherwise. The spec defines no compaction options yet, so the value is a plain
+     * empty JSON object.
+     *
+     * @see <a href="https://agentclientprotocol.com/protocol/v1/prompt-turn#session-compaction">ACP Session Compaction</a>
+     */
+    public record SessionCapabilities(@Nullable JsonObject compaction) {
+        public static SessionCapabilities withCompaction() {
+            return new SessionCapabilities(new JsonObject());
+        }
     }
 }
