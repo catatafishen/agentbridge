@@ -24,6 +24,7 @@ import javax.swing.text.html.HTML
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.InlineView
 import javax.swing.text.html.StyleSheet
+import org.jetbrains.annotations.VisibleForTesting
 
 /**
  * A [JEditorPane]-based component that renders streaming markdown as HTML.
@@ -76,16 +77,11 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     private var cachedHeight = -1
 
     /**
-     * Cached rendered pixels for this pane. Keyed by [paintCacheW] × [paintCacheH] ×
-     * [paintCacheVersion]. When all three match the current state, [paint] draws from this
-     * image (~0.05 ms) instead of invoking the full HTML view rendering chain (~2–10 ms on
-     * Windows GDI+). Cleared to null only when the component is made invisible or disposed;
-     * otherwise always holds the last successfully rendered frame.
+     * The last rendered frame. Blitting it (~0.05 ms) replaces the full HTML view rendering
+     * chain (~2–10 ms on Windows GDI+) whenever it still fits the pane; see [paint].
      */
-    private var paintCache: BufferedImage? = null
-    private var paintCacheW = -1
-    private var paintCacheH = -1
-    private var paintCacheVersion = -1
+    @VisibleForTesting
+    internal val frameCache = PaneFrameCache()
 
     private var lastContentChangeMs: Long = 0L
 
@@ -107,7 +103,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      */
     private val resizeSettleTimer = Timer(RESIZE_SETTLE_MS) {
         cachedForWidth = -1
-        paintCache = null   // force a fresh paint at the final settled width
+        frameCache.clear()   // force a fresh paint at the final settled width
         revalidate()
         repaint()
     }.apply { isRepeats = false }
@@ -289,8 +285,8 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
     override fun getMinimumSize(): Dimension = Dimension(0, 0)
 
     /**
-     * Paints from a cached [BufferedImage] when the component bounds and content version have
-     * not changed since the last render. On a cache miss, delegates to [super.paint] (full
+     * Paints from a cached [BufferedImage] when the component bounds, content version and
+     * backdrop have not changed since the last render. On a cache miss, delegates to [super.paint] (full
      * HTML rendering) and stores the result.
      *
      * **During a resize burst** (within [RESIZE_BURST_WINDOW_NANOS] of the last observed
@@ -300,6 +296,10 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      *
      * **Text selection**: if the user has selected text, the cache is bypassed so the
      * selection highlight is always painted live.
+     *
+     * **Backdrop**: when [PaneBackdrop] can tell the solid colour behind the pane, the cache is an
+     * opaque image pre-filled with it, so text keeps subpixel antialiasing. A frame is reused only
+     * over the backdrop it was rendered for.
      */
     override fun paint(g: Graphics) {
         val w = width
@@ -312,23 +312,21 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
             return
         }
 
-        // Exact cache hit: same bounds and same content — just blit.
-        if (paintCache != null &&
-            paintCacheW == w && paintCacheH == h &&
-            paintCacheVersion == contentVersion
-        ) {
-            UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+        val backdrop = PaneBackdrop.resolve(this)
+        val backdropRgb = backdrop?.rgb
+        val frame = frameCache.image
+
+        // Exact cache hit: same bounds, content and backdrop — just blit.
+        if (frame != null && frameCache.matches(w, h, contentVersion, backdropRgb)) {
+            UIUtil.drawImage(g, frame, 0, 0, null)
             return
         }
 
-        // During a resize burst, defer rendering only when the cached frame cannot crop text.
-        if (paintCache != null && ResizeBurstClock.isBurstActive()) {
+        // During a resize burst, defer rendering only when the cached frame fits the pane.
+        if (frame != null && ResizeBurstClock.isBurstActive()) {
             resizeSettleTimer.restart()
-            // A wider cached frame would clip its right-hand text when the pane narrows.
-            // Re-render shrink operations immediately; only defer paints that cannot crop text.
-            // Also never reuse a frame shorter than the pane: the missing bottom would stay blank.
-            if (paintCacheW <= w && paintCacheH >= h) {
-                UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+            if (frameCache.fits(w, h, backdropRgb)) {
+                UIUtil.drawImage(g, frame, 0, 0, null)
                 return
             }
         }
@@ -336,32 +334,36 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
         // Stale-frame (tab switch after resize): content unchanged but dimensions differ.
         // Blit the old frame immediately for a zero-cost first paint, then schedule a single
         // accurate repaint on the next EDT pass so the correct frame appears right after.
-        if (paintCache != null && paintCacheW <= w && paintCacheH >= h &&
-            paintCacheVersion == contentVersion && !staleRepaintPending
+        if (frame != null && frameCache.fits(w, h, backdropRgb) && frameCache.isOfVersion(contentVersion) &&
+            !staleRepaintPending
         ) {
-            UIUtil.drawImage(g, paintCache!!, 0, 0, null)
+            UIUtil.drawImage(g, frame, 0, 0, null)
             staleRepaintPending = true
             SwingUtilities.invokeLater {
                 staleRepaintPending = false
                 if (isShowing) {
-                    paintCache = null; repaint()
+                    frameCache.clear()
+                    repaint()
                 }
             }
             return
         }
 
         // Cache miss: render to a fresh BufferedImage, then blit.
-        val img = UIUtil.createImage(this, w, h, BufferedImage.TYPE_INT_ARGB)
+        val img = UIUtil.createImage(
+            this, w, h, if (backdrop != null) BufferedImage.TYPE_INT_RGB else BufferedImage.TYPE_INT_ARGB
+        )
         val g2 = img.createGraphics()
         try {
+            if (backdrop != null) {
+                g2.color = backdrop
+                g2.fillRect(0, 0, w, h)
+            }
             super.paint(g2)
         } finally {
             g2.dispose()
         }
-        paintCache = img
-        paintCacheW = w
-        paintCacheH = h
-        paintCacheVersion = contentVersion
+        frameCache.store(img, w, h, contentVersion, backdropRgb)
         UIUtil.drawImage(g, img, 0, 0, null)
     }
 
@@ -510,7 +512,7 @@ class NativeMarkdownPane(private val fileNavigator: FileNavigator) : JEditorPane
      * before the scroll and the block would appear frozen.
      */
     private fun invalidatePaintCache() {
-        paintCache = null
+        frameCache.clear()
     }
 
     /**

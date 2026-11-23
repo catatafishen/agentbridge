@@ -42,6 +42,13 @@ open class RoundedPanel(
     /** Controls the visual style preset: "modern" (default), "minimal", or "accessible". */
     var bubbleStyle: String = "modern"
 
+    /**
+     * The colour this panel fills its interior with, or null when the style draws no fill. Child panes
+     * sit inside the padding, so they lie entirely over this fill.
+     */
+    internal val fillColor: Color?
+        get() = if (bubbleStyle == "minimal") null else bgColor
+
     private var cachedBg: BufferedImage? = null
     private var cachedBgW = -1
     private var cachedBgH = -1
@@ -114,34 +121,30 @@ open class RoundedPanel(
         val g2 = img.createGraphics()
         try {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            val r = radius.toFloat()
+            // PaneBackdrop models the colour behind child panes from fillColor, so it alone decides the fill.
+            fillColor?.let {
+                g2.color = it
+                g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
+            }
             when (bubbleStyle) {
                 "minimal" -> {
-                    // No background fill; draw only a hairline top separator matching --fg-a16 from CSS.
+                    // Only a hairline top separator matching --fg-a16 from CSS.
                     val fg = UIUtil.getLabelForeground()
                     g2.color = Color(fg.red, fg.green, fg.blue, 40)
                     g2.fillRect(0, 0, w, 1)
                 }
 
                 "accessible" -> {
-                    // High-contrast variant: same fill, but border is always solid (full alpha).
-                    val r = radius.toFloat()
-                    g2.color = bgColor
-                    g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
-                    val solidBorder = borderColor?.let { Color(it.red, it.green, it.blue, 255) }
+                    // High-contrast variant: the border is always solid (full alpha).
+                    g2.color = borderColor?.let { Color(it.red, it.green, it.blue, 255) }
                         ?: Color(bgColor.red, bgColor.green, bgColor.blue, 200)
-                    g2.color = solidBorder
                     g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
                 }
 
-                else -> {
-                    // "modern" — current behavior.
-                    val r = radius.toFloat()
-                    g2.color = bgColor
-                    g2.fill(cornerPath(0f, 0f, w.toFloat(), h.toFloat(), r, squaredCorner))
-                    borderColor?.let {
-                        g2.color = it
-                        g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
-                    }
+                else -> borderColor?.let {
+                    g2.color = it
+                    g2.draw(cornerPath(0.5f, 0.5f, w - 1f, h - 1f, r, squaredCorner))
                 }
             }
         } finally {
