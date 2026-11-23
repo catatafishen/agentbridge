@@ -1,9 +1,6 @@
 package com.github.catatafishen.agentbridge.ui;
 
-import javax.swing.Timer;
 import java.awt.Graphics2D;
-import java.awt.SecondaryLoop;
-import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 
 public class NativeMarkdownResizeRepaintTest extends NativeMarkdownPaneTestBase {
@@ -14,7 +11,7 @@ public class NativeMarkdownResizeRepaintTest extends NativeMarkdownPaneTestBase 
             pane.setCompleteMarkdown(("The same response must wrap again at the new panel width. ").repeat(12));
             pane.setBounds(0, 0, 360, 180);
             paint(pane);
-            waitForTimer(400);
+            waitOnEdt(400);
             BufferedImage originalFrame = paint(pane);
 
             ResizeBurstClock.INSTANCE.tick();
@@ -26,7 +23,7 @@ public class NativeMarkdownResizeRepaintTest extends NativeMarkdownPaneTestBase 
                 samePixels(croppedOldFrame, duringResize)
             );
 
-            waitForTimer(400);
+            waitOnEdt(400);
 
             BufferedImage afterResize = paint(pane);
             assertTrue(
@@ -36,17 +33,6 @@ public class NativeMarkdownResizeRepaintTest extends NativeMarkdownPaneTestBase 
         } finally {
             pane.dispose();
         }
-    }
-
-    private void waitForTimer(int delayMs) {
-        SecondaryLoop settleLoop = Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
-        Timer timer = new Timer(delayMs, event -> {
-            ((Timer) event.getSource()).stop();
-            settleLoop.exit();
-        });
-        timer.setRepeats(false);
-        timer.start();
-        assertTrue("settle timer did not fire", settleLoop.enter());
     }
 
     private static BufferedImage paint(NativeMarkdownPane pane) {
