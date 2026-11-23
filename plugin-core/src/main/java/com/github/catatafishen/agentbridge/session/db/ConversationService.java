@@ -404,6 +404,21 @@ public final class ConversationService implements Disposable {
         }
     }
 
+    /**
+     * The persisted current session id, or null when none is set. Unlike {@link #getCurrentSessionId}, never
+     * creates one.
+     */
+    @Nullable
+    public String findCurrentSessionId(@Nullable String basePath) {
+        try {
+            String id = readCurrentSessionId(basePath);
+            return id.isEmpty() ? null : id;
+        } catch (IOException e) {
+            LOG.warn("Could not read current-session-id", e);
+            return null;
+        }
+    }
+
     @NotNull
     private String readCurrentSessionId(@Nullable String basePath) throws IOException {
         // Only use the persisted session-id file. If absent, the session was intentionally reset
