@@ -193,6 +193,19 @@ class ClaudeSubAgentRouterTest {
         }
 
         @Test
+        void subAgentStartedWithoutToolUseIdStillEnds() {
+            router.taskStatus(json("""
+                {"type":"system","subtype":"task_started","task_id":"%s","task_type":"local_agent"}
+                """.formatted(AGENT_ID)));
+
+            SessionUpdate.ChildSessionStatus status = router.taskStatus(taskNotification("completed"));
+
+            assertNotNull(status);
+            assertSame(SessionUpdate.ChildSessionState.COMPLETED, status.state());
+            assertTrue(router.unfinishedAtEndOfStream().isEmpty());
+        }
+
+        @Test
         void killedSubAgentIsInterruptedWithTheSummary() {
             router.taskStatus(taskStarted("local_agent"));
 

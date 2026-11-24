@@ -758,8 +758,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
 
     /**
      * The init event lists the CLI's slash commands; task events report sub-agents starting and ending.
-     * Session ids are taken from the result event only: init names a fresh session when Claude silently
-     * dropped an invalid {@code --resume}, which would overwrite the last known-good id.
+     * Session ids come from the result event only: after an invalid {@code --resume}, init names a fresh
+     * session.
      */
     private void handleSystemEvent(@NotNull JsonObject event, @NotNull StreamContext ctx) {
         SessionUpdate.ChildSessionStatus status = ctx.subAgents().taskStatus(event);
