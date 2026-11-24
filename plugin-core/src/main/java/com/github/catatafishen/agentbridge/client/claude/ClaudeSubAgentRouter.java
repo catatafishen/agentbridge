@@ -45,6 +45,8 @@ final class ClaudeSubAgentRouter {
 
     /** Agent tool_use id → the id of the sub-agent it started. */
     private final Map<String, String> agentByToolUse = new HashMap<>();
+    /** Every sub-agent seen in this prompt, by its own events or its task_started. */
+    private final Set<String> knownAgents = new HashSet<>();
     private final Map<String, String> descriptionByAgent = new HashMap<>();
     private final Set<String> handedBackAgents = new HashSet<>();
     private final Set<String> handbackToolUses = new HashSet<>();
@@ -63,6 +65,7 @@ final class ClaudeSubAgentRouter {
         String agentId = string(event, "agent_id");
         String childId = agentId != null ? agentId : parentToolUse;
         agentByToolUse.putIfAbsent(parentToolUse, childId);
+        knownAgents.add(childId);
         String description = string(event, "task_description");
         if (description != null) descriptionByAgent.putIfAbsent(childId, description);
         return childId;
@@ -138,11 +141,12 @@ final class ClaudeSubAgentRouter {
             if (toolUseId != null) agentByToolUse.put(toolUseId, taskId);
             String description = string(event, FIELD_DESCRIPTION);
             if (description != null) descriptionByAgent.put(taskId, description);
+            knownAgents.add(taskId);
             runningAgents.add(taskId);
             return new SessionUpdate.ChildSessionStatus(
                 taskId, description, SessionUpdate.ChildSessionState.RUNNING, null);
         }
-        if ("task_notification".equals(subtype) && agentByToolUse.containsValue(taskId)) {
+        if ("task_notification".equals(subtype) && knownAgents.contains(taskId)) {
             runningAgents.remove(taskId);
             String status = string(event, "status");
             SessionUpdate.ChildSessionState state = finalState(status);
