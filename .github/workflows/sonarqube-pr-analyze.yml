@@ -37,6 +37,8 @@ env:
   SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'catatafishen_agentbridge' }}
   SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION || 'catatafishen' }}
   SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+  # Commit-status context shown on the PR; mark it required in branch protection.
+  STATUS_CONTEXT: SonarQube PR analysis
 
 jobs:
   analyze:
@@ -46,25 +48,56 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read  # required to download artifacts from the triggering workflow run
+      statuses: write  # publish the analysis result as a commit status on the PR head
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # v2.22.4
         with:
           egress-policy: audit
 
+      # workflow_run jobs run in the context of master, so their own result never
+      # shows up in the PR's checks. Publish a commit status on the PR head so the
+      # analysis outcome (including "could not run") is visible and can be required.
+      - name: Mark analysis pending on PR commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=pending -f context="$STATUS_CONTEXT" \
+            -f description="SonarQube analysis running" -f target_url="$RUN_URL" > /dev/null
+
       # Look up the PR associated with this workflow run via the GitHub API.
       # This is safer than passing metadata through the artifact (which comes from the
       # untrusted build job) — the API returns data from GitHub itself.
+      #
+      # The commit->pulls endpoint only knows commits that exist in this repository,
+      # so it returns nothing for an open fork PR (the head commit lives in the fork
+      # until merge). Fall back to listing open PRs by `<fork-owner>:<branch>` and
+      # matching the exact head SHA, which works for both same-repo and fork PRs.
       - name: Find associated PR
         id: pr-meta
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
+          set -euo pipefail
           PR_JSON=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" \
             --jq 'first // empty')
           if [ -z "$PR_JSON" ]; then
-            echo "::error::No PR found for SHA $HEAD_SHA"
+            PR_JSON=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" \
+              -f state=open -f "head=$HEAD_OWNER:$HEAD_BRANCH" \
+              | jq -c --arg sha "$HEAD_SHA" '[.[] | select(.head.sha == $sha)] | first // empty')
+          fi
+          if [ -z "$PR_JSON" ]; then
+            echo "::error::No open PR found for SHA $HEAD_SHA ($HEAD_OWNER:$HEAD_BRANCH)"
             exit 1
           fi
           echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> "$GITHUB_OUTPUT"
@@ -194,8 +227,8 @@ jobs:
       # The chat-ui build is skipped because the JS coverage (lcov.info) is in the artifact.
       #
       # sonar.scm.revision labels the analysis with the PR commit SHA in SonarCloud.
-      # The actual blame fix is the `git reset --soft` step above which moves HEAD
-      # to the PR commit — JGit blame resolves from HEAD, not this property.
+      # The actual blame fix is the detached-HEAD checkout step above which moves
+      # HEAD to the PR commit — JGit blame resolves from HEAD, not this property.
       - name: Run SonarQube analysis
         if: steps.sonar-auto-analysis.outputs.enabled != 'true'
         env:
@@ -229,6 +262,32 @@ jobs:
           echo "::warning::SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
           echo "::warning::Disable it in SonarCloud: Project Settings > Analysis Method > Automatic Analysis to use CI coverage and projectVersion."
           echo "::warning::Skipping CI-based SonarQube analysis because SonarCloud would reject it while Automatic Analysis is enabled."
+
+      # Report the final outcome on the PR commit. Runs even when an earlier step
+      # failed, so a missing PR, a failed quality gate or a crash all show as red.
+      - name: Publish analysis result on PR commit
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          JOB_STATUS: ${{ job.status }}
+          PR_NUMBER: ${{ steps.pr-meta.outputs.number }}
+          AUTO_ANALYSIS: ${{ steps.sonar-auto-analysis.outputs.enabled }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ] && [ "$AUTO_ANALYSIS" = "true" ]; then
+            STATE=success; DESC="Skipped: SonarCloud Automatic Analysis is enabled"; TARGET="$RUN_URL"
+          elif [ "$JOB_STATUS" = "success" ]; then
+            STATE=success; DESC="Quality gate passed"
+            TARGET="$SONAR_HOST_URL/dashboard?id=$SONAR_PROJECT_KEY&pullRequest=$PR_NUMBER"
+          elif [ -z "$PR_NUMBER" ]; then
+            STATE=error; DESC="Could not resolve PR; analysis did not run"; TARGET="$RUN_URL"
+          else
+            STATE=failure; DESC="Quality gate failed or analysis errored"; TARGET="$RUN_URL"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$STATE" -f context="$STATUS_CONTEXT" \
+            -f description="$DESC" -f target_url="$TARGET" > /dev/null
 
   # Privileged failed-test reporter. Runs only when the unprivileged build workflow
   # FAILED on a PR, downloads the JUnit XML it bundled into the artifact, and posts
