@@ -104,17 +104,15 @@ public final class ClaudeClient extends AbstractClaudeClient {
     private static final String FIELD_SLASH_COMMANDS = "slash_commands";
 
     /**
-     * Claude Code built-in tools that bypass the IDE and must be suppressed when the profile
-     * enables {@code excludeAgentBuiltInTools}. These are passed to the CLI via
-     * {@code --disallowedTools} (a denylist), not {@code --tools} (an allowlist) — the allowlist
-     * variant also strips every {@code mcp__agentbridge__*} tool from the model's context, which
-     * left Claude with only WebFetch/WebSearch and no MCP tools at all. The denylist removes only
-     * these named built-ins while keeping WebFetch, WebSearch, and all MCP tools available.
+     * Claude Code built-in tools that read, write or run things behind the IDE's back, suppressed
+     * when the profile enables {@code excludeAgentBuiltInTools}. The CLI also removes them from
+     * sub-agents, so the {@code Task} (Agent) tool stays available and sub-agents work through
+     * the AgentBridge MCP tools.
      */
     static final List<String> DISABLED_BUILT_IN_TOOLS = List.of(
-        "Bash", "BashOutput", "KillBash",
+        "Bash", "BashOutput", "KillBash", "PowerShell",
         "Edit", "Write", "Read", "NotebookEdit",
-        "Glob", "Grep", "Task", "TodoWrite");
+        "Glob", "Grep", "TodoWrite");
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -472,10 +470,6 @@ public final class ClaudeClient extends AbstractClaudeClient {
         cmd.add("--model");
         cmd.add(model);
 
-        // Suppress IDE-bypassing built-in tools when the profile excludes them. Uses a
-        // --disallowedTools denylist (not a --tools allowlist) so that WebFetch, WebSearch, and
-        // all mcp__agentbridge__* tools remain available. A --tools allowlist would also strip the
-        // MCP tools, leaving the model with no file/search/command capabilities at all.
         cmd.addAll(buildToolRestrictionArgs(profile.isExcludeAgentBuiltInTools()));
 
         String effort = getSessionOption(sessionId, "effort");
@@ -493,11 +487,10 @@ public final class ClaudeClient extends AbstractClaudeClient {
     }
 
     /**
-     * Builds the CLI arguments that suppress IDE-bypassing built-in tools.
+     * Builds the CLI arguments that suppress {@link #DISABLED_BUILT_IN_TOOLS}. A denylist, because
+     * {@code --tools} is an exhaustive allowlist that would also hide every MCP tool.
      *
-     * @param excludeAgentBuiltInTools whether the active profile excludes agent built-in tools
-     * @return {@code ["--disallowedTools", "Bash,Edit,..."]} when excluding, otherwise an empty
-     * list. The denylist keeps WebFetch, WebSearch, and all {@code mcp__agentbridge__*} tools.
+     * @return {@code ["--disallowedTools", "Bash,Edit,..."]} when excluding, otherwise an empty list
      */
     @NotNull
     static List<String> buildToolRestrictionArgs(boolean excludeAgentBuiltInTools) {
