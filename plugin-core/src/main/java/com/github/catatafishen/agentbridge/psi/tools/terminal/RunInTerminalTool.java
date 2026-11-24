@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
 import com.github.catatafishen.agentbridge.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -9,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Runs a command in an integrated terminal owned by the current MCP session.
@@ -18,6 +20,15 @@ public final class RunInTerminalTool extends TerminalTool {
     private static final String JSON_COMMAND = "command";
     private static final String JSON_NEW_TAB = "new_tab";
     private static final String JSON_SHELL = "shell";
+    private static final String PARAM_WAIT_SECONDS = "wait_seconds";
+    private static final String JSON_MAX_LINES = "max_lines";
+
+    /**
+     * Appended to the result of a call without {@code wait_seconds}: steers the caller to wait in one call next time.
+     */
+    private static final String WAIT_HINT = "\n\nNext time pass wait_seconds=<max> to run_in_terminal: it waits for the "
+        + "command to finish and returns the exit code and output in this one call, so no sleep and no separate "
+        + "read_terminal_output is needed.";
 
     public RunInTerminalTool(Project project) {
         super(project);
@@ -40,7 +51,11 @@ public final class RunInTerminalTool extends TerminalTool {
             Returns a stable terminal_id; pass it on later run, read, write, and close calls for deterministic reuse. \
             With no terminal_id, reuses this session's most recent terminal. Set new_tab only for a truly parallel interactive process. \
             Close the terminal with close_terminal when it is no longer needed. \
-            For non-interactive commands with captured output, prefer run_command.
+            For non-interactive commands with captured output, prefer run_command. \
+            To run a command and get its result, pass wait_seconds=<max>: this single call waits for the command to \
+            finish and returns the exit code and output, so do NOT follow it with a sleep and a separate \
+            read_terminal_output. Without wait_seconds the call returns immediately and you would have to poll \
+            (read_terminal_output with wait_seconds and wait_for also blocks instead of sleeping).
 
             When the terminal is waiting for input:
             - For non-sensitive input (confirmations, choices, non-secret text): \
@@ -77,7 +92,16 @@ public final class RunInTerminalTool extends TerminalTool {
             Param.optional(JSON_NEW_TAB, TYPE_BOOLEAN,
                 "If true, create a separate terminal. Cannot be combined with terminal_id; the limit is 3 per MCP session"),
             Param.optional(JSON_SHELL, TYPE_STRING,
-                "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell")
+                "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell"),
+            Param.optional(PARAM_WAIT_SECONDS, TYPE_INTEGER,
+                "PREFERRED for commands that finish on their own: wait up to this many seconds (max "
+                    + McpRequestDeadline.MAX_TIMEOUT_SECONDS + ") for the command to finish and return its exit "
+                    + "code and output in this same call. A unique completion marker is appended to the command "
+                    + "for you (bash/zsh/sh, fish, PowerShell and cmd are supported). If it times out, the result "
+                    + "tells you how to keep waiting. Omit only for interactive or never-ending processes"),
+            Param.optional(JSON_MAX_LINES, TYPE_INTEGER,
+                "With wait_seconds: maximum lines of output to return from the end of the buffer "
+                    + "(default: 50). Use 0 for the full buffer")
         );
     }
 
@@ -93,6 +117,20 @@ public final class RunInTerminalTool extends TerminalTool {
         String shell = optionalSelector(args, JSON_SHELL);
         String ownerId = currentOwnerId();
 
+        Wait wait = null;
+        String commandToSend = command;
+        TerminalWaitArgs.Parsed parsed = TerminalWaitArgs.parse(args, false);
+        if (parsed.error() != null) return parsed.error();
+        if (parsed.requested()) {
+            String effectiveShell = resolveShell(shell);
+            TerminalDoneMarker.Shell family = TerminalDoneMarker.detect(effectiveShell);
+            String token = family == null ? null : TerminalDoneMarker.newToken();
+            if (family != null) commandToSend = command + TerminalDoneMarker.suffix(family, token);
+            wait = new Wait(parsed.seconds(), token, effectiveShell, null);
+        }
+        Wait requestedWait = wait;
+        String sendText = commandToSend;
+
         // Flush editor buffers so the command sees the latest content.
         EdtUtil.invokeAndWait(() ->
             com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
@@ -106,7 +144,7 @@ public final class RunInTerminalTool extends TerminalTool {
 
                 var result = getOrCreateTerminalWidget(
                     ownerId, managerClass, manager, terminalId, tabName, newTab, shell, command);
-                sendTerminalCommand(result.widget(), command);
+                sendTerminalCommand(result.widget(), sendText);
 
                 resultFuture.complete(new Sent(
                     "Command sent to " + (result.reused() ? "reused" : "new")
@@ -114,8 +152,9 @@ public final class RunInTerminalTool extends TerminalTool {
                         + "terminal_id: " + result.terminalId() + "\n"
                         + "command: " + redactSecrets(command)
                         + "\n\nReuse this terminal_id with run_in_terminal, read_terminal_output, "
-                        + "write_terminal_input, and close_terminal.",
-                    result.widget()));
+                        + "write_terminal_input, and close_terminal."
+                        + (requestedWait == null ? WAIT_HINT : ""),
+                    result.widget(), result.terminalId()));
             } catch (ClassNotFoundException e) {
                 resultFuture.complete(Sent.plain(
                     "Error: Terminal plugin not available. Use run_command tool instead."));
@@ -138,7 +177,36 @@ public final class RunInTerminalTool extends TerminalTool {
         } catch (Exception e) {
             return "Terminal opened (response timed out, but command was likely sent).";
         }
-        return sent.widget() == null ? sent.message() : sent.message() + startupNote(sent.widget());
+        if (sent.widget() == null) return sent.message();
+        if (wait == null) return sent.message() + startupNote(sent.widget());
+        Wait withId = new Wait(wait.seconds(), wait.token(), wait.shell(), sent.terminalId());
+        return sent.message() + "\n\n" + awaitCompletion(sent.widget(), withId, parsed.notice(), maxLines(args));
+    }
+
+    /**
+     * Waits for the command sent with a completion marker and returns its exit code and the tail of the output,
+     * so the caller needs neither a sleep nor a follow-up read. On timeout it says how to keep waiting.
+     */
+    private @NotNull String awaitCompletion(
+        @NotNull Object widget, @NotNull Wait wait, @Nullable String clampNotice, int maxLines
+    ) {
+        Pattern pattern = wait.token() == null ? null : Pattern.compile(TerminalDoneMarker.regex(wait.token()));
+        String note = McpRequestDeadline.prependNotice(
+            clampNotice, waitForWidget(widget, pattern, wait.seconds()).note());
+        CharSequence text = readWidgetText(widget);
+        return TerminalWaitResultFormatter.format(
+            note, wait.token(), wait.shell(), wait.terminalId(), text == null ? "" : text.toString(), maxLines);
+    }
+
+    private static int maxLines(@NotNull JsonObject args) {
+        return args.has(JSON_MAX_LINES) ? args.get(JSON_MAX_LINES).getAsInt() : DEFAULT_MAX_LINES;
+    }
+
+    /**
+     * A requested wait: how long, and the marker token that signals completion (null when the shell is not
+     * recognised and no marker can be added).
+     */
+    private record Wait(int seconds, @Nullable String token, @Nullable String shell, @Nullable String terminalId) {
     }
 
     /**
@@ -151,10 +219,12 @@ public final class RunInTerminalTool extends TerminalTool {
         return warning == null ? "" : "\n\n" + warning;
     }
 
-    /** What the EDT block produced: the message for the agent, and the widget when a command was actually sent. */
-    private record Sent(@NotNull String message, @Nullable Object widget) {
+    /**
+     * What the EDT block produced: the message for the agent, and the widget when a command was actually sent.
+     */
+    private record Sent(@NotNull String message, @Nullable Object widget, @Nullable String terminalId) {
         static Sent plain(@NotNull String message) {
-            return new Sent(message, null);
+            return new Sent(message, null, null);
         }
     }
 

@@ -11,8 +11,19 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TerminalToolStaticMethodsTest {
 
@@ -260,6 +271,55 @@ class TerminalToolStaticMethodsTest {
 
         assertEquals("already here", tool.await(5_000).toString());
         assertEquals(1, tool.reads());
+    }
+
+    @Test
+    void waitForWidget_returnsAsSoonAsThePatternMatches() {
+        TextSequenceTool tool = new TextSequenceTool(
+            mock(Project.class), "$ make", "building", "done\nAB_DONE_x_0", "never reached");
+
+        String note = tool.waitFor(java.util.regex.Pattern.compile("AB_DONE_x_\\d+"), 30);
+
+        assertTrue(note.contains("pattern matched"), note);
+        assertEquals(3, tool.reads(), "one baseline read plus one read per poll until the match");
+    }
+
+    @Test
+    void waitForWidget_reportsATimeoutWhenNothingMatches() {
+        TextSequenceTool tool = new TextSequenceTool(mock(Project.class), "$ still running");
+
+        String note = tool.waitFor(java.util.regex.Pattern.compile("NEVER"), 1);
+
+        assertTrue(note.contains("timeout reached"), note);
+    }
+
+    @Test
+    void waitForWidget_reportsTheExitCodeOfAMatchedMarker() {
+        TextSequenceTool tool = new TextSequenceTool(
+            mock(Project.class), "$ make", "done\nAB_DONE_a1b2c3d4_7\n$ ");
+
+        var result = tool.waitForResult(java.util.regex.Pattern.compile("AB_DONE_[0-9a-f]+_\\d+"), 30);
+
+        assertEquals(7, result.exitCode());
+        assertTrue(result.note().contains("pattern matched"), result.note());
+    }
+
+    @Test
+    void waitForWidget_hasNoExitCodeForAPatternThatIsNotAMarker() {
+        TextSequenceTool tool = new TextSequenceTool(mock(Project.class), "$ x", "BUILD SUCCESSFUL");
+
+        var result = tool.waitForResult(java.util.regex.Pattern.compile("BUILD \\w+"), 30);
+
+        assertNull(result.exitCode());
+    }
+
+    @Test
+    void waitForWidget_timeoutNoteDoesNotRepeatTheKeepWaitingInstruction() {
+        TextSequenceTool tool = new TextSequenceTool(mock(Project.class), "$ still running");
+
+        String note = tool.waitFor(java.util.regex.Pattern.compile("NEVER"), 1);
+
+        assertFalse(note.contains("read_terminal_output"), note);
     }
 
     // ── close failure guidance ──────────────────────────────
@@ -649,7 +709,9 @@ class TerminalToolStaticMethodsTest {
         }
     }
 
-    /** Serves a scripted sequence of buffer texts so the polling loop can be tested without a real terminal. */
+    /**
+     * Serves a scripted sequence of buffer texts so the polling loop can be tested without a real terminal.
+     */
     private static final class TextSequenceTool extends TerminalTool {
         private final java.util.ArrayDeque<String> texts;
         private final String last;
@@ -663,6 +725,16 @@ class TerminalToolStaticMethodsTest {
 
         private CharSequence await(long timeoutMs) {
             return awaitTerminalOutput(new Object(), timeoutMs);
+        }
+
+        private String waitFor(@org.jetbrains.annotations.Nullable java.util.regex.Pattern pattern, int seconds) {
+            return waitForWidget(new Object(), pattern, seconds).note();
+        }
+
+        private WaitResult waitForResult(
+            @org.jetbrains.annotations.Nullable java.util.regex.Pattern pattern, int seconds
+        ) {
+            return waitForWidget(new Object(), pattern, seconds);
         }
 
         private int reads() {

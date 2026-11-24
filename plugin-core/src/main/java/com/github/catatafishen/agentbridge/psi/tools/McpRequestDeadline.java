@@ -22,8 +22,10 @@ import org.jetbrains.annotations.Nullable;
  * command's own runtime.
  *
  * <p><b>The alternative for long work:</b> {@code run_in_terminal} starts a command and returns
- * immediately; {@code read_terminal_output} polls it. That pair is not bound by this deadline
- * because neither call blocks for the command's duration.
+ * immediately, or with {@code wait_seconds} blocks (clamped to {@link #MAX_TIMEOUT_SECONDS}) until the command
+ * finished and returns its exit code and output; {@code read_terminal_output} can continue waiting, optionally
+ * until a {@code wait_for} pattern matches. A call that
+ * blocks is bound by this deadline, so callers re-issue it for longer work.
  */
 public final class McpRequestDeadline {
 
@@ -79,7 +81,7 @@ public final class McpRequestDeadline {
         return "Note: requested timeout of " + requestedSeconds + "s was reduced to "
             + MAX_TIMEOUT_SECONDS + "s, the longest this tool can wait before the MCP client "
             + "abandons the request (~180s). For longer-running work use run_in_terminal, which "
-            + "returns immediately, then poll it with read_terminal_output.";
+            + "returns immediately, then poll it with read_terminal_output (wait_seconds/wait_for).";
     }
 
     /**

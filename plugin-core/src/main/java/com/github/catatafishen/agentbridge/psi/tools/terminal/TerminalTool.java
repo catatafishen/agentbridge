@@ -208,6 +208,83 @@ public abstract class TerminalTool extends Tool {
         return last;
     }
 
+    /**
+     * The shell the terminal will run: the explicit {@code shell} argument, else the IDE's configured default
+     * shell, else null when neither can be determined.
+     */
+    protected @Nullable String resolveShell(@Nullable String requestedShell) {
+        if (requestedShell != null) return requestedShell;
+        try {
+            var settingsClass =
+                Class.forName("org.jetbrains.plugins.terminal.TerminalProjectOptionsProvider");
+            var settings = settingsClass.getMethod(GET_INSTANCE_METHOD, Project.class).invoke(null, project);
+            return (String) settings.getClass().getMethod("getShellPath").invoke(settings);
+        } catch (Exception e) {
+            LOG.debug("Could not determine the terminal shell", e);
+            return null;
+        }
+    }
+
+    /**
+     * Blocks until {@code pattern} matches, the output goes idle, or {@code waitSeconds} elapse. Must not be
+     * called on the EDT.
+     */
+    protected @NotNull WaitResult waitForTerminal(
+        @NotNull AgentTabTracker.AgentTerminal terminal,
+        @Nullable java.util.regex.Pattern pattern,
+        int waitSeconds
+    ) {
+        CompletableFuture<Object> widgetFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
+                widgetFuture.complete(findTerminalWidgetByContent(managerClass, terminal.content()));
+            } catch (Exception e) {
+                widgetFuture.complete(null);
+            }
+        });
+        Object widget;
+        try {
+            widget = widgetFuture.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return WaitResult.skipped("Wait skipped: interrupted.");
+        } catch (Exception e) {
+            return WaitResult.skipped("Wait skipped: could not resolve the terminal widget.");
+        }
+        if (widget == null) return WaitResult.skipped("Wait skipped: no terminal widget found.");
+        return waitForWidget(widget, pattern, waitSeconds);
+    }
+
+    /**
+     * The result of a wait: the one-line note for the caller, and the exit code when the wait ended on a
+     * completion marker. A skipped wait has a note and nothing else.
+     */
+    protected record WaitResult(@NotNull String note, @Nullable Integer exitCode) {
+        static WaitResult skipped(@NotNull String note) {
+            return new WaitResult(note, null);
+        }
+    }
+
+    /**
+     * Same as {@link #waitForTerminal} for an already resolved widget. Must not be called on the EDT.
+     */
+    protected @NotNull WaitResult waitForWidget(
+        @NotNull Object widget,
+        @Nullable java.util.regex.Pattern pattern,
+        int waitSeconds
+    ) {
+        var outcome = TerminalWaitLoop.run(
+            () -> {
+                CharSequence text = readWidgetText(widget);
+                return text == null ? "" : text.toString();
+            },
+            pattern, waitSeconds * 1000L, POLL_INTERVAL_MS, System::currentTimeMillis, Thread::sleep);
+        return new WaitResult(
+            TerminalWaitTracker.describe(outcome.reason(), outcome.waitedMs()),
+            TerminalDoneMarker.exitCodeOfMarker(outcome.matched()));
+    }
+
     private static boolean isBlank(@Nullable CharSequence text) {
         return text == null || text.toString().isBlank();
     }
