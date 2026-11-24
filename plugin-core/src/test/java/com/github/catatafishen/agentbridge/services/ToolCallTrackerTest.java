@@ -441,6 +441,42 @@ class ToolCallTrackerTest {
     }
 
     @Test
+    void stopAllInFlight_keepsSuccessOfAToolThatAlreadyRan() {
+        ToolCallRecord rec = tracker.acpRegister("acp-ran", null, "read_file", argsReadFile("/ran"), "file",
+            ToolCallRecord.RoutingType.REGULAR, null);
+        tracker.mcpRegister("read_file", argsReadFile("/ran"), "file", null);
+        tracker.mcpComplete(rec.getRecordId(), "file content", true);
+
+        tracker.stopAllInFlight("Stopped by user");
+
+        assertEquals(ToolCallRecord.State.COMPLETED, rec.getState());
+        assertEquals(0, tracker.liveCount());
+    }
+
+    @Test
+    void stopAllInFlight_failsAToolWhoseMcpCallFailed() {
+        ToolCallRecord rec = tracker.mcpRegister("read_file", argsReadFile("/missing"), "file", null);
+        tracker.mcpComplete(rec.getRecordId(), "File not found", false);
+
+        tracker.stopAllInFlight("Stopped by user");
+
+        assertEquals(ToolCallRecord.State.FAILED, rec.getState());
+    }
+
+    @Test
+    void stopAllInFlight_completesALateCorrelatedToolWhoseResultWasCopied() {
+        ToolCallRecord acpRec = tracker.acpRegister("acp-late", null, "run_command", null, null,
+            ToolCallRecord.RoutingType.REGULAR, null);
+        ToolCallRecord mcpRec = tracker.mcpRegister("run_command", args("command", "ls"), "shell", null);
+        tracker.mcpComplete(mcpRec.getRecordId(), "listing", true);
+        tracker.acpProvideArgs("acp-late", args("command", "ls"));
+
+        tracker.stopAllInFlight("Stopped by user");
+
+        assertEquals(ToolCallRecord.State.COMPLETED, acpRec.getState());
+    }
+
+    @Test
     void stopAllInFlight_emptyTracker_doesNotThrow() {
         assertDoesNotThrow(() -> tracker.stopAllInFlight("test"));
         assertEquals(0, tracker.liveCount());

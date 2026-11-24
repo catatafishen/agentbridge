@@ -77,11 +77,10 @@ public final class ToolCallTracker {
         }
 
         /**
-         * Agent process exited (whether by normal user-initiated disconnect or an
-         * unexpected crash) while this tool call was still in flight. Fires before
-         * {@link #onFlushed(ToolCallRecord)} for the same record. UI listeners should
-         * transition the chip out of the spinning state into a failed state with
-         * {@code reason} as the displayed details.
+         * The user stopped the agent, or its process exited (by disconnect or an
+         * unexpected crash), while this tool call was still in flight. Fires before
+         * {@link #onFlushed(ToolCallRecord)} for the same record. The record's state is final:
+         * {@code COMPLETED} if its MCP tool had already succeeded, otherwise {@code FAILED}.
          */
         default void onAgentStopped(@NotNull ToolCallRecord callRecord, @NotNull String reason) {
         }
@@ -410,11 +409,11 @@ public final class ToolCallTracker {
     }
 
     /**
-     * Fail every live record because the agent process exited (whether by user-initiated
-     * disconnect or unexpected crash). Fires
+     * Ends every live record because the user stopped the agent or its process exited
+     * (by disconnect or an unexpected crash). A record whose MCP tool already succeeded becomes
+     * {@code COMPLETED}; the rest become {@code FAILED}. Fires
      * {@link Listener#onAgentStopped(ToolCallRecord, String)} followed by
-     * {@link Listener#onFlushed(ToolCallRecord)} for each record, then clears all internal
-     * maps. UI listeners use this to transition orphan spinning chips into a failed state.
+     * {@link Listener#onFlushed(ToolCallRecord)} for each record, then clears all internal maps.
      *
      * @param reason human-readable cause shown to the user in the chip details
      */
@@ -426,7 +425,8 @@ public final class ToolCallTracker {
         toolUseIdToRecordId.clear();
         acpSequence = 0;
         for (ToolCallRecord r : all) {
-            r.setState(ToolCallRecord.State.FAILED);
+            boolean ranSuccessfully = r.getMcpResult() != null && r.isMcpSuccess();
+            r.setState(ranSuccessfully ? ToolCallRecord.State.COMPLETED : ToolCallRecord.State.FAILED);
             fireOnAgentStopped(r, reason);
             fireOnFlushed(r);
         }

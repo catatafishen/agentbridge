@@ -376,11 +376,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
 
         override fun onAgentStopped(record: ToolCallRecord, reason: String) {
-            updateToolCall(
-                record.recordId,
-                MessageFormatter.ChipStatus.FAILED,
-                ChatPanelApi.ToolCallUpdate(details = reason),
-            )
+            updateToolCall(record.recordId, StoppedToolCall.status(record), StoppedToolCall.update(record, reason))
         }
     }
 

@@ -284,6 +284,7 @@ class PromptOrchestrator(
         }
         currentPromptThread?.interrupt()
         finishBackgroundSubAgents(MessageFormatter.ChipStatus.FAILED, BACKGROUND_STOPPED_NOTE)
+        failToolCallsInFlight()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry(STOPPED_BY_USER)
     }
@@ -320,8 +321,17 @@ class PromptOrchestrator(
         }
         agentManager.client.clearPostTurnState()
         finishBackgroundSubAgents(MessageFormatter.ChipStatus.FAILED, BACKGROUND_STOPPED_NOTE)
+        failToolCallsInFlight()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry(STOPPED_BY_USER)
+    }
+
+    /**
+     * Ends the chip of every tool call still in flight. A stopped agent need not report how they ended: Claude
+     * CLI's process is killed, so no tool result arrives for them.
+     */
+    private fun failToolCallsInFlight() {
+        ToolCallTracker.getInstance(project).stopAllInFlight(STOPPED_BY_USER)
     }
 
     private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {

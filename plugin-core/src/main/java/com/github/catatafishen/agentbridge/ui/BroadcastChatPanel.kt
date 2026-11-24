@@ -52,11 +52,7 @@ class BroadcastChatPanel(
         }
 
         override fun onAgentStopped(record: ToolCallRecord, reason: String) {
-            entryStore.updateToolCall(
-                record.recordId,
-                MessageFormatter.ChipStatus.FAILED,
-                ChatPanelApi.ToolCallUpdate(details = reason),
-            )
+            entryStore.updateToolCall(record.recordId, StoppedToolCall.status(record), StoppedToolCall.update(record, reason))
         }
     }
 
