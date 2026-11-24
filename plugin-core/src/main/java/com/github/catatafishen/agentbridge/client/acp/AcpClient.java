@@ -16,6 +16,7 @@ import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientPromptException;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
 import com.github.catatafishen.agentbridge.client.ClientStartException;
+import com.github.catatafishen.agentbridge.client.MessageBreaks;
 import com.github.catatafishen.agentbridge.client.SlashCommandInfo;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.agentbridge.client.acp.transport.JsonRpcException;
@@ -282,6 +283,8 @@ public abstract class AcpClient extends AbstractClient {
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
     private volatile long lastActivityNanos = System.nanoTime();
+
+    private final MessageBreaks messageBreaks = new MessageBreaks();
 
     private final AcpMessageParser messageParser = new AcpMessageParser(
         new AcpMessageParser.Delegate() {
@@ -1107,6 +1110,7 @@ public abstract class AcpClient extends AbstractClient {
             lastActivityNanos = turnStartNanos;
             // Reset post-turn state from the previous turn before starting a new one.
             clearPostTurnState();
+            messageBreaks.clear();
             updateConsumer.set(onUpdate);
             PromptRequest effectiveRequest = beforeSendPrompt(request);
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
@@ -1134,6 +1138,8 @@ public abstract class AcpClient extends AbstractClient {
                 : ERR_PROMPT_FAILED_PREFIX + displayName();
             throw new ClientPromptException(msg, e);
         } finally {
+            // The turn's last bubble is closed, so text the agent sends after it starts a bubble of its own.
+            messageBreaks.clear();
             afterPromptComplete();
         }
     }
@@ -2270,7 +2276,7 @@ public abstract class AcpClient extends AbstractClient {
         if (update != null) {
             update = processUpdate(update);
             if (update != null) {
-                consumer.accept(update);
+                consumer.accept(messageBreaks.separate(update));
             }
         }
     }

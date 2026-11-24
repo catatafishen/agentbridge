@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
+import com.github.catatafishen.agentbridge.client.MessageBreaks;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import com.google.gson.JsonElement;
@@ -34,9 +35,6 @@ final class ClaudeSubAgentRouter {
 
     private static final String ASYNC_LAUNCH_PREFIX = "Async agent launched successfully";
     private static final Pattern AGENT_ID = Pattern.compile("agentId:\\s*([\\w-]+)");
-    private static final String PARAGRAPH_BREAK = "\n\n";
-    /** Stream key of the main agent in {@link #lastTextMessage}; agent ids never contain a space. */
-    private static final String MAIN_STREAM = "main agent";
 
     private static final String FIELD_TASK_ID = "task_id";
     private static final String FIELD_TOOL_USE_ID = "tool_use_id";
@@ -50,8 +48,7 @@ final class ClaudeSubAgentRouter {
     private final Map<String, String> descriptionByAgent = new HashMap<>();
     private final Set<String> handedBackAgents = new HashSet<>();
     private final Set<String> handbackToolUses = new HashSet<>();
-    /** Per stream, the message id of the text shown last, or null once a tool call followed it. */
-    private final Map<String, String> lastTextMessage = new HashMap<>();
+    private final MessageBreaks messageBreaks = new MessageBreaks();
     /** Sub-agents that started and have not reported an end, in start order. */
     private final Set<String> runningAgents = new LinkedHashSet<>();
 
@@ -85,17 +82,14 @@ final class ClaudeSubAgentRouter {
      */
     @NotNull
     SessionUpdate text(@Nullable String childId, @Nullable String messageId, @NotNull String text) {
-        String stream = childId != null ? childId : MAIN_STREAM;
-        String previous = lastTextMessage.get(stream);
-        boolean newMessage = previous != null && messageId != null && !previous.equals(messageId);
-        if (messageId != null) lastTextMessage.put(stream, messageId);
-        String chunk = newMessage ? PARAGRAPH_BREAK + text : text;
+        boolean newMessage = messageBreaks.startsNewMessage(childId, messageId);
+        String chunk = newMessage ? MessageBreaks.PARAGRAPH_BREAK + text : text;
         return new SessionUpdate.AgentMessageChunk(List.of(new ContentBlock.Text(chunk)));
     }
 
     /** A tool call of the given stream separates the text before it from the text after it. */
     void toolCalled(@Nullable String childId) {
-        lastTextMessage.remove(childId != null ? childId : MAIN_STREAM);
+        messageBreaks.toolCalled(childId);
     }
 
     /**
