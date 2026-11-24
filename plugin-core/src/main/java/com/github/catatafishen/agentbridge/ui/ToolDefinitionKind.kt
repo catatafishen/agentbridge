@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy
 import com.github.catatafishen.agentbridge.services.ToolDefinition
 
 /**
@@ -21,12 +22,20 @@ import com.github.catatafishen.agentbridge.services.ToolDefinition
  * [java.awt.Color] honouring per-project user overrides in
  * [com.github.catatafishen.agentbridge.settings.McpServerSettings].
  */
-fun ToolDefinition.cssKindName(): String = when (kind()) {
-    ToolDefinition.Kind.SEARCH -> "search"
-    ToolDefinition.Kind.EDIT,
-    ToolDefinition.Kind.WRITE,
-    ToolDefinition.Kind.DELETE,
-    ToolDefinition.Kind.MOVE -> "edit"
-    ToolDefinition.Kind.EXECUTE -> "execute"
-    else -> "read"
+fun ToolDefinition.cssKindName(): String = when {
+    // A nested session has a colour of its own, the one of its entry in the chat, so its tool chip is told apart
+    // from the grey ones of the other tools without a kind.
+    id() == NestedSessionPolicy.TOOL_ID -> NESTED_KIND
+    else -> when (kind()) {
+        ToolDefinition.Kind.SEARCH -> "search"
+        ToolDefinition.Kind.EDIT,
+        ToolDefinition.Kind.WRITE,
+        ToolDefinition.Kind.DELETE,
+        ToolDefinition.Kind.MOVE -> "edit"
+        ToolDefinition.Kind.EXECUTE -> "execute"
+        else -> "read"
+    }
 }
+
+/** The chip kind of a nested session: its tool call and its entry. See [NativeChatColors.kindColor]. */
+const val NESTED_KIND = "nested"

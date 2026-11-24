@@ -150,6 +150,49 @@ class McpStdioProxyTest {
         void buildsUrlForHighPort() {
             assertEquals("http://127.0.0.1:65535/mcp", McpStdioProxy.buildMcpUrl(65535));
         }
+
+        @Test
+        @DisplayName("builds the URL of a given endpoint path")
+        void buildsUrlForPath() {
+            assertEquals("http://127.0.0.1:8080/mcp/nested/abcdef12",
+                McpStdioProxy.buildMcpUrl(8080, "/mcp/nested/abcdef12"));
+        }
+    }
+
+    // ── parsePath ───────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("parsePath")
+    class ParsePath {
+
+        @Test
+        @DisplayName("defaults to /mcp without --path")
+        void defaultsToMcp() {
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{"--port", "8080"}));
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{}));
+        }
+
+        @Test
+        @DisplayName("takes the nested endpoint path given with --path")
+        void takesNestedPath() {
+            assertEquals("/mcp/nested/abcdef12",
+                McpStdioProxy.parsePath(new String[]{"--port", "8080", "--path", "/mcp/nested/abcdef12"}));
+        }
+
+        @Test
+        @DisplayName("falls back to /mcp for a path outside /mcp")
+        void rejectsOtherPaths() {
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{"--path", "/health"}));
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{"--path", "/mcpx"}));
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{"--path", "http://evil.example.com/mcp"}));
+        }
+
+        @Test
+        @DisplayName("falls back to /mcp for a path that climbs out or carries a query")
+        void rejectsTraversalAndQuery() {
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{"--path", "/mcp/../hooks/tool"}));
+            assertEquals("/mcp", McpStdioProxy.parsePath(new String[]{"--path", "/mcp/nested/x?y=1"}));
+        }
     }
 
     // ── buildHealthUrl ──────────────────────────────────────────────────

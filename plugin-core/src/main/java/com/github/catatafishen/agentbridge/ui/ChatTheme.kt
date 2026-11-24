@@ -38,6 +38,12 @@ object ChatTheme {
     val THINK_COLOR: JBColor = JBColor(Gray._104, Gray._176)
     val ERROR_COLOR: JBColor = JBColor(Color(0xC7, 0x22, 0x22), Color(199, 34, 34))
 
+    /**
+     * Accent of a nested session's entry. It is not one of [SA_COLORS], so no sub-agent and no main agent
+     * shares it and the entry stands out from them.
+     */
+    val NESTED_COLOR: JBColor = JBColor(Color(0x5B, 0x3F, 0xD9), Color(0x9A, 0x86, 0xFF))
+
     val SA_COLORS: Array<JBColor> = arrayOf(
         JBColor(Color(0x1E, 0x88, 0x7E), Color(38, 166, 154)),
         JBColor(Color(0xC8, 0x8E, 0x32), Color(240, 173, 78)),

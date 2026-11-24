@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.protocol.NewSessionResponse;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientSessionException;
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
@@ -57,6 +58,16 @@ class AcpClientTest {
             JsonObject server = AcpClient.buildMcpHttpServerJson("custom", 12345);
             assertEquals("custom", server.get("name").getAsString());
             assertEquals("http://127.0.0.1:12345/mcp", server.get("url").getAsString());
+        }
+
+        @Test
+        void pointsAtTheGivenEndpointPathForANestedSession() {
+            String path = NestedSessionPolicy.endpointPath(NestedSessionPolicy.newSessionKey());
+
+            JsonObject server = AcpClient.buildMcpHttpServerJson("agentbridge", 8643, path);
+
+            assertEquals("http://127.0.0.1:8643" + path, server.get("url").getAsString());
+            assertTrue(server.get("headers").isJsonArray(), "the headers array stays mandatory");
         }
     }
 

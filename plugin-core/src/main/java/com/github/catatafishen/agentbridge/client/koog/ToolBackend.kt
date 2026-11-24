@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.client.koog
 
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy
 import com.github.catatafishen.agentbridge.services.McpProtocolHandler
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.google.gson.JsonArray
@@ -42,6 +43,13 @@ interface ToolBackend {
 class McpToolBackend(
     private val project: Project,
     private val handler: McpProtocolHandler = McpProtocolHandler(project),
+    /**
+     * The MCP session key the calls are made under, or null for the handler's own. A nested session passes
+     * one of its own, so the permission check can tell its calls from the chat's.
+     */
+    private val sessionKey: String? = null,
+    /** Tools this backend neither lists nor runs. */
+    private val excludedTools: Set<String> = emptySet(),
 ) : ToolBackend {
 
     private val nextId = AtomicLong(1)
@@ -60,13 +68,19 @@ class McpToolBackend(
 
     override fun listTools(): List<McpToolSpec> {
         val registry = ToolRegistry.getInstance(project)
-        return parseTools(rpc("tools/list", JsonObject())).map { spec ->
-            val definition = registry.findById(spec.name) ?: return@map spec
-            spec.copy(displayName = definition.displayName(), kind = definition.kind().value())
-        }
+        return parseTools(rpc("tools/list", JsonObject()))
+            .filter { it.name !in excludedTools }
+            .map { spec ->
+                val definition = registry.findById(spec.name) ?: return@map spec
+                spec.copy(displayName = definition.displayName(), kind = definition.kind().value())
+            }
     }
 
     override fun call(name: String, arguments: JsonObject, toolUseId: String?): ToolOutcome {
+        // The model may name a tool it was never offered; refusing here keeps the exclusion a rule, not a hint.
+        if (name in excludedTools) {
+            return ToolOutcome(NestedSessionPolicy.forbiddenToolMessage(name), true)
+        }
         val params = JsonObject().apply {
             addProperty("name", name)
             add("arguments", arguments)
@@ -85,7 +99,8 @@ class McpToolBackend(
             addProperty("method", method)
             add("params", params)
         }
-        return handler.handleMessage(request.toString())
+        val message = request.toString()
+        return (if (sessionKey != null) handler.handleMessage(message, sessionKey) else handler.handleMessage(message))
             ?: error("AgentBridge MCP handler returned no response for $method")
     }
 

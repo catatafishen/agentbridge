@@ -9,6 +9,7 @@ import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpStdioLaunch;
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptQueue;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
@@ -494,7 +495,7 @@ public abstract class AcpClient extends AbstractClient {
             // we do not yet distinguish between the two here. If a future change adds an
             // unexpected-exit detection path, it can call cancelAll/stopAllInFlight directly
             // with a more specific reason before invoking stop().
-            if (project != null && !project.isDisposed()) {
+            if (!isEphemeral() && project != null && !project.isDisposed()) {
                 try {
                     InFlightMcpToolRegistry.getInstance(project).cancelAll("agent stopped");
                     ToolCallTracker.getInstance(project).stopAllInFlight("agent stopped");
@@ -1066,6 +1067,9 @@ public abstract class AcpClient extends AbstractClient {
      * Package-private so tests can stub it without a live platform.
      */
     @Nullable String loadResumeSessionId() {
+        if (isEphemeral()) {
+            return null;
+        }
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
             return manager.getSettings().getResumeSessionId();
@@ -1076,6 +1080,9 @@ public abstract class AcpClient extends AbstractClient {
     }
 
     private void persistResumeSessionId(@Nullable String sessionId) {
+        if (isEphemeral()) {
+            return;
+        }
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
             manager.getSettings().setResumeSessionId(sessionId);
@@ -1332,6 +1339,9 @@ public abstract class AcpClient extends AbstractClient {
      * Package-private so the branch guard can be exercised in unit tests without a live platform.
      */
     void tryBranchSessionAtStartup() {
+        if (isEphemeral()) {
+            return;
+        }
         try {
             if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
                 branchCurrentSession();
@@ -2072,9 +2082,17 @@ public abstract class AcpClient extends AbstractClient {
         return true;
     }
 
+    /**
+     * The path of the MCP endpoint this client is wired to: the chat's own {@code /mcp}, or, for a nested session's
+     * client, the endpoint that carries the session's key. See {@code NestedSessionPolicy}.
+     */
+    protected final @NotNull String mcpEndpointPath() {
+        return NestedSessionPolicy.endpointPath(getNestedSessionKey());
+    }
+
     @Nullable
     protected final JsonObject buildMcpStdioServer(String serverName, int mcpPort) {
-        List<String> command = McpStdioLaunch.buildCommand(mcpPort);
+        List<String> command = McpStdioLaunch.buildCommand(mcpPort, mcpEndpointPath());
         if (command == null) {
             LOG.warn("Cannot build stdio MCP server config — " + McpStdioLaunch.describeUnavailable());
             return null;
@@ -2117,7 +2135,7 @@ public abstract class AcpClient extends AbstractClient {
                 "Cannot configure HTTP MCP server — the in-IDE MCP server is not running "
                     + "(no port available). IntelliJ tools will be unavailable.");
         }
-        return buildMcpHttpServerJson(serverName, mcpPort);
+        return buildMcpHttpServerJson(serverName, mcpPort, mcpEndpointPath());
     }
 
     /**
@@ -2132,10 +2150,14 @@ public abstract class AcpClient extends AbstractClient {
      * authentication headers. (See issue #948.)</p>
      */
     static @NotNull JsonObject buildMcpHttpServerJson(String serverName, int mcpPort) {
+        return buildMcpHttpServerJson(serverName, mcpPort, "/mcp");
+    }
+
+    static @NotNull JsonObject buildMcpHttpServerJson(String serverName, int mcpPort, String endpointPath) {
         JsonObject server = new JsonObject();
         server.addProperty("type", "http");
         server.addProperty("name", serverName);
-        server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
+        server.addProperty("url", "http://127.0.0.1:" + mcpPort + endpointPath);
         server.add("headers", new JsonArray());
         return server;
     }
@@ -2223,7 +2245,7 @@ public abstract class AcpClient extends AbstractClient {
             updateCommands(commands);
         }
         if (update instanceof SessionUpdate.SessionInfoChanged(var title)
-            && title != null && !title.isBlank() && currentSessionId != null) {
+            && title != null && !title.isBlank() && currentSessionId != null && !isEphemeral()) {
             String sessionId = currentSessionId;
             AppExecutorUtil.getAppExecutorService().execute(() ->
                 ConversationService.getInstance(project).updateSessionTitle(sessionId, title));

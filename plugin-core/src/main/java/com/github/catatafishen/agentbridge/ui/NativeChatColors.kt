@@ -35,7 +35,8 @@ object NativeChatColors {
     /**
      * Resolves the kind accent color, delegating to [ToolKindColors] for the four
      * user-configurable kinds (read, search, edit, execute). The "think" and "other"
-     * kinds are not user-configurable and use the shared defaults from [ChatTheme].
+     * kinds are not user-configurable and use the shared defaults from [ChatTheme]; "nested"
+     * is the colour of a nested session, [ChatTheme.NESTED_COLOR].
      *
      * [settings] is required to apply per-project user overrides; pass `null` to use defaults.
      */
@@ -44,6 +45,7 @@ object NativeChatColors {
         "edit", "write", "delete", "move" -> ToolKindColors.editColor(settings)
         "execute" -> ToolKindColors.executeColor(settings)
         "search" -> ToolKindColors.searchColor(settings)
+        NESTED_KIND -> ChatTheme.NESTED_COLOR
         else -> ChatTheme.THINK_COLOR
     }
 
@@ -83,6 +85,18 @@ object NativeChatColors {
     fun agentBubbleBorder(accent: Color): Color = JBColor(
         Color(accent.red, accent.green, accent.blue, 35),
         Color(accent.red, accent.green, accent.blue, 45),
+    )
+
+    /** Frame around a nested session's whole entry: clearly stronger than an agent bubble's border. */
+    fun nestedFrameBorder(accent: Color): Color = JBColor(
+        Color(accent.red, accent.green, accent.blue, 190),
+        Color(accent.red, accent.green, accent.blue, 200),
+    )
+
+    /** Faint tint behind a nested session's entry. */
+    fun nestedFrameBg(accent: Color): Color = JBColor(
+        Color(accent.red, accent.green, accent.blue, 10),
+        Color(accent.red, accent.green, accent.blue, 18),
     )
 
     /**

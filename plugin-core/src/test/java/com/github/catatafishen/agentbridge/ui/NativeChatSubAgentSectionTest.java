@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui;
 
 import com.github.catatafishen.agentbridge.bridge.EntryData;
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionChatView;
 import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
@@ -79,6 +80,52 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
             rawTexts(panel).contains("I'll search the repository."));
     }
 
+    public void testANestedSessionAddsNoChipOfItsOwn() {
+        NativeChatPanel withNested = panelWithNestedSession();
+        NativeChatPanel plain = new NativeChatPanel(getProject());
+
+        // The chip of the run_nested_session call is the only one; the entry's header shows the state.
+        assertEquals("no chip beside the call's own", countToolChips(plain), countToolChips(withNested));
+    }
+
+    public void testAnOrdinarySubAgentStillHasItsChip() {
+        NativeChatPanel withSubAgent = panelWithSubAgent();
+        NativeChatPanel plain = new NativeChatPanel(getProject());
+
+        assertEquals(countToolChips(plain) + 1, countToolChips(withSubAgent));
+    }
+
+    public void testANestedSessionStillShowsItsResultWithoutAChip() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentResult(NESTED_ID, "complete", "the answer", null, false, null);
+
+        assertTrue(rawTexts(panel).contains("the answer"));
+        assertEquals("Completed", statusTooltip(panel));
+    }
+
+    public void testUpdatingTheDetailsOfANestedSessionNeedsNoChip() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentDetails(NESTED_ID, "Koog", "Another task", "do it");
+
+        assertTrue(labelTexts(panel).contains("Nested session · Koog"));
+    }
+
+    private static int countToolChips(NativeChatPanel panel) {
+        return countChips(panel.getComponent());
+    }
+
+    private static int countChips(Component c) {
+        int n = c instanceof ToolChipComponent ? 1 : 0;
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                n += countChips(child);
+            }
+        }
+        return n;
+    }
+
     public void testATranscriptIsNotShownAgainAfterTheSectionStreamedIt() {
         NativeChatPanel panel = panelWithSubAgent();
         panel.appendSubAgentText("sa1", FINDING);
@@ -142,6 +189,228 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
         assertTrue(PromptOrchestrator.isBackgroundNote("✖ The sub-agent failed: rate limited"));
         assertFalse(PromptOrchestrator.isBackgroundNote(FINDING));
         assertFalse(PromptOrchestrator.isBackgroundNote("Finished. The main agent's report follows."));
+    }
+
+    // ── a nested session is framed apart from the other sub-agents ──
+
+    private static final String NESTED_ID = NestedSessionChatView.ENTRY_ID_PREFIX + "abc-123";
+
+    private NativeChatPanel panelWithNestedSession() {
+        NativeChatPanel panel = new NativeChatPanel(getProject());
+        panel.addSubAgentEntry(NESTED_ID, "Koog", "Review", "do it", new ChatPanelApi.SubAgentInitialState());
+        return panel;
+    }
+
+    public void testANestedSessionHasAHeaderThatNamesItAndItsAgent() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        List<String> labels = labelTexts(panel);
+
+        assertTrue("the header names the nested session and its agent, got " + labels,
+            labels.contains("Nested session \u00B7 Koog"));
+    }
+
+    public void testANestedSessionIsDrawnInAFrameOfItsOwn() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        assertEquals("the nested session sits in one frame", 1, countRoundedPanelsWithBorder(panel));
+    }
+
+    public void testAnOrdinarySubAgentHasNoNestedHeaderOrFrame() {
+        NativeChatPanel panel = panelWithSubAgent();
+
+        assertFalse(labelTexts(panel).stream().anyMatch(t -> t.startsWith("Nested session")));
+        assertEquals(0, countRoundedPanelsWithBorder(panel));
+    }
+
+    public void testTheHeaderShowsTheSessionAsRunningUntilItEnds() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        assertEquals("Running", statusTooltip(panel));
+    }
+
+    public void testTheHeaderShowsWhenTheSessionIsDone() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentResult(NESTED_ID, "complete", null, null, false, null);
+
+        assertEquals("Completed", statusTooltip(panel));
+    }
+
+    public void testTheHeaderShowsWhenTheSessionFailed() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentResult(NESTED_ID, "failed", "rate limited", null, false, null);
+
+        assertEquals("Failed", statusTooltip(panel));
+    }
+
+    public void testTheStateIsAnIconAndTakesNoTextInTheHeader() {
+        NativeChatPanel panel = panelWithNestedSession();
+        panel.updateSubAgentResult(NESTED_ID, "complete", null, null, false, null);
+
+        javax.swing.JLabel status = statusLabel(panel);
+
+        assertNotNull("the status has an icon", status.getIcon());
+        assertTrue("no words beside the icon", isBlank(status.getText()));
+    }
+
+    public void testEachStateHasAnIconOfItsOwn() {
+        NativeChatPanel panel = panelWithNestedSession();
+        javax.swing.Icon running = statusLabel(panel).getIcon();
+        panel.updateSubAgentResult(NESTED_ID, "complete", null, null, false, null);
+        javax.swing.Icon done = statusLabel(panel).getIcon();
+        panel.updateSubAgentResult(NESTED_ID, "failed", null, null, false, null);
+        javax.swing.Icon failed = statusLabel(panel).getIcon();
+
+        assertNotSame(running, done);
+        assertNotSame(done, failed);
+        assertNotSame(running, failed);
+    }
+
+    public void testASessionWithoutAnAnswerAddsNoLineThatOnlyRepeatsTheState() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentResult(NESTED_ID, "complete", null, null, false, null);
+
+        List<String> texts = rawTexts(panel);
+        assertFalse("no 'Completed' line, got " + texts, texts.stream().anyMatch(t -> t.contains("Completed")));
+    }
+
+    public void testAFailedSessionWithoutAnswerAddsNoLineThatOnlyRepeatsTheState() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentResult(NESTED_ID, "failed", null, null, false, null);
+
+        List<String> texts = rawTexts(panel);
+        assertFalse("no 'Failed' line, got " + texts, texts.stream().anyMatch(t -> t.contains("Failed")));
+    }
+
+    public void testASessionWithAnAnswerStillShowsIt() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.updateSubAgentResult(NESTED_ID, "complete", "the answer", null, false, null);
+
+        assertTrue(rawTexts(panel).contains("the answer"));
+    }
+
+    public void testAnOrdinarySubAgentStillGetsItsCompletedLine() {
+        NativeChatPanel panel = panelWithSubAgent();
+
+        panel.updateSubAgentResult("sa1", "complete", null, null, false, null);
+
+        assertTrue(rawTexts(panel).stream().anyMatch(t -> t.contains("Completed")));
+    }
+
+    private static javax.swing.JLabel statusLabel(NativeChatPanel panel) {
+        javax.swing.JLabel found = findStatusLabel(panel.getComponent());
+        assertNotNull("the nested session's header has a status", found);
+        return found;
+    }
+
+    private static String statusTooltip(NativeChatPanel panel) {
+        return statusLabel(panel).getToolTipText();
+    }
+
+    private static boolean isBlank(String text) {
+        return text == null || text.isEmpty();
+    }
+
+    /** The status is the label of the header that has a tooltip and no text: its icon carries the meaning. */
+    private static javax.swing.JLabel findStatusLabel(Component c) {
+        if (c instanceof javax.swing.JLabel label && label.getIcon() != null && isBlank(label.getText())
+            && label.getToolTipText() != null) {
+            return label;
+        }
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                javax.swing.JLabel found = findStatusLabel(child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    public void testANestedSessionsAnswerStreamsIntoItsFrame() {
+        NativeChatPanel panel = panelWithNestedSession();
+
+        panel.appendSubAgentText(NESTED_ID, "the ");
+        panel.appendSubAgentText(NESTED_ID, "answer");
+
+        assertTrue(rawTexts(panel).contains("the answer"));
+    }
+
+    public void testANestedSessionDoesNotShiftTheColoursOfTheSubAgentsAfterIt() {
+        NativeChatPanel withNested = new NativeChatPanel(getProject());
+        withNested.addSubAgentEntry(NESTED_ID, "Koog", "Review", null, new ChatPanelApi.SubAgentInitialState());
+        withNested.addSubAgentEntry("sa1", "explore", "Find", null, new ChatPanelApi.SubAgentInitialState());
+        NativeChatPanel without = panelWithSubAgent();
+
+        assertEquals("the sub-agent after a nested session keeps the colour it would have had alone",
+            subAgentAccent(without, "sa1"), subAgentAccent(withNested, "sa1"));
+    }
+
+    private static Object subAgentAccent(NativeChatPanel panel, String id) {
+        try {
+            var field = NativeChatPanel.class.getDeclaredField("subAgentSections");
+            field.setAccessible(true);
+            Object section = ((java.util.Map<?, ?>) field.get(panel)).get(id);
+            var accent = section.getClass().getDeclaredMethod("getAccent");
+            accent.setAccessible(true);
+            return accent.invoke(section);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not read the sub-agent's accent", e);
+        }
+    }
+
+    private static List<String> labelTexts(NativeChatPanel panel) {
+        List<String> out = new ArrayList<>();
+        collectLabelTexts(((ChatPanelApi) panel).getComponent(), out);
+        return out;
+    }
+
+    private static void collectLabelTexts(Component c, List<String> out) {
+        if (c instanceof javax.swing.JLabel label && label.getText() != null) {
+            out.add(label.getText());
+        }
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                collectLabelTexts(child, out);
+            }
+        }
+    }
+
+    /** Counts the rounded panels that draw a border: the frame of a nested session, which no sub-agent has. */
+    private static int countRoundedPanelsWithBorder(NativeChatPanel panel) {
+        return countFrames(((ChatPanelApi) panel).getComponent());
+    }
+
+    private static int countFrames(Component c) {
+        int n = 0;
+        if (c instanceof RoundedPanel rounded && hasNestedHeaderBelow(rounded)) {
+            n++;
+        }
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                n += countFrames(child);
+            }
+        }
+        return n;
+    }
+
+    private static boolean hasNestedHeaderBelow(Container container) {
+        for (Component child : container.getComponents()) {
+            if (child instanceof javax.swing.JLabel label && label.getText() != null
+                && label.getText().startsWith("Nested session")) {
+                return true;
+            }
+            if (child instanceof Container nested && hasNestedHeaderBelow(nested)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<String> rawTexts(NativeChatPanel panel) {
