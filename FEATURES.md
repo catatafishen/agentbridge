@@ -221,10 +221,16 @@ An agent can hand a self-contained task to a separate agent session and get its 
 own context.
 
 - **`run_nested_session`** — Runs the given prompt in a fresh session of an agent you choose (default: the active one)
-  and returns the answer. It blocks until the session ends or `timeout_seconds` (max 170) passes.
+  and returns the answer. The session runs in the background; the call waits for it for `timeout_seconds` (max 170,
+  the longest an MCP client waits for one call). The session itself may run for `max_runtime_seconds` (default 1800,
+  max 7200).
+- **`read_nested_session`** — If the session is still running when the call returns, the reply carries a session id.
+  This tool waits for it (`wait_seconds`, max 170), returns the answer so far, or stops it with `cancel: true`. A
+  finished session can be read again for an hour.
 - **Unattended** — the prompt tells the agent that nobody can answer questions, and the agent's own permission
   requests are denied. The rules are enforced by AgentBridge, not left to the prompt: `prompt_user`,
-  `interact_with_modal` and `run_nested_session` are not available to the session, and a tool call whose permission
+  `interact_with_modal`, `run_nested_session` and `read_nested_session` are not available to the session, and a tool
+  call whose permission
   is set to _Ask_ is denied instead of shown to you. Tools set to _Allow_ work as usual, and the session may change
   files. The nested session's agent reaches AgentBridge through an endpoint of its own, which is how the server tells
   its tool calls from your chat's. For GitHub Copilot the nested session also registers its server under its own
@@ -273,8 +279,7 @@ screen.
   notification permission on the device)
 - **Auto-reconnect** — reconnects automatically on network hiccup with full event replay so no
   messages are missed
-- **Settings** — enable/disable and configure the port under
-  _Settings → Tools → AgentBridge → Web Access_
+- **Settings** — enable/disable and configure the port under _Settings → Tools → AgentBridge → Web Access_
 
 ---
 
@@ -342,20 +347,20 @@ See the full reference in [docs/INLINE-DIFF-REVIEW.md](docs/INLINE-DIFF-REVIEW.m
 - **Persistent diff highlights** — green (added), amber (modified), red (deleted) bands
   appear in the gutter and editor, powered by the same `RangeHighlighter` layer used by VCS
 - **Review tab** — side-panel list of every file with `+N / −N` line counts, status icon,
-  and last-edited timestamp. Per-row Open / Accept / Revert; approved rows stay listed
-  (visually muted) until cleaned. Press `Delete` on an approved row to remove it
+  and last-edited timestamp. Per-row Open / Accept / Revert; approved rows stay listed (visually muted) until cleaned.
+  Press `Delete` on an approved row to remove it
 - **Re-edit flips back to PENDING** — when Auto-Approve is off and the agent edits a file
   that was already approved, the row flips back to PENDING and only the *new* hunks
   remain highlighted (the snapshot is rebased onto the previously-approved content)
-- **Cleanup paths** — per-row `Delete`, toolbar **Clean Approved**, post-`git_commit` prune
-  (only files actually in the commit), branch-switch / reset-hard wipe, and an optional
+- **Cleanup paths** — per-row `Delete`, toolbar **Clean Approved**, post-`git_commit` prune (only files actually in the
+  commit), branch-switch / reset-hard wipe, and an optional
   toolbar toggle **Auto-Clean on New Prompt**
 - **Editor banner** — shows `Review: File 3/7 · 5 changes` with Show-diff, Accept,
   Previous, Next, and Revert… actions; navigation works across all pending files
 - **Structured revert nudges** — reverting a file (from panel or banner) sends the agent a
   nudge containing the relative path, line ranges, optional reason, and a unified diff of
-  the reverted hunks. When a git gate is currently blocking, the revert dialog offers
-  **Continue reviewing** (queues the nudge, keeps gating) or **Send to agent now**
+  the reverted hunks. When a git gate is currently blocking, the revert dialog offers **Continue reviewing** (queues the
+  nudge, keeps gating) or **Send to agent now**
   (short-circuits the gate immediately so the agent can re-plan)
 - **Git gating** — `git_commit`, `git_merge`, `git_rebase`, `git_pull`, `git_reset --hard`,
   `git_stash pop/apply`, `git_branch create/switch`, `git_cherry_pick`, and `git_revert`
@@ -369,8 +374,8 @@ See the full reference in [docs/INLINE-DIFF-REVIEW.md](docs/INLINE-DIFF-REVIEW.m
 - **Persistence** — the review list (snapshots, approval state, timestamps, line counts) is
   stored in the workspace file and survives IDE restarts
 - **Unhandled-nudge handling** — `Settings → Tools → AgentBridge → Chat input` lets you
-  choose whether unhandled nudges are *Auto-sent as a new prompt* (default) or
-  *Restored into the chat input* (prepended to whatever you were typing)
+  choose whether unhandled nudges are *Auto-sent as a new prompt* (default) or *Restored into the chat input* (prepended
+  to whatever you were typing)
 
 ---
 
@@ -389,8 +394,8 @@ See [docs/MCP-TOOL-HOOKS.md](docs/MCP-TOOL-HOOKS.md) for the complete reference.
 - **State override** — success and failure hooks can flip the error state via `"state": "success"` / `"error"`
 - **Hook chaining** — multiple entries per trigger run sequentially, each seeing the previous output
 - **Identity enforcement** — built-in hook scripts prevent agents from impersonating the repository
-  owner when creating commits, PRs, issues, and comments. Uses the connected agent's name
-  (from MCP `initialize` handshake) for attribution
+  owner when creating commits, PRs, issues, and comments. Uses the connected agent's name (from MCP `initialize`
+  handshake) for attribution
 - **Connected agent identity** — `AGENTBRIDGE_AGENT_NAME` env var injected into every hook script,
   extracted from the MCP `clientInfo.name` field
 - **Per-tool configuration** — one JSON file per tool in `<storage-dir>/hooks/<tool-id>.json`

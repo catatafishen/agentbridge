@@ -1,7 +1,9 @@
 package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionJobs;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -15,10 +17,13 @@ public final class InfrastructureToolFactory {
     }
 
     public static @NotNull List<Tool> create(@NotNull Project project) {
+        // One registry for both nested-session tools: the second reads what the first starts.
+        NestedSessionJobs nestedSessions = new NestedSessionJobs(AppExecutorUtil::getAppExecutorService);
         return List.of(
             new PromptUserTool(project),
             new SleepTool(project),
-            new RunNestedSessionTool(project),
+            new RunNestedSessionTool(project, nestedSessions),
+            new ReadNestedSessionTool(project, nestedSessions),
             new HttpRequestTool(project),
             new RunCommandTool(project),
             new ReadIdeLogTool(project),
