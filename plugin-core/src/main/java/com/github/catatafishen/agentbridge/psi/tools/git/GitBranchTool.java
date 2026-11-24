@@ -96,9 +96,12 @@ public final class GitBranchTool extends GitTool {
     /**
      * Builds the {@code git for-each-ref} arguments. Each ref pattern must be its own argument:
      * a single "refs/heads refs/remotes" argument matches nothing, which listed "(no branches)".
+     * Remote refs are prefixed with {@code remotes/} because {@code %(refname:short)} yields
+     * {@code origin/x}, which {@code GitBranchRenderer} would otherwise classify as local.
      */
     static String[] listBranchesArgs(boolean all) {
         String format = "--format=%(if)%(HEAD)%(then)* %(else)  %(end)"
+            + "%(if:equals=refs/remotes)%(refname:rstrip=-2)%(then)remotes/%(end)"
             + "%(refname:short)|%(objectname:short)|%(committerdate:relative)|%(upstream:short)|%(upstream:track)";
         return all
             ? new String[]{"for-each-ref", "--sort=-committerdate", format, "refs/heads", "refs/remotes"}
