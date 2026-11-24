@@ -671,6 +671,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
                                      @NotNull AtomicBoolean cancelled) throws IOException {
         String stopReason = STOP_REASON_END_TURN;
         int eventCount = 0;
+        ClaudeSubAgentRouter subAgents = new ClaudeSubAgentRouter();
         try (BufferedReader reader = new BufferedReader(
             new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -685,7 +686,8 @@ public final class ClaudeClient extends AbstractClaudeClient {
                     if (LOG.isTraceEnabled()) {
                         LOG.trace("stream-json [" + eventCount + "] raw=" + line);
                     }
-                    stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
+                    stopReason = handleStreamEvent(
+                        sessionId, event, stopReason, new StreamContext(stdin, subAgents, onChunk, onUpdate));
                 } catch (ClaudeAuthRequiredException e) {
                     // Re-throw so the surrounding runClaude(...) translates it to ClientException
                     // and PromptOrchestrator can fire markAuthError. Don't let the generic
@@ -698,7 +700,11 @@ public final class ClaudeClient extends AbstractClaudeClient {
         } finally {
             stdin.closeQuietly();
         }
-        if (cancelled.get()) stopReason = "cancelled";
+        if (cancelled.get()) {
+            stopReason = "cancelled";
+        } else if (onUpdate != null) {
+            subAgents.unfinishedAtEndOfStream().forEach(onUpdate);
+        }
         if (eventCount == 0) {
             LOG.warn("Claude CLI produced no stream-json events (session=" + sessionId + ")");
         } else {
@@ -707,76 +713,88 @@ public final class ClaudeClient extends AbstractClaudeClient {
         return stopReason;
     }
 
+    /** What handling one prompt's stream-json events needs besides the event itself. */
+    private record StreamContext(@NotNull CliStdin stdin,
+                                 @NotNull ClaudeSubAgentRouter subAgents,
+                                 @Nullable Consumer<String> onChunk,
+                                 @Nullable Consumer<SessionUpdate> onUpdate) {
+    }
+
     @NotNull
     private String handleStreamEvent(@NotNull String sessionId,
                                      @NotNull JsonObject event,
                                      @NotNull String currentStopReason,
-                                     @NotNull CliStdin stdin,
-                                     @Nullable Consumer<String> onChunk,
-                                     @Nullable Consumer<SessionUpdate> onUpdate) {
+                                     @NotNull StreamContext ctx) {
         String type = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "";
         return switch (type) {
             case "system" -> {
-                // The result event is the authoritative source for session IDs.
-                // Updating here would overwrite the last known-good ID when Claude silently
-                // starts a fresh session because the --resume file was missing or invalid.
-                // The init event carries the list of slash commands supported by this CLI version.
-                // Parse them so the autocomplete popup can surface them to the user.
-                if (SUBTYPE_INIT.equals(event.has(FIELD_SUBTYPE)
-                    ? event.get(FIELD_SUBTYPE).getAsString() : null)
-                    && event.has(FIELD_SLASH_COMMANDS)
-                    && event.get(FIELD_SLASH_COMMANDS).isJsonArray()) {
-                    List<String> cmds = new ArrayList<>();
-                    for (JsonElement el : event.getAsJsonArray(FIELD_SLASH_COMMANDS)) {
-                        String cmd = el.getAsString();
-                        cmds.add(cmd.startsWith("/") ? cmd : "/" + cmd);
-                    }
-                    availableSlashCommands.clear();
-                    availableSlashCommands.addAll(cmds);
-                    LOG.info("ClaudeClient: " + cmds.size() + " slash command(s) available: " + cmds);
-                }
+                handleSystemEvent(event, ctx);
                 yield currentStopReason;
             }
             case "assistant" -> {
-                streamAssistantMessage(event, onChunk, onUpdate);
+                streamAssistantMessage(event, ctx);
                 yield currentStopReason;
             }
             case "tool_use" -> {
-                emitToolCallStart(event, onUpdate);
+                emitToolCallStart(event, ctx.onUpdate());
                 yield currentStopReason;
             }
             case "tool_result" -> {
-                emitToolCallEnd(event, onUpdate);
+                emitToolCallEnd(event, ctx.onUpdate());
                 yield currentStopReason;
             }
             case "user" -> {
-                handleUserEvent(event, onUpdate);
+                handleUserEvent(event, ctx);
                 yield currentStopReason;
             }
             case "control_request" -> {
-                respondToControlRequest(event, stdin);
+                respondToControlRequest(event, ctx.stdin());
                 yield currentStopReason;
             }
-            case "result" -> handleResultEvent(sessionId, event, stdin, onChunk, onUpdate);
+            case "result" -> handleResultEvent(sessionId, event, ctx.stdin(), ctx.onChunk(), ctx.onUpdate());
             default -> currentStopReason;
         };
     }
 
-    private void handleUserEvent(@NotNull JsonObject event,
-                                 @Nullable Consumer<SessionUpdate> onUpdate) {
-        // In stream-json format, tool results arrive as a "user" message event with
-        // tool_result content blocks. Process each block to emit tool_call_update events,
-        // which sets toolJustCompleted in the UI and creates a new message segment before
-        // the next assistant response.
-        if (!event.has(FIELD_MESSAGE)) return;
+    /**
+     * The init event lists the CLI's slash commands; task events report sub-agents starting and ending.
+     * Session ids are taken from the result event only: init names a fresh session when Claude silently
+     * dropped an invalid {@code --resume}, which would overwrite the last known-good id.
+     */
+    private void handleSystemEvent(@NotNull JsonObject event, @NotNull StreamContext ctx) {
+        SessionUpdate.ChildSessionStatus status = ctx.subAgents().taskStatus(event);
+        if (status != null) {
+            if (ctx.onUpdate() != null) ctx.onUpdate().accept(status);
+            return;
+        }
+        if (SUBTYPE_INIT.equals(event.has(FIELD_SUBTYPE) ? event.get(FIELD_SUBTYPE).getAsString() : null)
+            && event.has(FIELD_SLASH_COMMANDS)
+            && event.get(FIELD_SLASH_COMMANDS).isJsonArray()) {
+            List<String> cmds = new ArrayList<>();
+            for (JsonElement el : event.getAsJsonArray(FIELD_SLASH_COMMANDS)) {
+                String cmd = el.getAsString();
+                cmds.add(cmd.startsWith("/") ? cmd : "/" + cmd);
+            }
+            availableSlashCommands.clear();
+            availableSlashCommands.addAll(cmds);
+            LOG.info("ClaudeClient: " + cmds.size() + " slash command(s) available: " + cmds);
+        }
+    }
+
+    /** Tool results arrive as a "user" event with tool_result content blocks. */
+    private void handleUserEvent(@NotNull JsonObject event, @NotNull StreamContext ctx) {
+        if (!event.has(FIELD_MESSAGE) || ctx.onUpdate() == null) return;
         JsonObject msg = event.getAsJsonObject(FIELD_MESSAGE);
         if (!msg.has(FIELD_CONTENT) || !msg.get(FIELD_CONTENT).isJsonArray()) return;
+        ClaudeSubAgentRouter subAgents = ctx.subAgents();
+        Consumer<SessionUpdate> target = subAgents.target(subAgents.childId(event), ctx.onUpdate());
         for (JsonElement el : msg.getAsJsonArray(FIELD_CONTENT)) {
             if (!el.isJsonObject()) continue;
             JsonObject block = el.getAsJsonObject();
             String blockType = block.has(FIELD_TYPE) ? block.get(FIELD_TYPE).getAsString() : "";
-            if ("tool_result".equals(blockType)) {
-                emitToolCallEnd(block, onUpdate);
+            String toolUseId = block.has(FIELD_TOOL_USE_ID) ? block.get(FIELD_TOOL_USE_ID).getAsString() : "";
+            if ("tool_result".equals(blockType) && !subAgents.isHandbackResult(toolUseId)) {
+                emitToolCallEnd(block, subAgents.toolResult(toolUseId, extractToolResultContent(block)), target);
             }
         }
     }
@@ -835,37 +853,70 @@ public final class ClaudeClient extends AbstractClaudeClient {
         }
     }
 
-    private void streamAssistantMessage(@NotNull JsonObject event,
-                                        @Nullable Consumer<String> onChunk,
-                                        @Nullable Consumer<SessionUpdate> onUpdate) {
-        if (!event.has(FIELD_MESSAGE)) return;
+    private void streamAssistantMessage(@NotNull JsonObject event, @NotNull StreamContext ctx) {
+        if (!event.has(FIELD_MESSAGE) || ctx.onUpdate() == null) return;
         JsonObject message = event.getAsJsonObject(FIELD_MESSAGE);
         if (!message.has(FIELD_CONTENT)) return;
+        String childId = ctx.subAgents().childId(event);
+        AssistantMessage source = new AssistantMessage(
+            childId,
+            message.has("id") ? message.get("id").getAsString() : null,
+            ctx.subAgents().target(childId, ctx.onUpdate()));
         for (JsonElement block : message.getAsJsonArray(FIELD_CONTENT)) {
             if (block.isJsonObject()) {
-                streamContentBlock(block.getAsJsonObject(), onChunk, onUpdate);
+                streamContentBlock(block.getAsJsonObject(), source, ctx.subAgents());
             }
         }
     }
 
-    private void streamContentBlock(@NotNull JsonObject block,
-                                    @Nullable Consumer<String> onChunk,
-                                    @Nullable Consumer<SessionUpdate> onUpdate) {
+    /**
+     * An assistant message being streamed: the sub-agent that wrote it ({@code childId}, null for the main
+     * agent), its message id, and where its updates go.
+     */
+    private record AssistantMessage(@Nullable String childId, @Nullable String messageId,
+                                    @NotNull Consumer<SessionUpdate> target) {
+    }
+
+    private void streamContentBlock(@NotNull JsonObject block, @NotNull AssistantMessage source,
+                                    @NotNull ClaudeSubAgentRouter subAgents) {
         String blockType = block.has(FIELD_TYPE) ? block.get(FIELD_TYPE).getAsString() : "";
-        if (BLOCK_TYPE_TEXT.equals(blockType) && block.has(BLOCK_TYPE_TEXT) && onChunk != null) {
+        if (BLOCK_TYPE_TEXT.equals(blockType) && block.has(BLOCK_TYPE_TEXT)) {
             String text = block.get(BLOCK_TYPE_TEXT).getAsString();
-            if (!text.isEmpty()) onChunk.accept(text);
+            if (!text.isEmpty()) source.target().accept(subAgents.text(source.childId(), source.messageId(), text));
         } else if (BLOCK_TYPE_THINKING.equals(blockType) && block.has(BLOCK_TYPE_THINKING)) {
-            String thinking = block.get(BLOCK_TYPE_THINKING).getAsString();
-            emitThought(thinking, onUpdate);
+            emitThought(block.get(BLOCK_TYPE_THINKING).getAsString(), source.target());
         } else if ("tool_use".equals(blockType)) {
-            // Tool-use blocks are embedded in the assistant message content in stream-json format.
-            // Emit a tool_call start so the UI registers the tool call entry.
-            emitToolCallStart(block, onUpdate);
+            streamToolUse(block, source, subAgents);
         }
     }
 
+    /** A sub-agent's hand-back call shows as its text; every other tool call gets a chip. */
+    private void streamToolUse(@NotNull JsonObject block, @NotNull AssistantMessage source,
+                               @NotNull ClaudeSubAgentRouter subAgents) {
+        String name = block.has("name") ? block.get("name").getAsString() : "";
+        String id = block.has("id") ? block.get("id").getAsString() : "";
+        if (ClaudeSubAgentRouter.HANDBACK_TOOL.equals(name) && !id.isEmpty()) {
+            JsonObject input = block.has(FIELD_INPUT) && block.get(FIELD_INPUT).isJsonObject()
+                ? block.getAsJsonObject(FIELD_INPUT) : new JsonObject();
+            String report = subAgents.handback(source.childId(), id, input);
+            if (report != null) source.target().accept(subAgents.text(source.childId(), id, report));
+            return;
+        }
+        subAgents.toolCalled(source.childId());
+        emitToolCallStart(block, source.target());
+    }
+
+    /**
+     * A sub-agent that the Agent tool started with {@code run_in_background} completes the tool call at once;
+     * the result names the sub-agent's id, which its later events carry.
+     */
+    @Override
+    public @Nullable String backgroundSubAgentSessionId(@Nullable String subAgentResult) {
+        return ClaudeSubAgentRouter.backgroundAgentId(subAgentResult);
+    }
+
     private static final String FIELD_MESSAGE = "message";
+    private static final String FIELD_TOOL_USE_ID = "tool_use_id";
     private static final String FIELD_SUBTYPE = "subtype";
     private static final String FIELD_REQUEST_ID = "requestId";
     private static final String BLOCK_TYPE_TEXT = "text";
@@ -898,10 +949,15 @@ public final class ClaudeClient extends AbstractClaudeClient {
     }
 
     private void emitToolCallEnd(@NotNull JsonObject event, @Nullable Consumer<SessionUpdate> onUpdate) {
+        emitToolCallEnd(event, extractToolResultContent(event), onUpdate);
+    }
+
+    /** Emits the end of the tool call in tool_result {@code event}, with {@code content} as its result. */
+    private void emitToolCallEnd(@NotNull JsonObject event, @NotNull String content,
+                                 @Nullable Consumer<SessionUpdate> onUpdate) {
         LOG.info("[tool_result event] raw: " + event);
-        String toolUseId = event.has("tool_use_id") ? event.get("tool_use_id").getAsString() : "";
+        String toolUseId = event.has(FIELD_TOOL_USE_ID) ? event.get(FIELD_TOOL_USE_ID).getAsString() : "";
         boolean isError = event.has("is_error") && event.get("is_error").getAsBoolean();
-        String content = extractToolResultContent(event);
         LOG.info("[tool_result event] extracted: toolUseId=" + toolUseId + ", isError=" + isError + ", contentLen=" + content.length());
         emitToolCallEnd(toolUseId, content, !isError, onUpdate);
     }
