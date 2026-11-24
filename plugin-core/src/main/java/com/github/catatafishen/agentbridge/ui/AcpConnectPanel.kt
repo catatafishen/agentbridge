@@ -733,8 +733,9 @@ class AcpConnectPanel(
         return when (val choice = sessionCombo.selectedItem as? SessionChoice) {
             is SessionChoice.None -> {
                 settings.resumeSessionId = null
-                // Clear Claude CLI resume state so it starts fresh (no --resume).
-                if (sameAgent) sessionSwitch.clearClaudeResumeState()
+                // Clear Claude CLI resume state so it starts fresh (no --resume). An agent switch exports nothing
+                // to replace it, since the current session id is reset below.
+                sessionSwitch.clearClaudeResumeState()
                 // Delete the session ID file so restoreConversation() finds nothing and
                 // the chat pane opens empty rather than restoring the previous session.
                 conversations.resetCurrentSessionId(project.basePath)

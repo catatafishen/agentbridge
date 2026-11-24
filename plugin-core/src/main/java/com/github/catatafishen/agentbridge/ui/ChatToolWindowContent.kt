@@ -2598,7 +2598,9 @@ class ChatToolWindowContent(
                 LOG.warn("Error stopping agent during agent switch", ex)
             }
         }
-        resetSessionKeepingHistory()
+        // The persisted resume id stays, so the restarted process can continue the agent session.
+        resetSessionState()
+        updateSessionInfo()
         modelSelector.loadModelsAsync(
             onSuccess = { models ->
                 buildAndShowChatPanel()
@@ -2952,11 +2954,15 @@ class ChatToolWindowContent(
         com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
     }
 
-    fun resetSession() {
-        // Clear the persisted resume ID so the next session/new starts completely fresh.
+    /** The next prompt starts a new agent session instead of resuming the current one. */
+    private fun startNewAgentSession() {
         agentManager.settings.setResumeSessionId(null)
         agentManager.getClient().clearPersistedSession()
         resetSessionState()
+    }
+
+    fun resetSession() {
+        startNewAgentSession()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
         updateSessionInfo()
@@ -2976,7 +2982,7 @@ class ChatToolWindowContent(
     }
 
     fun resetSessionKeepingHistory() {
-        resetSessionState()
+        startNewAgentSession()
         updateSessionInfo()
     }
 
