@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 import com.github.catatafishen.agentbridge.client.AbstractClient;
 import com.github.catatafishen.agentbridge.client.ClientRegistry;
 import com.github.catatafishen.agentbridge.client.nested.NestedSessionChatView;
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionJobs;
 import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.github.catatafishen.agentbridge.client.nested.NestedSessionRunner;
 import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
@@ -15,7 +16,6 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -24,6 +24,11 @@ import java.util.stream.Collectors;
  * <p>The session is a second client of the chosen agent, started next to the chat's own and closed
  * when the prompt is done. It is not meant to ask questions: the prompt tells the agent so, and the
  * agent's own permission requests are denied. It shows up in the chat as a sub-agent entry.
+ *
+ * <p>The session runs in the background ({@link NestedSessionJobs}). This call waits for it only up to
+ * {@code timeout_seconds}, which an MCP client's own deadline caps; if the session is still running by then, the
+ * reply carries its id and {@code read_nested_session} waits for it further. The session's own limit is
+ * {@code max_runtime_seconds}.
  *
  * <p>Only one nested session runs per project at a time. That also stops a nested session from
  * starting another one, which would otherwise multiply agent processes without bound.
@@ -35,17 +40,24 @@ public final class RunNestedSessionTool extends InfrastructureTool {
     private static final String PARAM_MODEL = "model";
     private static final String PARAM_DESCRIPTION = "description";
     private static final String PARAM_TIMEOUT = "timeout_seconds";
+    private static final String PARAM_MAX_RUNTIME = "max_runtime_seconds";
     private static final int DEFAULT_TIMEOUT_SECONDS = 160;
+    static final int DEFAULT_MAX_RUNTIME_SECONDS = 1800;
+    static final int MAX_RUNTIME_SECONDS = 7200;
     private static final String DEFAULT_DESCRIPTION = "Nested session";
 
-    /**
-     * Guards the one-nested-session-at-a-time rule. Per tool instance, and the registry creates one
-     * per project.
-     */
-    private final AtomicBoolean running = new AtomicBoolean();
+    private final NestedSessionJobs jobs;
 
     public RunNestedSessionTool(Project project) {
+        this(project, new NestedSessionJobs(AppExecutorUtil::getAppExecutorService));
+    }
+
+    /**
+     * @param jobs shared with {@link ReadNestedSessionTool}, which reads what this tool starts
+     */
+    public RunNestedSessionTool(Project project, @NotNull NestedSessionJobs jobs) {
         super(project);
+        this.jobs = jobs;
     }
 
     @Override
@@ -66,9 +78,14 @@ public final class RunNestedSessionTool extends InfrastructureTool {
             + "questions, so the prompt must contain everything it needs, and its own permission requests "
             + "are denied. It may change files, like any agent. It appears in the chat as a sub-agent. "
             + "`agent` picks the agent (default: the active one); `model` and `description` are optional. "
-            + "Blocks until the session ends or `timeout_seconds` (default " + DEFAULT_TIMEOUT_SECONDS
-            + ", at most " + McpRequestDeadline.MAX_TIMEOUT_SECONDS + ") passes. Only one nested session "
-            + "runs at a time. Returns the answer text, or an error that says why there is none.";
+            + "The session runs in the background. This call waits for it for `timeout_seconds` (default "
+            + DEFAULT_TIMEOUT_SECONDS + ", at most " + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "). If it is "
+            + "still running then, the reply gives a session id and the session carries on: call "
+            + NestedSessionPolicy.READ_TOOL_ID + " with that id to wait further, read the answer so far, or "
+            + "cancel it. `max_runtime_seconds` (default " + DEFAULT_MAX_RUNTIME_SECONDS + ", at most "
+            + MAX_RUNTIME_SECONDS + ") is how long the session itself may run before it is stopped. "
+            + "Only one nested session runs at a time. Returns the answer text, or an error that says why "
+            + "there is none.";
     }
 
     @Override
@@ -105,22 +122,28 @@ public final class RunNestedSessionTool extends InfrastructureTool {
             Param.optional(PARAM_MODEL, TYPE_STRING, "Model id. Default: the agent's own default."),
             Param.optional(PARAM_DESCRIPTION, TYPE_STRING, "Short title shown in the chat."),
             Param.optional(PARAM_TIMEOUT, TYPE_INTEGER,
-                "Seconds to wait for the session (default " + DEFAULT_TIMEOUT_SECONDS + ", at most "
-                    + McpRequestDeadline.MAX_TIMEOUT_SECONDS + ").")
+                "Seconds this call waits for the session (default " + DEFAULT_TIMEOUT_SECONDS + ", at most "
+                    + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "). The session keeps running after that."),
+            Param.optional(PARAM_MAX_RUNTIME, TYPE_INTEGER,
+                "Seconds the session itself may run (default " + DEFAULT_MAX_RUNTIME_SECONDS + ", at most "
+                    + MAX_RUNTIME_SECONDS + ").")
         );
     }
 
     @Override
-    public @NotNull String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) throws InterruptedException {
         String prompt = text(args.get(PARAM_PROMPT));
         if (prompt == null) {
             return err("prompt is required and must not be blank");
         }
-        int requested = args.has(PARAM_TIMEOUT) && !args.get(PARAM_TIMEOUT).isJsonNull()
-            ? args.get(PARAM_TIMEOUT).getAsInt() : DEFAULT_TIMEOUT_SECONDS;
+        int requested = intArg(args, PARAM_TIMEOUT, DEFAULT_TIMEOUT_SECONDS);
         String rejected = McpRequestDeadline.rejectNonPositive(requested);
         if (rejected != null) {
             return rejected;
+        }
+        int maxRuntime = intArg(args, PARAM_MAX_RUNTIME, DEFAULT_MAX_RUNTIME_SECONDS);
+        if (maxRuntime <= 0) {
+            return err(PARAM_MAX_RUNTIME + " must be a positive integer (seconds), got: " + maxRuntime);
         }
         String agentId = text(args.get(PARAM_AGENT));
         if (agentId == null) {
@@ -130,20 +153,25 @@ public final class RunNestedSessionTool extends InfrastructureTool {
         if (client == null) {
             return err("Agent '" + agentId + "' cannot run nested sessions (yet). Available: " + available());
         }
-        if (!running.compareAndSet(false, true)) {
-            return err("Another nested session is already running. Wait for it to finish; a nested "
+        if (!jobs.tryAcquire()) {
+            return err("Another nested session is already running (see " + jobs.runningIds()
+                + "). Wait for it with " + NestedSessionPolicy.READ_TOOL_ID + " or cancel it; a nested "
                 + "session cannot start another one.");
         }
+        NestedSessionJobs.Job job;
         try {
-            return runNested(client, prompt, args, McpRequestDeadline.clamp(requested), requested);
-        } finally {
-            running.set(false);
+            job = start(client, prompt, args, Math.min(maxRuntime, MAX_RUNTIME_SECONDS));
+        } catch (RuntimeException e) {
+            jobs.release();
+            throw e;
         }
+        int wait = McpRequestDeadline.clamp(requested);
+        String body = ReadNestedSessionTool.awaitReply(job, wait);
+        return McpRequestDeadline.prependNotice(McpRequestDeadline.clampNotice(requested), body);
     }
 
-    private @NotNull String runNested(@NotNull AbstractClient client,
-                                      @NotNull String prompt, @NotNull JsonObject args,
-                                      int timeoutSeconds, int requestedSeconds) {
+    private @NotNull NestedSessionJobs.Job start(@NotNull AbstractClient client, @NotNull String prompt,
+                                                 @NotNull JsonObject args, int runtimeSeconds) {
         client.setEphemeral(true);
         client.setNestedSessionKey(NestedSessionPolicy.newSessionKey());
         String description = text(args.get(PARAM_DESCRIPTION));
@@ -154,16 +182,8 @@ public final class RunNestedSessionTool extends InfrastructureTool {
         String cwd = project.getBasePath();
         NestedSessionRunner.Request request = new NestedSessionRunner.Request(
             prompt, cwd != null ? cwd : System.getProperty("user.home"), text(args.get(PARAM_MODEL)),
-            timeoutSeconds);
-        NestedSessionRunner.Result result = new NestedSessionRunner(AppExecutorUtil.getAppExecutorService())
-            .run(client, request, view);
-        if (view != null) {
-            view.finish(result);
-        }
-        String body = result.status() == NestedSessionRunner.Status.COMPLETED
-            ? result.text()
-            : err(result.error() + (result.text().isEmpty() ? "" : "\n\nPartial answer:\n" + result.text()));
-        return McpRequestDeadline.prependNotice(McpRequestDeadline.clampNotice(requestedSeconds), body);
+            runtimeSeconds);
+        return jobs.start(client, request, view, view == null ? null : view::finish);
     }
 
     private @Nullable NestedSessionChatView chatView(@NotNull AbstractClient client,
@@ -175,6 +195,11 @@ public final class RunNestedSessionTool extends InfrastructureTool {
         NestedSessionChatView view = new NestedSessionChatView(panel);
         view.start(client.displayName(), description, prompt);
         return view;
+    }
+
+    private static int intArg(@NotNull JsonObject args, @NotNull String name, int fallback) {
+        JsonElement element = args.get(name);
+        return element != null && !element.isJsonNull() ? element.getAsInt() : fallback;
     }
 
     private static @NotNull String available() {

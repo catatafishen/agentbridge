@@ -33,10 +33,15 @@ public final class NestedSessionPolicy {
     public static final String TOOL_ID = "run_nested_session";
 
     /**
+     * The id of the tool that waits for, reads or cancels a nested session started in the background.
+     */
+    public static final String READ_TOOL_ID = "read_nested_session";
+
+    /**
      * Tools a nested session must not use: they wait for a person, or start further sessions.
      */
     public static final Set<String> FORBIDDEN_TOOLS = Set.of(
-        "prompt_user", "interact_with_modal", TOOL_ID);
+        "prompt_user", "interact_with_modal", TOOL_ID, READ_TOOL_ID);
 
     private NestedSessionPolicy() {
     }
