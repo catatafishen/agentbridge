@@ -83,7 +83,7 @@ The built-in Koog agent has no external CLI: it calls the model directly and nee
 Switch between agents with one click. Each agent has its own connection settings and custom instructions.
 AgentBridge MCP tool permissions are shared project-wide so the same IntelliJ tool policy applies after switching agents.
 
-### Community contributions
+## Community contributions
 
 AgentBridge has had a lot of help from the community. Thank you!
 
@@ -97,6 +97,14 @@ AgentBridge has had a lot of help from the community. Thank you!
   [@Strobotti](https://github.com/Strobotti)
 - **Goose** — [#1009](https://github.com/catatafishen/agentbridge/pull/1009) by
   [@jelloeater-agent](https://github.com/jelloeater-agent)
+- **OpenCode 2.x support** (model and agent switching via session config options, v2 permissions, session export,
+  sub-agent tracking and calling AgentBridge tools outside Code Mode) — [#1170](https://github.com/catatafishen/agentbridge/pull/1170),
+  [#1186](https://github.com/catatafishen/agentbridge/pull/1186), [#1188](https://github.com/catatafishen/agentbridge/pull/1188),
+  [#1199](https://github.com/catatafishen/agentbridge/pull/1199), [#1210](https://github.com/catatafishen/agentbridge/pull/1210),
+  [#1261](https://github.com/catatafishen/agentbridge/pull/1261), [#1267](https://github.com/catatafishen/agentbridge/pull/1267)
+  and more by [@BambinoSK](https://github.com/BambinoSK), who also surfaced Hermes session modes
+  ([#1138](https://github.com/catatafishen/agentbridge/pull/1138)) and let Claude Code start sub-agents
+  ([#1272](https://github.com/catatafishen/agentbridge/pull/1272))
 
 Want to add another agent? See [Adding a new agent](docs/ADDING-A-NEW-AGENT.md).
 
@@ -112,7 +120,28 @@ Want to add another agent? See [Adding a new agent](docs/ADDING-A-NEW-AGENT.md).
 - **Collapsible colored diff card for edit approvals** — [#1119](https://github.com/catatafishen/agentbridge/pull/1119)
   and the **editor context-menu actions** (Add Selection / Add File) —
   [#1097](https://github.com/catatafishen/agentbridge/pull/1097), both by
-  [@BambinoSK](https://github.com/BambinoSK)
+  [@BambinoSK](https://github.com/BambinoSK), who has since extended the approval flow: opening approvals in the
+  editor diff ([#1126](https://github.com/catatafishen/agentbridge/pull/1126)), diff cards for
+  `write_file`/`edit_text`/`create_scratch_file` prompts ([#1141](https://github.com/catatafishen/agentbridge/pull/1141),
+  [#1256](https://github.com/catatafishen/agentbridge/pull/1256)), one approval prompt at a time
+  ([#1251](https://github.com/catatafishen/agentbridge/pull/1251)) and a notification when a request waits while the IDE
+  is unfocused ([#1166](https://github.com/catatafishen/agentbridge/pull/1166))
+- **Sub-agent and tool-call visibility** (sub-agent sections and chip popups, live tool-call arguments) and a
+  **thinking-bubble toggle** — [#1192](https://github.com/catatafishen/agentbridge/pull/1192),
+  [#1258](https://github.com/catatafishen/agentbridge/pull/1258), [#1269](https://github.com/catatafishen/agentbridge/pull/1269),
+  [#1201](https://github.com/catatafishen/agentbridge/pull/1201) by [@BambinoSK](https://github.com/BambinoSK)
+- **`run_nested_session`** for unattended nested agent sessions — [#1270](https://github.com/catatafishen/agentbridge/pull/1270)
+  and **`get_commit_problems`** with editor-free analysis of closed files —
+  [#1236](https://github.com/catatafishen/agentbridge/pull/1236), both by [@KaiHufenbach](https://github.com/KaiHufenbach),
+  who also made the navigation tools deterministic and thread-safe
+  ([#1219](https://github.com/catatafishen/agentbridge/pull/1219)) and fixed chat bubble clipping
+  ([#1223](https://github.com/catatafishen/agentbridge/pull/1223), [#1233](https://github.com/catatafishen/agentbridge/pull/1233))
+- **Clearer tool errors** (`run_tests`, `search_text`, `create_run_configuration`, hook filters) —
+  [#1226](https://github.com/catatafishen/agentbridge/pull/1226), [#1228](https://github.com/catatafishen/agentbridge/pull/1228),
+  [#1235](https://github.com/catatafishen/agentbridge/pull/1235), [#1246](https://github.com/catatafishen/agentbridge/pull/1246)
+  by [@nightlab-agent](https://github.com/nightlab-agent)
+- **IDE-aware agent instructions** (names the actual JetBrains IDE instead of assuming IntelliJ) —
+  [#1224](https://github.com/catatafishen/agentbridge/pull/1224) by [@JanDiederich](https://github.com/JanDiederich)
 - **Quick MCP toggle, better MCP edit options and server statuses** —
   [#886](https://github.com/catatafishen/agentbridge/pull/886) by [@forstjiri](https://github.com/forstjiri)
 - **Chat message theming, accessibility and settings UI** — [#923](https://github.com/catatafishen/agentbridge/pull/923)
