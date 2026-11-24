@@ -1,20 +1,16 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
 import com.github.catatafishen.agentbridge.acp.protocol.PromptRequest;
-import com.github.catatafishen.agentbridge.bridge.AgentConfig;
-import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.model.ContentBlock;
 import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
-import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,7 +18,6 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
@@ -57,28 +52,11 @@ class ClaudeClientStreamTest {
     }
 
     private ClaudeClient createClient(String sseEvents) throws Exception {
-        byte[] inputBytes = sseEvents.getBytes(StandardCharsets.UTF_8);
-        return createClient((cmd, env, workDir) -> new FakeProcess(
-            new ByteArrayInputStream(inputBytes),
-            new ByteArrayOutputStream(),
-            new ByteArrayInputStream(new byte[0])
-        ));
+        return ClaudeCliTestFixtures.clientPrinting(sseEvents);
     }
 
     private ClaudeClient createClient(ClaudeClient.ProcessFactory factory) throws Exception {
-        AgentProfile profile = new AgentProfile();
-        profile.setDisplayName("test-claude");
-        AgentConfig config = new StubAgentConfig();
-
-        ClaudeClient c = new ClaudeClient(profile, config, null, null, 0, factory);
-        // Bypass start() which needs real binary resolution
-        Field startedField = findField(c.getClass(), "started");
-        startedField.setAccessible(true);
-        startedField.set(c, true);
-        Field binaryField = ClaudeClient.class.getDeclaredField("resolvedBinaryPath");
-        binaryField.setAccessible(true);
-        binaryField.set(c, "/usr/bin/claude");
-        return c;
+        return ClaudeCliTestFixtures.startedClient(factory);
     }
 
     private static Field findField(Class<?> clazz, String name) {
@@ -240,7 +218,7 @@ class ClaudeClientStreamTest {
             AtomicInteger callCount = new AtomicInteger(0);
             client = createClient((cmd, env, workDir) -> {
                 String events = callCount.getAndIncrement() == 0 ? goodEvents : errorEvents;
-                return new FakeProcess(
+                return new ClaudeCliTestFixtures.FakeProcess(
                     new ByteArrayInputStream(events.getBytes(StandardCharsets.UTF_8)),
                     new ByteArrayOutputStream(),
                     new ByteArrayInputStream(new byte[0])
@@ -494,7 +472,7 @@ class ClaudeClientStreamTest {
             WatchedStdout stdout = new WatchedStdout(RESULT, () -> {
             });
             StdinNeedingDrainedStdout stdin = new StdinNeedingDrainedStdout(stdout.firstRead);
-            client = createClient((cmd, env, workDir) -> new FakeProcess(
+            client = createClient((cmd, env, workDir) -> new ClaudeCliTestFixtures.FakeProcess(
                 stdout, stdin, new ByteArrayInputStream(new byte[0])));
             String sessionId = client.createSession(null);
 
@@ -514,7 +492,7 @@ class ClaudeClientStreamTest {
                     throw new IOException("Pipe terminata");
                 }
             };
-            client = createClient((cmd, env, workDir) -> new FakeProcess(
+            client = createClient((cmd, env, workDir) -> new ClaudeCliTestFixtures.FakeProcess(
                 new ByteArrayInputStream(new byte[0]), brokenStdin, new ByteArrayInputStream(new byte[0])));
             String sessionId = client.createSession(null);
 
@@ -535,7 +513,7 @@ class ClaudeClientStreamTest {
                 }
             };
             WatchedStdout stdout = new WatchedStdout("", () -> client.cancelSession(session.get()));
-            client = createClient((cmd, env, workDir) -> new FakeProcess(
+            client = createClient((cmd, env, workDir) -> new ClaudeCliTestFixtures.FakeProcess(
                 stdout, brokenStdin, new ByteArrayInputStream(new byte[0])));
             session.set(client.createSession(null));
 
@@ -648,108 +626,6 @@ class ClaudeClientStreamTest {
             client = createClient("");
             List<Model> models = client.getAvailableModels();
             assertFalse(models.isEmpty());
-        }
-    }
-
-    /**
-     * Minimal fake Process that supplies predetermined streams.
-     */
-    private static class FakeProcess extends Process {
-        private final InputStream stdout;
-        private final OutputStream stdin;
-        private final InputStream stderr;
-
-        FakeProcess(InputStream stdout, OutputStream stdin, InputStream stderr) {
-            this.stdout = stdout;
-            this.stdin = stdin;
-            this.stderr = stderr;
-        }
-
-        @Override
-        public OutputStream getOutputStream() {
-            return stdin;
-        }
-
-        @Override
-        public InputStream getInputStream() {
-            return stdout;
-        }
-
-        @Override
-        public InputStream getErrorStream() {
-            return stderr;
-        }
-
-        @Override
-        public int waitFor() {
-            return 0;
-        }
-
-        @Override
-        public int exitValue() {
-            return 0;
-        }
-
-        @Override
-        public void destroy() {
-        }
-
-        @Override
-        public boolean isAlive() {
-            return false;
-        }
-    }
-
-    /**
-     * Minimal AgentConfig stub that avoids IntelliJ service dependencies.
-     */
-    private static class StubAgentConfig implements AgentConfig {
-        @Override
-        public @NotNull String getDisplayName() {
-            return "test";
-        }
-
-        @Override
-        public @NotNull String getNotificationGroupId() {
-            return "test";
-        }
-
-        @Override
-        public void prepareForLaunch(String s) {
-        }
-
-        @Override
-        public @NotNull String findAgentBinary() {
-            return "/usr/bin/claude";
-        }
-
-        @Override
-        public @NotNull ProcessBuilder buildAcpProcess(String s, String s1, int i) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void parseInitializeResponse(JsonObject o) {
-        }
-
-        @Override
-        public String parseModelUsage(JsonObject o) {
-            return null;
-        }
-
-        @Override
-        public @NotNull AuthMethod getAuthMethod() {
-            return new AuthMethod();
-        }
-
-        @Override
-        public String getAgentBinaryPath() {
-            return "/usr/bin/claude";
-        }
-
-        @Override
-        public String getSessionInstructions() {
-            return null;
         }
     }
 }
