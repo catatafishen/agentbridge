@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.client.koog
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.bridge.EntryData
 import com.github.catatafishen.agentbridge.client.ClientSessionException
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.InstructionBuilder
@@ -23,6 +24,12 @@ interface ProviderConnection : AutoCloseable {
  */
 interface KoogEnvironment {
     val tools: ToolBackend
+
+    /**
+     * A new tool backend for one nested session: the tools nobody can answer are left out, and its calls carry a
+     * session key of their own, so a tool that would need the user's approval is refused instead of asking.
+     */
+    fun nestedTools(sessionKey: String): ToolBackend = tools
 
     /** What stops the agent from starting, phrased as the next step to take, or null when it is ready. */
     fun configurationProblem(): String?
@@ -65,6 +72,12 @@ interface KoogEnvironment {
 class IdeKoogEnvironment(private val project: Project) : KoogEnvironment {
 
     override val tools: ToolBackend by lazy { McpToolBackend(project) }
+
+    override fun nestedTools(sessionKey: String): ToolBackend = McpToolBackend(
+        project,
+        sessionKey = sessionKey,
+        excludedTools = NestedSessionPolicy.FORBIDDEN_TOOLS,
+    )
 
     override fun configurationProblem(): String? = KoogSettings.configurationProblem()
 

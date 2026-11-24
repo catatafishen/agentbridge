@@ -55,6 +55,48 @@ public abstract class AbstractClient {
     public void clearPersistedSession() {
     }
 
+    private volatile boolean ephemeral;
+
+    /**
+     * Marks this client as ephemeral: a short-lived client for a nested session that runs next to the
+     * chat's own client. An ephemeral client must leave everything that belongs to the chat's session
+     * alone: it neither resumes nor persists a resume session ID, does not branch or title the stored
+     * conversation, does not restore the stored history, and on {@link #stop()} does not cancel the
+     * project's in-flight tool calls (those belong to the main session). Must be called before
+     * {@link #start()}.
+     */
+    public void setEphemeral(boolean ephemeral) {
+        this.ephemeral = ephemeral;
+    }
+
+    /**
+     * Whether this client runs a nested session beside the chat's own; see {@link #setEphemeral}.
+     */
+    public boolean isEphemeral() {
+        return ephemeral;
+    }
+
+    private volatile String nestedSessionKey;
+
+    /**
+     * Gives this client the key of the nested session it runs. The MCP endpoint it is wired to carries the key, so
+     * the server can tell its tool calls from the chat's own: it refuses the tools nobody can answer, and a tool
+     * that would need the user's approval is denied. Implies nothing else; set {@link #setEphemeral} as well.
+     * Must be called before {@link #start()}.
+     *
+     * @param key a key from {@code NestedSessionPolicy.newSessionKey()}, or {@code null} for the chat's own client
+     */
+    public void setNestedSessionKey(@Nullable String key) {
+        this.nestedSessionKey = key;
+    }
+
+    /**
+     * The key of the nested session this client runs, or {@code null} for the chat's own client.
+     */
+    public @Nullable String getNestedSessionKey() {
+        return nestedSessionKey;
+    }
+
     /**
      * Whether the agent process is alive and initialized.
      */

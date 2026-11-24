@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.Headers;
@@ -169,6 +170,10 @@ class McpHttpServerStatelessTest {
     }
 
     private Call post(String body, Headers requestHeaders, String handlerReply) throws Exception {
+        return post(body, requestHeaders, handlerReply, "/mcp");
+    }
+
+    private Call post(String body, Headers requestHeaders, String handlerReply, String path) throws Exception {
         McpHttpServer server = new McpHttpServer(mock(com.intellij.openapi.project.Project.class));
         McpProtocolHandler handler = mock(McpProtocolHandler.class);
         when(handler.handleMessage(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
@@ -181,6 +186,7 @@ class McpHttpServerStatelessTest {
         Headers responseHeaders = new Headers();
         HttpExchange exchange = mock(HttpExchange.class);
         when(exchange.getRequestHeaders()).thenReturn(requestHeaders);
+        when(exchange.getRequestURI()).thenReturn(java.net.URI.create("http://127.0.0.1:8642" + path));
         when(exchange.getResponseHeaders()).thenReturn(responseHeaders);
         when(exchange.getResponseBody()).thenReturn(out);
         org.mockito.ArgumentCaptor<Integer> status = org.mockito.ArgumentCaptor.forClass(Integer.class);
@@ -198,6 +204,23 @@ class McpHttpServerStatelessTest {
         h.set("Mcp-Method", "tools/call");
         h.set("Mcp-Name", "read_file");
         return h;
+    }
+
+    @Test
+    void aNestedSessionsEndpointRunsItsCallsUnderTheNestedSessionsKey() throws Exception {
+        String key = NestedSessionPolicy.newSessionKey();
+        Call call = post(TOOLS_CALL_BODY, validHeaders(), "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}",
+            NestedSessionPolicy.endpointPath(key));
+
+        assertEquals(200, call.status());
+        verify(call.handler()).handleMessage(TOOLS_CALL_BODY, key);
+    }
+
+    @Test
+    void theChatsOwnEndpointStillRunsUnderTheFixedStatelessOwner() throws Exception {
+        Call call = post(TOOLS_CALL_BODY, validHeaders(), "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}", "/mcp");
+
+        verify(call.handler()).handleMessage(TOOLS_CALL_BODY, "stateless:default");
     }
 
     @Test

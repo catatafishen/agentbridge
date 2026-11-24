@@ -6,11 +6,13 @@ import com.github.catatafishen.agentbridge.bridge.NudgeSource
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.client.acp.AcpClient
 import com.github.catatafishen.agentbridge.client.acp.OpenCodeTaskOutput
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionChatView
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs
 import com.github.catatafishen.agentbridge.services.McpPauseService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
+import com.github.catatafishen.agentbridge.services.ToolDefinition
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
@@ -21,6 +23,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -539,7 +542,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
          * one: their chips sit in [chipStrip] above it, and OpenCode sends a tool call in mid-sentence.
          */
         var liveTextPane: NativeMarkdownPane? = null,
-    )
+        /** Whether this is a nested session's entry; it is drawn with its own accent, frame and header. */
+        val nested: Boolean = false,
+        /** The status in a nested session's header, kept current by [updateSubAgentResult]. */
+        var statusLabel: JBLabel? = null,
+    ) {
+        /** Accent of the section's bubbles: the nested one, or the sub-agent's slot in [ChatTheme.SA_COLORS]. */
+        val accent: Color
+            get() = if (nested) ChatTheme.NESTED_COLOR else ChatTheme.SA_COLORS[colorIndex]
+    }
 
     private val subAgentSections = mutableMapOf<String, SubAgentSection>()
     private var nextSubAgentColor = 0
@@ -1075,7 +1086,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // sync — both ultimately route through cssKindName() → NativeChatColors.kindColor().
         // Otherwise the agent's runtime classification (e.g. Copilot CLI mapping TERMINAL
         // → EXECUTE for read_terminal_output) would diverge from the tool's declared Kind.
-        val localDef = toolRegistry.findById(title)
+        val localDef = findTool(title)
         val effectiveKind = localDef?.cssKindName() ?: kind
         val resolvedKind = effectiveKind ?: "other"
         val toolDisplayName = localDef?.displayName() ?: resolveToolDisplayName(title)
@@ -1103,8 +1114,19 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      */
     private fun resolveToolDisplayName(title: String): String {
         if (title.contains(' ') || title.contains('(')) return title
-        val def = toolRegistry.findById(title)
+        val def = findTool(title)
         return def?.displayName() ?: title
+    }
+
+    /**
+     * The tool an agent's [title] names, however the agent writes it: see [ToolTitleResolver]. An exact id is
+     * looked up directly, which is what almost every call is.
+     */
+    private fun findTool(title: String): ToolDefinition? {
+        toolRegistry.findById(title)?.let { return it }
+        val byId = toolRegistry.allTools.associateBy { it.id() }
+        val id = ToolTitleResolver.resolve(title, byId.keys) { toolRegistry.findByDisplayName(it)?.id() }
+        return id?.let { byId[it] }
     }
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
@@ -1192,25 +1214,30 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         prompt: String?, initialState: ChatPanelApi.SubAgentInitialState
     ) {
         if (currentTurn?.markdownPane != null) finalizeTurn()
+        val nested = NestedSessionChatView.isNestedEntryId(id)
         val label = subAgentLabel(agentType)
         // Start allocation one slot past the main agent's color so sub-agents never share
         // the same accent as the parent (e.g. both "copilot" and the first sub-agent would
-        // otherwise both land on SA_COLORS[0]).
+        // otherwise both land on SA_COLORS[0]). A nested session has an accent of its own and
+        // takes no slot, so it does not shift the colors of the sub-agents that follow it.
         val startOffset = if (currentAgentColorIndex >= 0) currentAgentColorIndex + 1 else 0
-        val colorIndex = (startOffset + nextSubAgentColor++) % ChatTheme.SA_COLOR_COUNT
-        val accent = ChatTheme.SA_COLORS[colorIndex]
+        val colorIndex = if (nested) 0 else (startOffset + nextSubAgentColor++) % ChatTheme.SA_COLOR_COUNT
+        val accent: Color = if (nested) ChatTheme.NESTED_COLOR else ChatTheme.SA_COLORS[colorIndex]
 
-        // Sub-agent chip in the parent turn's chip strip.
-        val chipTitle = "[$label] $description"
-        toolCallData[id] =
-            ToolCallData(chipTitle, "think", agentType, SubAgentArguments.popupParams(null, agentType, description, prompt))
-        val chip = ToolChipComponent(
-            chipTitle, "think", "running", false,
-            McpServerSettings.getInstance(project)
-        ) { showToolPopup(id) }
-        allChips[id] = chip
-        ensureTurn().chipStrip.addToolChip(chip)
-        if (!spinTimer.isRunning) spinTimer.start()
+        // Sub-agent chip in the parent turn's chip strip. A nested session has none: the chip of the
+        // run_nested_session call is already there, in its colour, and the entry's header shows the state.
+        if (!nested) {
+            val chipTitle = "[$label] $description"
+            toolCallData[id] =
+                ToolCallData(chipTitle, "think", agentType, SubAgentArguments.popupParams(null, agentType, description, prompt))
+            val chip = ToolChipComponent(
+                chipTitle, "think", "running", false,
+                McpServerSettings.getInstance(project)
+            ) { showToolPopup(id) }
+            allChips[id] = chip
+            ensureTurn().chipStrip.addToolChip(chip)
+            if (!spinTimer.isRunning) spinTimer.start()
+        }
 
         // Prompt bubble: shows what was sent to the sub-agent. Agents that only reveal it later
         // (OpenCode) get it from updateSubAgentDetails instead.
@@ -1227,15 +1254,24 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         contentBox.add(subChipStrip)
 
-        val sectionWrapper = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(12), JBUI.scale(4), 0)
-            alignmentX = Component.LEFT_ALIGNMENT
-            add(contentBox, BorderLayout.CENTER)
+        val statusLabel = if (nested) JBLabel(NestedState.RUNNING.icon).apply {
+            toolTipText = NestedState.RUNNING.description
+        } else null
+        val sectionWrapper = if (statusLabel != null) {
+            createNestedFrame(accent, label, statusLabel, contentBox)
+        } else {
+            JPanel(BorderLayout()).apply {
+                isOpaque = false
+                border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(12), JBUI.scale(4), 0)
+                alignmentX = Component.LEFT_ALIGNMENT
+                add(contentBox, BorderLayout.CENTER)
+            }
         }
         val sectionRow = addRow(sectionWrapper)
-        subAgentSections[id] =
-            SubAgentSection(colorIndex, label, description, subChipStrip, contentBox, sectionRow, promptRow)
+        subAgentSections[id] = SubAgentSection(
+            colorIndex, label, description, subChipStrip, contentBox, sectionRow, promptRow,
+            nested = nested, statusLabel = statusLabel
+        )
 
         if (initialState.status != null) {
             updateSubAgentResult(
@@ -1245,7 +1281,64 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
+    /**
+     * The frame of a nested session's entry: a rounded border and tint in the nested accent around a header (icon,
+     * title and live status) and the entry's content, so it reads as one unit apart from the chat's own agents.
+     */
+    private fun createNestedFrame(accent: Color, label: String, status: JBLabel, content: JPanel): JPanel {
+        val title = JBLabel("Nested session \u00B7 $label", AllIcons.Hierarchy.Subtypes, SwingConstants.LEADING).apply {
+            foreground = accent
+            font = font.deriveFont(Font.BOLD)
+            iconTextGap = JBUI.scale(6)
+        }
+        val header = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyBottom(JBUI.scale(6))
+            add(title, BorderLayout.WEST)
+            add(status, BorderLayout.EAST)
+        }
+        val frame = RoundedPanel(
+            NativeChatColors.nestedFrameBg(accent), NativeChatColors.nestedFrameBorder(accent), JBUI.scale(12)
+        ).apply {
+            border = JBUI.Borders.empty(JBUI.scale(8), JBUI.scale(10))
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(header, BorderLayout.NORTH)
+            add(content, BorderLayout.CENTER)
+        }
+        return JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(JBUI.scale(4), JBUI.scale(12), JBUI.scale(4), 0)
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(frame, BorderLayout.CENTER)
+        }
+    }
+
     private fun subAgentLabel(agentType: String): String = SUB_AGENT_INFO[agentType]?.displayName ?: agentType
+
+    /**
+     * Puts the session's state into a nested entry's header as an icon, so it takes no more room than the icon
+     * itself; other sub-agents have none. The words are in the tooltip.
+     */
+    private fun showNestedStatus(section: SubAgentSection, status: String) {
+        val label = section.statusLabel ?: return
+        val state = nestedState(status)
+        label.icon = state.icon
+        label.text = ""
+        label.toolTipText = state.description
+    }
+
+    /** What the header's status icon stands for. */
+    private enum class NestedState(val icon: Icon, val description: String) {
+        RUNNING(AnimatedIcon.Default(), "Running"),
+        DONE(AllIcons.RunConfigurations.TestPassed, "Completed"),
+        FAILED(AllIcons.RunConfigurations.TestFailed, "Failed"),
+    }
+
+    private fun nestedState(status: String): NestedState = when (status) {
+        "completed", "complete" -> NestedState.DONE
+        "running", "in_progress", "pending" -> NestedState.RUNNING
+        else -> NestedState.FAILED
+    }
 
     private fun createSubAgentPromptBubble(label: String, accent: Color, prompt: String): JPanel =
         createSubAgentBubble(accent, "**@$label** $prompt")
@@ -1254,14 +1347,17 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val section = subAgentSections[id] ?: return
         if (!agentType.isNullOrBlank()) section.label = subAgentLabel(agentType)
         if (!description.isNullOrBlank()) section.description = description
-        val chipTitle = "[${section.label}] ${section.description}"
-        toolCallData[id]?.title = chipTitle
-        allChips[id]?.updateTitle(chipTitle)
-        toolCallData[id]?.let { it.arguments = SubAgentArguments.popupParams(it.arguments, agentType, description, prompt) }
+        // A nested session has no chip of its own, see addSubAgentEntry.
+        if (!section.nested) {
+            val chipTitle = "[${section.label}] ${section.description}"
+            toolCallData[id]?.title = chipTitle
+            allChips[id]?.updateTitle(chipTitle)
+            toolCallData[id]?.let { it.arguments = SubAgentArguments.popupParams(it.arguments, agentType, description, prompt) }
+        }
         if (prompt.isNullOrBlank() || section.promptRow != null) return
         val at = contentPanel.getComponentZOrder(section.row)
         if (at < 0) return
-        val promptRow = rowContainer(createSubAgentPromptBubble(section.label, ChatTheme.SA_COLORS[section.colorIndex], prompt))
+        val promptRow = rowContainer(createSubAgentPromptBubble(section.label, section.accent, prompt))
         contentPanel.add(promptRow, at)
         section.promptRow = promptRow
         contentPanel.revalidate()
@@ -1285,13 +1381,20 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         )
 
         val section = subAgentSections[id] ?: return
-        val accent = ChatTheme.SA_COLORS[section.colorIndex]
+        val accent = section.accent
+        showNestedStatus(section, status)
 
-        // Show the result text in the sub-agent's indented section.
+        // Show the result text in the sub-agent's indented section. A nested session shows its state in its header,
+        // so without an answer it has nothing more to say: a line that only repeats the state would cost room.
         val resultText = when {
             !answer.isNullOrBlank() -> answer
+            section.nested -> null
             status == "completed" || status == "complete" -> "\u2713 Completed"
             else -> "\u2716 Failed"
+        }
+        if (resultText == null) {
+            section.contentBox.revalidate()
+            return
         }
 
         // If we already have a result row, replace its content instead of appending a duplicate.
@@ -1382,7 +1485,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun addTranscriptToolChip(strip: ChipStripPanel, call: EntryData.ToolCall) {
         addToolChipTo(
             strip, call.entryId, call.title, call.arguments,
-            toolRegistry.findById(call.title)?.cssKindName() ?: call.kind,
+            findTool(call.title)?.cssKindName() ?: call.kind,
             call.status ?: "complete"
         )
         toolCallData[call.entryId]?.result = call.result
@@ -1414,7 +1517,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val shown = if (last is EntryData.Text && last.raw.trim() == answer) children.dropLast(1) else children
         if (shown.isEmpty()) return
 
-        val panel = buildTranscriptPanel(shown, ChatTheme.SA_COLORS[section.colorIndex])
+        val panel = buildTranscriptPanel(shown, section.accent)
         // Same layout as other agents' sub-agents: their work first, the result bubble last.
         val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
         if (resultIndex >= 0) section.contentBox.add(panel, resultIndex) else section.contentBox.add(panel)
@@ -1454,7 +1557,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             return
         }
         val pane = section.liveTextPane ?: createSubAgentPane().also { pane ->
-            val bubble = rowContainer(createSubAgentBubbleRow(ChatTheme.SA_COLORS[section.colorIndex], pane))
+            val bubble = rowContainer(createSubAgentBubbleRow(section.accent, pane))
             // Keep the result bubble last, as in setSubAgentTranscript.
             val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
             if (resultIndex >= 0) section.contentBox.add(bubble, resultIndex) else section.contentBox.add(bubble)

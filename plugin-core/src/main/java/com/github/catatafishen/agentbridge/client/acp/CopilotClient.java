@@ -58,7 +58,13 @@ public final class CopilotClient extends AcpClient {
     private static final String AGENT_ID = "copilot";
     private static final String DEFAULT_AGENT_SLUG = "intellij-default";
     private static final String MCP_SERVER_NAME = "agentbridge";
-    private static final String MCP_TOOL_PREFIX = "agentbridge-";
+    /**
+     * The server name of a nested session. It must differ from {@link #MCP_SERVER_NAME}: Copilot rejects a client
+     * MCP server whose name equals one from its own config ({@code ~/.copilot/mcp-config.json}), which would
+     * silently drop the nested endpoint. It must also not start with {@code agentbridge-}, or the tool titles
+     * ({@code <server>-<tool>}) would be read as tools of the chat's server.
+     */
+    static final String NESTED_MCP_SERVER_NAME = "agentbridgenested";
     private static final String MCP_TYPE_HTTP = "http";
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String SESSION_STATE_DIR = "session-state";
@@ -149,8 +155,12 @@ public final class CopilotClient extends AcpClient {
             Set<String> builtInSlugs = Set.of(DEFAULT_AGENT_SLUG, AGENT_SLUG_EXPLORE, AGENT_SLUG_EDIT);
             ProjectAgentScanner.copyToGlobalAgentsDir(Path.of(basePath), home.resolve("agents"), builtInSlugs);
         }
-        mergeMcpConfig(home, mcpPort);
-        migrateResumeSessionFromLegacyPath();
+        // A nested session's client must not rewrite the user's global config: it would point the chat's own
+        // Copilot sessions at the nested endpoint, and its endpoint reaches the agent through session/new anyway.
+        if (!isEphemeral()) {
+            mergeMcpConfig(home, mcpPort);
+            migrateResumeSessionFromLegacyPath();
+        }
     }
 
     // ─── Identity ────────────────────────────────────
@@ -195,6 +205,13 @@ public final class CopilotClient extends AcpClient {
         if (agentSlug != null && !agentSlug.isEmpty()) {
             cmd.add("--agent");
             cmd.add(agentSlug);
+        }
+        // The chat's own AgentBridge server comes from the CLI's config file and would be loaded next to the nested
+        // one. Both offer the same tool names, so the nested agent could reach the chat's endpoint and skip the
+        // rules that hold for the nested one. Switch the chat's server off for this process.
+        if (getNestedSessionKey() != null) {
+            cmd.add("--disable-mcp-server");
+            cmd.add(MCP_SERVER_NAME);
         }
 
         // Resume is handled exclusively over ACP (session/resume) by AcpClient when the agent
@@ -312,9 +329,9 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
         JsonObject server = new JsonObject();
-        server.addProperty("name", MCP_SERVER_NAME);
+        server.addProperty("name", mcpServerName());
         server.addProperty("type", MCP_TYPE_HTTP);
-        server.addProperty("url", "http://localhost:" + mcpPort + "/mcp");
+        server.addProperty("url", "http://localhost:" + mcpPort + mcpEndpointPath());
         server.add("headers", new JsonArray()); // Copilot requires headers as empty array
 
         JsonArray servers = new JsonArray();
@@ -337,10 +354,31 @@ public final class CopilotClient extends AcpClient {
 
     // ─── Tools ───────────────────────────────────────
 
+    /**
+     * The name this client's AgentBridge MCP server is registered under: the chat's own, or the nested one.
+     */
+    private String mcpServerName() {
+        return serverNameFor(getNestedSessionKey());
+    }
+
+    static String serverNameFor(@Nullable String nestedSessionKey) {
+        return nestedSessionKey != null ? NESTED_MCP_SERVER_NAME : MCP_SERVER_NAME;
+    }
+
+    /**
+     * The tool name inside a Copilot tool title {@code <server>-<tool>} of the given server, or {@code null} when
+     * the title is not one of that server's tools.
+     */
+    static @Nullable String toolNameOf(String title, String serverName) {
+        String prefix = serverName + "-";
+        return title.startsWith(prefix) ? title.substring(prefix.length()) : null;
+    }
+
     @Override
     protected String resolveToolId(String protocolTitle) {
-        if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
-            return protocolTitle.substring(MCP_TOOL_PREFIX.length());
+        String tool = toolNameOf(protocolTitle, mcpServerName());
+        if (tool != null) {
+            return tool;
         }
         // Copilot CLI sends known tool names (bash, grep, task, etc.) directly.
         // Normalize to lowercase so the rest of the system uses consistent IDs.
@@ -356,8 +394,9 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
-        if (rawTitle.startsWith(MCP_TOOL_PREFIX)) {
-            return rawTitle.substring(MCP_TOOL_PREFIX.length());
+        String tool = toolNameOf(rawTitle, mcpServerName());
+        if (tool != null) {
+            return tool;
         }
         String lower = rawTitle.toLowerCase();
         if (KNOWN_BUILTIN_TOOL_NAMES.contains(lower)) {
@@ -368,7 +407,7 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
-        if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
+        if (toolNameOf(protocolTitle, mcpServerName()) != null) {
             return true;
         }
         // Any "<server>-<tool>" pattern (e.g. "github-create_issue", "puppeteer-screenshot")
@@ -386,7 +425,7 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected boolean isAgentBridgeMcpToolTitle(@NotNull String protocolTitle) {
-        if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
+        if (toolNameOf(protocolTitle, mcpServerName()) != null) {
             return true;
         }
         ToolRegistry registry = ToolRegistry.getInstance(project);

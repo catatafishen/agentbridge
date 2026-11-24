@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi;
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptProvider;
 import com.github.catatafishen.agentbridge.bridge.PermissionPromptQueue;
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.github.catatafishen.agentbridge.psi.review.EditApprovalDiffTabs;
 import com.github.catatafishen.agentbridge.psi.tools.editor.CreateScratchFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.file.EditPreviewBuilder;
@@ -10,6 +11,7 @@ import com.github.catatafishen.agentbridge.psi.tools.project.ExternalDirRegistry
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.AutopilotPolicy;
+import com.github.catatafishen.agentbridge.services.McpCallContext;
 import com.github.catatafishen.agentbridge.services.ToolCallRecord;
 import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
@@ -782,6 +784,14 @@ public final class PsiBridgeService implements Disposable {
         if (sessionAllowedTools.contains(toolName)) {
             LOG.info("PSI Bridge: session-allowed for " + toolName);
             return null;
+        }
+
+        // A nested session is unattended: nobody is there to answer the prompt, so it would only
+        // stall until the timeout and then fail anyway. Refuse at once, and say why.
+        String nestedDenial = NestedSessionPolicy.denialForAsk(McpCallContext.current(), toolName);
+        if (nestedDenial != null) {
+            LOG.info("PSI Bridge: ASK for " + toolName + " denied, the call belongs to a nested session");
+            return nestedDenial;
         }
 
         // ASK: show a permission bubble in the chat panel and block until user responds

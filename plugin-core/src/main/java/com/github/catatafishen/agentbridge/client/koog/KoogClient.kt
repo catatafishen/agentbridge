@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.client.AbstractClient
 import com.github.catatafishen.agentbridge.client.ClientPromptException
 import com.github.catatafishen.agentbridge.client.ClientSessionException
 import com.github.catatafishen.agentbridge.client.ClientStartException
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy
 import com.github.catatafishen.agentbridge.model.Model
 import com.github.catatafishen.agentbridge.model.PromptResponse
 import com.github.catatafishen.agentbridge.model.SessionUpdate
@@ -147,7 +148,8 @@ class KoogClient(
         // Read at the start of every turn, not once per session: edits to the startup instructions, the tool
         // guidance or the memory then apply to the next message instead of the next new conversation.
         val conversation = KoogConversation(
-            streamer, env.tools,
+            streamer,
+            if (isEphemeral) env.nestedTools(nestedSessionKey ?: NestedSessionPolicy.newSessionKey()) else env.tools,
             systemPrompt = { env.systemPrompt(cwd) },
             maxToolCalls = { env.maxToolCallsPerTurn() },
             contextWindow = { selectedModel?.let { active.choices[it]?.contextLength } },
@@ -165,6 +167,8 @@ class KoogClient(
      * once after a new conversation was started or a session was dropped.
      */
     private fun restorePrevious(conversation: KoogConversation) {
+        // A nested session starts empty: the stored conversation is the chat's, not its own.
+        if (isEphemeral) return
         val skip = !restoreNext
         restoreNext = true
         if (skip) return
@@ -230,7 +234,8 @@ class KoogClient(
             return
         }
         selectedModel = modelId
-        env.rememberModel(modelId)
+        // The remembered model is the chat's preference; a nested session's choice must not overwrite it.
+        if (!isEphemeral) env.rememberModel(modelId)
     }
 
     override fun modelDisplayMode(): ModelDisplayMode = ModelDisplayMode.NAME

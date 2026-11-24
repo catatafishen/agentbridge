@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.github.catatafishen.agentbridge.services.hooks.HookQueryHandler;
 import com.github.catatafishen.agentbridge.services.hooks.HookToolHandler;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
@@ -274,6 +275,14 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
     private static final int MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
+    /**
+     * The nested session key the request's endpoint path stands for, or {@code null} for the chat's own endpoint.
+     */
+    private static @Nullable String nestedKeyOf(@NotNull HttpExchange exchange) {
+        java.net.URI uri = exchange.getRequestURI();
+        return uri == null ? null : NestedSessionPolicy.sessionKeyFromPath(uri.getPath());
+    }
+
     private void handleMcp(HttpExchange exchange) throws IOException {
         // CORS headers for browser-based agents and MCP transport session propagation.
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
@@ -331,14 +340,19 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             if (owner == null) return;
             String response;
             String ownerKey = owner.ownerKey();
+            // A nested session's agent calls its own endpoint, /mcp/nested/<token>. Its calls then run under the
+            // nested session's key, which is what makes the server refuse the tools nobody can answer and deny
+            // approvals. The transport session is still tracked under ownerKey (expiry, cleanup).
+            String nestedKey = nestedKeyOf(exchange);
+            String handlerKey = nestedKey != null ? nestedKey : ownerKey;
             // Established (tool) requests hold the shared side of restartGate so an agent
             // restart can only run while none is in flight; initialize bypasses it so a
             // restarting agent can always re-handshake.
             boolean gated = owner.kind() == HttpOwnerKind.ESTABLISHED;
             if (gated) restartGate.readLock().lock();
             try {
-                response = ownerKey != null
-                    ? protocolHandler.handleMessage(body, ownerKey)
+                response = handlerKey != null
+                    ? protocolHandler.handleMessage(body, handlerKey)
                     : protocolHandler.handleMessage(body);
             } finally {
                 if (gated) restartGate.readLock().unlock();
@@ -446,7 +460,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             return;
         }
 
-        String response = dispatchStateless(body, METHOD_TOOLS_CALL.equals(method));
+        String response = dispatchStateless(body, METHOD_TOOLS_CALL.equals(method), nestedKeyOf(exchange));
         if (response == null) {
             exchange.sendResponseHeaders(202, -1);
             return;
@@ -468,12 +482,12 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * {@link #stop()} releases them, and a call that finishes after the server stopped releases whatever it
      * created, the same way {@link #finishHttpRequest} does for sessions that ended mid-call.</p>
      */
-    private @Nullable String dispatchStateless(String body, boolean gated) {
+    private @Nullable String dispatchStateless(String body, boolean gated, @Nullable String nestedKey) {
         if (gated) restartGate.readLock().lock();
         // Captured before the call: stop() nulls the field, and the handler may be gone by the time we return.
         McpProtocolHandler handler = protocolHandler;
         try {
-            return handler.handleMessage(body, STATELESS_OWNER_KEY);
+            return handler.handleMessage(body, nestedKey != null ? nestedKey : STATELESS_OWNER_KEY);
         } finally {
             if (gated) restartGate.readLock().unlock();
             if (!running) closeStatelessOwnerTerminals();

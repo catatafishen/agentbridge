@@ -215,6 +215,32 @@ The chat interface is a full-featured agent console built on JCEF (Chromium).
 - **Sub-agent names** shown in chat bubble headers
 - **Profile-specific coloring** for agent messages
 
+### Nested Sessions
+
+An agent can hand a self-contained task to a separate agent session and get its final answer back, without filling its
+own context.
+
+- **`run_nested_session`** — Runs the given prompt in a fresh session of an agent you choose (default: the active one)
+  and returns the answer. It blocks until the session ends or `timeout_seconds` (max 170) passes.
+- **Unattended** — the prompt tells the agent that nobody can answer questions, and the agent's own permission
+  requests are denied. The rules are enforced by AgentBridge, not left to the prompt: `prompt_user`,
+  `interact_with_modal` and `run_nested_session` are not available to the session, and a tool call whose permission
+  is set to _Ask_ is denied instead of shown to you. Tools set to _Allow_ work as usual, and the session may change
+  files. The nested session's agent reaches AgentBridge through an endpoint of its own, which is how the server tells
+  its tool calls from your chat's. For GitHub Copilot the nested session also registers its server under its own
+  name, because Copilot ignores a client server that is named like one from its own config.
+- **Not verified against every agent yet.** The endpoint wiring is covered by unit tests, but only the built-in agent
+  has been run end to end. If an agent ignores the endpoint it is given, its nested session runs without these rules,
+  and nothing says so. Treat a nested session as unrestricted until you have checked it for your agent. In an
+  organisation that blocks third-party MCP servers (for example by Copilot policy), the nested session has no
+  AgentBridge tools at all.
+- **Visible in the chat** as a sub-agent entry that streams its text and tool calls and ends with its result.
+- **Separate from your conversation** — it does not read, resume or overwrite the chat's session or its remembered
+  model.
+- **One at a time** per project, which also stops a nested session from starting another one.
+- **Supported agents:** the built-in agent (Koog) and the ACP-based agents (Copilot, Junie, Kiro, OpenCode, Hermes,
+  Vibe, Goose). Claude and Codex are not supported yet and return an error.
+
 ### Nudge & Message Queue
 
 Guide the agent mid-turn without interrupting its current task, or queue up tasks for later.

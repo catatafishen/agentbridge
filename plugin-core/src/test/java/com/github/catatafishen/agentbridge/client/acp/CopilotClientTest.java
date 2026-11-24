@@ -14,6 +14,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -151,6 +152,44 @@ class CopilotClientTest {
         assertEquals("brand_new_tool",
             client.unknownToolToOffer(toolCall("brand_new_tool"), false, "s1", DEFAULTS, id -> false));
         assertNull(client.unknownToolToOffer(toolCall("brand_new_tool"), false, "s1", DEFAULTS, id -> false));
+    }
+
+    // ── nested session server name ──────────────────────────────────────
+
+    @Test
+    void theChatsOwnClientUsesTheAgentbridgeServerName() {
+        assertEquals("agentbridge", CopilotClient.serverNameFor(null));
+    }
+
+    @Test
+    void aNestedSessionUsesAServerNameOfItsOwn() {
+        String nested = CopilotClient.serverNameFor("nested:abcdef12");
+
+        assertEquals(CopilotClient.NESTED_MCP_SERVER_NAME, nested);
+        // Copilot rejects a client server named like one from its own config (~/.copilot/mcp-config.json).
+        assertNotEquals(CopilotClient.serverNameFor(null), nested);
+    }
+
+    @Test
+    void theNestedServerNameIsNotReadAsAToolOfTheChatsServer() {
+        // Tool titles are "<server>-<tool>". "agentbridge-" must not be a prefix of the nested server's titles.
+        String nestedTitle = CopilotClient.NESTED_MCP_SERVER_NAME + "-read_file";
+
+        assertNull(CopilotClient.toolNameOf(nestedTitle, CopilotClient.serverNameFor(null)));
+        assertEquals("read_file", CopilotClient.toolNameOf(nestedTitle, CopilotClient.NESTED_MCP_SERVER_NAME));
+    }
+
+    @Test
+    void aToolTitleOfTheChatsServerIsNotATitleOfTheNestedServer() {
+        assertNull(CopilotClient.toolNameOf("agentbridge-read_file", CopilotClient.NESTED_MCP_SERVER_NAME));
+        assertEquals("read_file", CopilotClient.toolNameOf("agentbridge-read_file", "agentbridge"));
+    }
+
+    @Test
+    void aTitleOfAnotherServerOrABuiltInIsNeverATitleOfOurServer() {
+        assertNull(CopilotClient.toolNameOf("github-create_issue", "agentbridge"));
+        assertNull(CopilotClient.toolNameOf("bash", "agentbridge"));
+        assertNull(CopilotClient.toolNameOf("agentbridge", "agentbridge"));
     }
 
     // ── buildAgentDefinition (private static) ───────────────────────────

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -1188,6 +1189,30 @@ class McpProtocolHandlerTest {
         req.addProperty("jsonrpc", "2.0");
         req.addProperty("id", id);
         return req;
+    }
+
+    @Test
+    void aNestedSessionCannotCallToolsThatWaitForAPerson() {
+        for (String tool : NestedSessionPolicy.FORBIDDEN_TOOLS) {
+            JsonObject params = new JsonObject();
+            params.addProperty("name", tool);
+            params.add("arguments", new JsonObject());
+
+            JsonObject result = parseResponse(sendNestedRequest("tools/call", params)).getAsJsonObject("result");
+
+            assertTrue(result.get("isError").getAsBoolean(), tool);
+            String text = result.getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString();
+            assertTrue(text.contains("not available in a nested session"), text);
+        }
+    }
+
+    private String sendNestedRequest(String method, JsonObject params) {
+        JsonObject request = new JsonObject();
+        request.addProperty("jsonrpc", "2.0");
+        request.addProperty("id", 1);
+        request.addProperty("method", method);
+        request.add("params", params);
+        return handler.handleMessage(request.toString(), NestedSessionPolicy.newSessionKey());
     }
 
     private String sendRequest(String method, JsonObject params) {

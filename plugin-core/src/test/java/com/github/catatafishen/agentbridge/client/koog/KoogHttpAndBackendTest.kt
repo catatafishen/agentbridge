@@ -316,5 +316,55 @@ class KoogHttpAndBackendTest {
 
             assertTrue(second > first)
         }
+
+        private fun nested(sessionKey: String = "nested:test") = McpToolBackend(
+            project, handler, sessionKey,
+            excludedTools = setOf("prompt_user", "run_nested_session"),
+        )
+
+        private fun replyWithKey(key: String, json: String) {
+            Mockito.`when`(handler.handleMessage(Mockito.anyString(), Mockito.eq(key))).thenReturn(json)
+        }
+
+        @Test
+        fun `a nested backend does not list the tools it excludes`() {
+            replyWithKey(
+                "nested:test",
+                """{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"read_file","description":"R","inputSchema":{"type":"object"}},{"name":"prompt_user","description":"Q"},{"name":"run_nested_session","description":"N"}]}}"""
+            )
+
+            val names = nested().listTools().map { it.name }
+
+            assertEquals(listOf("read_file"), names)
+        }
+
+        @Test
+        fun `a nested backend refuses an excluded tool without asking the handler`() {
+            val outcome = nested().call("prompt_user", JsonObject())
+
+            assertTrue(outcome.isError)
+            assertTrue(outcome.text.startsWith("Error: "), outcome.text)
+            assertTrue(outcome.text.contains("prompt_user"))
+            Mockito.verifyNoInteractions(handler)
+        }
+
+        @Test
+        fun `a nested backend runs its other tools under its own session key`() {
+            replyWithKey("nested:test", """{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"ok"}]}}""")
+
+            val outcome = nested().call("read_file", JsonObject())
+
+            assertEquals(ToolOutcome("ok", false), outcome)
+            Mockito.verify(handler).handleMessage(Mockito.anyString(), Mockito.eq("nested:test"))
+            Mockito.verify(handler, Mockito.never()).handleMessage(Mockito.anyString())
+        }
+
+        @Test
+        fun `the chat's own backend still lists and runs every tool and uses the handler's own session`() {
+            reply("""{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"prompt_user","description":"Q"}]}}""")
+
+            assertEquals(listOf("prompt_user"), backend.listTools().map { it.name })
+            Mockito.verify(handler, Mockito.never()).handleMessage(Mockito.anyString(), Mockito.anyString())
+        }
     }
 }

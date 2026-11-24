@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.BuildInfo;
+import com.github.catatafishen.agentbridge.client.nested.NestedSessionPolicy;
 import com.github.catatafishen.agentbridge.memory.MemoryService;
 import com.github.catatafishen.agentbridge.memory.MemorySettings;
 import com.github.catatafishen.agentbridge.memory.layers.EssentialStoryLayer;
@@ -204,8 +205,8 @@ public final class McpProtocolHandler {
     private @Nullable String dispatchMessage(JsonObject msg, String method, String sessionKey, boolean stateless) {
         JsonObject result = switch (method) {
             case "server/discover" -> handleServerDiscover(msg);
-            case "initialize" -> handleInitialize(msg);
-            case "tools/list" -> handleToolsList(msg);
+            case "initialize" -> handleInitialize(msg, sessionKey);
+            case "tools/list" -> handleToolsList(msg, sessionKey);
             case "tools/call" -> handleToolsCall(msg, sessionKey);
             case "resources/list" -> handleResourcesList(msg);
             case "resources/templates/list" -> handleResourceTemplatesList(msg);
@@ -319,10 +320,11 @@ public final class McpProtocolHandler {
         return capabilities;
     }
 
-    private JsonObject handleInitialize(JsonObject msg) {
-        // Extract connected agent identity from clientInfo (MCP spec)
+    private JsonObject handleInitialize(JsonObject msg, @NotNull String sessionKey) {
+        // Extract connected agent identity from clientInfo (MCP spec). A nested session's agent does not count:
+        // the name is handler-wide and hooks use it to attribute commits to the chat's agent.
         JsonObject params = msg.has(KEY_PARAMS) ? msg.getAsJsonObject(KEY_PARAMS) : null;
-        if (params != null && params.has("clientInfo")) {
+        if (params != null && params.has("clientInfo") && !NestedSessionPolicy.isNestedSessionKey(sessionKey)) {
             JsonObject clientInfo = params.getAsJsonObject("clientInfo");
             if (clientInfo.has("name")) {
                 connectedAgentName = clientInfo.get("name").getAsString();
@@ -414,16 +416,19 @@ public final class McpProtocolHandler {
         return InstructionBuilder.buildDefault();
     }
 
-    private JsonObject handleToolsList(JsonObject msg) {
+    private JsonObject handleToolsList(JsonObject msg, @NotNull String sessionKey) {
         // Ensure PsiBridgeService is initialized before listing tools
         PsiBridgeService.getInstance(project);
 
         McpServerSettings settings = McpServerSettings.getInstance(project);
         settings.ensureDefaultsApplied();
         List<ToolDefinition> enabledTools = McpToolFilter.getEnabledTools(settings, project);
-
+        // A nested session is not offered the tools nobody can answer (handleToolsCall refuses them as well).
         JsonArray tools = new JsonArray();
         for (ToolDefinition entry : enabledTools) {
+            if (NestedSessionPolicy.isForbidden(sessionKey, entry.id())) {
+                continue;
+            }
             JsonObject tool = new JsonObject();
             tool.addProperty("name", entry.id());
             tool.addProperty(KEY_DESCRIPTION, entry.description());
@@ -683,6 +688,10 @@ public final class McpProtocolHandler {
         String toolName = params.has("name") ? params.get("name").getAsString() : null;
         if (toolName == null) {
             return respondError(msg, -32602, "Missing tool name");
+        }
+        // Not only hidden from a nested session's tool list: a model may name a tool it was never offered.
+        if (NestedSessionPolicy.isForbidden(sessionKey, toolName)) {
+            return buildToolResult(msg, NestedSessionPolicy.forbiddenToolMessage(toolName), true);
         }
 
         McpServerSettings settings = McpServerSettings.getInstance(project);

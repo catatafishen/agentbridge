@@ -335,6 +335,58 @@ class KoogClientTest {
     }
 
     @Nested
+    inner class Ephemeral {
+        @Test
+        fun `a normal session reads the stored conversation, which is why an ephemeral one must not`() {
+            startedSession()
+
+            assertEquals(1, env.previousLoads)
+        }
+
+        @Test
+        fun `an ephemeral session starts empty and never reads the stored conversation`() {
+            client.setEphemeral(true)
+
+            startedSession()
+
+            assertEquals(0, env.previousLoads)
+            assertEquals(0, env.restoredNotices)
+        }
+
+        @Test
+        fun `an ephemeral session may pick a model without changing the remembered one`() {
+            client.setEphemeral(true)
+            val id = startedSession()
+
+            client.setModel(id, "m2")
+
+            assertEquals("m2", client.currentModelId)
+            assertTrue(env.remembered.isEmpty())
+        }
+
+        @Test
+        fun `the nested session runner gets the answer from a Koog client`() {
+            val executor = java.util.concurrent.Executors.newCachedThreadPool()
+            try {
+                client.setEphemeral(true)
+                val runner = com.github.catatafishen.agentbridge.client.nested.NestedSessionRunner(executor)
+                val request = com.github.catatafishen.agentbridge.client.nested.NestedSessionRunner.Request(
+                    "do it", "/project", null, 10
+                )
+
+                val result = runner.run(client, request, null)
+
+                assertEquals(com.github.catatafishen.agentbridge.client.nested.NestedSessionRunner.Status.COMPLETED, result.status())
+                assertEquals("answer from m1", result.text())
+                assertEquals(0, env.previousLoads)
+                assertFalse(client.isConnected, "the runner closes the client")
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+    }
+
+    @Nested
     inner class ModelLimits {
         @Test
         fun `a model with limits describes them for the picker`() {

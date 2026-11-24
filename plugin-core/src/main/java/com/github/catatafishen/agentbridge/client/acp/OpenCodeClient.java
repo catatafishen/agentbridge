@@ -444,7 +444,7 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        return buildInitConfig(probedVersion, mcpPort, OpenCodeClient::isMcpCodeModeEnabled);
+        return buildInitConfig(probedVersion, mcpPort, OpenCodeClient::isMcpCodeModeEnabled, mcpEndpointPath());
     }
 
     @Override
@@ -492,12 +492,17 @@ public final class OpenCodeClient extends AcpClient {
      */
     static Map<String, String> buildInitConfig(
         @Nullable String installedVersion, int mcpPort, BooleanSupplier mcpCodeMode) {
+        return buildInitConfig(installedVersion, mcpPort, mcpCodeMode, "/mcp");
+    }
+
+    static Map<String, String> buildInitConfig(
+        @Nullable String installedVersion, int mcpPort, BooleanSupplier mcpCodeMode, String endpointPath) {
         JsonObject config = new JsonObject();
         config.add("permission", permissionDenyConfig());
         if (isDefinitelyOpenCodeV2(installedVersion)) {
             config.add("permissions", v2PermissionDenyRules());
             if (mcpPort > 0) {
-                config.add("mcp", v2McpServersConfig(mcpPort, mcpCodeMode.getAsBoolean()));
+                config.add("mcp", v2McpServersConfig(mcpPort, mcpCodeMode.getAsBoolean(), endpointPath));
             }
             JsonObject explore = inlineExploreAgent();
             if (explore != null) {
@@ -513,10 +518,10 @@ public final class OpenCodeClient extends AcpClient {
      * The v2 {@code mcp} config object registering the AgentBridge loopback endpoint as a
      * remote server with OAuth disabled (it has no credentials to exchange).
      */
-    private static JsonObject v2McpServersConfig(int mcpPort, boolean mcpCodeMode) {
+    private static JsonObject v2McpServersConfig(int mcpPort, boolean mcpCodeMode, String endpointPath) {
         JsonObject agentbridge = new JsonObject();
         agentbridge.addProperty("type", "remote");
-        agentbridge.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
+        agentbridge.addProperty("url", "http://127.0.0.1:" + mcpPort + endpointPath);
         agentbridge.addProperty("oauth", false);
         if (!mcpCodeMode) {
             agentbridge.addProperty("codemode", false);
@@ -905,7 +910,7 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        applySessionMcpServers(probedVersion, mcpPort, params);
+        applySessionMcpServers(probedVersion, mcpPort, mcpEndpointPath(), params);
     }
 
     /**
@@ -915,10 +920,15 @@ public final class OpenCodeClient extends AcpClient {
      * a missing one with -32602 ("mcpServers: Required value is missing"), so v2 gets an empty list.
      */
     static void applySessionMcpServers(@Nullable String installedVersion, int mcpPort, JsonObject params) {
+        applySessionMcpServers(installedVersion, mcpPort, "/mcp", params);
+    }
+
+    static void applySessionMcpServers(@Nullable String installedVersion, int mcpPort, String endpointPath,
+                                       JsonObject params) {
         if (isDefinitelyOpenCodeV2(installedVersion) && mcpPort > 0) {
             params.add("mcpServers", new JsonArray());
         } else {
-            addMcpServerConfig(mcpPort, params);
+            addMcpServerConfig(mcpPort, endpointPath, params);
         }
     }
 
@@ -986,10 +996,14 @@ public final class OpenCodeClient extends AcpClient {
      * Adds the {@code mcpServers} block to session/new params with type "http".
      */
     static void addMcpServerConfig(int mcpPort, JsonObject params) {
+        addMcpServerConfig(mcpPort, "/mcp", params);
+    }
+
+    static void addMcpServerConfig(int mcpPort, String endpointPath, JsonObject params) {
         JsonObject server = new JsonObject();
         server.addProperty("name", "agentbridge");
         server.addProperty("type", "http");
-        server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
+        server.addProperty("url", "http://127.0.0.1:" + mcpPort + endpointPath);
         server.add("headers", new JsonArray());
         JsonArray servers = new JsonArray();
         servers.add(server);

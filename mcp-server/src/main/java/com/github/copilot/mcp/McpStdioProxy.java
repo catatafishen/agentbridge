@@ -43,6 +43,7 @@ public class McpStdioProxy {
     private static final int READ_TIMEOUT_MS = 600_000;
     private static final int RETRY_DELAY_MS = 500;
     private static final int MAX_RETRIES = 10;
+    private static final String DEFAULT_PATH = "/mcp";
 
     @SuppressWarnings("java:S106") // System.out is intentional — MCP protocol requires stdout
     public static void main(String[] args) {
@@ -52,7 +53,7 @@ public class McpStdioProxy {
             System.exit(1);
         }
 
-        String mcpUrl = buildMcpUrl(port);
+        String mcpUrl = buildMcpUrl(port, parsePath(args));
         LOG.log(Level.INFO, "MCP stdio proxy starting, forwarding to {0}", mcpUrl);
 
         waitForServer(port);
@@ -131,11 +132,35 @@ public class McpStdioProxy {
     }
 
     /**
+     * The endpoint path given with {@code --path}, or {@code /mcp} when there is none or the value is not a path
+     * below {@code /mcp}. A nested session's agent is started with the path of its own endpoint, which is how the
+     * server tells its tool calls from the chat's. Pure function — no I/O.
+     */
+    static String parsePath(String[] args) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("--path".equals(args[i])) {
+                String path = args[i + 1];
+                boolean belowMcp = path.equals(DEFAULT_PATH) || path.startsWith(DEFAULT_PATH + "/");
+                return belowMcp && !path.contains("..") && !path.contains("?") ? path : DEFAULT_PATH;
+            }
+        }
+        return DEFAULT_PATH;
+    }
+
+    /**
      * Builds the MCP endpoint URL for a given port.
      * Pure function — no I/O.
      */
     static String buildMcpUrl(int port) {
-        return "http://127.0.0.1:" + port + "/mcp";
+        return buildMcpUrl(port, DEFAULT_PATH);
+    }
+
+    /**
+     * Builds the MCP endpoint URL for a given port and path.
+     * Pure function — no I/O.
+     */
+    static String buildMcpUrl(int port, String path) {
+        return "http://127.0.0.1:" + port + path;
     }
 
     /**

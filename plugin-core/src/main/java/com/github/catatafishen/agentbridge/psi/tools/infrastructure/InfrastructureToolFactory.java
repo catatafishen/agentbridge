@@ -18,6 +18,7 @@ public final class InfrastructureToolFactory {
         return List.of(
             new PromptUserTool(project),
             new SleepTool(project),
+            new RunNestedSessionTool(project),
             new HttpRequestTool(project),
             new RunCommandTool(project),
             new ReadIdeLogTool(project),

@@ -5,6 +5,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -60,11 +61,21 @@ public final class McpStdioLaunch {
      */
     @Nullable
     public static List<String> buildCommand(int mcpPort) {
+        return buildCommand(mcpPort, null);
+    }
+
+    /**
+     * As {@link #buildCommand(int)}, for the MCP endpoint at {@code endpointPath}. A nested session's agent gets the
+     * path of its own endpoint, so the server tells its tool calls from the chat's. {@code null} or {@code /mcp}
+     * leaves the command as it was.
+     */
+    @Nullable
+    public static List<String> buildCommand(int mcpPort, @Nullable String endpointPath) {
         String javaPath = resolveJavaBinaryPath();
         if (javaPath == null) return null;
         String jarPath = McpServerJarLocator.findMcpServerJar();
         if (jarPath == null) return null;
-        return commandFor(javaPath, jarPath, mcpPort);
+        return commandFor(javaPath, jarPath, mcpPort, endpointPath);
     }
 
     /**
@@ -72,7 +83,19 @@ public final class McpStdioLaunch {
      */
     @NotNull
     static List<String> commandFor(@NotNull String javaPath, @NotNull String jarPath, int mcpPort) {
-        return List.of(javaPath, "-jar", jarPath, "--port", String.valueOf(mcpPort));
+        return commandFor(javaPath, jarPath, mcpPort, null);
+    }
+
+    @NotNull
+    static List<String> commandFor(@NotNull String javaPath, @NotNull String jarPath, int mcpPort,
+                                   @Nullable String endpointPath) {
+        List<String> command = new ArrayList<>(
+            List.of(javaPath, "-jar", jarPath, "--port", String.valueOf(mcpPort)));
+        if (endpointPath != null && !endpointPath.equals("/mcp")) {
+            command.add("--path");
+            command.add(endpointPath);
+        }
+        return List.copyOf(command);
     }
 
     /**

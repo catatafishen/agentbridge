@@ -78,7 +78,7 @@ public final class VibeClient extends AcpClient {
      */
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        addMcpServerConfig(mcpPort, params);
+        addMcpServerConfig(mcpPort, mcpEndpointPath(), params);
     }
 
     /**
@@ -88,12 +88,16 @@ public final class VibeClient extends AcpClient {
      * Shape: {@code {"type": "http", "name": "agentbridge", "url": "..."}}.
      */
     static void addMcpServerConfig(int mcpPort, JsonObject params) {
+        addMcpServerConfig(mcpPort, "/mcp", params);
+    }
+
+    static void addMcpServerConfig(int mcpPort, String endpointPath, JsonObject params) {
         JsonObject server = new JsonObject();
         server.addProperty("type", "http");
         server.addProperty("name", "agentbridge");
         // Use 127.0.0.1 explicitly: on some systems "localhost" resolves to IPv6 (::1)
         // while the MCP server binds to IPv4, causing connection failures.
-        server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
+        server.addProperty("url", "http://127.0.0.1:" + mcpPort + endpointPath);
         server.add("headers", new JsonArray());
 
         JsonArray servers = new JsonArray();
