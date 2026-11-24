@@ -654,6 +654,81 @@ public class TerminalToolsTest extends BasePlatformTestCase {
             writeTerminalInputTool.isOpenWorld());
     }
 
+    // ── Wait arguments (read_terminal_output / run_in_terminal) ────────────────
+
+    private static JsonObject waitArgs(String command, int waitSeconds) {
+        JsonObject obj = new JsonObject();
+        if (command != null) obj.addProperty("command", command);
+        obj.addProperty("wait_seconds", waitSeconds);
+        return obj;
+    }
+
+    public void testReadTerminalOutputRejectsNonPositiveWait() throws Exception {
+        String result = executeSync(readTerminalOutputTool, waitArgs(null, 0));
+
+        assertTrue(result, result.startsWith("Error: "));
+        assertTrue(result, result.contains("wait_seconds"));
+    }
+
+    public void testReadTerminalOutputRejectsWaitForWithoutWaitSeconds() throws Exception {
+        String result = executeSync(readTerminalOutputTool, args("wait_for", "done"));
+
+        assertEquals("Error: wait_for requires wait_seconds (the maximum time to wait).", result);
+    }
+
+    public void testReadTerminalOutputRejectsInvalidWaitForRegex() throws Exception {
+        JsonObject argsObj = args("wait_for", "(unclosed");
+        argsObj.addProperty("wait_seconds", 5);
+
+        String result = executeSync(readTerminalOutputTool, argsObj);
+
+        assertTrue(result, result.startsWith("Error: wait_for is not a valid regex"));
+    }
+
+    public void testReadTerminalOutputWithWaitButNoTerminalDoesNotBlock() throws Exception {
+        long start = System.currentTimeMillis();
+
+        String result = executeSync(readTerminalOutputTool, waitArgs(null, 60));
+
+        assertTrue("Must not wait for a terminal that does not exist, got: " + result,
+            System.currentTimeMillis() - start < 10_000);
+        assertFalse(result.isBlank());
+    }
+
+    public void testReadTerminalOutputSchemaDocumentsTheWaitParameters() {
+        JsonObject properties = readTerminalOutputTool.inputSchema().getAsJsonObject("properties");
+
+        assertTrue(properties.has("wait_seconds"));
+        assertTrue(properties.has("wait_for"));
+        assertTrue(readTerminalOutputTool.description().contains("run_in_terminal"));
+    }
+
+    public void testRunInTerminalRejectsNonPositiveWait() throws Exception {
+        String result = executeSync(runInTerminalTool, waitArgs("echo hi", -1));
+
+        assertTrue(result, result.startsWith("Error: "));
+        assertTrue(result, result.contains("wait_seconds"));
+        assertFalse("Rejected before anything is sent", result.startsWith("Command sent"));
+    }
+
+    public void testRunInTerminalSchemaPrefersWaitSeconds() {
+        JsonObject properties = runInTerminalTool.inputSchema().getAsJsonObject("properties");
+
+        assertTrue(properties.has("wait_seconds"));
+        assertTrue(properties.has("max_lines"));
+        String waitDescription = properties.getAsJsonObject("wait_seconds").get("description").getAsString();
+        assertTrue(waitDescription, waitDescription.contains("PREFERRED"));
+        assertTrue(runInTerminalTool.description().contains("wait_seconds"));
+        assertTrue(runInTerminalTool.description().contains("do NOT follow it with a sleep"));
+    }
+
+    public void testRunInTerminalWithWaitStillFailsGracefullyWithoutTerminalPlugin() throws Exception {
+        String result = executeSync(runInTerminalTool, waitArgs("echo hi", 5));
+
+        assertFalse("Must not be a raw Java exception string", result.startsWith("java."));
+        assertFalse("Nothing was sent, so there is no exit code to report", result.contains("Exit code"));
+    }
+
     // ── RunInTerminalTool ──────────────────────────────────────────────────────
 
     public void testRunInTerminalSchemaSupportsStableHandle() {

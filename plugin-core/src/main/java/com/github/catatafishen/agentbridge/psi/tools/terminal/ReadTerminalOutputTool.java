@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.tools.McpRequestDeadline;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
@@ -16,6 +17,9 @@ import java.util.concurrent.TimeUnit;
 public final class ReadTerminalOutputTool extends TerminalTool {
 
     private static final String PARAM_MAX_LINES = "max_lines";
+    private static final String PARAM_WAIT_SECONDS = TerminalWaitArgs.WAIT_SECONDS;
+    private static final String PARAM_WAIT_FOR = TerminalWaitArgs.WAIT_FOR;
+    private static final long READ_TIMEOUT_SECONDS = 10;
 
     public ReadTerminalOutputTool(Project project) {
         super(project);
@@ -35,7 +39,11 @@ public final class ReadTerminalOutputTool extends TerminalTool {
     public @NotNull String description() {
         return "Read recent output from a terminal owned by this MCP session. "
             + "Use terminal_id from run_in_terminal or list_terminals; tab_name remains "
-            + "available as an owner-scoped compatibility selector.";
+            + "available as an owner-scoped compatibility selector. "
+            + "Prefer run_in_terminal with wait_seconds, which waits for the command and returns its result in one "
+            + "call. Use this tool to follow a command that is still running (for example after a wait timed out) "
+            + "or to inspect a terminal: wait_seconds blocks instead of a separate sleep, and wait_for returns as "
+            + "soon as the output matches a regex.";
     }
 
     @Override
@@ -56,7 +64,14 @@ public final class ReadTerminalOutputTool extends TerminalTool {
             Param.optional(JSON_TAB_NAME, TYPE_STRING,
                 "Owner-scoped terminal tab name. If both selectors are omitted, reads this session's most recent terminal"),
             Param.optional(PARAM_MAX_LINES, TYPE_INTEGER,
-                "Maximum lines from the end of the buffer (default: 50). Use 0 for the full buffer")
+                "Maximum lines from the end of the buffer (default: 50). Use 0 for the full buffer"),
+            Param.optional(PARAM_WAIT_SECONDS, TYPE_INTEGER,
+                "Block up to this many seconds before reading (max 170) instead of sleeping separately. "
+                    + "Returns early when wait_for matches or, without wait_for, when the output changed "
+                    + "and then stayed unchanged for 2s. Default: read immediately"),
+            Param.optional(PARAM_WAIT_FOR, TYPE_STRING,
+                "Regex; with wait_seconds, return as soon as the terminal text matches it "
+                    + "(for example \"BUILD SUCCESSFUL\" or \"Listening on\")")
         );
     }
 
@@ -67,6 +82,21 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         String ownerId = currentOwnerId();
         int maxLines =
             args.has(PARAM_MAX_LINES) ? args.get(PARAM_MAX_LINES).getAsInt() : DEFAULT_MAX_LINES;
+
+        String waitNote = null;
+        TerminalWaitArgs.Parsed wait = TerminalWaitArgs.parse(args, true);
+        if (wait.error() != null) return wait.error();
+        if (wait.requested()) {
+            AgentTabTracker.AgentTerminal target = resolveOwnedTerminal(ownerId, terminalId, tabName);
+            if (target != null) {
+                WaitResult result = waitForTerminal(target, wait.pattern(), wait.seconds());
+                String body = result.exitCode() == null
+                    ? result.note()
+                    : result.note() + "\nExit code: " + result.exitCode();
+                waitNote = McpRequestDeadline.prependNotice(wait.notice(), body);
+            }
+        }
+        String note = waitNote;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
@@ -80,7 +110,9 @@ public final class ReadTerminalOutputTool extends TerminalTool {
                             + ". Use run_in_terminal or list_terminals.");
                     return;
                 }
-                readTerminalText(resultFuture, terminal, maxLines);
+                CompletableFuture<String> read = new CompletableFuture<>();
+                readTerminalText(read, terminal, maxLines);
+                read.thenAccept(text -> resultFuture.complete(note == null ? text : note + "\n\n" + text));
             } catch (Exception e) {
                 LOG.warn("Failed to read terminal", e);
                 resultFuture.complete(err("Failed to read terminal: " + e.getMessage()));
@@ -88,7 +120,7 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         });
 
         try {
-            return resultFuture.get(10, TimeUnit.SECONDS);
+            return resultFuture.get(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Terminal read timed out.";
