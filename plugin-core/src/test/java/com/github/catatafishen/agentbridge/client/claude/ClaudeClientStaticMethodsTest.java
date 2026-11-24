@@ -339,28 +339,38 @@ class ClaudeClientStaticMethodsTest {
                 "Must use --disallowedTools denylist, not --tools allowlist: " + args);
         }
 
+        private static List<String> deniedTools() {
+            return List.of(ClaudeClient.buildToolRestrictionArgs(true).get(1).split(","));
+        }
+
         @Test
         void disallowsIdeBypassingBuiltIns() {
-            String denylist = ClaudeClient.buildToolRestrictionArgs(true).get(1);
+            List<String> denied = deniedTools();
 
-            assertTrue(denylist.contains("Bash"), "Expected Bash in denylist: " + denylist);
-            assertTrue(denylist.contains("Edit"), "Expected Edit in denylist: " + denylist);
-            assertTrue(denylist.contains("Write"), "Expected Write in denylist: " + denylist);
-            assertTrue(denylist.contains("Read"), "Expected Read in denylist: " + denylist);
-            assertTrue(denylist.contains("Glob"), "Expected Glob in denylist: " + denylist);
-            assertTrue(denylist.contains("Grep"), "Expected Grep in denylist: " + denylist);
+            for (String tool : List.of("Bash", "PowerShell", "Edit", "Write", "Read", "Glob", "Grep")) {
+                assertTrue(denied.contains(tool), "Expected " + tool + " in denylist: " + denied);
+            }
+        }
+
+        @Test
+        void keepsSubAgentToolAvailable() {
+            List<String> denied = deniedTools();
+
+            assertFalse(denied.contains("Task"),
+                "Task (Agent) must stay available; the CLI applies the denylist to sub-agents too: " + denied);
+            assertFalse(denied.contains("Agent"), "Agent must stay available: " + denied);
         }
 
         @Test
         void keepsWebAndMcpToolsAvailable() {
-            String denylist = ClaudeClient.buildToolRestrictionArgs(true).get(1);
+            List<String> denied = deniedTools();
 
-            assertFalse(denylist.contains("WebFetch"),
-                "WebFetch must stay available (no MCP equivalent): " + denylist);
-            assertFalse(denylist.contains("WebSearch"),
-                "WebSearch must stay available (no MCP equivalent): " + denylist);
-            assertFalse(denylist.contains("mcp"),
-                "MCP tools must never be in the denylist: " + denylist);
+            assertFalse(denied.contains("WebFetch"),
+                "WebFetch must stay available (no MCP equivalent): " + denied);
+            assertFalse(denied.contains("WebSearch"),
+                "WebSearch must stay available (no MCP equivalent): " + denied);
+            assertTrue(denied.stream().noneMatch(t -> t.startsWith("mcp")),
+                "MCP tools must never be in the denylist: " + denied);
         }
     }
 
