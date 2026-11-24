@@ -138,11 +138,11 @@ class AcpMessageParser {
     }
 
     private SessionUpdate.AgentMessageChunk parseMessageChunk(JsonObject params) {
-        return new SessionUpdate.AgentMessageChunk(parseContentBlocks(params));
+        return new SessionUpdate.AgentMessageChunk(parseContentBlocks(params), getStringOrNull(params, "messageId"));
     }
 
     private SessionUpdate.AgentThoughtChunk parseThoughtChunk(JsonObject params) {
-        return new SessionUpdate.AgentThoughtChunk(parseContentBlocks(params));
+        return new SessionUpdate.AgentThoughtChunk(parseContentBlocks(params), getStringOrNull(params, "messageId"));
     }
 
     private SessionUpdate.UserMessageChunk parseUserMessageChunk(JsonObject params) {

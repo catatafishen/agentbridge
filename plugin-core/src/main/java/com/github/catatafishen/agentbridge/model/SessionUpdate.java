@@ -5,6 +5,7 @@ import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -150,8 +151,21 @@ public sealed interface SessionUpdate
 
     /**
      * Streamed text chunk from the agent's response.
+     *
+     * @param messageId the message the chunk belongs to, when the agent reports it; every chunk of one
+     *                  message has the same id
      */
-    record AgentMessageChunk(List<ContentBlock> content) implements SessionUpdate {
+    record AgentMessageChunk(List<ContentBlock> content, @Nullable String messageId) implements SessionUpdate {
+
+        public AgentMessageChunk(List<ContentBlock> content) {
+            this(content, null);
+        }
+
+        /** This chunk with {@code text} in front of its content. */
+        public AgentMessageChunk withLeadingText(String text) {
+            return new AgentMessageChunk(prepend(text, content), messageId);
+        }
+
         /**
          * Extracts all text content as a plain string.
          */
@@ -167,8 +181,21 @@ public sealed interface SessionUpdate
 
     /**
      * Agent's internal reasoning (thinking/chain-of-thought).
+     *
+     * @param messageId the message the chunk belongs to, when the agent reports it; every chunk of one
+     *                  message has the same id
      */
-    record AgentThoughtChunk(List<ContentBlock> content) implements SessionUpdate {
+    record AgentThoughtChunk(List<ContentBlock> content, @Nullable String messageId) implements SessionUpdate {
+
+        public AgentThoughtChunk(List<ContentBlock> content) {
+            this(content, null);
+        }
+
+        /** This chunk with {@code text} in front of its content. */
+        public AgentThoughtChunk withLeadingText(String text) {
+            return new AgentThoughtChunk(prepend(text, content), messageId);
+        }
+
         /**
          * Extracts all text content as a plain string.
          */
@@ -435,5 +462,12 @@ public sealed interface SessionUpdate
                 default -> null;
             };
         }
+    }
+
+    private static List<ContentBlock> prepend(String text, List<ContentBlock> content) {
+        List<ContentBlock> blocks = new ArrayList<>(content.size() + 1);
+        blocks.add(new ContentBlock.Text(text));
+        blocks.addAll(content);
+        return blocks;
     }
 }

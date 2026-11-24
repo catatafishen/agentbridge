@@ -96,6 +96,37 @@ class AcpMessageParserTest {
 
         assertInstanceOf(SessionUpdate.AgentMessageChunk.class, update);
         assertEquals("Hello, world!", ((SessionUpdate.AgentMessageChunk) update).text());
+        assertNull(((SessionUpdate.AgentMessageChunk) update).messageId());
+    }
+
+    @Test
+    void agentMessageChunkKeepsItsMessageId() {
+        JsonObject params = updateParams("agent_message_chunk");
+        params.addProperty("messageId", "msg_20ec85dd5001KPHb7ehp9s9q9I");
+        JsonObject content = new JsonObject();
+        content.addProperty("type", "text");
+        content.addProperty("text", "Both sub-agents are");
+        params.add("content", content);
+
+        SessionUpdate.AgentMessageChunk chunk =
+            assertInstanceOf(SessionUpdate.AgentMessageChunk.class, parser.parse(params));
+
+        assertEquals("msg_20ec85dd5001KPHb7ehp9s9q9I", chunk.messageId());
+    }
+
+    @Test
+    void agentThoughtChunkKeepsItsMessageId() {
+        JsonObject params = updateParams("agent_thought_chunk");
+        params.addProperty("messageId", "msg_20f199981001jLhUeFtTkwXU6a:reasoning:0");
+        JsonObject content = new JsonObject();
+        content.addProperty("type", "text");
+        content.addProperty("text", "Sub-agent B of");
+        params.add("content", content);
+
+        SessionUpdate.AgentThoughtChunk chunk =
+            assertInstanceOf(SessionUpdate.AgentThoughtChunk.class, parser.parse(params));
+
+        assertEquals("msg_20f199981001jLhUeFtTkwXU6a:reasoning:0", chunk.messageId());
     }
 
     // ── agent_thought_chunk — per spec: reasoning/thinking output ────────────
