@@ -1,10 +1,5 @@
 package com.github.catatafishen.agentbridge.client.claude;
 
-import com.github.catatafishen.agentbridge.bridge.AgentConfig;
-import com.github.catatafishen.agentbridge.bridge.AuthMethod;
-import com.github.catatafishen.agentbridge.services.AgentProfile;
-import com.google.gson.JsonObject;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
@@ -30,12 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ClaudeClientCancelTest {
 
     private ClaudeClient newClient() {
-        AgentProfile profile = new AgentProfile();
-        profile.setDisplayName("test-claude");
-        ClaudeClient.ProcessFactory unused = (cmd, env, workDir) -> {
+        return ClaudeCliTestFixtures.newClient((cmd, env, workDir) -> {
             throw new UnsupportedOperationException();
-        };
-        return new ClaudeClient(profile, new StubAgentConfig(), null, null, 0, unused);
+        });
     }
 
     @Test
@@ -160,59 +152,6 @@ class ClaudeClientCancelTest {
         @Override
         public boolean isAlive() {
             return !destroyed;
-        }
-    }
-
-    /** Minimal AgentConfig stub that avoids IntelliJ service dependencies. */
-    private static final class StubAgentConfig implements AgentConfig {
-        @Override
-        public @NotNull String getDisplayName() {
-            return "test-claude";
-        }
-
-        @Override
-        public @NotNull String getNotificationGroupId() {
-            return "test";
-        }
-
-        @Override
-        public void prepareForLaunch(String s) {
-            // No-op: the stub never launches a real agent process.
-        }
-
-        @Override
-        public @NotNull String findAgentBinary() {
-            return "/usr/bin/claude";
-        }
-
-        @Override
-        public @NotNull ProcessBuilder buildAcpProcess(String s, String s1, int i) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void parseInitializeResponse(@NotNull JsonObject o) {
-            // No-op: the stub has no initialization payload to read.
-        }
-
-        @Override
-        public String parseModelUsage(JsonObject o) {
-            return null;
-        }
-
-        @Override
-        public @NotNull AuthMethod getAuthMethod() {
-            return new AuthMethod();
-        }
-
-        @Override
-        public String getAgentBinaryPath() {
-            return "/usr/bin/claude";
-        }
-
-        @Override
-        public String getSessionInstructions() {
-            return null;
         }
     }
 }
