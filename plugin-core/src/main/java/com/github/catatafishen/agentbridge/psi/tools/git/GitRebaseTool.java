@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class GitRebaseTool extends GitTool {
 
     private static final String CMD_REBASE = "rebase";
+    private static final String CMD_REV_PARSE = "rev-parse";
     private static final String PARAM_BRANCH = "branch";
     private static final String PARAM_INTERACTIVE = "interactive";
     private static final String PARAM_OPERATIONS = "operations";
@@ -170,11 +171,46 @@ public final class GitRebaseTool extends GitTool {
             .awaitReviewCompletion("git rebase");
         if (reviewError != null) return reviewError;
 
+        String headBefore = runGitInQuiet(root, CMD_REV_PARSE, "HEAD");
         String result = runGitIn(root, buildPlainRebaseArgs(args).toArray(String[]::new));
         if (result.startsWith(ERR_PREFIX)) return fetchNote + enrichRebaseError(result, root);
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase");
-        return fetchNote + formatPlainRebaseSuccess(result) + getBranchContextIn(root);
+        String headAfter = runGitInQuiet(root, CMD_REV_PARSE, "HEAD");
+        String upstream = ontoArg != null && !ontoArg.isEmpty() ? ontoArg : branchArg;
+        String noOpNote = describeNoOp(root, upstream, headBefore, headAfter);
+        return fetchNote + formatPlainRebaseSuccess(result) + noOpNote + getBranchContextIn(root);
+    }
+
+    /**
+     * When the rebase left HEAD unchanged, says what it compared against so the agent can tell
+     * "already on top of the upstream" apart from "rebased onto the wrong thing".
+     */
+    private @NotNull String describeNoOp(@NotNull String root, @Nullable String upstream,
+                                         @Nullable String headBefore, @Nullable String headAfter) {
+        if (headBefore == null || !headBefore.equals(headAfter)) return "";
+        String target = upstream != null && !upstream.isEmpty() ? upstream : "@{upstream}";
+        String targetSha = runGitInQuiet(root, CMD_REV_PARSE, "--short", target + "^{commit}");
+        String counts = runGitInQuiet(root, "rev-list", "--left-right", "--count", target + "...HEAD");
+        return formatNoOpNote(target, targetSha, counts);
+    }
+
+    static @NotNull String formatNoOpNote(@NotNull String target, @Nullable String targetSha,
+                                          @Nullable String leftRightCounts) {
+        String sha = targetSha == null || targetSha.isBlank() ? "<unknown>" : targetSha.trim();
+        StringBuilder sb = new StringBuilder("⚠️ No commits were replayed: HEAD is unchanged. Compared against ")
+            .append(target).append(" (").append(sha).append(")");
+        String[] parts = leftRightCounts == null ? new String[0] : leftRightCounts.trim().split("\\s+");
+        if (parts.length == 2) {
+            sb.append(": HEAD is ").append(parts[1]).append(" commit(s) ahead and ")
+                .append(parts[0]).append(" behind");
+            if ("0".equals(parts[0])) {
+                sb.append(", so it already contains ").append(target)
+                    .append(". The ahead commits may include commits from the branch you started from, "
+                        + "not only your own; check with git_log");
+            }
+        }
+        return sb.append(".\n").toString();
     }
 
     static @NotNull List<String> buildPlainRebaseArgs(@NotNull JsonObject args) {
@@ -285,7 +321,7 @@ public final class GitRebaseTool extends GitTool {
      * @return the resolved git directory path
      */
     private @NotNull java.nio.file.Path resolveGitDir(@NotNull String root) {
-        String gitDirOutput = runGitInQuiet(root, "rev-parse", "--git-dir");
+        String gitDirOutput = runGitInQuiet(root, CMD_REV_PARSE, "--git-dir");
         if (gitDirOutput == null || gitDirOutput.isEmpty()) {
             return java.nio.file.Path.of(root, ".git");
         }

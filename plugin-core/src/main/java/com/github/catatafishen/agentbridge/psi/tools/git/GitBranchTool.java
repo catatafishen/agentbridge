@@ -7,11 +7,14 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
+
 @SuppressWarnings("java:S112")
 public final class GitBranchTool extends GitTool {
 
     private static final String CMD_BRANCH = "branch";
     private static final String CMD_CHECKOUT = "checkout";
+    private static final String CMD_REV_PARSE = "rev-parse";
     private static final String PARAM_ACTION = "action";
     private static final String PARAM_NAME = "name";
     private static final String PARAM_BASE = "base";
@@ -84,14 +87,22 @@ public final class GitBranchTool extends GitTool {
         if (root.startsWith(ERR_PREFIX)) return root;
         boolean all = args.has(PARAM_ALL) && args.get(PARAM_ALL).getAsBoolean();
 
-        String refPattern = all ? "refs/heads refs/remotes" : "refs/heads";
-        String format = "%(if)%(HEAD)%(then)* %(else)  %(end)"
-            + "%(refname:short)|%(objectname:short)|%(committerdate:relative)|%(upstream:short)|%(upstream:track)";
-        String raw = runGitIn(root, "for-each-ref", "--sort=-committerdate",
-            "--format=" + format, refPattern);
+        String raw = runGitIn(root, listBranchesArgs(all));
 
         return BranchListFormatter.formatBranchTable(raw)
             + "\n\n--- Context ---\n" + getBranchContextIn(root);
+    }
+
+    /**
+     * Builds the {@code git for-each-ref} arguments. Each ref pattern must be its own argument:
+     * a single "refs/heads refs/remotes" argument matches nothing, which listed "(no branches)".
+     */
+    static String[] listBranchesArgs(boolean all) {
+        String format = "--format=%(if)%(HEAD)%(then)* %(else)  %(end)"
+            + "%(refname:short)|%(objectname:short)|%(committerdate:relative)|%(upstream:short)|%(upstream:track)";
+        return all
+            ? new String[]{"for-each-ref", "--sort=-committerdate", format, "refs/heads", "refs/remotes"}
+            : new String[]{"for-each-ref", "--sort=-committerdate", format, "refs/heads"};
     }
 
     private String createBranch(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
@@ -106,10 +117,15 @@ public final class GitBranchTool extends GitTool {
         String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
             ? args.get(PARAM_BASE).getAsString()
             : null;
+        String startRef = base != null ? base : runGitInQuiet(setupError, CMD_REV_PARSE, "--abbrev-ref", "HEAD");
+        String startSha = runGitInQuiet(setupError, CMD_REV_PARSE, "--short",
+            Objects.requireNonNullElse(base, "HEAD") + "^{commit}");
         String result = runGitIn(setupError, createBranchArgs(name, base));
         if (result.startsWith(ERR_PREFIX)) return result;
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
-        return "Created and switched to branch '" + name + "'\n" + getBranchContextIn(setupError)
+        return "Created and switched to branch '" + name + "'\n"
+            + formatStartPoint(startRef, startSha, base == null) + "\n"
+            + getBranchContextIn(setupError)
             + staleBaseWarning(setupError, base);
     }
 
@@ -122,8 +138,18 @@ public final class GitBranchTool extends GitTool {
     private @NotNull String staleBaseWarning(@NotNull String root, @Nullable String base) {
         if (base == null) return "";
         String behind = runGitInQuiet(root, "rev-list", "--count", base + ".." + base + "@{upstream}");
-        String upstream = runGitInQuiet(root, "rev-parse", "--abbrev-ref", base + "@{upstream}");
+        String upstream = runGitInQuiet(root, CMD_REV_PARSE, "--abbrev-ref", base + "@{upstream}");
         return formatStaleBaseWarning(base, upstream, behind);
+    }
+
+    static @NotNull String formatStartPoint(@Nullable String startRef, @Nullable String startSha,
+                                            boolean implicitHead) {
+        String ref = startRef == null || startRef.isBlank() ? "<unknown>" : startRef.trim();
+        String sha = startSha == null || startSha.isBlank() ? "<unknown>" : startSha.trim();
+        String line = "Started from: " + ref + " (" + sha + ")";
+        return implicitHead
+            ? line + " — no 'base' given, so the branch starts from the current HEAD"
+            : line;
     }
 
     static @NotNull String formatStaleBaseWarning(@NotNull String base, @Nullable String upstream,
