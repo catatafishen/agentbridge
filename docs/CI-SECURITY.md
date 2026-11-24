@@ -43,8 +43,13 @@ malicious build script runs first.
 
 - Triggered when the build workflow completes successfully.
 - Has access to `SONAR_TOKEN`.
-- Looks up the associated PR via the GitHub API (`commits/{sha}/pulls`) — PR metadata
-  is never read from the untrusted artifact to prevent code injection.
+- Looks up the associated PR via the GitHub API (`commits/{sha}/pulls`, falling back to
+  `pulls?head=<owner>:<branch>` matched on the exact head SHA, because the first endpoint
+  does not know fork commits until merge) — PR metadata is never read from the untrusted
+  artifact to prevent code injection.
+- Publishes its outcome as the `SonarQube PR analysis` commit status on the PR head
+  (`statuses: write`). A `workflow_run` job's own result is not attached to the PR, so
+  without this a skipped or failed analysis is invisible on the PR.
 - Downloads the artifact produced by the build job.
 - Checks out the **base repository** (our trusted code) to get the Gradle wrapper and
   `build.gradle.kts`.
