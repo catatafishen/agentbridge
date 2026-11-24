@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -298,8 +299,25 @@ class CodexClientExporterTest {
         JsonObject firstLine = GSON.fromJson(rawLines.getFirst(), JsonObject.class);
         assertEquals("session_meta", firstLine.get("type").getAsString(),
             "First line must be session_meta");
-        assertTrue(firstLine.has("originator"), "session_meta must have originator field");
-        assertTrue(firstLine.has("cli_version"), "session_meta must have cli_version field");
+        assertTrue(firstLine.has("timestamp"), "session_meta envelope must have a timestamp field");
+        JsonObject meta = firstLine.getAsJsonObject("payload");
+        assertNotNull(meta, "session_meta fields must be under payload, or Codex cannot resume the thread");
+        assertTrue(meta.has("originator"), "session_meta must have originator field");
+        assertTrue(meta.has("cli_version"), "session_meta must have cli_version field");
+    }
+
+    @Test
+    void sessionMetaPayloadCarriesThreadIdAndCwd() throws IOException {
+        Path rollout = tempDir.resolve("rollout-meta-id.jsonl");
+        CodexClientExporter.writeRolloutFile(List.of(prompt("Hi")), rollout, "thread-1", "/work/project");
+
+        JsonObject firstLine = GSON.fromJson(Files.readAllLines(rollout, StandardCharsets.UTF_8).getFirst(),
+            JsonObject.class);
+        JsonObject meta = firstLine.getAsJsonObject("payload");
+        assertNotNull(meta, "session_meta fields must be under payload");
+        assertEquals("thread-1", meta.get("id").getAsString());
+        assertEquals("/work/project", meta.get("cwd").getAsString());
+        assertFalse(firstLine.has("id"), "session_meta fields must not be on the envelope itself");
     }
 
     @Test

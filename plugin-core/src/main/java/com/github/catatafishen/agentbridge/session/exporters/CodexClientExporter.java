@@ -134,8 +134,10 @@ public final class CodexClientExporter {
     /**
      * Writes a native Codex rollout JSONL file.
      *
-     * <p>Format: a {@code session_meta} header line, followed by each content item wrapped in a
-     * {@code response_item} envelope. This matches the format expected by {@code codex thread/resume}.</p>
+     * <p>Format: a {@code session_meta} header line, followed by each content item as a
+     * {@code response_item}. Every line, the header included, is an envelope with its fields under
+     * {@code payload}; {@code codex thread/resume} refuses a rollout whose header is flat or
+     * has no {@code cwd}.</p>
      */
     static void writeRolloutFile(
         @NotNull List<EntryData> entries,
@@ -232,7 +234,6 @@ public final class CodexClientExporter {
         @NotNull String timestamp,
         @Nullable String cwd) {
         JsonObject meta = new JsonObject();
-        meta.addProperty(F_TYPE, "session_meta");
         meta.addProperty("id", threadId);
         meta.addProperty(F_TIMESTAMP, timestamp);
         if (cwd != null) {
@@ -242,15 +243,23 @@ public final class CodexClientExporter {
         meta.addProperty("cli_version", "0.0.0");
         meta.addProperty("source", "vscode");
         meta.addProperty("model_provider", "openai");
-        sb.append(GSON.toJson(meta)).append('\n');
+        writeEnvelope(sb, "session_meta", meta, timestamp);
     }
 
     private static void writeResponseItem(
         @NotNull StringBuilder sb,
         @NotNull JsonObject payload,
         @NotNull String timestamp) {
+        writeEnvelope(sb, "response_item", payload, timestamp);
+    }
+
+    private static void writeEnvelope(
+        @NotNull StringBuilder sb,
+        @NotNull String type,
+        @NotNull JsonObject payload,
+        @NotNull String timestamp) {
         JsonObject envelope = new JsonObject();
-        envelope.addProperty(F_TYPE, "response_item");
+        envelope.addProperty(F_TYPE, type);
         envelope.addProperty(F_TIMESTAMP, timestamp);
         envelope.add("payload", payload);
         sb.append(GSON.toJson(envelope)).append('\n');
