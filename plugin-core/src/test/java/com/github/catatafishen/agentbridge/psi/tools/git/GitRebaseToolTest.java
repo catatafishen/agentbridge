@@ -19,6 +19,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GitRebaseToolTest {
 
     @Nested
+    class FormatNoOpNote {
+
+        @Test
+        void namesTargetAndCountsWhenAlreadyOnTop() {
+            String note = GitRebaseTool.formatNoOpNote("origin/master", "abc1234", "0\t3");
+            assertTrue(note.contains("No commits were replayed"));
+            assertTrue(note.contains("origin/master (abc1234)"));
+            assertTrue(note.contains("3 commit(s) ahead and 0 behind"));
+            assertTrue(note.contains("already contains origin/master"));
+        }
+
+        @Test
+        void omitsAlreadyContainsWhenBehind() {
+            String note = GitRebaseTool.formatNoOpNote("main", "abc", "2 1");
+            assertTrue(note.contains("1 commit(s) ahead and 2 behind"));
+            assertFalse(note.contains("already contains"));
+        }
+
+        @Test
+        void unknownShaAndMissingCountsAreSurfaced() {
+            String note = GitRebaseTool.formatNoOpNote("@{upstream}", null, null);
+            assertTrue(note.contains("@{upstream} (<unknown>)"));
+            assertFalse(note.contains("ahead"));
+        }
+    }
+
+    @Nested
     class ValidateInteractiveArgs {
 
         @Test
