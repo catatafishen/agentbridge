@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
@@ -144,6 +145,72 @@ class ToolCallParamsPanelTest {
         fun `whitespace is trimmed before classification`() {
             val result = ToolCallParamsPanel.classifyValue("  https://example.com  ")
             assertInstanceOf(ToolCallParamsPanel.ValueType.Url::class.java, result)
+        }
+    }
+
+    @Nested
+    inner class DisplayText {
+
+        @Test
+        fun `short text is shown whole`() {
+            assertEquals("Run the unit tests", ToolCallParamsPanel.displayText("Run the unit tests"))
+        }
+
+        @Test
+        fun `text of a few lines is shown whole, with its own line endings`() {
+            assertEquals("one\r\ntwo", ToolCallParamsPanel.displayText("one\r\ntwo"))
+        }
+
+        @Test
+        fun `long single line is cut at 1000 characters`() {
+            val shown = ToolCallParamsPanel.displayText("a".repeat(1500))
+
+            assertEquals("a".repeat(1000) + "…", shown)
+        }
+
+        @Test
+        fun `an emoji at the cut is left out whole, not split`() {
+            val shown = ToolCallParamsPanel.displayText("a".repeat(999) + "😀" + "a".repeat(10))
+
+            assertEquals("a".repeat(999) + "…", shown)
+        }
+
+        @Test
+        fun `text of exactly 1000 characters is not cut`() {
+            assertEquals("a".repeat(1000), ToolCallParamsPanel.displayText("a".repeat(1000)))
+        }
+
+        @Test
+        fun `many lines are cut after 8 and the line count is given`() {
+            val raw = (1..30).joinToString("\n") { "line $it" }
+
+            val shown = ToolCallParamsPanel.displayText(raw)
+
+            assertEquals((1..8).joinToString("\n") { "line $it" } + "… (30 lines)", shown)
+        }
+
+        @Test
+        fun `long lines are cut by length before the line limit`() {
+            val raw = List(5) { "b".repeat(300) }.joinToString("\n")
+
+            val shown = ToolCallParamsPanel.displayText(raw)
+
+            assertTrue(shown.startsWith(raw.take(1000)), shown)
+            assertTrue(shown.endsWith("… (5 lines)"), shown)
+        }
+    }
+
+    @Nested
+    inner class WrappedText {
+
+        @Test
+        fun `long text wraps to the width it is given`() {
+            val text = ToolCallParamsPanel.wrappedText("word ".repeat(100).trim())
+            val oneLine = text.getFontMetrics(text.font).height
+
+            text.setSize(200, oneLine)
+
+            assertTrue(text.preferredSize.height > 3 * oneLine, "height ${text.preferredSize.height}")
         }
     }
 }
