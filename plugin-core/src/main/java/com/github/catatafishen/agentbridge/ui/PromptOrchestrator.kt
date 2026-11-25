@@ -821,19 +821,16 @@ class PromptOrchestrator(
                         // Thought block ended — save it now (appendThinkingText is synchronous).
                         callbacks.appendNewEntries()
                         // Close the thinking entry so a later THOUGHT block (THOUGHT→TEXT→THOUGHT)
-                        // creates a fresh EntryData.Thinking with a new ID. Without this,
-                        // _currentThinking still points at the persisted entry and INSERT OR IGNORE
-                        // silently drops the second block's content.
+                        // creates a fresh EntryData.Thinking (its own chip) instead of joining this one.
                         consolePanel().collapseThinking()
-                        // Close the pre-thought text entry (if any) so the continuation creates
-                        // a fresh entry at a new index past persistedEntryCount. Without this,
-                        // appending to an already-persisted entry would be silently dropped.
+                        // Close the pre-thought text entry (if any) so the continuation becomes a
+                        // fresh entry after the thought, not part of the text before it.
                         consolePanel().closeCurrentTextEntry()
                     }
 
                     StreamBlockType.NONE -> {
                         // Resuming text after tool calls (or initial text): close the pre-tool
-                        // text entry so the continuation lands in a new, unpersisted entry.
+                        // text entry so the continuation becomes a fresh entry after the tool calls.
                         consolePanel().closeCurrentTextEntry()
                     }
 
@@ -866,9 +863,7 @@ class PromptOrchestrator(
 
                     StreamBlockType.THOUGHT -> {
                         // Thought block ended. Persist it, then close the thinking entry so
-                        // the next thinking block creates a fresh EntryData.Thinking with its
-                        // own ID. Without this, the next block appends to the already-persisted
-                        // entry and INSERT OR IGNORE silently drops the content update.
+                        // the next thinking block creates a fresh EntryData.Thinking (its own chip).
                         callbacks.appendNewEntries()
                         consolePanel().collapseThinking()
                     }
@@ -1179,11 +1174,8 @@ class PromptOrchestrator(
             val summary = result ?: description ?: ""
             if (summary.isNotBlank() && !stopped) {
                 // Close the current text entry first. If the agent streamed text before tool calls,
-                // _currentText still points to that entry (already persisted). Appending to it
-                // in-place would update the object without updating persistedEntryCount, so
-                // appendNewEntries() would miss it and INSERT OR IGNORE would skip the DB update.
-                // Closing ensures appendText creates a fresh entry with a new ID that lands after
-                // persistedEntryCount and is written to the DB correctly.
+                // _currentText still points to that entry, and the summary would join the text
+                // before the tool calls; closing makes it a fresh entry after them.
                 consolePanel().closeCurrentTextEntry()
                 consolePanel().appendText(summary)
             }

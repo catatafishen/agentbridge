@@ -26,6 +26,7 @@ class ConversationEntryStore {
     private val _entries = mutableListOf<EntryData>()
     private var _currentText: EntryData.Text? = null
     private var _currentThinking: EntryData.Thinking? = null
+    private val _closedSinceSnapshot = mutableListOf<EntryData>()
     private val _toolCallEntries = mutableMapOf<String, EntryData.ToolCall>()
     private val _subAgentEntries = mutableMapOf<String, EntryData.SubAgent>()
     private val _changeListeners = CopyOnWriteArrayList<Runnable>()
@@ -36,6 +37,38 @@ class ConversationEntryStore {
 
     /** Returns a defensive copy of the entries list. */
     fun getEntries(): List<EntryData> = synchronized(lock) { _entries.toList() }
+
+    /**
+     * What a save writes: all entries, and copies of the text and thinking entries that may have grown since
+     * the previous snapshot (the ones still being streamed, and those closed since). Saves happen mid-stream,
+     * so these grow after they are saved; the copies carry their content as of this call, to be written again.
+     */
+    fun snapshotForSaving(): SaveSnapshot = synchronized(lock) {
+        val streamed = (_closedSinceSnapshot + listOfNotNull(_currentText, _currentThinking)).map(::copyOfStreamed)
+        _closedSinceSnapshot.clear()
+        SaveSnapshot(_entries.toList(), streamed)
+    }
+
+    /** See [snapshotForSaving]. */
+    data class SaveSnapshot(val entries: List<EntryData>, val streamed: List<EntryData>)
+
+    private fun copyOfStreamed(entry: EntryData): EntryData = when (entry) {
+        is EntryData.Text -> EntryData.Text(entry.raw, entry.timestamp, entry.agent, entry.model, entry.entryId)
+        is EntryData.Thinking -> EntryData.Thinking(entry.raw, entry.timestamp, entry.agent, entry.model, entry.entryId)
+        else -> entry
+    }
+
+    /** Ends the current text entry; callers hold [lock]. */
+    private fun closeText() {
+        _currentText?.let(_closedSinceSnapshot::add)
+        _currentText = null
+    }
+
+    /** Ends the current thinking entry; callers hold [lock]. */
+    private fun closeThinking() {
+        _currentThinking?.let(_closedSinceSnapshot::add)
+        _currentThinking = null
+    }
 
     /** Returns a snapshot (ArrayList copy) for iteration outside EDT. */
     fun entriesSnapshot(): List<EntryData> = synchronized(lock) { ArrayList(_entries) }
@@ -76,8 +109,8 @@ class ConversationEntryStore {
     }
 
     fun startStreaming() = synchronized(lock) {
-        _currentText = null
-        _currentThinking = null
+        closeText()
+        closeThinking()
     }
 
     /**
@@ -230,25 +263,24 @@ class ConversationEntryStore {
      * task_complete summary) rather than silently merged into the last streamed text block.
      */
     fun closeCurrentTextEntry() = synchronized(lock) {
-        _currentText = null
+        closeText()
     }
 
     /**
      * Closes the current thinking entry so the next [appendThinkingText] call starts a fresh
      * [EntryData.Thinking] with a new entry ID.
      *
-     * Called when the model signals the end of a thinking block (collapseThinking). Without
-     * this, a second thinking block in the same turn would be merged into the first entry
-     * instead of being persisted as a separate chip.
+     * Called when the model signals the end of a thinking block (collapseThinking), so each
+     * thinking block in a turn is persisted as its own chip.
      */
     fun closeCurrentThinkingEntry() = synchronized(lock) {
-        _currentThinking = null
+        closeThinking()
     }
 
     fun finishResponse() {
         synchronized(lock) {
-            _currentText = null
-            _currentThinking = null
+            closeText()
+            closeThinking()
         }
         fireChanged()
     }
@@ -323,6 +355,7 @@ class ConversationEntryStore {
             _entries.clear()
             _currentText = null
             _currentThinking = null
+            _closedSinceSnapshot.clear()
             _toolCallEntries.clear()
             _subAgentEntries.clear()
         }

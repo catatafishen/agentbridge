@@ -11,6 +11,7 @@ import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import java.util.concurrent.CompletableFuture
 
 /**
  * Manages conversation persistence: incremental saves, restore from disk,
@@ -112,20 +113,31 @@ class ConversationPersistenceManager(
     /**
      * Queues every entry that has not already been committed or queued, and completes only after
      * SQLite commits the batch. Failed entries become eligible for the next save attempt.
+     *
+     * Streamed text and thinking entries grow after they are saved, so the ones already committed or queued
+     * get their current content written again; the write queue runs that update after their insert. The
+     * snapshot is taken and queued under one lock, so the queue writes snapshots in the order they were taken.
      */
-    fun appendNewEntriesAsync(): java.util.concurrent.CompletableFuture<Void> {
-        val entries = entryStore?.getEntries().orEmpty()
-        val newEntries = synchronized(persistenceLock) {
-            entries.filter { entry ->
+    fun appendNewEntriesAsync(): CompletableFuture<Void> {
+        val store = entryStore ?: return CompletableFuture.completedFuture(null)
+        synchronized(persistenceLock) {
+            val snapshot = store.snapshotForSaving()
+            val newEntries = snapshot.entries.filter { entry ->
                 entry.entryId !in persistedEntryIds && queuedEntryIds.add(entry.entryId)
             }
+            val newIds = newEntries.mapTo(HashSet()) { it.entryId }
+            val grown = snapshot.streamed.filter { it.entryId !in newIds }
+            val insert =
+                if (newEntries.isEmpty()) CompletableFuture.completedFuture<Void>(null) else insertNew(newEntries)
+            if (grown.isEmpty()) return insert
+            return CompletableFuture.allOf(insert, conversationStore.updateStreamedContentAsync(grown))
         }
-        if (newEntries.isEmpty()) {
-            return java.util.concurrent.CompletableFuture.completedFuture(null)
-        }
+    }
 
-        val entryIds = newEntries.map { it.entryId }.toSet()
-        return conversationStore.appendEntriesAsync(project.basePath, newEntries)
+    /** Writes [entries], which [appendNewEntriesAsync] has marked queued, and marks them saved once committed. */
+    private fun insertNew(entries: List<EntryData>): CompletableFuture<Void> {
+        val entryIds = entries.map { it.entryId }.toSet()
+        return conversationStore.appendEntriesAsync(project.basePath, entries)
             .whenComplete { _, error ->
                 synchronized(persistenceLock) {
                     queuedEntryIds.removeAll(entryIds)
