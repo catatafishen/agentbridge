@@ -204,6 +204,17 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     }
 
     public void stop() {
+        stop(true);
+    }
+
+    /**
+     * @param notifyListeners whether to publish {@link #STATUS_TOPIC}. False during {@link #dispose()}: when the
+     *                        plugin is unloaded dynamically the project stays open, and listeners that react by
+     *                        looking this service up again would make the platform cache a "service not found"
+     *                        entry keyed by the old plugin's {@link McpServerControl} class, which keeps the old
+     *                        plugin class loader alive and prevents the plugin from unloading.
+     */
+    private void stop(boolean notifyListeners) {
         boolean notify;
         synchronized (this) {
             if (!running || httpServer == null) return;
@@ -227,7 +238,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             protocolHandler = null;
             activeTransportMode = null;
             activeConnections.set(0);
-            notify = !project.isDisposed();
+            notify = notifyListeners && !project.isDisposed();
             LOG.info("[MCP] server stopped for project: " + project.getBasePath());
         }
         // Fire status notification AFTER releasing the synchronized lock. Firing inside the lock
@@ -938,7 +949,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
     @Override
     public void dispose() {
-        stop();
+        stop(false);
     }
 
     /**

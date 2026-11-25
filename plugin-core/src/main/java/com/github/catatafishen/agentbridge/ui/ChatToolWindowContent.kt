@@ -360,7 +360,7 @@ class ChatToolWindowContent(
         setupTitleBarActions()
         wireUpWebServerCallbacks()
 
-        connectPanel = AcpConnectPanel(project) { profileId, customCommand, freshSession ->
+        connectPanel = AcpConnectPanel(project, toolWindow.disposable) { profileId, customCommand, freshSession ->
             connectToAgent(profileId, customCommand, freshSession)
         }
         mainPanel.add(connectPanel, CARD_CONNECT)

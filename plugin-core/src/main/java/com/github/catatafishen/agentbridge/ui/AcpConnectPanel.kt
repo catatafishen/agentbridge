@@ -8,6 +8,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.sessions.SessionPickerDialog
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -35,6 +36,7 @@ import javax.swing.*
  */
 class AcpConnectPanel(
     private val project: Project,
+    private val parentDisposable: Disposable,
     private val onConnect: (String, String?, Boolean) -> Unit
 ) : JBPanel<AcpConnectPanel>(BorderLayout()) {
 
@@ -502,7 +504,8 @@ class AcpConnectPanel(
     // ── MCP state management ──
 
     private fun subscribeToBridgeEvents() {
-        val connection = project.messageBus.connect()
+        // Tied to the tool window: an unparented connection outlives the panel (and a dynamic plugin unload).
+        val connection = project.messageBus.connect(parentDisposable)
 
         connection.subscribe(
             McpHttpServer.STATUS_TOPIC,
