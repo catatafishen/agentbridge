@@ -169,6 +169,23 @@ public final class ConversationService implements Disposable {
         });
     }
 
+    /**
+     * Writes the current content of text and thinking entries saved while they were still being streamed,
+     * after any queued insert (see {@link ConversationWriter#updateStreamedContent}).
+     *
+     * @return a future that completes after SQLite commits the update; failures complete it exceptionally
+     */
+    public @NotNull CompletableFuture<Void> updateStreamedContentAsync(@NotNull List<EntryData> entries) {
+        if (entries.isEmpty()) return CompletableFuture.completedFuture(null);
+        List<EntryData> snapshot = List.copyOf(entries);
+        return enqueueWrite("update streamed entries", () -> {
+            ConversationWriter writer = getOrCreateWriter();
+            if (writer == null || !writer.updateStreamedContent(snapshot)) {
+                throw new IllegalStateException("Streamed entries were not updated in SQLite");
+            }
+        });
+    }
+
     private boolean appendEntriesChecked(@Nullable String basePath, @NotNull List<EntryData> entries) {
         try {
             String agent = currentAgent;

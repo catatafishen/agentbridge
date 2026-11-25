@@ -870,6 +870,48 @@ public final class ConversationWriter implements AutoCloseable {
     }
 
     /**
+     * Writes the current content of text and thinking entries that were saved while still being streamed;
+     * {@link #recordEntries} inserts with {@code INSERT OR IGNORE} and never rewrites them. Other entry types
+     * are ignored; an entry not saved yet is left alone (0 rows affected), since its insert writes its content.
+     *
+     * @return {@code false} when the update could not be written
+     */
+    public boolean updateStreamedContent(@NotNull List<EntryData> entries) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) {
+                LOG.warn("ConversationDatabase not initialised — failed to update " + entries.size()
+                    + " streamed entries");
+                return false;
+            }
+            try (PreparedStatement text = conn.prepareStatement(
+                "UPDATE text_events SET content = ? WHERE event_id = ?");
+                 PreparedStatement thinking = conn.prepareStatement(
+                     "UPDATE thinking_events SET content = ? WHERE event_id = ?")) {
+                for (EntryData entry : entries) {
+                    if (entry instanceof EntryData.Text t) {
+                        executeContentUpdate(text, t.getRaw(), t.getEntryId());
+                    } else if (entry instanceof EntryData.Thinking th) {
+                        executeContentUpdate(thinking, th.getRaw(), th.getEntryId());
+                    }
+                }
+                return true;
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to update " + entries.size() + " streamed entries", e);
+                return false;
+            }
+        }
+    }
+
+    private static void executeContentUpdate(
+        @NotNull PreparedStatement ps, @NotNull String content, @NotNull String eventId
+    ) throws SQLException {
+        ps.setString(1, content);
+        ps.setString(2, eventId);
+        ps.executeUpdate();
+    }
+
+    /**
      * Updates a tool call's result and status in the database after completion.
      *
      * <p>This handles the case where the tool call was persisted early (before its result

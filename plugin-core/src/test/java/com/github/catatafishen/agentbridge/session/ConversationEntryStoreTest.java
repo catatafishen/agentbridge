@@ -347,6 +347,45 @@ class ConversationEntryStoreTest {
     }
 
     @Test
+    void snapshotForSaving_copiesTheEntriesBeingStreamed() {
+        store.appendText("Hello");
+        store.appendThinkingText("Hmm");
+
+        var snapshot = store.snapshotForSaving();
+        store.appendText(" world");
+        store.appendThinkingText(" more");
+
+        assertEquals(2, snapshot.getEntries().size());
+        var streamed = snapshot.getStreamed();
+        assertEquals(2, streamed.size());
+        var text = (EntryData.Text) streamed.get(0);
+        var thinking = (EntryData.Thinking) streamed.get(1);
+        assertEquals("Hello", text.getRaw(), "the copy keeps the content it was saved with");
+        assertEquals("Hmm", thinking.getRaw());
+        assertEquals(snapshot.getEntries().get(0).getEntryId(), text.getEntryId());
+        var entries = store.getEntries();
+        assertEquals(2, entries.size(), "a save does not split the entries being streamed");
+        assertEquals("Hello world", ((EntryData.Text) entries.get(0)).getRaw());
+        assertEquals("Hmm more", ((EntryData.Thinking) entries.get(1)).getRaw());
+    }
+
+    @Test
+    void snapshotForSaving_keepsEntriesClosedSinceTheLastSnapshotOnce() {
+        store.appendText("Before");
+        store.snapshotForSaving();
+        store.appendText(" the tools.");
+        store.closeCurrentTextEntry();
+        store.appendThinkingText("Hmm");
+        store.finishResponse();
+
+        var streamed = store.snapshotForSaving().getStreamed();
+        assertEquals(2, streamed.size());
+        assertEquals("Before the tools.", ((EntryData.Text) streamed.get(0)).getRaw());
+        assertEquals("Hmm", ((EntryData.Thinking) streamed.get(1)).getRaw());
+        assertTrue(store.snapshotForSaving().getStreamed().isEmpty(), "the next snapshot has nothing streamed");
+    }
+
+    @Test
     void updateSubAgentDetails_reportsAnUnknownSubAgent() {
         assertFalse(store.updateSubAgentDetails("missing", "explore", "d", "p"));
     }
