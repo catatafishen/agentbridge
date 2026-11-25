@@ -219,8 +219,8 @@ class ConversationEntryStore {
         true
     }
 
-    fun appendSubAgentText(subAgentId: String, text: String) = synchronized(lock) {
-        subAgentTranscripts.appendText(subAgentId, text, timestamp(), _currentAgent)
+    fun appendSubAgentText(subAgentId: String, text: String, messageId: String?) = synchronized(lock) {
+        subAgentTranscripts.appendText(subAgentId, text, messageId, timestamp(), _currentAgent)
     }
 
     fun appendSubAgentThinking(subAgentId: String, text: String) = synchronized(lock) {

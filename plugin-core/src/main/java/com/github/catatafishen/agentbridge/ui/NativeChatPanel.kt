@@ -14,6 +14,7 @@ import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolDefinition
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.session.SubAgentTextBreaks
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.icons.AllIcons
@@ -556,20 +557,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var label: String,
         /** What the sub-agent was asked to do, as shown in its chip title after the label. */
         var description: String,
-        val chipStrip: ChipStripPanel,
+        /** Where the sub-agent's next tool calls and reasoning go; null after a text bubble until one is added. */
+        var chipStrip: ChipStripPanel?,
         val contentBox: JPanel,
         /** The row in [contentPanel] holding this section; the late prompt bubble is inserted before it. */
         val row: JPanel,
         var promptRow: JPanel? = null,
         var resultRow: JPanel? = null,
         var transcriptPanel: JPanel? = null,
-        /**
-         * The bubble [appendSubAgentText] streams into; null until text arrives. Tool calls don't start a new
-         * one: their chips sit in [chipStrip] above it, and OpenCode sends a tool call in mid-sentence.
-         */
-        var liveTextPane: NativeMarkdownPane? = null,
+        /** The bubble [appendSubAgentText] streams into unless [textBreaks] starts a new one; null before any text. */
+        var textPane: NativeMarkdownPane? = null,
         /** The hidden bubble [appendSubAgentThought] streams into, opened by the thought chip in [chipStrip]. */
         var thinkingPane: NativeMarkdownPane? = null,
+        val textBreaks: SubAgentTextBreaks = SubAgentTextBreaks(),
+        /** Whether the sub-agent streamed text, reasoning or tool calls into the section. */
+        var streamed: Boolean = false,
         /** Whether this is a nested session's entry; it is drawn with its own accent, frame and header. */
         val nested: Boolean = false,
         /** The status in a nested session's header, kept current by [updateSubAgentResult]. */
@@ -1414,6 +1416,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val section = subAgentSections[id] ?: return
         val accent = section.accent
         showNestedStatus(section, status)
+        if (status != MessageFormatter.ChipStatus.RUNNING) {
+            section.textPane?.notifyStreamDone()
+            section.thinkingPane?.notifyStreamDone()
+        }
 
         // Show the result text in the sub-agent's indented section. A nested session shows its state in its header,
         // so without an answer it has nothing more to say: a line that only repeats the state would cost room.
@@ -1545,7 +1551,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun setSubAgentTranscript(id: String, children: List<EntryData>) {
         val section = subAgentSections[id] ?: return
         // A section that streamed its sub-agent's session already shows the transcript's text and tools.
-        if (section.transcriptPanel != null || section.liveTextPane != null) return
+        if (section.transcriptPanel != null || section.streamed) return
         // The result bubble already shows the sub-agent's final answer, which is also its last
         // text part; showing it in both places would duplicate it.
         val answer = section.resultRow?.let { findMarkdownPane(it)?.getRawText() }?.trim()
@@ -1554,12 +1560,21 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         if (shown.isEmpty()) return
 
         val panel = buildTranscriptPanel(shown, section.accent)
-        // Same layout as other agents' sub-agents: their work first, the result bubble last.
-        val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
-        if (resultIndex >= 0) section.contentBox.add(panel, resultIndex) else section.contentBox.add(panel)
+        addAboveResult(section, panel)
         section.transcriptPanel = panel
-        section.contentBox.revalidate()
         if (autoScrollEnabled) scrollToBottom()
+    }
+
+    /** Adds [component] to the section's content; the result bubble stays last, as with other agents' sub-agents. */
+    private fun addAboveResult(section: SubAgentSection, component: JComponent) {
+        val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
+        if (resultIndex >= 0) section.contentBox.add(component, resultIndex) else section.contentBox.add(component)
+        section.contentBox.revalidate()
+    }
+
+    private fun chipStripOf(section: SubAgentSection): ChipStripPanel = section.chipStrip ?: ChipStripPanel().also {
+        addAboveResult(section, rowContainer(it))
+        section.chipStrip = it
     }
 
     /** Finds the first NativeMarkdownPane inside a component tree (for updating existing bubbles). */
@@ -1583,24 +1598,32 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             addToolCallEntry(toolId, title, arguments, kind, false)
             return
         }
-        addToolChipTo(section.chipStrip, toolId, title, arguments, kind)
+        section.streamed = true
+        section.textBreaks.chipAdded()
+        addToolChipTo(chipStripOf(section), toolId, title, arguments, kind)
         if (autoScrollEnabled) scrollToBottom()
     }
 
-    override fun appendSubAgentText(subAgentId: String, text: String) {
+    override fun appendSubAgentText(subAgentId: String, text: String, messageId: String?) {
         val section = subAgentSections[subAgentId] ?: run {
             LOG.warn("No sub-agent section $subAgentId for streamed sub-agent text; dropping ${text.length} chars")
             return
         }
-        val pane = section.liveTextPane ?: createSubAgentPane().also { pane ->
-            val bubble = rowContainer(createSubAgentBubbleRow(section.accent, pane))
-            // Keep the result bubble last, as in setSubAgentTranscript.
-            val resultIndex = section.resultRow?.let { section.contentBox.components.indexOf(it) } ?: -1
-            if (resultIndex >= 0) section.contentBox.add(bubble, resultIndex) else section.contentBox.add(bubble)
-            section.liveTextPane = pane
-            section.contentBox.revalidate()
+        section.streamed = true
+        val newBlock = section.textBreaks.startsNewBlock(messageId)
+        val current = section.textPane
+        if (!newBlock && current != null) {
+            current.appendMarkdown(text)
+        } else {
+            current?.notifyStreamDone()
+            section.thinkingPane?.notifyStreamDone()
+            val pane = createSubAgentPane()
+            addAboveResult(section, rowContainer(createSubAgentBubbleRow(section.accent, pane)))
+            section.textPane = pane
+            section.chipStrip = null
+            section.thinkingPane = null
+            pane.appendMarkdown(SubAgentTextBreaks.blockStart(text))
         }
-        pane.appendMarkdown(text)
         if (autoScrollEnabled) scrollToBottom()
     }
 
@@ -1609,8 +1632,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             LOG.warn("No sub-agent section $subAgentId for streamed sub-agent reasoning; dropping ${text.length} chars")
             return
         }
+        if (section.thinkingPane == null && text.isBlank()) return
+        section.streamed = true
+        section.textBreaks.chipAdded()
         // Collapsed, unlike the main agent's live thinking: a sub-agent's reasoning is there to look up.
-        val pane = section.thinkingPane ?: addThoughtChipTo(section.chipStrip).also { section.thinkingPane = it }
+        val pane = section.thinkingPane ?: addThoughtChipTo(chipStripOf(section)).also { section.thinkingPane = it }
         pane.appendMarkdown(text)
     }
 

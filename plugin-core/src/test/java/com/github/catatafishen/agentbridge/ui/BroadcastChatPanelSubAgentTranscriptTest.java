@@ -42,7 +42,7 @@ public class BroadcastChatPanelSubAgentTranscriptTest extends BasePlatformTestCa
         panel.appendSubAgentThought("sa1", "Where is Foo used?");
         panel.addSubAgentToolCall("sa1", "t1", "search_text", "{\"query\":\"Foo\"}", "search");
         panel.updateSubAgentToolCall("t1", "completed", "3 hits", null, false, null, null);
-        panel.appendSubAgentText("sa1", "Found 3 usages.");
+        panel.appendSubAgentText("sa1", "Found 3 usages.", null);
     }
 
     public void testTheStreamedConversationIsAttachedWhenTheSubAgentEnds() {
@@ -79,7 +79,7 @@ public class BroadcastChatPanelSubAgentTranscriptTest extends BasePlatformTestCa
     public void testTheMainAgentsToolCallsAreNotPartOfIt() {
         panel.addToolCallEntry("main-1", "read_file", null, "read", false);
         panel.updateSubAgentToolCall("main-1", "completed", "x", null, false, null, null);
-        panel.appendSubAgentText("sa1", "Done.");
+        panel.appendSubAgentText("sa1", "Done.", null);
 
         panel.updateSubAgentResult("sa1", "completed", "Done.", null, false, null);
 

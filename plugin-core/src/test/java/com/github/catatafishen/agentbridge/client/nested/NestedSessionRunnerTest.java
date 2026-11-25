@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.model.Model;
 import com.github.catatafishen.agentbridge.model.PromptResponse;
 import com.github.catatafishen.agentbridge.model.SessionUpdate;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -194,7 +195,7 @@ class NestedSessionRunnerTest {
 
         runner.run(client, request("x", 5), new NestedSessionRunner.Listener() {
             @Override
-            public void onText(@NotNull String text) {
+            public void onText(@NotNull String text, @Nullable String messageId) {
                 events.add("text:" + text);
             }
 

@@ -57,8 +57,8 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
     public void testSubAgentTextStreamsIntoItsSectionNotTheMainBubble() {
         NativeChatPanel panel = panelWithSubAgent();
 
-        panel.appendSubAgentText("sa1", "I'll ");
-        panel.appendSubAgentText("sa1", "search the repository.");
+        panel.appendSubAgentText("sa1", "I'll ", null);
+        panel.appendSubAgentText("sa1", "search the repository.", null);
         panel.appendText("Started a sub-agent.");
 
         List<String> texts = rawTexts(panel);
@@ -66,18 +66,6 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
             texts.contains("I'll search the repository."));
         assertTrue("the main agent's text must be on its own, got " + texts,
             texts.contains("Started a sub-agent."));
-    }
-
-    /** Seen with OpenCode 2.3.2: "I'll ", then the sub-agent's tool call, then "search the repository…". */
-    public void testSubAgentToolCallInMidSentenceKeepsTheSectionTextWhole() {
-        NativeChatPanel panel = panelWithSubAgent();
-
-        panel.appendSubAgentText("sa1", "I'll ");
-        panel.addSubAgentToolCall("sa1", "t1", "execute", null, "other");
-        panel.appendSubAgentText("sa1", "search the repository.");
-
-        assertTrue("the sub-agent's sentence must stay in one bubble, got " + rawTexts(panel),
-            rawTexts(panel).contains("I'll search the repository."));
     }
 
     public void testANestedSessionAddsNoChipOfItsOwn() {
@@ -128,7 +116,7 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
 
     public void testATranscriptIsNotShownAgainAfterTheSectionStreamedIt() {
         NativeChatPanel panel = panelWithSubAgent();
-        panel.appendSubAgentText("sa1", FINDING);
+        panel.appendSubAgentText("sa1", FINDING, null);
 
         panel.setSubAgentTranscript("sa1", List.of(new EntryData.Text(FINDING), new EntryData.Text(LAST_WORDS)));
 
@@ -136,6 +124,17 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
         assertEquals("the streamed text is shown once, got " + texts, 1,
             texts.stream().filter(FINDING::equals).count());
         assertFalse(texts.contains(LAST_WORDS));
+    }
+
+    public void testATranscriptIsNotShownAfterTheSectionStreamedOnlyToolCalls() {
+        NativeChatPanel panel = panelWithSubAgent();
+        panel.addSubAgentToolCall("sa1", "t1", "execute", null, "other");
+
+        panel.setSubAgentTranscript("sa1", List.of(
+            new EntryData.ToolCall("execute", null, "other", null, "complete", null, null, false, null, null, "", "", "", "t1"),
+            new EntryData.Text(LAST_WORDS)));
+
+        assertFalse("the streamed section already shows the sub-agent's work", rawTexts(panel).contains(LAST_WORDS));
     }
 
     public void testATranscriptIsShownWhenNothingWasStreamed() {
@@ -149,7 +148,7 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
     public void testTextForAnUnknownSubAgentIsDropped() {
         NativeChatPanel panel = new NativeChatPanel(getProject());
 
-        panel.appendSubAgentText("missing", "lost");
+        panel.appendSubAgentText("missing", "lost", null);
 
         assertFalse(rawTexts(panel).contains("lost"));
     }
@@ -336,8 +335,8 @@ public class NativeChatSubAgentSectionTest extends BasePlatformTestCase {
     public void testANestedSessionsAnswerStreamsIntoItsFrame() {
         NativeChatPanel panel = panelWithNestedSession();
 
-        panel.appendSubAgentText(NESTED_ID, "the ");
-        panel.appendSubAgentText(NESTED_ID, "answer");
+        panel.appendSubAgentText(NESTED_ID, "the ", null);
+        panel.appendSubAgentText(NESTED_ID, "answer", null);
 
         assertTrue(rawTexts(panel).contains("the answer"));
     }

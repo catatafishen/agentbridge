@@ -53,9 +53,9 @@ public final class NestedSessionChatView implements NestedSessionRunner.Listener
     }
 
     @Override
-    public void onText(@NotNull String text) {
+    public void onText(@NotNull String text, @Nullable String messageId) {
         streamedText = true;
-        panel.appendSubAgentText(entryId, text);
+        panel.appendSubAgentText(entryId, text, messageId);
     }
 
     @Override

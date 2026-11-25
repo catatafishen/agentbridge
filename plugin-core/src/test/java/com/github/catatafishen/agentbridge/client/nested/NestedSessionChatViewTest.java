@@ -80,12 +80,12 @@ class NestedSessionChatViewTest {
         NestedSessionChatView view = new NestedSessionChatView(panel);
         view.start("Koog", "Review", "do it");
 
-        view.onText("the ");
-        view.onText("answer");
+        view.onText("the ", null);
+        view.onText("answer", null);
         view.finish(completed("the answer"));
 
-        verify(panel).appendSubAgentText(anyString(), eq("the "));
-        verify(panel).appendSubAgentText(anyString(), eq("answer"));
+        verify(panel).appendSubAgentText(anyString(), eq("the "), eq(null));
+        verify(panel).appendSubAgentText(anyString(), eq("answer"), eq(null));
         verify(panel).updateSubAgentResult(anyString(), eq("complete"), eq(null), eq(null), eq(false), eq(null));
     }
 
@@ -97,7 +97,7 @@ class NestedSessionChatViewTest {
 
         view.finish(completed("delivered all at once"));
 
-        verify(panel, never()).appendSubAgentText(anyString(), any());
+        verify(panel, never()).appendSubAgentText(anyString(), any(), any());
         verify(panel).updateSubAgentResult(anyString(), eq("complete"), eq("delivered all at once"), eq(null),
             eq(false), eq(null));
     }
@@ -110,13 +110,13 @@ class NestedSessionChatViewTest {
         NestedSessionChatView view = new NestedSessionChatView(panel);
         view.start("Koog", "Review", "do it");
 
-        view.onText("one ");
-        view.onText("two");
+        view.onText("one ", null);
+        view.onText("two", null);
 
         InOrder order = inOrder(panel);
-        order.verify(panel).appendSubAgentText(anyString(), eq("one "));
-        order.verify(panel).appendSubAgentText(anyString(), eq("two"));
-        verify(panel, times(2)).appendSubAgentText(anyString(), anyString());
+        order.verify(panel).appendSubAgentText(anyString(), eq("one "), eq(null));
+        order.verify(panel).appendSubAgentText(anyString(), eq("two"), eq(null));
+        verify(panel, times(2)).appendSubAgentText(anyString(), anyString(), any());
     }
 
     // ── how the panel recognises a nested session's entry ──
@@ -158,7 +158,7 @@ class NestedSessionChatViewTest {
 
         view.finish(failed("not started", ""));
 
-        verify(panel, never()).appendSubAgentText(anyString(), any());
+        verify(panel, never()).appendSubAgentText(anyString(), any(), any());
         verify(panel).updateSubAgentResult(anyString(), eq("failed"), eq("not started"), eq(null), eq(false),
             eq(null));
     }

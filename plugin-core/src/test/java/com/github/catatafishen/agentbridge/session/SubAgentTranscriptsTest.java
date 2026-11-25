@@ -13,8 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A sub-agent's streamed conversation is recorded in the shape its section shows it: reasoning, tool calls in
- * the order they started, then the text, which tool calls do not split.
+ * A sub-agent's streamed conversation is recorded in the order its section shows it: text blocks with the tool calls
+ * and reasoning between them.
  */
 class SubAgentTranscriptsTest {
 
@@ -32,31 +32,46 @@ class SubAgentTranscriptsTest {
     }
 
     @Test
-    void reasoningThenToolsThenTextWhateverOrderTheyStreamedIn() {
-        transcripts.appendText("sa1", "I'll ", TS, "opencode");
-        transcripts.addToolCall("sa1", "t1", "search_text", "{}", "search", TS, "opencode");
+    void keepsTheOrderTheyStreamedIn() {
         transcripts.appendThinking("sa1", "Look for ", TS, "opencode");
-        transcripts.appendText("sa1", "search the repository.", TS, "opencode");
-        transcripts.addToolCall("sa1", "t2", "read_file", null, null, TS, "opencode");
         transcripts.appendThinking("sa1", "Foo.", TS, "opencode");
+        transcripts.appendText("sa1", "Searching.", "msg_1", TS, "opencode");
+        transcripts.addToolCall("sa1", "t1", "search_text", "{}", "search", TS, "opencode");
+        transcripts.appendThinking("sa1", "Read it.", TS, "opencode");
+        transcripts.addToolCall("sa1", "t2", "read_file", null, null, TS, "opencode");
+        transcripts.appendText("sa1", "\n\nFound it.", "msg_2", TS, "opencode");
 
         List<EntryData> children = transcripts.snapshot("sa1");
 
-        assertEquals(4, children.size());
+        assertEquals(6, children.size());
         assertEquals("Look for Foo.", assertInstanceOf(EntryData.Thinking.class, children.get(0)).getRaw());
-        assertEquals("t1", assertInstanceOf(EntryData.ToolCall.class, children.get(1)).getEntryId());
-        EntryData.ToolCall second = assertInstanceOf(EntryData.ToolCall.class, children.get(2));
+        assertEquals("Searching.", assertInstanceOf(EntryData.Text.class, children.get(1)).getRaw());
+        assertEquals("t1", assertInstanceOf(EntryData.ToolCall.class, children.get(2)).getEntryId());
+        assertEquals("Read it.", assertInstanceOf(EntryData.Thinking.class, children.get(3)).getRaw());
+        EntryData.ToolCall second = assertInstanceOf(EntryData.ToolCall.class, children.get(4));
         assertEquals("t2", second.getEntryId());
         assertEquals("other", second.getKind(), "a tool call without a kind gets the default");
-        assertEquals("I'll search the repository.",
-            assertInstanceOf(EntryData.Text.class, children.get(3)).getRaw(),
-            "a tool call in mid-sentence must not split the text");
+        assertEquals("Found it.", assertInstanceOf(EntryData.Text.class, children.get(5)).getRaw(),
+            "a new block needs no break from the message before it");
+    }
+
+    @Test
+    void aToolCallInMidSentenceDoesNotSplitTheText() {
+        transcripts.appendText("sa1", "I'll ", "msg_1", TS, "opencode");
+        transcripts.addToolCall("sa1", "t1", "search_text", "{}", "search", TS, "opencode");
+        transcripts.appendText("sa1", "search the repository.", "msg_1", TS, "opencode");
+
+        List<EntryData> children = transcripts.snapshot("sa1");
+
+        assertEquals(2, children.size());
+        assertEquals("I'll search the repository.", assertInstanceOf(EntryData.Text.class, children.get(0)).getRaw());
+        assertInstanceOf(EntryData.ToolCall.class, children.get(1));
     }
 
     @Test
     void subAgentsAreRecordedApart() {
-        transcripts.appendText("sa1", "first", TS, "a");
-        transcripts.appendText("sa2", "second", TS, "a");
+        transcripts.appendText("sa1", "first", null, TS, "a");
+        transcripts.appendText("sa2", "second", null, TS, "a");
 
         assertEquals("first", ((EntryData.Text) transcripts.snapshot("sa1").getFirst()).getRaw());
         assertEquals("second", ((EntryData.Text) transcripts.snapshot("sa2").getFirst()).getRaw());
@@ -101,38 +116,47 @@ class SubAgentTranscriptsTest {
     }
 
     @Test
+    void toolCallStillRunningWhenTheSubAgentEndsIsSavedWithoutStatus() {
+        transcripts.addToolCall("sa1", "t1", "execute", null, "other", TS, "a");
+        transcripts.updateToolCall("t1", new SubAgentTranscripts.ToolCallChange("running"));
+
+        assertNull(((EntryData.ToolCall) transcripts.snapshot("sa1").getFirst()).getStatus(),
+            "a saved running status would spin forever after a restart");
+    }
+
+    @Test
     void updateOfAnUnknownToolCallIsReported() {
         assertFalse(transcripts.updateToolCall("main-tool", new SubAgentTranscripts.ToolCallChange("completed")));
     }
 
     @Test
     void blankTextAndReasoningAreLeftOut() {
-        transcripts.appendText("sa1", "  \n", TS, "a");
+        transcripts.appendText("sa1", "  \n", null, TS, "a");
         transcripts.appendThinking("sa1", " ", TS, "a");
-        transcripts.appendText("sa1", "", TS, "a");
+        transcripts.appendText("sa1", "", null, TS, "a");
 
         assertTrue(transcripts.snapshot("sa1").isEmpty());
     }
 
     @Test
     void snapshotDoesNotChangeWhenTheSubAgentStreamsOn() {
-        transcripts.appendText("sa1", "Found ", TS, "a");
+        transcripts.appendText("sa1", "Found ", "msg_1", TS, "a");
         transcripts.addToolCall("sa1", "t1", "execute", null, "other", TS, "a");
         List<EntryData> saved = transcripts.snapshot("sa1");
 
-        transcripts.appendText("sa1", "3 files.", TS, "a");
+        transcripts.appendText("sa1", "3 files.", "msg_1", TS, "a");
         transcripts.updateToolCall("t1", new SubAgentTranscripts.ToolCallChange("completed", "ok"));
 
-        assertEquals("Found ", ((EntryData.Text) saved.get(1)).getRaw());
-        assertNull(((EntryData.ToolCall) saved.getFirst()).getStatus());
-        assertEquals("Found 3 files.", ((EntryData.Text) transcripts.snapshot("sa1").get(1)).getRaw());
+        assertEquals("Found ", ((EntryData.Text) saved.getFirst()).getRaw());
+        assertNull(((EntryData.ToolCall) saved.get(1)).getStatus());
+        assertEquals("Found 3 files.", ((EntryData.Text) transcripts.snapshot("sa1").getFirst()).getRaw());
     }
 
     @Test
     void entryIdsStayStableAcrossSnapshots() {
-        transcripts.appendText("sa1", "Found ", TS, "a");
+        transcripts.appendText("sa1", "Found ", null, TS, "a");
         String first = transcripts.snapshot("sa1").getFirst().getEntryId();
-        transcripts.appendText("sa1", "more", TS, "a");
+        transcripts.appendText("sa1", "more", null, TS, "a");
 
         assertEquals(first, transcripts.snapshot("sa1").getFirst().getEntryId(),
             "a later write must replace the same entry, not add another");
@@ -141,7 +165,7 @@ class SubAgentTranscriptsTest {
     @Test
     void forgetStopsRecordingTheSubAgentAndItsToolCalls() {
         transcripts.addToolCall("sa1", "t1", "execute", null, "other", TS, "a");
-        transcripts.appendText("sa2", "other", TS, "a");
+        transcripts.appendText("sa2", "other", null, TS, "a");
 
         transcripts.forget("sa1");
 
@@ -152,7 +176,7 @@ class SubAgentTranscriptsTest {
 
     @Test
     void clearForgetsEverything() {
-        transcripts.appendText("sa1", "x", TS, "a");
+        transcripts.appendText("sa1", "x", null, TS, "a");
         transcripts.addToolCall("sa2", "t1", "execute", null, "other", TS, "a");
 
         transcripts.clear();
@@ -163,8 +187,8 @@ class SubAgentTranscriptsTest {
 
     @Test
     void recordsAgentAndTimestampOfTheFirstChunk() {
-        transcripts.appendText("sa1", "a", TS, "opencode");
-        transcripts.appendText("sa1", "b", "later", "other");
+        transcripts.appendText("sa1", "a", null, TS, "opencode");
+        transcripts.appendText("sa1", "b", null, "later", "other");
 
         EntryData.Text text = (EntryData.Text) transcripts.snapshot("sa1").getFirst();
         assertEquals(TS, text.getTimestamp());
