@@ -139,4 +139,25 @@ class ClaudeClientSubAgentStreamTest {
             .findFirst().orElseThrow();
         assertEquals("", agentEnd.result());
     }
+
+    /** A foreground sub-agent as Claude Code 2.1.330 reports it: its report comes only in the Agent call's result. */
+    @Test
+    void foregroundSubAgentResultIsItsReportWithoutTheCliFrame() throws Exception {
+        String foreground = """
+            {"type":"assistant","message":{"id":"msg_1","content":[{"type":"tool_use","id":"toolu_agent","name":"Agent","input":{"description":"Count","subagent_type":"Explore","prompt":"Count"}}]}}
+            {"type":"assistant","parent_tool_use_id":"toolu_agent","agent_id":"agent-fg","message":{"id":"msg_s1","content":[{"type":"tool_use","id":"toolu_tree","name":"mcp__agentbridge__list_directory_tree","input":{}}]}}
+            {"type":"user","parent_tool_use_id":"toolu_agent","agent_id":"agent-fg","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_tree","content":"src"}]}}
+            {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_agent","content":[{"type":"text","text":"  <tools-used-before-summary>mcp__agentbridge__list_directory_tree</tools-used-before-summary>\\n  \\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. The report follows:\\n  2"}]}]}}
+            {"type":"result","subtype":"success","session_id":"cli-3"}
+            """;
+
+        List<SessionUpdate> updates = run(foreground);
+
+        SessionUpdate.ToolCallUpdate agentEnd = updates.stream()
+            .filter(SessionUpdate.ToolCallUpdate.class::isInstance)
+            .map(SessionUpdate.ToolCallUpdate.class::cast)
+            .filter(u -> "toolu_agent".equals(u.toolCallId()))
+            .findFirst().orElseThrow();
+        assertEquals("2", agentEnd.result());
+    }
 }

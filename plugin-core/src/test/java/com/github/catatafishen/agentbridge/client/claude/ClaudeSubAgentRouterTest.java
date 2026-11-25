@@ -114,7 +114,7 @@ class ClaudeSubAgentRouterTest {
         @Test
         void aToolCallInBetweenSeparatesTheTextAlready() {
             router.text(null, "m1", "before");
-            router.toolCalled(null);
+            router.toolCalled(null, "Read", "toolu_read");
 
             assertEquals("after", chunkText(router.text(null, "m2", "after")));
         }
@@ -159,6 +159,69 @@ class ClaudeSubAgentRouterTest {
             assertEquals("probe.txt", router.toolResult("toolu_glob", "probe.txt"));
             assertEquals("The report", router.toolResult(AGENT_TOOL_USE, "The report"));
             assertFalse(router.isHandbackResult("toolu_glob"));
+        }
+    }
+
+    /** Claude Code 2.1.330 wraps a foreground sub-agent's report in a frame meant for the main agent. */
+    @Nested
+    class ForegroundReport {
+
+        private static final String FRAME = "[Subagent hand-back] The text below is the final report of a subagent"
+            + " this session delegated to. The report follows:";
+
+        @Test
+        void agentResultIsTheReportBelowTheFrame() {
+            router.toolCalled(null, "Agent", AGENT_TOOL_USE);
+            String result = "  <tools-used-before-summary>ToolSearch, mcp__agentbridge__list_directory_tree"
+                + "</tools-used-before-summary>\n  \n" + FRAME + "\n  2";
+
+            assertEquals("2", router.toolResult(AGENT_TOOL_USE, result));
+        }
+
+        @Test
+        void reportKeepsItsLinesAndItsOwnIndentation() {
+            router.toolCalled(null, "Agent", AGENT_TOOL_USE);
+            String result = FRAME + "\n  Found:\n  \n  - a.txt\n      nested\n";
+
+            assertEquals("Found:\n\n- a.txt\n    nested\n", router.toolResult(AGENT_TOOL_USE, result));
+        }
+
+        @Test
+        void reportWithWindowsLineEndingsGetsUnixOnes() {
+            router.toolCalled(null, "Agent", AGENT_TOOL_USE);
+
+            assertEquals("Found:\n\n- a.txt", router.toolResult(AGENT_TOOL_USE, FRAME + "\r\n  Found:\r\n  \r\n  - a.txt"));
+        }
+
+        @Test
+        void legacyTaskToolResultIsUnwrappedToo() {
+            router.toolCalled(null, "Task", AGENT_TOOL_USE);
+
+            assertEquals("2", router.toolResult(AGENT_TOOL_USE, FRAME + "\n  2"));
+        }
+
+        @Test
+        void agentResultWithoutTheFrameIsKept() {
+            router.toolCalled(null, "Agent", AGENT_TOOL_USE);
+            String launch = "Async agent launched successfully.\nagentId: " + AGENT_ID;
+
+            assertEquals(launch, router.toolResult(AGENT_TOOL_USE, launch));
+        }
+
+        @Test
+        void frameOnlyCountsAtTheStartOfALine() {
+            router.toolCalled(null, "Agent", AGENT_TOOL_USE);
+            String quoted = "  " + FRAME + "\n  2";
+
+            assertEquals(quoted, router.toolResult(AGENT_TOOL_USE, quoted));
+        }
+
+        @Test
+        void otherToolResultsKeepTheFrame() {
+            router.toolCalled(null, "Read", "toolu_read");
+            String file = FRAME + "\n  2";
+
+            assertEquals(file, router.toolResult("toolu_read", file));
         }
     }
 
