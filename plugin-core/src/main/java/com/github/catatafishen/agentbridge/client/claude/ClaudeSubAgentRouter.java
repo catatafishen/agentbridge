@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -18,6 +19,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Sends the stream-json events of Claude Code's sub-agents (its Agent tool) to their sub-agent in the chat,
@@ -32,6 +34,11 @@ final class ClaudeSubAgentRouter {
 
     /** The tool a sub-agent calls to deliver its report; its message is the sub-agent's answer. */
     static final String HANDBACK_TOOL = "SubagentHandback";
+
+    /** The tools that start a sub-agent; older Claude Code versions name the Agent tool {@code Task}. */
+    private static final Set<String> AGENT_TOOLS = Set.of("Agent", "Task");
+    private static final String HANDBACK_FRAME = "[Subagent hand-back]";
+    private static final String REPORT_INDENT = "  ";
 
     private static final String ASYNC_LAUNCH_PREFIX = "Async agent launched successfully";
     private static final Pattern AGENT_ID = Pattern.compile("agentId:\\s*([\\w-]+)");
@@ -48,6 +55,7 @@ final class ClaudeSubAgentRouter {
     private final Map<String, String> descriptionByAgent = new HashMap<>();
     private final Set<String> handedBackAgents = new HashSet<>();
     private final Set<String> handbackToolUses = new HashSet<>();
+    private final Set<String> agentToolUses = new HashSet<>();
     private final MessageBreaks messageBreaks = new MessageBreaks();
     /** Sub-agents that started and have not reported an end, in start order. */
     private final Set<String> runningAgents = new LinkedHashSet<>();
@@ -87,9 +95,13 @@ final class ClaudeSubAgentRouter {
         return new SessionUpdate.AgentMessageChunk(List.of(new ContentBlock.Text(chunk)));
     }
 
-    /** A tool call of the given stream separates the text before it from the text after it. */
-    void toolCalled(@Nullable String childId) {
+    /**
+     * A tool call of the given stream separates the text before it from the text after it. An Agent call is
+     * remembered, so {@link #toolResult} can take the sub-agent's report out of its result.
+     */
+    void toolCalled(@Nullable String childId, @NotNull String toolName, @NotNull String toolUseId) {
         messageBreaks.toolCalled(childId);
+        if (AGENT_TOOLS.contains(toolName)) agentToolUses.add(toolUseId);
     }
 
     /**
@@ -112,12 +124,31 @@ final class ClaudeSubAgentRouter {
     /**
      * The result to show for tool call {@code toolUseId}. When it started a sub-agent that handed its report
      * back, the CLI's result only says where the report went, and the report is already in the sub-agent's
-     * section, so the result is empty.
+     * section, so the result is empty. Otherwise the result of an Agent call is the sub-agent's report.
      */
     @NotNull
     String toolResult(@NotNull String toolUseId, @NotNull String content) {
         String agentId = agentByToolUse.get(toolUseId);
-        return agentId != null && handedBackAgents.contains(agentId) ? "" : content;
+        if (agentId != null && handedBackAgents.contains(agentId)) return "";
+        return agentToolUses.contains(toolUseId) ? report(content) : content;
+    }
+
+    /**
+     * The report in a sub-agent's {@code result}. Claude Code puts it below a line starting with
+     * {@value #HANDBACK_FRAME} at column 0 and indents each of its lines by two spaces; a result without that line
+     * is the report itself.
+     */
+    @NotNull
+    private static String report(@NotNull String result) {
+        String[] lines = result.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith(HANDBACK_FRAME)) {
+                return Arrays.stream(lines, i + 1, lines.length)
+                    .map(line -> line.startsWith(REPORT_INDENT) ? line.substring(REPORT_INDENT.length()) : line)
+                    .collect(Collectors.joining("\n"));
+            }
+        }
+        return result;
     }
 
     /**

@@ -902,7 +902,7 @@ public final class ClaudeClient extends AbstractClaudeClient {
             if (report != null) source.target().accept(subAgents.text(source.childId(), id, report));
             return;
         }
-        subAgents.toolCalled(source.childId());
+        subAgents.toolCalled(source.childId(), name, id);
         emitToolCallStart(block, source.target());
     }
 
