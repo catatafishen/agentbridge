@@ -2598,6 +2598,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 }
 
                 is EntryData.TurnStats -> {
+                    // The turn ended here, as finishResponse() ends it live: what the agent sent after it
+                    // (a background sub-agent's report) starts its own section instead of joining the
+                    // turn's last bubble.
+                    finalizeTurn()
                     emitTurnStats(
                         TurnStatsData(
                             durationMs = entry.durationMs,
