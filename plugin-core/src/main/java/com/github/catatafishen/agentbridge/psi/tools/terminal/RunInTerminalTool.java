@@ -26,9 +26,12 @@ public final class RunInTerminalTool extends TerminalTool {
     /**
      * Appended to the result of a call without {@code wait_seconds}: steers the caller to wait in one call next time.
      */
-    private static final String WAIT_HINT = "\n\nNext time pass wait_seconds=<max> to run_in_terminal: it waits for the "
-        + "command to finish and returns the exit code and output in this one call, so no sleep and no separate "
-        + "read_terminal_output is needed.";
+    private static final String WAIT_HINT = """
+
+
+        Next time pass wait_seconds=<max> to run_in_terminal: it waits for the \
+        command to finish and returns the exit code and output in this one call, so no sleep and no separate \
+        read_terminal_output is needed.""";
 
     public RunInTerminalTool(Project project) {
         super(project);
@@ -117,70 +120,100 @@ public final class RunInTerminalTool extends TerminalTool {
         String shell = optionalSelector(args, JSON_SHELL);
         String ownerId = currentOwnerId();
 
-        Wait wait = null;
-        String commandToSend = command;
         TerminalWaitArgs.Parsed parsed = TerminalWaitArgs.parse(args, false);
         if (parsed.error() != null) return parsed.error();
-        if (parsed.requested()) {
-            String effectiveShell = resolveShell(shell);
-            TerminalDoneMarker.Shell family = TerminalDoneMarker.detect(effectiveShell);
-            String token = family == null ? null : TerminalDoneMarker.newToken();
-            if (family != null) commandToSend = command + TerminalDoneMarker.suffix(family, token);
-            wait = new Wait(parsed.seconds(), token, effectiveShell, null);
-        }
-        Wait requestedWait = wait;
-        String sendText = commandToSend;
+        Wait wait = parsed.requested() ? prepareWait(parsed.seconds(), shell) : null;
+        String sendText = withCompletionMarker(command, wait);
 
         // Flush editor buffers so the command sees the latest content.
         EdtUtil.invokeAndWait(() ->
             com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
 
         CompletableFuture<Sent> resultFuture = new CompletableFuture<>();
-        EdtUtil.invokeLater(() -> {
-            try {
-                var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
-                var manager = managerClass.getMethod(GET_INSTANCE_METHOD, Project.class)
-                    .invoke(null, project);
+        TerminalRequest request = new TerminalRequest(
+            ownerId, terminalId, tabName, newTab, shell, command, sendText, wait != null);
+        EdtUtil.invokeLater(() -> resultFuture.complete(sendOnEdt(request)));
 
-                var result = getOrCreateTerminalWidget(
-                    ownerId, managerClass, manager, terminalId, tabName, newTab, shell, command);
-                sendTerminalCommand(result.widget(), sendText);
-
-                resultFuture.complete(new Sent(
-                    "Command sent to " + (result.reused() ? "reused" : "new")
-                        + " terminal '" + result.tabName() + "'.\n"
-                        + "terminal_id: " + result.terminalId() + "\n"
-                        + "command: " + redactSecrets(command)
-                        + "\n\nReuse this terminal_id with run_in_terminal, read_terminal_output, "
-                        + "write_terminal_input, and close_terminal."
-                        + (requestedWait == null ? WAIT_HINT : ""),
-                    result.widget(), result.terminalId()));
-            } catch (ClassNotFoundException e) {
-                resultFuture.complete(Sent.plain(
-                    "Error: Terminal plugin not available. Use run_command tool instead."));
-            } catch (IllegalStateException e) {
-                resultFuture.complete(Sent.plain(formatCapacityError(e)));
-            } catch (Exception e) {
-                LOG.warn("Failed to open terminal", e);
-                resultFuture.complete(Sent.plain(
-                    "Error: Failed to open terminal: " + e.getMessage()
-                        + ". Use run_command tool instead."));
-            }
-        });
-
-        Sent sent;
-        try {
-            sent = resultFuture.get(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "Terminal opened (response timed out, but command was likely sent).";
-        } catch (Exception e) {
-            return "Terminal opened (response timed out, but command was likely sent).";
-        }
+        Sent sent = awaitSent(resultFuture);
+        if (sent == null) return "Terminal opened (response timed out, but command was likely sent).";
         if (sent.widget() == null) return sent.message();
         if (wait == null) return sent.message() + startupNote(sent.widget());
         Wait withId = new Wait(wait.seconds(), wait.token(), wait.shell(), sent.terminalId());
         return sent.message() + "\n\n" + awaitCompletion(sent.widget(), withId, parsed.notice(), maxLines(args));
+    }
+
+    /**
+     * Resolves the shell and, when its family is recognised, a completion-marker token for the requested wait.
+     */
+    private @NotNull Wait prepareWait(int seconds, @Nullable String shell) {
+        String effectiveShell = resolveShell(shell);
+        TerminalDoneMarker.Shell family = TerminalDoneMarker.detect(effectiveShell);
+        String token = family == null ? null : TerminalDoneMarker.newToken();
+        return new Wait(seconds, token, effectiveShell, null);
+    }
+
+    /**
+     * {@code command} with the completion marker appended, or unchanged when no wait or no marker was prepared.
+     */
+    private static @NotNull String withCompletionMarker(@NotNull String command, @Nullable Wait wait) {
+        if (wait == null || wait.token() == null) return command;
+        TerminalDoneMarker.Shell family = TerminalDoneMarker.detect(wait.shell());
+        return family == null ? command : command + TerminalDoneMarker.suffix(family, wait.token());
+    }
+
+    /**
+     * Opens or reuses the terminal and sends the command. Must run on the EDT.
+     */
+    private @NotNull Sent sendOnEdt(@NotNull TerminalRequest request) {
+        try {
+            var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
+            var manager = managerClass.getMethod(GET_INSTANCE_METHOD, Project.class)
+                .invoke(null, project);
+
+            var result = getOrCreateTerminalWidget(request.ownerId(), managerClass, manager,
+                request.terminalId(), request.tabName(), request.newTab(), request.shell(), request.command());
+            sendTerminalCommand(result.widget(), request.sendText());
+
+            return new Sent(
+                "Command sent to " + (result.reused() ? "reused" : "new")
+                    + " terminal '" + result.tabName() + "'.\n"
+                    + "terminal_id: " + result.terminalId() + "\n"
+                    + "command: " + redactSecrets(request.command())
+                    + "\n\nReuse this terminal_id with run_in_terminal, read_terminal_output, "
+                    + "write_terminal_input, and close_terminal."
+                    + (request.waiting() ? "" : WAIT_HINT),
+                result.widget(), result.terminalId());
+        } catch (ClassNotFoundException e) {
+            return Sent.plain("Error: Terminal plugin not available. Use run_command tool instead.");
+        } catch (IllegalStateException e) {
+            return Sent.plain(formatCapacityError(e));
+        } catch (Exception e) {
+            LOG.warn("Failed to open terminal", e);
+            return Sent.plain("Error: Failed to open terminal: " + e.getMessage() + ". Use run_command tool instead.");
+        }
+    }
+
+    /**
+     * Waits for the EDT send to finish; null when it timed out or was interrupted.
+     */
+    private static @Nullable Sent awaitSent(@NotNull CompletableFuture<Sent> future) {
+        try {
+            return future.get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Everything the EDT block needs to open or reuse a terminal and send the command.
+     */
+    private record TerminalRequest(
+        @NotNull String ownerId, @Nullable String terminalId, @Nullable String tabName, boolean newTab,
+        @Nullable String shell, @NotNull String command, @NotNull String sendText, boolean waiting
+    ) {
     }
 
     /**
