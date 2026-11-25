@@ -78,12 +78,12 @@ public final class RunNestedSessionTool extends InfrastructureTool {
             + "questions, so the prompt must contain everything it needs, and its own permission requests "
             + "are denied. It may change files, like any agent. It appears in the chat as a sub-agent. "
             + "`agent` picks the agent (default: the active one); `model` and `description` are optional. "
-            + "The session runs in the background. This call waits for it for `timeout_seconds` (default "
-            + DEFAULT_TIMEOUT_SECONDS + ", at most " + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "). If it is "
+            + "The session runs in the background. This call waits for it for `timeout_seconds` "
+            + limits(DEFAULT_TIMEOUT_SECONDS, McpRequestDeadline.MAX_TIMEOUT_SECONDS) + ". If it is "
             + "still running then, the reply gives a session id and the session carries on: call "
             + NestedSessionPolicy.READ_TOOL_ID + " with that id to wait further, read the answer so far, or "
-            + "cancel it. `max_runtime_seconds` (default " + DEFAULT_MAX_RUNTIME_SECONDS + ", at most "
-            + MAX_RUNTIME_SECONDS + ") is how long the session itself may run before it is stopped. "
+            + "cancel it. `max_runtime_seconds` " + limits(DEFAULT_MAX_RUNTIME_SECONDS, MAX_RUNTIME_SECONDS)
+            + " is how long the session itself may run before it is stopped. "
             + "Only one nested session runs at a time. Returns the answer text, or an error that says why "
             + "there is none.";
     }
@@ -122,12 +122,20 @@ public final class RunNestedSessionTool extends InfrastructureTool {
             Param.optional(PARAM_MODEL, TYPE_STRING, "Model id. Default: the agent's own default."),
             Param.optional(PARAM_DESCRIPTION, TYPE_STRING, "Short title shown in the chat."),
             Param.optional(PARAM_TIMEOUT, TYPE_INTEGER,
-                "Seconds this call waits for the session (default " + DEFAULT_TIMEOUT_SECONDS + ", at most "
-                    + McpRequestDeadline.MAX_TIMEOUT_SECONDS + "). The session keeps running after that."),
+                "Seconds this call waits for the session "
+                    + limits(DEFAULT_TIMEOUT_SECONDS, McpRequestDeadline.MAX_TIMEOUT_SECONDS)
+                    + ". The session keeps running after that."),
             Param.optional(PARAM_MAX_RUNTIME, TYPE_INTEGER,
-                "Seconds the session itself may run (default " + DEFAULT_MAX_RUNTIME_SECONDS + ", at most "
-                    + MAX_RUNTIME_SECONDS + ").")
+                "Seconds the session itself may run "
+                    + limits(DEFAULT_MAX_RUNTIME_SECONDS, MAX_RUNTIME_SECONDS) + ".")
         );
+    }
+
+    /**
+     * The "(default X, at most Y)" suffix shared by the description and the schema of both time limits.
+     */
+    private static @NotNull String limits(int defaultSeconds, int maxSeconds) {
+        return "(default " + defaultSeconds + ", at most " + maxSeconds + ")";
     }
 
     @Override

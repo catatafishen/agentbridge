@@ -33,6 +33,7 @@ import java.util.function.Supplier;
 public final class NestedSessionJobs {
 
     private static final Logger LOG = Logger.getInstance(NestedSessionJobs.class);
+    private static final String LOG_PREFIX = "Nested session job ";
 
     /**
      * How long a finished job's result stays readable.
@@ -103,7 +104,7 @@ public final class NestedSessionJobs {
                     "The nested session was cancelled before it started.");
             }
         } catch (RuntimeException e) {
-            LOG.warn("Nested session job " + job.id() + " failed", e);
+            LOG.warn(LOG_PREFIX + job.id() + " failed", e);
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             result = new NestedSessionRunner.Result(NestedSessionRunner.Status.FAILED, job.text(), message);
         } finally {
@@ -114,7 +115,7 @@ public final class NestedSessionJobs {
                 onFinished.accept(result);
             }
         } catch (RuntimeException e) {
-            LOG.warn("Nested session job " + job.id() + ": could not report the result", e);
+            LOG.warn(LOG_PREFIX + job.id() + ": could not report the result", e);
         } finally {
             release();
             job.complete(result);
@@ -235,7 +236,7 @@ public final class NestedSessionJobs {
             thread = null;
             // The runner re-sets the flag after a cancel; clear it so the pool thread is clean for its next task.
             if (Thread.interrupted()) {
-                LOG.debug("Nested session job " + id + " ended interrupted");
+                LOG.debug(LOG_PREFIX + id + " ended interrupted");
             }
         }
 
