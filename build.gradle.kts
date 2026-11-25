@@ -11,7 +11,7 @@ buildscript {
 
 plugins {
     id("java")
-    id("org.sonarqube") version "7.5.0.8588"
+    id("org.sonarqube") version "7.6.0.18749"
     id("org.jetbrains.kotlin.jvm") version "2.4.21" apply false
     id("org.jetbrains.intellij.platform") version "2.20.1" apply false
     idea
