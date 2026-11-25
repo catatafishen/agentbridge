@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -15,9 +17,14 @@ class TerminalWaitArgsTest {
         return com.google.gson.JsonParser.parseString(json).getAsJsonObject();
     }
 
-    @Test
-    void noWaitArgumentsMeansNoWait() {
-        var parsed = TerminalWaitArgs.parse(args("{}"), true);
+    @ParameterizedTest(name = "{0} (wait_for supported: {1}) requests no wait")
+    @CsvSource(delimiter = '|', value = {
+        "{}                       | true",
+        "{\"wait_seconds\": null} | true",
+        "{\"wait_for\": \"x\"}    | false",
+    })
+    void argumentsThatRequestNoWaitAreNotAnError(String json, boolean waitForSupported) {
+        var parsed = TerminalWaitArgs.parse(args(json), waitForSupported);
 
         assertFalse(parsed.requested());
         assertNull(parsed.error());
@@ -100,22 +107,6 @@ class TerminalWaitArgsTest {
 
         assertTrue(parsed.requested());
         assertNull(parsed.pattern());
-        assertNull(parsed.error());
-    }
-
-    @Test
-    void waitForAloneIsNotAnErrorWhenUnsupported() {
-        var parsed = TerminalWaitArgs.parse(args("{\"wait_for\": \"x\"}"), false);
-
-        assertFalse(parsed.requested());
-        assertNull(parsed.error());
-    }
-
-    @Test
-    void jsonNullWaitSecondsMeansNotRequested() {
-        var parsed = TerminalWaitArgs.parse(args("{\"wait_seconds\": null}"), true);
-
-        assertFalse(parsed.requested());
         assertNull(parsed.error());
     }
 }

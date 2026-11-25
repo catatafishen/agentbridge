@@ -20,6 +20,8 @@ final class TerminalWaitTracker {
      */
     static final long IDLE_MS = 2_000;
 
+    private static final String WAIT_ENDED_AFTER = "Wait ended after ";
+
     /**
      * Why the wait ended.
      */
@@ -57,10 +59,10 @@ final class TerminalWaitTracker {
 
     static @NotNull String describe(@NotNull Reason reason, long waitedMs) {
         return switch (reason) {
-            case MATCHED -> "Wait ended after " + waitedMs + " ms: wait_for pattern matched.";
-            case IDLE -> "Wait ended after " + waitedMs + " ms: output stopped changing.";
+            case MATCHED -> WAIT_ENDED_AFTER + waitedMs + " ms: wait_for pattern matched.";
+            case IDLE -> WAIT_ENDED_AFTER + waitedMs + " ms: output stopped changing.";
             case INTERRUPTED -> "Wait interrupted after " + waitedMs + " ms.";
-            case TIMEOUT -> "Wait ended after " + waitedMs + " ms: timeout reached, the command may still "
+            case TIMEOUT -> WAIT_ENDED_AFTER + waitedMs + " ms: timeout reached, the command may still "
                 + "be running.";
         };
     }

@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -83,20 +84,9 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         int maxLines =
             args.has(PARAM_MAX_LINES) ? args.get(PARAM_MAX_LINES).getAsInt() : DEFAULT_MAX_LINES;
 
-        String waitNote = null;
         TerminalWaitArgs.Parsed wait = TerminalWaitArgs.parse(args, true);
         if (wait.error() != null) return wait.error();
-        if (wait.requested()) {
-            AgentTabTracker.AgentTerminal target = resolveOwnedTerminal(ownerId, terminalId, tabName);
-            if (target != null) {
-                WaitResult result = waitForTerminal(target, wait.pattern(), wait.seconds());
-                String body = result.exitCode() == null
-                    ? result.note()
-                    : result.note() + "\nExit code: " + result.exitCode();
-                waitNote = McpRequestDeadline.prependNotice(wait.notice(), body);
-            }
-        }
-        String note = waitNote;
+        String note = wait.requested() ? waitBeforeRead(wait, ownerId, terminalId, tabName) : null;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
@@ -127,6 +117,23 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         } catch (Exception e) {
             return "Terminal read timed out.";
         }
+    }
+
+    /**
+     * Blocks until the requested wait ends and describes why; null when no owned terminal matches the selector
+     * (the read that follows reports that).
+     */
+    private @Nullable String waitBeforeRead(
+        @NotNull TerminalWaitArgs.Parsed wait, @NotNull String ownerId,
+        @Nullable String terminalId, @Nullable String tabName
+    ) {
+        AgentTabTracker.AgentTerminal target = resolveOwnedTerminal(ownerId, terminalId, tabName);
+        if (target == null) return null;
+        WaitResult result = waitForTerminal(target, wait.pattern(), wait.seconds());
+        String body = result.exitCode() == null
+            ? result.note()
+            : result.note() + "\nExit code: " + result.exitCode();
+        return McpRequestDeadline.prependNotice(wait.notice(), body);
     }
 
     @Override
