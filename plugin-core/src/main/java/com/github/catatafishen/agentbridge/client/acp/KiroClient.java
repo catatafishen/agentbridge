@@ -941,11 +941,11 @@ public final class KiroClient extends AcpClient {
      * Returns the original update unchanged if no conversion is needed.
      */
     static SessionUpdate convertThinkingToThought(SessionUpdate update) {
-        if (update instanceof SessionUpdate.AgentMessageChunk chunk) {
-            boolean hasThinking = chunk.content().stream()
-                .anyMatch(block -> block instanceof ContentBlock.Thinking);
+        if (update instanceof SessionUpdate.AgentMessageChunk(List<ContentBlock> content, String messageId)) {
+            boolean hasThinking = content.stream()
+                .anyMatch(ContentBlock.Thinking.class::isInstance);
             if (hasThinking) {
-                return new SessionUpdate.AgentThoughtChunk(chunk.content(), chunk.messageId());
+                return new SessionUpdate.AgentThoughtChunk(content, messageId);
             }
         }
         return update;

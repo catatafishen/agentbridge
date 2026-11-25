@@ -16,10 +16,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class MessageBreaks {
 
-    /** What goes between two messages of one stream. */
+    /**
+     * What goes between two messages of one stream.
+     */
     public static final String PARAGRAPH_BREAK = "\n\n";
 
-    /** Stream key of the main agent; sub-agent ids never contain a space. */
+    /**
+     * Stream key of the main agent; sub-agent ids never contain a space.
+     */
     private static final String MAIN_STREAM = "main agent";
 
     private final Map<String, String> lastTextMessage = new ConcurrentHashMap<>();
@@ -34,13 +38,17 @@ public final class MessageBreaks {
         return startsNew(lastTextMessage, childId, messageId);
     }
 
-    /** A tool call of sub-agent {@code childId}, or of the main agent when it is null, ends the text before it. */
+    /**
+     * A tool call of sub-agent {@code childId}, or of the main agent when it is null, ends the text before it.
+     */
     public void toolCalled(@Nullable String childId) {
         lastTextMessage.remove(stream(childId));
         lastThoughtMessage.remove(stream(childId));
     }
 
-    /** Forgets every stream, when a new prompt starts. */
+    /**
+     * Forgets every stream, when a new prompt starts.
+     */
     public void clear() {
         lastTextMessage.clear();
         lastThoughtMessage.clear();
@@ -52,11 +60,11 @@ public final class MessageBreaks {
      */
     @NotNull
     public SessionUpdate separate(@NotNull SessionUpdate update) {
-        if (update instanceof SessionUpdate.ChildSessionUpdate child) {
-            SessionUpdate inner = separate(child.childSessionId(), child.update());
-            return inner == child.update()
+        if (update instanceof SessionUpdate.ChildSessionUpdate(String childId, String title, SessionUpdate original)) {
+            SessionUpdate inner = separate(childId, original);
+            return inner == original
                 ? update
-                : new SessionUpdate.ChildSessionUpdate(child.childSessionId(), child.title(), inner);
+                : new SessionUpdate.ChildSessionUpdate(childId, title, inner);
         }
         return separate(null, update);
     }
