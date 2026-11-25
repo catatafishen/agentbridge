@@ -254,20 +254,19 @@ public final class ConversationReader {
         // Reverse to chronological order
         java.util.Collections.reverse(turnIds);
 
-        for (String turnId : turnIds) {
-            // Load prompt
-            try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT prompt_text, started_at FROM turns WHERE id = ?")) {
-                ps.setString(1, turnId);
-                try (ResultSet rs = ps.executeQuery()) {
+        try (PreparedStatement prompt = conn.prepareStatement(
+            "SELECT prompt_text, started_at FROM turns WHERE id = ?")) {
+            for (String turnId : turnIds) {
+                prompt.setString(1, turnId);
+                try (ResultSet rs = prompt.executeQuery()) {
                     if (rs.next()) {
                         List<ContextFileRef> ctxFiles = loadContextFiles(conn, turnId);
                         result.add(new EntryData.Prompt(rs.getString(1), rs.getString(2),
                             ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
                     }
                 }
+                loadTurnEventsAndStats(conn, turnId, result);
             }
-            loadTurnEventsAndStats(conn, turnId, result);
         }
         return result;
     }
