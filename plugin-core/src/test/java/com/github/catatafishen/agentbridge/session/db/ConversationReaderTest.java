@@ -389,6 +389,70 @@ class ConversationReaderTest {
         assertTrue(loaded.getCommitHashes().contains("def456"));
     }
 
+    /** A turn whose agent went on after it ended: a reply at 10:00:01, stats at 10:05, a report at 10:06. */
+    private void recordTurnWithMessageAfterItsEnd() {
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Count them", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            new EntryData.Text("I started a sub-agent.", "2026-01-01T10:00:01Z", "", "", "text-1"),
+            turnStatsEndedAt("2026-01-01T10:05:00Z"),
+            new EntryData.Thinking("It reported 24.", "2026-01-01T10:06:00Z", "", "", "thought-2"),
+            new EntryData.Text("DONE 24", "2026-01-01T10:06:30Z", "", "", "text-2")
+        ));
+    }
+
+    private static EntryData.TurnStats turnStatsEndedAt(String endedAt) {
+        return new EntryData.TurnStats(
+            "t1", 5000, 1000, 2000, 0.05, 3, 0, 0, "gpt-4", "1.5",
+            0, 0, 0, 0.0, 0, 0, 0,
+            endedAt, "stats-1", List.of()
+        );
+    }
+
+    private static List<String> kinds(List<EntryData> entries) {
+        return entries.stream().map(e -> e.getClass().getSimpleName()).toList();
+    }
+
+    @Test
+    void whatTheAgentSentAfterItsTurnIsRestoredAfterTheTurnStats() {
+        recordTurnWithMessageAfterItsEnd();
+
+        List<EntryData> entries = reader.loadEntries("sess-1");
+
+        assertEquals(List.of("Prompt", "Text", "TurnStats", "Thinking", "Text"), kinds(entries),
+            "the chat showed the report after the turn's stats, not joined to the turn's reply");
+    }
+
+    @Test
+    void recentEntriesAlsoPlaceTheTurnStatsAtTheTurnEnd() {
+        recordTurnWithMessageAfterItsEnd();
+
+        List<EntryData> entries = reader.loadRecentEntries("sess-1", 5);
+
+        assertEquals(List.of("Prompt", "Text", "TurnStats", "Thinking", "Text"), kinds(entries));
+    }
+
+    @Test
+    void turnStatsStayLastWhenNothingCameAfterTheTurn() {
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            new EntryData.Text("Hello", "2026-01-01T10:00:01Z", "", "", "text-1"),
+            turnStatsEndedAt("2026-01-01T10:00:02Z")
+        ));
+
+        assertEquals(List.of("Prompt", "Text", "TurnStats"), kinds(reader.loadEntries("sess-1")));
+    }
+
+    @Test
+    void indexAfterTurnEndSkipsEntriesWithoutATimestamp() {
+        List<EntryData> entries = List.of(
+            new EntryData.Text("before", "", "", "", "a"),
+            new EntryData.Text("after", "2026-01-01T10:06:00Z", "", "", "b"));
+
+        assertEquals(1, ConversationReader.indexAfterTurnEnd(entries, 0, "2026-01-01T10:05:00Z"));
+        assertEquals(2, ConversationReader.indexAfterTurnEnd(entries, 0, ""),
+            "stats without an end time stay at the end");
+    }
+
     @Test
     void roundtripContextFilesEntry() {
         List<FileRef> files = List.of(

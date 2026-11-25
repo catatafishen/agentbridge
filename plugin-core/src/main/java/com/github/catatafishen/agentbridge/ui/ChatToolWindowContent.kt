@@ -1324,7 +1324,8 @@ class ChatToolWindowContent(
         promptOrchestrator = PromptOrchestrator(
             project, agentManager, billing, contextManager, authService,
             { consolePanel }, { copilotBanner }, { statusBanner },
-            createOrchestratorCallbacks()
+            createOrchestratorCallbacks(),
+            toolWindow.disposable,
         )
 
         // Shortcut hint bar — initialized here so input wiring below can reference it.

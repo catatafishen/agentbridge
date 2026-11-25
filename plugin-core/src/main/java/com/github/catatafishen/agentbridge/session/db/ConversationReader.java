@@ -11,6 +11,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -227,11 +229,7 @@ public final class ConversationReader {
                     result.add(new EntryData.Prompt(promptText, startedAt,
                         ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
 
-                    // Load events for this turn
-                    loadEventsForTurn(conn, turnId, result);
-
-                    // Emit TurnStats if turn is finalised
-                    addTurnStatsIfPresent(conn, turnId, result);
+                    loadTurnEventsAndStats(conn, turnId, result);
                 }
             }
         }
@@ -269,8 +267,7 @@ public final class ConversationReader {
                     }
                 }
             }
-            loadEventsForTurn(conn, turnId, result);
-            addTurnStatsIfPresent(conn, turnId, result);
+            loadTurnEventsAndStats(conn, turnId, result);
         }
         return result;
     }
@@ -319,8 +316,7 @@ public final class ConversationReader {
                     List<ContextFileRef> ctxFiles = loadContextFiles(conn, turnId);
                     result.add(new EntryData.Prompt(promptText, startedAt,
                         ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
-                    loadEventsForTurn(conn, turnId, result);
-                    addTurnStatsIfPresent(conn, turnId, result);
+                    loadTurnEventsAndStats(conn, turnId, result);
                 }
             }
         }
@@ -377,6 +373,50 @@ public final class ConversationReader {
     }
 
     // ── Event loading ─────────────────────────────────────────────────────────
+
+    /**
+     * Adds the turn's events and, if it has them, its stats. The stats go before the first event saved after
+     * the turn ended, as they did live: the agent can go on sending after its turn (a background sub-agent's
+     * report).
+     */
+    private void loadTurnEventsAndStats(
+        @NotNull Connection conn, @NotNull String turnId,
+        @NotNull List<EntryData> result) throws SQLException {
+        int eventsStart = result.size();
+        loadEventsForTurn(conn, turnId, result);
+        int statsAt = result.size();
+        addTurnStatsIfPresent(conn, turnId, result);
+        if (result.size() > statsAt) {
+            EntryData stats = result.remove(statsAt);
+            result.add(indexAfterTurnEnd(result, eventsStart, stats.getTimestamp()), stats);
+        }
+    }
+
+    /**
+     * The index of the first entry from {@code from} on that is later than {@code endedAt}, or the list's size.
+     * Entries without a parseable timestamp count as part of the turn, as do all of them when the turn has no
+     * end time (stats that only carry commit hashes).
+     */
+    static int indexAfterTurnEnd(@NotNull List<EntryData> entries, int from, @NotNull String endedAt) {
+        Instant end = parseInstant(endedAt);
+        if (end == null) return entries.size();
+        for (int i = from; i < entries.size(); i++) {
+            Instant at = parseInstant(entries.get(i).getTimestamp());
+            if (at != null && at.isAfter(end)) return i;
+        }
+        return entries.size();
+    }
+
+    @Nullable
+    private static Instant parseInstant(@NotNull String timestamp) {
+        if (timestamp.isEmpty()) return null;
+        try {
+            return Instant.parse(timestamp);
+        } catch (DateTimeParseException e) {
+            LOG.warn("ConversationReader: unparseable timestamp '" + timestamp + "'", e);
+            return null;
+        }
+    }
 
     private void loadEventsForTurn(
         @NotNull Connection conn, @NotNull String turnId,

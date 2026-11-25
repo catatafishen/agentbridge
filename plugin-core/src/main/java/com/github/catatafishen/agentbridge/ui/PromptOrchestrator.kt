@@ -12,9 +12,11 @@ import com.github.catatafishen.agentbridge.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.util.Alarm
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -71,6 +73,7 @@ class PromptOrchestrator(
     private val copilotBanner: () -> AuthSetupBanner?,
     private val statusBanner: () -> StatusBanner?,
     private val callbacks: PromptOrchestratorCallbacks,
+    parentDisposable: Disposable,
 ) {
     companion object {
         private const val STOPPED_BY_USER = "Stopped by user"
@@ -95,6 +98,9 @@ class PromptOrchestrator(
         @JvmStatic
         fun isBackgroundNote(text: String): Boolean =
             text in BACKGROUND_NOTES || text.startsWith(BACKGROUND_FAILED_NOTE)
+
+        /** How long the agent must send nothing before the conversation is saved; see [QuietSaveScheduler]. */
+        private const val QUIET_SAVE_DELAY_MS = 2_000L
     }
 
     private val log = Logger.getInstance(PromptOrchestrator::class.java)
@@ -204,6 +210,16 @@ class PromptOrchestrator(
 
     /** Child sessions already logged as having no sub-agent entry, so each is logged once. */
     private val unroutedChildSessions = ConcurrentHashMap.newKeySet<String>()
+
+    private val quietSaveAlarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, parentDisposable)
+
+    /** Saves what the agent sends after its turn, which no turn-end save covers. */
+    private val quietSave = QuietSaveScheduler(
+        QUIET_SAVE_DELAY_MS,
+        { System.nanoTime() / 1_000_000 },
+        { task, delayMs -> quietSaveAlarm.addRequest(task, delayMs) },
+        { callbacks.appendNewEntries() },
+    )
     private var pendingBanner: PendingBanner? = null
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
@@ -585,6 +601,7 @@ class PromptOrchestrator(
     ) {
         val promptBlocks = buildPromptBlocks(effectivePrompt, attachments)
         val onUpdate = java.util.function.Consumer<SessionUpdate> { update ->
+            quietSave.onActivity()
             handlePromptStreamingUpdate(update)
         }
         val sendCall: (String) -> Unit = { sid ->
