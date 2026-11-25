@@ -435,12 +435,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          gh auth setup-git
           # Move marketplace-latest to the published release. The next Marketplace
           # publication uses this tag as the baseline for GitHub-generated notes.
+          #
+          # Delete + create instead of a forced update: moving an existing ref makes GitHub
+          # check the old..new diff, and when it touches .github/workflows/ the push is
+          # rejected because GITHUB_TOKEN can never hold the `workflows` permission.
+          # Creating a fresh ref at a commit already in the repo has no such diff.
           TARGET_SHA=$(git rev-list -n1 "$RELEASE_TAG")
-          git tag -f marketplace-latest "$TARGET_SHA"
-          git push origin marketplace-latest --force
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/marketplace-latest" --silent \
+            || echo "marketplace-latest did not exist yet"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref=refs/tags/marketplace-latest -f sha="$TARGET_SHA" --silent
           echo "Updated marketplace-latest → $TARGET_SHA ($RELEASE_TAG)"
 
       - name: Tag release as pending marketplace review
@@ -459,6 +465,7 @@ jobs:
           # Push an annotated pending-review tag (tagger.date lets the check
           # workflow know how long the review has been in progress)
           TARGET_SHA=$(git rev-list -n1 "$RELEASE_TAG")
+          gh auth setup-git
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name  "github-actions[bot]"
           git tag -a "marketplace-pending-$RELEASE_TAG" "$TARGET_SHA" \
