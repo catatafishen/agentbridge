@@ -961,7 +961,7 @@ class PromptOrchestrator(
     }
 
     /**
-     * An update from a sub-agent's own session. Its text and tool calls go to the sub-agent's section and
+     * An update from a sub-agent's own session. Its text, reasoning and tool calls go to the sub-agent's section and
      * leave the main agent's open bubble alone. Tool call updates find their chip by id, wherever it is, so
      * they take the usual path.
      */
@@ -983,6 +983,11 @@ class PromptOrchestrator(
                 if (!stopped) consolePanel().appendSubAgentText(owner, inner.text())
             }
 
+            is SessionUpdate.AgentThoughtChunk -> {
+                turnHadContent = true
+                if (!stopped) consolePanel().appendSubAgentThought(owner, inner.text())
+            }
+
             is SessionUpdate.ToolCall -> {
                 turnHadContent = true
                 if (inner.toolCallId().isEmpty()) return
@@ -993,8 +998,8 @@ class PromptOrchestrator(
                 )
             }
 
-            // The section has no place for the rest (reasoning, plans, usage, session settings), and they
-            // are not the main agent's.
+            // The section has no place for the rest (plans, usage, session settings), and they are not the
+            // main agent's.
             else -> log.debug("Not showing ${inner.javaClass.simpleName} of child session ${update.childSessionId()}")
         }
     }

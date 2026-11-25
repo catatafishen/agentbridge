@@ -309,6 +309,28 @@ class ConversationReaderTest {
         assertEquals(3, loaded.getChildren().size());
     }
 
+    /** A transcript recorded from the stream is written first; the client's own, fetched later, replaces it. */
+    @Test
+    void laterSubAgentChildrenReplaceTheOnesWrittenBefore() {
+        writer.recordEntries("sess-1", "OpenCode", "opencode", List.of(
+            new EntryData.Prompt("Help", "2026-01-01T10:00:00Z", null, "t1", "t1"),
+            subAgentWithChildren()
+        ));
+        EntryData.Text recorded = new EntryData.Text(
+            "Partial answer", "2026-01-01T10:00:05Z", "assistant", "opencode", "c-other");
+
+        assertTrue(writer.recordSubAgentChildren("sa1", List.of(recorded)));
+        EntryData.SubAgent afterFirst =
+            assertInstanceOf(EntryData.SubAgent.class, reader.loadEntries("sess-1").get(1));
+        assertEquals(1, afterFirst.getChildren().size(), "the second write must replace, not add");
+        assertEquals("Partial answer",
+            assertInstanceOf(EntryData.Text.class, afterFirst.getChildren().getFirst()).getRaw());
+
+        assertTrue(writer.recordSubAgentChildren("sa1", subAgentChildren()));
+        assertSubAgentChildrenLoaded(
+            assertInstanceOf(EntryData.SubAgent.class, reader.loadEntries("sess-1").get(1)));
+    }
+
     @Test
     void subAgentPersistedWithoutPromptGetsItFromALaterUpdate() {
         EntryData.SubAgent early = new EntryData.SubAgent(

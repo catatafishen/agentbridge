@@ -57,6 +57,14 @@ class ChatToolWindowContent(
             "/icons/expui/thinkingBubbleOff.svg", ChatToolWindowContent::class.java
         )
 
+        /** Title-bar sub-agent toggle icons: plain tree when shown, slashed tree when hidden. */
+        private val SUB_AGENTS_ON_ICON = com.intellij.openapi.util.IconLoader.getIcon(
+            "/icons/expui/subAgents.svg", ChatToolWindowContent::class.java
+        )
+        private val SUB_AGENTS_OFF_ICON = com.intellij.openapi.util.IconLoader.getIcon(
+            "/icons/expui/subAgentsOff.svg", ChatToolWindowContent::class.java
+        )
+
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatToolWindowContent>()
 
         fun getInstance(project: Project): ChatToolWindowContent? = instances[project]
@@ -388,6 +396,7 @@ class ChatToolWindowContent(
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
             ThinkingDisplayToggleAction(),
+            SubAgentSectionsToggleAction(),
             Separator.create(),
             StatisticsAction(),
             SettingsAction()
@@ -1992,6 +2001,31 @@ class ChatToolWindowContent(
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.setThinkingDisplayEnabled(state)
+        }
+    }
+
+    /**
+     * Title-bar toggle next to Show Thinking: shows or hides the sub-agents' sections in the chat (what each
+     * was asked, its tool calls, reasoning and text). Their chips in the main agent's row stay either way, and
+     * nested sessions are not affected. Persisted per project.
+     */
+    private inner class SubAgentSectionsToggleAction : ToggleAction(
+        "Show Sub-Agents",
+        "Show each sub-agent's conversation in the chat; its chip stays either way",
+        SUB_AGENTS_ON_ICON
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun update(e: AnActionEvent) {
+            super.update(e)
+            e.presentation.icon = if (isSelected(e)) SUB_AGENTS_ON_ICON else SUB_AGENTS_OFF_ICON
+        }
+
+        override fun isSelected(e: AnActionEvent): Boolean =
+            if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.subAgentSectionsVisible else true
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.setSubAgentSectionsVisible(state)
         }
     }
 

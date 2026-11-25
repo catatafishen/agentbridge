@@ -332,6 +332,60 @@ class ConversationEntryStoreTest {
     }
 
     @Test
+    void attachSubAgentTranscript_attachesWhatTheSubAgentStreamed() {
+        var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
+        store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
+        store.appendSubAgentThinking("sa1", "Where are they?");
+        store.addSubAgentToolCall("sa1", "t1", "search_text", "{\"query\":\"Foo\"}", "search");
+        store.updateSubAgentToolCall("t1", new SubAgentTranscripts.ToolCallChange("completed", "5 hits"));
+        store.appendSubAgentText("sa1", "Found 5 files");
+
+        List<EntryData> children = store.attachSubAgentTranscript("sa1");
+
+        assertNotNull(children);
+        assertEquals(3, children.size());
+        var entry = (EntryData.SubAgent) store.getEntries().getFirst();
+        assertEquals(children, entry.getChildren());
+        assertEquals(1, store.getEntries().size(), "children are not top-level entries");
+        assertEquals("5 hits", assertInstanceOf(EntryData.ToolCall.class, children.get(1)).getResult());
+    }
+
+    @Test
+    void attachSubAgentTranscript_returnsNullWhenNothingWasStreamed() {
+        var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
+        store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
+
+        assertNull(store.attachSubAgentTranscript("sa1"));
+        assertNull(store.attachSubAgentTranscript("missing"));
+    }
+
+    @Test
+    void transcriptTheClientSuppliesReplacesTheStreamedOne() {
+        var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
+        store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
+        store.appendSubAgentText("sa1", "partial");
+        var child = new EntryData.Text("Found 5 files", "2026-01-01T10:00:00Z", "general", "m", "sa1:prt_1");
+
+        store.setSubAgentChildren("sa1", List.of(child));
+
+        assertNull(store.attachSubAgentTranscript("sa1"), "the streamed recording must be dropped");
+        var entry = (EntryData.SubAgent) store.getEntries().getFirst();
+        assertEquals(List.of(child), entry.getChildren());
+    }
+
+    @Test
+    void clearDropsStreamedSubAgentTranscripts() {
+        var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
+        store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
+        store.appendSubAgentText("sa1", "partial");
+
+        store.clear();
+        store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
+
+        assertNull(store.attachSubAgentTranscript("sa1"));
+    }
+
+    @Test
     void updateSubAgentDetails_fillsInWhatTheToolCallLeftOut() {
         var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
         store.addSubAgentEntry("sa1", "general", "task", null, state);
