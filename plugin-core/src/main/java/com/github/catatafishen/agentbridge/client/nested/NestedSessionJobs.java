@@ -246,11 +246,11 @@ public final class NestedSessionJobs {
         }
 
         @Override
-        public void onText(@NotNull String part) {
+        public void onText(@NotNull String part, @Nullable String messageId) {
             synchronized (this) {
                 text.append(part);
             }
-            if (delegate != null) delegate.onText(part);
+            if (delegate != null) delegate.onText(part, messageId);
         }
 
         @Override

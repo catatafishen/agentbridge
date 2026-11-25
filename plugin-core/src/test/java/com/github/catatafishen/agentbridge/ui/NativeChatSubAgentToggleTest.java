@@ -47,7 +47,7 @@ public class NativeChatSubAgentToggleTest extends BasePlatformTestCase {
     private NativeChatPanel panelWithSubAgent() {
         NativeChatPanel panel = new NativeChatPanel(getProject());
         panel.addSubAgentEntry("sa1", "explore", "Find usages", PROMPT, new ChatPanelApi.SubAgentInitialState());
-        panel.appendSubAgentText("sa1", SUB_AGENT_TEXT);
+        panel.appendSubAgentText("sa1", SUB_AGENT_TEXT, null);
         return panel;
     }
 
@@ -72,7 +72,7 @@ public class NativeChatSubAgentToggleTest extends BasePlatformTestCase {
     public void testTurningItBackOnShowsWhatStreamedWhileHidden() {
         NativeChatPanel panel = panelWithSubAgent();
         panel.setSubAgentSectionsVisible(false);
-        panel.appendSubAgentText("sa1", " More.");
+        panel.appendSubAgentText("sa1", " More.", null);
 
         panel.setSubAgentSectionsVisible(true);
 
@@ -85,7 +85,7 @@ public class NativeChatSubAgentToggleTest extends BasePlatformTestCase {
         panel.setSubAgentSectionsVisible(false);
 
         panel.addSubAgentEntry("sa1", "explore", "Find usages", null, new ChatPanelApi.SubAgentInitialState());
-        panel.appendSubAgentText("sa1", SUB_AGENT_TEXT);
+        panel.appendSubAgentText("sa1", SUB_AGENT_TEXT, null);
         // OpenCode reveals the prompt only later.
         panel.updateSubAgentDetails("sa1", "explore", "Find usages", PROMPT);
 
@@ -98,7 +98,7 @@ public class NativeChatSubAgentToggleTest extends BasePlatformTestCase {
         panel.setSubAgentSectionsVisible(false);
 
         panel.addSubAgentEntry(NESTED_ID, "Koog", "Review", "do it", new ChatPanelApi.SubAgentInitialState());
-        panel.appendSubAgentText(NESTED_ID, "Nested answer");
+        panel.appendSubAgentText(NESTED_ID, "Nested answer", null);
 
         assertTrue(isDisplayed(panel, "Nested answer"));
     }

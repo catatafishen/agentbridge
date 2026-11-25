@@ -77,7 +77,7 @@ public final class NestedSessionRunner {
      * Progress of a running session, for showing it. Called on the thread that streams the updates.
      */
     public interface Listener {
-        void onText(@NotNull String text);
+        void onText(@NotNull String text, @Nullable String messageId);
 
         void onToolCall(@NotNull SessionUpdate.ToolCall call);
 
@@ -171,7 +171,7 @@ public final class NestedSessionRunner {
             case SessionUpdate.AgentMessageChunk chunk -> {
                 String part = chunk.text();
                 text.append(part);
-                if (listener != null && !part.isEmpty()) listener.onText(part);
+                if (listener != null && !part.isEmpty()) listener.onText(part, chunk.messageId());
             }
             case SessionUpdate.ToolCall call -> {
                 if (listener != null) listener.onToolCall(call);

@@ -980,7 +980,7 @@ class PromptOrchestrator(
         when (inner) {
             is SessionUpdate.AgentMessageChunk -> {
                 turnHadContent = true
-                if (!stopped) consolePanel().appendSubAgentText(owner, inner.text())
+                if (!stopped) consolePanel().appendSubAgentText(owner, inner.text(), inner.messageId())
             }
 
             is SessionUpdate.AgentThoughtChunk -> {

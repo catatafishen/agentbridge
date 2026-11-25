@@ -338,7 +338,7 @@ class ConversationEntryStoreTest {
         store.appendSubAgentThinking("sa1", "Where are they?");
         store.addSubAgentToolCall("sa1", "t1", "search_text", "{\"query\":\"Foo\"}", "search");
         store.updateSubAgentToolCall("t1", new SubAgentTranscripts.ToolCallChange("completed", "5 hits"));
-        store.appendSubAgentText("sa1", "Found 5 files");
+        store.appendSubAgentText("sa1", "Found 5 files", null);
 
         List<EntryData> children = store.attachSubAgentTranscript("sa1");
 
@@ -363,7 +363,7 @@ class ConversationEntryStoreTest {
     void transcriptTheClientSuppliesReplacesTheStreamedOne() {
         var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
         store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
-        store.appendSubAgentText("sa1", "partial");
+        store.appendSubAgentText("sa1", "partial", null);
         var child = new EntryData.Text("Found 5 files", "2026-01-01T10:00:00Z", "general", "m", "sa1:prt_1");
 
         store.setSubAgentChildren("sa1", List.of(child));
@@ -377,7 +377,7 @@ class ConversationEntryStoreTest {
     void clearDropsStreamedSubAgentTranscripts() {
         var state = new ChatPanelApi.SubAgentInitialState(null, "running", null, false, null);
         store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
-        store.appendSubAgentText("sa1", "partial");
+        store.appendSubAgentText("sa1", "partial", null);
 
         store.clear();
         store.addSubAgentEntry("sa1", "explore", "Find files", null, state);
