@@ -158,10 +158,16 @@ interface ChatPanelApi : Disposable {
 
     /**
      * Streams a chunk of the sub-agent's own text into its section, while it works. All chunks go into one
-     * text bubble, also across tool calls. Shown only: not stored with the conversation, like the
-     * section's tool chips.
+     * text bubble, also across tool calls. With the section's reasoning and tool calls, it is stored with
+     * the sub-agent's entry when the sub-agent ends.
      */
     fun appendSubAgentText(subAgentId: String, text: String)
+
+    /**
+     * Streams a chunk of the sub-agent's reasoning into its section: one collapsed thought chip per section,
+     * opened by a click, like the main agent's finished thoughts.
+     */
+    fun appendSubAgentThought(subAgentId: String, text: String)
 
     // ── Status / errors ────────────────────────────────────────────
 

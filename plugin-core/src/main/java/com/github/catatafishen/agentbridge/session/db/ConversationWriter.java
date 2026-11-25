@@ -619,7 +619,8 @@ public final class ConversationWriter implements AutoCloseable {
      *
      * <p>If the sub-agent row has not been written yet this does nothing and returns {@code false}:
      * the children are then written together with the sub-agent itself by {@link #recordEntries}.
-     * Writing is idempotent ({@code INSERT OR IGNORE} on the child ids).
+     * The children replace any written before, so a later, fuller transcript (the client's own, or
+     * text recorded after an earlier write) wins, and writing the same list twice changes nothing.
      *
      * @return {@code true} when the children are in the database after this call
      */
@@ -633,7 +634,7 @@ public final class ConversationWriter implements AutoCloseable {
             if (conn == null) return false;
             try {
                 if (!subAgentEventExists(conn, subAgentEventId)) return false;
-                insertSubAgentChildrenInTransaction(conn, subAgentEventId, children);
+                replaceSubAgentChildrenInTransaction(conn, subAgentEventId, children);
                 return true;
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record " + children.size()
@@ -643,13 +644,18 @@ public final class ConversationWriter implements AutoCloseable {
         }
     }
 
-    private static void insertSubAgentChildrenInTransaction(
+    private static void replaceSubAgentChildrenInTransaction(
         @NotNull Connection conn,
         @NotNull String subAgentEventId,
         @NotNull List<EntryData> children
     ) throws SQLException {
         conn.setAutoCommit(false);
         try {
+            try (PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM sub_agent_children WHERE sub_agent_event_id = ?")) {
+                ps.setString(1, subAgentEventId);
+                ps.executeUpdate();
+            }
             insertSubAgentChildren(conn, subAgentEventId, children);
             conn.commit();
         } catch (SQLException e) {

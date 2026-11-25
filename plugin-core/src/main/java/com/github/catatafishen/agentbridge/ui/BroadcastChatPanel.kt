@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.bridge.*
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.session.ConversationEntryStore
+import com.github.catatafishen.agentbridge.session.SubAgentTranscripts
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -204,9 +205,11 @@ class BroadcastChatPanel(
         entryStore.updateSubAgentResult(id, status, result, description, autoDenied, denialReason)
         // Persist completion to DB — fixes the race where the entry was already INSERT'd with null result
         if (status != MessageFormatter.ChipStatus.RUNNING) {
-            ConversationService.getInstance(project).updateSubAgentCompletionAsync(
-                id, result, status, autoDenied, denialReason
-            )
+            val service = ConversationService.getInstance(project)
+            service.updateSubAgentCompletionAsync(id, result, status, autoDenied, denialReason)
+            // The sub-agent's streamed conversation goes with it. If its row is not in the DB yet, the
+            // transcript is written together with it (it hangs off the in-memory entry).
+            entryStore.attachSubAgentTranscript(id)?.let { service.recordSubAgentChildrenAsync(id, it) }
         }
         dispatchUi { nativePanel.updateSubAgentResult(id, status, result, description, autoDenied, denialReason) }
     }
@@ -236,24 +239,34 @@ class BroadcastChatPanel(
     override fun addSubAgentToolCall(
         subAgentId: String, toolId: String, title: String,
         arguments: String?, kind: String?
-    ) = dispatchUi { nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind) }
+    ) {
+        entryStore.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind)
+        dispatchUi { nativePanel.addSubAgentToolCall(subAgentId, toolId, title, arguments, kind) }
+    }
 
-    override fun appendSubAgentText(subAgentId: String, text: String) =
+    override fun appendSubAgentText(subAgentId: String, text: String) {
+        entryStore.appendSubAgentText(subAgentId, text)
         dispatchUi { nativePanel.appendSubAgentText(subAgentId, text) }
+    }
+
+    override fun appendSubAgentThought(subAgentId: String, text: String) {
+        entryStore.appendSubAgentThinking(subAgentId, text)
+        dispatchUi { nativePanel.appendSubAgentThought(subAgentId, text) }
+    }
 
     override fun updateSubAgentToolCall(
         toolId: String, status: String, details: String?, description: String?,
         autoDenied: Boolean, denialReason: String?, arguments: String?
-    ) = dispatchUi {
-        nativePanel.updateSubAgentToolCall(
+    ) {
+        entryStore.updateSubAgentToolCall(
             toolId,
-            status,
-            details,
-            description,
-            autoDenied,
-            denialReason,
-            arguments
+            SubAgentTranscripts.ToolCallChange(status, details, description, autoDenied, denialReason, arguments)
         )
+        dispatchUi {
+            nativePanel.updateSubAgentToolCall(
+                toolId, status, details, description, autoDenied, denialReason, arguments
+            )
+        }
     }
 
     override fun addErrorEntry(message: String) = dispatchUi { nativePanel.addErrorEntry(message) }

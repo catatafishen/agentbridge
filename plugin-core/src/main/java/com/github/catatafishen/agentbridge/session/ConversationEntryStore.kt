@@ -28,6 +28,7 @@ class ConversationEntryStore {
     private var _currentThinking: EntryData.Thinking? = null
     private val _toolCallEntries = mutableMapOf<String, EntryData.ToolCall>()
     private val _subAgentEntries = mutableMapOf<String, EntryData.SubAgent>()
+    private val subAgentTranscripts = SubAgentTranscripts()
     private val _changeListeners = CopyOnWriteArrayList<Runnable>()
 
     private var _currentAgent = ""
@@ -206,14 +207,45 @@ class ConversationEntryStore {
     }
 
     /**
-     * Attaches the sub-agent's own conversation to its entry so it is persisted with it.
+     * Attaches the sub-agent's own conversation, as the client supplied it, to its entry so it is persisted
+     * with it. It replaces what was recorded from the sub-agent's stream.
      *
      * @return false when no sub-agent entry with [id] is tracked
      */
     fun setSubAgentChildren(id: String, children: List<EntryData>): Boolean = synchronized(lock) {
         val entry = _subAgentEntries[id] ?: return false
+        subAgentTranscripts.forget(id)
         entry.children = children.toList()
         true
+    }
+
+    fun appendSubAgentText(subAgentId: String, text: String) = synchronized(lock) {
+        subAgentTranscripts.appendText(subAgentId, text, timestamp(), _currentAgent)
+    }
+
+    fun appendSubAgentThinking(subAgentId: String, text: String) = synchronized(lock) {
+        subAgentTranscripts.appendThinking(subAgentId, text, timestamp(), _currentAgent)
+    }
+
+    fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String?, kind: String?) =
+        synchronized(lock) {
+            subAgentTranscripts.addToolCall(subAgentId, toolId, title, arguments, kind, timestamp(), _currentAgent)
+        }
+
+    fun updateSubAgentToolCall(toolId: String, change: SubAgentTranscripts.ToolCallChange): Boolean =
+        synchronized(lock) { subAgentTranscripts.updateToolCall(toolId, change) }
+
+    /**
+     * Attaches what was recorded of the sub-agent's stream to its entry, so it is persisted with it.
+     *
+     * @return the attached transcript, or null when no sub-agent entry with [id] is tracked or nothing was
+     * recorded
+     */
+    fun attachSubAgentTranscript(id: String): List<EntryData>? = synchronized(lock) {
+        val entry = _subAgentEntries[id] ?: return null
+        val children = subAgentTranscripts.snapshot(id).ifEmpty { return null }
+        entry.children = children
+        children
     }
 
     fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
@@ -325,6 +357,7 @@ class ConversationEntryStore {
             _currentThinking = null
             _toolCallEntries.clear()
             _subAgentEntries.clear()
+            subAgentTranscripts.clear()
         }
         fireChanged()
     }

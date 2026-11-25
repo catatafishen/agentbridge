@@ -91,6 +91,36 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         applyThinkingDisplay()
     }
 
+    /**
+     * Whether sub-agent sections (the prompt bubble and the row with the sub-agent's own chips, reasoning and
+     * text) are shown in the chat. Their chips in the main agent's row always stay. Nested sessions are not
+     * sub-agents here and always show. Read from the project preference [PREF_SHOW_SUB_AGENTS] (default on).
+     */
+    @Volatile
+    var subAgentSectionsVisible: Boolean = PropertiesComponent.getInstance(project)
+        .getBoolean(PREF_SHOW_SUB_AGENTS, true)
+        private set
+
+    /**
+     * Shows or hides every sub-agent section already in the chat and those still to come, and persists the
+     * choice. Hidden sections keep receiving content, so showing them again shows everything.
+     */
+    fun setSubAgentSectionsVisible(visible: Boolean) {
+        if (subAgentSectionsVisible == visible) return
+        subAgentSectionsVisible = visible
+        PropertiesComponent.getInstance(project).setValue(PREF_SHOW_SUB_AGENTS, visible, true)
+        for (section in subAgentSections.values) applySectionVisibility(section)
+        contentPanel.revalidate()
+        contentPanel.repaint()
+        if (autoScrollEnabled) scrollToBottom()
+    }
+
+    private fun applySectionVisibility(section: SubAgentSection) {
+        if (section.nested) return
+        section.row.isVisible = subAgentSectionsVisible
+        section.promptRow?.isVisible = subAgentSectionsVisible
+    }
+
     private fun applyThinkingDisplay() {
         if (thinkingDisplayEnabled) {
             val turn = currentTurn
@@ -538,6 +568,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
          * one: their chips sit in [chipStrip] above it, and OpenCode sends a tool call in mid-sentence.
          */
         var liveTextPane: NativeMarkdownPane? = null,
+        /** The hidden bubble [appendSubAgentThought] streams into, opened by the thought chip in [chipStrip]. */
+        var thinkingPane: NativeMarkdownPane? = null,
         /** Whether this is a nested session's entry; it is drawn with its own accent, frame and header. */
         val nested: Boolean = false,
         /** The status in a nested session's header, kept current by [updateSubAgentResult]. */
@@ -1264,10 +1296,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             }
         }
         val sectionRow = addRow(sectionWrapper)
-        subAgentSections[id] = SubAgentSection(
+        val section = SubAgentSection(
             colorIndex, label, description, subChipStrip, contentBox, sectionRow, promptRow,
             nested = nested, statusLabel = statusLabel
         )
+        subAgentSections[id] = section
+        applySectionVisibility(section)
 
         if (initialState.status != null) {
             updateSubAgentResult(
@@ -1356,6 +1390,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val promptRow = rowContainer(createSubAgentPromptBubble(section.label, section.accent, prompt))
         contentPanel.add(promptRow, at)
         section.promptRow = promptRow
+        applySectionVisibility(section)
         contentPanel.revalidate()
         if (autoScrollEnabled) scrollToBottom()
     }
@@ -1489,8 +1524,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** Adds a collapsed thinking chip + bubble holding [markdown] to [strip]. */
     private fun addReasoningTo(strip: ChipStripPanel, markdown: String) {
+        addThoughtChipTo(strip).setCompleteMarkdown(markdown)
+    }
+
+    /** Adds a collapsed "Thought" chip to [strip] and returns the pane of the hidden bubble it opens. */
+    private fun addThoughtChipTo(strip: ChipStripPanel): NativeMarkdownPane {
         val (wrapper, pane, bubbleRow) = createMarkdownBubble(NativeChatColors.THINK_BG)
-        pane.setCompleteMarkdown(markdown)
         trackAgentBubble(bubbleRow.bubble)
         bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         wrapper.border = JBUI.Borders.emptyTop(JBUI.scale(4))
@@ -1500,6 +1539,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             strip.revalidate()
             strip.repaint()
         })
+        return pane
     }
 
     override fun setSubAgentTranscript(id: String, children: List<EntryData>) {
@@ -1562,6 +1602,16 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         pane.appendMarkdown(text)
         if (autoScrollEnabled) scrollToBottom()
+    }
+
+    override fun appendSubAgentThought(subAgentId: String, text: String) {
+        val section = subAgentSections[subAgentId] ?: run {
+            LOG.warn("No sub-agent section $subAgentId for streamed sub-agent reasoning; dropping ${text.length} chars")
+            return
+        }
+        // Collapsed, unlike the main agent's live thinking: a sub-agent's reasoning is there to look up.
+        val pane = section.thinkingPane ?: addThoughtChipTo(section.chipStrip).also { section.thinkingPane = it }
+        pane.appendMarkdown(text)
     }
 
     /**
@@ -2671,6 +2721,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
          * after a history reload.
          */
         const val PREF_SHOW_THINKING = "agentbridge.chat.showThinking"
+
+        /** Project preference behind [subAgentSectionsVisible]. */
+        const val PREF_SHOW_SUB_AGENTS = "agentbridge.chat.showSubAgents"
 
         /** The "+Ns" extension buttons offered while the sleep tool is running. */
         private val SLEEP_EXTENSION_SECONDS = listOf(10, 30)
