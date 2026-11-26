@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui;
 
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
@@ -9,6 +11,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
  */
 public class StatusBannerTest extends BasePlatformTestCase {
 
+    private static final Logger LOG = Logger.getInstance(StatusBannerTest.class);
     private static final String NOTICE = "Agent finished its turn but is still sending messages.";
 
     private StatusBanner banner;
@@ -17,6 +20,19 @@ public class StatusBannerTest extends BasePlatformTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         banner = new StatusBanner(getTestRootDisposable());
+    }
+
+    @Override
+    protected void tearDown() throws Exception {
+        try {
+            // PsiBridgeStartup opens the conversation DB when the test project opens; close it before the
+            // framework deletes the project dir (Windows: "being used by another process").
+            ConversationDatabase.getInstance(getProject()).dispose();
+        } catch (Exception e) {
+            LOG.warn("Could not close the conversation DB", e);
+        } finally {
+            super.tearDown();
+        }
     }
 
     public void testTheNamedBannerIsDismissed() {

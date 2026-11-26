@@ -282,7 +282,15 @@ class PromptOrchestrator(
         // Set the flag FIRST so the background thread sees it even if the remote session
         // completes the turn before Thread.interrupt() fires.
         stopped = true
-        clearPostTurnCallbacks()
+        // Clear the pending post-turn callback so a late "cancelled" session/update from the
+        // remote agent can't re-arm the "still sending" banner after the *next* turn starts
+        // (stopped is reset to false at execute() start, so the !stopped guard on the callback
+        // is not sufficient across turn boundaries — the callback slot itself must be empty).
+        try {
+            agentManager.client.setFirstPostTurnCallback(null)
+        } catch (_: Exception) {
+            // Best-effort
+        }
         val sessionId = currentSessionId
         if (sessionId != null) {
             try {
@@ -338,7 +346,6 @@ class PromptOrchestrator(
             // Best-effort
         }
         agentManager.client.clearPostTurnState()
-        clearPostTurnCallbacks()
         finishBackgroundSubAgents(MessageFormatter.ChipStatus.FAILED, BACKGROUND_STOPPED_NOTE)
         failToolCallsInFlight()
         consolePanel().cancelAllRunning()
@@ -351,19 +358,6 @@ class PromptOrchestrator(
      */
     private fun failToolCallsInFlight() {
         ToolCallTracker.getInstance(project).stopAllInFlight(STOPPED_BY_USER)
-    }
-
-    /**
-     * Empties the client's post-turn callback slots, so a late "cancelled" update can't re-arm the "still sending"
-     * banner after the next turn starts (the `!stopped` guard resets with each turn; the slot must be empty).
-     */
-    private fun clearPostTurnCallbacks() {
-        try {
-            agentManager.client.setFirstPostTurnCallback(null)
-            agentManager.client.setPostTurnQuietCallback(null)
-        } catch (_: Exception) {
-            // Best-effort
-        }
     }
 
     private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
