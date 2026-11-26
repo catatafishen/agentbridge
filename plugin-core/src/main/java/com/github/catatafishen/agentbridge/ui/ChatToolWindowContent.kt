@@ -2021,7 +2021,7 @@ class ChatToolWindowContent(
         }
 
         override fun isSelected(e: AnActionEvent): Boolean =
-            if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.subAgentSectionsVisible else true
+            !::broadcastPanel.isInitialized || broadcastPanel.nativePanel.subAgentSectionsVisible
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             if (::broadcastPanel.isInitialized) broadcastPanel.nativePanel.setSubAgentSectionsVisible(state)
