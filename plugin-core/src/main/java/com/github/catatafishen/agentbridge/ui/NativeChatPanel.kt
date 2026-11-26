@@ -680,6 +680,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun scrollToBottom() {
         SwingUtilities.invokeLater {
+            // While the user drags the thumb the scroll listener sees only "adjusting" changes; the release decides.
+            if (scrollPane.verticalScrollBar.valueIsAdjusting) return@invokeLater
             // Do NOT call scrollPane.validate() here. A synchronous validate() walks every
             // NativeMarkdownPane in the chat history and triggers a full Swing HTML layout
             // (BasicTextUI$RootView.setSize + BoxView.updateLayoutArray) which is O(n²) in
