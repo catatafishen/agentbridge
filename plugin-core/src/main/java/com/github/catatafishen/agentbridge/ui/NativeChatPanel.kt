@@ -233,9 +233,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val toolCallData = mutableMapOf<String, ToolCallData>()
 
-    /** Maps prompt entryId → rendered row container; used by [scrollToEntry]. */
-    private val _promptEntryComponents = mutableMapOf<String, JPanel>()
-
     /** Weak references to user-bubble RoundedPanels for live color updates. */
     private val userBubbles = java.util.Collections.synchronizedList(
         mutableListOf<java.lang.ref.WeakReference<RoundedPanel>>()
@@ -287,7 +284,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private val contentPanel = JBPanel<JBPanel<*>>(null).apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
-        border = JBUI.Borders.empty(8, 10)
+        border = contentBorder(railShown = false)
         background = UIUtil.getPanelBackground()
     }
 
@@ -345,7 +342,40 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         })
     }
 
+    /**
+     * One dot per prompt, between the chat and its scrollbar; also the registry of prompt rows that
+     * [scrollToEntry] uses.
+     */
+    private val promptRail = PromptRail(
+        scrollPane.viewport,
+        { userAccent() },
+        { entryId -> scrollToEntry(entryId) },
+        PropertiesComponent.getInstance(project).getBoolean(PREF_SHOW_PROMPT_RAIL, true)
+    ).also { rail ->
+        rail.installIn(scrollPane)
+        fitContentToRail(rail.isVisible)
+        rail.addComponentListener(object : ComponentAdapter() {
+            override fun componentShown(e: ComponentEvent) = fitContentToRail(true)
+            override fun componentHidden(e: ComponentEvent) = fitContentToRail(false)
+        })
+    }
+
+    /** The rail's own width is the chat's right margin while it is shown, so its dots sit midway to the scrollbar. */
+    private fun fitContentToRail(railShown: Boolean) {
+        contentPanel.border = contentBorder(railShown)
+        contentPanel.revalidate()
+    }
+
     override val component: JComponent = scrollPane
+
+    /** Whether the prompt rail is shown; persisted in the project preference [PREF_SHOW_PROMPT_RAIL]. */
+    val promptRailEnabled: Boolean
+        get() = promptRail.isRailEnabled
+
+    fun setPromptRailEnabled(enabled: Boolean) {
+        PropertiesComponent.getInstance(project).setValue(PREF_SHOW_PROMPT_RAIL, enabled, true)
+        promptRail.setRailEnabled(enabled)
+    }
 
     private var currentTurn: TurnContext? = null
     private val allChips = mutableMapOf<String, ToolChipComponent>()
@@ -435,9 +465,24 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
     }
 
+    /** Scrolls so the prompt's row is near the top of the chat; auto-scroll stays on only if that is the bottom. */
     fun scrollToEntry(entryId: String) {
-        val comp = _promptEntryComponents[entryId] ?: return
-        comp.scrollRectToVisible(Rectangle(0, 0, comp.width, comp.height))
+        val row = promptRail.rowFor(entryId)
+        if (row == null || !SwingUtilities.isDescendingFrom(row, bottomAlignedHost)) {
+            LOG.warn("Cannot scroll to prompt $entryId: its row is ${if (row == null) "unknown" else "not in the chat"}")
+            return
+        }
+        val viewport = scrollPane.viewport
+        val rowY = SwingUtilities.convertPoint(row, 0, 0, bottomAlignedHost).y
+        val top = PromptRailLayout.scrollTarget(
+            rowY, bottomAlignedHost.height, viewport.extentSize.height, JBUI.scale(ROW_SPACING)
+        )
+        val atBottom = top >= bottomAlignedHost.height - viewport.extentSize.height
+        if (autoScrollEnabled && !atBottom) {
+            setAutoScroll(false)
+            onAutoScrollDisabled?.invoke()
+        }
+        viewport.viewPosition = Point(0, top)
     }
 
     private var placeholderLabel: JBLabel? = null
@@ -680,6 +725,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     private fun scrollToBottom() {
         SwingUtilities.invokeLater {
+            // Auto-scroll can be turned off after this was queued, e.g. by a prompt-rail jump.
+            if (!autoScrollEnabled) return@invokeLater
+            // While the user drags the thumb the scroll listener sees only "adjusting" changes; the release decides.
+            if (scrollPane.verticalScrollBar.valueIsAdjusting) return@invokeLater
             // Do NOT call scrollPane.validate() here. A synchronous validate() walks every
             // NativeMarkdownPane in the chat history and triggers a full Swing HTML layout
             // (BasicTextUI$RootView.setSize + BoxView.updateLayoutArray) which is O(n²) in
@@ -1022,7 +1071,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // regardless of where the user was scrolled before sending.
         // Guarded against replay, where addPromptEntry is called to restore history.
         if (!isReplaying) {
-            autoScrollEnabled = true
+            setAutoScroll(true)
             onAutoScrollEnabled?.invoke()
         }
         return addPromptEntryAt(text, contextFiles) { row -> addRow(row) }
@@ -1730,7 +1779,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         toolCallData.clear()
         subAgentSections.clear()
         nextSubAgentColor = 0
-        _promptEntryComponents.clear()
+        promptRail.clearPrompts()
         nudgeBubbles.clear()
         queuedMessages.clear()
         currentModelLabel = null
@@ -2734,7 +2783,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         trackUserBubble(bubble)
-        _promptEntryComponents[entryId] = addFn(row)
+        promptRail.addPrompt(entryId, addFn(row), text)
         showWorkingIndicator()
         return entryId
     }
@@ -2754,6 +2803,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         /** Project preference behind [subAgentSectionsVisible]. */
         const val PREF_SHOW_SUB_AGENTS = "agentbridge.chat.showSubAgents"
+
+        private const val CONTENT_INSET_V = 8
+        private const val CONTENT_INSET_H = 10
+
+        private fun contentBorder(railShown: Boolean) =
+            JBUI.Borders.empty(CONTENT_INSET_V, CONTENT_INSET_H, CONTENT_INSET_V, if (railShown) 0 else CONTENT_INSET_H)
+
+        /** Project preference behind [promptRailEnabled]. */
+        const val PREF_SHOW_PROMPT_RAIL = "agentbridge.chat.showPromptRail"
 
         /** The "+Ns" extension buttons offered while the sleep tool is running. */
         private val SLEEP_EXTENSION_SECONDS = listOf(10, 30)
