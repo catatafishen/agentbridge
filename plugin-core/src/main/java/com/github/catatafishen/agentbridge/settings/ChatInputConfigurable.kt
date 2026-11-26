@@ -4,6 +4,8 @@ import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.CleanupSettings
 import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
+import com.github.catatafishen.agentbridge.ui.NativeChatPanel
+import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
@@ -153,6 +155,11 @@ class ChatInputConfigurable(private val project: Project) :
                 )
                 .bindSelected({ mcp.isShowTurnStats }, { mcp.isShowTurnStats = it })
         }
+        row {
+            checkBox("Show prompt navigator (a dot for each prompt beside the chat)")
+                .comment("Hover a dot to preview its prompt; click it to scroll the chat there.")
+                .bindSelected(::isPromptRailEnabled, ::setPromptRailEnabled)
+        }
         separator()
         row("Scratch file retention (hours, 0 = forever):") {
             spinner(0..8760, 1)
@@ -249,6 +256,18 @@ class ChatInputConfigurable(private val project: Project) :
             val chatContent = ChatToolWindowContent.getInstance(project)
             chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)
             chatContent?.setShortcutHintsVisible()
+        }
+    }
+
+    private fun isPromptRailEnabled(): Boolean =
+        PropertiesComponent.getInstance(project).getBoolean(NativeChatPanel.PREF_SHOW_PROMPT_RAIL, true)
+
+    private fun setPromptRailEnabled(enabled: Boolean) {
+        val chat = NativeChatPanel.getInstance(project)
+        if (chat != null) {
+            chat.setPromptRailEnabled(enabled)
+        } else {
+            PropertiesComponent.getInstance(project).setValue(NativeChatPanel.PREF_SHOW_PROMPT_RAIL, enabled, true)
         }
     }
 }
