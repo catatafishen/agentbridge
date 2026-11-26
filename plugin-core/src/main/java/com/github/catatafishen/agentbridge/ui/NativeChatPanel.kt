@@ -626,9 +626,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private fun addRow(comp: JComponent): JPanel {
         placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
         val container = rowContainer(comp)
-        // Insert before the working indicator, or before queued messages when no indicator is
-        // present (the gap between turns while queued messages are still waiting).
-        val insertBefore = workingIndicatorWrapper
+        // Insert above the rows already shown while older history is prepended; otherwise before the working
+        // indicator, or before queued messages when no indicator is present (the gap between turns while
+        // queued messages are still waiting).
+        val insertBefore = prependAnchor
+            ?: workingIndicatorWrapper
             ?: queuedMessages.values.minByOrNull { contentPanel.getComponentZOrder(it) }
         if (insertBefore != null) {
             val idx = contentPanel.getComponentZOrder(insertBefore)
@@ -1020,12 +1022,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // Sending a prompt is an explicit "show me the response" signal.
         // Re-enable auto-scroll so the working indicator and streaming reply are visible,
         // regardless of where the user was scrolled before sending.
-        // Guarded against replay, where addPromptEntry is called to restore history.
-        if (!isReplaying) {
-            autoScrollEnabled = true
-            onAutoScrollEnabled?.invoke()
-        }
-        return addPromptEntryAt(text, contextFiles) { row -> addRow(row) }
+        autoScrollEnabled = true
+        onAutoScrollEnabled?.invoke()
+        return addPromptRow(text)
     }
 
     override fun removePromptEntry(entryId: String) { /* Native panel doesn't track entry IDs for removal */
@@ -2584,13 +2583,40 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         replayEntries(entries)
     }
 
+    /**
+     * Inserts older history above the rows already shown, below "Load more". A reply may be streaming meanwhile,
+     * so its turn, its working time and the last timestamp shown are set aside and restored afterwards.
+     */
     fun prependEntries(entries: List<EntryData>) {
         if (entries.isEmpty()) return
-        val insertionPoint = loadMoreContainer?.let { contentPanel.getComponentZOrder(it) + 1 } ?: 0
-        replayEntries(entries, insertionIndex = insertionPoint)
+        val firstShown = loadMoreContainer?.let { contentPanel.getComponentZOrder(it) + 1 } ?: 0
+        val liveTurn = currentTurn
+        val liveToolJustCompleted = toolJustCompleted
+        val liveTimestampMinute = lastShownTimestampMinute
+        val liveWorkingStartMs = workingStartMs
+        val savedAutoScroll = autoScrollEnabled
+        placeholderLabel?.let { contentPanel.remove(it); placeholderLabel = null }
+        prependAnchor = if (firstShown < contentPanel.componentCount) contentPanel.getComponent(firstShown) else null
+        currentTurn = null
+        toolJustCompleted = false
+        lastShownTimestampMinute = ""
+        autoScrollEnabled = false
+        try {
+            replayEntries(entries)
+        } finally {
+            prependAnchor = null
+            currentTurn = liveTurn
+            toolJustCompleted = liveToolJustCompleted
+            lastShownTimestampMinute = liveTimestampMinute
+            workingStartMs = liveWorkingStartMs
+            autoScrollEnabled = savedAutoScroll
+        }
     }
 
     private var loadMoreContainer: JPanel? = null
+
+    /** While older history is prepended, [addRow] inserts above this row, the first one shown before. */
+    private var prependAnchor: Component? = null
 
     fun showLoadMore(deferredCount: Int) {
         hideLoadMore()
@@ -2614,33 +2640,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contentPanel.repaint()
     }
 
-    /**
-     * Replays [EntryData] items into the panel using the existing ChatPanelApi methods.
-     * When [insertionIndex] >= 0, components are inserted at that position (for prepend);
-     * otherwise they are appended at the end.
-     */
-    private fun replayEntries(entries: List<EntryData>, insertionIndex: Int = -1) {
-        val savedAutoScroll = autoScrollEnabled
-        if (insertionIndex >= 0) autoScrollEnabled = false
+    /** Replays [EntryData] items into the panel through the ChatPanelApi methods; [addRow] decides where rows go. */
+    private fun replayEntries(entries: List<EntryData>) {
         isReplaying = true
-
-        val prevAddRow = if (insertionIndex >= 0) {
-            var nextIdx = insertionIndex
-            { comp: JComponent -> insertRowAt(comp, nextIdx).also { nextIdx += 1 } }
-        } else null
 
         for (entry in entries) {
             overrideTimestamp = entry.timestamp.ifEmpty { null }
             when (entry) {
-                is EntryData.Prompt -> {
-                    finalizeTurn()
-                    val ctxTriples = entry.contextFiles?.map { Triple(it.name, it.path, it.line) }
-                    if (prevAddRow != null) {
-                        addPromptEntryAt(entry.text, ctxTriples, entry.entryId, prevAddRow)
-                    } else {
-                        addPromptEntry(entry.text, ctxTriples)
-                    }
-                }
+                is EntryData.Prompt -> addPromptRow(entry.text, entry.entryId)
 
                 is EntryData.Text -> {
                     appendText(entry.raw)
@@ -2705,24 +2712,11 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         finalizeTurn()
         isReplaying = false
 
-        if (insertionIndex >= 0) autoScrollEnabled = savedAutoScroll
         contentPanel.revalidate()
         contentPanel.repaint()
     }
 
-    private fun insertRowAt(comp: JComponent, index: Int): JPanel {
-        val container = rowContainer(comp)
-        contentPanel.add(container, index)
-        return container
-    }
-
-    private fun addPromptEntryAt(
-        text: String,
-        // Part of the ChatPanelApi contract; context file display not yet implemented in native panel.
-        @Suppress("UNUSED_PARAMETER") contextFiles: List<Triple<String, String, Int>>?,
-        entryId: String = java.util.UUID.randomUUID().toString(),
-        addFn: (JComponent) -> JPanel
-    ): String {
+    private fun addPromptRow(text: String, entryId: String = java.util.UUID.randomUUID().toString()): String {
         finalizeTurn()
         val pane = createMarkdownPane(text)
         val (row, bubble) = createMessageRow(
@@ -2734,7 +2728,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             bubbleRow.addHoverButton(AllIcons.Actions.Copy, "Copy") { copyToClipboard(pane.getRawText()) }
         }
         trackUserBubble(bubble)
-        _promptEntryComponents[entryId] = addFn(row)
+        _promptEntryComponents[entryId] = addRow(row)
         showWorkingIndicator()
         return entryId
     }
