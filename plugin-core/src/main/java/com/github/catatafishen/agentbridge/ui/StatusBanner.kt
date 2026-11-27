@@ -63,6 +63,7 @@ class StatusBanner(parentDisposable: Disposable) :
 
     private val dismissAlarm = Alarm(parentDisposable)
     private var currentBanner: InlineBanner? = null
+    private var currentMessage: String? = null
     private var hovered = false
 
     init {
@@ -100,6 +101,16 @@ class StatusBanner(parentDisposable: Disposable) :
             dismiss()
         } else {
             ApplicationManager.getApplication().invokeLater { dismiss() }
+        }
+    }
+
+    /**
+     * Dismisses the current banner only if it shows [message], so a banner that replaced it stays. Queued like
+     * [show], so it also takes down a banner shown just before. Any thread.
+     */
+    fun dismissIfShowing(message: String) {
+        ApplicationManager.getApplication().invokeLater {
+            if (currentMessage == message) dismiss()
         }
     }
 
@@ -160,6 +171,7 @@ class StatusBanner(parentDisposable: Disposable) :
             }
 
             currentBanner = banner
+            currentMessage = message
             add(banner, BorderLayout.CENTER)
             isVisible = true
             revalidate()
@@ -176,6 +188,7 @@ class StatusBanner(parentDisposable: Disposable) :
         ApplicationManager.getApplication().assertIsDispatchThread()
         dismissAlarm.cancelAllRequests()
         hovered = false
+        currentMessage = null
         currentBanner?.let { banner ->
             currentBanner = null
             banner.close()

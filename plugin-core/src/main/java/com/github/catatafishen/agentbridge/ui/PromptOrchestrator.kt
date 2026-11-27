@@ -54,6 +54,11 @@ data class PromptOrchestratorCallbacks(
      * the Stop button and show an info notice.
      */
     val onPostTurnBackgroundDetected: () -> Unit,
+    /**
+     * Called when the agent has been quiet long enough after its turn that its later messages are no
+     * longer shown. The UI should drop the notice and the Stop button [onPostTurnBackgroundDetected] showed.
+     */
+    val onPostTurnBackgroundEnded: () -> Unit,
 )
 
 /** Stored banner message to re-display at the start of the next prompt turn. */
@@ -256,8 +261,13 @@ class PromptOrchestrator(
         agentManager.client.setFirstPostTurnCallback {
             if (!stopped) callbacks.onPostTurnBackgroundDetected()
         }
+        // The client holds a single quiet callback, so everything that ends with the post-turn window goes here.
         agentManager.client.setPostTurnQuietCallback {
-            finishBackgroundSubAgents(MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_QUIET_NOTE)
+            try {
+                finishBackgroundSubAgents(MessageFormatter.ChipStatus.COMPLETE, BACKGROUND_QUIET_NOTE)
+            } finally {
+                callbacks.onPostTurnBackgroundEnded()
+            }
         }
         try {
             executePrompt(prompt, contextItems, selectedModelId)

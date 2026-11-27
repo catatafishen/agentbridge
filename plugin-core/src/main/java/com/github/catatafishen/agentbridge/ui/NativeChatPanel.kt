@@ -457,6 +457,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     private var waitExtendButton: JButton? = null
     private var waitTimeoutAction: (() -> Unit)? = null
 
+    /** The countdown created the indicator because no turn showed one (a late sleep or prompt_user); it goes with it. */
+    private var indicatorOnlyForCountdown = false
+
     /** Verb shown in the countdown label: "Waiting" for prompt_user, "Sleeping" for sleep. */
     private var waitLabelPrefix = "Waiting"
 
@@ -767,6 +770,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         waitLabelPrefix = "Waiting"
         waitTimeoutAction = null
         isWaitingMode = false
+        indicatorOnlyForCountdown = false
         cardsHidingWorkingIndicator.clear()
         workingIndicatorWrapper?.let {
             contentPanel.remove(it)
@@ -838,7 +842,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
      * Creates the indicator if it is not yet shown.
      */
     private fun beginWaiting(labelPrefix: String, deadlineEpochMs: Long, onTimeout: (() -> Unit)?) {
-        if (workingLabel == null) showWorkingIndicator()
+        if (workingLabel == null) {
+            showWorkingIndicator()
+            indicatorOnlyForCountdown = true
+        }
         isWaitingMode = true
         waitLabelPrefix = labelPrefix
         waitStartMs = System.currentTimeMillis()
@@ -963,6 +970,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     /** Reverts the working indicator to normal "Working… Xs" mode after an ask-user or sleep completes. */
     private fun stopWaitingMode() {
+        if (indicatorOnlyForCountdown) {
+            hideWorkingIndicator()
+            return
+        }
         isWaitingMode = false
         sleepTracker.clear()
         waitLabelPrefix = "Waiting"
@@ -2285,13 +2296,18 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         // naturally so the tool returns "user response timed out".
         val markTimedOut = {
             if (resolved.compareAndSet(false, true)) {
-                isWaitingMode = false
-                waitTimeoutAction = null
-                workingTimer.stop()
                 pendingAskUserRespond.set(null)
-                waitExtendButton?.isVisible = false
-                workingLabel?.text = "\u23f1 Time expired"
-                updateWorkingIndicatorVisibility()
+                if (indicatorOnlyForCountdown) {
+                    // No turn is left to end and take the row down, so it goes with the countdown.
+                    hideWorkingIndicator()
+                } else {
+                    isWaitingMode = false
+                    waitTimeoutAction = null
+                    workingTimer.stop()
+                    waitExtendButton?.isVisible = false
+                    workingLabel?.text = "\u23f1 Time expired"
+                    updateWorkingIndicatorVisibility()
+                }
                 allButtons.forEach { it.isEnabled = false }
                 controlsRow?.let { contentPanel.remove(it) }
                 contentPanel.revalidate()
