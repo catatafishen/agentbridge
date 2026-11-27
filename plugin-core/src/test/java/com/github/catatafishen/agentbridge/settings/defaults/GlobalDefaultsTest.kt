@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.settings.defaults
 
 import com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings
 import com.github.catatafishen.agentbridge.memory.MemorySettings
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings
 import com.github.catatafishen.agentbridge.psi.graph.CodeGraphSettings
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.CleanupSettings
@@ -517,6 +518,11 @@ class GlobalDefaultsTest {
                 assertTrue(runtimeStateMarkers.none { key.contains(it, ignoreCase = true) }, key)
             }
             assertTrue("agent.activeProfileId" in ActiveAgentManager.USER_CHOICE_KEYS)
+        }
+
+        @Test
+        fun `the choice to bring the Run window forward is copied under the key the tool layer reads`() {
+            assertTrue(ToolLayerSettings.RAISE_RUN_WINDOW_KEY in ActiveAgentManager.USER_CHOICE_KEYS)
         }
 
         @Test

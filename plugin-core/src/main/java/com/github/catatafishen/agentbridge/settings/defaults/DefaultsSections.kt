@@ -57,7 +57,8 @@ object DefaultsSections {
         PropertyDefaultsSection(
             id = "agent",
             title = "Agent behaviour",
-            description = "Which agent is active, auto-connect, follow-agent options and the turn timeouts.",
+            description = "Which agent is active, auto-connect, follow-agent options, whether the Run window comes " +
+                "forward for the agent's commands, and the turn timeouts.",
             keys = { ActiveAgentManager.USER_CHOICE_KEYS },
         ),
         PropertyDefaultsSection(

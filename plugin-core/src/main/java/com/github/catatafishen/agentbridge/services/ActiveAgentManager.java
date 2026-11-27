@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.client.ClientRegistry;
 import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
 import com.github.catatafishen.agentbridge.client.codex.CodexClient;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
@@ -41,6 +42,7 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
     private static final String KEY_ALLOW_TRANSIENT_FILE_OPENS = "agent.allowTransientFileOpens";
     private static final String KEY_EDIT_APPROVAL_AUTO_DIFF = "agent.editApprovalAutoDiff";
+    private static final String KEY_RAISE_RUN_WINDOW = ToolLayerSettings.RAISE_RUN_WINDOW_KEY;
     private static final String KEY_INJECT_CONV_HISTORY = "agent.injectConversationHistory";
     private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
     private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
@@ -262,6 +264,7 @@ public final class ActiveAgentManager implements Disposable {
         KEY_FOLLOW_AGENT_FILES,
         KEY_ALLOW_TRANSIENT_FILE_OPENS,
         KEY_EDIT_APPROVAL_AUTO_DIFF,
+        KEY_RAISE_RUN_WINDOW,
         KEY_AUTO_CONNECT,
         KEY_SHARED_TURN_TIMEOUT_MINUTES,
         KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS,
@@ -298,19 +301,6 @@ public final class ActiveAgentManager implements Disposable {
             start();
         }
         return acpClient;
-    }
-
-    /**
-     * Returns the agent client only if already started and healthy.
-     * Does NOT trigger lazy start — returns {@code null} if the client is not ready.
-     * Use this from EDT-sensitive code paths that must not block.
-     *
-     * @deprecated Use {@link #getClientIfRunning()}
-     */
-    @Deprecated
-    @Nullable
-    public AbstractClient getClientIfReady() {
-        return getClientIfRunning();
     }
 
     /**
@@ -646,6 +636,18 @@ public final class ActiveAgentManager implements Disposable {
     public static void setEditApprovalAutoDiff(@NotNull Project project, boolean enabled) {
         PropertiesComponent.getInstance(project)
             .setValue(KEY_EDIT_APPROVAL_AUTO_DIFF, enabled, false);
+    }
+
+    /**
+     * Whether the Run tool window may be brought forward when a command the agent started
+     * gets a Run tab ({@code run_command}, hooks shown in the Run panel). Default {@code true}.
+     */
+    public static boolean getRaiseRunWindow(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_RAISE_RUN_WINDOW, true);
+    }
+
+    public static void setRaiseRunWindow(@NotNull Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_RAISE_RUN_WINDOW, enabled, true);
     }
 
     public static boolean getInjectConversationHistory(@NotNull Project project) {

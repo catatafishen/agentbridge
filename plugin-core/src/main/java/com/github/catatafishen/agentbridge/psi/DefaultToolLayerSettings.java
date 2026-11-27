@@ -38,6 +38,13 @@ public final class DefaultToolLayerSettings implements ToolLayerSettings {
     }
 
     @Override
+    public boolean getRaiseRunWindow() {
+        if (project == null) return true;
+        return PropertiesComponent.getInstance(project)
+            .getBoolean(RAISE_RUN_WINDOW_KEY, true);
+    }
+
+    @Override
     public @Nullable String getActiveAgentLabel() {
         return null;
     }

@@ -36,6 +36,11 @@ public final class ActiveAgentToolLayerSettings implements ToolLayerSettings {
     }
 
     @Override
+    public boolean getRaiseRunWindow() {
+        return ActiveAgentManager.getRaiseRunWindow(project);
+    }
+
+    @Override
     public @Nullable String getActiveAgentLabel() {
         return ActiveAgentManager.getInstance(project).getSettings().getActiveAgentLabel();
     }
