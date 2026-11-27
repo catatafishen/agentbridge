@@ -122,7 +122,7 @@ internal class PromptEditorSetup(
 
     fun checkSlashCommandAutocomplete() {
         // Use non-blocking accessor — must never trigger lazy client startup on EDT
-        val client = agentManager.getClientIfReady() ?: return
+        val client = agentManager.getClientIfRunning() ?: return
         val commands = mutableListOf(
             SlashCommandInfo("/session-restart", "Restart the current session (keep history)"),
             SlashCommandInfo("/session-clear", "Clear the current session and start fresh")

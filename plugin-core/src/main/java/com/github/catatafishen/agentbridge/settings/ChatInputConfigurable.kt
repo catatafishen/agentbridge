@@ -129,6 +129,19 @@ class ChatInputConfigurable(private val project: Project) :
             }
         }
         row {
+            checkBox("Bring the Run window forward when the agent runs a command")
+                .comment(
+                    "Commands the agent runs with <code>run_command</code>, and hooks shown in the Run panel, " +
+                        "always get a Run tab. When this is on, the Run window opens and takes focus unless " +
+                        "the chat has focus. When off, the tab is added in the background and the window " +
+                        "is never opened or focused."
+                )
+                .bindSelected(
+                    { ActiveAgentManager.getRaiseRunWindow(project) },
+                    { ActiveAgentManager.setRaiseRunWindow(project, it) }
+                )
+        }
+        row {
             checkBox("Automatically open edit approvals in the editor diff")
                 .comment(
                     "When an agent asks to edit a file, automatically show the proposed change " +

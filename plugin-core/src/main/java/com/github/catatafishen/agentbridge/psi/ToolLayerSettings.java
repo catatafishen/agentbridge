@@ -25,6 +25,8 @@ public interface ToolLayerSettings {
 
     String ALLOW_TRANSIENT_FILE_OPENS_KEY = "agent.allowTransientFileOpens";
 
+    String RAISE_RUN_WINDOW_KEY = "agent.raiseRunWindow";
+
     @NotNull
     static ToolLayerSettings getInstance(@NotNull Project project) {
         ToolLayerSettings service = (ToolLayerSettings) PlatformApiCompat.getServiceByRawClass(project, ToolLayerSettings.class);
@@ -46,6 +48,15 @@ public interface ToolLayerSettings {
      * {@link #getFollowAgentFiles()} returns {@code false}.
      */
     default boolean getAllowTransientFileOpens() {
+        return true;
+    }
+
+    /**
+     * Whether the Run tool window may be brought forward (activated and focused) when a
+     * command the agent started is shown in a Run tab. When {@code false} the tab is still
+     * added, but the window is never raised. Defaults to {@code true}.
+     */
+    default boolean getRaiseRunWindow() {
         return true;
     }
 
